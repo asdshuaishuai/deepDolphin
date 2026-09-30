@@ -1,0 +1,243 @@
+// BarView.swift — 菜单栏弹窗（MenuBarExtra .window 风格）。
+//
+// 系统集成的速览入口：总览 + 快捷动作，详情引导到主面板。
+import SwiftUI
+
+struct BarView: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            Divider().padding(.vertical, 4)
+
+            if !model.engineFound {
+                missingEngine
+            } else if model.projects.isEmpty {
+                emptyOrError
+            } else {
+                projectRows
+            }
+
+            Divider().padding(.vertical, 4)
+            footer
+        }
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+        .frame(width: 380)
+        .onAppear {
+            Task { await model.refreshAll() }
+        }
+    }
+
+    // MARK: 头部
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Text("项目群进度")
+                .font(.headline)
+            if let line = model.summaryLine {
+                Text(line)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if model.isLoading {
+                ProgressView().controlSize(.small)
+            }
+            Button {
+                Task { await model.refreshAll() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .help("刷新")
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
+    }
+
+    // MARK: 项目行
+
+    private var projectRows: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(model.projects.prefix(12)) { p in
+                    MenuProjectRow(project: p)
+                }
+                if model.projects.count > 12 {
+                    Button {
+                        openMainPanel(section: .dashboard)
+                    } label: {
+                        Text("还有 \(model.projects.count - 12) 个项目，打开面板查看…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+        .frame(maxHeight: 420)
+    }
+
+    // MARK: 空态 / 错误态
+
+    private var missingEngine: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("未找到 deepGit 引擎", systemImage: "questionmark.circle")
+                .font(.subheadline.weight(.medium))
+            Text("运行 deepgit-engine 的 scripts/install.sh 安装，或设 DEEPGIT_BIN")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("重新检测") {
+                DeepGitEngine.shared.refreshBinary()
+                Task { await model.refreshAll() }
+            }
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+
+    private var emptyOrError: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let err = model.lastError {
+                Label("引擎错误", systemImage: "exclamationmark.triangle")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.red)
+                Text(err)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            } else {
+                Text(model.isLoading ? "读取中…" : "暂无已注册项目")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text("运行 deepgit scan <目录> 注册项目群")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+
+    // MARK: 底部动作
+
+    private var footer: some View {
+        HStack(spacing: 6) {
+            Button {
+                openMainPanel(section: .dashboard)
+            } label: {
+                Label("打开面板", systemImage: "rectangle.inset.filled.and.person.filled")
+                    .labelStyle(.titleAndIcon)
+            }
+            .controlSize(.small)
+
+            Button {
+                Task { await model.updateAll(deep: false) }
+            } label: {
+                if model.busyAll {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Text("全部浅更新")
+                }
+            }
+            .controlSize(.small)
+            .disabled(model.busyAll || model.projects.isEmpty)
+
+            Spacer()
+
+            Button {
+                NSApplication.shared.terminate(nil)
+            } label: {
+                Image(systemName: "power")
+            }
+            .buttonStyle(.borderless)
+            .help("退出")
+        }
+        .padding(.horizontal, 12)
+    }
+
+    private func openMainPanel(section: RootSection) {
+        model.selection = section
+        PanelWindowController.shared.open(model: model)
+    }
+}
+
+/// 菜单栏弹窗里的单项目行：状态点 + 名称 + 未提交徽标 + 待记录迷你进度条
+struct MenuProjectRow: View {
+    @EnvironmentObject var model: AppModel
+    let project: ProjectStatus
+
+    private var currentBranch: BranchStatus? {
+        project.branches.first { $0.isCurrent } ?? project.branches.first
+    }
+
+    var body: some View {
+        Button {
+            model.selection = .project(project.name)
+            PanelWindowController.shared.open(model: model)
+            Task { await model.loadProject(project.name) }
+        } label: {
+            HStack(spacing: 8) {
+                if project.error != nil {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundStyle(.red)
+                        .font(.system(size: 9))
+                } else if let b = currentBranch {
+                    StatusDot(status: b.status)
+                } else {
+                    Circle().fill(.secondary).frame(width: 8, height: 8)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(project.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
+                        if project.userDirtyCount > 0 {
+                            Chip(text: "●\(project.userDirtyCount)", tint: .orange)
+                        }
+                        if model.busyProject == project.name {
+                            ProgressView().controlSize(.mini)
+                        }
+                    }
+                    Text(project.error ?? subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(project.error != nil ? .red : .secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                if let b = currentBranch, b.pendingCommits > 0 {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(b.pendingCommits)")
+                            .font(.system(.caption, design: .rounded).weight(.semibold))
+                            .foregroundStyle(.blue)
+                        ProgressView(value: Double(min(b.pendingCommits, 10)), total: 10)
+                            .progressViewStyle(.linear)
+                            .tint(.blue)
+                            .frame(width: 44)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var subtitle: String {
+        if let pulse = project.pulseLine { return pulse }
+        if let b = currentBranch, !b.headAgo.isEmpty {
+            return "\(b.headAgo) · \(b.statusLabel)"
+        }
+        return project.lastCommitAgo.isEmpty ? "非 git 项目" : project.lastCommitAgo
+    }
+}

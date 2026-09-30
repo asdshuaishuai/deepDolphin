@@ -1,0 +1,7 @@
+# Swift 构建产物
+.build/
+.swiftpm/
+DerivedData/
+# App bundle（build.sh 重新生成）
+**/*.app/
+.DS_Store
