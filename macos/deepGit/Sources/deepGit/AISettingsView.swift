@@ -14,11 +14,13 @@ struct GeneralSettingsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     ScheduleCard()
                     AISettingsView(onClose: onClose)
-                        .environmentObject(AppModel.shared)
                 }
                 .padding(16)
             }
+            .environmentObject(AppModel.shared)  // 覆盖全部子树（ScheduleCard/AISettingsView 都要用）
         }
+        // NSHostingView 会按内容最小尺寸收缩窗口：没有最小约束窗口会被压成 0×0
+        .frame(minWidth: 540, minHeight: 640)
     }
 }
 

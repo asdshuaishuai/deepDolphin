@@ -26,8 +26,9 @@ struct PanelView: View {
                 Task { await model.loadProject(name) }
             }
         }
-        .sheet(isPresented: $showAISettings) {
-            AISettingsView()
+        .sheet(isPresented: $model.showAISettings) {
+            GeneralSettingsView(onClose: { model.showAISettings = false })
+                .environmentObject(model)
         }
     }
 
@@ -152,6 +153,4 @@ struct PanelView: View {
             UpdateActionMenu()
         }
     }
-
-    @State private var showAISettings = false
 }

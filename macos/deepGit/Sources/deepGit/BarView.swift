@@ -155,12 +155,12 @@ struct BarView: View {
             Spacer()
 
             Button {
-                NSApplication.shared.terminate(nil)
+                (NSApp.delegate as? AppDelegate)?.requestFullQuit()
             } label: {
                 Image(systemName: "power")
             }
             .buttonStyle(.borderless)
-            .help("退出")
+            .help("完全退出")
         }
         .padding(.horizontal, 12)
     }

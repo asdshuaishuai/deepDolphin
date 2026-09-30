@@ -106,6 +106,7 @@ final class AppModel: ObservableObject {
     @Published var lastRefreshed: Date?
     @Published var busyProject: String?
     @Published var busyAll = false
+    @Published var showAISettings = false
 
     private var timer: Timer?
     private var notifiedKeys = Set<String>()

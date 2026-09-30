@@ -71,6 +71,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 PanelWindowController.shared.open(model: AppModel.shared)
             }
         }
+        if args.contains("--open-settings") {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                PanelWindowController.shared.openAISettings(model: AppModel.shared)
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -136,6 +142,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     // Dock 右键菜单：系统集成速捷入口
+    /// bar 的「退出」置位 → 真正退出；其它来源（Dock 退出/系统）→ 只关窗口，bar 存活
+    private var fullQuitRequested = false
+
+    func requestFullQuit() {
+        fullQuitRequested = true
+        NSApp.terminate(nil)
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            PanelWindowController.shared.open(model: AppModel.shared)
+        }
+        return false
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if fullQuitRequested {
+            return .terminateNow
+        }
+        // Dock「退出」/ 系统 terminate：关闭窗口，但菜单栏（bar）继续运行
+        PanelWindowController.shared.closeAll()
+        DispatchQueue.main.async {
+            Notifier.shared.notify(
+                title: "deepGit 仍在菜单栏运行",
+                body: "从菜单栏弹窗的 ⏻ 退出可完全退出"
+            )
+        }
+        return .terminateCancel
+    }
+
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let menu = NSMenu()
         let open = NSMenuItem(title: "打开面板", action: #selector(openPanelFromDock), keyEquivalent: "")

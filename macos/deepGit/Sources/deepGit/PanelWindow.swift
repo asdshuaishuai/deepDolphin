@@ -11,7 +11,6 @@ final class PanelWindowController: NSObject, NSToolbarDelegate {
     static let shared = PanelWindowController()
 
     private var window: NSWindow?
-    private var settingsWindow: NSWindow?
     private var modelRef: AppModel?
 
     var isVisible: Bool {
@@ -169,31 +168,18 @@ final class PanelWindowController: NSObject, NSToolbarDelegate {
         }
     }
 
+    /// 关闭全部窗口（保留 bar 运行）
+    func closeAll() {
+        window?.orderOut(nil)
+    }
+
     // MARK: 设置窗口
 
     func openAISettings(model: AppModel) {
         modelRef = model
-        if let w = settingsWindow {
-            w.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-        let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 680),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        w.title = "AI 与自动化设置"
-        w.isReleasedWhenClosed = false
-        w.contentView = NSHostingView(
-            rootView: GeneralSettingsView { [weak self] in
-                self?.settingsWindow?.orderOut(nil)
-            }
-        )
-        w.center()
-        w.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        settingsWindow = w
+        // SwiftUI sheet 呈现（由 PanelView 持有 .sheet）；NSHostingView 独立窗口在 macOS 27
+        // 上布局死循环（窗口缩成 0×0），已弃用
+        model.showAISettings = true
+        open(model: model)
     }
 }
