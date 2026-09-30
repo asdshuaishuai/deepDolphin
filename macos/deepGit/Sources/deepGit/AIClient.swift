@@ -6,7 +6,7 @@ import Foundation
 
 extension EngineCLI {
     func status(light: Bool) async throws -> StatusEnvelope {
-        let data = try await runData(["status", "--json", "--quiet"], timeout: 180)
+        let data = try await runData(["status", "--json", "--quiet"], timeout: 30)
         // 兼容两种形状：标准 {projects,summary}；旧版/边角裸 ProjectStatus
         if let env = try? JSONDecoder().decode(StatusEnvelope.self, from: data) {
             return env

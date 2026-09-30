@@ -113,18 +113,22 @@ struct MilestoneRow: View {
                 }
             }
 
-            // 行内操作（···）：达成 / 重开 / 放弃 / 打开项目 / 删除
-            Menu {
-                rowActions
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 15))
-                    .foregroundStyle(.secondary)
+            // 行内直达按钮（不用 Menu：List 行内 Menu 命中率不可靠）
+            HStack(spacing: 2) {
+                if milestone.status == "open" {
+                    actionButton("达成", "checkmark.circle.fill", .green) {
+                        Task { await model.milestoneAction(milestone, action: "done") }
+                    }
+                }
+                if milestone.status != "open" {
+                    actionButton("重开", "arrow.counterclockwise.circle.fill", .blue) {
+                        Task { await model.milestoneAction(milestone, action: "reopen") }
+                    }
+                }
+                actionButton("删除", "trash.fill", .red) {
+                    Task { await model.milestoneAction(milestone, action: "remove") }
+                }
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("操作")
         }
         .padding(.vertical, 3)
         .contentShape(Rectangle())
@@ -144,7 +148,7 @@ struct MilestoneRow: View {
             Button("标记达成") { Task { await model.milestoneAction(milestone, action: "done") } }
         }
         if milestone.status != "open" {
-            Button("重新打开") { Task { await model.milestoneAction(milestone, action: "open") } }
+            Button("重新打开") { Task { await model.milestoneAction(milestone, action: "reopen") } }
         }
         if milestone.status != "dropped" {
             Button("放弃") { Task { await model.milestoneAction(milestone, action: "drop") } }
@@ -159,6 +163,18 @@ struct MilestoneRow: View {
         }
         Divider()
         Button("删除", role: .destructive) { Task { await model.milestoneAction(milestone, action: "remove") } }
+    }
+
+    private func actionButton(_ label: String, _ icon: String, _ tint: Color, action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+        } label: {
+            Image(systemName: icon)
+                .foregroundStyle(tint.opacity(0.75))
+                .font(.system(size: 13))
+        }
+        .buttonStyle(.plain)
+        .help(label)
     }
 
     private var icon: String {

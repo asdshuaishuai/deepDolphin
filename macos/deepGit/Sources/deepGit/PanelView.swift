@@ -6,6 +6,7 @@ import SwiftUI
 struct PanelView: View {
     @EnvironmentObject var model: AppModel
     @State private var showScan = false
+    @State private var showTCCGuide = false
 
     var body: some View {
         NavigationSplitView {
@@ -31,6 +32,29 @@ struct PanelView: View {
         .sheet(isPresented: $model.showAISettings) {
             GeneralSettingsView(onClose: { model.showAISettings = false })
                 .environmentObject(model)
+        }
+        .sheet(isPresented: $showTCCGuide) {
+            VStack(spacing: 16) {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.orange)
+                Text("需要完全磁盘访问权限")
+                    .font(.title3.weight(.semibold))
+                Text("deepGit 需要访问外置卷上的项目目录。请在系统设置中允许，然后重启 deepGit。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 30)
+                Button("打开系统设置") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                Button("稍后") { showTCCGuide = false }
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 400, height: 280)
         }
         .sheet(isPresented: $showScan) {
             ScanSheet().environmentObject(model)
@@ -65,8 +89,6 @@ struct PanelView: View {
                     .tag(RootSection.dashboard)
                 Label("看板", systemImage: "rectangle.split.3x1")
                     .tag(RootSection.board)
-                Label("AI 助手", systemImage: "sparkles")
-                    .tag(RootSection.agent)
                 Label("里程碑", systemImage: "flag.2.crossed")
                     .tag(RootSection.milestones)
                     .badge(model.dashboard.map { d in
@@ -132,6 +154,15 @@ struct PanelView: View {
                         .font(.caption)
                         .lineLimit(2)
                     Spacer()
+                    if err.contains("完全磁盘访问") || err.contains("可移除宗卷") {
+                        Button("打开系统设置") {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .font(.caption)
+                        .buttonStyle(.borderedProminent)
+                    }
                     Button {
                         model.lastError = nil
                     } label: {
@@ -163,8 +194,6 @@ struct PanelView: View {
                 DashboardView()
             case .board:
                 BoardPage()
-            case .agent:
-                AgentView()
             case .milestones:
                 MilestonesView()
             case .project(let name):
