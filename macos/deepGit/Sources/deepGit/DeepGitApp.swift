@@ -13,9 +13,13 @@ import SwiftUI
 import AppKit
 import UserNotifications
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Notifier.shared.setUp()
+        Notifier.shared.onOpenPanel = {
+            PanelWindowController.shared.open(model: AppModel.shared)
+        }
         Task { await AppModel.shared.start() }
 
         let args = ProcessInfo.processInfo.arguments
@@ -56,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } else if let i = args.firstIndex(of: "--section"), i + 1 < args.count {
                 switch args[i + 1] {
                 case "milestones": section = .milestones
+                case "board": section = .board
                 default: section = .dashboard
                 }
             }
@@ -72,6 +77,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationWillTerminate(_ notification: Notification) {
         AppModel.shared.stop()
         DeepGitEngine.shared.stopServerIfOurs()
+    }
+
+    // Dock 右键菜单：系统集成速捷入口
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        let open = NSMenuItem(title: "打开面板", action: #selector(openPanelFromDock), keyEquivalent: "")
+        menu.addItem(open)
+        let update = NSMenuItem(title: "全部浅更新", action: #selector(shallowAllFromDock), keyEquivalent: "")
+        menu.addItem(update)
+        return menu
+    }
+
+    @objc func openPanelFromDock() {
+        PanelWindowController.shared.open(model: AppModel.shared)
+    }
+
+    @objc func shallowAllFromDock() {
+        Task { await AppModel.shared.updateAll(deep: false) }
     }
 }
 

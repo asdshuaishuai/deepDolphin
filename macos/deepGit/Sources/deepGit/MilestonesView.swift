@@ -1,4 +1,5 @@
 // MilestonesView.swift — 里程碑管理页。
+// 行内直操作：点击行跳项目；··· 菜单 = 达成/重开/放弃/打开项目/删除（右键同效）。
 import SwiftUI
 
 struct MilestonesView: View {
@@ -18,16 +19,12 @@ struct MilestonesView: View {
                     Section {
                         ForEach(model.milestones) { m in
                             MilestoneRow(milestone: m)
-                                .contextMenu {
-                                    milestoneMenu(m)
-                                }
                         }
                     } header: {
                         HStack {
                             Text("全部里程碑（\(model.milestones.count)）")
                             Spacer()
-                            let counts = model.dashboard?.milestones.counts
-                            if let c = counts {
+                            if let c = model.dashboard?.milestones.counts {
                                 Text("进行中 \(c.open) · 已达成 \(c.done) · 已放弃 \(c.dropped)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -52,23 +49,11 @@ struct MilestonesView: View {
             AddMilestoneSheet()
                 .environmentObject(model)
         }
-    }
-
-    @ViewBuilder
-    private func milestoneMenu(_ m: MilestoneItem) -> some View {
-        if m.status != "done" {
-            Button("标记达成") { Task { await model.milestoneAction(m, action: "done") } }
-        }
-        if m.status != "open" {
-            Button("重新打开") { Task { await model.milestoneAction(m, action: "open") } }
-        }
-        if m.status != "dropped" {
-            Button("放弃") { Task { await model.milestoneAction(m, action: "drop") } }
-        }
-        Divider()
-        Button("删除", role: .destructive) { Task { await model.milestoneAction(m, action: "remove") } }
+        .task { await model.fetchMilestones() }
     }
 }
+
+// MARK: - 行
 
 struct MilestoneRow: View {
     @EnvironmentObject var model: AppModel
@@ -126,8 +111,53 @@ struct MilestoneRow: View {
                         .foregroundStyle(.tertiary)
                 }
             }
+
+            // 行内操作（···）：达成 / 重开 / 放弃 / 打开项目 / 删除
+            Menu {
+                rowActions
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("操作")
         }
         .padding(.vertical, 3)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            Task {
+                model.selection = .project(milestone.projectName)
+                PanelWindowController.shared.open(model: model)
+                await model.loadProject(milestone.projectName)
+            }
+        }
+        .contextMenu { rowActions }
+    }
+
+    @ViewBuilder
+    private var rowActions: some View {
+        if milestone.status != "done" {
+            Button("标记达成") { Task { await model.milestoneAction(milestone, action: "done") } }
+        }
+        if milestone.status != "open" {
+            Button("重新打开") { Task { await model.milestoneAction(milestone, action: "open") } }
+        }
+        if milestone.status != "dropped" {
+            Button("放弃") { Task { await model.milestoneAction(milestone, action: "drop") } }
+        }
+        Divider()
+        Button("打开项目") {
+            Task {
+                model.selection = .project(milestone.projectName)
+                PanelWindowController.shared.open(model: model)
+                await model.loadProject(milestone.projectName)
+            }
+        }
+        Divider()
+        Button("删除", role: .destructive) { Task { await model.milestoneAction(milestone, action: "remove") } }
     }
 
     private var icon: String {
