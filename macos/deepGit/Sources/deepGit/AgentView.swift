@@ -52,25 +52,8 @@ final class AgentSession: ObservableObject {
 
     /// selftest 日志开关
     var logSink: ((String) -> Void)?
-
-    /// 解析模型回复中的工具调用（```json {"tool":...,"params":{...}} ```）
-    private func parseToolCall(_ reply: String) -> (name: String, params: [String: Any])? {
-        guard let start = reply.range(of: "```json"),
-              let end = reply.range(of: "```", range: start.upperBound..<reply.endIndex) else {
-            // 也容忍裸 JSON 单行
-            let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard trimmed.hasPrefix("{"), trimmed.hasSuffix("}"),
-                  let data = trimmed.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let tool = obj["tool"] as? String else { return nil }
-            return (tool, obj["params"] as? [String: Any] ?? [:])
-        }
-        let body = String(reply[start.upperBound..<end.lowerBound])
-        guard let data = body.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tool = obj["tool"] as? String else { return nil }
-        return (tool, obj["params"] as? [String: Any] ?? [:])
-    }
+    /// 无头自测直接注入配置（不走 UserDefaults）
+    var overrideConfig: AIConfig?
 
     /// 工具名 → 引擎 HTTP 调用。返回 (ok, 摘要文本)
     private func executeTool(_ name: String, params: [String: Any]) async -> (Bool, String) {
@@ -142,6 +125,29 @@ final class AgentSession: ObservableObject {
         return data
     }
 
+    /// 引擎 /api/tools → ai-sdk 工具定义（params: "a,b" → JSON Schema）
+    private func engineToolDefinitions() async -> [ToolDefinition] {
+        guard let data = try? await rawGet("api/tools", query: [:]),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tools = obj["tools"] as? [[String: Any]] else { return [] }
+        return tools.compactMap { t in
+            guard let name = t["name"] as? String else { return nil }
+            let desc = (t["description"] as? String) ?? ""
+            let paramString = (t["params"] as? String) ?? ""
+            var props: [String: Any] = [:]
+            var required: [String] = []
+            for key in paramString.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) where !key.isEmpty {
+                props[key] = ["type": "string", "description": key]
+                required.append(key)
+            }
+            return ToolDefinition(
+                name: name,
+                description: desc,
+                parametersJSON: ["type": "object", "properties": props, "required": required]
+            )
+        }
+    }
+
     /// 上下文包 + 工具清单 → system prompt
     private func buildSystemPrompt(toolsManifest: String) -> String {
         let scopeLine: String
@@ -206,35 +212,37 @@ final class AgentSession: ObservableObject {
             let toolsData = try await rawGet("api/tools", query: [:])
             let toolsText = String(data: toolsData, encoding: .utf8) ?? "{}"
 
-            let provider = AIProvider(config: AIConfig.load())
+            let model = LanguageModel(config: overrideConfig ?? AIConfig.load())
             let system = buildSystemPrompt(toolsManifest: toolsText)
                 + "\n\n## 当前范围事实（引擎生成）\n\n" + context
+            let toolDefs = await engineToolDefinitions()
 
-            var convo: [AIProvider.Message] = [AIProvider.Message(role: "user", content: question)]
+            var convo: [ChatMessage] = [ChatMessage.user(question)]
 
-            // 工具循环（≤4 轮）
+            // 工具循环（≤4 轮）——原生 tool_calls / tool_use 线格式
             for round in 1...4 {
-                let reply = try await provider.chat(system: system, messages: convo)
-                if let call = parseToolCall(reply) {
-                    messages.append(AgentMessage(kind: .assistant, text: "🔧 调用工具 `\(call.name)`"))
-                    logSink?("TOOL_CALL: \(call.name) params=\(call.params)")
-                    let (ok, result) = await executeTool(call.name, params: call.params)
-                    let clipped = result.count > 16000 ? String(result.prefix(16000)) + "\n…(截断)" : result
-                    messages.append(AgentMessage(kind: .toolCall(name: call.name, result: clipped, ok: ok), text: clipped))
-                    convo.append(AIProvider.Message(role: "assistant", content: reply))
-                    convo.append(AIProvider.Message(
-                        role: "user",
-                        content: "工具 \(call.name) 执行\(ok ? "成功" : "失败")，结果：\n\(clipped)\n\n请继续。"
-                    ))
+                let result = try await model.generateText(system: system, messages: convo, tools: toolDefs)
+                if !result.toolCalls.isEmpty {
+                    convo.append(ChatMessage(role: "assistant", text: result.text, toolCalls: result.toolCalls, toolCallID: nil))
+                    for call in result.toolCalls {
+                        messages.append(AgentMessage(kind: .assistant, text: "🔧 调用工具 `\(call.name)`"))
+                        logSink?("TOOL_CALL: \(call.name) args=\(call.argumentsJSON)")
+                        let params = (try? JSONSerialization.jsonObject(with: Data(call.argumentsJSON.utf8))) as? [String: Any] ?? [:]
+                        let (ok, out) = await executeTool(call.name, params: params)
+                        let clipped = out.count > 16000 ? String(out.prefix(16000)) + "\n…(截断)" : out
+                        messages.append(AgentMessage(kind: .toolCall(name: call.name, result: clipped, ok: ok), text: clipped))
+                        convo.append(ChatMessage(role: "tool", text: "工具 \(call.name) 执行\(ok ? "成功" : "失败")：\n\(clipped)", toolCalls: nil, toolCallID: call.id))
+                    }
                 } else {
-                    messages.append(AgentMessage(kind: .assistant, text: reply))
-                    logSink?("FINAL: \(reply.prefix(200))")
+                    messages.append(AgentMessage(kind: .assistant, text: result.text))
+                    logSink?("FINAL: \(result.text.prefix(200))")
                     break
                 }
                 if round == 4 {
                     messages.append(AgentMessage(kind: .error, text: "已达工具调用轮次上限（4），请拆分问题或直接提问"))
                 }
             }
+            lastDuration = Date().timeIntervalSince(startedAt)
             lastDuration = Date().timeIntervalSince(startedAt)
         } catch {
             messages.append(AgentMessage(kind: .error, text: error.localizedDescription))

@@ -12,17 +12,24 @@
 
 状态项标题即健康度：项目数 + `⚠︎N`（有停滞分支）或 `●N`（有未提交改动），图标颜色随状态变化（绿/橙/红）。
 
-## AI 助手（客户端 AI 层，deepDesign 模式）
+## AI 助手（客户端 AI 层，deepDesign 模式 · models.dev + ai-sdk）
 
-引擎是 **AI 无关**内核；AI 的配置、调用与 agent 循环全部在本客户端：
+引擎是 **AI 无关**内核；AI 的目录、通道、配置与 agent 循环全部在本客户端，
+实现方式与 deepOrca 同构：**models.dev 目录 + ai-sdk 通道**。
 
-- **设置**（面板工具栏 ⚙️）：provider 预设（DeepSeek / OpenAI / Anthropic / Ollama / 自定义 OpenAI 兼容）、
-  模型、Base URL、API Key——**key 存 macOS 钥匙串**，永不进引擎与日志。支持一键测试连通。
-- **AI 助手**（侧栏 ✦）：选择范围（项目群或单项目）后直接提问。
-  工作流：拉取引擎 `/api/context` 上下文包 + `/api/tools` 工具清单 → 组 prompt →
-  模型可回复 `{"tool": "...", "params": {...}}` 调用引擎工具（执行更新、读文档、提交改动…），
-  客户端执行后把结果喂回，最多 4 轮 → 最终答案以 Markdown 渲染。
-- 无头自测（CI/排查）：`deepGit --agent-selftest "总结一下项目群现状"`（配合 `defaults write cn.deepgit.app ai.*` 可指向本地 mock）。
+- **models.dev 目录**（`ModelsDev.swift`）：vendor 快照 `Resources/models-dev.json`
+  （从 deepOrca 的 models-dev/api.json 瘦身，225 家 provider）+ 启动后静默刷新最新目录。
+  数据仅作选择器与通道元数据：模型 id、tool_call、reasoning、上下文窗口、成本、provider api 端点。
+- **ai-sdk 通道**（`AISDK.swift`）：`LanguageModel.generateText` ——
+  OpenAI 兼容（deepseek/openai/ollama/openrouter/网关…）与 Anthropic 双协议，
+  **原生 tool_calls / tool_use 线格式**（不是文本协议）；baseURL 默认取目录 `api` 字段。
+- **设置**（AI 助手页 ⚙️）：provider/model 选择器由目录填充（⚡︎=tool_call、🧠=reasoning、
+  上下文窗口徽标），Base URL 默认目录端点可覆盖；**key 存 macOS 钥匙串**；一键测试连通。
+- **AI 助手**（侧栏 ✦）：选范围提问 → 引擎 `/api/context` 上下文包 + `/api/tools` 工具清单 →
+  模型原生调用引擎工具（更新/读文档/提交改动…），客户端执行后回喂，≤4 轮 → Markdown 渲染。
+- 无头自测（CI/排查）：`deepGit --agent-selftest "总结一下项目群现状"`；
+  本地 mock 验证：`defaults write cn.deepgit.app ai.providerID mock` +
+  `ai.baseURL http://127.0.0.1:5999/v1` + `ai.apiKey mock-key`（配一个回 tool_calls 的假 provider）。
 
 ## 引擎 / 客户端边界（重要）
 
@@ -32,7 +39,7 @@
 | 状态 / 仪表盘 / 里程碑 / 日志数据 | **引擎** | `GET /api/status`、`/api/dashboard`、`/api/milestones` |
 | 更新 / 里程碑 / git 操作 | **引擎** | `POST /api/update`、`/api/deep`、`/api/milestones`、`/api/milestones/action`、`/api/git`（pull/push/commit/stash/unstash/fetch 白名单，无破坏性命令） |
 | agent 喂养（上下文包/工具清单） | **引擎** | `GET /api/context`、`GET /api/tools`——引擎 AI 无关，只供事实与动作 |
-| **AI 配置与调用、工具循环** | **客户端** | key 存钥匙串；provider 直连（OpenAI 兼容 + Anthropic）；agent 循环在 AgentView |
+| **AI 目录/通道/配置、工具循环** | **客户端** | models.dev 目录（快照+刷新）选型；ai-sdk 风格通道（OpenAI 兼容 + Anthropic 原生 tool_calls）；key 存钥匙串；agent 循环在 AgentView |
 | 文档内容 | **引擎** | `GET /api/docs?name=` 返回 README/AGENTS/CLAUDE 原文（单文件 200KB 截断），客户端本地渲染 |
 | 进度存储（`~/.deepgit/store/`） | **引擎** | 客户端不落任何业务数据 |
 | 引擎发现与拉起 | **客户端** | `DEEPGIT_BIN` → app 内嵌副本（`Contents/Resources/deepgit`）→ `~/.local/bin` → `/usr/local/bin` → 登录 shell PATH；找到后按需 `deepgit serve` |
@@ -73,7 +80,8 @@ Sources/deepGit/
   PanelWindow.swift     主面板 NSWindow 管理（确定性开窗）
   Engine.swift          引擎发现 + serve 托管 + APIClient（ URLSession ）
   Models.swift          HTTP 契约 Codable 模型（与引擎 flow 层 JSON 严格同名）
-  AIProvider.swift      AI 配置（Keychain）+ OpenAI 兼容/Anthropic 调用
+  ModelsDev.swift       models.dev 目录（vendor 快照 + 静默刷新）→ provider/model 元数据
+  AISDK.swift           ai-sdk 风格通道：generateText + 原生 tool_calls/tool_use；配置（钥匙串）
   AgentView.swift       AI 助手：会话 UI + 工具调用循环（引擎 /api/tools 驱动）
   AISettingsView.swift  AI 设置页（provider/模型/密钥/测试连接）
   MarkdownView.swift    轻量 Markdown 渲染（文档平铺与 AI 回答共用）

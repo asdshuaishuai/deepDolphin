@@ -19,9 +19,12 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
-# 应用图标
+# 应用图标 + models.dev 目录快照（AI 设置选择器数据骨干）
 if [ -f "$DIR/AppIcon.icns" ]; then
   cp "$DIR/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+fi
+if [ -f "$DIR/Resources/models-dev.json" ]; then
+  cp "$DIR/Resources/models-dev.json" "$APP_BUNDLE/Contents/Resources/models-dev.json"
 fi
 
 cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
