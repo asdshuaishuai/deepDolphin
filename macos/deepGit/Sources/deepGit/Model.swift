@@ -58,6 +58,7 @@ final class LoginItem {
 enum RootSection: Hashable {
     case dashboard
     case milestones
+    case agent        // AI 助手（客户端 AI 层）
     case project(String)  // 项目名
 }
 

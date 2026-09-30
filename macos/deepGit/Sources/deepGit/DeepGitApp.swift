@@ -26,12 +26,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
             return
         }
+        if let i = args.firstIndex(of: "--agent-selftest"), i + 1 < args.count {
+            let question = args[i + 1]
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                _ = await AppModel.shared.ensureReady()
+                let session = AgentSession()
+                session.logSink = { msg in print("[selftest] \(msg)") }
+                await session.ask(question)
+                for m in session.messages {
+                    let tag: String
+                    switch m.kind {
+                    case .user: tag = "user"
+                    case .assistant: tag = "assistant"
+                    case .toolCall(let n, _, let ok): tag = "tool(\(n),ok=\(ok))"
+                    case .error: tag = "error"
+                    }
+                    print("[selftest-msg] \(tag): \(m.text.prefix(120).replacingOccurrences(of: "\n", with: " "))")
+                }
+                print("[selftest-done]")
+                Foundation.exit(0)
+            }
+            return
+        }
         if args.contains("--open-panel") {
             var section: RootSection?
             if let i = args.firstIndex(of: "--project"), i + 1 < args.count {
                 section = .project(args[i + 1])
             } else if let i = args.firstIndex(of: "--section"), i + 1 < args.count {
-                section = args[i + 1] == "milestones" ? .milestones : .dashboard
+                switch args[i + 1] {
+                case "milestones": section = .milestones
+                case "agent": section = .agent
+                default: section = .dashboard
+                }
             }
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 300_000_000)

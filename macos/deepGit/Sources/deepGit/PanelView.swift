@@ -26,6 +26,9 @@ struct PanelView: View {
                 Task { await model.loadProject(name) }
             }
         }
+        .sheet(isPresented: $showAISettings) {
+            AISettingsView()
+        }
     }
 
     // MARK: 侧栏
@@ -40,6 +43,8 @@ struct PanelView: View {
                     .badge(model.dashboard.map { d in
                         d.milestones.counts.open + d.milestones.counts.done
                     } ?? 0)
+                Label("AI 助手", systemImage: "sparkles")
+                    .tag(RootSection.agent)
             }
             Section("项目（\(model.projects.count)）") {
                 ForEach(model.projects) { p in
@@ -99,6 +104,8 @@ struct PanelView: View {
                 DashboardView()
             case .milestones:
                 MilestonesView()
+            case .agent:
+                AgentView()
             case .project(let name):
                 ProjectDetailView(projectName: name)
             case nil:
@@ -152,6 +159,14 @@ struct PanelView: View {
                 Label("全部浅更新", systemImage: "arrow.triangle.branch")
             }
             .disabled(model.busyAll || model.projects.isEmpty)
+
+            Button {
+                showAISettings = true
+            } label: {
+                Label("AI 设置", systemImage: "gearshape")
+            }
         }
     }
+
+    @State private var showAISettings = false
 }
