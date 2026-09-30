@@ -55,12 +55,6 @@ struct DeepGitApp: App {
         .defaultSize(width: 1100, height: 720)
         .commands {
             CommandGroup(replacing: .newItem) {}
-            CommandGroup(after: .appInfo) {
-                Button("设置…") {
-                    AppModel.shared.showAISettings = true
-                }
-                .keyboardShortcut(",")
-            }
             CommandMenu("操作") {
                 Button("刷新") {
                     Task { await model.refreshAll() }
