@@ -17,6 +17,20 @@ final class PanelWindowController {
         window?.isVisible == true
     }
 
+    /// 调试用：把菜单栏弹窗内容（BarView）放进普通窗口，验证其独立渲染
+    func openBarPreview(model: AppModel) {
+        let w = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 640),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        w.title = "Bar 预览"
+        w.contentView = NSHostingView(rootView: BarView().environmentObject(model))
+        w.center()
+        w.makeKeyAndOrderFront(nil)
+    }
+
     func open(model: AppModel) {
         NSLog("deepgit-bar: PanelWindowController.open 被调用")
         if let w = window {

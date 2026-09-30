@@ -19,6 +19,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         Task { await AppModel.shared.start() }
 
         let args = ProcessInfo.processInfo.arguments
+        if args.contains("--bar-preview") {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                PanelWindowController.shared.openBarPreview(model: AppModel.shared)
+            }
+            return
+        }
         if args.contains("--open-panel") {
             var section: RootSection?
             if let i = args.firstIndex(of: "--project"), i + 1 < args.count {

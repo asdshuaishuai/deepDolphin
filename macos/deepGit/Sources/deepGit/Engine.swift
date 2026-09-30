@@ -141,6 +141,14 @@ final class DeepGitEngine: @unchecked Sendable {
 final class APIClient: @unchecked Sendable {
     static let shared = APIClient()
 
+    /// 独立会话 + 显式超时：引擎僵死时快速失败，不让 UI 卡在加载态
+    private let session: URLSession = {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 15
+        cfg.timeoutIntervalForResource = 60
+        return URLSession(configuration: cfg)
+    }()
+
     private var base: URL {
         URL(string: "http://127.0.0.1:\(DeepGitEngine.shared.serverPort)")!
     }
@@ -150,7 +158,7 @@ final class APIClient: @unchecked Sendable {
         if !query.isEmpty {
             comps.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
         }
-        let (data, resp) = try await URLSession.shared.data(for: URLRequest(url: comps.url!))
+        let (data, resp) = try await session.data(for: URLRequest(url: comps.url!))
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
             let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
             throw EngineError.failed("GET \(path) 失败（HTTP \(code)）")
@@ -170,7 +178,7 @@ final class APIClient: @unchecked Sendable {
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
             let msg = String(data: data, encoding: .utf8) ?? ""

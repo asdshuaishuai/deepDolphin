@@ -186,6 +186,12 @@ final class AppModel: ObservableObject {
         }
 
         await fetchStatus(light: false)
+        // 冷启动首发容易撞上引擎还在采集：失败后自动补一轮
+        if lastError != nil && !projects.isEmpty == false {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            lastError = nil
+            await fetchStatus(light: false)
+        }
         await fetchDashboard()
         await fetchMilestones()
         lastRefreshed = Date()

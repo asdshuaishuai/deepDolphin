@@ -60,27 +60,26 @@ struct BarView: View {
 
     // MARK: 项目行
 
+    // 注意：MenuBarExtra 弹窗里 ScrollView 会塌缩成 0 高，这里用平铺 VStack
+    // （超过 12 个项目时给出面板引导，弹窗高度由系统自动约束在屏幕内）
     private var projectRows: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(model.projects.prefix(12)) { p in
-                    MenuProjectRow(project: p)
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(model.projects.prefix(12)) { p in
+                MenuProjectRow(project: p)
+            }
+            if model.projects.count > 12 {
+                Button {
+                    openMainPanel(section: .dashboard)
+                } label: {
+                    Text("还有 \(model.projects.count - 12) 个项目，打开面板查看…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                if model.projects.count > 12 {
-                    Button {
-                        openMainPanel(section: .dashboard)
-                    } label: {
-                        Text("还有 \(model.projects.count - 12) 个项目，打开面板查看…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
             }
         }
-        .frame(maxHeight: 420)
     }
 
     // MARK: 空态 / 错误态
@@ -112,6 +111,10 @@ struct BarView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
+                Button("重试") {
+                    Task { await model.refreshAll() }
+                }
+                .controlSize(.small)
             } else {
                 Text(model.isLoading ? "读取中…" : "暂无已注册项目")
                     .font(.subheadline)
