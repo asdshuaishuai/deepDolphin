@@ -4,7 +4,56 @@
 // baseURL 默认取目录 api 字段，可覆盖；key 存 macOS 钥匙串。引擎不感知 AI。
 import SwiftUI
 
+struct GeneralSettingsView: View {
+    /// 关闭宿主窗口（PanelWindow 注入）
+    var onClose: (() -> Void)? = nil
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    ScheduleCard()
+                    AISettingsView(onClose: onClose)
+                        .environmentObject(AppModel.shared)
+                }
+                .padding(16)
+            }
+        }
+    }
+}
+
+/// 定时更新卡片
+struct ScheduleCard: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("自动化", systemImage: "clock.badge.checkmark")
+                .font(.subheadline.weight(.semibold))
+            Picker("定时更新", selection: Binding(
+                get: { model.autoUpdateHours },
+                set: { model.setAutoUpdate(hours: $0) }
+            )) {
+                Text("关闭").tag(0)
+                Text("每 1 小时").tag(1)
+                Text("每 3 小时").tag(3)
+                Text("每 6 小时").tag(6)
+                Text("每 12 小时").tag(12)
+                Text("每 24 小时").tag(24)
+            }
+            .pickerStyle(.segmented)
+            Text("开启后按间隔对全部项目执行浅更新；AI 已配置时会生成简报并推送通知。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
 struct AISettingsView: View {
+    var onClose: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     @State private var providerID = "deepseek"
@@ -115,7 +164,7 @@ struct AISettingsView: View {
 
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
+                Button("取消") { close() }
                     .keyboardShortcut(.cancelAction)
                 Button("保存") { save() }
                     .keyboardShortcut(.defaultAction)
@@ -123,7 +172,6 @@ struct AISettingsView: View {
             }
             .padding()
         }
-        .frame(width: 520, height: 560)
         .onAppear(perform: load)
     }
 
@@ -176,8 +224,14 @@ struct AISettingsView: View {
         return c
     }
 
+    private func close() {
+        if let onClose { onClose() } else {
+            dismiss()
+        }
+    }
+
     private func save() {
         draft().save()
-        dismiss()
+        close()
     }
 }

@@ -1,23 +1,121 @@
-// PanelWindow.swift — 主面板窗口管理。
+// PanelWindow.swift — 主面板窗口管理（正经 Mac 应用形态）。
 //
-// 用 NSWindow 直接承载 SwiftUI 面板视图，而不是 Window scene：
-// 1. 可以在启动参数 / 菜单栏 / 任何时机确定性开窗（SwiftUI 的 openWindow
-//    依赖视图环境，MenuBarExtra 内容又是懒加载的，启动时拿不到）
-// 2. 生命周期可控：关闭仅隐藏，App 退出前统一清理
+// - 统一工具栏（NSToolbar .unified）：刷新 / 全部浅更新 / 弹性 / 定时更新菜单 / AI 设置
+// - 窗口标题 + 副标题（项目群摘要，随刷新更新）
+// - 设置走独立窗口（⌘, / 工具栏）
 import AppKit
 import SwiftUI
 
 @MainActor
-final class PanelWindowController {
+final class PanelWindowController: NSObject, NSToolbarDelegate {
     static let shared = PanelWindowController()
 
     private var window: NSWindow?
+    private var settingsWindow: NSWindow?
+    private var modelRef: AppModel?
 
     var isVisible: Bool {
         window?.isVisible == true
     }
 
-    /// 调试用：把菜单栏弹窗内容（BarView）放进普通窗口，验证其独立渲染
+    // MARK: NSToolbarDelegate
+
+    private enum ItemID: String, CaseIterable {
+        case refresh, updateAll, flexible, schedule, aiSettings
+    }
+
+    nonisolated func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        var ids: [NSToolbarItem.Identifier] = [
+            NSToolbarItem.Identifier(ItemID.refresh.rawValue),
+            NSToolbarItem.Identifier(ItemID.updateAll.rawValue),
+        ]
+        ids.append(.flexibleSpace)
+        ids.append(NSToolbarItem.Identifier(ItemID.schedule.rawValue))
+        ids.append(NSToolbarItem.Identifier(ItemID.aiSettings.rawValue))
+        return ids
+    }
+
+    nonisolated func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    nonisolated func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        switch ItemID(rawValue: itemIdentifier.rawValue) {
+        case .refresh:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "刷新"
+            item.toolTip = "重新拉取引擎状态"
+            item.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "刷新")
+            item.target = self
+            item.action = #selector(refreshTapped)
+            return item
+        case .updateAll:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "全部浅更新"
+            item.toolTip = "记录全部项目进度并刷新文档"
+            item.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "全部浅更新")
+            item.target = self
+            item.action = #selector(updateAllTapped)
+            return item
+        case .schedule:
+            let item = NSMenuToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "定时更新"
+            item.toolTip = "定时更新间隔"
+            item.image = NSImage(systemSymbolName: "clock", accessibilityDescription: "定时更新")
+            item.showsIndicator = true
+            Task { @MainActor in
+                item.menu = Self.scheduleMenu()
+            }
+            return item
+        case .aiSettings:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "AI 设置"
+            item.toolTip = "Provider / 模型 / API Key"
+            item.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "AI 设置")
+            item.target = self
+            item.action = #selector(aiSettingsTapped)
+            return item
+        default:
+            return nil
+        }
+    }
+
+    nonisolated private static func scheduleMenu() -> NSMenu {
+        let menu = NSMenu()
+        let hours: [(String, Int)] = [("关闭定时更新", 0), ("每 1 小时", 1), ("每 3 小时", 3), ("每 6 小时", 6), ("每 12 小时", 12), ("每 24 小时", 24)]
+        for (title, h) in hours {
+            let item = NSMenuItem(title: title, action: #selector(AppDelegate.schedulePicked(_:)), keyEquivalent: "")
+            item.tag = h
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func refreshTapped() {
+        Task { await modelRef?.refreshAll() }
+    }
+
+    @objc private func updateAllTapped() {
+        Task { await modelRef?.updateAll(deep: false) }
+    }
+
+    @objc private func aiSettingsTapped() {
+        if let m = modelRef {
+            openAISettings(model: m)
+        }
+    }
+
+    static func handleScheduleTag(_ tag: Int) {
+        Task { @MainActor in
+            AppModel.shared.setAutoUpdate(hours: tag)
+        }
+    }
+
+    /// 调试用：把菜单栏弹窗内容放进普通窗口
     func openBarPreview(model: AppModel) {
         let w = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 640),
@@ -31,8 +129,10 @@ final class PanelWindowController {
         w.makeKeyAndOrderFront(nil)
     }
 
+    // MARK: 打开主面板
+
     func open(model: AppModel) {
-        NSLog("deepgit-bar: PanelWindowController.open 被调用")
+        modelRef = model
         if let w = window {
             w.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -44,18 +144,56 @@ final class PanelWindowController {
             backing: .buffered,
             defer: false
         )
-        w.title = "deepGit 面板"
+        w.title = "deepGit"
+        w.subtitle = "本地项目群进度管理"
         w.minSize = NSSize(width: 940, height: 620)
-        w.titlebarAppearsTransparent = false
         w.isReleasedWhenClosed = false
         w.contentView = NSHostingView(
             rootView: PanelView().environmentObject(model)
         )
+
+        let toolbar = NSToolbar(identifier: "PanelToolbar")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        w.toolbar = toolbar
+        w.toolbarStyle = .unified
+
         w.center()
         w.setFrameAutosaveName("deepGitPanel")
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         window = w
-        NSLog("deepgit-bar: 面板窗口已创建 frame=\(w.frame)")
+
+        model.onSummaryChange = { [weak self] line in
+            self?.window?.subtitle = line ?? "本地项目群进度管理"
+        }
+    }
+
+    // MARK: 设置窗口
+
+    func openAISettings(model: AppModel) {
+        modelRef = model
+        if let w = settingsWindow {
+            w.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let w = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 680),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        w.title = "AI 与自动化设置"
+        w.isReleasedWhenClosed = false
+        w.contentView = NSHostingView(
+            rootView: GeneralSettingsView { [weak self] in
+                self?.settingsWindow?.orderOut(nil)
+            }
+        )
+        w.center()
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow = w
     }
 }

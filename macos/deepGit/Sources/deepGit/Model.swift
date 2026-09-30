@@ -110,6 +110,8 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
     private var notifiedKeys = Set<String>()
     var autoTimer: Timer?
+    /// 面板副标题回调（PanelWindow 注入）
+    var onSummaryChange: ((String?) -> Void)?
 
     // MARK: 菜单栏状态项（图标 + 标题 = 实时健康度）
 
@@ -229,6 +231,7 @@ final class AppModel: ObservableObject {
             }
             summary = env.summary
             engineFound = true
+            onSummaryChange?(summaryLine)
         } catch {
             if DeepGitEngine.shared.binaryPath == nil { engineFound = false }
             lastError = error.localizedDescription

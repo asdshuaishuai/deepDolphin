@@ -78,6 +78,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         DeepGitEngine.shared.stopServerIfOurs()
     }
 
+    // MARK: 标准 App 菜单（App/编辑/窗口 + 设置 ⌘,）
+
+    private func buildMainMenu() {
+        let mainMenu = NSMenu()
+
+        // App 菜单
+        let appItem = NSMenuItem()
+        mainMenu.addItem(appItem)
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "关于 deepGit", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        let settings = appMenu.addItem(withTitle: "设置…", action: #selector(openAIFromToolbar), keyEquivalent: ",")
+        settings.target = self
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "隐藏 deepGit", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "退出 deepGit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+
+        // 编辑（启用文本剪切/拷贝/粘贴/全选）
+        let editItem = NSMenuItem()
+        mainMenu.addItem(editItem)
+        let editMenu = NSMenu(title: "编辑")
+        editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = editMenu
+
+        // 窗口
+        let winItem = NSMenuItem()
+        mainMenu.addItem(winItem)
+        let winMenu = NSMenu(title: "窗口")
+        winMenu.addItem(withTitle: "最小化", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        winMenu.addItem(withTitle: "关闭", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        winItem.submenu = winMenu
+
+        NSApp.mainMenu = mainMenu
+    }
+
+    // MARK: 工具栏动作（NSToolbar target）
+
+    @objc func refreshFromToolbar() {
+        Task { await AppModel.shared.refreshAll() }
+    }
+
+    @objc func updateAllFromToolbar() {
+        Task { await AppModel.shared.updateAll(deep: false) }
+    }
+
+    @objc func openAIFromToolbar() {
+        PanelWindowController.shared.openAISettings(model: AppModel.shared)
+    }
+
+    @objc func schedulePicked(_ sender: NSMenuItem) {
+        PanelWindowController.handleScheduleTag(sender.tag)
+    }
+
     // Dock 右键菜单：系统集成速捷入口
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let menu = NSMenu()

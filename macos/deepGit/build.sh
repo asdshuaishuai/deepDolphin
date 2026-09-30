@@ -40,8 +40,6 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
-    <!-- 菜单栏常驻（系统集成），面板窗口按需打开 -->
-    <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>CFBundleIconFile</key><string>AppIcon</string>
 </dict>
