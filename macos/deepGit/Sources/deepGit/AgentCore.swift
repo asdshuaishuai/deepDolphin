@@ -28,18 +28,20 @@ enum AgentTarget: Equatable, Hashable {
 enum AgentCore {
     /// GET 原始数据
     static func rawGet(_ path: String, query: [String: String]) async throws -> Data {
-        var comps = URLComponents(
-            url: URL(string: "http://127.0.0.1:\(DeepGitEngine.shared.serverPort)")!.appendingPathComponent(path),
-            resolvingAgainstBaseURL: false
-        )!
-        if !query.isEmpty {
-            comps.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        // 进程内通信：通过 CLI 子进程获取数据
+        if path == "api/context" {
+            let scope = query["scope"] ?? "group"
+            let name = query["name"] ?? ""
+            let budget = Int(query["budget"] ?? "9000") ?? 9000
+            var args = ["context"]
+            if scope == "project" { args.append(name) }
+            args += ["--budget", String(budget), "--json"]
+            return try await EngineCLI.shared.runData(args, timeout: 60)
         }
-        let (data, resp) = try await URLSession.shared.data(for: URLRequest(url: comps.url!))
-        guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
-            throw EngineError.failed("GET \(path) 失败")
+        if path == "api/tools" {
+            return try await EngineCLI.shared.toolsManifest()
         }
-        return data
+        throw EngineError.failed("未知路径：\(path)")
     }
 
     /// 引擎 /api/tools → ai-sdk 工具定义
@@ -86,26 +88,20 @@ enum AgentCore {
                 let data = try await rawGet("api/milestones", query: [:])
                 return (true, String(data: data, encoding: .utf8) ?? "")
             case "run_shallow_update":
-                let data = try await APIClient.shared.post("api/update", query: ["name": str("name")])
+                let data = try await EngineCLI.shared.update(name: str("name"), deep: false)
                 return (true, String(data: data, encoding: .utf8) ?? "完成")
             case "run_deep_update":
-                let data = try await APIClient.shared.post("api/deep", query: ["name": str("name")])
+                let data = try await EngineCLI.shared.update(name: str("name"), deep: true)
                 return (true, String(data: data, encoding: .utf8) ?? "完成")
             case "git_commit":
-                let data = try await APIClient.shared.post(
-                    "api/git", body: ["project": str("name"), "op": "commit", "message": str("message")]
-                )
+                let data = try await EngineCLI.shared.gitOp(project: str("name"), op: "commit", message: str("message"))
                 return (true, String(data: data, encoding: .utf8) ?? "完成")
             case "git_pull_push":
-                let data = try await APIClient.shared.post(
-                    "api/git", body: ["project": str("name"), "op": str("op").isEmpty ? "pull" : str("op")]
-                )
+                let data = try await EngineCLI.shared.gitOp(project: str("name"), op: str("op").isEmpty ? "pull" : str("op"))
                 return (true, String(data: data, encoding: .utf8) ?? "完成")
             case "milestone_done":
-                let data = try await APIClient.shared.post(
-                    "api/milestones/action", body: ["project": str("project"), "name": str("name"), "action": "done"]
-                )
-                return (true, String(data: data, encoding: .utf8) ?? "完成")
+                try await EngineCLI.shared.milestoneAction(project: str("project"), name: str("name"), action: "done")
+                return (true, "完成")
             default:
                 return (false, "未知工具：\(name)")
             }

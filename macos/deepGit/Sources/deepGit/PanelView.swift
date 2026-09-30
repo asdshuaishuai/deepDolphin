@@ -15,6 +15,7 @@ struct PanelView: View {
         }
         .frame(minWidth: 940, minHeight: 620)
         .navigationTitle("deepGit 面板")
+        .toolbarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
         .task {
             await model.refreshAll()
@@ -166,7 +167,7 @@ struct PanelView: View {
                 .font(.system(.callout, design: .monospaced))
             }
             Button("重新检测引擎") {
-                DeepGitEngine.shared.refreshBinary()
+                EngineCLI.shared.refreshBinary()
                 Task { await model.refreshAll() }
             }
         }

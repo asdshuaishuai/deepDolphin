@@ -136,9 +136,7 @@ extension AppModel {
 
     /// 更新 + AI 摘要（浅/深通用）。返回摘要文本。
     func updateWithAISummary(_ project: ProjectStatus, deep: Bool) async throws -> String {
-        let _: Data = try await APIClient.shared.post(
-            deep ? "api/deep" : "api/update", query: ["name": project.name]
-        )
+        _ = try await EngineCLI.shared.update(name: project.name, deep: deep)
         await loadProject(project.name)
         return try await AgentCore.updateDigest(projectName: project.name, deep: deep)
     }
@@ -219,7 +217,7 @@ struct UpdateActionMenu: View {
                         aiResult = summary
                         Notifier.shared.notify(title: deep ? "深度更新完成" : "浅更新完成", body: "AI 摘要已生成")
                     } else {
-                        let _: Data = try await APIClient.shared.post(deep ? "api/deep" : "api/update")
+                        _ = try await EngineCLI.shared.updateAll(deep: deep)
                         await model.refreshAll()
                         let digest = try await AgentCore.scheduledDigest()
                         aiResult = digest

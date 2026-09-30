@@ -73,12 +73,10 @@ struct ScanSheet: View {
                 if mode == 0 {
                     var body: [String: Any] = ["path": singlePath]
                     if !singleName.isEmpty { body["name"] = singleName }
-                    let _: Data = try await APIClient.shared.post("api/add", body: body)
+                    let _: Data = try await EngineCLI.shared.addProject(path: singlePath, name: singleName)
                     results = ["已注册"]
                 } else {
-                    let data = try await APIClient.shared.post(
-                        "api/scan", query: ["root": scanRoot, "depth": String(scanDepth)]
-                    )
+                    let data = try await EngineCLI.shared.scan(root: scanRoot, depth: scanDepth)
                     if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                         results = ["发现 \(obj["found"] as? Int ?? 0) 个项目，已注册"]
                     }

@@ -93,7 +93,7 @@ struct BarView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button("重新检测") {
-                DeepGitEngine.shared.refreshBinary()
+                EngineCLI.shared.refreshBinary()
                 Task { await model.refreshAll() }
             }
             .controlSize(.small)

@@ -103,7 +103,6 @@ final class AppModel: ObservableObject {
     @Published var isLoading = false
     @Published var lastError: String?
     @Published var engineFound = true
-    @Published var serverReady = false
     @Published var lastRefreshed: Date?
     @Published var busyProject: String?
     @Published var busyAll = false
@@ -174,22 +173,16 @@ final class AppModel: ObservableObject {
     func stop() {
         timer?.invalidate()
         timer = nil
-        DeepGitEngine.shared.stopServerIfOurs()
+        
     }
 
     // MARK: 数据加载
 
     /// 确保引擎服务就绪（发现引擎 → 拉起 serve → 探测 health）
     func ensureReady() async -> Bool {
-        if serverReady, await DeepGitEngine.shared.probeServer() { return true }
-        if DeepGitEngine.shared.binaryPath == nil {
-            DeepGitEngine.shared.refreshBinary()
-        }
-        engineFound = DeepGitEngine.shared.binaryPath != nil
+        engineFound = EngineCLI.shared.binaryPath != nil
         guard engineFound else { return false }
-        let ok = await DeepGitEngine.shared.ensureServer()
-        serverReady = ok
-        return ok
+        return true
     }
 
     /// 轻量刷新：仅状态（bar 周期任务用）
@@ -225,9 +218,7 @@ final class AppModel: ObservableObject {
 
     func fetchStatus(light: Bool) async {
         do {
-            let env: StatusEnvelope = try await APIClient.shared.get(
-                "api/status", query: ["light": light ? "1" : "0"]
-            )
+            let env = try await EngineCLI.shared.status(light: light)
             projects = env.projects.sorted {
                 $0.name.localizedStandardCompare($1.name) == .orderedAscending
             }
@@ -235,17 +226,17 @@ final class AppModel: ObservableObject {
             engineFound = true
             onSummaryChange?(summaryLine)
         } catch {
-            if DeepGitEngine.shared.binaryPath == nil { engineFound = false }
+            if EngineCLI.shared.binaryPath == nil { engineFound = false }
             lastError = error.localizedDescription
         }
     }
 
     func fetchDashboard() async {
-        dashboard = try? await APIClient.shared.get("api/dashboard")
+        dashboard = try? await EngineCLI.shared.dashboard()
     }
 
     func fetchMilestones() async {
-        if let env: MilestonesEnvelope = try? await APIClient.shared.get("api/milestones") {
+        if let env = try? await EngineCLI.shared.milestones() {
             milestones = env.milestones
         }
     }
@@ -253,9 +244,7 @@ final class AppModel: ObservableObject {
     /// 单项目完整状态（含 8 条日志），面板详情用
     func loadProject(_ name: String) async {
         do {
-            let p: ProjectStatus = try await APIClient.shared.get(
-                "api/status", query: ["name": name]
-            )
+            let p = try await EngineCLI.shared.status(name: name)
             projectDetails[name] = p
         } catch {
             lastError = error.localizedDescription
@@ -265,9 +254,7 @@ final class AppModel: ObservableObject {
     /// 项目文档内容（README / AGENTS / CLAUDE 平铺展示用）
     func loadDocs(_ name: String) async {
         do {
-            let env: DocsEnvelope = try await APIClient.shared.get(
-                "api/docs", query: ["name": name]
-            )
+            let env = try await EngineCLI.shared.docs(name: name)
             projectDocs[name] = env.docs
         } catch {
             // 文档读取失败不阻塞详情页
@@ -281,10 +268,7 @@ final class AppModel: ObservableObject {
         busyProject = project.name
         defer { busyProject = nil }
         do {
-            let data = try await APIClient.shared.post(
-                "api/git",
-                body: ["project": project.name, "op": op, "message": message]
-            )
+            let data = try await EngineCLI.shared.gitOp(project: project.name, op: op, message: message)
             let r = try JSONDecoder().decode(GitOpResponse.self, from: data)
             let text = r.output.isEmpty ? (r.ok ? "完成" : "失败") : r.output
             lastGitOpOutput = (r.ok, "[\(r.op)] \(text)")
@@ -306,10 +290,7 @@ final class AppModel: ObservableObject {
         busyProject = project.name
         defer { busyProject = nil }
         do {
-            let _: Data = try await APIClient.shared.post(
-                deep ? "api/deep" : "api/update",
-                query: ["name": project.name]
-            )
+            _ = try await EngineCLI.shared.update(name: project.name, deep: deep)
             await refreshAll()
             await loadProject(project.name)
             Notifier.shared.notify(
@@ -327,7 +308,7 @@ final class AppModel: ObservableObject {
         busyAll = true
         defer { busyAll = false }
         do {
-            let _: Data = try await APIClient.shared.post(deep ? "api/deep" : "api/update")
+            _ = try await EngineCLI.shared.updateAll(deep: deep)
             await refreshAll()
             if !silent {
                 Notifier.shared.notify(
@@ -347,10 +328,7 @@ final class AppModel: ObservableObject {
 
     func milestoneAction(_ m: MilestoneItem, action: String) async {
         do {
-            let _: Data = try await APIClient.shared.post(
-                "api/milestones/action",
-                body: ["project": m.projectName, "name": m.name, "action": action]
-            )
+            try await EngineCLI.shared.milestoneAction(project: m.projectName, name: m.name, action: action)
             await fetchMilestones()
             await fetchDashboard()
         } catch {
@@ -363,7 +341,7 @@ final class AppModel: ObservableObject {
         if !tag.isEmpty { body["tag"] = tag }
         if !targetDate.isEmpty { body["targetDate"] = targetDate }
         if !description.isEmpty { body["description"] = description }
-        let _: Data = try await APIClient.shared.post("api/milestones", body: body)
+        try await EngineCLI.shared.addMilestone(project: project, name: name, tag: tag, date: targetDate)
         await fetchMilestones()
         await fetchDashboard()
     }
