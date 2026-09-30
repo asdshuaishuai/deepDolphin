@@ -45,24 +45,18 @@ func boardColumn(for p: ProjectStatus) -> BoardColumn {
     return .other
 }
 
-struct BoardView: View {
+/// 仪表盘内嵌的看板区块（自适应列宽，不横向滚动）
+struct BoardSection: View {
     @EnvironmentObject var model: AppModel
 
-    private func cards(for column: BoardColumn) -> [ProjectStatus] {
-        model.projects.filter { boardColumn(for: $0) == column }
-    }
-
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 14) {
-                ForEach(BoardColumn.allCases) { column in
-                    BoardColumnView(column: column, projects: cards(for: column))
-                }
+        let columns = [GridItem(.adaptive(minimum: 200, maximum: 260), spacing: 10)]
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+            ForEach(BoardColumn.allCases) { column in
+                let list = model.projects.filter { boardColumn(for: $0) == column }
+                BoardColumnView(column: column, projects: list)
             }
-            .padding(16)
         }
-        .navigationTitle("看板")
-        .refreshable { await model.refreshLight() }
     }
 }
 
@@ -71,39 +65,39 @@ struct BoardColumnView: View {
     let projects: [ProjectStatus]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 5) {
                 Image(systemName: column.icon)
                     .foregroundStyle(column.color)
+                    .font(.caption)
                 Text(column.rawValue)
-                    .font(.subheadline.weight(.semibold))
-                Text("\(projects.count)")
                     .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
+                Text("\(projects.count)")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 5)
                     .background(column.color.opacity(0.15), in: Capsule())
                     .foregroundStyle(column.color)
                 Spacer()
             }
-            .padding(.horizontal, 4)
 
             if projects.isEmpty {
-                VStack(spacing: 4) {
-                    Circle().strokeBorder(column.color.opacity(0.3), lineWidth: 1).frame(width: 26, height: 26)
-                    Text("空")
+                Text("—")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, minHeight: 30)
+            } else {
+                ForEach(projects.prefix(4)) { p in
+                    BoardCard(project: p, tint: column.color)
+                }
+                if projects.count > 4 {
+                    Text("还有 \(projects.count - 4) 个…")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 22)
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
-            } else {
-                ForEach(projects) { p in
-                    BoardCard(project: p, tint: column.color)
-                }
             }
         }
-        .frame(width: 280)
+        .padding(10)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 11))
     }
 }
 
@@ -124,7 +118,7 @@ struct BoardCard: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
                 Text(project.name)
-                    .font(.system(.callout, design: .rounded).weight(.semibold))
+                    .font(.caption.weight(.semibold))
                     .lineLimit(1)
                 Spacer()
                 if model.busyProject == project.name {
@@ -155,23 +149,25 @@ struct BoardCard: View {
 
             Divider()
 
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Button {
                     Task { await model.update(project, deep: false) }
                 } label: {
-                    Label("浅更新", systemImage: "arrow.down.circle")
-                        .font(.caption2)
+                    Image(systemName: "arrow.down.circle")
+                        .font(.caption)
                 }
                 .buttonStyle(.borderless)
+                .help("浅更新")
                 .disabled(model.busyProject == project.name || model.busyAll)
 
                 Button {
                     generateBrief()
                 } label: {
-                    Label("说明", systemImage: "sparkles")
-                        .font(.caption2)
+                    Image(systemName: "sparkles")
+                        .font(.caption)
                 }
                 .buttonStyle(.borderless)
+                .help("AI 项目说明")
                 .disabled(briefBusy)
 
                 Spacer()
@@ -179,6 +175,7 @@ struct BoardCard: View {
                     Text(b.headAgo)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
+                        .lineLimit(1)
                 }
             }
         }

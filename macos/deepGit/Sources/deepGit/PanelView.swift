@@ -38,8 +38,6 @@ struct PanelView: View {
             Section("总览") {
                 Label("仪表盘", systemImage: "square.grid.2x2")
                     .tag(RootSection.dashboard)
-                Label("看板", systemImage: "rectangle.split.3x1")
-                    .tag(RootSection.board)
                 Label("里程碑", systemImage: "flag.2.crossed")
                     .tag(RootSection.milestones)
                     .badge(model.dashboard.map { d in
@@ -102,8 +100,6 @@ struct PanelView: View {
             switch model.selection {
             case .dashboard:
                 DashboardView()
-            case .board:
-                BoardView()
             case .milestones:
                 MilestonesView()
             case .project(let name):
