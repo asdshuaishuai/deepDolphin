@@ -4,6 +4,7 @@
 import SwiftUI
 
 struct BarView: View {
+    @Environment(\.openWindow) private var openWindow
     @EnvironmentObject var model: AppModel
 
     var body: some View {
@@ -155,7 +156,7 @@ struct BarView: View {
             Spacer()
 
             Button {
-                (NSApp.delegate as? AppDelegate)?.requestFullQuit()
+                NSApp.terminate(nil)
             } label: {
                 Image(systemName: "power")
             }
@@ -167,12 +168,13 @@ struct BarView: View {
 
     private func openMainPanel(section: RootSection) {
         model.selection = section
-        PanelWindowController.shared.open(model: model)
+        openWindow(id: "panel")
     }
 }
 
 /// 菜单栏弹窗里的单项目行：状态点 + 名称 + 未提交徽标 + 待记录迷你进度条
 struct MenuProjectRow: View {
+    @Environment(\.openWindow) private var openWindow
     @EnvironmentObject var model: AppModel
     let project: ProjectStatus
 
@@ -183,7 +185,7 @@ struct MenuProjectRow: View {
     var body: some View {
         Button {
             model.selection = .project(project.name)
-            PanelWindowController.shared.open(model: model)
+            openWindow(id: "panel")
             Task { await model.loadProject(project.name) }
         } label: {
             HStack(spacing: 8) {

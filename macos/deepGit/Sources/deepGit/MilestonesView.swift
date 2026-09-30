@@ -56,6 +56,7 @@ struct MilestonesView: View {
 // MARK: - 行
 
 struct MilestoneRow: View {
+    @Environment(\.openWindow) private var openWindow
     @EnvironmentObject var model: AppModel
     let milestone: MilestoneItem
 
@@ -130,7 +131,7 @@ struct MilestoneRow: View {
         .onTapGesture {
             Task {
                 model.selection = .project(milestone.projectName)
-                PanelWindowController.shared.open(model: model)
+                openWindow(id: "panel")
                 await model.loadProject(milestone.projectName)
             }
         }
@@ -152,7 +153,7 @@ struct MilestoneRow: View {
         Button("打开项目") {
             Task {
                 model.selection = .project(milestone.projectName)
-                PanelWindowController.shared.open(model: model)
+                openWindow(id: "panel")
                 await model.loadProject(milestone.projectName)
             }
         }

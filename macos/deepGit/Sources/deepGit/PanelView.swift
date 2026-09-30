@@ -5,6 +5,7 @@ import SwiftUI
 
 struct PanelView: View {
     @EnvironmentObject var model: AppModel
+    @State private var showScan = false
 
     var body: some View {
         NavigationSplitView {
@@ -30,6 +31,28 @@ struct PanelView: View {
             GeneralSettingsView(onClose: { model.showAISettings = false })
                 .environmentObject(model)
         }
+        .sheet(isPresented: $showScan) {
+            ScanSheet().environmentObject(model)
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    Task { await model.refreshAll() }
+                } label: {
+                    Label("刷新", systemImage: "arrow.clockwise")
+                }
+                Button {
+                    Task { await model.updateAll(deep: false) }
+                } label: {
+                    Label("全部浅更新", systemImage: "arrow.triangle.2.circlepath")
+                }
+                Button {
+                    model.showAISettings = true
+                } label: {
+                    Label("AI 设置", systemImage: "gearshape")
+                }
+            }
+        }
     }
 
     // MARK: 侧栏
@@ -39,11 +62,21 @@ struct PanelView: View {
             Section("总览") {
                 Label("仪表盘", systemImage: "square.grid.2x2")
                     .tag(RootSection.dashboard)
+                Label("看板", systemImage: "rectangle.split.3x1")
+                    .tag(RootSection.board)
                 Label("里程碑", systemImage: "flag.2.crossed")
                     .tag(RootSection.milestones)
                     .badge(model.dashboard.map { d in
                         d.milestones.counts.open + d.milestones.counts.done
                     } ?? 0)
+            }
+            Section {
+                Button {
+                    showScan = true
+                } label: {
+                    Label("添加 / 扫描项目", systemImage: "plus.circle.fill")
+                        .foregroundStyle(.blue)
+                }
             }
             Section("项目（\(model.projects.count)）") {
                 ForEach(model.projects) { p in
@@ -101,6 +134,8 @@ struct PanelView: View {
             switch model.selection {
             case .dashboard:
                 DashboardView()
+            case .board:
+                BoardPage()
             case .milestones:
                 MilestonesView()
             case .project(let name):

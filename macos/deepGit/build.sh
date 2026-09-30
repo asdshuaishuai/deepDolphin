@@ -26,12 +26,18 @@ fi
 if [ -f "$DIR/Resources/models-dev.json" ]; then
   cp "$DIR/Resources/models-dev.json" "$APP_BUNDLE/Contents/Resources/models-dev.json"
 fi
+# 中文本地化
+mkdir -p "$APP_BUNDLE/Contents/Resources/zh_CN.lproj"
+if [ -f "$DIR/Resources/zh_CN.lproj/InfoPlist.strings" ]; then
+  cp "$DIR/Resources/zh_CN.lproj/InfoPlist.strings" "$APP_BUNDLE/Contents/Resources/zh_CN.lproj/"
+fi
 
 cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
     <key>CFBundleName</key><string>deepGit</string>
     <key>CFBundleDisplayName</key><string>deepGit</string>
     <key>CFBundleIdentifier</key><string>cn.deepgit.app</string>
@@ -40,6 +46,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>CFBundleLocalizations</key><array><string>zh_CN</string></array>
     <key>NSHighResolutionCapable</key><true/>
     <key>CFBundleIconFile</key><string>AppIcon</string>
 </dict>

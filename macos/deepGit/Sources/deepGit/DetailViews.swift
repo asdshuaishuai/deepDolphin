@@ -435,8 +435,7 @@ struct DashboardView: View {
                 StatCard(label: "stash", value: "\(d.work.stashes)", icon: "archivebox")
             }
 
-            // 项目看板（按健康状态分列）
-            BoardSection()
+
 
             // 语言分布 + 里程碑
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {

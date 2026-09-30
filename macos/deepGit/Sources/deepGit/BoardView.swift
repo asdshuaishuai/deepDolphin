@@ -102,6 +102,7 @@ struct BoardColumnView: View {
 }
 
 struct BoardCard: View {
+    @Environment(\.openWindow) private var openWindow
     @EnvironmentObject var model: AppModel
     let project: ProjectStatus
     let tint: Color
@@ -189,7 +190,7 @@ struct BoardCard: View {
         .onTapGesture {
             Task {
                 model.selection = .project(project.name)
-                PanelWindowController.shared.open(model: model)
+                openWindow(id: "panel")
                 await model.loadProject(project.name)
             }
         }
@@ -217,5 +218,23 @@ struct BoardCard: View {
             }
             briefBusy = false
         }
+    }
+}
+
+/// 独立看板页（横向四列）
+struct BoardPage: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 14) {
+                ForEach(BoardColumn.allCases) { column in
+                    let list = model.projects.filter { boardColumn(for: $0) == column }
+                    BoardColumnView(column: column, projects: list)
+                }
+            }
+            .padding(16)
+        }
+        .navigationTitle("看板")
     }
 }

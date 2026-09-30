@@ -1,192 +1,29 @@
 // DeepGitApp.swift — deepGit（macOS 客户端）入口。
 //
-// 双形态系统集成：
-//   1. MenuBarExtra（.window 富弹窗）——常驻菜单栏速览 + 快捷动作
-//   2. 主面板窗口（NSWindow + PanelView）——完整项目管理面板
-//      打开方式：菜单栏「打开面板」、项目行点击、或 `deepGit --open-panel`
-//      深链：--project <名称> / --section milestones|dashboard
+// 多 Scene 架构（正经 Mac 应用）：
+//   Window("panel")          主面板——SwiftUI 管理窗口、工具栏、生命周期
+//   MenuBarExtra             菜单栏常驻速览
+//   Settings                 标准 ⌘, 设置窗口
+//   .commands                中文菜单（操作/窗口）
 //
-// 【边界】纯客户端：数据全走引擎 HTTP API（GET /api/*），
-// 写操作 POST 给引擎（/api/update|deep|git|milestones*）。
-// 引擎未运行时按发现链拉起（DEEPGIT_BIN → 内嵌副本 → ~/.local/bin → shell PATH）。
+// 深链：--project <名称> / --section milestones|board|dashboard
+// 【边界】纯客户端：数据全走引擎 HTTP API。
 import SwiftUI
 import AppKit
 import UserNotifications
 
-@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Notifier.shared.setUp()
-        Notifier.shared.onOpenPanel = {
-            PanelWindowController.shared.open(model: AppModel.shared)
-        }
-        Task { await AppModel.shared.start() }
+    }
 
-        let args = ProcessInfo.processInfo.arguments
-        if args.contains("--bar-preview") {
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 800_000_000)
-                PanelWindowController.shared.openBarPreview(model: AppModel.shared)
-            }
-            return
-        }
-        if let i = args.firstIndex(of: "--agent-selftest"), i + 1 < args.count {
-            let question = args[i + 1]
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
-                _ = await AppModel.shared.ensureReady()
-                let session = AgentSession()
-                session.logSink = { msg in print("[selftest] \(msg)") }
-                await session.ask(question)
-                for m in session.messages {
-                    let tag: String
-                    switch m.kind {
-                    case .user: tag = "user"
-                    case .assistant: tag = "assistant"
-                    case .toolCall(let n, _, let ok): tag = "tool(\(n),ok=\(ok))"
-                    case .error: tag = "error"
-                    }
-                    print("[selftest-msg] \(tag): \(m.text.prefix(120).replacingOccurrences(of: "\n", with: " "))")
-                }
-                print("[selftest-done]")
-                Foundation.exit(0)
-            }
-            return
-        }
-        if args.contains("--open-panel") {
-            var section: RootSection?
-            if let i = args.firstIndex(of: "--project"), i + 1 < args.count {
-                section = .project(args[i + 1])
-            } else if let i = args.firstIndex(of: "--section"), i + 1 < args.count {
-                switch args[i + 1] {
-                case "milestones": section = .milestones
-                default: section = .dashboard
-                }
-            }
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                if let s = section {
-                    AppModel.shared.selection = s
-                }
-                PanelWindowController.shared.open(model: AppModel.shared)
-            }
-        }
-        if args.contains("--open-settings") {
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
-                PanelWindowController.shared.openAISettings(model: AppModel.shared)
-            }
-        }
+    func requestFullQuit() {
+        NSApp.terminate(nil)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         AppModel.shared.stop()
         DeepGitEngine.shared.stopServerIfOurs()
-    }
-
-    // MARK: 标准 App 菜单（App/编辑/窗口 + 设置 ⌘,）
-
-    private func buildMainMenu() {
-        let mainMenu = NSMenu()
-
-        // App 菜单
-        let appItem = NSMenuItem()
-        mainMenu.addItem(appItem)
-        let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "关于 deepGit", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
-        appMenu.addItem(.separator())
-        let settings = appMenu.addItem(withTitle: "设置…", action: #selector(openAIFromToolbar), keyEquivalent: ",")
-        settings.target = self
-        appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "隐藏 deepGit", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        appMenu.addItem(withTitle: "退出 deepGit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        appItem.submenu = appMenu
-
-        // 编辑（启用文本剪切/拷贝/粘贴/全选）
-        let editItem = NSMenuItem()
-        mainMenu.addItem(editItem)
-        let editMenu = NSMenu(title: "编辑")
-        editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        editItem.submenu = editMenu
-
-        // 窗口
-        let winItem = NSMenuItem()
-        mainMenu.addItem(winItem)
-        let winMenu = NSMenu(title: "窗口")
-        winMenu.addItem(withTitle: "最小化", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        winMenu.addItem(withTitle: "关闭", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        winItem.submenu = winMenu
-
-        NSApp.mainMenu = mainMenu
-    }
-
-    // MARK: 工具栏动作（NSToolbar target）
-
-    @objc func refreshFromToolbar() {
-        Task { await AppModel.shared.refreshAll() }
-    }
-
-    @objc func updateAllFromToolbar() {
-        Task { await AppModel.shared.updateAll(deep: false) }
-    }
-
-    @objc func openAIFromToolbar() {
-        PanelWindowController.shared.openAISettings(model: AppModel.shared)
-    }
-
-    @objc func schedulePicked(_ sender: NSMenuItem) {
-        PanelWindowController.handleScheduleTag(sender.tag)
-    }
-
-    // Dock 右键菜单：系统集成速捷入口
-    /// bar 的「退出」置位 → 真正退出；其它来源（Dock 退出/系统）→ 只关窗口，bar 存活
-    private var fullQuitRequested = false
-
-    func requestFullQuit() {
-        fullQuitRequested = true
-        NSApp.terminate(nil)
-    }
-
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            PanelWindowController.shared.open(model: AppModel.shared)
-        }
-        return false
-    }
-
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if fullQuitRequested {
-            return .terminateNow
-        }
-        // Dock「退出」/ 系统 terminate：关闭窗口，但菜单栏（bar）继续运行
-        PanelWindowController.shared.closeAll()
-        DispatchQueue.main.async {
-            Notifier.shared.notify(
-                title: "deepGit 仍在菜单栏运行",
-                body: "从菜单栏弹窗的 ⏻ 退出可完全退出"
-            )
-        }
-        return .terminateCancel
-    }
-
-    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-        let menu = NSMenu()
-        let open = NSMenuItem(title: "打开面板", action: #selector(openPanelFromDock), keyEquivalent: "")
-        menu.addItem(open)
-        let update = NSMenuItem(title: "全部浅更新", action: #selector(shallowAllFromDock), keyEquivalent: "")
-        menu.addItem(update)
-        return menu
-    }
-
-    @objc func openPanelFromDock() {
-        PanelWindowController.shared.open(model: AppModel.shared)
-    }
-
-    @objc func shallowAllFromDock() {
-        Task { await AppModel.shared.updateAll(deep: false) }
     }
 }
 
@@ -194,13 +31,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 struct DeepGitApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @ObservedObject private var model = AppModel.shared
+    @Environment(\.openWindow) private var openWindow
+
+    init() {
+        // 深链参数在首次 UI 出现时处理（onAppear 在 DeepGitPanel）
+    }
 
     var body: some Scene {
-        // 菜单栏速览入口（.window 风格富弹窗）
+        // 主面板窗口（启动自动打开）
+        Window("deepGit", id: "panel") {
+            DeepGitPanel()
+                .environmentObject(model)
+                        }
+        .defaultSize(width: 1100, height: 720)
+        .commands {
+            CommandGroup(replacing: .newItem) {}
+            CommandGroup(after: .appInfo) {
+                Button("设置…") {
+                    AppModel.shared.showAISettings = true
+                }
+                .keyboardShortcut(",")
+            }
+            CommandMenu("操作") {
+                Button("刷新") {
+                    Task { await model.refreshAll() }
+                }
+                .keyboardShortcut("r")
+                Divider()
+                Button("全部浅更新") {
+                    Task { await model.updateAll(deep: false) }
+                }
+                .keyboardShortcut("u", modifiers: [.command, .shift])
+            }
+        }
+
+        // 菜单栏速览
         MenuBarExtra {
             BarView()
                 .environmentObject(model)
-        } label: {
+                        } label: {
             HStack(spacing: 3) {
                 Image(systemName: model.menuSymbol)
                     .symbolRenderingMode(.hierarchical)
@@ -209,6 +78,12 @@ struct DeepGitApp: App {
             }
         }
         .menuBarExtraStyle(.window)
+
+        // 标准 ⌘, 设置
+        Settings {
+            GeneralSettingsView()
+                .environmentObject(model)
+        }
     }
 
     private var menuTint: Color {
@@ -217,6 +92,38 @@ struct DeepGitApp: App {
         case "orange": return .orange
         case "red": return .red
         default: return .secondary
+        }
+    }
+}
+
+/// 面板窗口根视图（处理深链参数 + 生命周期）
+struct DeepGitPanel: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.openWindow) private var openPanel
+
+    var body: some View {
+        PanelView()
+            .onAppear {
+                Notifier.shared.setUp()
+                Task { await model.start() }
+                handleLaunchArgs()
+            }
+    }
+
+    private func handleLaunchArgs() {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("--open-panel") || args.contains("--open-settings") else { return }
+        if let i = args.firstIndex(of: "--project"), i + 1 < args.count {
+            model.selection = .project(args[i + 1])
+        } else if let i = args.firstIndex(of: "--section"), i + 1 < args.count {
+            switch args[i + 1] {
+            case "milestones": model.selection = .milestones
+            case "board": model.selection = .board
+            default: model.selection = .dashboard
+            }
+        }
+        if args.contains("--open-settings") {
+            model.showAISettings = true
         }
     }
 }

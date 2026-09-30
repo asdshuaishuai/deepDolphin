@@ -77,6 +77,7 @@ final class LoginItem {
 enum RootSection: Hashable {
     case dashboard
     case milestones
+    case board
     case project(String)  // 项目名
 }
 
