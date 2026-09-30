@@ -30,18 +30,6 @@ struct AgentMessage: Identifiable, Equatable {
     }
 }
 
-enum AgentTarget: Equatable, Hashable {
-    case group
-    case project(String)
-
-    var label: String {
-        switch self {
-        case .group: return "整个项目群"
-        case .project(let n): return n
-        }
-    }
-}
-
 @MainActor
 final class AgentSession: ObservableObject {
     @Published var messages: [AgentMessage] = []
@@ -54,126 +42,6 @@ final class AgentSession: ObservableObject {
     var logSink: ((String) -> Void)?
     /// 无头自测直接注入配置（不走 UserDefaults）
     var overrideConfig: AIConfig?
-
-    /// 工具名 → 引擎 HTTP 调用。返回 (ok, 摘要文本)
-    private func executeTool(_ name: String, params: [String: Any]) async -> (Bool, String) {
-        let str = { (key: String) in params[key] as? String ?? "" }
-        do {
-            switch name {
-            case "get_group_context", "get_project_context", "get_project_docs", "get_journal", "get_milestones":
-                var path = ""
-                var query: [String: String] = [:]
-                switch name {
-                case "get_group_context":
-                    path = "api/context"; query = ["scope": "group", "budget": "8000"]
-                case "get_project_context":
-                    path = "api/context"; query = ["scope": "project", "name": str("name")]
-                case "get_project_docs":
-                    path = "api/docs"; query = ["name": str("name")]
-                case "get_journal":
-                    path = "api/journal"; query = ["name": str("name")]
-                default:
-                    path = "api/milestones"
-                }
-                let data = try await rawGet(path, query: query)
-                return (true, String(data: data, encoding: .utf8) ?? "")
-            case "run_shallow_update":
-                let data = try await APIClient.shared.post("api/update", query: ["name": str("name")])
-                return (true, String(data: data, encoding: .utf8) ?? "完成")
-            case "run_deep_update":
-                let data = try await APIClient.shared.post("api/deep", query: ["name": str("name")])
-                return (true, String(data: data, encoding: .utf8) ?? "完成")
-            case "git_commit":
-                let data = try await APIClient.shared.post(
-                    "api/git",
-                    body: ["project": str("name"), "op": "commit", "message": str("message")]
-                )
-                return (true, String(data: data, encoding: .utf8) ?? "完成")
-            case "git_pull_push":
-                let data = try await APIClient.shared.post(
-                    "api/git",
-                    body: ["project": str("name"), "op": str("op").isEmpty ? "pull" : str("op")]
-                )
-                return (true, String(data: data, encoding: .utf8) ?? "完成")
-            case "milestone_done":
-                let data = try await APIClient.shared.post(
-                    "api/milestones/action",
-                    body: ["project": str("project"), "name": str("name"), "action": "done"]
-                )
-                return (true, String(data: data, encoding: .utf8) ?? "完成")
-            default:
-                return (false, "未知工具：\(name)")
-            }
-        } catch {
-            return (false, error.localizedDescription)
-        }
-    }
-
-    /// GET 原始数据（工具结果原样喂给模型）
-    private func rawGet(_ path: String, query: [String: String]) async throws -> Data {
-        var comps = URLComponents(
-            url: URL(string: "http://127.0.0.1:\(DeepGitEngine.shared.serverPort)")!.appendingPathComponent(path),
-            resolvingAgainstBaseURL: false
-        )!
-        if !query.isEmpty {
-            comps.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
-        }
-        let (data, resp) = try await URLSession.shared.data(for: URLRequest(url: comps.url!))
-        guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
-            throw EngineError.failed("GET \(path) 失败")
-        }
-        return data
-    }
-
-    /// 引擎 /api/tools → ai-sdk 工具定义（params: "a,b" → JSON Schema）
-    private func engineToolDefinitions() async -> [ToolDefinition] {
-        guard let data = try? await rawGet("api/tools", query: [:]),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tools = obj["tools"] as? [[String: Any]] else { return [] }
-        return tools.compactMap { t in
-            guard let name = t["name"] as? String else { return nil }
-            let desc = (t["description"] as? String) ?? ""
-            let paramString = (t["params"] as? String) ?? ""
-            var props: [String: Any] = [:]
-            var required: [String] = []
-            for key in paramString.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) where !key.isEmpty {
-                props[key] = ["type": "string", "description": key]
-                required.append(key)
-            }
-            return ToolDefinition(
-                name: name,
-                description: desc,
-                parametersJSON: ["type": "object", "properties": props, "required": required]
-            )
-        }
-    }
-
-    /// 上下文包 + 工具清单 → system prompt
-    private func buildSystemPrompt(toolsManifest: String) -> String {
-        let scopeLine: String
-        switch target {
-        case .group: scopeLine = "scope=group（整个项目群）"
-        case .project(let n): scopeLine = "scope=project&name=\(n)（项目 \(n)）"
-        }
-        return """
-        你是 deepGit 项目群管理助手。引擎（AI 无关内核）已经把当前范围的确定性事实整理给你。
-
-        ## 当前上下文
-        用户关注的范围：\(scopeLine)
-        引擎端点：http://127.0.0.1:\(DeepGitEngine.shared.serverPort)
-
-        ## 可用工具（通过回复 JSON 调用）
-        \(toolsManifest)
-
-        ## 调用规则
-        - 需要更多数据或要执行动作时，只回复一个 JSON 代码块：
-          ```json
-          {"tool": "工具名", "params": {"参数名": "值"}}
-          ```
-        - 引擎会把工具结果作为新的用户消息给你；拿到足够信息后，用 Markdown 给出最终中文回答
-        - 最终回答要具体：点名项目/分支，给可执行建议；不编造上下文里没有的事实
-        """
-    }
 
     func send() async {
         let question = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -197,52 +65,19 @@ final class AgentSession: ObservableObject {
         logSink?("USER: \(question)")
 
         do {
-            // 上下文 + 工具清单
-            let scopePath: String
-            let scopeQuery: [String: String]
-            switch target {
-            case .group:
-                scopePath = "api/context"; scopeQuery = ["scope": "group", "budget": "9000"]
-            case .project(let n):
-                scopePath = "api/context"; scopeQuery = ["scope": "project", "name": n, "budget": "9000"]
-            }
-            let ctxData = try await rawGet(scopePath, query: scopeQuery)
-            let ctxObj = try JSONSerialization.jsonObject(with: ctxData) as? [String: Any]
-            let context = ctxObj?["context"] as? String ?? ""
-            let toolsData = try await rawGet("api/tools", query: [:])
-            let toolsText = String(data: toolsData, encoding: .utf8) ?? "{}"
-
-            let model = LanguageModel(config: overrideConfig ?? AIConfig.load())
-            let system = buildSystemPrompt(toolsManifest: toolsText)
-                + "\n\n## 当前范围事实（引擎生成）\n\n" + context
-            let toolDefs = await engineToolDefinitions()
-
-            var convo: [ChatMessage] = [ChatMessage.user(question)]
-
-            // 工具循环（≤4 轮）——原生 tool_calls / tool_use 线格式
-            for round in 1...4 {
-                let result = try await model.generateText(system: system, messages: convo, tools: toolDefs)
-                if !result.toolCalls.isEmpty {
-                    convo.append(ChatMessage(role: "assistant", text: result.text, toolCalls: result.toolCalls, toolCallID: nil))
-                    for call in result.toolCalls {
-                        messages.append(AgentMessage(kind: .assistant, text: "🔧 调用工具 `\(call.name)`"))
-                        logSink?("TOOL_CALL: \(call.name) args=\(call.argumentsJSON)")
-                        let params = (try? JSONSerialization.jsonObject(with: Data(call.argumentsJSON.utf8))) as? [String: Any] ?? [:]
-                        let (ok, out) = await executeTool(call.name, params: params)
-                        let clipped = out.count > 16000 ? String(out.prefix(16000)) + "\n…(截断)" : out
-                        messages.append(AgentMessage(kind: .toolCall(name: call.name, result: clipped, ok: ok), text: clipped))
-                        convo.append(ChatMessage(role: "tool", text: "工具 \(call.name) 执行\(ok ? "成功" : "失败")：\n\(clipped)", toolCalls: nil, toolCallID: call.id))
+            let final = try await AgentCore.run(
+                question: question,
+                target: target,
+                config: overrideConfig,
+                onEvent: { [weak self] event in
+                    Task { @MainActor in
+                        if event.hasPrefix("🔧") {
+                            self?.messages.append(AgentMessage(kind: .assistant, text: event))
+                        }
                     }
-                } else {
-                    messages.append(AgentMessage(kind: .assistant, text: result.text))
-                    logSink?("FINAL: \(result.text.prefix(200))")
-                    break
                 }
-                if round == 4 {
-                    messages.append(AgentMessage(kind: .error, text: "已达工具调用轮次上限（4），请拆分问题或直接提问"))
-                }
-            }
-            lastDuration = Date().timeIntervalSince(startedAt)
+            )
+            messages.append(AgentMessage(kind: .assistant, text: final))
             lastDuration = Date().timeIntervalSince(startedAt)
         } catch {
             messages.append(AgentMessage(kind: .error, text: error.localizedDescription))

@@ -161,14 +161,8 @@ struct ProjectDetailView: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 8) {
                 HStack(spacing: 8) {
-                    Button("浅更新") {
-                        Task { await model.update(p, deep: false) }
-                    }
-                    .disabled(model.busyProject != nil || model.busyAll)
-                    Button("深度更新") {
-                        Task { await model.update(p, deep: true) }
-                    }
-                    .disabled(model.busyProject != nil || model.busyAll)
+                    ProjectBriefButton(project: p)
+                    UpdateActionMenu(project: p)
                 }
                 HStack(spacing: 10) {
                     Button {
@@ -402,20 +396,43 @@ struct DashboardView: View {
 
     private func dashboardContent(_ d: Dashboard) -> some View {
         VStack(alignment: .leading, spacing: 16) {
+            // Hero：项目群一句话 + 一键说明
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("项目群脉搏")
+                        .font(.title2.weight(.bold))
+                    let active = d.projects.active7d
+                    let risky = d.projects.dirty + d.work.mergeCandidates + (d.work.untrackedFiles > 0 ? 1 : 0)
+                    Text(active > 0
+                        ? "\(d.projects.total) 个项目 · \(active) 个近 7 天活跃\(risky > 0 ? " · \(risky) 项待处理" : "")"
+                        : "共 \(d.projects.total) 个项目")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                GroupBriefButton()
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(colors: [.purple.opacity(0.12), .blue.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                in: RoundedRectangle(cornerRadius: 14)
+            )
+
             // 统计卡
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                StatCard(label: "项目总数", value: "\(d.projects.total)")
-                StatCard(label: "近 7 天活跃", value: "\(d.projects.active7d)", tint: .green)
-                StatCard(label: "近 30 天活跃", value: "\(d.projects.active30d)")
-                StatCard(label: "有未提交改动", value: "\(d.projects.dirty)", tint: statTint(d.projects.dirty))
+                StatCard(label: "项目总数", value: "\(d.projects.total)", icon: "square.grid.2x2")
+                StatCard(label: "近 7 天活跃", value: "\(d.projects.active7d)", tint: .green, icon: "bolt.fill")
+                StatCard(label: "近 30 天活跃", value: "\(d.projects.active30d)", icon: "calendar")
+                StatCard(label: "有未提交改动", value: "\(d.projects.dirty)", tint: statTint(d.projects.dirty), icon: "pencil.line")
             }
 
             // 工作面
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                StatCard(label: "分支", value: "\(d.work.branches)")
-                StatCard(label: "待合入分支", value: "\(d.work.mergeCandidates)", tint: statTint(d.work.mergeCandidates))
-                StatCard(label: "未跟踪文件", value: "\(d.work.untrackedFiles)", tint: statTint(d.work.untrackedFiles))
-                StatCard(label: "stash", value: "\(d.work.stashes)")
+                StatCard(label: "分支", value: "\(d.work.branches)", icon: "arrow.triangle.branch")
+                StatCard(label: "待合入分支", value: "\(d.work.mergeCandidates)", tint: statTint(d.work.mergeCandidates), icon: "arrow.merge")
+                StatCard(label: "未跟踪文件", value: "\(d.work.untrackedFiles)", tint: statTint(d.work.untrackedFiles), icon: "questionmark.folder")
+                StatCard(label: "stash", value: "\(d.work.stashes)", icon: "archivebox")
             }
 
             // 语言分布 + 里程碑

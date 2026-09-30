@@ -26,14 +26,23 @@ struct StatCard: View {
     let label: String
     let value: String
     var tint: Color = .primary
+    var icon: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(value)
-                .font(.system(.title2, design: .rounded).weight(.semibold))
-                .foregroundStyle(tint)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+            HStack {
+                Text(value)
+                    .font(.system(.title2, design: .rounded).weight(.semibold))
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Spacer()
+                if !icon.isEmpty {
+                    Image(systemName: icon)
+                        .foregroundStyle(tint.opacity(0.55))
+                        .font(.system(size: 13))
+                }
+            }
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)

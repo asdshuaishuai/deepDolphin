@@ -56,7 +56,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } else if let i = args.firstIndex(of: "--section"), i + 1 < args.count {
                 switch args[i + 1] {
                 case "milestones": section = .milestones
-                case "agent": section = .agent
                 default: section = .dashboard
                 }
             }

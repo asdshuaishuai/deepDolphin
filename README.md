@@ -1,7 +1,9 @@
 # deepGit Clients
 
-**deepGit 的各平台 UI 交互层。** 业务核心全部在 [deepgit-engine](https://github.com/asdshuaishuai/deepgit-engine)（仓颉引擎），
-本仓库的每个客户端都是**纯展示层**：通过引擎的本地 HTTP API（`127.0.0.1`）读数据、POST 写操作，不含任何业务逻辑。
+**deepGit 的各平台 UI 交互层（含 AI 层）。** 业务核心全部在 [deepgit-engine](https://github.com/asdshuaishuai/deepgit-engine)（仓颉引擎，AI 无关），
+本仓库的每个客户端都是**展示与 AI 层**：通过引擎的本地 HTTP API（`127.0.0.1`）读数据、POST 写操作，AI 的配置/调用/工具循环在客户端完成。
+
+**跨平台能力基准**：见 [PLATFORM-CHARTER.md](PLATFORM-CHARTER.md) —— 四大平台交互 UI 自由，能力必须一致（C1–C11 矩阵）。
 
 ## 目录结构
 

@@ -58,7 +58,6 @@ final class LoginItem {
 enum RootSection: Hashable {
     case dashboard
     case milestones
-    case agent        // AI 助手（客户端 AI 层）
     case project(String)  // 项目名
 }
 
@@ -91,6 +90,7 @@ final class AppModel: ObservableObject {
 
     private var timer: Timer?
     private var notifiedKeys = Set<String>()
+    var autoTimer: Timer?
 
     // MARK: 菜单栏状态项（图标 + 标题 = 实时健康度）
 
@@ -140,6 +140,7 @@ final class AppModel: ObservableObject {
 
     func start() async {
         await refreshAll()
+        restartAutoTimer()
         timer?.invalidate()
         // 每 5 分钟轻量刷新（bar 常驻，保持轻量）
         timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
@@ -297,20 +298,24 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func updateAll(deep: Bool) async {
+    func updateAll(deep: Bool, silent: Bool = false) async {
         guard !busyAll else { return }
         busyAll = true
         defer { busyAll = false }
         do {
             let _: Data = try await APIClient.shared.post(deep ? "api/deep" : "api/update")
             await refreshAll()
-            Notifier.shared.notify(
-                title: deep ? "全部深度更新完成" : "全部进度已记录",
-                body: "\(projects.count) 个项目"
-            )
+            if !silent {
+                Notifier.shared.notify(
+                    title: deep ? "全部深度更新完成" : "全部进度已记录",
+                    body: "\(projects.count) 个项目"
+                )
+            }
         } catch {
             lastError = error.localizedDescription
-            Notifier.shared.notify(title: "批量更新失败", body: error.localizedDescription)
+            if !silent {
+                Notifier.shared.notify(title: "批量更新失败", body: error.localizedDescription)
+            }
         }
     }
 

@@ -43,8 +43,6 @@ struct PanelView: View {
                     .badge(model.dashboard.map { d in
                         d.milestones.counts.open + d.milestones.counts.done
                     } ?? 0)
-                Label("AI 助手", systemImage: "sparkles")
-                    .tag(RootSection.agent)
             }
             Section("项目（\(model.projects.count)）") {
                 ForEach(model.projects) { p in
@@ -104,8 +102,6 @@ struct PanelView: View {
                 DashboardView()
             case .milestones:
                 MilestonesView()
-            case .agent:
-                AgentView()
             case .project(let name):
                 ProjectDetailView(projectName: name)
             case nil:
@@ -153,18 +149,7 @@ struct PanelView: View {
             }
             .disabled(model.isLoading)
 
-            Button {
-                Task { await model.updateAll(deep: false) }
-            } label: {
-                Label("全部浅更新", systemImage: "arrow.triangle.branch")
-            }
-            .disabled(model.busyAll || model.projects.isEmpty)
-
-            Button {
-                showAISettings = true
-            } label: {
-                Label("AI 设置", systemImage: "gearshape")
-            }
+            UpdateActionMenu()
         }
     }
 
