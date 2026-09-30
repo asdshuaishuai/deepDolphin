@@ -6,9 +6,15 @@ import Foundation
 
 extension EngineCLI {
     func status(light: Bool) async throws -> StatusEnvelope {
-        var args = ["status", "--json", "--quiet"]
-        if light { args.append("--quiet") }
-        return try await runJSON(args, as: StatusEnvelope.self, timeout: 180)
+        let data = try await runData(["status", "--json", "--quiet"], timeout: 180)
+        // 兼容两种形状：标准 {projects,summary}；旧版/边角裸 ProjectStatus
+        if let env = try? JSONDecoder().decode(StatusEnvelope.self, from: data) {
+            return env
+        }
+        if let single = try? JSONDecoder().decode(ProjectStatus.self, from: data) {
+            return StatusEnvelope(projects: [single], summary: nil)
+        }
+        throw EngineError.failed("引擎输出无法解析（可能尚未注册任何项目）")
     }
 
     func status(name: String) async throws -> ProjectStatus {
@@ -24,7 +30,8 @@ extension EngineCLI {
     }
 
     func docs(name: String) async throws -> DocsEnvelope {
-        try await runJSON(["context", name, "--json"], as: DocsEnvelope.self, timeout: 60)
+        // 引擎 deepgit docs <项目> --json 输出 {docs:[{file,content}]}
+        try await runJSON(["docs", name, "--json"], as: DocsEnvelope.self, timeout: 60)
     }
 
     func journal(name: String) async throws -> Data {
@@ -49,14 +56,16 @@ extension EngineCLI {
     }
 
     func milestoneAction(project: String, name: String, action: String) async throws {
-        let cmd = action == "remove" ? "remove" : action
+        // UI 词汇 "open" → 引擎 CLI 词汇 "reopen"
+        let cmd = action == "open" ? "reopen" : action
         _ = try await runData(["milestone", cmd, project, name, "--json"], timeout: 30)
     }
 
-    func addMilestone(project: String, name: String, tag: String, date: String) async throws {
+    func addMilestone(project: String, name: String, tag: String, date: String, desc: String = "") async throws {
         var args = ["milestone", "add", project, name]
         if !tag.isEmpty { args += ["--tag", tag] }
         if !date.isEmpty { args += ["--date", date] }
+        if !desc.isEmpty { args += ["--desc", desc] }
         args.append("--json")
         _ = try await runData(args, timeout: 30)
     }

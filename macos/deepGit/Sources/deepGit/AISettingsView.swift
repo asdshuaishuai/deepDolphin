@@ -12,6 +12,7 @@ struct GeneralSettingsView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    LoginItemCard()
                     ScheduleCard()
                     AISettingsView(onClose: onClose)
                 }
@@ -21,6 +22,38 @@ struct GeneralSettingsView: View {
         }
         // NSHostingView 会按内容最小尺寸收缩窗口：没有最小约束窗口会被压成 0×0
         .frame(minWidth: 540, minHeight: 640)
+    }
+}
+
+/// 开机自启卡片（复活 LoginItem）
+struct LoginItemCard: View {
+    @State private var enabled = false
+    @State private var loaded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("通用", systemImage: "arrow.clockwise.circle")
+                .font(.subheadline.weight(.semibold))
+            if #available(macOS 13.0, *) {
+                Toggle("登录时自动启动 deepGit", isOn: $enabled)
+                    .onChange(of: enabled) { on in
+                        LoginItem.shared.setEnabled(on)
+                    }
+                Text("通过系统「登录项」注册；菜单栏速览与面板随登录可用。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+        .onAppear {
+            guard !loaded else { return }
+            loaded = true
+            if #available(macOS 13.0, *) {
+                enabled = LoginItem.shared.isEnabled
+            }
+        }
     }
 }
 
@@ -157,7 +190,7 @@ struct AISettingsView: View {
                                 .lineLimit(2)
                         }
                     }
-                    Text("AI 全部在客户端执行（deepDesign 模式）：模型目录来自 models.dev，上下文来自引擎 /api/context，工具经引擎 HTTP API 执行；密钥只存本机钥匙串。")
+                    Text("AI 全部在客户端执行：模型目录来自 models.dev（启动后会联网刷新一次），上下文与工具经引擎本地调用；密钥只存本机钥匙串。注意：项目路径、分支、文档摘要等上下文会发送到你所配置的 provider 服务器。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

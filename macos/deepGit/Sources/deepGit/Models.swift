@@ -211,7 +211,6 @@ struct DocFile: Decodable, Identifiable, Hashable {
 }
 
 struct DocsEnvelope: Decodable {
-    let project: String
     let docs: [DocFile]
 }
 

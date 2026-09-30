@@ -78,7 +78,9 @@ struct ScanSheet: View {
                 } else {
                     let data = try await EngineCLI.shared.scan(root: scanRoot, depth: scanDepth)
                     if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                        results = ["发现 \(obj["found"] as? Int ?? 0) 个项目，已注册"]
+                        let added = obj["added"] as? Int ?? 0
+                        let existing = obj["existing"] as? Int ?? 0
+                        results = ["新增 \(added) 个项目" + (existing > 0 ? "（已存在 \(existing) 个跳过）" : "")]
                     }
                 }
                 await model.refreshAll()

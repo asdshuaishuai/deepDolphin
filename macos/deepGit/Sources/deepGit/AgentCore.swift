@@ -79,13 +79,13 @@ enum AgentCore {
                 let data = try await rawGet("api/context", query: ["scope": "project", "name": str("name"), "budget": "8000"])
                 return (true, String(data: data, encoding: .utf8) ?? "")
             case "get_project_docs":
-                let data = try await rawGet("api/docs", query: ["name": str("name")])
+                let data = try await EngineCLI.shared.runData(["docs", str("name"), "--json"], timeout: 60)
                 return (true, String(data: data, encoding: .utf8) ?? "")
             case "get_journal":
-                let data = try await rawGet("api/journal", query: ["name": str("name")])
+                let data = try await EngineCLI.shared.journal(name: str("name"))
                 return (true, String(data: data, encoding: .utf8) ?? "")
             case "get_milestones":
-                let data = try await rawGet("api/milestones", query: [:])
+                let data = try await EngineCLI.shared.runData(["milestone", "list", "--json"], timeout: 60)
                 return (true, String(data: data, encoding: .utf8) ?? "")
             case "run_shallow_update":
                 let data = try await EngineCLI.shared.update(name: str("name"), deep: false)

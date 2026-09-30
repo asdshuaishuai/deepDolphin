@@ -40,8 +40,12 @@ struct CatalogProvider {
 final class ModelCatalog: @unchecked Sendable {
     static let shared = ModelCatalog()
 
-    private(set) var providers: [CatalogProvider] = []
+    private var _providers: [CatalogProvider] = []
     private let loadLock = NSLock()
+    var providers: [CatalogProvider] {
+        loadLock.lock(); defer { loadLock.unlock() }
+        return _providers
+    }
     private static let refreshFlag = "models-dev.refreshed"
 
     private init() {
@@ -51,6 +55,13 @@ final class ModelCatalog: @unchecked Sendable {
 
     /// bundle 内的 vendor 快照（同步、启动即用）
     private func loadBundled() {
+        // 优先读回上次网络刷新的快照（比 bundle 内的新）
+        if let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            let cached = dir.appendingPathComponent("deepGit/models-dev.json")
+            if let data = try? Data(contentsOf: cached), parseInto(data: data) {
+                return
+            }
+        }
         guard let url = Bundle.main.url(forResource: "models-dev", withExtension: "json"),
               let data = try? Data(contentsOf: url) else { return }
         parse(data: data)
@@ -127,7 +138,7 @@ final class ModelCatalog: @unchecked Sendable {
             return $0.models.count > $1.models.count
         }
         loadLock.lock()
-        providers = out
+        _providers = out
         loadLock.unlock()
         return true
     }

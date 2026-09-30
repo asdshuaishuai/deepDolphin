@@ -15,6 +15,16 @@ import UserNotifications
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Notifier.shared.setUp()
+        // 通知点击 → 打开/激活主面板（NSApp.windows 兜底：窗口被关也能找回）
+        Notifier.shared.onOpenPanel = {
+            NSApp.activate(ignoringOtherApps: true)
+            for w in NSApp.windows where w.title == "deepGit" {
+                w.makeKeyAndOrderFront(nil)
+                return
+            }
+            // 窗口已销毁：由 SwiftUI Window scene 的 openWindow 兜底（通知中心转发）
+            NotificationCenter.default.post(name: .openPanelRequest, object: nil)
+        }
     }
 
     func requestFullQuit() {
@@ -107,6 +117,9 @@ struct DeepGitPanel: View {
                 Task { await model.start() }
                 handleLaunchArgs()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openPanelRequest)) { _ in
+                openPanel(id: "panel")
+            }
     }
 
     private func handleLaunchArgs() {
@@ -123,6 +136,20 @@ struct DeepGitPanel: View {
         }
         if args.contains("--open-settings") {
             model.showAISettings = true
+        }
+        // 无头 agent 自测（README 文档化；mock provider 配 defaults 即可全链路验证）
+        if let i = args.firstIndex(of: "--agent-selftest") {
+            let question = (i + 1 < args.count) ? args[i + 1] : "总结一下项目群现状"
+            Task {
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                do {
+                    let answer = try await AgentCore.run(question: question, target: .group)
+                    print("[selftest] FINAL: \(answer.prefix(200))")
+                } catch {
+                    print("[selftest] ERROR: \(error.localizedDescription)")
+                }
+                print("[selftest-done]")
+            }
         }
     }
 }

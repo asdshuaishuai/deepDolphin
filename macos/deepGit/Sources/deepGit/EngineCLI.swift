@@ -25,8 +25,15 @@ enum EngineError: LocalizedError {
 final class EngineCLI: @unchecked Sendable {
     static let shared = EngineCLI()
 
-    private(set) var binaryPath: String?
+    private var _binaryPath: String?
+    private let pathLock = NSLock()
     private var pathLookupDone = false
+
+    /// 线程安全读取（runJSON/runData 在 detached 线程并发读）
+    var binaryPath: String? {
+        pathLock.lock(); defer { pathLock.unlock() }
+        return _binaryPath
+    }
 
     // MARK: 引擎发现
 
@@ -45,14 +52,15 @@ final class EngineCLI: @unchecked Sendable {
     }
 
     private init() {
-        binaryPath = candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+        _binaryPath = candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     func refreshBinary() {
-        binaryPath = candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
-        if binaryPath == nil && !pathLookupDone {
+        pathLock.lock(); defer { pathLock.unlock() }
+        _binaryPath = candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+        if _binaryPath == nil && !pathLookupDone {
             pathLookupDone = true
-            binaryPath = lookupInUserShell()
+            _binaryPath = lookupInUserShell()
         }
     }
 
@@ -94,15 +102,29 @@ final class EngineCLI: @unchecked Sendable {
         var outBuf = Data()
         var errBuf = Data()
         let lock = NSLock()
+        // EOF 信号量：handler 收到空数据（EOF）时 signal——收尾必须等它，
+        // 否则 handler 手里的最后一块数据可能在 readDataToEndOfFile 之后才 append（乱序）
+        let outEOF = DispatchSemaphore(value: 0)
+        let errEOF = DispatchSemaphore(value: 0)
+        var outSawEOF = false
+        var errSawEOF = false
         outPipe.fileHandleForReading.readabilityHandler = { h in
             let d = h.availableData
-            if d.isEmpty { h.readabilityHandler = nil } else {
+            if d.isEmpty {
+                h.readabilityHandler = nil
+                lock.lock(); outSawEOF = true; lock.unlock()
+                outEOF.signal()
+            } else {
                 lock.lock(); outBuf.append(d); lock.unlock()
             }
         }
         errPipe.fileHandleForReading.readabilityHandler = { h in
             let d = h.availableData
-            if d.isEmpty { h.readabilityHandler = nil } else {
+            if d.isEmpty {
+                h.readabilityHandler = nil
+                lock.lock(); errSawEOF = true; lock.unlock()
+                errEOF.signal()
+            } else {
                 lock.lock(); errBuf.append(d); lock.unlock()
             }
         }
@@ -122,8 +144,16 @@ final class EngineCLI: @unchecked Sendable {
             throw EngineError.timeout(Int(timeout))
         }
 
+        // 等 handler 报 EOF（最长 2s 防御），再做清尾追加——消除乱序窗口
+        _ = outEOF.wait(timeout: .now() + 2)
+        _ = errEOF.wait(timeout: .now() + 2)
         lock.lock(); defer { lock.unlock() }
-        outBuf.append(outPipe.fileHandleForReading.readDataToEndOfFile())
+        if !outSawEOF {
+            outBuf.append(outPipe.fileHandleForReading.readDataToEndOfFile())
+        }
+        if !errSawEOF {
+            errBuf.append(errPipe.fileHandleForReading.readDataToEndOfFile())
+        }
         outPipe.fileHandleForReading.readabilityHandler = nil
         errPipe.fileHandleForReading.readabilityHandler = nil
 

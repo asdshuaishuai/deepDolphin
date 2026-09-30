@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "deepGit",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v14)],
     products: [
         .executable(name: "deepGit", targets: ["deepGit"])
     ],

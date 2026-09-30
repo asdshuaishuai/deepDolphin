@@ -78,6 +78,7 @@ enum RootSection: Hashable {
     case dashboard
     case milestones
     case board
+    case agent        // AI 助手对话
     case project(String)  // 项目名
 }
 
@@ -111,6 +112,7 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
     private var notifiedKeys = Set<String>()
     var autoTimer: Timer?
+    var firstRunTimer: Timer?
     /// 面板副标题回调（PanelWindow 注入）
     var onSummaryChange: ((String?) -> Void)?
 
@@ -303,8 +305,9 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func updateAll(deep: Bool, silent: Bool = false) async {
-        guard !busyAll else { return }
+    @discardableResult
+    func updateAll(deep: Bool, silent: Bool = false) async -> Bool {
+        guard !busyAll else { return false }
         busyAll = true
         defer { busyAll = false }
         do {
@@ -316,11 +319,13 @@ final class AppModel: ObservableObject {
                     body: "\(projects.count) 个项目"
                 )
             }
+            return true
         } catch {
             lastError = error.localizedDescription
             if !silent {
                 Notifier.shared.notify(title: "批量更新失败", body: error.localizedDescription)
             }
+            return false
         }
     }
 
@@ -341,7 +346,7 @@ final class AppModel: ObservableObject {
         if !tag.isEmpty { body["tag"] = tag }
         if !targetDate.isEmpty { body["targetDate"] = targetDate }
         if !description.isEmpty { body["description"] = description }
-        try await EngineCLI.shared.addMilestone(project: project, name: name, tag: tag, date: targetDate)
+        try await EngineCLI.shared.addMilestone(project: project, name: name, tag: tag, date: targetDate, desc: description)
         await fetchMilestones()
         await fetchDashboard()
     }
@@ -372,4 +377,8 @@ final class AppModel: ObservableObject {
             }
         }
     }
+}
+
+extension Notification.Name {
+    static let openPanelRequest = Notification.Name("deepgit.openPanel")
 }

@@ -61,12 +61,21 @@ struct AIConfig: Equatable {
     var isAnthropic: Bool { providerID == "anthropic" }
 
     var effectiveBaseURL: String {
-        if !baseURL.isEmpty { return baseURL }
-        // 目录优先，其次常用默认
+        if !baseURL.isEmpty { return sanitized(baseURL) }
+        // 目录优先，其次常用默认。目录数据来自网络（models.dev），
+        // 强制 https（localhost 豁免）——防投毒端点骗取 apiKey
         if let api = ModelCatalog.shared.provider(providerID)?.api, !api.isEmpty {
-            return api
+            return sanitized(api)
         }
         return providerID == "anthropic" ? "https://api.anthropic.com" : ""
+    }
+
+    /// 仅放行 https 或 localhost 的 http
+    private func sanitized(_ url: String) -> String {
+        let lower = url.lowercased()
+        if lower.hasPrefix("https://") { return url }
+        if lower.hasPrefix("http://127.0.0.1") || lower.hasPrefix("http://localhost") { return url }
+        return ""
     }
 
     var isConfigured: Bool {
@@ -106,6 +115,8 @@ struct AIConfig: Equatable {
         } else {
             Keychain.set(apiKey, service: Self.service, account: Self.keyAccount)
         }
+        // 清掉 mock 自测可能残留的明文副本（否则清空 key 后 isConfigured 仍为 true）
+        Self.ud.removeObject(forKey: "ai.apiKey")
     }
 }
 
@@ -235,7 +246,10 @@ struct LanguageModel {
             }
         }
 
-        let data = try await post(url: URL(string: "\(base)/chat/completions")!, body: body,
+        guard let chatURL = URL(string: "\(base)/chat/completions") else {
+            throw EngineError.failed("Base URL 非法：\(base)")
+        }
+        let data = try await post(url: chatURL, body: body,
                             headers: ["Authorization": "Bearer \(config.apiKey)"])
         guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = obj["choices"] as? [[String: Any]],
@@ -301,7 +315,10 @@ struct LanguageModel {
             }
         }
 
-        let data = try await post(url: URL(string: "\(base)/v1/messages")!, body: body, headers: [
+        guard let msgURL = URL(string: "\(base)/v1/messages") else {
+            throw EngineError.failed("Base URL 非法：\(base)")
+        }
+        let data = try await post(url: msgURL, body: body, headers: [
             "x-api-key": config.apiKey,
             "anthropic-version": "2023-06-01",
         ])
@@ -330,6 +347,17 @@ struct LanguageModel {
         return GenerateTextResult(text: text, toolCalls: calls)
     }
 
+    /// 错误文本脱敏：剥掉可能被恶意服务器回显的凭证模式
+    static func redacted(_ text: String) -> String {
+        var t = text
+        for pattern in ["Bearer ", "sk-", "x-api-key"] where t.contains(pattern) {
+            // 保守做法：包含敏感模式时整体截断为提示
+            t = "（响应含敏感字段，已隐藏）"
+            break
+        }
+        return t
+    }
+
     // MARK: 公共 POST
 
     private func post(url: URL, body: [String: Any], headers: [String: String]) async throws -> Data {
@@ -347,7 +375,7 @@ struct LanguageModel {
         }
         guard http.statusCode == 200 else {
             let text = String(data: data, encoding: .utf8) ?? ""
-            throw EngineError.failed("AI 调用失败（HTTP \(http.statusCode)）：\(text.prefix(300))")
+            throw EngineError.failed("AI 调用失败（HTTP \(http.statusCode)）：\(Self.redacted(text).prefix(300))")
         }
         return data
     }

@@ -65,6 +65,8 @@ struct PanelView: View {
                     .tag(RootSection.dashboard)
                 Label("看板", systemImage: "rectangle.split.3x1")
                     .tag(RootSection.board)
+                Label("AI 助手", systemImage: "sparkles")
+                    .tag(RootSection.agent)
                 Label("里程碑", systemImage: "flag.2.crossed")
                     .tag(RootSection.milestones)
                     .badge(model.dashboard.map { d in
@@ -120,6 +122,30 @@ struct PanelView: View {
 
     @ViewBuilder
     private var detail: some View {
+        // 常驻错误条：项目正常加载时 lastError 也要可见（此前只在空列表时展示 → 静默失败）
+        if let err = model.lastError, model.projects.isEmpty == false, !model.isLoading {
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(err)
+                        .font(.caption)
+                        .lineLimit(2)
+                    Spacer()
+                    Button {
+                        model.lastError = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(.orange.opacity(0.12))
+                .task { await model.refreshAll() }
+            }
+        }
         if !model.engineFound {
             setupGuide
         } else if model.projects.isEmpty && model.isLoading {
@@ -137,6 +163,8 @@ struct PanelView: View {
                 DashboardView()
             case .board:
                 BoardPage()
+            case .agent:
+                AgentView()
             case .milestones:
                 MilestonesView()
             case .project(let name):

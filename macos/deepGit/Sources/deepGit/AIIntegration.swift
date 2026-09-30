@@ -120,7 +120,11 @@ extension AppModel {
 
     func runScheduledUpdate() async {
         guard !busyAll else { return }
-        await updateAll(deep: false, silent: true)
+        let ok = await updateAll(deep: false, silent: true)
+        guard ok else {
+            Notifier.shared.notify(title: "定时更新失败", body: AppModel.shared.lastError ?? "未知错误")
+            return
+        }
         // AI 已配置 → 生成简报并通知
         if AIConfig.load().isConfigured {
             do {
