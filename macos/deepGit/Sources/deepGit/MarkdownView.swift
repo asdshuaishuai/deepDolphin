@@ -44,7 +44,7 @@ struct MarkdownView: View {
                 .lineSpacing(4)
 
         case .bullet(let items):
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     HStack(alignment: .firstTextBaseline, spacing: 7) {
                         Circle().fill(.blue).frame(width: 5, height: 5)
@@ -54,7 +54,7 @@ struct MarkdownView: View {
             }
 
         case .numbered(let items):
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     Text(item).font(.callout).lineSpacing(3)
                 }

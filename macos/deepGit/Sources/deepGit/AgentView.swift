@@ -160,7 +160,7 @@ struct AgentView: View {
     private var transcriptView: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: DSSpacing.md) {
                     if chat.history.isEmpty {
                         emptyHint
                     }
@@ -194,7 +194,7 @@ struct AgentView: View {
     }
 
     private var emptyHint: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
             Text("可以问：")
                 .font(.headline)
             ForEach(chat.target == .group ? groupSamples : projectSamples, id: \.self) { s in
@@ -242,7 +242,7 @@ struct AgentView: View {
     }
 
     private func errorBanner(_ err: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: DSSpacing.sm) {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(.red)
             Text(err).font(.caption).foregroundStyle(.red)
             Spacer()
@@ -265,7 +265,7 @@ struct AgentView: View {
     }
 
     private var inputBar: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        HStack(alignment: .bottom, spacing: DSSpacing.sm) {
             TextField("问点什么…（⌘↩ 发送）", text: $chat.draft, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(1...6)

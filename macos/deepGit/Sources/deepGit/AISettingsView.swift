@@ -11,7 +11,7 @@ struct GeneralSettingsView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: DSSpacing.lg) {
                     LoginItemCard()
                     ScheduleCard()
                     AISettingsView(onClose: onClose)
@@ -179,7 +179,7 @@ struct AISettingsView: View {
                         }
                     }
                     if let m = catalogProvider?.model(model) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: DSSpacing.sm) {
                             if m.toolCall { Chip(text: "tool_call ✓", tint: .green) }
                             if m.reasoning { Chip(text: "reasoning", tint: .purple) }
                             if let ctx = m.contextTokens {

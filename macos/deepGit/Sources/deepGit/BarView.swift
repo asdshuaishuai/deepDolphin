@@ -40,7 +40,7 @@ struct BarView: View {
     // MARK: 头部
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DSSpacing.sm) {
             Text("项目群进度")
                 .font(.headline)
             if let line = model.summaryLine {
@@ -93,7 +93,7 @@ struct BarView: View {
     // MARK: 空态 / 错误态
 
     private var missingEngine: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
             Label("未找到 deepGit 引擎", systemImage: "questionmark.circle")
                 .font(.subheadline.weight(.medium))
             Text("运行 deepgit-engine 的 scripts/install.sh 安装，或设 DEEPGIT_BIN")
@@ -110,7 +110,7 @@ struct BarView: View {
     }
 
     private var emptyOrError: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
             if let err = model.lastError {
                 Label("引擎错误", systemImage: "exclamationmark.triangle")
                     .font(.subheadline.weight(.medium))
@@ -216,7 +216,7 @@ struct MenuProjectRow: View {
             openWindow(id: "panel")
             Task { await model.loadProject(project.name) }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: DSSpacing.sm) {
                 if project.error != nil {
                     Image(systemName: "exclamationmark.circle.fill")
                         .foregroundStyle(.red)

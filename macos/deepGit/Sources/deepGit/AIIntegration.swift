@@ -78,7 +78,7 @@ struct AIResultSheet: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let err = errorText {
-                VStack(spacing: 8) {
+                VStack(spacing: DSSpacing.sm) {
                     Label(err, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red)
                     Button("重试") { onRegenerate?() }
@@ -220,7 +220,7 @@ struct UpdateActionMenu: View {
             // 它们已经升成顶栏那对双轨按钮（设计稿最突出的元素）。
             // 同一个动作在同一个窗口里出现两次，用户会以为是两种不同的东西 ——
             // 而其中一份还少了范围信息（菜单项的标题不会随 selection 变）。
-            HStack(spacing: 4) {
+            HStack(spacing: DSSpacing.xs) {
                 Image(systemName: "ellipsis.circle")
                 Text("更多")
             }
@@ -311,7 +311,7 @@ struct DualTrackButtons: View {
         let pending = ScopeRules.pending(scope,
                                          allTotal: model.pendingAll,
                                          byProject: model.pendingByProject)
-        HStack(spacing: 8) {
+        HStack(spacing: DSSpacing.sm) {
             Button {
                 model.runUpdate(deep: false)
             } label: {

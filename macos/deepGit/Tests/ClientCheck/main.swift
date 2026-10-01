@@ -2149,6 +2149,105 @@ do {
         return "\(CommitTypeColor.capacity) 色不重样"
     }
 
+    check("语言分布卡不许内联第二套调色板（§3.3「消灭两套调色板」）") {
+        // 编译期事实：语言卡刻意不取模，前提是「画出来的条数 ≤ 色板容量」。
+        // 这条把那个前提钉住 —— 哪天有人把 LANG_BAR_MAX 调到 20 而不同时扩色板，
+        // 运行期会直接数组越界崩溃，而判据会在编译检查时就红。
+        guard LANG_BAR_MAX <= CommitTypeColor.capacity else {
+            throw fail("LANG_BAR_MAX(\(LANG_BAR_MAX)) 超过色板容量(\(CommitTypeColor.capacity))：\n" +
+                "      语言卡按序号直取色板（不取模），条数一旦超过容量就是数组越界")
+        }
+        let v = try strippedCode("DetailViews.swift")
+        guard let dash = slice(v, from: "private func dashboardContent(", to: "private func milestoneRow(") else {
+            throw fail("切不出 dashboardContent —— lint 判据本身坏了（不是缺陷）")
+        }
+        if dash.contains("let palette: [Color]") {
+            throw fail("语言分布卡又内联了一份颜色字面量 ⇒ 与提交构成卡成「两套调色板」：\n" +
+                "      同一个蓝在一张卡里是 feat、在另一张卡里是 Swift，序号相同的两项颜色还不同")
+        }
+        // 两处取色（分段条 + 图例）都要走单一来源
+        guard let bar = slice(dash, from: "SegmentedBar(segments: d.languages",
+                              to: "VStack(alignment: .leading, spacing: 5)"),
+              let legend = slice(dash, from: "ForEach(d.languages.prefix", to: "id: \\.0)") else {
+            throw fail("切不出语言卡的两处取色（结构变了？）")
+        }
+        for (where_, seg) in [("分段条", bar), ("图例", legend)] {
+            guard seg.contains("CommitTypeColor.palette[i]") else {
+                throw fail("语言卡\(where_)没有走 CommitTypeColor.palette ⇒ 与提交构成卡不同源")
+            }
+            guard seg.contains("DSColor.sequence(") else {
+                throw fail("语言卡\(where_)没有走 DSColor.sequence ⇒ 色板序号到颜色的映射有第二个出处")
+            }
+            // 与提交构成卡同一条纪律：取模只会掩盖容量不够
+            if seg.contains("%") {
+                throw fail("语言卡\(where_)里出现取模 ⇒ 容量不够时被悄悄回绕，两种语言涂成一个颜色")
+            }
+        }
+        return "两处取色同源，且上限 ≤ 色板容量（故不必取模）"
+    }
+
+    check("序列色映射必须穷举（加新色忘了配，编译就要红）") {
+        let d = try strippedCode("DesignSystem.swift")
+        guard let f = slice(d, from: "static func sequence(", to: "\n    }\n") else {
+            throw fail("切不出 DSColor.sequence（结构变了？）")
+        }
+        if f.contains("default:") {
+            throw fail("DSColor.sequence 有 default 分支 ⇒ 往 CommitTypeColor 加新 case 时颜色会静默漏掉，\n" +
+                "      而类型还不报错")
+        }
+        // 穷举 switch 下编译器已经兜住了漏配，这里再钉一遍是防「有人加了 default」之后
+        // 又少配某个 case（那种情况编译仍然过，只有这条会红）
+        for c in CommitTypeColor.allCases where !f.contains("case .\(c.rawValue):") {
+            throw fail("序列色映射漏了 .\(c.rawValue) ⇒ 该序号会编译不过或被 default 吃掉")
+        }
+        return "\(CommitTypeColor.allCases.count) 个色全配，无 default"
+    }
+
+    check("spacing 刻度值必须走 token；待确认的散值不许增长（§3.3）") {
+        let scale = [4, 8, 12, 16, 20, 24]
+        // ⚠️ 散值（2/3/5/6/7/10/14）**故意保留**，不是漏掉：
+        // 收敛到刻度会改变布局（14→16 挤不挤？10→8 还是 12？），
+        // 而本项目还没做过任何视觉验证 —— 擅自收敛等于把猜测写进布局。
+        // 它们记在 clients/macos/deepGit/README.md 的待人工确认清单里，
+        // 这条判据负责盯着「不许再新增」。
+        let pending = [2, 3, 5, 6, 7, 10, 14]
+        let baseline = 51
+        let SCALE_NAME: [Int: String] = [4: "xs", 8: "sm", 12: "md", 16: "lg", 20: "xl", 24: "xxl"]
+        let re = try NSRegularExpression(pattern: "(?<![A-Za-z0-9_])spacing: (\\d+)(?![\\d.])")
+        var bad: [String] = []
+        var pendingCount = 0
+        for name in try allSourceFileNames() {
+            let code = try strippedCode(name)
+            // ⚠️ 新 SDK 里 `matches(in:)` 的 `range:` 没有默认值了，必须显式给全串；
+            // 少给时报的是 "missing argument for parameter 'range'"（看着像函数名写错了）。
+            let full = NSRange(code.startIndex..<code.endIndex, in: code)
+            for m in re.matches(in: code, range: full) {
+                // 同理别用 `ns.substring(with:)`：range(at:) 已 Swift 化成
+                // Range<String.Index>，两边类型对不上。
+                guard let r = Range(m.range(at: 1), in: code) else { continue }
+                let v = Int(code[r]) ?? -1
+                if v == 0 { continue }          // 「无间距」是真实需求，不在刻度里
+                if scale.contains(v) {
+                    bad.append("\(name)：spacing: \(v) 等于刻度值 \(SCALE_NAME[v]!) ⇒ 必须写 token，"
+                        + "否则改 DSSpacing 时这一处不会跟着动")
+                } else if pending.contains(v) {
+                    pendingCount += 1
+                } else {
+                    bad.append("\(name)：spacing: \(v) 是新增散值（刻度只有 4/8/12/16/20/24）")
+                }
+            }
+        }
+        guard bad.isEmpty else {
+            throw fail(bad.prefix(3).joined(separator: "\n      ")
+                + (bad.count > 3 ? "\n      …另有 \(bad.count - 3) 处" : ""))
+        }
+        guard pendingCount <= baseline else {
+            throw fail("待人工确认的散值从 \(baseline) 处涨到 \(pendingCount) 处：\n" +
+                "      要么把新值收进刻度（改 DSSpacing 或写 token），要么更新基线并在 README 说明理由")
+        }
+        return "刻度值零字面量；待确认散值 \(pendingCount)/\(baseline)"
+    }
+
     check("卡片正好 12 条：不许造披露（cut 恒为 false 才是常态）") {
         let s = commitTypeCardSlice(entries: real)
         guard !s.cut, s.entries.count == 12, s.note == nil else {
@@ -2218,16 +2317,30 @@ do {
         // 就能溜过去 —— NC58-b 第一版注入就因为变量名对不上而**假绿**。
         // 这三十行里没有任何一处需要取模：切片函数已经保证条目数 ≤ 色板容量，
         // 所以「取模」在这里只能是「用取模掩盖容量不够」。
-        guard !card.contains("%") else {
+        if card.contains("%") {
             throw fail("提交构成卡里又出现取模：色板短于条目数时会把两类画成一个颜色")
         }
-        guard card.contains("CommitTypeColor.palette") else {
-            throw fail("色板没有走单一来源 CommitTypeColor.palette")
+        // ⚠️ 必须**两处取色都查**。只查「这个函数体里出现过 CommitTypeColor.palette」
+        // 的话，把另一处硬编码成 `Color.blue` 就整条溜过去了 ——
+        // NC76 变体 2 实测假绿过一次：注入替换的是**文件里第一处**
+        // （提交构成卡的分段条），而语言卡两处原封不动，于是全绿。
+        // 「出现过一次」是现象，「每一处都同源」才是实质。
+        guard let bar = slice(card, from: "SegmentedBar(segments: slice.entries", to: "FlowLegend(items:"),
+              let legend = slice(card, from: "FlowLegend(items:", to: "if let note") else {
+            throw fail("切不出提交构成卡的两处取色（结构变了？）")
+        }
+        for (where_, seg) in [("分段条", bar), ("图例", legend)] {
+            guard seg.contains("CommitTypeColor.palette[i]") else {
+                throw fail("提交构成卡的\(where_)没有走 CommitTypeColor.palette[i] ⇒ 色板有第二个出处")
+            }
+            guard seg.contains("DSColor.sequence(") else {
+                throw fail("提交构成卡的\(where_)没有走 DSColor.sequence ⇒ 序号到颜色的映射有第二个出处")
+            }
         }
         guard card.contains("commitTypeCardSlice(") else {
             throw fail("卡片没有走切片函数 ⇒ 容量上限不是一条真实限制")
         }
-        return "单一来源 + 真实上限"
+        return "单一来源 + 真实上限，两处取色都同源"
     }
 
     check("新增的纯函数必须挂进 client-check.sh 的编译清单") {
@@ -3878,6 +3991,61 @@ do {
             throw fail("引擎的 unreadable 披露丢了 ⇒ 客户端拿到少了一条 README 的数组却无从判断")
         }
         return "起 / 成 / 败三点齐全，unreadable 披露仍在"
+    }
+}
+
+// MARK: - U. 焦点管理：面板打开即可打字
+//
+// §3.2 点名三处：**里程碑表单、搜索框、扫描面板**。
+// 原来只有搜索框有（且那是因为系统 `.searchable` 不吃外部 focus 绑定，
+// 才自建了 TextField + @FocusState）。另两处打开后焦点不在任何控件上，
+// 用户得先用鼠标点一下才能打字 —— 键盘用户尤其吃亏。
+
+do {
+    print("【U】焦点管理：§3.2 点名的三处，打开即可打字")
+
+    check("三处焦点都在，且声明了就得绑到字段上") {
+        let ms = try strippedCode("MilestonesView.swift")
+        let ss = try strippedCode("ScanSheet.swift")
+        let pv = try strippedCode("PanelView.swift")
+        for (name, code) in [("里程碑表单", ms), ("扫描面板", ss), ("侧栏搜索框", pv)] {
+            guard code.contains("@FocusState") else {
+                throw fail("\(name)没有 @FocusState ⇒ 打开面板后要先用鼠标点一下才能打字")
+            }
+        }
+        // 声明了却没绑 = 死代码（不变量 88）
+        guard ms.contains(".focused($nameFocused)") else { throw fail("里程碑的 @FocusState 没绑到任何字段") }
+        guard ss.contains(".focused($pathFocused)") else { throw fail("扫描面板的 @FocusState 没绑到任何字段") }
+        return "三处都在且都绑上了"
+    }
+
+    check("焦点必须落在「第一个该填的字段」，不是可有可无的那个") {
+        let ms = try strippedCode("MilestonesView.swift")
+        let ss = try strippedCode("ScanSheet.swift")
+        // 里程碑：项目有默认值，名称才是空着等人填的
+        guard let f = slice(ms, from: "TextField(\"名称", to: "TextField(\"绑定 tag"),
+              f.contains(".focused($nameFocused)") else {
+            throw fail("里程碑的焦点没落在「名称」框上（挂到别的字段或压根没挂）")
+        }
+        // 扫描面板：路径是唯一必填项，项目名是可选的
+        guard let f = slice(ss, from: "TextField(placeholder, text: text)", to: "Button(\"选择…\")"),
+              f.contains(".focused($pathFocused)") else {
+            throw fail("扫描面板的焦点没落在路径框上")
+        }
+        return "里程碑给名称、扫描给路径，都不是次要字段"
+    }
+
+    check("打开即聚焦；扫描面板切模式还要重送") {
+        let ms = try strippedCode("MilestonesView.swift")
+        let ss = try strippedCode("ScanSheet.swift")
+        guard ms.contains("nameFocused = true") else { throw fail("里程碑 Sheet 打开时没把焦点送进名称框") }
+        guard ss.contains("pathFocused = true") else { throw fail("扫描面板打开时没把焦点送进路径框") }
+        // 两个模式的路径框共用同一个绑定：切模式不重送，焦点就留在
+        // 一个已经不在屏幕上的控件上，用户敲的字会消失
+        guard ss.contains(".onChange(of: mode)") else {
+            throw fail("扫描面板切换「单个 / 批量」时没重送焦点 ⇒ 焦点留在屏幕外的框里，敲的字消失")
+        }
+        return "打开即聚焦，切模式重送"
     }
 }
 

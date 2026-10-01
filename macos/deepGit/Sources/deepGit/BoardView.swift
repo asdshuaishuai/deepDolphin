@@ -65,7 +65,7 @@ struct BoardColumnView: View {
     let projects: [ProjectStatus]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
             HStack(spacing: 5) {
                 Image(systemName: column.icon)
                     .foregroundStyle(column.color)
@@ -159,7 +159,7 @@ struct BoardCard: View {
 
             Divider()
 
-            HStack(spacing: 8) {
+            HStack(spacing: DSSpacing.sm) {
                 Button {
                     model.startUpdate(project, deep: false)
                 } label: {

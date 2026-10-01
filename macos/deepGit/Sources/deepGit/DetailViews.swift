@@ -45,7 +45,7 @@ struct ProjectDetailView: View {
 
     private func content(_ p: ProjectStatus) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: DSSpacing.lg) {
                 header(p)
                 if let err = p.error {
                     Label(err, systemImage: "exclamationmark.triangle")
@@ -121,7 +121,7 @@ struct ProjectDetailView: View {
 
     private func gitCard(_ p: ProjectStatus) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+            HStack(spacing: DSSpacing.sm) {
                 gitOpButton(p, "拉取", "arrow.down.to.line", "pull")
                 gitOpButton(p, "推送", "arrow.up.to.line", "push")
                 gitOpButton(p, "抓取", "arrow.triangle.2.circlepath", "fetch")
@@ -134,7 +134,7 @@ struct ProjectDetailView: View {
                 }
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: DSSpacing.sm) {
                 TextField("提交信息（提交全部改动）", text: $commitMessage)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { pendingCommit = p }
@@ -143,7 +143,7 @@ struct ProjectDetailView: View {
             }
 
             if let out = model.lastGitOpOutput {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     HStack {
                         Image(systemName: out.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
                             .foregroundStyle(out.ok ? Color.green : Color.red)
@@ -222,9 +222,9 @@ struct ProjectDetailView: View {
     // MARK: 头部
 
     private func header(_ p: ProjectStatus) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: DSSpacing.md) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
+                HStack(spacing: DSSpacing.sm) {
                     Text(p.name)
                         .font(.title.weight(.semibold))
                     if !p.isGit {
@@ -272,8 +272,8 @@ struct ProjectDetailView: View {
                 }
             }
             Spacer()
-            VStack(alignment: .trailing, spacing: 8) {
-                HStack(spacing: 8) {
+            VStack(alignment: .trailing, spacing: DSSpacing.sm) {
+                HStack(spacing: DSSpacing.sm) {
                     ProjectBriefButton(project: p)
                     UpdateActionMenu(project: p)
                 }
@@ -313,7 +313,7 @@ struct ProjectDetailView: View {
 
     @ViewBuilder
     private func pulseCard(_ p: ProjectStatus) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
             if let h = p.mergeHint, h.kind != "merged" {
                 Label(h.description, systemImage: h.kind == "fast-forward" ? "arrow.up.right" : "arrow.triangle.merge")
                     .font(.callout)
@@ -325,7 +325,7 @@ struct ProjectDetailView: View {
                         in: RoundedRectangle(cornerRadius: DSRadius.control)
                     )
             }
-            HStack(spacing: 8) {
+            HStack(spacing: DSSpacing.sm) {
                 Chip(text: "未提交 \(p.userDirtyCount)", tint: statTint(p.userDirtyCount))
                 Chip(text: "未跟踪 \(p.untrackedCount)", tint: statTint(p.untrackedCount))
                 Chip(text: "stash \(p.stashCount)", tint: statTint(p.stashCount))
@@ -420,10 +420,10 @@ struct ProjectDetailView: View {
             VStack(alignment: .leading, spacing: 10) {
                 SegmentedBar(segments: slice.entries.enumerated().map { i, t in
                     .init(label: t.type, value: Double(t.count),
-                          color: commitTypeColor(CommitTypeColor.palette[i]))
+                          color: DSColor.sequence(CommitTypeColor.palette[i]))
                 })
                 FlowLegend(items: slice.entries.enumerated().map { i, t in
-                    (t.type, "\(t.count)", commitTypeColor(CommitTypeColor.palette[i]))
+                    (t.type, "\(t.count)", DSColor.sequence(CommitTypeColor.palette[i]))
                 })
                 if let note = slice.note {
                     Text(note)
@@ -437,24 +437,6 @@ struct ProjectDetailView: View {
         }
     }
 
-    /// 名字 → 颜色。**穷举 switch，没有 default**：
-    /// 往 `CommitTypeColor` 加一个新 case 而忘了配颜色，编译就红。
-    private func commitTypeColor(_ c: CommitTypeColor) -> Color {
-        switch c {
-        case .blue: return .blue
-        case .red: return .red
-        case .orange: return .orange
-        case .purple: return .purple
-        case .teal: return .teal
-        case .indigo: return .indigo
-        case .mint: return .mint
-        case .pink: return .pink
-        case .brown: return .brown
-        case .yellow: return .yellow
-        case .cyan: return .cyan
-        case .gray: return .gray
-        }
-    }
 
     // MARK: 分支
 
@@ -464,7 +446,7 @@ struct ProjectDetailView: View {
             EmptyState(icon: "arrow.triangle.branch", title: "暂无进度记录", subtitle: "运行一次「浅更新」后，各分支进度会出现在这里")
                 .frame(height: 90)
         } else {
-            VStack(spacing: 8) {
+            VStack(spacing: DSSpacing.sm) {
                 ForEach(p.branches) { b in
                     HStack(spacing: 10) {
                         StatusDot(status: b.status)
@@ -576,7 +558,7 @@ struct ProjectDetailView: View {
     /// 它们在 ProjectStatus 上而不在条目上。原先这个函数只收数组，
     /// 拿不到窗口与全量的区分依据 —— 于是那一段什么都不敢显示。
     private func journalCard(_ journal: [JournalEntry], of p: ProjectStatus) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
             ForEach(journal) { e in
                 // 口径与截断必须由纯函数判定（#188）：同一个 `+N` 在浅/深
                 // 两条路径上含义不同，客户端原来一律渲染成无口径的绿色徽章。
@@ -641,9 +623,9 @@ struct FlowLegend: View {
     let items: [(String, String, Color)]
 
     var body: some View {
-        FlowLayout(spacing: 8) {
+        FlowLayout(spacing: DSSpacing.sm) {
             ForEach(items, id: \.0) { label, value, color in
-                HStack(spacing: 4) {
+                HStack(spacing: DSSpacing.xs) {
                     Circle().fill(color).frame(width: 7, height: 7)
                     Text(label)
                         .font(.caption)
@@ -676,7 +658,7 @@ struct DashboardView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: DSSpacing.lg) {
                 // ⚠️ 原来只有 `if let … else ProgressView`，于是采集失败时
                 // **主区永远转圈** —— 错误横幅挂在 PanelView 顶部，
                 // 于是用户同时看到「一条报错」和「一个永不停歇的加载中」。
@@ -712,7 +694,7 @@ struct DashboardView: View {
     }
 
     private func dashboardContent(_ d: Dashboard) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
             // Hero：项目群一句话 + 一键说明
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -737,7 +719,7 @@ struct DashboardView: View {
             )
 
             // 统计卡
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: DSSpacing.md) {
                 StatCard(label: "项目总数", value: "\(d.projects.total)", icon: "square.grid.2x2")
                 StatCard(label: "近 7 天活跃", value: "\(d.projects.active7d)", tint: .green, icon: "bolt.fill")
                 StatCard(label: "近 30 天活跃", value: "\(d.projects.active30d)", icon: "calendar")
@@ -745,7 +727,7 @@ struct DashboardView: View {
             }
 
             // 工作面
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: DSSpacing.md) {
                 StatCard(label: "分支", value: "\(d.work.branches)", icon: "arrow.triangle.branch")
                 StatCard(label: "待合入分支", value: "\(d.work.mergeCandidates)", tint: statTint(d.work.mergeCandidates), icon: "arrow.merge")
                 StatCard(label: "未跟踪文件", value: "\(d.work.untrackedFiles)", tint: statTint(d.work.untrackedFiles), icon: "questionmark.folder")
@@ -775,14 +757,23 @@ struct DashboardView: View {
                     if d.languages.isEmpty {
                         EmptyState(icon: "text.justify", title: coverage.emptyTitle).frame(height: 70)
                     } else {
-                        let palette: [Color] = [.blue, .purple, .orange, .teal, .pink, .indigo, .mint, .yellow]
+                        // ⚠️ 原来这里内联 8 色字面量（.blue, .purple, .orange, .teal…），
+                        // 而提交构成卡用 12 色（.blue, .red, .orange, .purple…）：
+                        // 同一个「蓝」在一张卡里是 feat、在另一张卡里是 Swift，
+                        // 序号相同的两项两张卡颜色还不同，读者拿两张卡对照会误读。
+                        // 这正是改版规范 §3.3 点名的「消灭两套调色板」。
+                        // 现在与提交构成卡同源：第 1 名 = 蓝，两张卡一致。
+                        //
+                        // 刻意**不取模**：LANG_BAR_MAX(8) ≤ 色板容量(12) 是硬保证
+                        // （判据锁着），取模只会掩盖「上限被悄悄改大」。
                         VStack(alignment: .leading, spacing: 10) {
                             SegmentedBar(segments: d.languages.prefix(LANG_BAR_MAX).enumerated().map { i, l in
-                                .init(label: l.language, value: Double(l.count), color: palette[i % palette.count])
+                                .init(label: l.language, value: Double(l.count),
+                                      color: DSColor.sequence(CommitTypeColor.palette[i]))
                             })
                             VStack(alignment: .leading, spacing: 5) {
                                 ForEach(d.languages.prefix(LANG_BAR_MAX).enumerated().map { i, l in
-                                    (l.language, l.count, palette[i % palette.count])
+                                    (l.language, l.count, DSColor.sequence(CommitTypeColor.palette[i]))
                                 }, id: \.0) { lang, count, color in
                                     HStack {
                                         Circle().fill(color).frame(width: 7, height: 7)
@@ -866,7 +857,7 @@ struct DashboardView: View {
     }
 
     private func milestoneRow(_ m: MilestoneItem) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: DSSpacing.sm) {
             Image(systemName: m.status == "done" ? "checkmark.circle.fill" : (m.overdue ? "exclamationmark.circle.fill" : "circle.dashed"))
                 .foregroundStyle(m.status == "done" ? Color.green : (m.overdue ? Color.red : .secondary))
             Text(m.projectName)

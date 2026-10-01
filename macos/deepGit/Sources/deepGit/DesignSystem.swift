@@ -51,6 +51,37 @@ enum DSColor {
         }
     }
 
+    /// **序列色**：排名序号 token → 颜色。全局唯一映射口。
+    ///
+    /// 序号来自 `CommitTypeColor.palette`（纯函数层里色板的唯一声明处），
+    /// 提交构成卡与语言分布卡都走这里。
+    ///
+    /// ⚠️ 语言分布卡原来在自己函数体里内联了 8 色
+    /// （`.blue, .purple, .orange, .teal…`），而提交构成卡是 12 色
+    /// （`.blue, .red, .orange, .purple…`）。于是：
+    ///   · 同一个「蓝」在一张卡里是 feat、在另一张卡里是 Swift；
+    ///   · 序号相同的两项两张卡颜色还不同，读者拿两张卡对照会误读。
+    /// 这正是改版规范 §3.3 点名的「消灭两套调色板」。
+    ///
+    /// 穷举 switch，没有 default：往 `CommitTypeColor` 加新 case 而忘了配颜色，
+    /// 编译就红。
+    static func sequence(_ c: CommitTypeColor) -> Color {
+        switch c {
+        case .blue: return .blue
+        case .red: return .red
+        case .orange: return .orange
+        case .purple: return .purple
+        case .teal: return .teal
+        case .indigo: return .indigo
+        case .mint: return .mint
+        case .pink: return .pink
+        case .brown: return .brown
+        case .yellow: return .yellow
+        case .cyan: return .cyan
+        case .gray: return .gray
+        }
+    }
+
     /// 量级色：分档 → 颜色
     static func color(_ s: DSStat) -> Color {
         switch s {

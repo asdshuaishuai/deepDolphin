@@ -67,7 +67,7 @@ struct PanelView: View {
             AgentView(target: agentTarget)
         }
         .sheet(isPresented: $showTCCGuide) {
-            VStack(spacing: 16) {
+            VStack(spacing: DSSpacing.lg) {
                 Image(systemName: "lock.shield")
                     .font(.largeTitle)
                     .foregroundStyle(.orange)
@@ -157,7 +157,7 @@ struct PanelView: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(shownProjects) { p in
-                    HStack(spacing: 8) {
+                    HStack(spacing: DSSpacing.sm) {
                         if p.error != nil {
                             Image(systemName: "exclamationmark.circle.fill")
                                 .foregroundStyle(.red)
@@ -198,7 +198,7 @@ struct PanelView: View {
     /// 用它而不是系统 `.searchable` 的唯一理由：**⌘F 必须能把焦点送进来**，
     /// 而系统搜索栏不接受外部 focus 绑定（按了没反应）。
     private var sidebarSearch: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: DSSpacing.xs) {
             Image(systemName: "magnifyingglass")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
@@ -263,7 +263,7 @@ struct PanelView: View {
         // 它恰恰发生在启动刷新**途中**（列表到了才判得出「不存在」），
         // 挂到错误条那套条件上会被 isLoading 挡掉，用户什么也看不到。
         if let note = model.routeNotice {
-            HStack(spacing: 8) {
+            HStack(spacing: DSSpacing.sm) {
                 Image(systemName: "link.badge.plus")
                     .foregroundStyle(.orange)
                 Text(note)
@@ -286,7 +286,7 @@ struct PanelView: View {
         // 常驻错误条：项目正常加载时 lastError 也要可见（此前只在空列表时展示 → 静默失败）
         if let err = model.lastError, model.projects.isEmpty == false, !model.isLoading {
             VStack(spacing: 0) {
-                HStack(spacing: 8) {
+                HStack(spacing: DSSpacing.sm) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                     Text(err)
