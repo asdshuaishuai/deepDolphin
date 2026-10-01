@@ -62,7 +62,7 @@ struct MarkdownView: View {
 
         case .quote(let lines):
             HStack(alignment: .top, spacing: 0) {
-                RoundedRectangle(cornerRadius: DSRadius.chip)
+                DSRect.shape(DSRadius.chip)
                     .fill(.blue.opacity(0.5))
                     .frame(width: 3)
                 VStack(alignment: .leading, spacing: 3) {

@@ -194,7 +194,7 @@ struct BoardCard: View {
         .padding(11)
         .surface()
         .overlay(
-            RoundedRectangle(cornerRadius: DSRadius.card)
+            DSRect.shape(DSRadius.card)
                 .stroke(tint.opacity(0.25), lineWidth: 1)
         )
         .contentShape(Rectangle())

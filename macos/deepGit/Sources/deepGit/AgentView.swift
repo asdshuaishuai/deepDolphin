@@ -229,7 +229,7 @@ struct AgentView: View {
                 Spacer(minLength: 40)
                 Text(e.text)
                     .padding(10)
-                    .background(Color.accentColor.opacity(0.18), in: RoundedRectangle(cornerRadius: DSRadius.card))
+                    .tinted(Color.accentColor.opacity(0.18))
             }
         case .assistant:
             MarkdownView(text: e.text)

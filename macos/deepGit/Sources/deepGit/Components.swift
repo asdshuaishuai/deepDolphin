@@ -67,7 +67,7 @@ struct SegmentedBar: View {
         GeometryReader { geo in
             HStack(spacing: 2) {
                 ForEach(segments) { s in
-                    RoundedRectangle(cornerRadius: DSRadius.chip)
+                    DSRect.shape(DSRadius.chip)
                         .fill(s.color)
                         .frame(width: max(geo.size.width * (s.value / total) - 2, 4))
                 }

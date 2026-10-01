@@ -188,8 +188,42 @@ enum DSLevel {
     }
 }
 
+/// 圆角矩形的**唯一构造点**。
+///
+/// ⚠️ 原来 9 处 `RoundedRectangle(` 里只有 `surface` 内部写了
+/// `style: .continuous`，其余 8 处用默认的 circular ——
+/// 于是同一张 Card（continuous）里嵌着的 Chip / 描边 / 彩色底（circular）
+/// 圆角**接缝对不上**。圆角值早就收敛到 DSRadius 三档了（§3.3），
+/// 但「渲染风格有两套」这件事没人管。
+///
+/// 连续曲率是 macOS 原生控件的做法，所以统一到 `.continuous`；
+/// 在这里集中一次，是为了让判据能查「不许再出现裸的 RoundedRectangle」。
+enum DSRect {
+    /// 返回**具体类型**而不是 `some View`：
+    /// 不透明类型进了 `.overlay { }` 这种 ViewBuilder 之后，
+    /// 编译器会崩在 "failed to produce diagnostic for expression"
+    /// （不是语法错误，是它推导不出来，害我以为是自己写错了）。
+    static func shape(_ radius: CGFloat) -> RoundedRectangle {
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
+    }
+}
+
 extension View {
     func surface(_ level: DSLevel = .card) -> some View {
-        background(level.fill, in: RoundedRectangle(cornerRadius: level.radius, style: .continuous))
+        background(level.fill, in: DSRect.shape(level.radius))
+    }
+
+    /// 语义着色表面。**刻意与 `surface` 分开**：
+    /// 这里的颜色本身携带语义（红底 = 出错 / 强调色 = AI 消息），
+    /// 收进中性 `surface` 就把「读不出来」和「确实没有」画成同一张卡
+    /// —— 与不变量 81「不知道与确实没有必须分开」是同一件事。
+    ///
+    /// ⚠️ 参数必须是泛型 `ShapeStyle` 而不是 `Color`：
+    /// `.quaternary` / `.secondary` / `.tertiary` 是 `HierarchicalShapeStyle`，
+    /// 不是 `Color`（`Color.quaternary` 编译不过）。写死 `Color` 就会逼着
+    /// 调用方把层级色硬转成 Color，白丢一层语义 —— 同一个坑在三元表达式里
+    /// 也踩过（`cond ? .secondary : .red` 两边类型不同族）。
+    func tinted<S: ShapeStyle>(_ color: S, radius: CGFloat = DSRadius.card) -> some View {
+        background(color, in: DSRect.shape(radius))
     }
 }

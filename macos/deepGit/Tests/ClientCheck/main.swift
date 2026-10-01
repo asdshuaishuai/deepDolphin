@@ -2248,6 +2248,37 @@ do {
         return "刻度值零字面量；待确认散值 \(pendingCount)/\(baseline)"
     }
 
+    check("圆角矩形只能有一个构造点，且必须是连续曲率（§3.3 圆角收敛的下一层）") {
+        // 圆角**值**早就收敛到 DSRadius 三档了，但 9 处 RoundedRectangle 里
+        // 只有 surface 内部写了 style: .continuous，其余 8 处用默认 circular ——
+        // 同一张 Card（continuous）里嵌着的 Chip / 描边 / 彩色底（circular）
+        // 圆角接缝对不上。判据卡「唯一构造点」，才盯得住风格不再分叉。
+        let re = try NSRegularExpression(pattern: "RoundedRectangle\\(")
+        var spots: [String] = []
+        for name in try allSourceFileNames() {
+            let code = try strippedCode(name)
+            let full = NSRange(code.startIndex..<code.endIndex, in: code)
+            for _ in re.matches(in: code, range: full) { spots.append(name) }
+        }
+        guard spots.count == 1, spots.first == "DesignSystem.swift" else {
+            throw fail("裸 RoundedRectangle 出现在 \(spots.count) 个位置：\(spots.joined(separator: ", "))\n" +
+                "      ⇒ 唯一构造点 DSRect.shape 之外又冒出来了，圆角风格会再次分叉")
+        }
+        let d = try strippedCode("DesignSystem.swift")
+        guard let f = slice(d, from: "static func shape(", to: "\n    }\n") else {
+            throw fail("切不出 DSRect.shape（结构变了？）")
+        }
+        guard f.contains("style: .continuous") else {
+            throw fail("唯一构造点没写 style: .continuous ⇒ 退回默认 circular，与 macOS 原生控件不一致")
+        }
+        // 语义着色必须能接层级色（.quaternary 是 HierarchicalShapeStyle，不是 Color）
+        guard d.contains("func tinted<S: ShapeStyle>") else {
+            throw fail("tinted 的参数不是泛型 ShapeStyle ⇒ 层级色（.quaternary/.secondary）传不进来，\n" +
+                "      调用方只好把层级色硬转成 Color，白丢一层语义")
+        }
+        return "1 个构造点 · 连续曲率 · 着色面支持层级色"
+    }
+
     check("卡片正好 12 条：不许造披露（cut 恒为 false 才是常态）") {
         let s = commitTypeCardSlice(entries: real)
         guard !s.cut, s.entries.count == 12, s.note == nil else {

@@ -52,7 +52,7 @@ struct ProjectDetailView: View {
                         .foregroundStyle(.red)
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: DSRadius.card))
+                        .tinted(.red.opacity(0.08))
                 }
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
                     Card(title: "工程脉搏") { pulseCard(p) }
@@ -320,10 +320,8 @@ struct ProjectDetailView: View {
                     .foregroundStyle(h.kind == "fast-forward" ? .green : .orange)
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        (h.kind == "fast-forward" ? Color.green : Color.orange).opacity(0.08),
-                        in: RoundedRectangle(cornerRadius: DSRadius.control)
-                    )
+                    .tinted((h.kind == "fast-forward" ? Color.green : Color.orange).opacity(0.08),
+                            radius: DSRadius.control)
             }
             HStack(spacing: DSSpacing.sm) {
                 Chip(text: "未提交 \(p.userDirtyCount)", tint: statTint(p.userDirtyCount))
@@ -572,7 +570,7 @@ struct ProjectDetailView: View {
                         .font(.caption2.weight(.medium))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: DSRadius.control))
+                        .tinted(.quaternary, radius: DSRadius.control)
                     Text(e.branch)
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
@@ -715,7 +713,7 @@ struct DashboardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 LinearGradient(colors: [.purple.opacity(0.12), .blue.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: RoundedRectangle(cornerRadius: DSRadius.card)
+                in: DSRect.shape(DSRadius.card)
             )
 
             // 统计卡
