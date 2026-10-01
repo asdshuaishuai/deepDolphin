@@ -169,9 +169,26 @@ Sources/deepGit/
 | 圆角统一到**连续曲率**（`DSRect.shape` 唯一构造点） | 9 处 `RoundedRectangle` 里只有 `surface` 内部写了 `style: .continuous`，其余 8 处是默认 circular ⇒ 同一张 Card 里 Chip / 描边 / 彩色底接缝对不上 | **这是视觉改动，未验证**：连续曲率是 macOS 原生控件的做法，方向确定，但实际观感要人眼看。另有 `.quaternary` 等层级色走 `tinted` 的泛型参数，抹掉颜色会把「出错」和「中性」画成同一张卡 |
 | 动效**保持极少**（全项目只有 1 处） | §3.3 要求「统一缓动与时长，遵循 macOS 观感（**不过度**）」—— 不加错动效比加动频更重要 | 那唯一一处（agent 新消息自动滚动）已从裸 `withAnimation`（SwiftUI 默认 0.25s / default 缓动）改为 `DSMotion.standard`（0.20s easeInOut）。判据卡住「不许新增裸动效」，所以以后加动效必须走 token |
 
+### 视觉验证：能自动验一部分了（`scripts/render-harness/`）
+
+`scripts/render-harness/run.sh` 会造沙箱项目、把真实视图**离屏渲染成 PNG** ——
+于是「视觉未验证」不再是永久待办。已用它确认：三态空态文案、EmptyState、
+卡片圆角与接缝、分段条配色、间距等值替换后的观感都没问题。
+
+**它验不了的**（每条都做过对照实验，细节见 `scripts/render-harness/main.swift` 顶部）：
+- 窗口 chrome 与**真实 toolbar** —— toolbar 由 `NSWindow` 承载，不是视图的一部分
+  ⇒ 顶栏双轨按钮在 1100 宽下挤不挤，仍需人眼
+- **按钮文字**：快照里 header 位置的按钮只画得出空白底（改成 `Label` 后依旧，
+  而同图 `gitOpButton` 正常 ⇒ 是位置/样式的离屏限制）
+- **个别行距**：header 的两行文字在快照里重叠，改 `spacing: 6`→`8` 后依旧
+  ⇒ 不是间距不够，是未挂窗口时行高算不准
+- 视图带 `.task` 取数副作用时（仪表盘），快照可能截到加载态
+
+所以它把「能自动验的那部分」从盲区里拿出来了，剩下的仍要人眼。
+
 ### 还没做的（需要人眼或需要授权）
 
-- **视觉渲染未验证**：顶栏新增了带文字的双轨按钮，1100 宽默认窗口下挤不挤得下，只能人眼看。
+- **顶栏双轨按钮**在 1100 宽默认窗口下挤不挤得下 —— 快照覆盖不到 toolbar。
 - **真机/真数据未跑**：本轮所有验证都在沙箱 `DEEPGIT_HOME=/tmp/...` 里做，
   `~/.deepgit/registry.json` 未动（保持 4710 字节 / sha `b61aaa5a…`）。
 

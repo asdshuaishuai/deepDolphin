@@ -315,20 +315,34 @@ struct DualTrackButtons: View {
             Button {
                 model.runUpdate(deep: false)
             } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "bolt.fill")
-                    Text(ScopeRules.shallowLabel(scope))
-                    // 只在真有东西时出现。恒显的 0 徽章会被无视，
-                    // 而「0」还容易被读成「引擎说不用更新」。
-                    if pending > 0 {
-                        Text("\(pending)")
-                            .font(.caption2.weight(.bold))
-                            .monospacedDigit()
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(DSColor.shallow, in: Capsule())
-                            .foregroundStyle(.white)
+                // ⚠️ 用 `Label { title } icon: { … }` 而不是裸 `HStack { Image; Text }`。
+                // 语义完全等价（图标在前、标题在后），而 `Label` 是 macOS 按钮的
+                // 语义化 label 通路，对 VoiceOver 更友好，项目里其它按钮
+                // （详情页的 gitOpButton）也是这么写的。
+                //
+                // ⚠️ 别把「离屏渲染快照里这个按钮只画得出空白底、画不出文字」
+                // 记到这次改动头上：我为此做过对照实验 —— 改成 `Label` 之后
+                // 快照里**仍然**是白框，而同一张图里 gitOpButton 的文字正常。
+                // 所以那是离屏环境对 header 位置按钮的已知限制
+                // （见 scripts/render-harness/main.swift 顶部的边界说明），
+                // 与 label 结构无关。要判断按钮对不对，得看真窗口。
+                Label {
+                    HStack(spacing: 5) {
+                        Text(ScopeRules.shallowLabel(scope))
+                        // 只在真有东西时出现。恒显的 0 徽章会被无视，
+                        // 而「0」还容易被读成「引擎说不用更新」。
+                        if pending > 0 {
+                            Text("\(pending)")
+                                .font(.caption2.weight(.bold))
+                                .monospacedDigit()
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(DSColor.shallow, in: Capsule())
+                                .foregroundStyle(.white)
+                        }
                     }
+                } icon: {
+                    Image(systemName: "bolt.fill")
                 }
             }
             .disabled(model.updateScopeBusy)
@@ -340,9 +354,10 @@ struct DualTrackButtons: View {
             Button {
                 model.runUpdate(deep: true)
             } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "wand.and.stars")
+                Label {
                     Text(ScopeRules.deepLabel(scope))
+                } icon: {
+                    Image(systemName: "wand.and.stars")
                 }
             }
             .disabled(model.updateScopeBusy)

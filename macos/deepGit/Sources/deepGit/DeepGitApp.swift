@@ -110,6 +110,10 @@ private final class DockMenuTarget: NSObject {
     }
 }
 
+// ⚠️ 离屏渲染 harness（scripts/render-harness/）要自己当 @main，
+// 于是这里整块用条件编译屏蔽。屏蔽的是 **@main 入口**，不是视图 ——
+// DeepGitPanel 在下面，harness 照样能用它渲染截图。
+#if !DEEPGIT_RENDER_HARNESS
 @main
 struct DeepGitApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -200,6 +204,8 @@ struct DeepGitApp: App {
         }
     }
 }
+
+#endif  // DEEPGIT_RENDER_HARNESS（只屏蔽 @main 入口，视图留在外面）
 
 /// 面板窗口根视图（处理深链参数 + 生命周期）
 struct DeepGitPanel: View {
