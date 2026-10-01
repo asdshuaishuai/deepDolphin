@@ -161,9 +161,31 @@ Sources/deepGit/
 | 代码结构清单**按磁盘重建** | 原清单 1 个文件不存在、18 个漏列 | 已加双向判据（`client-check.sh`），以后清单与磁盘不符会红 |
 | 文档区四态的**措辞由客户端定** | 引擎只给内容与 `unreadable` 列表，不给文案 | 判据卡的是「空与失败必须是两句不同的话」，不卡具体字词 —— 改文案不会红，改成同一句会红 |
 | stale 阈值**跟引擎，不在客户端自造** | 引擎是 3/14 天（`kernel/progress.cj`），客户端原来自造 30 天 | 引擎改阈值时客户端自动跟随；反过来客户端不许再推导 |
+| 颜色映射提到**视图层共享**（`DSColor.sequence`） | 原来 `commitTypeColor` 是 `ProjectDetailView` 的私有方法，`DashboardView` 里的语言卡够不着，只好自己内联 8 色 ⇒ 两套调色板 | 色板序列仍在纯函数层（`CommitTypeColor.palette`，可单测）；映射必须在视图层，因为 `Color` 属 SwiftUI，纯函数层不许 import |
+| spacing 只做**等值替换**（45 处） | 刻度值字面量与 token 同值不同源，改 token 时不跟着动（真缺陷） | 51 处散值**故意保留**：收进刻度是改布局，视觉未验证前不擅自做。见下方待确认清单 |
 
 ### 还没做的（需要人眼或需要授权）
 
 - **视觉渲染未验证**：顶栏新增了带文字的双轨按钮，1100 宽默认窗口下挤不挤得下，只能人眼看。
 - **真机/真数据未跑**：本轮所有验证都在沙箱 `DEEPGIT_HOME=/tmp/...` 里做，
   `~/.deepgit/registry.json` 未动（保持 4710 字节 / sha `b61aaa5a…`）。
+
+### 待人工确认：spacing 的 51 处散值
+
+刻度值（4/8/12/16/20/24）已全部换成 `DSSpacing` token（45 处，**零视觉变化**，
+因为数值本来就相等）。剩下 51 处**故意保留**：
+
+| 值 | 处数 | 涉及文件 |
+|---|---|---|
+| 10 | 13 | AIIntegration / AISettingsView / BoardView / Components / DetailViews / MilestonesView |
+| 14 | 8 | BoardView / DetailViews / PanelView |
+| 2 | 7 | BarView / Components / DetailViews / MarkdownView / MilestonesView |
+| 6 | 7 | AgentView / BarView / BoardView / DetailViews / PanelView |
+| 3 | 6 | DeepGitApp / DetailViews / MarkdownView / MilestonesView |
+| 5 | 6 | AIIntegration / BoardView / DetailViews |
+| 7 | 4 | BoardView / DetailViews / MarkdownView |
+
+**为什么不一刀切收进刻度**：那是**改布局**、不是重构。14→16 挤不挤、
+10 该变 8 还是 12，都得看着窗口才知道，而本项目至今没做过任何视觉验证 ——
+擅自收敛等于把猜测写进布局。判据把基线钉死在 51 处（`client-check.sh` 不许它增长），
+等有人真正看过窗口，再逐档收掉。通用判据见 `deepgit-engine` 的不变量 96。
