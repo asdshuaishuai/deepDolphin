@@ -7,48 +7,6 @@
 import Foundation
 import Security
 
-// MARK: - 消息与工具
-
-struct ChatMessage: Equatable {
-    var role: String           // system | user | assistant | tool
-    var text: String
-    /// assistant 原生工具调用（OpenAI 形状，Anthropic 侧转换）
-    var toolCalls: [ToolCallRequest]?
-    /// tool 角色消息的调用 id（OpenAI tool_call_id / Anthropic tool_use_id）
-    var toolCallID: String?
-
-    static func system(_ t: String) -> ChatMessage { ChatMessage(role: "system", text: t, toolCalls: nil, toolCallID: nil) }
-    static func user(_ t: String) -> ChatMessage { ChatMessage(role: "user", text: t, toolCalls: nil, toolCallID: nil) }
-    static func assistant(_ t: String) -> ChatMessage { ChatMessage(role: "assistant", text: t, toolCalls: nil, toolCallID: nil) }
-}
-
-struct ToolCallRequest: Equatable {
-    let id: String
-    let name: String
-    /// JSON 对象字符串
-    let argumentsJSON: String
-}
-
-struct ToolCallResponse: Equatable {
-    let id: String
-    let name: String
-    /// 已执行的结果文本
-    let content: String
-    let isError: Bool
-}
-
-struct ToolDefinition {
-    let name: String
-    let description: String
-    /// JSON Schema 对象（字符串键）
-    let parametersJSON: [String: Any]
-}
-
-struct GenerateTextResult {
-    let text: String
-    let toolCalls: [ToolCallRequest]
-}
-
 // MARK: - 配置
 
 struct AIConfig: Equatable {
@@ -106,34 +64,91 @@ struct AIConfig: Equatable {
         return c
     }
 
-    func save() {
+    /// 上次 `save()` 是否把 key 真正写进了 Keychain。
+    ///
+    /// 为什么要单独记：`isConfigured` 只看 `apiKey` 非空，
+    /// 而那个非空值是**用户刚输入的**——哪怕 Keychain 写失败了它也非空。
+    /// 于是设置页显示「已配置」、保存按钮照常成功、下次启动 key 消失。
+    /// 这个标志让 `keychainSaveFailed` 能把那次失败说出口。
+    /// nil = 还没保存过（不是「保存成功」也不是「失败」）。
+    static var keychainSaveFailed: Bool?
+
+    /// 保存。返回 nil 表示成功；非 nil 是给用户看的失败原因。
+    ///
+    /// 原来返回 `Void` 且完全不看 `SecItemAdd` 的返回码 ——
+    /// 「key 没存进去」这件事不留任何痕迹。
+    @discardableResult
+    func save() -> String? {
         Self.ud.set(providerID, forKey: "ai.providerID")
         Self.ud.set(model, forKey: "ai.model")
         Self.ud.set(baseURL, forKey: "ai.baseURL")
+        var problem: String?
         if apiKey.isEmpty {
-            Keychain.delete(service: Self.service, account: Self.keyAccount)
+            let st = Keychain.delete(service: Self.service, account: Self.keyAccount)
+            // -25300 = 本来就没有，清空是成功的
+            if st != errSecSuccess && st != errSecItemNotFound {
+                problem = "清除 Keychain 里的 key 失败（\(Keychain.describe(st))）"
+            }
+            Self.keychainSaveFailed = (problem == nil) ? false : true
         } else {
-            Keychain.set(apiKey, service: Self.service, account: Self.keyAccount)
+            let st = Keychain.set(apiKey, service: Self.service, account: Self.keyAccount)
+            if st != errSecSuccess {
+                problem = "key 没能存进 Keychain（\(Keychain.describe(st))）—— " +
+                    "设置会丢失，请重试或检查钥匙串权限"
+            }
+            Self.keychainSaveFailed = (st != errSecSuccess)
         }
         // 清掉 mock 自测可能残留的明文副本（否则清空 key 后 isConfigured 仍为 true）
         Self.ud.removeObject(forKey: "ai.apiKey")
+        if let problem { NSLog("deepgit: \(problem)") }
+        return problem
+    }
+}
+
+extension Keychain {
+    /// `OSStatus` 的人类可读形式（`-34018` 这种数字对用户毫无意义）。
+    static func describe(_ status: OSStatus) -> String {
+        let msg = SecCopyErrorMessageString(status, nil) as String? ?? "未知错误"
+        return "\(status) \(msg)"
     }
 }
 
 // MARK: - Keychain
 
+/// Keychain 读写。**每个函数都返回 `OSStatus`**，调用方必须检查。
+///
+/// ⚠️ 原来三个函数都返回 `Void`，`SecItemDelete` / `SecItemAdd` 的返回码
+/// 直接丢掉。于是「key 存不进去」这件事**没有任何痕迹**：
+/// `AIConfig.save()` 照常返回，设置页显示已保存，`isConfigured` 也是 true，
+/// 下次启动 `load()` 却读了个空 —— key 静默消失，用户只会觉得「这软件有 bug」。
+///
+/// 诚实说明：**我没能在当前构建配置下复现出活的写入失败**。
+/// 实测（2026-10-01，arm64 / ad-hoc 签名）CLI 与 .app bundle 两种形态
+/// `SecItemAdd` 都返回 0，跨进程 `SecItemCopyMatching` 也能读回。
+/// 所以这是**潜在**失效路径（keychain 被锁、条目 ACL 不匹配、
+/// 未来改成正式签名后 entitlement 变化），不是当前就咬人的 bug。
+/// 但丢弃返回码属于本项目最高发的那族缺陷（读不出来/没做成被报成做成了），
+/// 而且修起来是几行的事，不值得留着。
 enum Keychain {
-    static func set(_ value: String, service: String, account: String) {
-        guard let data = value.data(using: .utf8) else { return }
+    /// - Returns: `errSecSuccess` 表示成功；其余是 `OSStatus`（见 `SecCopyErrorMessageString`）。
+    @discardableResult
+    static func set(_ value: String, service: String, account: String) -> OSStatus {
+        guard let data = value.data(using: .utf8) else { return errSecParam }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        SecItemDelete(query as CFDictionary)
+        // 先删后加：同名条目已存在时 SecItemAdd 会返回 errSecDuplicateItem(-25299)。
+        // 删除失败要分情况：-25300（item not found）是正常的，
+        // 其它错误则意味着「旧条目可能还在」，此时直接 add 必然失败。
+        let delStatus = SecItemDelete(query as CFDictionary)
+        if delStatus != errSecSuccess && delStatus != errSecItemNotFound {
+            return delStatus
+        }
         var attrs = query
         attrs[kSecValueData as String] = data
-        SecItemAdd(attrs as CFDictionary, nil)
+        return SecItemAdd(attrs as CFDictionary, nil)
     }
 
     static func get(service: String, account: String) -> String? {
@@ -146,17 +161,39 @@ enum Keychain {
         ]
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
+        // 读失败和「没有 key」都返回 nil —— 调用方分不出这两种，
+        // 但这与写不同：读失败时用户本来也没有可用的 key，行为一致。
+        // 需要区分时看 `getDetailed`。
         guard status == errSecSuccess, let data = result as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
-    static func delete(service: String, account: String) {
+    /// 需要区分「没有」与「读失败」时用这个。
+    static func getDetailed(service: String, account: String) -> (value: String?, status: OSStatus) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess else { return (nil, status) }
+        guard let data = result as? Data, let s = String(data: data, encoding: .utf8) else {
+            return (nil, errSecDecode)
+        }
+        return (s, status)
+    }
+
+    @discardableResult
+    static func delete(service: String, account: String) -> OSStatus {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        SecItemDelete(query as CFDictionary)
+        return SecItemDelete(query as CFDictionary)
     }
 }
 
@@ -369,14 +406,28 @@ struct LanguageModel {
             req.setValue(v, forHTTPHeaderField: k)
         }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse else {
-            throw EngineError.failed("AI 响应异常")
+        // ⚠️ 网络错误必须**包一层**再抛出去。
+        //
+        // 原来 `URLError` 裸传，而六个调用点全都用 `error.localizedDescription`
+        // —— 于是用户在中文界面里看到的是
+        //     "Could not connect to the server."
+        // 英文、且不告诉他**哪一部分**错了。而这恰恰发生在「测试连接」上：
+        // 用户刚填完 baseURL 想知道对不对，这句话没用。
+        //
+        // 包一层而不是让每个调用点多传参数：漏传一处，那个出口就退回英文。
+        // 让错误自己带着"试的是哪个地址"，`localizedDescription` 在任何地方都自动是好的。
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard let http = resp as? HTTPURLResponse else {
+                throw EngineError.failed("AI 响应异常")
+            }
+            guard http.statusCode == 200 else {
+                let text = String(data: data, encoding: .utf8) ?? ""
+                throw EngineError.failed("AI 调用失败（HTTP \(http.statusCode)）：\(Self.redacted(text).prefix(300))")
+            }
+            return data
+        } catch {
+            throw AIChannelError(underlying: error, attemptedURL: url.absoluteString)
         }
-        guard http.statusCode == 200 else {
-            let text = String(data: data, encoding: .utf8) ?? ""
-            throw EngineError.failed("AI 调用失败（HTTP \(http.statusCode)）：\(Self.redacted(text).prefix(300))")
-        }
-        return data
     }
 }

@@ -29,6 +29,8 @@ struct GeneralSettingsView: View {
 struct LoginItemCard: View {
     @State private var enabled = false
     @State private var loaded = false
+    /// 设置没生效时的说明（回滚原因）
+    @State private var note: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -37,21 +39,37 @@ struct LoginItemCard: View {
             if #available(macOS 13.0, *) {
                 Toggle("登录时自动启动 deepGit", isOn: $enabled)
                     .onChange(of: enabled) { on in
-                        LoginItem.shared.setEnabled(on)
+                        if #available(macOS 13.0, *) {
+                            LoginItem.shared.setEnabled(on)
+                        }
                     }
                 Text("通过系统「登录项」注册；菜单栏速览与面板随登录可用。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                // ⚠️ 原来没有这一段：注册/注销失败只 NSLog 一句，
+                // Toggle 仍停在用户点的那一侧 —— **开关说自己知道是假的话**。
+                // 用户只能靠重启去发现它压根没生效。
+                if let note {
+                    Label(note, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+        .surface()
         .onAppear {
             guard !loaded else { return }
             loaded = true
             if #available(macOS 13.0, *) {
                 enabled = LoginItem.shared.isEnabled
+                // 订阅回滚：系统状态与请求不一致时，把 Toggle 拨回**系统的真实状态**
+                LoginItem.shared.onLoginItemMismatch = { actual, reason in
+                    enabled = actual
+                    note = reason
+                }
             }
         }
     }
@@ -83,7 +101,7 @@ struct ScheduleCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+        .surface()
     }
 }
 
@@ -117,6 +135,11 @@ struct AISettingsView: View {
         VStack(spacing: 0) {
             Form {
                 Section("Provider（models.dev 目录 · \(ModelCatalog.shared.providers.count) 家）") {
+                    // ⚠️ 标题里的 225 与列表里的 40 讲的是**不同的集合**（缺陷 #209）：
+                    // 目录 225 家里只有 199 家有可用端点，列表只列前 40 家。
+                    // 原来标题零限定词 ⇒ 读成「225 家里随便挑」，而 provider 栏
+                    // 又没有过滤框（只有模型栏有），于是那 159 家用户根本选不到。
+                    let coverage = ModelCatalog.shared.providerPickerCoverage
                     Picker("Provider", selection: $providerID) {
                         ForEach(ModelCatalog.shared.popularProviders(), id: \.id) { p in
                             Text("\(p.name) (\(p.id))").tag(p.id)
@@ -126,6 +149,14 @@ struct AISettingsView: View {
                         }
                     }
                     .onChange(of: providerID) { _ in providerChanged() }
+                    // 披露恒发：哪怕没被砍（比如目录只有 12 家有端点），
+                    // 也不许把「这个数字是什么口径」留给读者猜。
+                    if let note = coverage.note {
+                        Text(note)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
                     LabeledContent("端点") {
                         Text(baseURL.isEmpty ? "（空 — 将在测试时报错）" : baseURL)
@@ -266,7 +297,15 @@ struct AISettingsView: View {
     }
 
     private func save() {
-        draft().save()
+        // ⚠️ 原来是无条件 `draft().save(); close()` ——
+        // 保存完立刻关窗，**任何失败都被关在窗后面**。
+        // 现在 save() 会返回失败原因（Keychain 写不进去就是其中一种），
+        // 失败时**不关窗**，把原因摆在用户面前让他重试。
+        // 静默关窗的成功假象，正是这个项目反复在修的那族缺陷。
+        if let problem = draft().save() {
+            testResult = (false, problem)
+            return
+        }
         close()
     }
 }

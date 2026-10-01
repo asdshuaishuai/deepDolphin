@@ -97,7 +97,7 @@ struct BoardColumnView: View {
             }
         }
         .padding(10)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 11))
+        .surface()
     }
 }
 
@@ -138,6 +138,15 @@ struct BoardCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
 
+                // 卡片上也要显示 warnings：这里正是"0 个提交"最容易被当成事实的地方
+                // （列表一眼扫过去，谁会去点开详情）。
+                ForEach(project.warnings, id: \.self) { w in
+                    Label(w, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .lineLimit(2)
+                }
+
                 HStack(spacing: 5) {
                     if project.userDirtyCount > 0 { Chip(text: "●\(project.userDirtyCount)", tint: .orange) }
                     if project.untrackedCount > 0 { Chip(text: "未跟踪 \(project.untrackedCount)", tint: .orange) }
@@ -152,13 +161,14 @@ struct BoardCard: View {
 
             HStack(spacing: 8) {
                 Button {
-                    Task { await model.update(project, deep: false) }
+                    model.startUpdate(project, deep: false)
                 } label: {
                     Image(systemName: "arrow.down.circle")
                         .font(.caption)
                 }
                 .buttonStyle(.borderless)
                 .help("浅更新")
+                .accessibilityLabel(A11y.label("浅更新"))
                 .disabled(model.busyProject == project.name || model.busyAll)
 
                 Button {
@@ -169,6 +179,7 @@ struct BoardCard: View {
                 }
                 .buttonStyle(.borderless)
                 .help("AI 项目说明")
+                .accessibilityLabel(A11y.label("AI 项目说明"))
                 .disabled(briefBusy)
 
                 Spacer()
@@ -181,15 +192,15 @@ struct BoardCard: View {
             }
         }
         .padding(11)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 11))
+        .surface()
         .overlay(
-            RoundedRectangle(cornerRadius: 11)
+            RoundedRectangle(cornerRadius: DSRadius.card)
                 .stroke(tint.opacity(0.25), lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onTapGesture {
             Task {
-                model.selection = .project(project.name)
+                model.go(.project(project.name))
                 openWindow(id: "panel")
                 await model.loadProject(project.name)
             }
@@ -214,7 +225,7 @@ struct BoardCard: View {
             do {
                 briefText = try await model.projectBrief(for: project)
             } catch {
-                briefError = error.localizedDescription
+                briefError = EngineError.userMessage(for: error)
             }
             briefBusy = false
         }

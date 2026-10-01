@@ -7,7 +7,8 @@
 //   .commands                中文菜单（操作/窗口）
 //
 // 深链：--project <名称> / --section milestones|board|dashboard
-// 【边界】纯客户端：数据全走引擎 HTTP API。
+// 【边界】纯客户端：数据全走引擎 CLI 子进程（EngineCLI），不走网络。
+// ⚠️ 原文写的是「数据全走引擎 HTTP API」—— 那条路已随 HTTP 服务端整体删除。
 import SwiftUI
 import AppKit
 import UserNotifications
@@ -56,15 +57,43 @@ struct DeepGitApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandMenu("操作") {
+                // 双轨动作在这里也有一份 —— 菜单项是 macOS 的惯例入口，
+                // 而且 ⇧⌘U / ⌥⇧⌘D 挂在这里**一定有效**（挂在 toolbar 按钮上
+                // 虽然也合法，但那是另一套分发路径，不拿它赌）。
+                // 两条调的都是 `model.runUpdate(deep:)`，
+                // 所以范围、确认框、忙碌判定与顶栏按钮**完全一致**。
+                //
+                // ⚠️ ⌥⇧⌘D 此前**声明了却从来没绑定**：ShortcutMap.deep 写在表里、
+                //    冲突检查也把它算进去，但没有一处 keyboardShortcut 用它 ——
+                //    于是 §3.2 要求的「⌥⇧⌘D 深更新」是不存在的功能。
+                //    绑了才算数。
+                Button(ScopeRules.shallowLabel(model.updateScope)) {
+                    model.runUpdate(deep: false)
+                }
+                .keyboardShortcut(ShortcutMap.shallow.keyEquivalentSwiftUI, modifiers: ShortcutMap.shallow.modifiersSwiftUI)
+                .disabled(model.updateScopeBusy)
+
+                Button(ScopeRules.deepLabel(model.updateScope)) {
+                    model.runUpdate(deep: true)
+                }
+                .keyboardShortcut(ShortcutMap.deep.keyEquivalentSwiftUI, modifiers: ShortcutMap.deep.modifiersSwiftUI)
+                .disabled(model.updateScopeBusy)
+
+                Divider()
+
                 Button("刷新") {
                     Task { await model.refreshAll() }
                 }
-                .keyboardShortcut("r")
-                Divider()
-                Button("全部浅更新") {
-                    Task { await model.updateAll(deep: false) }
+                .keyboardShortcut(ShortcutMap.refresh.keyEquivalentSwiftUI, modifiers: ShortcutMap.refresh.modifiersSwiftUI)
+
+                // 停止：不加这个，批量更新一旦开始就只能等 15 分钟。
+                // 它终止的是**引擎子进程**，不是只取消 Swift 侧的 Task
+                // —— 后者对 Task.detached 里的阻塞调用无效（见 EngineCLI 注释）。
+                Button("停止更新") {
+                    model.stopUpdate()
                 }
-                .keyboardShortcut("u", modifiers: [.command, .shift])
+                .keyboardShortcut(ShortcutMap.stop.keyEquivalentSwiftUI, modifiers: ShortcutMap.stop.modifiersSwiftUI)
+                .disabled(!model.canStopUpdate)
             }
         }
 
@@ -108,32 +137,54 @@ struct DeepGitPanel: View {
         PanelView()
             .onAppear {
                 Notifier.shared.setUp()
-                Task { await model.start() }
+                // ⚠️ 原来这里还有 `Task { await model.start() }`，
+                // 而 PanelView 的 `.task` 也调 start() —— 首次打开跑两遍全量刷新。
+                // 加载与定时器的归属权交给 PanelView（唯一入口）。
                 handleLaunchArgs()
             }
             .onReceive(NotificationCenter.default.publisher(for: .openPanelRequest)) { _ in
                 openPanel(id: "panel")
             }
+            // 菜单栏「全部浅更新」从这里弹确认：那条路是 CommandMenu（不是 View），
+            // 挂不上 .confirmationDialog，所以由主面板代为呈现。
+            .confirmationDialog(
+                model.pendingBulkUpdate.map { "全部\($0.label)？" } ?? "",
+                isPresented: Binding(
+                    get: { model.pendingBulkUpdate != nil },
+                    set: { if !$0 { model.pendingBulkUpdate = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let track = model.pendingBulkUpdate {
+                    Button(DestructiveGuard.confirmTitle(for: .bulkUpdate)) {
+                        model.startUpdateAll(deep: track == .deep)
+                        model.pendingBulkUpdate = nil
+                    }
+                }
+                Button("取消", role: .cancel) { model.pendingBulkUpdate = nil }
+            } message: {
+                Text(model.pendingBulkUpdate.map {
+                    DestructiveGuard.bulkUpdateMessage(projectCount: model.projects.count, track: $0)
+                } ?? "")
+            }
     }
 
     private func handleLaunchArgs() {
-        let args = ProcessInfo.processInfo.arguments
-        guard args.contains("--open-panel") || args.contains("--open-settings") else { return }
-        if let i = args.firstIndex(of: "--project"), i + 1 < args.count {
-            model.selection = .project(args[i + 1])
-        } else if let i = args.firstIndex(of: "--section"), i + 1 < args.count {
-            switch args[i + 1] {
-            case "milestones": model.selection = .milestones
-            case "board": model.selection = .board
-            default: model.selection = .dashboard
-            }
+        // 解析与判定都在纯函数层（Route.swift / Router.swift）：
+        // 深链是纯字符串处理，不该只能靠「手动敲一次命令试试」来验证。
+        let intent = Route.parse(ProcessInfo.processInfo.arguments)
+        model.launchIntent = intent
+
+        if let route = intent.route {
+            // 走 go(_:) 而不是直接赋值 —— 跳到一个不存在的项目要被 Router 拦下，
+            // 而项目列表此刻通常还没加载完，Router 会先记下、加载完再判。
+            model.go(route)
         }
-        if args.contains("--open-settings") {
+        if intent.openSettings {
             model.showAISettings = true
         }
         // 无头 agent 自测（README 文档化；mock provider 配 defaults 即可全链路验证）
-        if let i = args.firstIndex(of: "--agent-selftest") {
-            let question = (i + 1 < args.count) ? args[i + 1] : "总结一下项目群现状"
+        if let question = intent.agentSelfTest {
             Task {
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
                 do {

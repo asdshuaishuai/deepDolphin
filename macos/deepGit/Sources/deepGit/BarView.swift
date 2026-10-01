@@ -7,6 +7,12 @@ struct BarView: View {
     @Environment(\.openWindow) private var openWindow
     @EnvironmentObject var model: AppModel
 
+    /// 待确认的批量更新。nil = 没在等确认。
+    ///
+    /// 批量更新会改写**多个仓库**的托管区域，所以先说清范围再动手。
+    /// 它不是不可逆的（每个文件都留备份），所以确认框是告知式的，不染红。
+    @State private var pendingBulk: DSSyncTrack?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -54,6 +60,7 @@ struct BarView: View {
             }
             .buttonStyle(.borderless)
             .help("刷新")
+            .accessibilityLabel(A11y.label("刷新"))
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
@@ -142,7 +149,7 @@ struct BarView: View {
             .controlSize(.small)
 
             Button {
-                Task { await model.updateAll(deep: false) }
+                pendingBulk = .shallow
             } label: {
                 if model.busyAll {
                     ProgressView().controlSize(.mini)
@@ -162,12 +169,33 @@ struct BarView: View {
             }
             .buttonStyle(.borderless)
             .help("完全退出")
+            .accessibilityLabel(A11y.label("完全退出"))
         }
         .padding(.horizontal, 12)
+        .confirmationDialog(
+            pendingBulk.map { "全部\($0.label)？" } ?? "",
+            isPresented: Binding(
+                get: { pendingBulk != nil },
+                set: { if !$0 { pendingBulk = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let track = pendingBulk {
+                Button(DestructiveGuard.confirmTitle(for: .bulkUpdate)) {
+                    model.startUpdateAll(deep: track == .deep)
+                    pendingBulk = nil
+                }
+            }
+            Button("取消", role: .cancel) { pendingBulk = nil }
+        } message: {
+            Text(pendingBulk.map {
+                DestructiveGuard.bulkUpdateMessage(projectCount: model.projects.count, track: $0)
+            } ?? "")
+        }
     }
 
     private func openMainPanel(section: RootSection) {
-        model.selection = section
+        model.go(section)
         openWindow(id: "panel")
     }
 }
@@ -184,7 +212,7 @@ struct MenuProjectRow: View {
 
     var body: some View {
         Button {
-            model.selection = .project(project.name)
+            model.go(.project(project.name))
             openWindow(id: "panel")
             Task { await model.loadProject(project.name) }
         } label: {
@@ -192,7 +220,7 @@ struct MenuProjectRow: View {
                 if project.error != nil {
                     Image(systemName: "exclamationmark.circle.fill")
                         .foregroundStyle(.red)
-                        .font(.system(size: 9))
+                        .font(.caption2)
                 } else if let b = currentBranch {
                     StatusDot(status: b.status)
                 } else {
@@ -202,7 +230,7 @@ struct MenuProjectRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(project.name)
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.subheadline)
                             .lineLimit(1)
                         if project.userDirtyCount > 0 {
                             Chip(text: "●\(project.userDirtyCount)", tint: .orange)

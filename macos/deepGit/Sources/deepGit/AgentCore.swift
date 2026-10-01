@@ -1,7 +1,7 @@
 // AgentCore.swift — 无 UI 的 agent 执行核心（AI 层的可复用部分）。
 //
 // 使用方：AgentView（对话）、浅/深更新的 AI 摘要、一键项目说明、定时更新的 AI 简报。
-// 引擎是 AI 无关内核：这里拉上下文包（/api/context）与工具清单（/api/tools），
+// 引擎是 AI 无关内核：这里拉上下文包（deepgit context --json）与工具清单（deepgit tools --json），
 // 组 prompt 后经 ai-sdk 通道（LanguageModel）执行原生工具循环。
 import Foundation
 
@@ -28,7 +28,7 @@ enum AgentTarget: Equatable, Hashable {
 enum AgentCore {
     /// GET 原始数据
     static func rawGet(_ path: String, query: [String: String]) async throws -> Data {
-        // 进程内通信：通过 CLI 子进程获取数据
+        // 本机进程间通信：通过 CLI 子进程获取数据（不是链接进引擎的 FFI，见 AGENTS.md 不变量 58）
         if path == "api/context" {
             let scope = query["scope"] ?? "group"
             let name = query["name"] ?? ""
@@ -44,7 +44,7 @@ enum AgentCore {
         throw EngineError.failed("未知路径：\(path)")
     }
 
-    /// 引擎 /api/tools → ai-sdk 工具定义
+    /// 引擎 tools --json → ai-sdk 工具定义
     static func engineToolDefinitions() async -> [ToolDefinition] {
         guard let data = try? await rawGet("api/tools", query: [:]),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -67,17 +67,34 @@ enum AgentCore {
         }
     }
 
-    /// 工具执行（引擎 HTTP API）。返回 (ok, 结果文本)
-    static func executeTool(_ name: String, params: [String: Any]) async -> (Bool, String) {
+    /// 工具执行（本机进程间：CLI 子进程）。返回 (ok, 结果文本)
+    static func executeTool(
+        _ name: String,
+        params: [String: Any],
+        parametersJSONByName: [String: String]
+    ) async -> (Bool, String) {
+        // ⚠️ 必填校验放在**执行点内部**，不是调用方（缺陷 NC31 的收口）。
+        // 空项目名在引擎侧等于「整个项目群」，实测会改写所有项目的 README；
+        // 放在调用方的话，将来多一个调用点就绕过去了。
+        // 必填清单只有一个来源：已经发给模型的那份 required。
+        let required = ToolArgs.required(parametersJSONByName: parametersJSONByName, tool: name)
+        let absent = ToolArgs.missing(params: params, required: required)
+        if !absent.isEmpty {
+            return (false, ToolArgs.missingMessage(tool: name, missing: absent))
+        }
         func str(_ key: String) -> String { params[key] as? String ?? "" }
         do {
             switch name {
             case "get_group_context":
                 let data = try await rawGet("api/context", query: ["scope": "group", "budget": "8000"])
-                return (true, String(data: data, encoding: .utf8) ?? "")
+                return (true, ContextEnvelope.decode(data).context)
             case "get_project_context":
+                // ⚠️ 原来这里把整个 JSON 信封原样交给模型（#191）：
+                // `{"scope":"project","budget":8000,"context":"# deepGit…\n…"}`
+                // 系统提示词那条路交的是 markdown，引擎自己的 MCP 工具回的也是裸 markdown
+                // —— 同名工具三种形状，模型读到的第一行是 `{"scope":`。
                 let data = try await rawGet("api/context", query: ["scope": "project", "name": str("name"), "budget": "8000"])
-                return (true, String(data: data, encoding: .utf8) ?? "")
+                return (true, ContextEnvelope.decode(data).context)
             case "get_project_docs":
                 let data = try await EngineCLI.shared.runData(["docs", str("name"), "--json"], timeout: 60)
                 return (true, String(data: data, encoding: .utf8) ?? "")
@@ -106,7 +123,7 @@ enum AgentCore {
                 return (false, "未知工具：\(name)")
             }
         } catch {
-            return (false, error.localizedDescription)
+            return (false, EngineError.userMessage(for: error))
         }
     }
 
@@ -119,16 +136,66 @@ enum AgentCore {
         maxRounds: Int = 4,
         onEvent: ((String) -> Void)? = nil
     ) async throws -> String {
+        // 无状态入口：走多轮版本（history 传空），再取最后一条 assistant 文本。
+        // 与原实现的返回值等价：正常收尾时最后一条 assistant 就是 result.text，
+        // 撞轮次上限时是 partial。
+        let convo = try await run(question: question,
+                                  target: target,
+                                  history: [],
+                                  config: config,
+                                  maxRounds: maxRounds,
+                                  onEvent: onEvent)
+        return convo.last(where: { $0.role == "assistant" })?.text ?? ""
+    }
+
+    /// 多轮版本：把已有历史接在问题前面，返回**追加后**的完整历史。
+    ///
+    /// ⚠️ 原来只有上面那个 `run`，它每次都从
+    /// `var convo = [ChatMessage.user(question)]` 零起步 —— 于是
+    /// 所谓"对话"其实是一串互不相干的一次性提问，模型看不见上一轮。
+    /// 「那刚才那个项目后来怎么样了」这类追问必然落空，而且失败得很安静：
+    /// 模型会拿第一轮的上下文硬答，答得还挺像回事。
+    ///
+    /// 返回新数组而不是就地改：调用方（视图模型）要把结果存进 @State，
+    /// 而 AgentCore 是无状态的，不该替谁改状态。
+    @discardableResult
+    static func run(
+        question: String,
+        target: AgentTarget,
+        history: [ChatMessage],
+        config: AIConfig? = nil,
+        maxRounds: Int = 4,
+        onEvent: ((String) -> Void)? = nil
+    ) async throws -> [ChatMessage] {
         let cfg = config ?? AIConfig.load()
         guard cfg.isConfigured else {
             throw EngineError.failed("AI 未配置：请在 AI 设置里选择 provider 并填写 API Key")
         }
         let ctxData = try await rawGet(target.scopePath, query: target.scopeQuery)
+        // 畸形 JSON 仍然 `try` 抛错（这是对的：引擎二进制坏了就该硬失败，
+        // 而不是拿一段说明文字冒充上下文）。
+        // 但「JSON 合法、context 键缺失」原来落到 `?? ""`，
+        // 空上下文会被模型读成「这个项目群什么都没有」。
+        // 「没解出来」与「没有」必须分开 —— 与工具那条路共用同一个判定。
         let ctxObj = try JSONSerialization.jsonObject(with: ctxData) as? [String: Any]
-        let context = ctxObj?["context"] as? String ?? ""
+        let decoded = ContextEnvelope.decode(ctxData)
+        let context = decoded.note.map { $0 + "\n\n" + decoded.context } ?? decoded.context
+        _ = ctxObj
         let toolsData = try await rawGet("api/tools", query: [:])
         let toolsText = String(data: toolsData, encoding: .utf8) ?? "{}"
         let toolDefs = await engineToolDefinitions()
+        // 必填参数**只从这一份取**：就是已经发给模型的那份工具定义。
+        // 执行端照模型看到过的契约执行，不另抄一份（抄两份必然漂移）。
+        let paramsByTool: [String: String] = {
+            var m: [String: String] = [:]
+            for d in toolDefs {
+                if let data = try? JSONSerialization.data(withJSONObject: d.parametersJSON),
+                   let s = String(data: data, encoding: .utf8) {
+                    m[d.name] = s
+                }
+            }
+            return m
+        }()
 
         let scopeLine = "scope: \(target.label)"
         let system = """
@@ -147,24 +214,78 @@ enum AgentCore {
 
         let fullSystem = system + "\n\n## 当前范围事实（引擎生成）\n\n" + context
         let model = LanguageModel(config: cfg)
-        var convo: [ChatMessage] = [ChatMessage.user(question)]
+
+        // 历史 + 本轮提问。历史先裁一刀，否则聊几轮就撞上模型的上下文上限，
+        // 报一个和"你问题太长"长得一样的错。
+        // 拼对话这一步抽在 Conversation.seed —— 「历史会不会被丢」因此可测。
+        // 内联在这里时，lint 只能查到某一种写法，换个写法缺陷就溜过去了。
+        var convo = Conversation.seed(history: history, question: question)
 
         for round in 1...maxRounds {
             let result = try await model.generateText(system: fullSystem, messages: convo, tools: toolDefs)
             if result.toolCalls.isEmpty {
-                return result.text
+                convo.append(ChatMessage.assistant(result.text))
+                return convo
             }
             convo.append(ChatMessage(role: "assistant", text: result.text, toolCalls: result.toolCalls, toolCallID: nil))
             for call in result.toolCalls {
                 onEvent?("🔧 \(call.name)")
-                let params = (try? JSONSerialization.jsonObject(with: Data(call.argumentsJSON.utf8))) as? [String: Any] ?? [:]
-                let (ok, out) = await executeTool(call.name, params: params)
-                let clipped = out.count > 16000 ? String(out.prefix(16000)) + "\n…(截断)" : out
+                // ⚠️ 畸形参数必须在**执行之前**拦下（缺陷 NC31）。
+                // 原来这里写的是
+                //   `(try? JSONSerialization.jsonObject(...)) as? [String: Any] ?? [:]`
+                // 畸形 JSON 被吞成「没有参数」，而「没有 name」在客户端会变成
+                // 空位置参数 `["update", "", …]`，引擎又把它等同于「整个项目群」——
+                // 实测一次畸形的模型响应就会改写所有项目的 README，界面还显示 ✓ 成功。
+                //
+                // 拦住之后**不执行**，只把原因回报给模型让它重试：
+                // 报「执行失败」会诱使模型放弃或编造参数，报清楚才能重试。
+                let params: [String: Any]
+                switch ToolArgs.decode(call.argumentsJSON) {
+                case .malformed(let raw):
+                    let why = ToolArgs.malformedMessage(tool: call.name, raw: raw)
+                    onEvent?("   ✗ \(call.name)：参数非法，未执行")
+                    // isError 必须显式打：界面靠它决定显不显示，
+                    // 靠文案里有没有「执行失败」四个字判断过一次就漏过路径。
+                    convo.append(ChatMessage.tool(why, callID: call.id, isError: true))
+                    continue
+                case .object(let obj):
+                    params = obj
+                }
+
+                // 必填参数由 executeTool **在执行点内部**校验（见那里的注释），
+                // 这样将来多一个调用点也绕不过去。这里只负责畸形 JSON 的拦截，
+                // 因为它发生在 params 存在之前。
+                let (ok, out) = await executeTool(
+                    call.name, params: params, parametersJSONByName: paramsByTool)
+                // ⚠️ 引擎的截断披露写在**结尾**（#191）。从头部切 16000 会把
+                // 引擎那行披露一起切掉，于是模型看到一段「看起来完整、其实缺尾巴」
+                // 的上下文。客户端自己切的这刀必须自报家门。
+                let clipped = out.count > 16000
+                    ? String(out.prefix(16000)) + clientClipNote(out.count, 16000)
+                    : out
                 onEvent?("   \(ok ? "✓" : "✗") \(call.name)")
-                convo.append(ChatMessage(role: "tool", text: "工具 \(call.name) 执行\(ok ? "成功" : "失败")：\n\(clipped)", toolCalls: nil, toolCallID: call.id))
+                convo.append(ChatMessage.tool(
+                    "工具 \(call.name) 执行\(ok ? "成功" : "失败")：\n\(clipped)",
+                    callID: call.id, isError: !ok))
             }
             if round == maxRounds {
-                throw EngineError.failed("已达工具调用轮次上限（\(maxRounds)）")
+                // ⚠️ 这里**不能**抛错丢掉这一轮：工具已经在上面执行完了。
+                // 判定在 AgentOutcome（独立文件、纯函数、可被 AgentCheck 直接编译测试）：
+                // 原来只看「有没有文本」，于是「文本空 + 工具已执行」被判成真空 → throw，
+                // 而 run_shallow_update / git_commit 的副作用**早已发生** ——
+                // 界面显示「失败」、工具输出与历史全丢，用户重试就重复执行一次（缺陷 NC30）。
+                // 只有「文本真空 **且** 这一轮没跑过工具」才该抛错，那时抛错才是诚实说法。
+                switch AgentOutcome.finish(
+                    text: result.text,
+                    executedTools: result.toolCalls.map(\.name),
+                    maxRounds: maxRounds
+                ) {
+                case .final(let message):
+                    convo.append(ChatMessage.assistant(message))
+                    return convo
+                case .failed:
+                    throw EngineError.failed("已达工具调用轮次上限（\(maxRounds)），且模型未产出任何文本")
+                }
             }
         }
         throw EngineError.failed("agent 循环异常退出")

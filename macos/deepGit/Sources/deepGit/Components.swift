@@ -8,16 +8,14 @@ struct StatusDot: View {
         Circle()
             .fill(color)
             .frame(width: 8, height: 8)
+            // 8pt 的点没有文字替代，VoiceOver 只能靠标签
+            .accessibilityElement()
+            .accessibilityLabel("状态")
+            .accessibilityValue(DSStatus.from(status).label)
     }
 
     private var color: Color {
-        switch status {
-        case "active": return .green
-        case "idle": return .yellow
-        case "stale": return .red
-        case "merged": return .purple
-        default: return .secondary
-        }
+        DSColor.color(DSStatus.from(status))
     }
 }
 
@@ -29,10 +27,10 @@ struct StatCard: View {
     var icon: String = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: DSSpacing.xs) {
             HStack {
                 Text(value)
-                    .font(.system(.title2, design: .rounded).weight(.semibold))
+                    .font(DSTypography.metric)
                     .foregroundStyle(tint)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
@@ -40,16 +38,16 @@ struct StatCard: View {
                 if !icon.isEmpty {
                     Image(systemName: icon)
                         .foregroundStyle(tint.opacity(0.55))
-                        .font(.system(size: 13))
+                        .font(DSTypography.label)
                 }
             }
             Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(DSTypography.label)
+                .foregroundStyle(DSColor.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+        .padding(DSSpacing.md)
+        .surface()
     }
 }
 
@@ -69,7 +67,7 @@ struct SegmentedBar: View {
         GeometryReader { geo in
             HStack(spacing: 2) {
                 ForEach(segments) { s in
-                    RoundedRectangle(cornerRadius: 3)
+                    RoundedRectangle(cornerRadius: DSRadius.chip)
                         .fill(s.color)
                         .frame(width: max(geo.size.width * (s.value / total) - 2, 4))
                 }
@@ -102,13 +100,13 @@ struct Card<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(DSTypography.cardTitle)
+                .foregroundStyle(DSColor.textSecondary)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+        .padding(DSSpacing.md)
+        .surface()
     }
 }
 
@@ -119,25 +117,28 @@ struct EmptyState: View {
     var subtitle: String = ""
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: DSSpacing.sm) {
             Image(systemName: icon)
-                .font(.system(size: 36))
+                .font(.largeTitle)
                 .foregroundStyle(.tertiary)
             Text(title)
                 .font(.headline)
                 .foregroundStyle(.secondary)
             if !subtitle.isEmpty {
                 Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .font(DSTypography.label)
+                    .foregroundStyle(DSColor.textTertiary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-/// 数值颜色
+/// 数值颜色。
+///
+/// 【行为已改】原来是「任何 n>0 都橙」——1 个未提交文件和 300 个同色，等于没分级。
+/// 现在按量级分四档，负数（数据本身有问题）按最严重处理，宁可说「要处理」也不说「干净」。
+/// 判据在 Tests/ClientCheck 的「数值必须按量级分档」那条。
 func statTint(_ n: Int) -> Color {
-    if n > 0 { return .orange }
-    return .primary
+    DSColor.color(DSStat.from(n))
 }

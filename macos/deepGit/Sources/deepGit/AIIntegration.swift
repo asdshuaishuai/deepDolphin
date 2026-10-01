@@ -34,6 +34,7 @@ struct AIResultSheet: View {
                     }
                     .buttonStyle(.borderless)
                     .help("复制 Markdown")
+                    .accessibilityLabel(A11y.label("复制 Markdown"))
                 }
                 if let regen = onRegenerate, !busy {
                     Button {
@@ -43,7 +44,25 @@ struct AIResultSheet: View {
                     }
                     .buttonStyle(.borderless)
                     .help("重新生成")
+                    .accessibilityLabel(A11y.label("重新生成"))
                 }
+                // ⚠️ 原来**没有关闭按钮**，而 `dismiss` 声明了却一次都没用。
+                // macOS 的 sheet 是贴在窗口上的，没有窗口红点可点，
+                // 于是这个 620×560 的模态只能靠 Esc —— 而它也没绑 cancelAction。
+                // 结论是「AI 结果一出来就出不去」，得重启 app。
+                //
+                // 这跟之前修的那族缺陷同源：**声明了能力却没接上**，
+                // 编译器不会报，代码评审也看不出来（`dismiss` 在不在，
+                // 看起来都只是个 Environment 属性）。
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut(.cancelAction)
+                .help("关闭")
+                .accessibilityLabel(A11y.label("关闭"))
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -73,7 +92,14 @@ struct AIResultSheet: View {
                 }
             }
         }
-        .frame(width: 620, height: 560)
+        // ⚠️ 原来是 `.frame(width: 620, height: 560)` —— **固定尺寸，不可缩放**。
+        // 一份 AI 报告常常好几千字，620×560 的窗口里只能看到开头两三段，
+        // 而用户没法拖大它（macOS 的 sheet 尺寸由这个 frame 决定）。
+        // 改成「可缩放 + 有下限」：下限保证小报告不至于挤成一团，
+        // 可缩放让长报告能被拖大。上下限都取合理的整数，别写死成设计稿的数值。
+        .frame(minWidth: 520, idealWidth: 720,
+               minHeight: 420, idealHeight: 620)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -104,16 +130,24 @@ extension AppModel {
         objectWillChange.send()
     }
 
+    /// 启动后延迟首轮更新 + 周期更新。**必须先收掉旧的**，
+    /// 否则每次面板 onAppear（→ start()）都会多挂一个 600 秒幽灵 timer。
     func restartAutoTimer() {
         autoTimer?.invalidate()
         autoTimer = nil
+        // ⚠️ 原来这个「首轮延迟」timer 是**一次性**的（repeats: false），
+        // 创建完既不存也不取消 —— `firstRunTimer` 当时声明了却从没赋值，
+        // 于是它是个谁都碰不到的孤儿。面板开关 N 次 ⇒ 10 分钟后 N 次幽灵更新，
+        // 且和 autoTimer 的周期更新撞在一起。
+        firstRunTimer?.invalidate()
+        firstRunTimer = nil
         let hours = autoUpdateHours
         guard hours > 0 else { return }
         autoTimer = Timer.scheduledTimer(withTimeInterval: Double(hours) * 3600, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.runScheduledUpdate() }
         }
         // 首轮延迟 10 分钟（避免启动即全量更新）
-        Timer.scheduledTimer(withTimeInterval: 600, repeats: false) { [weak self] _ in
+        firstRunTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: false) { [weak self] _ in
             Task { @MainActor in await self?.runScheduledUpdate() }
         }
     }
@@ -131,7 +165,7 @@ extension AppModel {
                 let digest = try await AgentCore.scheduledDigest()
                 Notifier.shared.notify(title: "定时更新简报", body: String(digest.prefix(180)))
             } catch {
-                Notifier.shared.notify(title: "定时更新完成", body: "全部项目进度已记录（AI 简报失败：\(error.localizedDescription.prefix(60)))")
+                Notifier.shared.notify(title: "定时更新完成", body: "全部项目进度已记录（AI 简报失败：\(EngineError.userMessage(for: error).prefix(60)))")
             }
         } else {
             Notifier.shared.notify(title: "定时更新完成", body: "\(projects.count) 个项目进度已记录")
@@ -156,24 +190,21 @@ struct UpdateActionMenu: View {
     @State private var aiError: String?
     @State private var showAI = false
     @State private var aiTitle = ""
+    /// 本次 sheet 是**哪种模式**发起的 —— 「重试」必须重试同一个动作。
+    ///
+    /// ⚠️ 原来 `onRegenerate: nil`，于是错误态那个「重试」按钮点了没反应
+    /// （`Button("重试") { onRegenerate?() }` 里那个 `?` 静默吞掉）。
+    /// 而那恰恰是最需要重试的时刻：引擎失败、网络失败、AI 超时。
+    /// 另外三个 AIResultSheet 调用点（项目群说明 / 项目说明 / 看板说明）
+    /// 都传了真闭包，只有这里漏了。
+    @State private var aiDeep = false
 
     var body: some View {
         Menu {
             Button {
-                updateAction(deep: false, withAI: false)
-            } label: {
-                Label("浅更新", systemImage: "arrow.down.circle")
-            }
-            Button {
                 updateAction(deep: false, withAI: true)
             } label: {
                 Label("浅更新 + AI 摘要", systemImage: "sparkles")
-            }
-            Divider()
-            Button {
-                updateAction(deep: true, withAI: false)
-            } label: {
-                Label("深度更新", systemImage: "arrow.triangle.branch")
             }
             Button {
                 updateAction(deep: true, withAI: true)
@@ -185,23 +216,25 @@ struct UpdateActionMenu: View {
                 ScheduleMenu()
             }
         } label: {
+            // ⚠️ 菜单里**不再**有「浅更新」「深度更新」两个裸项：
+            // 它们已经升成顶栏那对双轨按钮（设计稿最突出的元素）。
+            // 同一个动作在同一个窗口里出现两次，用户会以为是两种不同的东西 ——
+            // 而其中一份还少了范围信息（菜单项的标题不会随 selection 变）。
             HStack(spacing: 4) {
-                if model.busyAll || (project != nil && model.busyProject == project?.name) {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                }
-                Text(project == nil ? "更新" : "动作")
+                Image(systemName: "ellipsis.circle")
+                Text("更多")
             }
         }
         .fixedSize()
+        .help("带 AI 的更新变体与定时更新")
+        .accessibilityLabel(A11y.label("更多更新选项"))
         .sheet(isPresented: $showAI) {
             AIResultSheet(
                 title: aiTitle,
                 markdown: aiResult ?? "",
                 busy: aiBusy,
                 errorText: aiError,
-                onRegenerate: nil
+                onRegenerate: { updateAction(deep: aiDeep, withAI: true) }
             )
         }
     }
@@ -212,6 +245,8 @@ struct UpdateActionMenu: View {
                 aiBusy = true
                 aiError = nil
                 aiResult = nil
+                // 记下模式，供「重试」用（见 aiDeep 的注释）
+                aiDeep = deep
                 aiTitle = "\(deep ? "深度更新" : "浅更新")AI 报告\(project.map { " · " + $0.name } ?? "")"
                 showAI = true
                 do {
@@ -221,14 +256,19 @@ struct UpdateActionMenu: View {
                         aiResult = summary
                         Notifier.shared.notify(title: deep ? "深度更新完成" : "浅更新完成", body: "AI 摘要已生成")
                     } else {
-                        _ = try await EngineCLI.shared.updateAll(deep: deep)
-                        await model.refreshAll()
+                        // ⚠️ 原来直接调 `EngineCLI.shared.updateAll(deep:)`，
+                        // **绕过了** AppModel.updateAll 的 `busyAll` 闸门
+                        // （那里有 `guard !busyAll else { return false }`）。
+                        // 于是这一条路径上的批量更新可以和别的入口并发跑，
+                        // 两个 `deepgit update` 同时写文档托管区域与进度库。
+                        // 走 model 才有锁、才有刷新、才有通知。
+                        _ = await model.updateAll(deep: deep, silent: true)
                         let digest = try await AgentCore.scheduledDigest()
                         aiResult = digest
                         Notifier.shared.notify(title: "批量更新完成", body: "AI 简报已生成")
                     }
                 } catch {
-                    aiError = error.localizedDescription
+                    aiError = EngineError.userMessage(for: error)
                 }
                 model.busyProject = nil
                 aiBusy = false
@@ -238,6 +278,81 @@ struct UpdateActionMenu: View {
                 } else {
                     await model.updateAll(deep: deep)
                 }
+            }
+        }
+    }
+}
+
+/// 顶栏**双轨主动作**：浅更新 / 深更新。
+///
+/// 为什么把它们从 `UpdateActionMenu` 里提出来做成两个按钮：
+/// 设计稿最突出的元素就是这一对（绿色浅更新 → 箭头 → 紫色深更新），
+/// 而原来它们被折叠在一个写着「更新」的下拉里 ——
+/// 整个应用最常做的两个动作，用户得先点开菜单才能看见。
+///
+/// 两个不能省的细节：
+///   · **标题带范围**（「浅更新 · 全部」/「浅更新 · deepGit」）：
+///     同一个按钮在两种范围下动作完全不同，不写清楚用户按下前无从知道会动谁。
+///   · **深更新写明会动哪些托管文档**：这是不可逆的一步（会改用户的文件），
+///     动手前必须让用户看见它要写哪几个。
+///
+/// ⚠️ **「待记录 N」徽章的前世**：这个徽章我画过一次又撤掉了。
+/// 撤的理由是它**拿不到真数** —— 引擎的 status 当时读的是进度库里存的快照，
+/// 而那个快照在 update 算完后立刻归零（`engine/src/flow/update.cj:591`），
+/// 于是 `pendingCommits` 实质恒为 0，徽章永远不亮。
+/// 引擎自己的注释早就承认了（`flow/dashboard.cj:205`）。
+/// 现在引擎的 status 改成**实时**计算了（`engine/src/flow/status.cj`），
+/// 徽章才有意义，所以又装回来 —— 见不变量 89 的前后半段。
+struct DualTrackButtons: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        let scope = model.updateScope
+        let pending = ScopeRules.pending(scope,
+                                         allTotal: model.pendingAll,
+                                         byProject: model.pendingByProject)
+        HStack(spacing: 8) {
+            Button {
+                model.runUpdate(deep: false)
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "bolt.fill")
+                    Text(ScopeRules.shallowLabel(scope))
+                    // 只在真有东西时出现。恒显的 0 徽章会被无视，
+                    // 而「0」还容易被读成「引擎说不用更新」。
+                    if pending > 0 {
+                        Text("\(pending)")
+                            .font(.caption2.weight(.bold))
+                            .monospacedDigit()
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(DSColor.shallow, in: Capsule())
+                            .foregroundStyle(.white)
+                    }
+                }
+            }
+            .disabled(model.updateScopeBusy)
+            .help("记录自上次以来还没被引擎记下的提交（当前 \(pending) 个）（\(ShortcutMap.shallow.display)）")
+            .accessibilityLabel(A11y.label(
+                ScopeRules.shallowLabel(scope),
+                value: pending > 0 ? "有 \(pending) 个待记录" : "没有待记录的提交"))
+
+            Button {
+                model.runUpdate(deep: true)
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "wand.and.stars")
+                    Text(ScopeRules.deepLabel(scope))
+                }
+            }
+            .disabled(model.updateScopeBusy)
+            .help("重写托管文档：\(ScopeRules.deepTouches)。这一步会改写你的文件（\(ShortcutMap.deep.display)）")
+            .accessibilityLabel(A11y.label(
+                ScopeRules.deepLabel(scope),
+                value: "会改写 " + ScopeRules.deepTouches))
+
+            if model.updateScopeBusy {
+                ProgressView().controlSize(.small)
             }
         }
     }
@@ -286,6 +401,7 @@ struct GroupBriefButton: View {
         }
         .disabled(busy)
         .help("AI 生成项目群说明（结合全部项目事实）")
+        .accessibilityLabel(A11y.label("AI 生成项目群说明（结合全部项目事实）"))
         .sheet(isPresented: $show) {
             AIResultSheet(
                 title: "项目群说明",
@@ -309,7 +425,7 @@ struct GroupBriefButton: View {
                     target: .group
                 )
             } catch {
-                errorText = error.localizedDescription
+                errorText = EngineError.userMessage(for: error)
             }
             busy = false
         }
@@ -338,6 +454,7 @@ struct ProjectBriefButton: View {
         }
         .disabled(busy)
         .help("AI 生成项目说明（结合 README、代码构成与进度事实）")
+        .accessibilityLabel(A11y.label("AI 生成项目说明（结合 README、代码构成与进度事实）"))
         .sheet(isPresented: $show) {
             AIResultSheet(
                 title: "项目说明 · \(project.name)",
@@ -358,7 +475,7 @@ struct ProjectBriefButton: View {
             do {
                 result = try await model.projectBrief(for: project)
             } catch {
-                errorText = error.localizedDescription
+                errorText = EngineError.userMessage(for: error)
             }
             busy = false
         }
