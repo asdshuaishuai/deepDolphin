@@ -101,13 +101,13 @@ struct MilestoneRow: View {
     @State private var pendingAction: DestructiveAction?
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DSSpacing.md) {
             Image(systemName: icon)
                 .foregroundStyle(iconTint)
                 .font(.title3)
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
+                HStack(spacing: DSSpacing.sm) {
                     Text(milestone.projectName)
                         .foregroundStyle(.secondary)
                     Text(milestone.name)
@@ -295,6 +295,9 @@ struct AddMilestoneSheet: View {
     @State private var desc = ""
     @State private var submitting = false
     @State private var errorText: String?
+    /// 新建里程碑的**第一个该被填的字段**是名称，不是项目。
+    /// 原来焦点不在任何地方，Sheet 一打开用户得先用鼠标点一下才能打字。
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -305,6 +308,7 @@ struct AddMilestoneSheet: View {
                     }
                 }
                 TextField("名称（如 v1.0）", text: $name)
+                    .focused($nameFocused)
                 TextField("绑定 tag（可选，tag 存在即自动达成）", text: $tag)
                 Toggle("设定目标日期", isOn: $hasDate)
                 if hasDate {
@@ -340,6 +344,9 @@ struct AddMilestoneSheet: View {
                     return nil
                 } ?? model.projects.first?.name ?? ""
             }
+            // 放在项目默认值之后：onAppear 里连着改 @State 与 @FocusState 时，
+            // 先补齐前置状态，焦点才不会被同一次刷新吃掉。
+            nameFocused = true
         }
     }
 

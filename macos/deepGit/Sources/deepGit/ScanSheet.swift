@@ -24,6 +24,9 @@ struct ScanSheet: View {
     @State private var errorText: String?
     @State private var dropTargeted = false
     @State private var work: Task<Void, Never>?
+    /// 路径框是这个面板里**唯一必填**的输入（项目名是可选的）。
+    /// 原来焦点不在任何地方：打开就得先用鼠标点一下才能打字/粘贴路径。
+    @FocusState private var pathFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -80,6 +83,10 @@ struct ScanSheet: View {
         }
         .frame(width: 480, height: 440)
         .onDisappear { work?.cancel() }
+        .onAppear { pathFocused = true }
+        // 两个模式的路径框是同一个绑定：切模式后要把焦点交回**当前**那个，
+        // 否则用户停在批量模式时敲字会打进一个看不见的框。
+        .onChange(of: mode) { _, _ in pathFocused = true }
     }
 
     // MARK: - 路径输入
@@ -114,10 +121,11 @@ struct ScanSheet: View {
     private func pathRow(text: Binding<String>,
                          placeholder: String,
                          problem: String?) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: DSSpacing.xs) {
+            HStack(spacing: DSSpacing.sm) {
                 TextField(placeholder, text: text)
                     .textFieldStyle(.roundedBorder)
+                    .focused($pathFocused)
                 Button("选择…") { choosePath(into: text) }
                     .disabled(busy)
             }
