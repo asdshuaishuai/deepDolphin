@@ -4108,6 +4108,102 @@ do {
     }
 }
 
+// MARK: - V. 文档声明必须兑现
+//
+// README 的「系统集成」里写着「Dock 菜单：右键 Dock 图标 = 打开面板 / 全部浅更新」，
+// 而源码里 `dock` 一处都没有 —— **文档在说一个不存在的功能**。
+// 这与不变量 88（声明 ≠ 绑定）同族：文档里的「有」和代码里的「有」也是两个真相源。
+
+do {
+    print("【V】文档声明必须兑现（README 写了就要真能做）")
+
+    check("README 声明的 Dock 菜单必须真存在") {
+        let readme = try pkgText("README.md")
+        guard readme.contains("Dock 菜单") else { throw fail("README 不再声称有 Dock 菜单（若已删除请同步改判据）") }
+        let a = try strippedCode("DeepGitApp.swift")
+        guard a.contains("applicationDockMenu") else {
+            throw fail("没有 applicationDockMenu ⇒ README 写的「Dock 菜单：右键 Dock 图标 = 打开面板 / 全部浅更新」\n" +
+                "      是个不存在的功能（要么实现，要么把 README 那行删掉）")
+        }
+        // ⚠️ 「函数名在」不等于「菜单在」。这个判据前前后后栽了三次：
+        //   第一版  contains("applicationDockMenu") ⇒ 注入 `return nil` 假绿
+        //   第二版  contains("buildDockMenu()") ⇒ **函数定义本身** `private func
+        //           buildDockMenu() -> NSMenu?` 就含这个子串，照样假绿
+        //   第三版  slice(… to: "\n    }\n") ⇒ 注入把函数压成单行后找不到结束标记，
+        //           切片一路跨到下一个函数，又把 buildDockMenu 的**定义**吃了进来
+        // 所以这里既不靠子串也不靠花括号边界，而是**按行取「声明的下一行」** ——
+        // 那是函数体的第一行，不可能是别处的定义。
+        let lines = a.components(separatedBy: "\n")
+        guard let decl = lines.firstIndex(where: { $0.contains("func applicationDockMenu(") }) else {
+            throw fail("切不出 applicationDockMenu 的声明行（结构变了？）")
+        }
+        let bodyLine = decl + 1 < lines.count
+            ? lines[decl + 1].trimmingCharacters(in: .whitespaces) : ""
+        guard bodyLine.contains("buildDockMenu()") else {
+            throw fail("applicationDockMenu 的函数体第一行是「\(bodyLine)」，没调用 buildDockMenu()\n" +
+                "      ⇒ 右键 Dock 弹不出菜单，而 README 说的是「右键 Dock 图标 = 打开面板 / 全部浅更新」")
+        }
+        guard let body = slice(a, from: "private func buildDockMenu(", to: "\n    }\n") else {
+            throw fail("切不出 buildDockMenu（结构变了？）")
+        }
+        guard body.contains("return menu") else {
+            throw fail("buildDockMenu 没有 return menu ⇒ 菜单是空的或被写死")
+        }
+        return "声明兑现，且真的造出菜单"
+    }
+
+    check("Dock 菜单项必须都设 target（没设就会灰着点不动）") {
+        // ⚠️ 这是实现时踩到的坑：`NSMenuItem.target` 留空时只在 responder chain
+        // 里找动作，而 `AppDelegate` 是 `NSObject`（不是 `NSResponder`），
+        // **根本不在 chain 里** —— 菜单能弹出来，但两项全是灰的。
+        // target 还是弱引用，所以得由 AppDelegate 强持有那个接收者。
+        let a = try strippedCode("DeepGitApp.swift")
+        guard let items = slice(a, from: "private func buildDockMenu(", to: "\n    }\n") else {
+            throw fail("切不出 buildDockMenu（结构变了？）")
+        }
+        let nItem = items.components(separatedBy: "NSMenuItem(").count - 1
+        let nTarget = items.components(separatedBy: ".target = ").count - 1
+        guard nItem >= 2 else {
+            throw fail("Dock 菜单只有 \(nItem) 项，而 README 声明的是「打开面板 / 全部浅更新」两项")
+        }
+        guard nItem == nTarget else {
+            throw fail("菜单项 \(nItem) 个、设了 target 的 \(nTarget) 个 ⇒ 有项会灰着点不动")
+        }
+        return "\(nItem) 项全部设了 target"
+    }
+
+    check("Dock 的「全部浅更新」必须走不经过 scope 的入口，且不许绕过确认") {
+        let a = try strippedCode("DeepGitApp.swift")
+        let m = try strippedCode("Model.swift")
+        guard m.contains("func requestBulkUpdate(deep:") else {
+            throw fail("Model 没有 requestBulkUpdate ⇒ Dock 菜单只能拿 runUpdate 顶替，\n" +
+                "      而 runUpdate 按 updateScope 走（范围由 selection 推导）：\n" +
+                "      用户停在某个项目上时点「全部」会去更新那**一个**项目")
+        }
+        // 确认框挂在主面板的 confirmationDialog 上 ⇒ 面板没开就没人呈现
+        // ⇒ 点了只设 pending 会表现为「点了没反应」
+        guard let f = slice(a, from: "func shallowUpdateAll()", to: "\n    }\n") else {
+            throw fail("切不出 DockMenuTarget.shallowUpdateAll")
+        }
+        // 批量更新会写文件，是破坏性动作：菜单回调里不许直接开跑。
+        // ⚠️ 这条必须**排最前**：第一版把它放在最后，于是注入
+        // `startUpdateAll(deep: false)` 时先撞上「没走 requestBulkUpdate」就抛了 ——
+        // 判据抓到了缺陷，但报的理由不是最严重的那条。
+        // 负控的价值一半在「红」，另一半在「红得对不对得上它声称的判据」。
+        if f.contains("startUpdateAll(") {
+            throw fail("Dock 菜单回调里直接 startUpdateAll ⇒ 绕过了确认框（批量更新会写文件）")
+        }
+        guard f.contains("requestBulkUpdate(deep: false)") else {
+            throw fail("Dock 的「全部浅更新」没走 requestBulkUpdate（可能掉回 scope 推导）")
+        }
+        guard f.contains("openPanel()") else {
+            throw fail("点完之后没有打开面板 ⇒ 确认框挂在面板上，窗口没开就没人呈现，\n" +
+                "      用户只会看到「点了没反应」")
+        }
+        return "走 requestBulkUpdate + 叫醒面板，不绕过确认"
+    }
+}
+
 print("")
 if failures.isEmpty {
     print("✅ 客户端检查通过：\(checks) 项")

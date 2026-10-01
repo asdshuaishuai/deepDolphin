@@ -14,18 +14,69 @@ import AppKit
 import UserNotifications
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    /// Dock 右键菜单的动作接收者。
+    ///
+    /// ⚠️ 不能直接用 `AppDelegate` 自己当 target：它是 `NSObject`（不是
+    /// `NSResponder`），**不在 responder chain 里**，而 `NSMenuItem.target`
+    /// 留空时只会在 chain 里找 —— 菜单项会灰着点不动。
+    /// 也正因为 target 是弱引用，得由 AppDelegate 强持有它
+    /// （AppDelegate 的生命周期 = app 的生命周期，够长）。
+    private lazy var dockTarget = DockMenuTarget()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Notifier.shared.setUp()
         // 通知点击 → 打开/激活主面板（NSApp.windows 兜底：窗口被关也能找回）
-        Notifier.shared.onOpenPanel = {
-            NSApp.activate(ignoringOtherApps: true)
-            for w in NSApp.windows where w.title == "deepGit" {
-                w.makeKeyAndOrderFront(nil)
-                return
-            }
-            // 窗口已销毁：由 SwiftUI Window scene 的 openWindow 兜底（通知中心转发）
-            NotificationCenter.default.post(name: .openPanelRequest, object: nil)
+        Notifier.shared.onOpenPanel = { [weak self] in
+            self?.openPanel()
         }
+    }
+
+    /// 打开或激活主面板。通知点击与 Dock 菜单共用这一条路。
+    func openPanel() {
+        NSApp.activate(ignoringOtherApps: true)
+        for w in NSApp.windows where w.title == "deepGit" {
+            w.makeKeyAndOrderFront(nil)
+            return
+        }
+        // 窗口已销毁：由 SwiftUI Window scene 的 openWindow 兜底（通知中心转发）
+        NotificationCenter.default.post(name: .openPanelRequest, object: nil)
+    }
+
+    /// Dock 图标右键菜单（README 声明过，此前**完全没实现**）。
+    ///
+    /// 只做两件最常做的事：打开面板、全部浅更新。
+    /// 刻意不放更多 —— Dock 菜单在 macOS 里的定位就是「高频动作的快捷入口」，
+    /// 完整动作表在应用内「操作」菜单里。
+    ///
+    /// ⚠️ `AppModel` 是 `@MainActor` 隔离的，而 NSApplicationDelegate 协议方法
+    /// 不是。这里用 `MainActor.assumeIsolated` 而不是 `Task { @MainActor in }`：
+    /// 返回值是**同步**的 `NSMenu`，不能 await；而菜单项的 target / isEnabled
+    /// 本来就只能在主线程设置。AppKit 的 delegate 回调必在主线程，所以这个
+    /// 假设成立（`assumeIsolated` 在非主线程会直接断言，正好是"别这么用"的提示）。
+    func applicationDockMenu(_ sender: NSMenu) -> NSMenu? {
+        MainActor.assumeIsolated { buildDockMenu() }
+    }
+
+    @MainActor
+    private func buildDockMenu() -> NSMenu? {
+        let model = AppModel.shared
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let open = NSMenuItem(title: "打开面板", action: #selector(DockMenuTarget.openPanel), keyEquivalent: "")
+        open.target = dockTarget
+        menu.addItem(open)
+
+        // 「全部浅更新」是**破坏性动作**（会写文件），所以只设 pending，
+        // 由主面板的 confirmationDialog 呈现确认 —— 不在这里直接开跑。
+        // ⚠️ 而且必须先叫醒面板：确认框挂在面板上，窗口没开就没人呈现它，
+        // 用户点了会以为「点了没反应」。
+        let shallow = NSMenuItem(title: "全部浅更新", action: #selector(DockMenuTarget.shallowUpdateAll), keyEquivalent: "")
+        shallow.target = dockTarget
+        shallow.isEnabled = !model.updateScopeBusy
+        menu.addItem(shallow)
+
+        return menu
     }
 
     func requestFullQuit() {
@@ -34,6 +85,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationWillTerminate(_ notification: Notification) {
         AppModel.shared.stop()
+    }
+}
+
+/// Dock 菜单的 action 接收者（`@objc` 方法必须挂在一个 NSObject 上）。
+private final class DockMenuTarget: NSObject {
+    @objc func openPanel() {
+        NSApp.activate(ignoringOtherApps: true)
+        for w in NSApp.windows where w.title == "deepGit" {
+            w.makeKeyAndOrderFront(nil)
+            return
+        }
+        NotificationCenter.default.post(name: .openPanelRequest, object: nil)
+    }
+
+    @objc func shallowUpdateAll() {
+        // 同 applicationDockMenu：AppModel 是 @MainActor 隔离的，
+        // 而 NSMenuItem 的 action 回调是同步的非隔离上下文。
+        MainActor.assumeIsolated {
+            AppModel.shared.requestBulkUpdate(deep: false)
+        }
+        // 确认框挂在主面板上，面板没开就没人呈现它 ⇒ 先叫醒
+        openPanel()
     }
 }
 

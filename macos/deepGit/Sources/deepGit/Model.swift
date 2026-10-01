@@ -278,8 +278,18 @@ final class AppModel: ObservableObject {
             }
             Task { await update(p, deep: deep) }
         case .all:
-            pendingBulkUpdate = deep ? .deep : .shallow
+            requestBulkUpdate(deep: deep)
         }
+    }
+
+    /// 「不管当前选中了什么，都要更新全部项目群」的入口。
+    ///
+    /// ⚠️ 不能靠 `runUpdate(deep:)` 顶替：它按 `updateScope` 走，
+    /// 而范围是由 `selection` 推导的 —— 用户停在某个项目上时，
+    /// 调它会去更新**那一个项目**，而 Dock 菜单写的是「全部」。
+    /// 名字里得说清是「全部」，免得调用方以为它等价于 runUpdate。
+    func requestBulkUpdate(deep: Bool) {
+        pendingBulkUpdate = deep ? .deep : .shallow
     }
 
     /// 项目列表加载完之后的补判。
