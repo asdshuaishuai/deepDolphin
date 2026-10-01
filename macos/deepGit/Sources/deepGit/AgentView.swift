@@ -187,7 +187,11 @@ struct AgentView: View {
             }
             .onChange(of: chat.history.count) { _, _ in
                 if let last = chat.transcript.last {
-                    withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    // 走 token 而不是裸 withAnimation{}：裸写吃的是 SwiftUI 默认
+                    // （0.25s / default 缓动），跟 DSMotion 的两档都不是一回事，
+                    // 于是「统一缓动与时长」在唯一一处动效上恰好没生效。
+                    // 滚动跟手要跟上，不是 0.12 的 quick ⇒ 用 standard。
+                    withAnimation(DSMotion.standard) { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
         }

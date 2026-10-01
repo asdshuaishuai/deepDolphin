@@ -164,6 +164,7 @@ Sources/deepGit/
 | 颜色映射提到**视图层共享**（`DSColor.sequence`） | 原来 `commitTypeColor` 是 `ProjectDetailView` 的私有方法，`DashboardView` 里的语言卡够不着，只好自己内联 8 色 ⇒ 两套调色板 | 色板序列仍在纯函数层（`CommitTypeColor.palette`，可单测）；映射必须在视图层，因为 `Color` 属 SwiftUI，纯函数层不许 import |
 | spacing 只做**等值替换**（45 处） | 刻度值字面量与 token 同值不同源，改 token 时不跟着动（真缺陷） | 51 处散值**故意保留**：收进刻度是改布局，视觉未验证前不擅自做。见下方待确认清单 |
 | 圆角统一到**连续曲率**（`DSRect.shape` 唯一构造点） | 9 处 `RoundedRectangle` 里只有 `surface` 内部写了 `style: .continuous`，其余 8 处是默认 circular ⇒ 同一张 Card 里 Chip / 描边 / 彩色底接缝对不上 | **这是视觉改动，未验证**：连续曲率是 macOS 原生控件的做法，方向确定，但实际观感要人眼看。另有 `.quaternary` 等层级色走 `tinted` 的泛型参数，抹掉颜色会把「出错」和「中性」画成同一张卡 |
+| 动效**保持极少**（全项目只有 1 处） | §3.3 要求「统一缓动与时长，遵循 macOS 观感（**不过度**）」—— 不加错动效比加动频更重要 | 那唯一一处（agent 新消息自动滚动）已从裸 `withAnimation`（SwiftUI 默认 0.25s / default 缓动）改为 `DSMotion.standard`（0.20s easeInOut）。判据卡住「不许新增裸动效」，所以以后加动效必须走 token |
 
 ### 还没做的（需要人眼或需要授权）
 

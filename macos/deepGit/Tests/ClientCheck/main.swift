@@ -2279,6 +2279,34 @@ do {
         return "1 个构造点 · 连续曲率 · 着色面支持层级色"
     }
 
+    check("动效必须走 DSMotion token，且不许新增裸动效（§3.3「不过度」）") {
+        let d = try strippedCode("DesignSystem.swift")
+        guard d.contains("enum DSMotion") else { throw fail("DSMotion token 不见了") }
+        for tier in ["quick", "standard"] {
+            guard d.contains("static let \(tier)") else { throw fail("DSMotion.\(tier) 不见了") }
+        }
+        // 裸 withAnimation { } 吃的是 SwiftUI 默认（0.25s / default 缓动），
+        // 不属于任何一档 —— 「统一缓动与时长」在它那儿就失效了。
+        // 全项目曾只有这一处动效，恰好是裸的。
+        var bare: [String] = []
+        let re = try NSRegularExpression(pattern: "withAnimation\\s*(\\([^)]*\\))?\\s*\\{")
+        for name in try allSourceFileNames() {
+            let code = try strippedCode(name)
+            let full = NSRange(code.startIndex..<code.endIndex, in: code)
+            for m in re.matches(in: code, range: full) {
+                // withAnimation(x) { } 带参数才是走 token 的写法
+                let hasArg = m.range(at: 1).location != NSNotFound
+                if !hasArg { bare.append(name) }
+            }
+        }
+        guard bare.isEmpty else {
+            throw fail("裸 withAnimation（没走 DSMotion）出现在：\(bare.joined(separator: ", "))\n" +
+                "      ⇒ 缓动与时长在那几处不受统一约束；要么写 withAnimation(DSMotion.standard) { }，\n" +
+                "      要么确实不需要动效就去掉")
+        }
+        return "全部动效走 token，裸动效 0 处"
+    }
+
     check("卡片正好 12 条：不许造披露（cut 恒为 false 才是常态）") {
         let s = commitTypeCardSlice(entries: real)
         guard !s.cut, s.entries.count == 12, s.note == nil else {
