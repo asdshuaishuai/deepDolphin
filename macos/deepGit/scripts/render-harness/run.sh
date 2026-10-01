@@ -79,13 +79,16 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 
 export DEEPGIT_BIN="$ENGINE_BIN"
-echo "渲染（输出到 ${OUT_DIR}）…"
-"$APP/Contents/MacOS/harness" "$OUT_DIR/shot.png"
+# 第二个参数原样透传给 harness：传 "window" 改走「装进 NSWindow 但不上屏」那条路。
+MODE="${2:-}"
+echo "渲染（输出到 ${OUT_DIR}${MODE:+，模式 ${MODE}}）…"
+"$APP/Contents/MacOS/harness" "$OUT_DIR/shot.png" $MODE
 RC=$?
 echo ""
 echo "产出："
 ls -la "${OUT_DIR}"/*.png 2>/dev/null | awk '{print "  " $NF "  " $5 " bytes"}'
 echo ""
 echo "注意：快照的已知限制见 scripts/render-harness/main.swift 顶部；"
-echo "toolbar、按钮文字、个别行距在离屏下不可信，判断界面要看真窗口。"
+echo "panel 模式专治顶栏（内容排版回默认模式看，理由见第 6 条）；"
+echo "按钮文字与个别行距在离屏下不可信，判断界面最终还是要看真窗口。"
 exit $RC
