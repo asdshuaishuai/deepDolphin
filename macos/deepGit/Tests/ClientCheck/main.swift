@@ -3277,7 +3277,12 @@ do {
         // 规范 §3.1 说「看板页是死代码，删掉」。核实后发现它现在有入口、有 switch 分支。
         // ⚠️ 判据不能只找 `case .board:` —— 那个字符串现在出现在 `title(for:)` 的
         // switch 里（一个 switch 分支 ≠ 一个可达入口）。要钉的是**侧栏入口**。
-        guard pv.contains("viewShortcut(.board") else {
+        //
+        // ⚠️ 也**不能只认 `viewShortcut(.board`**：看板行后来改走了
+        // `countedRow(title: "看板", …)`（带待处理计数），判据却还在找旧写法，
+        // 于是报「看板入口被删了」—— 报错的其实是判据的写法假设，不是代码。
+        // 与不变量 107 同一条：判据要钉「这个入口在不在」，不钉「它用哪个构造点写的」。
+        guard pv.contains("viewShortcut(.board") || pv.contains("countedRow(title: \"看板\"") else {
             throw fail("侧栏没有看板入口了 —— 确认它是否真的被删了")
         }
         // detail 侧也还得能路由过去
@@ -3432,26 +3437,45 @@ do {
         let pv = try strippedCode("PanelView.swift")
         // ⚠️ 这条是 NC67 之后我自己犯的错：给视图切换另开了一个「视图切换」分组，
         // 把「总览」里已有的仪表盘/看板/里程碑又列了一遍 —— 而且两组还不一致
-        // （只有「总览」那组带 badge），看着像两种不同的视图。
+        // （只有「总览」那组带计数），看着像两种不同的视图。
         // 判据要数的是**侧栏里声明了几次导航项**，不是源码里某个字符串出现几次 ——
-        // 导航项现在是 `viewShortcut(.dashboard, …)` 这么写的，
-        // 照旧去数 `RootSection.dashboard` 会得到 0。
+        // 导航项现在是 `viewShortcut(.dashboard, …)` 与
+        // `countedRow(title: "看板", …)` 两种写法（带计数的走后者），
+        // 只认前一种会把「看板 0 次」报成重复入口问题。
+        //
+        // ⚠️ 数的是**两种写法之和**，不是「第一个匹配到的那个」：
+        // 只数 `viewShortcut(.board` 的话，复制一份 `countedRow(title: "看板"…)`
+        // 到另一组里，这条判据会全绿 —— 而那正是它要防的重复入口。
+        func entryCount(_ target: ShortcutTarget, _ title: String) -> Int {
+            pv.components(separatedBy: "viewShortcut(.\(target)").count - 1
+                + pv.components(separatedBy: "countedRow(title: \"\(title)\"").count - 1
+        }
         for (target, title) in [(ShortcutTarget.dashboard, "仪表盘"), (.board, "看板")] {
-            let n = pv.components(separatedBy: "viewShortcut(.\(target)").count - 1
+            let n = entryCount(target, title)
             guard n == 1 else {
                 throw fail("「\(title)」的侧栏入口出现 \(n) 次 ⇒ 重复入口（应为 1）")
             }
         }
-        // 里程碑那条不走 viewShortcut（它要带 badge），单独钉
+        // 里程碑那条不走 viewShortcut（它要带计数），单独钉
         let ms = pv.components(separatedBy: "Label(\"里程碑\"").count - 1
+            + pv.components(separatedBy: "countedRow(title: \"里程碑\"").count - 1
         guard ms == 1 else {
             throw fail("「里程碑」的侧栏入口出现 \(ms) 次 ⇒ 重复入口（应为 1）")
         }
         // 不许有第二个叫「视图切换」的分组（那是重复列表的信号）
         if pv.contains("视图切换") {
-            throw fail("侧栏有一个「视图切换」分组 ⇒ 与「总览」重复列同一批视图")
+            throw fail("侧栏有一个「视图切换」分组 ⇒ 与「视图」重复列同一批视图")
         }
-        return "三个固定视图各出现一次，无重复分组"
+        // ⚠️ 动作项（添加 / 扫描）不许留在 List 的分组里 ——
+        // 它没有 `.tag(...)`，点它会把当前选中清掉（跳回「项目详情」），
+        // 而且它把「视图 / 仓库」两组切成三段。
+        let list = try slice(pv, from: "List(selection:", to: ".listStyle(.sidebar)")
+            ?? "（切不出侧栏 List）"
+        if list.contains("添加 / 扫描项目") {
+            throw fail("「添加 / 扫描项目」还在侧栏 List 的分组里：它是动作不是导航项，"
+                + "没有 tag ⇒ 点击会清掉当前选中，而且把两组切断")
+        }
+        return "三个固定视图各出现一次（两种写法都计入）、无重复分组、动作项已移出 List"
     }
 }
 

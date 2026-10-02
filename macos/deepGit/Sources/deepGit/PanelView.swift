@@ -107,13 +107,25 @@ struct PanelView: View {
                 get: { model.selection },
                 set: { if let s = $0 { model.go(s) } }
             )) {
-            Section("总览") {
+            // ── 分组：视图 / 仓库 ──
+            //
+            // 设计稿侧栏是三组（双轨协同管道 / Git 结构与进度分析 / 受管 Git 仓库），
+            // 但它第一组的四个入口（变动管道、AGENT.md 记忆治理、动态 README、Release）
+            // **本项目没有这些功能** —— 照抄会造一排点进去是空页的入口。
+            // 所以按**本应用真有的东西**重组：
+            //   「视图」= 三个固定视图（对应设计稿的「Git 结构与进度分析」）
+            //   「仓库」= 受管项目（对应设计稿的「受管 Git 仓库」）
+            // 「添加 / 扫描项目」是**动作**不是导航项，原来它自己占一个
+            // **没有标题的单项 Section**，正好卡在两组中间把信息架构切成三段 ——
+            // 移到底部动作区（见下），两组才真的是两组。
+            Section("视图") {
                 // ⌘1–⌘3 的键位声明在 ShortcutMap（唯一来源），这里只消费。
                 // ⚠️ 快捷键挂在**已有的导航项**上，不另开一个「视图切换」分组 ——
-                //    另开一组会把同一批视图列两遍，两组还不一致（只有这组带 badge），
+                //    另开一组会把同一批视图列两遍，两组还不一致（只有这组带计数），
                 //    既破坏侧栏的信息架构，又让人以为它们是两种不同的东西。
                 viewShortcut(.dashboard, key: .dashboard)
-                viewShortcut(.board, key: .board)
+                countedRow(title: "看板", icon: icon(for: .board), route: .board,
+                           target: .board, count: attentionCount)
                 // ⚠️ 这里**原来用的是 `.badge(...)`**，而那一行因此**点不动**。
                 //    实测（本机 macOS 26）：侧栏「里程碑」连点 5 次，
                 //    `selection` 的 didSet 一次都没触发 —— `go(.milestones)`
@@ -123,26 +135,11 @@ struct PanelView: View {
                 //    症状极隐蔽：那一行看着完全正常、⌘3 也能进，
                 //    只有真去点它才会发现是死的 —— 而「进不去的导航项」
                 //    等于这个视图对鼠标用户不存在。
-                //    计数改用行内文字（与「项目（3/3）」同一套做法），不用 badge。
-                HStack(spacing: 6) {
-                    Label("里程碑", systemImage: "flag.2.crossed")
-                    Spacer(minLength: 8)
-                    milestoneCount
-                }
-                .tag(RootSection.milestones)
-                .keyboardShortcut(
-                    ShortcutMap.shortcut(for: .milestones)?.keyEquivalentSwiftUI ?? KeyEquivalent("\u{0}"),
-                    modifiers: ShortcutMap.shortcut(for: .milestones)?.modifiersSwiftUI ?? [.command])
+                //    计数改用行内文字（`countedRow`），不用 badge。
+                countedRow(title: "里程碑", icon: icon(for: .milestones), route: .milestones,
+                           target: .milestones, count: milestoneCountValue)
             }
-            Section {
-                Button {
-                    showScan = true
-                } label: {
-                    Label("添加 / 扫描项目", systemImage: "plus.circle.fill")
-                        .foregroundStyle(.blue)
-                }
-            }
-            Section("项目（\(shownProjects.count)/\(model.projects.count)）") {
+            Section("仓库（\(shownProjects.count)/\(model.projects.count)）") {
                 // ⌘4 打开当前选中的项目。
                 // ⚠️ 没有项目时**什么都不做** —— 不能把 selection 改成某个不存在的项目，
                 // 也不能弹一个空详情页（那正是「点了没反应」的另一种形态）。
@@ -198,7 +195,32 @@ struct PanelView: View {
         // 列表内容滚到底时会从它底下穿过去，看着像文字被压住了。
         // `.safeAreaInset` 让它占据自己的布局空间，列表自动避开。
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            SidebarStatusStrip(model: model)
+            // 动作区在状态条**之上**。
+            //
+            // ⚠️ 原来「添加 / 扫描项目」是侧栏 List 里的**一个没有标题的单项 Section**，
+            //    正好卡在「视图」与「项目」两组中间 —— 它是**动作**不是导航项，
+            //    放在导航结构里会把两组切成三段，读者会以为那是第三个分组。
+            //    而且它没有 `.tag(...)`，在 `List(selection:)` 里点它会清掉当前选中 ——
+            //    侧栏一点就跳回「项目详情」那行，是另一种「点了没反应」。
+            //    移出 List 之后两件事一起消失：分组干净了，点击也不再改选中。
+            VStack(spacing: 0) {
+                Divider()
+                Button {
+                    showScan = true
+                } label: {
+                    Label("添加 / 扫描项目", systemImage: "plus.circle")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, DSSpacing.md)
+                .padding(.vertical, DSSpacing.sm)
+                .foregroundStyle(.blue)
+                .help("注册一个项目，或扫描目录自动发现项目")
+                .accessibilityLabel(A11y.label("添加或扫描项目"))
+                Divider()
+                SidebarStatusStrip(model: model)
+            }
         }
         }
     }
@@ -247,24 +269,54 @@ struct PanelView: View {
                 modifiers: ShortcutMap.shortcut(for: target)?.modifiersSwiftUI ?? [.command])
     }
 
-    /// 侧栏「里程碑」行尾的里程碑总数。
+    /// 带行尾计数的侧栏导航项。**看板与里程碑共用这一处**。
     ///
-    /// 只数 `open + done`，**不含 `unknown`** —— unknown 是「读不出来」，
-    /// 把它算进「你有 N 个里程碑」就是把无知说成事实（同一个理由，
-    /// 仪表盘的里程碑完成率分母也不含 unknown）。
-    /// 读不出来时显示「—」而不是 0：`model.dashboard == nil` 是「还没读到」，
-    /// 与「确实一个都没有」是两件事。
-    @ViewBuilder
-    private var milestoneCount: some View {
-        if let d = model.dashboard {
-            Text("\(d.milestones.counts.open + d.milestones.counts.done)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-        } else {
-            Text("—")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+    /// ⚠️ 为什么不用 `.badge()`：它在 `List(selection:)` 的行上会接管命中测试，
+    /// 整行点不动（实测连点 5 次 selection 一次未变），而外观完全正常。
+    /// 三个视图行必须走同一个构造点 —— 一旦某个行手写 HStack、另一个用 badge，
+    /// 两行的点击行为就会分叉，而那只有真点一次才发现得了。
+    ///
+    /// ⚠️ 计数为 nil 时**什么都不显示**，而不是显示 0：
+    /// 「读不出来」与「真的是 0」在侧栏这一行长得一样的话，
+    /// 用户会把没读到当成没有。
+    private func countedRow(title: String, icon: String, route: RootSection,
+                            target: ShortcutTarget, count: Int?) -> some View {
+        HStack(spacing: 6) {
+            Label(title, systemImage: icon)
+            Spacer(minLength: 8)
+            if let count {
+                Text("\(count)")
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(count > 0 ? .secondary : .tertiary)
+            }
+        }
+        .tag(route)
+        .keyboardShortcut(
+            ShortcutMap.shortcut(for: target)?.keyEquivalentSwiftUI ?? KeyEquivalent("\u{0}"),
+            modifiers: ShortcutMap.shortcut(for: target)?.modifiersSwiftUI ?? [.command])
+    }
+
+    /// 看板行尾的「要你动手」项目数。
+    ///
+    /// ⚠️ **报的是待处理数，不是项目总数** —— 设计稿给「变动管道」打的徽标
+    /// 是 `totalPendingShallowCommits`，也是「有几件事等我做」。
+    /// 报总数的话每个视图行都是同一个数字，徽标就成了装饰。
+    ///
+    /// ⚠️ 也不受仪表盘的时间窗筛选影响：徽标回答「**现在**有几件事要我动手」，
+    /// 筛选回答「我在看哪一段时间」。把筛选套上去会让徽标随筛选跳变，
+    /// 而它并不属于任何一个时间窗。
+    private var attentionCount: Int? {
+        model.dashboard == nil ? nil
+            : model.projects.filter { $0.boardColumn == .attention }.count
+    }
+
+    /// 里程碑行尾的总数。只数 `open + done`，**不含 `unknown`**
+    /// —— unknown 是「读不出来」，算进「你有 N 个里程碑」就是把无知说成事实。
+    /// 读不出来时返回 nil（不显示），而不是 0。
+    private var milestoneCountValue: Int? {
+        model.dashboard.map { d in
+            d.milestones.counts.open + d.milestones.counts.done
         }
     }
 
