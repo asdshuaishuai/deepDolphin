@@ -4642,6 +4642,230 @@ do {
 }
 
 print("")
+print("【V】「一键全量」：覆盖必须由代码保证，执行必须走 agent 工具通道")
+
+do {
+    // 这组判据的由来：用户要求「浅更新和深更新增加两个一键全量，对所有仓库，
+    // 都基于 AI agent 进行」。落码时有两个很容易写错、而且写错了界面上完全看不出来的地方：
+    //   ① 覆盖：让模型决定跑哪些仓库 ⇒ 可能少跑一个，而界面照样说「全量完成」
+    //   ② 执行：调 `EngineCLI.updateAll` 一次性批量 ⇒ 那是**裸引擎**，
+    //      和「基于 AI agent 执行」不是一回事（差别在必填校验与工具清单同源）
+
+    let src = try strippedCode("AgentBulkUpdate.swift")
+
+    check("「一键全量」必须逐个走 agent 工具通道，不许退回裸的批量 CLI") {
+        guard src.contains("AgentCore.executeTool") else {
+            throw fail("AgentBulkUpdate 没有调用 AgentCore.executeTool ⇒ 全量更新绕开了 agent 工具通道，\n" +
+                "      「基于 AI agent 执行」不成立（那条路是裸 EngineCLI 批量，两回事）")
+        }
+        // 反向也要钉：同一条实现里不许再摆一条裸批量路径。
+        // 只查「有 executeTool」不够 —— executeTool 旁边放一句
+        // `EngineCLI.shared.updateAll(deep:)` 全程照跑，判据照样绿。
+        for forbidden in ["EngineCLI.shared.updateAll", "model.updateAll", "startUpdateAll("] {
+            if src.contains(forbidden) {
+                throw fail("AgentBulkUpdate 里出现了 \(forbidden) ⇒ 存在绕过 agent 工具通道的裸批量路径")
+            }
+        }
+        return "逐仓库 executeTool，无裸批量旁路"
+    }
+
+    check("每个仓库都必须显式传项目名（空名在引擎侧等于「整个项目群」，老坑 NC31）") {
+        guard src.contains("params: [\"name\": p.name]") else {
+            throw fail("工具调用没有逐个显式传项目名 ⇒ 有路径会传空 name，\n" +
+                "      而引擎侧空项目名 = 整个项目群 ⇒ 「更新一个仓库」变成「改写全群」")
+        }
+        return "逐个显式传名"
+    }
+
+    check("覆盖必须遍历全部已注册项目（不许截断、不许按状态过滤）") {
+        // 判定落在 for 循环体上：从 `for p in projects` 切到函数收尾。
+        // 只查「出现过 for p in projects」会被「先全量、后面再 prefix(2) 截一遍」骗过去。
+        guard let loop = slice(src, from: "for p in projects", to: "let ai = await digest") else {
+            throw fail("切不出「一键全量」的项目遍历循环（结构变了，先更新这条判据）")
+        }
+        for cut in ["prefix(", "suffix(", ".filter", ".dropFirst", ".dropLast"] {
+            if loop.contains(cut) {
+                throw fail("全量遍历里有 \(cut) ⇒ 少跑了仓库，而界面会说「全量完成」")
+            }
+        }
+        guard loop.contains("outcomes.append") else {
+            throw fail("全量遍历没有逐个记账 ⇒ 无法说清哪些仓库真的更新了")
+        }
+        return "遍历全部且逐个记账"
+    }
+
+    check("一个仓库失败不许中断整批（否则「全量」变成「跑到一半」）") {
+        guard let loop = slice(src, from: "for p in projects", to: "let ai = await digest") else {
+            throw fail("切不出遍历循环（结构变了，先更新这条判据）")
+        }
+        // 中断的两种写法：循环里 return / throw。记账式的 continue 不算
+        //（那是「跳过这一个继续跑」，正是我们要的）。
+        for abort in ["return", "throw "] where loop.contains(abort) {
+            throw fail("全量循环里有 \(abort) ⇒ 第 N 个仓库失败会中断整批，\n" +
+                "      而界面只报「全量完成」")
+        }
+        return "逐个记账，不中断"
+    }
+
+    check("AI 那一层没跑成时必须说出口，不许静默") {
+        // 判据卡的是「有 catch，且 catch 里产出了面向用户的文字」，
+        // 不是卡具体措辞 —— 改文案不该红，写成空 catch 就该红。
+        //
+        // ⚠️ 切片边界：`digest` 是本文件最后一个函数，所以从 `} catch {`
+        //    切到文件尾正好覆盖整个 catch 体。
+        //    （第一版把 `to` 设成 catch 里那行 `return ("", "未生成 AI 简报…")`，
+        //      而 slice **不含** `to` 标记本身 ⇒ 被检查的区间刚好少了要查的那一行，
+        //      判据于是对着自己的边界报红。这类错只在真跑负控时才会暴露。）
+        guard let handler = slice(src, from: "} catch {", to: "\n    }\n}") else {
+            throw fail("切不出 AI 简报的失败处理（结构变了，先更新这条判据）")
+        }
+        if !handler.contains("EngineError.userMessage") {
+            throw fail("AI 简报失败时没有把原因说给用户 ⇒ 「没生成」和「生成了」在界面上长得一样")
+        }
+        // 空 catch（只有注释）会让上面那条通过，所以额外钉「catch 里有产出」。
+        guard handler.contains("return (") else {
+            throw fail("AI 简报的 catch 没有产出任何结果 ⇒ AI 没跑成时用户看不到任何提示")
+        }
+        return "AI 未跑成时如实报出原因"
+    }
+
+    check("工具名不许在客户端另写一份字面量（引擎改名要看得见地坏掉）") {
+        // 唯一出处是 AgentBulkUpdate.toolName。视图与 Model 只能调它。
+        let view = try strippedCode("AgentBulkView.swift")
+        let model = try strippedCode("Model.swift")
+        for (where_, text) in [("AgentBulkView", view), ("Model", model)] {
+            for literal in ["run_shallow_update", "run_deep_update"] {
+                if text.contains(literal) {
+                    throw fail("\(where_) 里出现了工具名字面量 \"\(literal)\" ⇒ 引擎改名后这里不会跟着变，\n" +
+                        "      失败会表现为「点了没反应」而不是一条能被看见的报错")
+                }
+            }
+        }
+        guard src.contains("func toolName(deep: Bool) -> String") else {
+            throw fail("AgentBulkUpdate.toolName 不见了 —— 工具名的唯一出处被删了")
+        }
+        return "工具名只有一处；视图与模型都不写字面量"
+    }
+
+    check("必填清单必须与 agent 循环共用同一份（各抄一份 = 必填校验悄悄失效）") {
+        let core = try strippedCode("AgentCore.swift")
+        guard core.contains("func requiredParamsByTool()") else {
+            throw fail("AgentCore.requiredParamsByTool 没了 ⇒ 必填清单又变成两份，\n" +
+                "      漂移的后果是 executeTool 的必填校验失效（空项目名 = 全群改写）")
+        }
+        // 循环里必须真的调它，不许在旁边再内联一份拼装。
+        guard core.contains("let paramsByTool = await requiredParamsByTool()") else {
+            throw fail("agent 循环没有走 requiredParamsByTool() ⇒ 循环与全量用的是两份清单")
+        }
+        if !src.contains("await AgentCore.requiredParamsByTool()") {
+            throw fail("AgentBulkUpdate 没有走 requiredParamsByTool() ⇒ 必填清单有两份")
+        }
+        return "循环与全量共用同一份"
+    }
+
+    check("一键全量必须与其它批量更新共用同一把锁（并发会同时改写多个仓库）") {
+        let model = try strippedCode("Model.swift")
+        guard let start = slice(model, from: "func startAgentBulk", to: "func startUpdateAll") else {
+            throw fail("切不出 startAgentBulk（结构变了，先更新这条判据）")
+        }
+        // 占锁必须在**发起**时就位，且早于任何 await：
+        // 放到 await 之后再置位，两条路都能在 busyAll 还是 false 时通过 guard。
+        guard let firstAwait = start.range(of: "await"),
+              let lockAt = start.range(of: "busyAll = true"),
+              lockAt.lowerBound < firstAwait.lowerBound else {
+            throw fail("startAgentBulk 没有在第一个 await 之前占住 busyAll ⇒\n" +
+                "      它可以和别的批量更新并发，同时改写多个仓库的托管区域")
+        }
+        return "发起即占锁，早于任何 await"
+    }
+
+    check("全量必须先刷新注册表再冻结名单（冻结陈旧名单 = 静默漏仓库）") {
+        // 这条是**真 app 截图抓到的**：用 CLI 往注册表加了一个仓库后立刻点「全量浅」，
+        // 面板写「已注册项目 3 个，本次实际执行 3 个，成功 3 个，失败 0 个」，
+        // 而侧栏已经是「仓库（4/4）」——第 4 个整行消失，面板还说「全量完成」。
+        // 遍历本身没错，错在**冻结的是上次加载时的名单**。
+        //
+        // 判据钉的是**顺序**：刷新必须在冻结之前。反了就等于用陈旧名单。
+        let model = try strippedCode("Model.swift")
+        guard let start = slice(model, from: "func startAgentBulk", to: "func startUpdateAll") else {
+            throw fail("切不出 startAgentBulk（结构变了，先更新这条判据）")
+        }
+        guard let refreshAt = start.range(of: "await self.refreshAll()"),
+              let freezeAt = start.range(of: "let targets = self.projects") else {
+            throw fail("startAgentBulk 里找不到「刷新」或「冻结名单」这一步（结构变了，先更新这条判据）")
+        }
+        guard refreshAt.lowerBound < freezeAt.lowerBound else {
+            throw fail("先冻结名单、后刷新注册表 ⇒ 全量用的是**陈旧名单**，\n" +
+                "      而按钮承诺的是「所有仓库」—— 漏掉的那几个连一行提示都没有")
+        }
+        // 面板标题里的仓库数必须取**结果里的真值**。
+        // 取点击那一刻的 `model.projects.count` 会出现面板自相矛盾：
+        // 真 app 实测「标题 · 4 个仓库 / 正文 已注册项目 5 个」——
+        // 因为全量会先刷新注册表再冻结，点下去时看到的 N 可能比实际执行的少。
+        let view = try strippedCode("AgentBulkView.swift")
+        if !view.contains("\\(r.attempted) 个仓库") {
+            throw fail("面板标题没用结果里的真实仓库数 ⇒ 会和正文「已注册项目 N 个」自相矛盾")
+        }
+        return "先刷新、后冻结；标题取真值"
+    }
+
+    check("一键全量的按钮必须真的挂在工作条上（声明了能力却没接上 = 死功能）") {
+        let bar = try strippedCode("WorkBar.swift")
+        guard bar.contains("AgentBulkButtons()") else {
+            throw fail("WorkBar 里没有 AgentBulkButtons() ⇒ 两个全量按钮做出来了但没入口，\n" +
+                "      界面上找不到 —— 与「声明了 dismiss 却一次没用」同源")
+        }
+        // 恰好一处。出现两次 = 同一批按钮列两遍（判据 NC87 的同款理由）。
+        let n = bar.components(separatedBy: "AgentBulkButtons()").count - 1
+        guard n == 1 else {
+            throw fail("AgentBulkButtons() 在工作条里出现 \(n) 次（应为 1）")
+        }
+        return "工作条上一处入口"
+    }
+
+    check("逐仓库「说明」必须是人类可读的结果，不许直接灌引擎原始 JSON") {
+        // 这条是**真 app 截图抓到的**，不是想出来的：第一版把工具返回的
+        // `{ok, mode, project, docs:[…], journalEntry:{…}}` 整段塞进结果表格，
+        // 后果有两个 —— 表格被撑爆（备份路径不换行，右侧截断），
+        // 以及「哪个文档改了、有没有备份」这条用户唯一需要的信息
+        // 被埋在 projectId / journalEntry 这些内部字段里。
+        //
+        // 修法是转调项目里已有的唯一口径 `updateOutcomeSummary`
+        // （为缺陷 #211 写的：三态区分 + 备份必须说清在哪）。
+        // 判据钉的是「用了那一个口径」，不钉具体措辞。
+        guard src.contains("updateOutcomeSummary(") else {
+            throw fail("逐仓库说明没有走 updateOutcomeSummary ⇒ 又要自己写一份措辞，\n" +
+                "      而那份措辞必然漏掉「文档没变」与「备份在哪」")
+        }
+        guard src.contains("UpdateResultEnvelope.self") else {
+            throw fail("没有解码 UpdateResultEnvelope ⇒ 说明里只能是原始 JSON")
+        }
+        // 反向：记账那一行不许直接用工具的原始返回。
+        //
+        // ⚠️ **这里踩过一次判据自身的漏洞（NC88 变体 12）**：第一版断言
+        //    `src.contains("detail: text)")`，而那正是第一版的**单行**写法。
+        //    后来为了可读性把 Outcome(...) 拆成多行，反向断言就再也匹配不上 ——
+        //    把 `detail` 改回 `text` 判据照样绿，而界面照样显示引擎 JSON。
+        //    ⇒ 钉「append 记账那一段里必须调用 describe(」，
+        //    并**排除**那一段里出现裸的 `detail: text`（不限行尾）。
+        guard let appendSite = slice(src, from: "outcomes.append(", to: "let ai = await digest") else {
+            throw fail("切不出逐仓库记账处（结构变了，先更新这条判据）")
+        }
+        guard appendSite.contains("describe(") else {
+            throw fail("逐仓库记账没有经过 describe() ⇒ 说明里会是引擎原始 JSON")
+        }
+        if appendSite.contains("detail: text") {
+            throw fail("逐仓库说明直接取了工具的原始返回 ⇒ 界面会显示引擎 JSON")
+        }
+        // markdown 表格在这个窄面板里不换行，第一版就是这么被撑爆的。
+        if src.contains("| 仓库 |") {
+            throw fail("逐仓库明细又改回 markdown 表格 ⇒ 备份路径不换行，窄面板会截断")
+        }
+        return "走 updateOutcomeSummary + 列表排版"
+    }
+}
+
+print("")
 if failures.isEmpty {
     print("✅ 客户端检查通过：\(checks) 项")
     exit(0)

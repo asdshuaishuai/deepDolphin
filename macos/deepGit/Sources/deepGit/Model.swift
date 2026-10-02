@@ -125,6 +125,14 @@ final class AppModel: ObservableObject {
     /// 所以待确认状态必须有一个跨视图的落脚点，由主面板 `DeepGitPanel` 渲染对话框。
     /// 同一动作在 `BarView`（菜单栏弹窗）也有入口，那里用自己的 `@State` 即可。
 
+    /// 「一键全量」正在跑哪一轨。nil = 没在跑。
+    ///
+    /// ⚠️ 它**不替代** `busyAll`：那个 bool 是所有批量更新的互斥闸门
+    /// （裸 `update-all`、定时更新、菜单栏批量都共用），
+    /// 「一键全量」同样要占着它 —— 否则它会和别的批量更新同时写托管区域。
+    /// 这里只记「是谁在跑」，供界面把按钮切成运行态。
+    @Published var agentBulkTrack: DSSyncTrack?
+
     @Published var projectDocs: [String: [DocFile]] = [:]
     /// 每个项目的文档加载结果。理由同 `projectLoadErrors`（见 loadDocs 的注释）。
     @Published private(set) var docsStates: [String: LoadState] = [:]
@@ -713,6 +721,39 @@ final class AppModel: ObservableObject {
         updateTasks[project.name]?.cancel()
         updateTasks[project.name] = Task { [weak self] in
             await self?.update(project, deep: deep)
+        }
+    }
+
+    /// 「一键全量」的发起入口：逐个已注册仓库走 agent 工具通道更新，
+    /// 再由 agent 生成一份全量简报。完成回调把结果交给界面呈现。
+    ///
+    /// ⚠️ 占的是 `busyAll` 同一个闸门，而且**在 Task 之外、任何 await 之前**占住 ——
+    /// 放到 await 之后再置位，两条路都能在 `busyAll` 还是 false 时通过 `guard`，
+    /// 然后两个更新同时改写多个仓库的 README / AGENTS.md。
+    ///
+    /// ⚠️ **必须先刷新再冻结名单**。这条是**真 app 截图抓到的**：
+    /// 用 CLI 在注册表里加了一个仓库之后立刻点「全量浅」，
+    /// 结果面板写「已注册项目 3 个，本次实际执行 3 个，成功 3 个」——
+    /// 而侧栏已经是「仓库（4/4）」。第 4 个仓库**整行消失**，
+    /// 面板还理直气壮地写着「全量完成」。
+    /// 病因不是漏遍历，是**冻结的是一份陈旧名单**：
+    /// app 不知道别的进程改过注册表，于是「所有仓库」= 「我上次加载时看到的仓库」。
+    /// 「全量」卖的就是「一个不漏」这一条，所以名单必须是**发起时的**注册表，
+    /// 不是**上次加载时**的注册表。
+    func startAgentBulk(deep: Bool, onDone: @escaping (AgentBulkUpdate.Report) -> Void) {
+        guard !busyAll else { return }
+        busyAll = true
+        agentBulkTrack = deep ? .deep : .shallow
+        updateAllTask = Task { [weak self] in
+            guard let self else { return }
+            // 先把注册表拉一遍，再冻结。顺序反了就等于冻结陈旧名单（见上）。
+            await self.refreshAll()
+            let targets = self.projects
+            let report = await AgentBulkUpdate.run(deep: deep, projects: targets)
+            self.agentBulkTrack = nil
+            self.busyAll = false
+            await self.refreshAll()
+            onDone(report)
         }
     }
 

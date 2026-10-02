@@ -24,7 +24,17 @@ struct WorkBar: View {
         HStack(spacing: DSSpacing.md) {
             scopePicker
             Spacer(minLength: DSSpacing.md)
-            pipeline
+            // ⚠️ 「一键全量」与右边的双轨是**两种不同的动作**（范围 + 执行方式都不同），
+            // 所以用一条分隔线把它们明确切开，而不是并排摆成四个同级按钮：
+            // 四个长得差不多的更新按钮摆在一起，用户无法在按下之前判断会动哪些仓库。
+            // 分隔线也是设计稿那条「双轨是一条链」的呼应 —— 链是右边那两个。
+            HStack(spacing: DSSpacing.md) {
+                AgentBulkButtons()
+                Rectangle()
+                    .fill(DSColor.border)
+                    .frame(width: 1, height: 18)
+                pipeline
+            }
         }
         .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, DSSpacing.sm)

@@ -67,6 +67,26 @@ enum AgentCore {
         }
     }
 
+    /// 工具名 → 该工具的 parameters JSON（供 `executeTool` 做必填校验）。
+    ///
+    /// ⚠️ **agent 循环与「一键全量」共用这一份**，不许各抄一份。
+    /// 抄两份必然漂移，而漂移的后果是**必填校验悄悄失效** ——
+    /// `run_shallow_update` 传空 `name` 在引擎侧等于「整个项目群」
+    /// （`executeTool` 注释里的老坑 NC31），校验一旦失效就是静默的全群改写。
+    ///
+    /// 必填清单**只从引擎的工具清单取**（`tools --json` 的 `params` 字段），
+    /// 不在客户端硬编码：客户端抄一份就等于自己发明契约。
+    static func requiredParamsByTool() async -> [String: String] {
+        var m: [String: String] = [:]
+        for d in await engineToolDefinitions() {
+            if let data = try? JSONSerialization.data(withJSONObject: d.parametersJSON),
+               let s = String(data: data, encoding: .utf8) {
+                m[d.name] = s
+            }
+        }
+        return m
+    }
+
     /// 工具执行（本机进程间：CLI 子进程）。返回 (ok, 结果文本)
     static func executeTool(
         _ name: String,
@@ -186,16 +206,8 @@ enum AgentCore {
         let toolDefs = await engineToolDefinitions()
         // 必填参数**只从这一份取**：就是已经发给模型的那份工具定义。
         // 执行端照模型看到过的契约执行，不另抄一份（抄两份必然漂移）。
-        let paramsByTool: [String: String] = {
-            var m: [String: String] = [:]
-            for d in toolDefs {
-                if let data = try? JSONSerialization.data(withJSONObject: d.parametersJSON),
-                   let s = String(data: data, encoding: .utf8) {
-                    m[d.name] = s
-                }
-            }
-            return m
-        }()
+        // 「一键全量」走的是同一个 `requiredParamsByTool()`，见那里的注释。
+        let paramsByTool = await requiredParamsByTool()
 
         let scopeLine = "scope: \(target.label)"
         let system = """
