@@ -75,8 +75,21 @@ enum AgentBulkUpdate {
             let items = outcomes.map { o in
                 "- **\(o.name)**　\(o.ok ? "✅" : "❌")　\(escapeCell(o.detail))"
             }
+            // ⚠️ 这里原来写的是「\(succeeded)/\(outcomes.count) 完成」。
+            // 真 app 一跑就看出问题：上一行刚说完「成功 3 个，失败 3 个」，
+            // 下一行紧接着写「3/6 完成」—— **同一件事用了两个词**
+            // （「成功」和「完成」），而两个词在中文里不总是同义：
+            // 用户很容易把「3/6 完成」读成「6 个里完成了 3 个」之外的别的分母，
+            // 或者以为失败的 3 个不算在 6 里。
+            // ⇒ 判据家族里已经有「一屏之内不许出现两个答案」，
+            //   **措辞也算** —— 数字对但换个词说，照样是分叉。
+            // 改成与上一行同一个词，并把失败的条数也说清，不必读者自己做减法。
+            let failed = outcomes.count - succeeded
+            let tally = failed > 0
+                ? "成功 \(succeeded) · 失败 \(failed)"
+                : "\(succeeded) 个仓库全部成功"
             return """
-            ## 逐仓库结果（\(succeeded)/\(outcomes.count) 完成）
+            ## 逐仓库结果（\(tally)）
 
             \(items.joined(separator: "\n"))
             """
