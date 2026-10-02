@@ -51,7 +51,7 @@
 //   要先确认失败原因，再决定要不要放弃。见 AGENTS.md 不变量 101。
 //
 // 【编译】
-//   swiftc -DDEEPGIT_RENDER_HARNESS <Sources/deepGit/*.swift> main.swift -o harness
+//   swiftc -DDEEPGIT_RENDER_HARNESS <Sources/deepDolphin/*.swift> main.swift -o harness
 //   条件编译宏用来屏蔽 DeepGitApp 的 @main（否则两个入口打架）。
 //   ⚠️ `#if` 必须**只**包住 @main struct，DeepGitPanel 要留在外面 ——
 //   第一版把 `#endif` 放在文件末尾，连 DeepGitPanel 一起屏蔽了，报

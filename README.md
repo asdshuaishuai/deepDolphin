@@ -1,17 +1,17 @@
-# deepGit Clients
+# deepDolphin Clients
 
-**deepGit 的各平台 UI 交互层（含 AI 层）。** 业务核心全部在 [deepgit-engine](https://github.com/asdshuaishuai/deepgit-engine)（仓颉引擎，AI 无关），
-本仓库的每个客户端都是**展示与 AI 层**：通过 **CLI 子进程**调用引擎（`deepgit <命令> --json`）读写数据，AI 的配置/调用/工具循环在客户端完成。
+**deepDolphin 的各平台 UI 交互层（含 AI 层）。** 业务核心全部在 [moongit](https://github.com/asdshuaishuai/moongit)（仓颉引擎，AI 无关），
+本仓库的每个客户端都是**展示与 AI 层**：通过 **CLI 子进程**调用引擎（`moongit <命令> --json`）读写数据，AI 的配置/调用/工具循环在客户端完成。
 
 **跨平台能力基准**：见 [PLATFORM-CHARTER.md](PLATFORM-CHARTER.md) —— 四大平台交互 UI 自由，能力必须一致（C1–C11 矩阵）。
 
 ## 目录结构
 
 ```
-clients/
+deepDolphin/
   macos/        macOS 客户端（SwiftUI，已实现）——菜单栏常驻 + 主面板窗口
+  linux/        Linux 客户端（仓颉 + CangjieGUI，已实现读侧）
   windows/      Windows 客户端（规划中：WinUI 3 / WPF，消费同一套 CLI 契约）
-  linux/        Linux 客户端（规划中：GTK4 / Tauri，消费同一套 CLI 契约）
   harmonyos/    鸿蒙 PC 客户端（规划中：ArkUI，消费同一套 CLI 契约）
 ```
 
@@ -30,13 +30,22 @@ clients/
 
 ## macOS 客户端
 
-见 [macos/deepGit/README.md](macos/deepGit/README.md)。
+见 [macos/README.md](macos/README.md)。
 
 ```sh
-cd macos/deepGit
-sh build.sh        # swift build -c release + 组装 deepGit.app + ad-hoc 签名
-open deepGit.app
+cd macos
+sh build.sh        # swift build -c release + 组装 deepDolphin.app + ad-hoc 签名
+open deepDolphin.app
 ```
 
 构建期会尝试把引擎二进制与仓颉运行时内嵌进 .app（自包含分发）；不内嵌则按
 `DEEPGIT_BIN → 内嵌副本 → ~/.local/bin → 登录 shell PATH` 的顺序发现引擎。
+
+> `DEEPGIT_BIN` / `DEEPGIT_HOME` 这两个环境变量名**保持旧名不变** —— 它们是外部调用方的既有接口，
+> 改名会让所有现存的启动脚本与文档一次性失效。引擎侧同理：`~/.deepgit` 数据目录与
+> `<!-- deepgit:begin -->` 文档托管标记都是硬编码的既有数据身份，跟着改名会让引擎认不出已托管的区域、另开新区。
+> 只有**名字**（引擎 moonGit、应用 deepDolphin、CLI 命令 moongit）改了，**身份**没改。
+
+## Linux 客户端
+
+见 [linux/README.md](linux/README.md)。

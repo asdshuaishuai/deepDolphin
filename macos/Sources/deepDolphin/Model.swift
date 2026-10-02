@@ -143,7 +143,7 @@ final class AppModel: ObservableObject {
     /// 原来是 9 处直接赋值，于是「跳到一个不存在的项目」也照样跳，
     /// 详情页再用一个永远不结束的 `ProgressView("加载 X …")` 把它兜住。
     @Published private(set) var selection: RootSection? = .dashboard {
-        didSet { NSLog("deepgit-bar: selection → \(String(describing: selection))") }
+        didSet { NSLog("deepdolphin-bar: selection → \(String(describing: selection))") }
     }
     @Published var isLoading = false
     /// 仪表盘 + 看板**共用**的那份筛选。
@@ -498,7 +498,7 @@ final class AppModel: ObservableObject {
         // TCC 预检：外置卷上的项目在 GUI app 未获授权时，git 子进程会被内核无限阻塞。
         // FileManager.isReadableFile 立即返回（不 spawn 子进程），提前拦截并给用户明确指引。
         if let first = projects.first, !FileManager.default.isReadableFile(atPath: first.path) {
-            lastError = "无法访问项目目录（\(first.path)）——\n请在 系统设置 → 隐私与安全性 → 完全磁盘访问权限 中允许 deepGit"
+            lastError = "无法访问项目目录（\(first.path)）——\n请在 系统设置 → 隐私与安全性 → 完全磁盘访问权限 中允许 deepDolphin"
             engineFound = true
             return
         }
@@ -837,5 +837,5 @@ final class AppModel: ObservableObject {
 }
 
 extension Notification.Name {
-    static let openPanelRequest = Notification.Name("deepgit.openPanel")
+    static let openPanelRequest = Notification.Name("deepdolphin.openPanel")
 }

@@ -15,16 +15,19 @@ PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT_DIR="${1:-/tmp/dg-harness}"
 SANDBOX_HOME="/tmp/dg-visual"
 SANDBOX_PROJECTS="/tmp/dg-visual-projects"
-# PKG_DIR = <repo>/clients/macos/deepGit ⇒ 仓库根要上三级
-REPO_ROOT="$(cd "$PKG_DIR/../../.." && pwd)"
-ENGINE_BIN="$REPO_ROOT/engine/target/release/bin/main"
+# PKG_DIR = <repo>/deepDolphin/macos ⇒ 仓库根要上两级
+# ⚠️ 拍平过一次：这里曾是 deepDolphin/macos（三级）。
+#    实现直接放进平台目录后少了一层，`../../..` 会跳出仓库根（到 /Volumes），
+#    症状是 ENGINE_BIN 路径不存在。改层级时先数一遍。
+REPO_ROOT="$(cd "$PKG_DIR/../.." && pwd)"
+ENGINE_BIN="$REPO_ROOT/moonGit/target/release/bin/main"
 
 # 客户端检查/编译前必须 unset SDKROOT（引擎构建才需要它）
 unset SDKROOT
 
 if [ ! -x "$ENGINE_BIN" ]; then
   echo "✗ 找不到引擎二进制：$ENGINE_BIN" >&2
-  echo "  先构建：cd engine && cjpm build -c release" >&2
+  echo "  先构建：cd moonGit && cjpm build -c release" >&2
   exit 1
 fi
 
@@ -53,7 +56,7 @@ export DEEPGIT_HOME="$SANDBOX_HOME"
 SDK="$(xcrun --show-sdk-path --sdk macosx)"
 echo "编译 harness（-DDEEPGIT_RENDER_HARNESS）…"
 swiftc -swift-version 5 -DDEEPGIT_RENDER_HARNESS -sdk "$SDK" \
-  "$PKG_DIR"/Sources/deepGit/*.swift \
+  "$PKG_DIR"/Sources/deepDolphin/*.swift \
   "$PKG_DIR"/scripts/render-harness/main.swift \
   -o "$OUT_DIR/harness" || { echo "✗ 编译失败" >&2; exit 1; }
 

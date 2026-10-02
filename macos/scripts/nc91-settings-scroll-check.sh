@@ -14,8 +14,8 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 unset SDKROOT
 
-SETTINGS=Sources/deepGit/AISettingsView.swift
-SRCDIR=Sources/deepGit
+SETTINGS=Sources/deepDolphin/AISettingsView.swift
+SRCDIR=Sources/deepDolphin
 FILES="AISettingsView.swift"
 
 pass=0

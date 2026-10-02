@@ -16,8 +16,8 @@ import UserNotifications
 /// 主面板窗口的**唯一出处**。
 ///
 /// ⚠️ 原来标题字面量散在 4 处，而其中 2 处**判的字符串根本不会成立**：
-///     · `Window("deepGit", id: "panel")`     —— 场景的初始标题
-///     · `PanelView` 的 `.navigationTitle("deepGit 面板")` —— 实际生效的标题
+///     · `Window("deepDolphin", id: "panel")`     —— 场景的初始标题
+///     · `PanelView` 的 `.navigationTitle("deepDolphin 面板")` —— 实际生效的标题
 ///     · `AppDelegate.openPanel()` 的 `w.title == "deepGit"`
 ///     · `DockMenuTarget.openPanel()` 的 `w.title == "deepGit"`
 ///
@@ -33,7 +33,7 @@ import UserNotifications
 /// DockMenuTarget 各抄一份，改一处忘另一处必然发生）。
 enum PanelWindow {
     /// 窗口标题。`Window(...)` 与 `.navigationTitle(...)` 都用它。
-    static let title = "deepGit 面板"
+    static let title = "deepDolphin 面板"
 
     /// 这扇窗是不是主面板。
     ///

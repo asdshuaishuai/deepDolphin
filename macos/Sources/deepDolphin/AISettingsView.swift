@@ -211,7 +211,7 @@ struct LoginItemCard: View {
             Label("开机自启", systemImage: "power")
                 .font(.subheadline.weight(.semibold))
             if #available(macOS 13.0, *) {
-                Toggle("登录时自动启动 deepGit", isOn: $enabled)
+                Toggle("登录时自动启动 deepDolphin", isOn: $enabled)
                     .onChange(of: enabled) { on in
                         if #available(macOS 13.0, *) {
                             LoginItem.shared.setEnabled(on)

@@ -43,7 +43,7 @@ struct AIConfig: Equatable {
     // ---- 持久化：key 进 Keychain，其余进 UserDefaults ----
 
     private static let ud = UserDefaults.standard
-    private static let service = "cn.deepgit.app.ai"
+    private static let service = "cn.deepdolphin.app.ai"
     private static let keyAccount = "api-key"
 
     static func load() -> AIConfig {

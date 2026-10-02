@@ -1,11 +1,11 @@
 #!/bin/sh
-# 构建 deepGit.app —— macOS 客户端（菜单栏常驻 + 主面板窗口），双击即用。
+# 构建 deepDolphin.app —— macOS 客户端（菜单栏常驻 + 主面板窗口），双击即用。
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 
-APP_NAME="deepGit"
+APP_NAME="deepDolphin"
 BUILD_DIR=".build/release"
 APP_BUNDLE="$DIR/$APP_NAME.app"
 
@@ -38,9 +38,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
-    <key>CFBundleName</key><string>deepGit</string>
-    <key>CFBundleDisplayName</key><string>deepGit</string>
-    <key>CFBundleIdentifier</key><string>cn.deepgit.app</string>
+    <key>CFBundleName</key><string>deepDolphin</string>
+    <key>CFBundleDisplayName</key><string>deepDolphin</string>
+    <key>CFBundleIdentifier</key><string>cn.deepdolphin.app</string>
     <key>CFBundleExecutable</key><string>$APP_NAME</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
@@ -73,12 +73,14 @@ ENGINE_PICKED=""
 ENGINE_IS_REPO=0
 for CANDIDATE in \
   "${DEEPGIT_BIN:-}" \
-  "$DIR/../../../engine/target/release/bin/main" \
+  "$DIR/../../moonGit/target/release/bin/main" \
+  "$(command -v moongit 2>/dev/null || true)" \
   "$(command -v deepgit 2>/dev/null || true)" \
+  "$HOME/.local/bin/moongit" \
   "$HOME/.local/bin/deepgit"; do
   if [ -n "$CANDIDATE" ] && [ -x "$CANDIDATE" ]; then
     case "$CANDIDATE" in
-      */engine/target/*) ENGINE_IS_REPO=1 ;;
+      */moonGit/target/*) ENGINE_IS_REPO=1 ;;
       *) ENGINE_IS_REPO=0 ;;
     esac
     ENGINE_PICKED="$CANDIDATE"
@@ -87,14 +89,14 @@ for CANDIDATE in \
 done
 
 if [ -n "$ENGINE_PICKED" ]; then
-  cp "$ENGINE_PICKED" "$APP_BUNDLE/Contents/Resources/deepgit"
+  cp "$ENGINE_PICKED" "$APP_BUNDLE/Contents/Resources/moongit"
   if [ "$ENGINE_IS_REPO" = "1" ]; then
     echo "   已内嵌引擎（仓内 release）：$ENGINE_PICKED"
   else
     echo "⚠ 已内嵌引擎（**已安装版，可能过期**）：$ENGINE_PICKED" >&2
-    echo "  仓内 engine/target/release/bin/main 没找到或不可执行。" >&2
+    echo "  仓内 moonGit/target/release/bin/main 没找到或不可执行。" >&2
     echo "  打出来的 app 会带着旧引擎，而下面的检查测的是仓内代码 —— 两者不是一回事。" >&2
-    echo "  先 cd engine && cjpm build 再打包。" >&2
+    echo "  先 cd moonGit && cjpm build 再打包。" >&2
   fi
 fi
 
@@ -121,8 +123,8 @@ if [ -d "$CJ_RUNTIME" ]; then
   #   2. 把 `/Users/kelthas/...` 写进了要分发的二进制，还硬编码 arm64。
   #
   # 修法：**重写** rpath 而不是追加 —— 先逐条删干净，再按 bundle 相对顺序加回。
-  # 只改 bundle 里这份拷贝，不动 engine/target/release/bin/main（开发时仍需 SDK 路径）。
-  EMBEDDED="$APP_BUNDLE/Contents/Resources/deepgit"
+  # 只改 bundle 里这份拷贝，不动 moonGit/target/release/bin/main（开发时仍需 SDK 路径）。
+  EMBEDDED="$APP_BUNDLE/Contents/Resources/moongit"
   if [ -x "$EMBEDDED" ]; then
     # ⚠️ 三条实测踩出来的坑，写在这里免得下一个人再踩一遍：
     #
@@ -223,8 +225,8 @@ fi
 # 所以对内嵌引擎要**单独**验，而且必须**真的执行它** ——
 # 「检查通过」和「东西能用」之间隔着 AMFI、dyld、rpath 三道闸，
 # 任何只读元数据的检查都跨不过去。只有 fork 一次真进程才算数。
-if [ -x "$APP_BUNDLE/Contents/Resources/deepgit" ]; then
-  EMBED="$APP_BUNDLE/Contents/Resources/deepgit"
+if [ -x "$APP_BUNDLE/Contents/Resources/moongit" ]; then
+  EMBED="$APP_BUNDLE/Contents/Resources/moongit"
   if ! codesign --verify --strict "$EMBED" >/dev/null 2>&1; then
     echo "✗ 内嵌引擎未通过签名校验：" >&2
     codesign -dv "$EMBED" 2>&1 | sed 's/^/  /' >&2
@@ -235,7 +237,7 @@ if [ -x "$APP_BUNDLE/Contents/Resources/deepgit" ]; then
   # 于是「能跑」只能来自 bundle 自己的 Frameworks。
   # 一旦 rpath 里还留着构建机绝对路径，这条在开发机上仍会过
   # （因为开发机装了 SDK），所以它验证的是 bundle 自包含，不是「本机能跑」。
-  SMOKE_HOME="${TMPDIR:-/tmp}/deepgit-build-smoke-$$"
+  SMOKE_HOME="${TMPDIR:-/tmp}/deepdolphin-build-smoke-$$"
   mkdir -p "$SMOKE_HOME"
   if SMOKE_OUT="$(env -i HOME="$SMOKE_HOME" PATH=/usr/bin:/bin \
         DEEPGIT_HOME="$SMOKE_HOME/home" "$EMBED" --help 2>&1)"; then

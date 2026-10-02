@@ -94,7 +94,7 @@ struct BarView: View {
 
     private var missingEngine: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            Label("未找到 deepGit 引擎", systemImage: "questionmark.circle")
+            Label("未找到 moonGit 引擎", systemImage: "questionmark.circle")
                 .font(.subheadline.weight(.medium))
             Text("运行 deepgit-engine 的 scripts/install.sh 安装，或设 DEEPGIT_BIN")
                 .font(.caption)

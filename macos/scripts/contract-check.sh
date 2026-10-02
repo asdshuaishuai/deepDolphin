@@ -7,7 +7,7 @@
 # 那种缺陷人工审计和代码评审都挡不住（两边各自「看起来」都合理）。
 # 能挡住它的只有一件事：**拿引擎的真实输出喂客户端的真实模型**。
 #
-# 【关键点】编译的是 Sources/deepGit/Models.swift 本体，不是测试里的副本 ——
+# 【关键点】编译的是 Sources/deepDolphin/Models.swift 本体，不是测试里的副本 ——
 # 副本会与源文件漂移，测了等于没测。
 #
 # 【跑法】scripts/contract-check.sh
@@ -16,28 +16,30 @@
 set -uo pipefail
 
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MODELS="$PKG_DIR/Sources/deepGit/Models.swift"
+MODELS="$PKG_DIR/Sources/deepDolphin/Models.swift"
 # Models.swift 的 commitTypeLine 走这个零依赖纯函数，编译时必须一起带上
 # （漏了就是「符号找不到」，与模型写错症状相似但原因完全不同）。
-CTCOMP="$PKG_DIR/Sources/deepGit/CommitTypeComposition.swift"
-MSCARD="$PKG_DIR/Sources/deepGit/MilestoneCard.swift"
-UPOUT="$PKG_DIR/Sources/deepGit/UpdateOutcome.swift"
+CTCOMP="$PKG_DIR/Sources/deepDolphin/CommitTypeComposition.swift"
+MSCARD="$PKG_DIR/Sources/deepDolphin/MilestoneCard.swift"
+UPOUT="$PKG_DIR/Sources/deepDolphin/UpdateOutcome.swift"
 CHECKER="$PKG_DIR/Tests/ContractCheck/main.swift"
 
 # ---- 定位引擎二进制 -------------------------------------------------------
-# ⚠️ 路径必须数对层数：PKG_DIR 是 <repo>/clients/macos/deepGit，
-#    引擎在 <repo>/engine —— 要上溯**三**层。两层会落到不存在的 clients/engine，
-#    然后静默回退到 ~/.local/bin/deepgit（过期安装版），
+# ⚠️ 路径必须数对层数：PKG_DIR 是 <repo>/deepDolphin/macos，
+#    引擎在 <repo>/moonGit —— 要上溯**两**层。层数错了会落到不存在的目录，
+#    然后静默回退到 ~/.local/bin/moongit（过期安装版），
 #    于是契约检查会拿旧引擎的输出对新模型，报出一堆假失败 ——
 #    症状与「模型写错了」几乎一样，极难分辨。
-#    本项目已因此栽过一次：journal 顶层被报成「不是 object」（旧引擎返回裸数组）、
-#    projects 缺 listed（旧引擎没这个键）、错误桩缺 commitCount。
+#    本项目已因此栽过两次：一次层数错（journal 顶层被报成「不是 object」——
+#    旧引擎返回裸数组、projects 缺 listed、错误桩缺 commitCount），
+#    一次是引擎仓改名 moonGit/ → moonGit/。
 find_engine() {
   if [[ -n "${DEEPGIT_BIN:-}" && -x "$DEEPGIT_BIN" ]]; then echo "$DEEPGIT_BIN"; return; fi
-  local repo_engine="$PKG_DIR/../../../engine/target/release/bin/main"
+  local repo_engine="$PKG_DIR/../../moonGit/target/release/bin/main"
   if [[ -x "$repo_engine" ]]; then echo "$repo_engine"; return; fi
   # 退而求其次：已安装的。本地开发时应总是命中上面那条。
-  for p in "$HOME/.local/bin/deepgit" /usr/local/bin/deepgit /opt/homebrew/bin/deepgit; do
+  for p in "$HOME/.local/bin/moongit" "$HOME/.local/bin/deepgit" \
+           /usr/local/bin/moongit /opt/homebrew/bin/moongit; do
     [[ -x "$p" ]] && { echo "$p"; return; }
   done
   echo ""
@@ -46,16 +48,16 @@ find_engine() {
 ENGINE="$(find_engine)"
 if [[ -z "$ENGINE" ]]; then
   echo "✗ 找不到 deepgit 引擎二进制。" >&2
-  echo "  请先构建：cd engine && cjpm build" >&2
+  echo "  请先构建：cd moonGit && cjpm build" >&2
   echo "  或设置 DEEPGIT_BIN=/path/to/deepgit" >&2
   exit 2
 fi
 # 用的是不是仓内那个？回退到已安装版要提醒 —— 它可能是过期的，
 # 那样报出来的失败反映的是引擎版本而不是模型对错。
 case "$ENGINE" in
-  *"/engine/target/"*) ;;
+  *"/moonGit/target/"*) ;;
   *) echo "⚠ 用的是已安装的引擎（${ENGINE}），不是仓内 release。" >&2
-     echo "  已安装版可能过期，失败未必是模型的问题。建议先 cd engine && cjpm build" >&2 ;;
+     echo "  已安装版可能过期，失败未必是模型的问题。建议先 cd moonGit && cjpm build" >&2 ;;
 esac
 echo "引擎：$ENGINE"
 
@@ -428,7 +430,7 @@ RC=$?
 if [[ $RC -ne 0 ]]; then
   echo ""
   echo "契约检查未通过。常见成因："
-  echo "  · 引擎改了 JSON 键名 —— 同步改 Sources/deepGit/Models.swift（AGENTS.md 有约定）"
+  echo "  · 引擎改了 JSON 键名 —— 同步改 Sources/deepDolphin/Models.swift（AGENTS.md 有约定）"
   echo "  · 引擎新增了必填字段 —— 补进对应 struct"
   echo "  · 沙箱没造成功 —— 上面的 ⚠ 会提示"
 fi

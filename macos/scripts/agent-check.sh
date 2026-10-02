@@ -6,7 +6,7 @@
 #   P0-5 agent 每次从零起步（`var convo = [ChatMessage.user(question)]`），
 #         所谓"对话"其实是一串互不相干的一次性提问
 #
-# 编译的是 Sources/deepGit/*.swift 本体（不是副本）——
+# 编译的是 Sources/deepDolphin/*.swift 本体（不是副本）——
 # 副本会与源文件漂移，测了等于没测。
 # 也正因为它们无任何依赖，判定才能被单独抽出来测：
 # 内联在 for 循环/视图里时，那几档永远抓不到。
@@ -16,11 +16,11 @@
 set -uo pipefail
 
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUTCOME="$PKG_DIR/Sources/deepGit/AgentOutcome.swift"
-MSG="$PKG_DIR/Sources/deepGit/ChatMessage.swift"
-CONVO="$PKG_DIR/Sources/deepGit/AgentConversation.swift"
-AIERR="$PKG_DIR/Sources/deepGit/AIErrorMessage.swift"
-ARGS="$PKG_DIR/Sources/deepGit/ToolArgs.swift"
+OUTCOME="$PKG_DIR/Sources/deepDolphin/AgentOutcome.swift"
+MSG="$PKG_DIR/Sources/deepDolphin/ChatMessage.swift"
+CONVO="$PKG_DIR/Sources/deepDolphin/AgentConversation.swift"
+AIERR="$PKG_DIR/Sources/deepDolphin/AIErrorMessage.swift"
+ARGS="$PKG_DIR/Sources/deepDolphin/ToolArgs.swift"
 CHECKER="$PKG_DIR/Tests/AgentCheck/main.swift"
 
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/dg-agent-XXXXXX")"

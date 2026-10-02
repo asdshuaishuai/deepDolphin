@@ -10,7 +10,7 @@
 #   · P0-2 快照是扁平键（context/cost_in/cost_out），解析器读嵌套
 #     （limit{}/cost{}）⇒ 225 个 provider 的上下文窗口与成本全为 nil。
 #
-# 【关键点】编译的是 Sources/deepGit/ModelsDev.swift 本体，不是副本 ——
+# 【关键点】编译的是 Sources/deepDolphin/ModelsDev.swift 本体，不是副本 ——
 # 副本会与源文件漂移，测了等于没测。
 #
 # 【跑法】scripts/catalog-check.sh
@@ -18,9 +18,9 @@
 set -uo pipefail
 
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CATALOG="$PKG_DIR/Sources/deepGit/ModelsDev.swift"
+CATALOG="$PKG_DIR/Sources/deepDolphin/ModelsDev.swift"
 # ModelsDev.popularProviders 的默认上限来自这里，编译时必须一起带上
-PICKER="$PKG_DIR/Sources/deepGit/ProviderPickerSlice.swift"
+PICKER="$PKG_DIR/Sources/deepDolphin/ProviderPickerSlice.swift"
 CHECKER="$PKG_DIR/Tests/CatalogCheck/main.swift"
 SNAPSHOT="$PKG_DIR/Resources/models-dev.json"
 

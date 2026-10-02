@@ -6,7 +6,7 @@
 #   P1-12 刷新进行中时把用户请求静默丢弃 ⇒ 点刷新像没反应
 #   ScanSheet 手打绝对路径 / 首尾空格直接失败且报错误导 ⇒ 判定抽到 PathInput
 #
-# 编译的是 Sources/deepGit/*.swift 本体（不是副本）：
+# 编译的是 Sources/deepDolphin/*.swift 本体（不是副本）：
 # 副本会与源文件漂移，测了等于没测。
 # 之所以能单独编译它们，正是因为那些判定被抽成了零依赖的纯函数 ——
 # 内联在视图/生命周期代码里时，运行时根本抓不到它们。
@@ -16,27 +16,27 @@
 set -uo pipefail
 
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DECISIONS="$PKG_DIR/Sources/deepGit/ClientDecisions.swift"
-PATHINPUT="$PKG_DIR/Sources/deepGit/PathInput.swift"
-STOPDEC="$PKG_DIR/Sources/deepGit/StopDecision.swift"
-LANGCOV="$PKG_DIR/Sources/deepGit/LanguageCoverage.swift"
-CCSCOPE="$PKG_DIR/Sources/deepGit/CommitCountScope.swift"
-CTXENV="$PKG_DIR/Sources/deepGit/ContextEnvelope.swift"
-ENGFAIL="$PKG_DIR/Sources/deepGit/EngineFailure.swift"
-SCANCOV="$PKG_DIR/Sources/deepGit/ScanCoverage.swift"
-CTCOMP="$PKG_DIR/Sources/deepGit/CommitTypeComposition.swift"
-UPOUT="$PKG_DIR/Sources/deepGit/UpdateOutcome.swift"
-MSCARD="$PKG_DIR/Sources/deepGit/MilestoneCard.swift"
-DSTOK="$PKG_DIR/Sources/deepGit/DesignTokens.swift"
-DSTRG="$PKG_DIR/Sources/deepGit/DestructiveGuard.swift"
-A11Y="$PKG_DIR/Sources/deepGit/A11yLabel.swift"
-SCL="$PKG_DIR/Sources/deepGit/ShortcutMap.swift"
-ROUTE="$PKG_DIR/Sources/deepGit/Route.swift"
-ROUTER="$PKG_DIR/Sources/deepGit/Router.swift"
-SCOPE="$PKG_DIR/Sources/deepGit/Scope.swift"
-LDST="$PKG_DIR/Sources/deepGit/LoadState.swift"
-DASHSCOPE="$PKG_DIR/Sources/deepGit/DashboardScope.swift"
-MODELS="$PKG_DIR/Sources/deepGit/Models.swift"
+DECISIONS="$PKG_DIR/Sources/deepDolphin/ClientDecisions.swift"
+PATHINPUT="$PKG_DIR/Sources/deepDolphin/PathInput.swift"
+STOPDEC="$PKG_DIR/Sources/deepDolphin/StopDecision.swift"
+LANGCOV="$PKG_DIR/Sources/deepDolphin/LanguageCoverage.swift"
+CCSCOPE="$PKG_DIR/Sources/deepDolphin/CommitCountScope.swift"
+CTXENV="$PKG_DIR/Sources/deepDolphin/ContextEnvelope.swift"
+ENGFAIL="$PKG_DIR/Sources/deepDolphin/EngineFailure.swift"
+SCANCOV="$PKG_DIR/Sources/deepDolphin/ScanCoverage.swift"
+CTCOMP="$PKG_DIR/Sources/deepDolphin/CommitTypeComposition.swift"
+UPOUT="$PKG_DIR/Sources/deepDolphin/UpdateOutcome.swift"
+MSCARD="$PKG_DIR/Sources/deepDolphin/MilestoneCard.swift"
+DSTOK="$PKG_DIR/Sources/deepDolphin/DesignTokens.swift"
+DSTRG="$PKG_DIR/Sources/deepDolphin/DestructiveGuard.swift"
+A11Y="$PKG_DIR/Sources/deepDolphin/A11yLabel.swift"
+SCL="$PKG_DIR/Sources/deepDolphin/ShortcutMap.swift"
+ROUTE="$PKG_DIR/Sources/deepDolphin/Route.swift"
+ROUTER="$PKG_DIR/Sources/deepDolphin/Router.swift"
+SCOPE="$PKG_DIR/Sources/deepDolphin/Scope.swift"
+LDST="$PKG_DIR/Sources/deepDolphin/LoadState.swift"
+DASHSCOPE="$PKG_DIR/Sources/deepDolphin/DashboardScope.swift"
+MODELS="$PKG_DIR/Sources/deepDolphin/Models.swift"
 CHECKER="$PKG_DIR/Tests/ClientCheck/main.swift"
 
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/dg-client-XXXXXX")"
@@ -61,18 +61,18 @@ PRECHECK_N=0
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   PRECHECK_N=$((PRECHECK_N+1))
-  if [ ! -f "$PKG_DIR/Sources/deepGit/$f" ]; then
+  if [ ! -f "$PKG_DIR/Sources/deepDolphin/$f" ]; then
     echo "✗ 编译清单声明了 ${f}，但磁盘上没有这个文件" >&2
     PRECHECK_FAIL=$((PRECHECK_FAIL+1))
   fi
 done <<EOF
-$(sed -n 's/^[A-Z_][A-Z_0-9]*="\$PKG_DIR\/Sources\/deepGit\/\([^"]*\)"$/\1/p' "$0")
+$(sed -n 's/^[A-Z_][A-Z_0-9]*="\$PKG_DIR\/Sources\/deepDolphin\/\([^"]*\)"$/\1/p' "$0")
 EOF
 
 # (2) 清单里的每个文件都必须零 SwiftUI/AppKit 依赖
-for f in $(sed -n 's/^[A-Z_][A-Z_0-9]*="\$PKG_DIR\/Sources\/deepGit\/\([^"]*\)"$/\1/p' "$0"); do
-  [ -f "$PKG_DIR/Sources/deepGit/$f" ] || continue
-  if grep -qE '^import (SwiftUI|AppKit)' "$PKG_DIR/Sources/deepGit/$f"; then
+for f in $(sed -n 's/^[A-Z_][A-Z_0-9]*="\$PKG_DIR\/Sources\/deepDolphin\/\([^"]*\)"$/\1/p' "$0"); do
+  [ -f "$PKG_DIR/Sources/deepDolphin/$f" ] || continue
+  if grep -qE '^import (SwiftUI|AppKit)' "$PKG_DIR/Sources/deepDolphin/$f"; then
     echo "✗ $f 进了编译清单但依赖 SwiftUI/AppKit ⇒ 命令行检查器编不过" >&2
     PRECHECK_FAIL=$((PRECHECK_FAIL+1))
   fi

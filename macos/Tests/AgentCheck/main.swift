@@ -1,6 +1,6 @@
 // AgentCheck — agent 判定层的检查。
 //
-// 编译的是 Sources/deepGit/*.swift 本体（不是副本）：
+// 编译的是 Sources/deepDolphin/*.swift 本体（不是副本）：
 // 副本会与源文件漂移，测了等于没测。
 //
 // 覆盖两个缺陷：
@@ -88,7 +88,7 @@ func sourceText(_ name: String) throws -> String {
         .deletingLastPathComponent()   // AgentCheck
         .deletingLastPathComponent()   // Tests
         .deletingLastPathComponent()   // <pkg>
-    return try String(contentsOf: dir.appendingPathComponent("Sources/deepGit/\(name)"),
+    return try String(contentsOf: dir.appendingPathComponent("Sources/deepDolphin/\(name)"),
                       encoding: .utf8)
 }
 
@@ -202,7 +202,7 @@ do {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let url = pkg.appendingPathComponent("Sources/deepGit/AgentCore.swift")
+        let url = pkg.appendingPathComponent("Sources/deepDolphin/AgentCore.swift")
         let raw = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
         guard raw.contains("//") else { throw fail("读不到 AgentCore.swift") }
         // AgentCore 的注释里明确引用了旧的 `?? [:]`；剥完必须消失
@@ -276,7 +276,7 @@ do {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let url = pkg.appendingPathComponent("Sources/deepGit/AgentCore.swift")
+        let url = pkg.appendingPathComponent("Sources/deepDolphin/AgentCore.swift")
         // code() 剥注释：AgentCore.swift:211 的注释里引用着旧的 `?? [:]`，
         // 不剥的话那条「不得再用」会假红。1b 这条实测没被注释骗到（NC31-c），
         // 但走同一条路径更省心，且不会因为将来注释写法一变就失效。
@@ -402,7 +402,7 @@ do {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let url = pkg.appendingPathComponent("Sources/deepGit/AgentCore.swift")
+        let url = pkg.appendingPathComponent("Sources/deepDolphin/AgentCore.swift")
         let src = code((try? String(contentsOf: url, encoding: .utf8)) ?? "")
         guard src.contains("AgentCore") else {
             throw fail("读不到 AgentCore.swift（\(url.path)）—— 本条会静默空转")
@@ -504,7 +504,7 @@ do {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let url = pkg.appendingPathComponent("Sources/deepGit/AgentConversation.swift")
+        let url = pkg.appendingPathComponent("Sources/deepDolphin/AgentConversation.swift")
         let src = code((try? String(contentsOf: url, encoding: .utf8)) ?? "")
         guard src.contains("enum Conversation") else {
             throw fail("读不到 AgentConversation.swift（\(url.path)）—— 本条会静默空转")
@@ -537,12 +537,12 @@ do {
         .deletingLastPathComponent()   // AgentCheck
         .deletingLastPathComponent()   // Tests
         .deletingLastPathComponent()   // <pkg>
-        .appendingPathComponent("Sources/deepGit/AIIntegration.swift")
+        .appendingPathComponent("Sources/deepDolphin/AIIntegration.swift")
     let board = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-        .appendingPathComponent("Sources/deepGit/BoardView.swift")
+        .appendingPathComponent("Sources/deepDolphin/BoardView.swift")
     let files = [src, board]
 
     check("所有 AIResultSheet 调用点都传了实现（没有 onRegenerate: nil）") {

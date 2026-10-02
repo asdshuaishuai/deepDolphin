@@ -8,7 +8,7 @@
 #      body 每次求值都全量重解析一遍，200KB 文档是每帧主线程工作。
 #      抽成纯函数 + 4 条记忆化后才可测。
 #
-# 编译的是 Sources/deepGit/MarkdownParser.swift 本体（不是副本）——
+# 编译的是 Sources/deepDolphin/MarkdownParser.swift 本体（不是副本）——
 # 副本会与源文件漂移，测了等于没测。
 # 也正因为它不 import SwiftUI，才可能被单独编译测试。
 #
@@ -17,7 +17,7 @@
 set -uo pipefail
 
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PARSER="$PKG_DIR/Sources/deepGit/MarkdownParser.swift"
+PARSER="$PKG_DIR/Sources/deepDolphin/MarkdownParser.swift"
 CHECKER="$PKG_DIR/Tests/MarkdownCheck/main.swift"
 
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/dg-md-XXXXXX")"

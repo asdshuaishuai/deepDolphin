@@ -2,7 +2,7 @@
 //
 // ⚠️ 术语：这里**不是**「进程内 FFI」。引擎是**子进程**（或 MCP stdio），
 // 与本进程在同一台机器上，但不共享地址空间。进程内 FFI（dylib 直连）已决定不做，
-// 见 engine/AGENTS.md 不变量 58。
+// 见 moonGit/AGENTS.md 不变量 58。
 //
 // 【边界】客户端通过 CLI 子进程调用引擎（`deepgit <命令> --json`），
 // 不走 HTTP 网络。引擎二进制来自应用内嵌副本或系统安装。
@@ -29,7 +29,7 @@ enum EngineError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notFound:
-            return "找不到 deepGit 引擎。请运行 deepgit-engine/scripts/install.sh 安装，或设置 DEEPGIT_BIN"
+            return "找不到 moonGit 引擎。请运行 moonGit/scripts/install.sh 安装，或设置 DEEPGIT_BIN"
         case .failed(let msg):
             return msg
         case .failedWithPayload(let msg, _):
@@ -100,12 +100,21 @@ final class EngineCLI: @unchecked Sendable {
         if let env = ProcessInfo.processInfo.environment["DEEPGIT_BIN"], !env.isEmpty {
             paths.append(env)
         }
-        if let bundled = Bundle.main.path(forResource: "deepgit", ofType: nil) {
-            paths.append(bundled)
+        // 内嵌副本与已安装版都先找新名 moongit，再回退旧名 deepgit。
+        //
+        // ⚠️ 回退不能省：引擎命令名 2026-10-03 改成 moongit，但装在用户机器上的
+        //    旧版仍然是 ~/.local/bin/deepgit。只列新名的话，**没跑过 install.sh
+        //    的机器上引擎会静默找不到** —— 而找不到时上层会回落到「无引擎」态，
+        //    面板照常打开、只是所有数据都不刷新，看不出是「引擎没找到」。
+        for name in ["moongit", "deepgit"] {
+            if let bundled = Bundle.main.path(forResource: name, ofType: nil) {
+                paths.append(bundled)
+            }
         }
-        paths.append(NSHomeDirectory() + "/.local/bin/deepgit")
-        paths.append("/usr/local/bin/deepgit")
-        paths.append("/opt/homebrew/bin/deepgit")
+        for dir in ["\(NSHomeDirectory())/.local/bin", "/usr/local/bin", "/opt/homebrew/bin"] {
+            paths.append("\(dir)/moongit")
+            paths.append("\(dir)/deepgit")
+        }
         return paths
     }
 

@@ -1,6 +1,6 @@
 // MarkdownCheck — MarkdownView 块级解析的检查。
 //
-// 编译的是 Sources/deepGit/MarkdownParser.swift 本体（不是副本）。
+// 编译的是 Sources/deepDolphin/MarkdownParser.swift 本体（不是副本）。
 //
 // 覆盖两件事：
 //   1. 解析结果正确（抽文件时把 150 行搬过来，最容易丢的是行内记号剥离与标题层级）
@@ -236,7 +236,7 @@ do {
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-    let viewURL = root.appendingPathComponent("Sources/deepGit/MarkdownView.swift")
+    let viewURL = root.appendingPathComponent("Sources/deepDolphin/MarkdownView.swift")
     let raw = try String(contentsOf: viewURL, encoding: .utf8)
     // 剥注释再匹配（教训见 AGENTS.md：源码 lint 不剥注释一定出假红）
     var code = ""

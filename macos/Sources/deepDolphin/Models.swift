@@ -1,6 +1,6 @@
 // Models.swift — 与引擎 CLI 的 `--json` 输出对齐的契约模型。
 //
-// 【边界】字段名必须与 engine/src/flow/*.cj 的 JSON 输出严格一致；
+// 【边界】字段名必须与 moonGit/src/flow/*.cj 的 JSON 输出严格一致；
 // 引擎改键名 = 破坏契约，必须同步改这里（AGENTS.md 有约定）。
 //
 // ⚠️ 原来这里写的是「与引擎 HTTP API 对齐」—— 传输层早已改成 CLI 子进程，

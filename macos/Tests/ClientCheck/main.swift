@@ -1,6 +1,6 @@
 // ClientCheck — 客户端状态判定的检查。
 //
-// 编译的是 Sources/deepGit/ClientDecisions.swift 本体（不是副本）——
+// 编译的是 Sources/deepDolphin/ClientDecisions.swift 本体（不是副本）——
 // 副本会与源文件漂移，测了等于没测。
 //
 // 覆盖两个已修缺陷：
@@ -60,7 +60,7 @@ let sourceDir = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()   // <pkg>
 
 func sourceText(_ name: String) throws -> String {
-    try String(contentsOf: sourceDir.appendingPathComponent("Sources/deepGit/\(name)"),
+    try String(contentsOf: sourceDir.appendingPathComponent("Sources/deepDolphin/\(name)"),
                 encoding: .utf8)
 }
 
@@ -72,7 +72,7 @@ func strippedCode(_ name: String) throws -> String {
 
 /// `Sources/deepGit` 下全部 .swift 文件名（不含路径、不含子目录）。
 func allSourceFileNames() throws -> [String] {
-    let dir = sourceDir.appendingPathComponent("Sources/deepGit")
+    let dir = sourceDir.appendingPathComponent("Sources/deepDolphin")
     let names = try FileManager.default.contentsOfDirectory(atPath: dir.path)
     return names.filter { $0.hasSuffix(".swift") }.sorted()
 }
@@ -255,7 +255,7 @@ do {
         .deletingLastPathComponent()   // ClientCheck
         .deletingLastPathComponent()   // Tests
         .deletingLastPathComponent()   // <pkg>
-    let src = root.appendingPathComponent("Sources/deepGit")
+    let src = root.appendingPathComponent("Sources/deepDolphin")
     func text(_ name: String) throws -> String {
         try String(contentsOf: src.appendingPathComponent(name), encoding: .utf8)
     }
@@ -956,7 +956,7 @@ do {
 
 print("【5】路径判定（PathInput.swift）—— 引擎不吃首尾空格，相对路径无基准")
 
-// 判据的依据是**实测**（engine/target/release/bin/main，2026-10-01）：
+// 判据的依据是**实测**（moonGit/target/release/bin/main，2026-10-01）：
 //   /abs        ✓ 引擎会规范化（/tmp → /private/tmp）
 //   /abs/       ✓ 引擎会消解尾斜杠
 //   ~/sub       ✓ 引擎自己展开 ~
@@ -2490,7 +2490,7 @@ do {
         // 收敛到刻度会改变布局（14→16 挤不挤？10→8 还是 12？），
         // 离屏快照虽能验观感却不是真窗口（深浅色主题、缩到最小时的截断都拍不到）
         // —— 擅自收敛等于把猜测写进布局。
-        // 它们记在 clients/macos/deepGit/README.md 的待人工确认清单里，
+        // 它们记在 deepDolphin/macos/README.md 的待人工确认清单里，
         // 这条判据负责盯着「不许再新增」。
         //
         // ⚠️ pending 从 7 档涨到 12 档，**不是新违规，是判据覆盖面被修好之后
@@ -3314,7 +3314,7 @@ do {
         let sh = try pkgText("scripts/client-check.sh")
         var checked = 0
         for line in sh.split(separator: "\n") {
-            guard let eq = line.range(of: "=\"$PKG_DIR/Sources/deepGit/") else { continue }
+            guard let eq = line.range(of: "=\"$PKG_DIR/Sources/deepDolphin/") else { continue }
             let file = String(line[eq.upperBound...]).trimmingCharacters(in: .whitespaces)
             .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
             let code = try strippedCode(file)
@@ -3739,7 +3739,7 @@ do {
 // 模型收了、界面不说，等于没算 —— 用户看到的仍是一份残缺的真相。
 //
 // Phase 3 地基层的账：补了 13 个引擎键进模型，其中 6 个当时一个都没渲染。
-// 引擎的档位线是 3/14 天（engine/src/kernel/progress.cj:30-36），
+// 引擎的档位线是 3/14 天（moonGit/src/kernel/progress.cj:30-36），
 // 客户端当时自己写了个 30 天 —— 两个真相源，且已经开始互相矛盾。
 
 do {

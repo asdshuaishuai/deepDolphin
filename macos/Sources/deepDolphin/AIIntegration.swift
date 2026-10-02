@@ -298,10 +298,10 @@ struct UpdateActionMenu: View {
 ///
 /// ⚠️ **「待记录 N」徽章的前世**：这个徽章我画过一次又撤掉了。
 /// 撤的理由是它**拿不到真数** —— 引擎的 status 当时读的是进度库里存的快照，
-/// 而那个快照在 update 算完后立刻归零（`engine/src/flow/update.cj:591`），
+/// 而那个快照在 update 算完后立刻归零（`moonGit/src/flow/update.cj:591`），
 /// 于是 `pendingCommits` 实质恒为 0，徽章永远不亮。
 /// 引擎自己的注释早就承认了（`flow/dashboard.cj:205`）。
-/// 现在引擎的 status 改成**实时**计算了（`engine/src/flow/status.cj`），
+/// 现在引擎的 status 改成**实时**计算了（`moonGit/src/flow/status.cj`），
 /// 徽章才有意义，所以又装回来 —— 见不变量 89 的前后半段。
 struct DualTrackButtons: View {
     @EnvironmentObject var model: AppModel

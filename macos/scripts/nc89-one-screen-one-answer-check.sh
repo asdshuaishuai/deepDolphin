@@ -14,13 +14,13 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 unset SDKROOT
 
-MODELS=Sources/deepGit/Models.swift
-SCOPE=Sources/deepGit/DashboardScope.swift
-VIEWS=Sources/deepGit/DetailViews.swift
-BAR=Sources/deepGit/WorkBar.swift
-PANEL=Sources/deepGit/PanelView.swift
-APP=Sources/deepGit/DeepGitApp.swift
-SRCDIR=Sources/deepGit
+MODELS=Sources/deepDolphin/Models.swift
+SCOPE=Sources/deepDolphin/DashboardScope.swift
+VIEWS=Sources/deepDolphin/DetailViews.swift
+BAR=Sources/deepDolphin/WorkBar.swift
+PANEL=Sources/deepDolphin/PanelView.swift
+APP=Sources/deepDolphin/DeepGitApp.swift
+SRCDIR=Sources/deepDolphin
 # ⚠️ 备份清单必须**列全所有被 mutate 的文件**。
 #   漏一个 = 那个文件的还原靠不上，脚本中途非零退出时改坏的源码就留在工作区里。
 #   （本脚本第一版就是漏了 PanelView：变体 9 改它，而清单里没有它。）

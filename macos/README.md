@@ -1,4 +1,4 @@
-# deepGit — macOS 客户端
+# deepDolphin — macOS 客户端
 
 > 双形态原生客户端：**主面板窗口**（完整 git 项目管理面板）+ **菜单栏 bar**（辅助速览）。
 > 本项目是纯客户端，独立于引擎构建与发布。
@@ -7,7 +7,7 @@
 
 | 形态 | 入口 | 内容 |
 |---|---|---|
-| **主面板**（主体） | 菜单栏「打开面板」、点击 bar 项目行、或 `deepGit --open-panel` | 侧栏导航：**仪表盘**（项目群脉搏 hero + 一键说明 + 图标统计卡/语言分布/里程碑/活跃项目）、**看板**（独立页面：按健康状态分列——活跃/待处理/停滞/其他，卡片带快捷动作）、**里程碑**（行内直操作：点击行跳项目、··· 菜单达成/重开/放弃/删除）、**项目详情**（工程脉搏、提交构成、分支进度、Git 操作、进度日志、README/AGENTS/CLAUDE 平铺） |
+| **主面板**（主体） | 菜单栏「打开面板」、点击 bar 项目行、或 `deepDolphin --open-panel` | 侧栏导航：**仪表盘**（项目群脉搏 hero + 一键说明 + 图标统计卡/语言分布/里程碑/活跃项目）、**看板**（独立页面：按健康状态分列——活跃/待处理/停滞/其他，卡片带快捷动作）、**里程碑**（行内直操作：点击行跳项目、··· 菜单达成/重开/放弃/删除）、**项目详情**（工程脉搏、提交构成、分支进度、Git 操作、进度日志、README/AGENTS/CLAUDE 平铺） |
 | **菜单栏 bar**（辅助） | 常驻状态项（如 `15 ⚠︎1`） | `.window` 富弹窗：汇总行 + 项目速览行（状态点/未提交徽标/待记录迷你进度条）+ 全部浅更新 + 退出 |
 
 状态项标题即健康度：项目数 + `⚠︎N`（有停滞分支）或 `●N`（有未提交改动），图标颜色随状态变化（绿/橙/红）。
@@ -27,27 +27,27 @@
   上下文窗口徽标），Base URL 默认目录端点可覆盖；**key 存 macOS 钥匙串**；一键测试连通。
 - **AI 助手**（侧栏 ✦）：选范围提问 → 引擎 `context --json` 上下文包 + `tools --json` 工具清单 →
   模型原生调用引擎工具（更新/读文档/提交改动…），客户端执行后回喂，≤4 轮 → Markdown 渲染。
-- 无头自测（CI/排查）：`deepGit --agent-selftest "总结一下项目群现状"`；
-  本地 mock 验证：`defaults write cn.deepgit.app ai.providerID mock` +
+- 无头自测（CI/排查）：`deepDolphin --agent-selftest "总结一下项目群现状"`；
+  本地 mock 验证：`defaults write cn.deepdolphin.app ai.providerID mock` +
   `ai.baseURL http://127.0.0.1:5999/v1` + `ai.apiKey mock-key`（配一个回 tool_calls 的假 provider）。
 
 ## 引擎 / 客户端边界（重要）
 
 | 职责 | 归属 | 说明 |
 |---|---|---|
-| 项目注册、进度记录、文档写入 | **引擎** | `deepgit scan/update/deep/track --json`（CLI 子进程） |
-| 状态 / 仪表盘 / 里程碑 / 日志数据 | **引擎** | `deepgit status/dashboard/milestone list --json` |
-| 更新 / 里程碑 / git 操作 | **引擎** | `deepgit update/deep --json`、`deepgit milestone <子命令> --json`、`deepgit git <op> <项目> --json`（pull/push/commit/stash/unstash/fetch 白名单，无破坏性命令） |
-| agent 喂养（上下文包/工具清单） | **引擎** | `deepgit context --json`、`deepgit tools --json`（或 MCP `tools/list`）——引擎 AI 无关，只供事实与动作 |
+| 项目注册、进度记录、文档写入 | **引擎** | `moongit scan/update/deep/track --json`（CLI 子进程） |
+| 状态 / 仪表盘 / 里程碑 / 日志数据 | **引擎** | `moongit status/dashboard/milestone list --json` |
+| 更新 / 里程碑 / git 操作 | **引擎** | `moongit update/deep --json`、`moongit milestone <子命令> --json`、`moongit git <op> <项目> --json`（pull/push/commit/stash/unstash/fetch 白名单，无破坏性命令） |
+| agent 喂养（上下文包/工具清单） | **引擎** | `moongit context --json`、`moongit tools --json`（或 MCP `tools/list`）——引擎 AI 无关，只供事实与动作 |
 | **AI 目录/通道/配置、工具循环** | **客户端** | models.dev 目录（快照+刷新）选型；ai-sdk 风格通道（OpenAI 兼容 + Anthropic 原生 tool_calls）；key 存钥匙串；agent 循环在 AgentView |
-| 文档内容 | **引擎** | `deepgit docs <项目> --json` 返回 README/AGENTS/CLAUDE 原文（单文件 200KB 截断），客户端本地渲染 |
+| 文档内容 | **引擎** | `moongit docs <项目> --json` 返回 README/AGENTS/CLAUDE 原文（单文件 200KB 截断），客户端本地渲染 |
 | 进度存储（`~/.deepgit/store/`） | **引擎** | 客户端不落任何业务数据 |
-| 引擎发现与拉起 | **客户端** | `DEEPGIT_BIN` → app 内嵌副本（`Contents/Resources/deepgit`）→ `~/.local/bin` → `/usr/local/bin` → 登录 shell PATH；找到后按需拉起 CLI 子进程 |
+| 引擎发现与拉起 | **客户端** | `DEEPGIT_BIN` → app 内嵌副本（`Contents/Resources/moongit`）→ `~/.local/bin` → `/usr/local/bin` → 登录 shell PATH；找到后按需拉起 CLI 子进程 |
 | 数据获取与渲染、通知、自启 | **客户端** | 本仓库全部代码 |
 | 退出清理 | **客户端** | 若引擎服务是本 app 拉起的，退出时一并停止 |
 
 契约：引擎 `--json` 的键名是**唯一耦合面**，改动必须同步
-`Sources/deepGit/Models.swift` 与引擎 `flow/*.cj`。
+`Sources/deepDolphin/Models.swift` 与引擎 `flow/*.cj`。
 （传输层只有 CLI 子进程与 MCP，**没有 HTTP 服务**；客户端不走网络取引擎数据。）
 
 ## 系统集成
@@ -68,7 +68,7 @@
 - **应用图标**：`AppIcon.png`（PIL 生成的 git 分支拓扑 + ◆ 记号）→ `AppIcon.icns`，
   build.sh 自动拷入 bundle（CFBundleIconFile）。
 - **深链启动参数**（解析规则在 `Route.swift`，纯函数可单测）：
-  - `deepGit --open-panel` 启动即开主面板
+  - `deepDolphin --open-panel` 启动即开主面板
   - `--project <名称>` 直达项目详情
   - `--section dashboard|board|milestones` 直达对应页
   - `--agent-selftest [问题]` 无头跑一次 agent 并打印结果（问题可省）
@@ -80,9 +80,9 @@
 ## 构建
 
 ```sh
-sh build.sh        # swift build -c release + 组装 deepGit.app + ad-hoc 签名
-open deepGit.app
-# 安装：cp -R deepGit.app /Applications/
+sh build.sh        # swift build -c release + 组装 deepDolphin.app + ad-hoc 签名
+open deepDolphin.app
+# 安装：cp -R deepDolphin.app /Applications/
 ```
 
 `build.sh` 会尝试把引擎二进制与仓颉运行时 dylib 内嵌进 .app（~59MB），
@@ -91,7 +91,7 @@ open deepGit.app
 ## 代码结构
 
 ```
-Sources/deepGit/
+Sources/deepDolphin/
   A11yLabel.swift               纯函数：无障碍标签与 `SearchFilter`（空态两态可区分）
   AIClient.swift                引擎/上下文/工具清单的客户端门面
   AIErrorMessage.swift          纯函数：URLError → 可执行中文 + 地址脱敏到 host:port
@@ -114,7 +114,7 @@ Sources/deepGit/
   ContextEnvelope.swift         纯函数：agent 上下文包裁剪
   DashboardParts.swift          仪表盘四段式零件：筛选行 / KPI 宽卡 / 逐项目进度卡（设计稿布局）
   DashboardScope.swift          纯函数：时间窗 + 提交类型筛选、4 张 KPI 的归并口径
-  DeepGitApp.swift              入口：MenuBarExtra(.window) + AppDelegate（深链/退出清理）+ CommandMenu（双轨动作 ⇧⌘U / ⌥⇧⌘D）
+  DeepDolphinApp.swift              入口：MenuBarExtra(.window) + AppDelegate（深链/退出清理）+ CommandMenu（双轨动作 ⇧⌘U / ⌥⇧⌘D）
   DesignSystem.swift            设计系统视图层：DSColor / DSSpacing / DSRadius / DSTypography / Surface
   DesignTokens.swift            纯函数：色板（逐值等于设计稿 tailwind.config）/ 状态与量级分档
   DestructiveGuard.swift        纯函数：破坏性动作的确认文案与「可逆动作不弹确认」
@@ -156,9 +156,9 @@ Sources/deepGit/
 
 ## 已知边界 · 按最佳预案定的取舍（2026-10-02 起）
 
-> 协作规约见 `engine/AGENTS.md` 的「协作规约」节：拿不准时按预案定、不停下来提问，
+> 协作规约见 `moonGit/AGENTS.md` 的「协作规约」节：拿不准时按预案定、不停下来提问，
 > 但**必须把决定写进文档**。以下是本轮落档的具体取舍与它的已知代价。
-> 通用判据（可复用的那部分）已提炼为 `engine/AGENTS.md` 不变量 95。
+> 通用判据（可复用的那部分）已提炼为 `moonGit/AGENTS.md` 不变量 95。
 > 本轮新增的通用判据：**114**（引擎修过的口径，客户端必须逐字对齐）、
 > **115**（同一个量在同一屏里只许有一个算法）、**116**（撤入口 ≠ 撤能力）、
 > **117**（交叉验证必须拿非空样本）、**118**（负控要按判据的实际位置选套件）。
@@ -193,7 +193,7 @@ Sources/deepGit/
 | **全量更新的「覆盖」由代码保证，不交给模型** | 用户要求「一键全量，对所有仓库，基于 AI agent 执行」。这里把「基于 AI agent 执行」拆成两半：**执行**走 agent 工具通道（`AgentCore.executeTool`，与 agent 对话同一个执行点、同一份工具清单、同一套必填校验），**决定跑哪些**由代码逐个显式传项目名 | 理由：全量卖的就是「一个不漏」这一条。把覆盖交给模型 ⇒ 可能少跑一个，而界面照样显示「全量完成」，用户没有任何线索（**看起来对**是最坏的一类失败）。判据钉住遍历里不许出现 `prefix(` / `.filter` / `.dropFirst`，且必须逐个记账。**代价**：agent 在这一步没有自由裁量权 —— 它不能在发现某个仓库状态特殊时改主意跳过，那是刻意的，见不变量 108 |
 | 每一页**各自声明滚动归属**：AI 页不套 `ScrollView` | 切浅色验主题时撞上的真缺陷。`AISettingsPane` 的 `Form` 在 macOS 是 List-backed：套进外层 `ScrollView` 之后，它报给外层的是**整份内容高度**而不是视口高度，于是两件事同时坏 —— ① 外层永远判定「装得下」，滚轮纹丝不动，`Base URL 覆盖` / `测试连接` / 数据说明段**根本够不着**；② sheet 被内容撑到比窗口还高，**页脚被顶出窗口框**。实测（窗口 940×672）：sheet 776×689、位置 y=152；页脚两个按钮落在 y=809，而窗口底边在 772 —— 保存按钮被画在窗口外面、压在桌面上。改法是让 `Form` 自己滚，另两页（普通 `VStack`）照旧套 `ScrollView` | **判据按分支分别钉**，不钉「有没有 `ScrollView`」这个字面量 —— 另两页套它才是对的，只断言总数会把这三条一起判死。外侧（AI 分支 0 层）与内侧（`AISettingsPane` 里有 `Form`）两半都要钉：不套但也没有的话这一页直接退化成不可滚的静态布局。负控 NC91 变体 1 就是**把本轮修掉的缺陷原样改回去**，它必须红 —— 缺陷版和修复版长得极像（都有一层 `ScrollView`），不实测分不出谁是谁 |
 | 设置面板尺寸下限 **480×400** | 用户 2026-10-03 原话：「设置窗口有些大，可以小一些」。前提是上一行先修好 —— 内容不再反过来撑大 sheet 之后，`minWidth/minHeight` 才是它的**实际**大小（改之前实测 sheet 就是 776×689） | 判据把 `minHeight` 钉在 **320...520**：上界来自实测（窗口最小 940×672、去掉工具栏约剩 620，超了页脚就会被顶出窗口框），下界是可用性（低于 320 页签栏和页脚要挤在一起）。真 app 已验：三页在 480×400 下都正常，AI 页可滚到最底（`/tmp/ai-end.png`：测试连接 + 数据说明都在，页脚钉住不动），改完模型 id 点进「过滤模型」失焦后「保存」变蓝底亮起 |
-| ~~一键全量与顶栏双轨**并存**~~ → **2026-10-02 推翻：撤掉那两个按钮，能力留着** | 上一版的理由是「双轨的范围由 `selection` 推导，停在某个项目上就是「浅更新 · deepGit」，所以它没有指向全群的入口」。**用户当场指出这条理由不成立**：「仪表盘那边有浅更新、深更新 全部，所以没必要再多两个」—— 全局范围下双轨的标题**本来就是**「浅更新 · 全部 / 深更新 · 全部」。四个措辞不同、长相差不多的按钮摆在一起，用户按下之前判断不出会动哪些仓库 | **删的是按钮，不是能力**：「全量基于 AI agent 执行」那条要求仍然成立，改由 `AppModel.updateAll` 走 `AgentBulkUpdate.run`（agent 工具通道），入口就是已有的双轨按钮。顺带得到逐仓库结果面板（以前只有一条聚合通知）。判据改成钉**背后那条**：「同一个动作在同一屏里只能有一个入口」+「这一处真能走通到 `updateAll`」—— 按钮可以换位置换措辞，但两处并排就是复发。推广：入口数是**排版问题**，能力是**通路问题**，撤入口时先确认通路还在 |
+| ~~一键全量与顶栏双轨**并存**~~ → **2026-10-02 推翻：撤掉那两个按钮，能力留着** | 上一版的理由是「双轨的范围由 `selection` 推导，停在某个项目上就是「浅更新 · deepDolphin」，所以它没有指向全群的入口」。**用户当场指出这条理由不成立**：「仪表盘那边有浅更新、深更新 全部，所以没必要再多两个」—— 全局范围下双轨的标题**本来就是**「浅更新 · 全部 / 深更新 · 全部」。四个措辞不同、长相差不多的按钮摆在一起，用户按下之前判断不出会动哪些仓库 | **删的是按钮，不是能力**：「全量基于 AI agent 执行」那条要求仍然成立，改由 `AppModel.updateAll` 走 `AgentBulkUpdate.run`（agent 工具通道），入口就是已有的双轨按钮。顺带得到逐仓库结果面板（以前只有一条聚合通知）。判据改成钉**背后那条**：「同一个动作在同一屏里只能有一个入口」+「这一处真能走通到 `updateAll`」—— 按钮可以换位置换措辞，但两处并排就是复发。推广：入口数是**排版问题**，能力是**通路问题**，撤入口时先确认通路还在 |
 | 单一仓库的 git 操作**挪到页头**，与「项目说明」并排 | 用户 2026-10-02 原话：「把单一仓库的 git 操作放到顶部吧」+「项目说明平齐吧」。原来那排按钮（拉取/推送/抓取/暂存/恢复）在页面中下部的「Git 操作」卡里，而页头右侧只有「项目说明 + 更新」—— **最常用的两个动作被埋在分支进度、里程碑、日志、托管文档四张卡下面，第一屏根本看不到** | **提交不塞进页头按钮排**：它要一个提交信息输入框，硬塞会让页头多出一整行输入框把标题挤掉。它留在下面的「提交改动」卡里，并**紧跟**按钮排那一组（不隔四张卡）。卡标题随之从「Git 操作」改成「提交改动」—— 只讲提交的卡顶着「Git 操作」的名字会与页头那排对不上。判据钉「按钮排唯一构造点」：两处各写一份，可用性判定（`busyProject`）就会分叉，而那只有真点一次才发现 |
 | 「可合入分支」判据**逐字对齐引擎**，客户端不许自己发明 | 引擎 `flow/dashboard.cj:200-208` 早就把 `mergeCandidates` 的判据从 `pendingCommits` 换成 `aheadOfDefault`，还专门写了回归测试 `testDashboardMergeCandidatesUsesAheadOfDefaultNotPending`。**客户端把引擎刚修掉的错误又犯了一遍**（`needsAction` 里写着 `branches.contains { $0.pendingCommits > 0 && !$0.isDefault }`）。真 app 实测：5 个分支 `ahead=1 / pending=0` ⇒ 引擎 `work.mergeCandidates` = 5，客户端判 0 个项目要动手 ⇒ 侧栏「看板 0」而仪表盘「待处理 6」 | 提成有名字的派生属性 `BranchStatus.isMergeCandidate`（三处都要用，抄三份必然漂移）。模型补上 `merged` 键（引擎恒发，模型原来没有）—— 写成 `let merged: Bool` 而不是 `= false`，后者会被合成解码跳过、永远是 false。判据分两层：**源码级**钉三条条件齐全 + `pendingCommits` 不许出现，**行为级**拿契约沙箱的真实 fixture 交叉验证「客户端判的条数 == 引擎 `work.mergeCandidates`」。⚠️ 后者**要求沙箱里有非空样本**：旧沙箱所有仓库都没远端 ⇒ `branches` 恒空 ⇒ 断言 0 == 0 空转着变绿，客户端判据错着也是绿的。为此专门造了一个有远端、且已跑过 update 的仓库（旧判据在它上面判 0、新判据判 1） |
 | KPI「项目总数」用 `listed`，「待处理」用**项目数** | 两处都是「同一件事在一屏里给了两个答案」：`total` 只数**采集成功**的（注册 6 个、3 个采集失败 ⇒ 大数字写 3，而侧栏写「仓库（6/6）」、范围选择器写「全部 6 个项目」）；「待处理」原来是 `dirty + mergeCandidates + (untracked>0?1:0)` —— **项目数 + 分支数 + 布尔**三种单位相加。引擎测试注释早就点名过第一个坑（`dashboard.cj:721-722`：「必须钉住『listed 才是注册表条数』，否则下一个人又会去用 total」） | 失败数**不许跟着消失**：降级到副说明（「可读取 3/6 · 采集失败 3 个」），改用 `listed` 是对的，只改一半等于把坏掉的项目藏起来。「待处理」主数字取「有多少个项目要我动手」，与侧栏徽标、看板「待处理」列**同源**（`needsAction`）；分支数进副说明并写清单位（「待合入分支 5 条」）。**页头那一行摘要原来自己又算了一遍**（第四处分叉），现在没有自己的算法 —— `DashKPIBuilder.summaryLine` 只从 `kpis` 数组里读 |
@@ -203,7 +203,7 @@ Sources/deepGit/
 | 「保存」按**有没有改动**禁用 | 打开设置什么都不改也能点保存 = 一个点下去什么都不会发生的按钮（本项目反复在修的「摆而不动」那族） | 判据钉 `original` 存的是**补过 baseURL 之后**的那一份 —— 拿没补过的那份当基准的话，一打开就恒为「有改动」，按钮永远亮着 |
 | 保存失败的消息贴在**页脚**，且失败后送回 AI 页 | 失败可能发生在用户已经切到别的页签之后。消息跟着页签走就看不见，而「点了保存但什么都没发生」是最坏的一种反馈 | 失败一定发生在 AI 页（只有它有 save），所以失败时 `tab = .ai` 把用户送回出问题的那一页，否则他可能停在「自动化」上看着一条与自己无关的报错 |
 | 面板里的仓库数**只能有一处来源** | 标题写「· 4 个仓库」（点击时的 `model.projects.count`）而正文写「已注册项目 5 个」（结果里的真值）—— 面板自己跟自己打架，用户没线索该信哪个 | 标题改为取 `report.attempted`。凡是同一个概念在界面上出现两处，两处必须同源 |
-| AI 简报那一层**没跑成时必须说出口** | 本机 AI 未配置（`defaults read cn.deepgit.app.ai` 不存在）。若静默，界面上「没生成简报」与「生成了空的」长得一样 | 措辞区分三态：跑成了 / 没跑成（附原因与下一步）/ 跑了但没产出。**并且不许把整件事报成失败** —— 更新已经执行完了，报失败会让人以为仓库没被动过。判据只卡「有没有把原因说给用户」，不卡具体措辞 |
+| AI 简报那一层**没跑成时必须说出口** | 本机 AI 未配置（`defaults read cn.deepdolphin.app.ai` 不存在）。若静默，界面上「没生成简报」与「生成了空的」长得一样 | 措辞区分三态：跑成了 / 没跑成（附原因与下一步）/ 跑了但没产出。**并且不许把整件事报成失败** —— 更新已经执行完了，报失败会让人以为仓库没被动过。判据只卡「有没有把原因说给用户」，不卡具体措辞 |
 | 逐仓库「说明」**复用 `updateOutcomeSummary`** | 工具返回的是引擎原始 JSON。第一版整段塞进结果表格，真 app 一跑就暴露：表格被撑爆，且「哪个文档改了、有没有备份」被埋在 `projectId` / `journalEntry` 里 | 转调项目已有的唯一口径（为缺陷 #211 写的，三态区分 + 备份必须说清在哪），**不另写一份措辞**。明细用**列表**不用 markdown 表格 —— 表格单元不换行，备份路径一长右侧就截断。这条是**截图抓到的，不是想出来的** |
 | 全量**先刷新注册表再冻结名单** | 「冻结名单」本来是为了防「跑到一半换名单」，但冻结得太早就是拿**陈旧数据**当全集：app 不知道别的进程（CLI / 另一个终端）改过注册表。实测：用 CLI 加一个仓库后不刷新 app 直接点全量，面板写「已注册项目 3 个，成功 3 个，失败 0 个」，而侧栏已是「仓库（4/4）」—— 第 4 个整行消失，面板还说「全量完成」 | 正确顺序：**占锁仍在任何 `await` 之前**（否则并发会同时改写多个仓库），但名单要在 Task 里、刷新之后取。推广：承诺「覆盖某个全集」的动作，名单必须在**发起时**重新取，界面那份是为了显示不是为了执行 |
 
@@ -215,10 +215,10 @@ Sources/deepGit/
 
 ```sh
 export DEEPGIT_HOME=/tmp/dg-rich                      # 沙箱化，不碰用户数据
-export DEEPGIT_BIN="$PWD/engine/target/release/bin/main"
-nohup ./deepGit.app/Contents/MacOS/deepGit > /tmp/dg.log 2>&1 &
-osascript -e 'tell application "System Events" to tell process "deepGit" to set position of window 1 to {1750, 120}'
-osascript -e 'tell application "System Events" to set frontmost of (first process whose name is "deepGit") to true'
+export DEEPGIT_BIN="$PWD/../../moonGit/target/release/bin/main"
+nohup ./deepDolphin.app/Contents/MacOS/deepDolphin > /tmp/dg.log 2>&1 &
+osascript -e 'tell application "System Events" to tell process "deepDolphin" to set position of window 1 to {1750, 120}'
+osascript -e 'tell application "System Events" to set frontmost of (first process whose name is "deepDolphin") to true'
 screencapture -x -R1750,120,1100,720 /tmp/shot.png
 # 真实点击：AX click 无响应，必须走 CGEvent（先 move 再 down/up）
 ```
@@ -273,7 +273,7 @@ EmptyState、卡片圆角与接缝、分段条配色、间距等值替换后的�
 
 > ⚠️ 本节此前写着「整窗渲染会 SIGSEGV ⇒ 顶栏只能人眼看」，**那条结论是错的**：
 > 那次崩溃是 harness 自己的一个无限递归 `log()` 造成的，与 `orderFront` 无关。
-> 修正后顶栏已可自动验证（见 `engine/AGENTS.md` 不变量 101）。
+> 修正后顶栏已可自动验证（见 `moonGit/AGENTS.md` 不变量 101）。
 
 ### 还没做的
 
@@ -296,7 +296,7 @@ EmptyState、卡片圆角与接缝、分段条配色、间距等值替换后的�
   打模型 id 时切英文输入（或按空格确认）即可。
   真 app 已用 mock 数据验完整链路：打 `qwen2-mock` 时 Picker 实时跟随、
   页脚「保存」当场变蓝；切到「通用」再切回来草稿仍在；点「取消」后
-  `defaults read cn.deepgit.app.ai` 报 Domain not found（确实没落盘）。
+  `defaults read cn.deepdolphin.app.ai` 报 Domain not found（确实没落盘）。
 
 - **本轮踩到并纠正的一次误判，值得单独记**：`osascript` 合成按键之后**立刻**读
   AX，拿到的是**滞后一次交互**的界面。头几轮据此得出「`TextField` 绑
@@ -368,7 +368,7 @@ EmptyState、卡片圆角与接缝、分段条配色、间距等值替换后的�
   浅色下暴露出的唯一新问题（AI 页下半段够不着）已修，见上表「每一页各自声明滚动归属」一行。
   窗口最小尺寸下的侧栏截断也已验（见下一条）。
 - **一键全量的 AI 简报从未真跑过**：本机 AI 未配置
-  （`defaults read cn.deepgit.app.ai` 不存在），所以「未生成 AI 简报」那条分支验过了，
+  （`defaults read cn.deepdolphin.app.ai` 不存在），所以「未生成 AI 简报」那条分支验过了，
   **「生成成功」那条分支没有** —— 简报正文的质量、长度，以及它有没有把逐仓库表
   复读一遍，都还没看过。配好 AI 后必须补跑一次。
 - ~~**一键全量没在有失败仓库的数据上跑过**~~ —— 已验：沙箱里放了一个路径被删掉的
@@ -397,8 +397,8 @@ EmptyState、卡片圆角与接缝、分段条配色、间距等值替换后的�
   「提交改动」卡紧跟其下不隔卡。
 - ~~**一条「声明了却一次没用」的同类缺陷**~~ —— **已修**（2026-10-02，用户「继续」后）：
   `AppDelegate.openPanel()` 里那条「窗口已经开着就直接 focus」的快路径判的是
-  `w.title == "deepGit"`，而 `PanelView.swift:41` 的 `.navigationTitle("deepGit 面板")`
-  会覆盖窗口标题（真 app 的 AX 窗口名读到的正是「deepGit 面板」）
+  `w.title == "deepDolphin"`，而 `PanelView.swift:41` 的 `.navigationTitle("deepDolphin 面板")`
+  会覆盖窗口标题（真 app 的 AX 窗口名读到的正是「deepDolphin 面板」）
   ⇒ **那个比较永不成立**，每次都落到下面的通知转发。
   功能没坏（`openWindow(id: "panel")` 同样会把已开的窗口带到前面），
   但注释里写着「NSApp.windows **兜底**」，实际上**只有兜底那条在跑** ——
@@ -444,7 +444,7 @@ EmptyState、卡片圆角与接缝、分段条配色、间距等值替换后的�
 | 7 | 5 | MarkdownView(2) / BoardView(1) / Components(1) / DetailViews(1) |
 | 6 | 15 | BarView(5) / PanelView(5) / DetailViews(3) / AgentView(1) / BoardView(1) |
 | 5 | 9 | AIIntegration(3) / BoardView(3) / DetailViews(2) / BarView(1) |
-| 3 | 8 | MilestonesView(3) / DetailViews(2) / MarkdownView(2) / DeepGitApp(1) |
+| 3 | 8 | MilestonesView(3) / DetailViews(2) / MarkdownView(2) / DeepDolphinApp(1) |
 | 2 | 8 | BarView(3) / Components(2) / DetailViews(1) / MarkdownView(1) / MilestonesView(1) |
 | 1 | 2 | AIIntegration(1) / DetailViews(1)　— 发丝线，不是节奏值 |
 
@@ -454,7 +454,7 @@ EmptyState、卡片圆角与接缝、分段条配色、间距等值替换后的�
 > 1/11/18/30/40 五档散值也从未被计入，基线 51 其实是「被看见的数」不是「实际的数」。
 > 覆盖面补齐后重算为 87 处 / 12 档（**不是新增违规，是第一次被看见**）。
 > 30/40 明显不是节奏值而是结构性留白（面板分隔、hero 区），
-> 记在这里是为了将来收敛时知道它们存在。通用判据见 `deepgit-engine` 不变量 102。
+> 记在这里是为了将来收敛时知道它们存在。通用判据见 `moongit` 不变量 102。
 
 **为什么不一刀切收进刻度**：那是**改布局**、不是重构。14→16 挤不挤、
 10 该变 8 还是 12，得看着窗口才知道。离屏 harness 现在能给出**快照级**的观感

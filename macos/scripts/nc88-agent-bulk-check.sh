@@ -12,11 +12,11 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 unset SDKROOT
 
-SRC=Sources/deepGit/AgentBulkUpdate.swift
-VIEW=Sources/deepGit/AgentBulkView.swift
-MODEL=Sources/deepGit/Model.swift
-BAR=Sources/deepGit/WorkBar.swift
-SRCDIR=Sources/deepGit
+SRC=Sources/deepDolphin/AgentBulkUpdate.swift
+VIEW=Sources/deepDolphin/AgentBulkView.swift
+MODEL=Sources/deepDolphin/Model.swift
+BAR=Sources/deepDolphin/WorkBar.swift
+SRCDIR=Sources/deepDolphin
 
 pass=0
 fail=0

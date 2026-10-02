@@ -9,7 +9,7 @@
 //
 // 【为什么不放在 SwiftPM test target】本包只有一个 executableTarget，
 // 对它做 XCTest 需要处理 main 入口冲突。这里改成独立可执行：
-//   swiftc Sources/deepGit/Models.swift Tests/ContractCheck/main.swift -o /tmp/cc
+//   swiftc Sources/deepDolphin/Models.swift Tests/ContractCheck/main.swift -o /tmp/cc
 // 关键点：**直接编译真实的 Models.swift**，不复制一份到测试里 ——
 // 复制的那份会与源文件漂移，测了等于没测。
 //
@@ -75,7 +75,7 @@ func sourceText(_ name: String) throws -> String {
         .deletingLastPathComponent()   // ContractCheck
         .deletingLastPathComponent()   // Tests
         .deletingLastPathComponent()   // <pkg>
-    return try String(contentsOf: dir.appendingPathComponent("Sources/deepGit/\(name)"),
+    return try String(contentsOf: dir.appendingPathComponent("Sources/deepDolphin/\(name)"),
                       encoding: .utf8)
 }
 
@@ -1601,7 +1601,11 @@ check("tags 的元素类型只能查引擎源码（CLI 造不出非空样本）"
         .deletingLastPathComponent()   // ContractCheck
         .deletingLastPathComponent()   // Tests
         .deletingLastPathComponent()   // <pkg>
-    let src = try String(contentsOf: dir.appendingPathComponent("../../../engine/src/flow/status.cj"),
+    // ⚠️ 层级数跟着目录结构走：<pkg> = <repo>/deepDolphin/macos，
+    //    引擎仓在 <repo>/moonGit ⇒ 上溯**两**层。
+    //    拍平前这里是 deepDolphin/macos（三层）。层数错了不会静默 ——
+    //    读文件直接抛 NSFileNoSuchFileError，契约检查当场红（这是好事）。
+    let src = try String(contentsOf: dir.appendingPathComponent("../../moonGit/src/flow/status.cj"),
                          encoding: .utf8)
     guard src.contains("for (t in project.tags)") else {
         throw structError("status.cj 里找不到 for (t in project.tags) ⇒ 判据没对准构造处")

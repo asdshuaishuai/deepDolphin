@@ -273,7 +273,7 @@ do {
             .deletingLastPathComponent()   // CatalogCheck
             .deletingLastPathComponent()   // Tests
             .deletingLastPathComponent()   // <pkg>
-            .appendingPathComponent("Sources/deepGit/ModelsDev.swift"), encoding: .utf8)
+            .appendingPathComponent("Sources/deepDolphin/ModelsDev.swift"), encoding: .utf8)
         guard src.contains("limit: Int = PROVIDER_PICKER_MAX") else {
             throw fail("popularProviders 的默认值不是那个常量")
         }

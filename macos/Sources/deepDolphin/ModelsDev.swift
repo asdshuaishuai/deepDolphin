@@ -152,7 +152,7 @@ final class ModelCatalog: @unchecked Sendable {
     private func loadBundled() {
         // 优先读回上次网络刷新的快照（比 bundle 内的新）
         if let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-            let cached = dir.appendingPathComponent("deepGit/models-dev.json")
+            let cached = dir.appendingPathComponent("deepDolphin/models-dev.json")
             if let data = try? Data(contentsOf: cached) {
                 adopt(parseCatalog(data: data))
                 if !providers.isEmpty { return }
@@ -177,7 +177,7 @@ final class ModelCatalog: @unchecked Sendable {
             guard !parsed.isEmpty else { return }
             self.adopt(parsed)
             if let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-                let dir = dir.appendingPathComponent("deepGit", isDirectory: true)
+                let dir = dir.appendingPathComponent("deepDolphin", isDirectory: true)
                 try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 try? data.write(to: dir.appendingPathComponent("models-dev.json"))
             }
