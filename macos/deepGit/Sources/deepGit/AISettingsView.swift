@@ -60,9 +60,12 @@ struct GeneralSettingsView: View {
             footer
         }
         // NSHostingView 会按内容最小尺寸收缩窗口：没有最小约束窗口会被压成 0×0。
-        // ⚠️ 高度从 640 降到 520：分页之后每页内容都变短了，
-        //    沿用 640 会让「通用」那一页下方空出一大片。
-        .frame(minWidth: 540, minHeight: 520)
+        //
+        // ⚠️ 这两个数字直接决定 sheet 的实际大小 —— 前提是**内容不再反过来撑大它**。
+        //    640 → 520 → 480×400：AI 页改成让 `Form` 自己滚之后，内容高度不再外泄，
+        //    sheet 才真的缩到 min frame（改之前实测 776×689，页脚被顶出窗口框）。
+        //    再往小压，页签栏（标题 + 280 宽的分段控件）会先挤扁，所以 480 是下限附近。
+        .frame(minWidth: 480, minHeight: 400)
         .onAppear(perform: load)
     }
 
@@ -93,18 +96,32 @@ struct GeneralSettingsView: View {
 
     /// 每页只画**一个**分支。三个分支都在 body 里写全了也不会同时出现，
     /// 但那样「哪一页有哪些控件」就得读三遍代码才看得出来。
+    ///
+    /// ⚠️ **滚动策略逐页写死，不许统一套一层 ScrollView。**
+    ///    `AISettingsPane` 的 `Form` 在 macOS 是 List-backed。把它塞进外层
+    ///    `ScrollView`，Form 会把**整份内容高度**报给外层（它自己不当滚动容器用），
+    ///    于是：① 外层永远判定「装得下」，滚不动，AI 页下半段够不着；
+    ///    ② sheet 被撑到比窗口还高，页脚被顶到窗口框外、压在桌面上。
+    ///    实测：窗口 940×672 时 sheet 高 689，页脚落在 y=809、窗口底边 772。
+    ///    另两页是普通 VStack，套 ScrollView 没问题，所以只有 AI 页例外。
     @ViewBuilder
     private var pane: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: DSSpacing.lg) {
-                switch tab {
-                case .general:    LoginItemCard()
-                case .automation: ScheduleCard()
-                case .ai:         AISettingsPane(draft: $draft)
-                }
+        switch tab {
+        case .general:
+            ScrollView {
+                LoginItemCard()
+                    .padding(DSSpacing.lg)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(DSSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        case .automation:
+            ScrollView {
+                ScheduleCard()
+                    .padding(DSSpacing.lg)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        case .ai:
+            // 不套 ScrollView：Form 自己就是滚动容器。
+            AISettingsPane(draft: $draft)
         }
     }
 

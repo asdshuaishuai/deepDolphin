@@ -636,6 +636,101 @@ do {
         return "草稿与基准都在宿主；AI 页只拿 @Binding，不自持第二份"
     }
 
+    check("每一页各自声明滚动归属：AI 页不许再套一层 ScrollView") {
+        // 这条是从**真实翻车**里长出来的，不是写法洁癖。
+        //
+        // `AISettingsPane` 的 `Form` 在 macOS 是 List-backed。把它塞进外层
+        // `ScrollView`，它报给外层的是**整份内容高度**而不是视口高度，于是：
+        //   ① 外层永远判定「装得下」，滚轮纹丝不动，AI 页下半段根本够不着；
+        //   ② sheet 被内容撑到比窗口还高 —— 实测 sheet 776×689、窗口 940×672，
+        //      页脚按钮落在 y=809、窗口底边在 772，保存按钮被顶到窗口框外压在桌面上。
+        // 修法是**让 Form 自己滚**：AI 分支里不许出现 ScrollView。
+        //
+        // ⚠️ 判据钉的是「这一页归谁滚」，不是「有没有 ScrollView」这个字面量：
+        //    另两页是普通 VStack，套 ScrollView 才是对的，所以按分支分别断言。
+        //    只断言「整个内容区里 ScrollView 的个数」会把这三条一起判死。
+        let t = try codeOf("AISettingsView.swift")
+        guard let pane = slice(t, from: "private var pane: some View", to: "private var footer: some View") else {
+            throw fail("切不出设置的内容区（结构变了，先更新这条判据）")
+        }
+        // 按 `case .xxx:` 标签现切分支。位置从正文里找，不写死顺序 ——
+        // 写死的话有人调换分支顺序就会切错段，判据反而变绿。
+        let re = try NSRegularExpression(pattern: "case \\.([A-Za-z_][A-Za-z0-9_]*):")
+        let ms = re.matches(in: pane, range: NSRange(pane.startIndex..., in: pane))
+        guard ms.count >= 3 else {
+            throw fail("内容区里只切出 \(ms.count) 个分支（结构变了，先更新这条判据）")
+        }
+        var bodies: [String: String] = [:]
+        for (i, m) in ms.enumerated() {
+            guard let nameRange = Range(m.range(at: 1), in: pane) else { continue }
+            let start = pane.index(pane.startIndex, offsetBy: m.range.location + m.range.length)
+            let end = i + 1 < ms.count
+                ? pane.index(pane.startIndex, offsetBy: ms[i + 1].range.location)
+                : pane.endIndex
+            if start <= end { bodies[String(pane[nameRange])] = String(pane[start..<end]) }
+        }
+        // 谁该自己滚、谁该被外层带着滚 —— 逐页钉死。
+        let expectScroll: [String: Int] = ["general": 1, "automation": 1, "ai": 0]
+        for (name, want) in expectScroll.sorted(by: { $0.key < $1.key }) {
+            guard let body = bodies[name] else {
+                throw fail("内容区里切不出分支「\(name)」⇒ 这一页点开是空的")
+            }
+            let got = body.components(separatedBy: "ScrollView").count - 1
+            guard got == want else {
+                throw fail("分支「\(name)」里有 \(got) 个 ScrollView（应为 \(want)）⇒ "
+                    + (name == "ai"
+                        ? "Form 又被套进外层滚动容器了：AI 页滚不动，sheet 还会被内容撑高、把页脚顶出窗口"
+                        : "这一页没有滚动容器，窗口一小内容就够不着"))
+            }
+        }
+        guard bodies["ai"]?.contains("AISettingsPane(draft:") == true else {
+            throw fail("AI 分支没有直接挂 AISettingsPane")
+        }
+        // 「不许套 ScrollView」只钉住了外侧；内侧还得**真有一个滚动容器**。
+        // 两半缺一不可：不套但也没有 ⇒ 这一页直接退化成不可滚的静态布局。
+        //
+        // ⚠️ 墙不能选 `private var catalogProvider` —— 它声明在 `body` **之前**，
+        //    拿它当墙切出来的只是一堆属性声明，`Form` 根本不在里面（判据会恒红）。
+        guard let aiPage = slice(t, from: "struct AISettingsPane: View {", to: "private func providerChanged()") else {
+            throw fail("切不出 AI 页的声明（结构变了，先更新这条判据）")
+        }
+        guard aiPage.contains("Form {") else {
+            throw fail("AI 页里没有 Form ⇒ 它自己不是滚动容器，窗口一小下半段就够不着")
+        }
+        return "三个分支各自声明滚动归属：AI 页 0 层（Form 自己滚），另两页各 1 层"
+    }
+
+    check("设置面板的尺寸下限必须留在窗口装得下的范围内") {
+        // 尺寸下限是 sheet 的**实际**大小（前提是内容不再反过来撑大它）。
+        // 上下界都钉：上界来自实测 —— 窗口最小 940×672、去掉工具栏约剩 620，
+        // 历史上写成 640/689 时页脚就被顶到了窗口框外；下界是可用性，
+        // 低于 320 页签栏和页脚就挤到一起了。
+        let t = try codeOf("AISettingsView.swift")
+        guard let host = slice(t, from: "struct GeneralSettingsView: View {", to: "var body: some View") else {
+            throw fail("切不出设置宿主的声明（结构变了，先更新这条判据）")
+        }
+        guard let body = slice(t, from: "var body: some View", to: "private var header: some View") else {
+            throw fail("切不出设置宿主的 body（结构变了，先更新这条判据）")
+        }
+        // 少了最小约束，NSHostingView 会按内容收缩，窗口能被压成 0×0。
+        guard host.contains("@State private var tab: SettingsTab"),
+              body.contains("minWidth:") else {
+            throw fail("设置宿主没有声明最小尺寸 ⇒ sheet 会按内容收缩（历史上能被压成 0×0）")
+        }
+        let re = try NSRegularExpression(pattern: "minHeight:\\s*(\\d+)")
+        guard let m = re.firstMatch(in: body, range: NSRange(body.startIndex..., in: body)),
+              let r = Range(m.range(at: 1), in: body),
+              let h = Int(body[r]) else {
+            throw fail("读不到设置面板的 minHeight（结构变了，先更新这条判据）")
+        }
+        guard (320...520).contains(h) else {
+            throw fail("设置面板的 minHeight=\(h) 不在 320...520 内 ⇒ "
+                + (h > 520 ? "比窗口装得下的还高，页脚会被顶出窗口框"
+                           : "矮到页签栏和页脚要挤在一起"))
+        }
+        return "最小高度 \(h) 落在 320...520（窗口 940×672 装得下，且不挤）"
+    }
+
     check("isConfigured 不得在 keychain 写失败时仍报「已配置」") {
         let t = try codeOf("AISDK.swift")
         guard let body = slice(t, from: "var isConfigured: Bool", to: "\n    }") else {

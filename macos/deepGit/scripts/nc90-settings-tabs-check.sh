@@ -71,11 +71,28 @@ run() {
   fi
 }
 
+# expect_gone <文件> <该消失的文本> <变体名>
+# mutate() 的锚点是「改完必须出现某段文本」。但**删东西**的变体没有
+# 「出现」可指认 —— 只能指认它该**不**出现。
+# ⚠️ 锚点里带换行也不行：grep 逐行匹配，`grep -F` 拿到含换行的模式永远不中，
+#    于是这个「必需的锚点」静默退化成永远通过。
+expect_gone() {
+  local file="$1" text="$2" name="$3"
+  if grep -qF "$text" "$file"; then
+    printf '  ✗ %-36s 变体没删掉「%s」—— 负控没生效（判据无辜）\n' "$name" "$text"
+    exit 2
+  fi
+}
+
 echo "NC90 —— 设置分页签判据组负控"
 echo ""
 
 # ── 变体 1：漏接一个页签（点得过去、里面是空的） ──
-mutate "$SETTINGS" 's/                case \.automation: ScheduleCard\(\)\n//'
+# ⚠️ 锚点跟着 `pane` 的排版走：AI 页改成「Form 自己滚」之后，
+#    三个分支从「一行一个 case」变成了多行块，旧的单行正则已经失配 ——
+#    mutate() 会以 rc=2 报「锚点失配」，那时**判据是清白的**，是变体没生效。
+mutate "$SETTINGS" 's/        case \.automation:\n.*?        case \.ai:\n/        case .ai:\n/s'
+expect_gone "$SETTINGS" 'ScheduleCard()' "变体1 自动化页没接内容"
 run "必须双向对齐" "变体1 自动化页没接内容"
 restore
 
@@ -112,7 +129,14 @@ restore
 
 # ── 变体 7：同一个页签分支写两遍 ──
 # 写两遍就是渲染两次 —— 本项目反复修过的缺陷族（按钮排两遍、侧栏行两遍）。
-mutate "$SETTINGS" 's/(                case \.general:    LoginItemCard\(\))/$1\n                LoginItemCard()/'
+mutate "$SETTINGS" 's/(        case \.general:\n)(            ScrollView \{\n)/$1            LoginItemCard()\n$2/'
+# 锚点只能指认「多出来的那一行」；这里指认的是**张数**——
+# grep 逐行匹配，没法用带换行的模式断言相邻两行，只能数出现次数。
+n=$(grep -c 'LoginItemCard()' "$SETTINGS")
+if [ "$n" -ne 2 ]; then
+  printf '  ✗ 变体7 通用页渲染两张卡            变体改完后 LoginItemCard() 出现 %s 次（应为 2）—— 负控没生效（判据无辜）\n' "$n"
+  exit 2
+fi
 run "必须双向对齐" "变体7 通用页渲染两张卡"
 restore
 
