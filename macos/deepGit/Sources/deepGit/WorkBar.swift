@@ -24,17 +24,17 @@ struct WorkBar: View {
         HStack(spacing: DSSpacing.md) {
             scopePicker
             Spacer(minLength: DSSpacing.md)
-            // ⚠️ 「一键全量」与右边的双轨是**两种不同的动作**（范围 + 执行方式都不同），
-            // 所以用一条分隔线把它们明确切开，而不是并排摆成四个同级按钮：
-            // 四个长得差不多的更新按钮摆在一起，用户无法在按下之前判断会动哪些仓库。
-            // 分隔线也是设计稿那条「双轨是一条链」的呼应 —— 链是右边那两个。
-            HStack(spacing: DSSpacing.md) {
-                AgentBulkButtons()
-                Rectangle()
-                    .fill(DSColor.border)
-                    .frame(width: 1, height: 18)
-                pipeline
-            }
+            // ⚠️ 这里原来还有一对「全量浅 / 全量深」按钮（AgentBulkButtons），
+            //    2026-10-02 按用户要求删掉了：双轨按钮在**全局范围**下的标题
+            //    本来就是「浅更新 · 全部 / 深更新 · 全部」，
+            //    再摆一对全量按钮，同一个动作在同一屏里出现两次，
+            //    而两份的措辞还不一样（「全量」vs「· 全部」）——
+            //    用户会以为是两种不同的东西。
+            //
+            //    ⚠️ 删的是**按钮**，不是能力：那条「全量基于 AI agent 执行」的要求
+            //    仍然成立，改由 `AppModel.updateAll` 走 agent 工具通道实现
+            //    （见 Model.swift 的注释）。入口是已有的双轨按钮，不是新增按钮。
+            pipeline
         }
         .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, DSSpacing.sm)

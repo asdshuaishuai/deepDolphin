@@ -236,7 +236,12 @@ struct DeepGitPanel: View {
             ) {
                 if let track = model.pendingBulkUpdate {
                     Button(DestructiveGuard.confirmTitle(for: .bulkUpdate)) {
-                        model.startUpdateAll(deep: track == .deep)
+                        // 跑完把逐仓库结果交给面板。⚠️ 以前这条路径只有一条
+                        // 聚合通知（「N 个项目已更新」），哪个仓库改了哪些文档、
+                        // 哪个失败了、备份在哪，全都看不见。
+                        model.startUpdateAll(deep: track == .deep) { r in
+                            model.agentBulkResult = r
+                        }
                         model.pendingBulkUpdate = nil
                     }
                 }
@@ -245,6 +250,11 @@ struct DeepGitPanel: View {
                 Text(model.pendingBulkUpdate.map {
                     DestructiveGuard.bulkUpdateMessage(projectCount: model.projects.count, track: $0)
                 } ?? "")
+            }
+            // 全量结果面板。挂在主面板上：菜单栏与 Dock 两条入口都是
+            // CommandMenu / NSMenuItem（不是 View），挂不上 sheet。
+            .sheet(item: $model.agentBulkResult) { r in
+                AgentBulkResultSheet(report: r)
             }
     }
 

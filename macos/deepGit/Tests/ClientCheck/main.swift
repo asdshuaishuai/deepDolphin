@@ -4763,20 +4763,39 @@ do {
         return "循环与全量共用同一份"
     }
 
-    check("一键全量必须与其它批量更新共用同一把锁（并发会同时改写多个仓库）") {
+    check("全量必须与其它批量更新共用同一把锁（并发会同时改写多个仓库）") {
+        // ⚠️ 锚点换过一次：`startAgentBulk` 已删（全量按钮按用户要求撤掉，
+        //    入口并进双轨），执行体搬到 `AppModel.updateAll`。
+        //    判据**跟着语义走**：不变量是「全量与其它批量更新共用一把锁、
+        //    且发起即占锁」，函数名只是当前恰好承载它的那个。
         let model = try strippedCode("Model.swift")
-        guard let start = slice(model, from: "func startAgentBulk", to: "func startUpdateAll") else {
-            throw fail("切不出 startAgentBulk（结构变了，先更新这条判据）")
+        guard let body = slice(model, from: "func updateAll", to: "func milestoneAction") else {
+            throw fail("切不出 updateAll 的函数体（结构变了，先更新这条判据）")
+        }
+        // 共用同一把锁 = 用的是别人也认的那把，不是自己另开一个。
+        guard body.contains("busyAll = true"), body.contains("defer { busyAll = false }") else {
+            throw fail("updateAll 没有占/放 busyAll ⇒ 全量成了不参与互斥的一路人，\n" +
+                "      能和单项目更新并发，同时改写同一个仓库的托管区域")
         }
         // 占锁必须在**发起**时就位，且早于任何 await：
         // 放到 await 之后再置位，两条路都能在 busyAll 还是 false 时通过 guard。
-        guard let firstAwait = start.range(of: "await"),
-              let lockAt = start.range(of: "busyAll = true"),
+        guard let firstAwait = body.range(of: "await"),
+              let lockAt = body.range(of: "busyAll = true"),
               lockAt.lowerBound < firstAwait.lowerBound else {
-            throw fail("startAgentBulk 没有在第一个 await 之前占住 busyAll ⇒\n" +
+            throw fail("updateAll 没有在第一个 await 之前占住 busyAll ⇒\n" +
                 "      它可以和别的批量更新并发，同时改写多个仓库的托管区域")
         }
-        return "发起即占锁，早于任何 await"
+        // 锁既然是「共用」的，另一头就也得认它 —— 只查全量这一侧不够。
+        for (fn, probe) in [("startUpdate", "func startUpdate("),
+                            ("startUpdateAll", "func startUpdateAll(")] {
+            guard let other = slice(model, from: probe, to: "func updateAll") else {
+                throw fail("切不出 \(fn)（结构变了，先更新这条判据）")
+            }
+            guard other.contains("busyAll") else {
+                throw fail("\(fn) 不看 busyAll ⇒ 这把锁不是共用的，只是全量自己关自己")
+            }
+        }
+        return "发起即占锁，早于任何 await；两个批量入口都认这把锁"
     }
 
     check("全量必须先刷新注册表再冻结名单（冻结陈旧名单 = 静默漏仓库）") {
@@ -4787,40 +4806,64 @@ do {
         //
         // 判据钉的是**顺序**：刷新必须在冻结之前。反了就等于用陈旧名单。
         let model = try strippedCode("Model.swift")
-        guard let start = slice(model, from: "func startAgentBulk", to: "func startUpdateAll") else {
-            throw fail("切不出 startAgentBulk（结构变了，先更新这条判据）")
+        guard let body = slice(model, from: "func updateAll", to: "func milestoneAction") else {
+            throw fail("切不出 updateAll 的函数体（结构变了，先更新这条判据）")
         }
-        guard let refreshAt = start.range(of: "await self.refreshAll()"),
-              let freezeAt = start.range(of: "let targets = self.projects") else {
-            throw fail("startAgentBulk 里找不到「刷新」或「冻结名单」这一步（结构变了，先更新这条判据）")
+        guard let refreshAt = body.range(of: "await refreshAll()"),
+              let freezeAt = body.range(of: "let targets = projects") else {
+            throw fail("updateAll 里找不到「刷新」或「冻结名单」这一步（结构变了，先更新这条判据）")
         }
         guard refreshAt.lowerBound < freezeAt.lowerBound else {
             throw fail("先冻结名单、后刷新注册表 ⇒ 全量用的是**陈旧名单**，\n" +
-                "      而按钮承诺的是「所有仓库」—— 漏掉的那几个连一行提示都没有")
+                "      而入口承诺的是「所有仓库」—— 漏掉的那几个连一行提示都没有")
         }
         // 面板标题里的仓库数必须取**结果里的真值**。
         // 取点击那一刻的 `model.projects.count` 会出现面板自相矛盾：
         // 真 app 实测「标题 · 4 个仓库 / 正文 已注册项目 5 个」——
         // 因为全量会先刷新注册表再冻结，点下去时看到的 N 可能比实际执行的少。
         let view = try strippedCode("AgentBulkView.swift")
-        if !view.contains("\\(r.attempted) 个仓库") {
+        if !view.contains("\\(report.attempted) 个仓库") {
             throw fail("面板标题没用结果里的真实仓库数 ⇒ 会和正文「已注册项目 N 个」自相矛盾")
         }
         return "先刷新、后冻结；标题取真值"
     }
 
-    check("一键全量的按钮必须真的挂在工作条上（声明了能力却没接上 = 死功能）") {
+    check("全量入口不许在一屏里出现两次（同一个动作列两遍 = 用户以为是两件事）") {
+        // 2026-10-02 用户原话：「仪表盘那边有浅更新、深更新 全部，
+        // 所以没必要再多两个」——顶栏那对「全量浅 / 全量深」因此撤掉。
+        //
+        // 这条**不是**把删掉的按钮钉死，而是钉住它背后的判据：
+        // 同一个动作在同一屏里只能有一个入口。按钮可以换位置、换措辞，
+        // 但「浅更新 · 全部」旁边再挂一个「全量浅」就是复发。
+        //
+        // ⚠️ 能力没跟着按钮一起删：全量改由双轨按钮在全局范围下触发。
+        //    所以这条同时钉「入口只有一处」与「这一处真能走通全量」。
         let bar = try strippedCode("WorkBar.swift")
-        guard bar.contains("AgentBulkButtons()") else {
-            throw fail("WorkBar 里没有 AgentBulkButtons() ⇒ 两个全量按钮做出来了但没入口，\n" +
-                "      界面上找不到 —— 与「声明了 dismiss 却一次没用」同源")
+        if bar.contains("AgentBulkButtons") {
+            throw fail("WorkBar 里又出现了一对独立的全量按钮 ⇒ 同一个动作在同一屏里出现两次，\n" +
+                "      而两份的措辞还不一样（「全量」vs「· 全部」），用户会以为是两种不同的东西")
         }
-        // 恰好一处。出现两次 = 同一批按钮列两遍（判据 NC87 的同款理由）。
-        let n = bar.components(separatedBy: "AgentBulkButtons()").count - 1
-        guard n == 1 else {
-            throw fail("AgentBulkButtons() 在工作条里出现 \(n) 次（应为 1）")
+        // 顶栏只剩「范围选择器 + 双轨」，不许再多第三种发起全量的控件。
+        for stray in ["全量浅", "全量深", "全量更新"] {
+            if bar.contains(stray) {
+                throw fail("WorkBar 里出现了「\(stray)」字样 ⇒ 顶栏多出了第二个全量入口")
+            }
         }
-        return "工作条上一处入口"
+        // 撤掉按钮不许撤掉能力：双轨 → 全量 这条链必须还通着。
+        // 三段各自钉一处，缺任何一段都会让「全量」变成没人能点的死能力。
+        let model = try strippedCode("Model.swift")
+        let integration = try strippedCode("AIIntegration.swift")
+        let app = try strippedCode("DeepGitApp.swift")
+        if !model.contains("case .all:") || !model.contains("requestBulkUpdate(deep: deep)") {
+            throw fail("双轨在全局范围下不再走 requestBulkUpdate ⇒ 全量没有入口了（按钮已撤，不能再撤能力）")
+        }
+        if !integration.contains("model.runUpdate(deep:") {
+            throw fail("双轨按钮不再调 runUpdate ⇒ 全量那条链断了")
+        }
+        if !app.contains("model.startUpdateAll(deep:") {
+            throw fail("确认框不再调 startUpdateAll ⇒ 全量那条链断了")
+        }
+        return "顶栏只有双轨一处入口，链路仍通到 updateAll"
     }
 
     check("逐仓库「说明」必须是人类可读的结果，不许直接灌引擎原始 JSON") {
@@ -4862,6 +4905,306 @@ do {
             throw fail("逐仓库明细又改回 markdown 表格 ⇒ 备份路径不换行，窄面板会截断")
         }
         return "走 updateOutcomeSummary + 列表排版"
+    }
+}
+
+// MARK: - 【W】一屏之内不许出现两个答案（2026-10-02 真 app 巡检）
+//
+// 这组三条全部来自**真 app 截图**，不是评审想出来的。打开面板第一眼就看到
+// 三处自相矛盾的数字，而每一处的表现形式都一样：
+//     同一个量，在同一屏里被算了两遍，两遍的规则不同。
+//
+// 共同的病根不是「某个数算错了」，是**同一件事有两个算法**。
+// 所以这一组的判据大多不钉「等于多少」，而钉「是不是同一个出处」——
+// 消掉分叉的源头，比把两个数字调成一致更耐改。
+
+print("")
+print("【W】一屏之内不许出现两个答案")
+
+do {
+    // ── W1：待处理 ──
+    check("「待处理」只有一个算法：needsAction（不许再拿 pendingCommits 判「能不能合」）") {
+        // 根因：侧栏徽标用 `ProjectStatus.needsAction`，而它判分支那一项时写的是
+        // `branches.contains { $0.pendingCommits > 0 && !$0.isDefault }` ——
+        // 引擎 `flow/dashboard.cj:200-208` 明确说这是错的，还专门写了回归测试
+        // `testDashboardMergeCandidatesUsesAheadOfDefaultNotPending`。
+        // 实测：侧栏「看板 0」而仪表盘「待处理 6」，因为引擎算出 5 个可合入分支，
+        // 客户端一个都没认。
+        let models = try strippedCode("Models.swift")
+        guard let needAction = slice(models, from: "var needsAction: Bool {", to: "var liveness") else {
+            throw fail("切不出 needsAction（结构变了，先更新这条判据）")
+        }
+        guard needAction.contains("$0.isMergeCandidate") else {
+            throw fail("needsAction 没有走 BranchStatus.isMergeCandidate ⇒\n" +
+                "      「能不能合」在客户端有第二个算法，而引擎已经换过算法了")
+        }
+        if needAction.contains("pendingCommits") {
+            throw fail("needsAction 又用上了 pendingCommits ⇒ 回到引擎已经修掉的那个错：\n" +
+                "      pendingCommits 是「引擎还没记录的提交数」，刚跑过 update 恒为 0，\n" +
+                "      与「这个分支能不能合」毫无关系")
+        }
+        // 同一个谓词在整份源码里只能有一个定义点：抄第二份就是等着漂移。
+        let n = models.components(separatedBy: "isMergeCandidate").count - 1
+        guard n >= 2 else {
+            throw fail("isMergeCandidate 在 Models.swift 里只出现 \(n) 次（定义 + 至少一处使用）")
+        }
+        return "needsAction → isMergeCandidate；全文件无 pendingCommits 参与判定"
+    }
+
+    check("Decodable 结构体里不许有「let + 初值」的存储属性（合成解码器会跳过它）") {
+        // ⚠️ 为什么这条**按写法扫全文件**，而不是点名某几个字段：
+        //   上一条 JournalEntry 的判据是点名的（四个字段写死在数组里），
+        //   而它自己的注释写着「点名式判据只覆盖被点名的人」。
+        //   事实正是如此 —— 本轮新增的 `BranchStatus.merged` 就落在那四个之外，
+        //   写成 `let merged: Bool = false` 时四条全绿。
+        //
+        // 规则本身只有一句：Swift 合成 `init(from:)` 对
+        // **带初始值的不可变（let）存储属性直接跳过**（编译期有一句
+        // "immutable property will not be decoded because it is declared
+        // with an initial value"）。于是「引擎恒发也解不出来，字段永远是默认值」。
+        // 后果按字段不同，但都是**静默说谎**：可选的永远 nil、布尔永远 false。
+        //
+        // 为什么这条必须待在 client-check（契约检查里跑不了）：
+        // 变体「改成 `let merged: Bool = false`」会让 Swift 的**成员初始化器
+        // 直接丢掉 `merged` 参数** ⇒ 任何显式传 `merged:` 的测试代码编译失败
+        // ⇒ 契约检查在编译阶段就退出，判据根本没机会运行。
+        // 实测踩过：负控据此报「这条判据是摆设」，而真相是「跑错了套件」
+        // （见不变量 118）。client-check 只做源码 lint、不编译，正好是这条的家。
+        let m = try strippedCode("Models.swift")
+        var decodable = false
+        var structName = ""
+        var offenders: [String] = []
+        for rawLine in m.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(rawLine)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("struct ") || trimmed.hasPrefix("enum ")
+                || trimmed.hasPrefix("extension ") {
+                decodable = line.contains("Decodable")
+                structName = trimmed.split(separator: " ").dropFirst().first.map(String.init) ?? trimmed
+                continue
+            }
+            // 缩进 0 的右花括号 = 结构体结束。
+            if line == "}" {
+                decodable = false
+                structName = ""
+                continue
+            }
+            guard decodable else { continue }
+            // 只要「存储属性 + let + 同时给了初值」这一种形状。
+            // `static let` 是常量、`let x: T { … }` 是计算属性（下一行才是花括号），
+            // 两者都不匹配 `let 名字: 类型 = 值`。
+            guard let hit = line.range(of: #"^\s+let [A-Za-z_][A-Za-z0-9_]*:[^=]+="#,
+                                      options: .regularExpression) else { continue }
+            // NSRegularExpression 走 range(of:options:) 拿不到捕获组，
+            // 所以从匹配串里切出名字 —— 直接把整行塞进报错里会变成
+            // 「BranchStatus:.let merged: Bool =」，没人读得懂指的是哪个字段。
+            let matched = String(line[hit]).trimmingCharacters(in: .whitespaces)
+            let decl = matched.split(separator: ":", maxSplits: 1).first.map(String.init) ?? matched
+            let name = decl.trimmingCharacters(in: .whitespaces)
+                .replacingOccurrences(of: "let ", with: "")
+                .trimmingCharacters(in: .whitespaces)
+            offenders.append("\(structName).\(name)")
+        }
+        guard offenders.isEmpty else {
+            throw fail("这些 Decodable 存储属性写成了「let + 初值」，合成解码器**永远不会解它们**：\n"
+                + "      " + offenders.joined(separator: "、") + "\n"
+                + "      引擎恒发也解不出来，字段永远是默认值 ⇒ 界面在静默说谎。"
+                + "\n      可选的要写 `var`；必填的非可选字段根本不该有初值"
+                + "（缺键应当解码失败，而不是静默变成 0/false）")
+        }
+        return "全文件扫描：Decodable 结构体里 0 处「let + 初值」存储属性"
+    }
+
+    // ── W2：项目总数 ──
+    check("「项目总数」必须用 listed（注册表条数），不许用 total（仅采集成功）") {
+        // 引擎的测试注释（dashboard.cj:721-722）早就点名了这个坑：
+        // 「必须钉住『listed 才是注册表条数』这个前提，否则下一个人又会去用 total」。
+        // 上一个「下一个人」就是这张 KPI 卡：主数字取 total = 3，
+        // 而同一屏的侧栏写「仓库（6/6）」、范围选择器写「全部 6 个项目」。
+        let dash = try strippedCode("DashboardScope.swift")
+        guard let kpis = slice(dash, from: "static func kpis(", to: "static func summaryLine") else {
+            throw fail("切不出 DashKPIBuilder.kpis（结构变了，先更新这条判据）")
+        }
+        // 主数字这一行不许出现 total。
+        guard let projKPI = slice(kpis, from: "DashKPI(kind: .projects", to: "DashKPI(kind: .milestones") else {
+            throw fail("切不出「项目总数」那张 KPI（结构变了，先更新这条判据）")
+        }
+        if projKPI.contains(".total") {
+            throw fail("「项目总数」的主数字用了 projects.total（只数采集成功的）⇒\n" +
+                "      采集失败的项目从主数字里消失，而侧栏与范围选择器还数着它")
+        }
+        guard projKPI.contains("value: listed") else {
+            throw fail("「项目总数」的主数字不是 listed（注册表条数）⇒ 结构变了，先更新这条判据")
+        }
+        // 失败数不许悄悄消失：它降级到副说明，但必须在。
+        guard kpis.contains("采集失败") else {
+            throw fail("采集失败的项目数从界面上消失了 ⇒ 改用 listed 是对的，\n" +
+                "      但必须同时说清「其中几个读不出来」，否则用户以为全部都读到了")
+        }
+        return "主数字 listed；total 与失败数降级到副说明并披露"
+    }
+
+    // ── W3：待处理必须是项目数，且与侧栏徽标同源 ──
+    check("KPI「待处理」必须是项目数，且与侧栏徽标同一个算法") {
+        // 原来这里是 `dirty + mergeCandidates + (untracked > 0 ? 1 : 0)`：
+        //   dirty 是项目数、mergeCandidates 是**分支数**、第三项是个布尔。
+        // 三种单位加成一个「待处理」，得到的数字没有意义。
+        let dash = try strippedCode("DashboardScope.swift")
+        guard let kpis = slice(dash, from: "static func kpis(", to: "static func summaryLine") else {
+            throw fail("切不出 DashKPIBuilder.kpis（结构变了，先更新这条判据）")
+        }
+        guard let attKPI = slice(kpis, from: "DashKPI(kind: .attention", to: "DashKPI(kind: .reach") else {
+            throw fail("切不出「待处理」那张 KPI（结构变了，先更新这条判据）")
+        }
+        guard attKPI.contains("value: attentionProjects.count") else {
+            throw fail("「待处理」的主数字不是「有多少个项目要我动手」⇒ 结构变了，先更新这条判据")
+        }
+        guard kpis.contains("projects.filter { $0.needsAction }") else {
+            throw fail("待处理项目集不是按 needsAction 筛的 ⇒ 与侧栏徽标、看板「待处理」列不是同一个算法")
+        }
+        // 分支数可以出现，但只许出现在副说明里，且必须带单位。
+        if kpis.contains("value: mergeBranchCount") {
+            throw fail("「待处理」的主数字换成了分支数 ⇒ 与侧栏徽标（项目数）直接打架")
+        }
+        guard kpis.contains("待合入分支") else {
+            throw fail("可合入分支的条数从界面上消失了 —— 它该留在**副说明**里并标明单位，\n" +
+                "      而不是混进主数字")
+        }
+        // 侧栏徽标那一侧也钉一下 —— 但它**不是**直接写 needsAction：
+        // 徽标数的是 `boardColumn == .attention`，而 boardColumn 只读 `liveness`，
+        // liveness 的 .needsAction 那一档才来自 `needsAction`。
+        // 所以这里钉的是**这条链完整**（三段都在，且 boardColumn 不自己另判），
+        // 钉「面板里出现 needsAction 这个词」会把正确的实现判红。
+        let panel = try strippedCode("PanelView.swift")
+        guard panel.contains("boardColumn == .attention") else {
+            throw fail("侧栏徽标不再按 boardColumn == .attention 计数 ⇒ 与看板「待处理」列分叉了")
+        }
+        let board = try strippedCode("BoardView.swift")
+        guard let col = slice(board, from: "var boardColumn: BoardColumn {", to: "struct BoardPage") else {
+            throw fail("切不出 boardColumn（结构变了，先更新这条判据）")
+        }
+        guard col.contains("switch liveness") else {
+            throw fail("boardColumn 不再只读 liveness ⇒ 看板列与「待处理」分叉了")
+        }
+        if col.contains("needsAction") && !col.contains("case .needsAction") {
+            throw fail("boardColumn 里自己又判了一遍 needsAction ⇒ 看板列与 KPI 会分叉")
+        }
+        // liveness 的 needsAction 档必须真的来自 needsAction。
+        let models = try strippedCode("Models.swift")
+        guard let live = slice(models, from: "var liveness: Liveness {", to: "var stateWord") else {
+            throw fail("切不出 liveness（结构变了，先更新这条判据）")
+        }
+        guard live.contains("if needsAction") else {
+            throw fail("liveness 的 needsAction 档不再来自 needsAction ⇒ 侧栏徽标与 KPI 的链条断了")
+        }
+        // ⚠️ **「链条完整」不等于「结果是同一个数」** —— 这是本条判据漏过一次的地方。
+        //   `liveness` 里 `engineStale` 排在 `needsAction` **前面**时，
+        //   链条是通的（boardColumn → liveness → needsAction 都在），
+        //   而真 app 上侧栏「看板 1」与仪表盘「待处理 3」照样打架：
+        //   「又停滞又有活要干」的项目在 liveness 内部就被 `return` 掉了，
+        //   根本走不到 needsAction 那一行。
+        //   ⇒ 判据必须钉**判定顺序**：等我动手的先判，停滞的后判。
+        //   两条理由见 Models.swift 的注释（不互斥；且 `.attention` 列的表头
+        //   本来就写着「待合入的分支」）。
+        guard let needAt = live.range(of: "if needsAction"),
+              let staleAt = live.range(of: "if primaryBranch?.status == \"stale\"") else {
+            throw fail("liveness 里找不到 needsAction 或 engineStale 的判定行（结构变了，先更新这条判据）")
+        }
+        guard needAt.lowerBound < staleAt.lowerBound else {
+            throw fail("liveness 先判 engineStale 再判 needsAction ⇒\n" +
+                "      「又停滞又有活要干」的项目在 liveness 内部就被 return 掉，\n" +
+                "      侧栏「看板」数 1 而仪表盘「待处理」数 3 —— 同一个谓词、两个结果")
+        }
+        return "主数字 = needsAction 项目数；分支数进副说明并标明单位；侧栏经 boardColumn → liveness 同源且顺序正确"
+    }
+
+    // ── W4：页头摘要不许自己再算一遍 ──
+    check("仪表盘页头摘要必须消费 KPI 数组，不许自己再算一遍项目数与待处理") {
+        // 这是同一个缺陷的**第四处**：页头那行「N 个项目 · M 个近 7 天活跃 · K 项待处理」
+        // 独立算了一遍（`d.projects.total` + 混合单位），而下面 4 张 KPI 卡用的是
+        // `listed` + 项目数。同屏两个答案，用户先看到的是页头那个。
+        //
+        // 修法不是「把页头改对」（那只是把分叉从 3 处减到 2 处），
+        // 而是**让页头没有自己的算法** —— `summaryLine` 只从 `kpis` 数组里读。
+        let scope = try strippedCode("DashboardScope.swift")
+        guard scope.contains("static func summaryLine(_ kpis: [DashKPI]) -> String") else {
+            throw fail("DashKPIBuilder.summaryLine 没了 ⇒ 页头与 KPI 卡又要各算各的")
+        }
+        // summaryLine 内部不许碰 d.projects / d.work 的原始字段。
+        guard let line = slice(scope, from: "static func summaryLine", to: "\n}") else {
+            throw fail("切不出 summaryLine 的函数体（结构变了，先更新这条判据）")
+        }
+        for raw in ["d.projects", "d.work", ".dirty", ".mergeCandidates"] where line.contains(raw) {
+            throw fail("summaryLine 里出现了「\(raw)」⇒ 它又在独立算一遍，页头与 KPI 卡会分叉")
+        }
+        let views = try strippedCode("DetailViews.swift")
+        guard views.contains("DashKPIBuilder.summaryLine(kpis)") else {
+            throw fail("仪表盘页头没有走 summaryLine(kpis) ⇒ 摘要与 KPI 卡是两个算法")
+        }
+        // 页头拿的必须是同一个数组：kpis 只能算一次。
+        let n = views.components(separatedBy: "DashKPIBuilder.kpis(d, projects: model.projects)").count - 1
+        guard n == 1 else {
+            throw fail("kpis 被算出了 \(n) 次（应为 1）⇒ 页头和 KPI 卡可能拿的不是同一份")
+        }
+        return "页头与 KPI 卡共用同一个 kpis 数组；summaryLine 不碰原始字段"
+    }
+
+    // ── W5：单一仓库的 git 操作在页头，且只有一个构造点 ──
+    check("单仓库的 git 操作按钮排必须在页头，且只有一个构造点") {
+        // 用户 2026-10-02 原话：「把单一仓库的 git 操作放到顶部吧」+「项目说明平齐」——
+        // 页头右侧本来就有「项目说明」按钮，所以只有并排才叫平齐。
+        // 原来那排按钮在页面中下部的「Git 操作」卡里，
+        // 而页头右侧只有「项目说明 + 更新」—— 第一屏看不到最常用的两个动作。
+        let views = try strippedCode("DetailViews.swift")
+        guard let header = slice(views, from: "private func header(", to: "private func ") else {
+            throw fail("切不出详情页页头（结构变了，先更新这条判据）")
+        }
+        guard header.contains("gitOpButtons(p)") else {
+            throw fail("页头里没有 git 操作按钮排 ⇒ 单一仓库的 git 操作又回到页面中下部了")
+        }
+        // 「平齐」= 与项目说明同一个 HStack。
+        guard header.contains("ProjectBriefButton(project: p)") else {
+            throw fail("页头里没有项目说明按钮 ⇒ 无从判断「平齐」")
+        }
+        // 恰好一个构造点。出现两次 = 同一排按钮列两遍，
+        // 而两处的可用性判定（busyProject）会分叉（本项目反复修过的缺陷族）。
+        let n = views.components(separatedBy: "gitOpButtons(p)").count - 1
+        guard n == 1 else {
+            throw fail("gitOpButtons(p) 在详情页里出现 \(n) 次（应为 1）⇒ 同一排按钮被列了两遍")
+        }
+        // 提交表单**不许**混进按钮排：它要一个输入框，硬塞会把页头标题挤掉。
+        if let opButtons = slice(views, from: "private func gitOpButtons(", to: "private func gitCard") {
+            if opButtons.contains("TextField") {
+                throw fail("提交表单被塞进了页头按钮排 ⇒ 页头会多出一整行输入框")
+            }
+        }
+        return "页头与项目说明并排；按钮排唯一构造点；提交留在下面那张卡"
+    }
+
+    // ── W6：提交卡紧跟在按钮排下面，不隔卡 ──
+    check("「提交改动」卡必须紧跟页头按钮排那一组，不许隔到页面中下部") {
+        // 原来它在 工程脉搏/提交构成 之后、分支进度之前，
+        // 而 git 操作按钮又在更下面 —— 同一组动作被拆成两半、中间隔着好几张卡。
+        //
+        // ⚠️ 切片边界不能用 `// MARK:` —— 那是注释，`strippedCode` 已经剥掉了，
+        //    拿它当墙会直接切不出东西（第一版就踩了，报「结构变了」，
+        //    实际是判据自己锚错了）。用下一个**真实**声明 `gitOpButtons` 当墙。
+        let views = try strippedCode("DetailViews.swift")
+        guard let body = slice(views, from: "private func content(", to: "private func gitOpButtons(") else {
+            throw fail("切不出详情页内容装配（结构变了，先更新这条判据）")
+        }
+        guard let pulseAt = body.range(of: "工程脉搏"),
+              let commitCardAt = body.range(of: "提交改动") else {
+            throw fail("切不出「工程脉搏」或「提交改动」卡（结构变了，先更新这条判据）")
+        }
+        guard commitCardAt.lowerBound > pulseAt.lowerBound else {
+            throw fail("「提交改动」卡跑到页头按钮排**上面**去了 ⇒ 动作与表单再次分离")
+        }
+        // 按钮排上面的「提交」入口必须真的连到 pendingCommit。
+        guard views.contains("pendingCommit = p") else {
+            throw fail("提交入口不再走 pendingCommit ⇒ 输入框与按钮没有同一个待提交目标")
+        }
+        return "提交卡在页头按钮排之后、且是唯一提交入口"
     }
 }
 

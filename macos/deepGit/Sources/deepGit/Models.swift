@@ -150,6 +150,15 @@ struct BranchStatus: Decodable, Identifiable, Hashable {
     let isCurrent: Bool
     let isDefault: Bool
 
+    /// 这条分支是不是已经合进默认分支了。
+    ///
+    /// ⚠️ 引擎恒发这个键（`status --json` 的分支对象里实测有 `"merged": false`），
+    /// 而模型原来**没有它** —— 于是客户端算「哪些分支可以合」时
+    /// 少一个排除条件，只能拿 `isDefault` 顶替。
+    /// 写成 `let merged: Bool` 而不是 `var ... = false`：后者会被合成的
+    /// `init(from:)` 跳过、永远是 false（见不变量 105 的整族）。
+    let merged: Bool
+
     // ── 引擎给了、模型原来没有的键（Phase 3 地基层）──
 
     /// 这条分支最近发生的**具体事件**。实测形如 `["更新：“第二次”", "微调：“首次”"]`。
@@ -203,6 +212,22 @@ struct BranchStatus: Decodable, Identifiable, Hashable {
         let sha = (head?.isEmpty == false) ? head! : headShort
         let subject = (headSubject?.isEmpty == false) ? headSubject! : "（无标题）"
         return "\(subject)（\(sha) · \(headAgo)）"
+    }
+
+    /// 这条分支是不是「可以合进默认分支」。
+    ///
+    /// ⚠️ 判据**逐字对齐引擎** `flow/dashboard.cj:206-209`：
+    ///     ahead > 0 && !isDefault && !merged
+    /// 三条缺一不可：
+    ///   · `aheadOfDefault > 0` —— 相对默认分支的领先数
+    ///     （**不是** `pendingCommits`，理由见 `ProjectStatus.needsAction` 的注释）
+    ///   · `!isDefault` —— 默认分支不需要合进自己
+    ///   · `!merged` —— 已经合过的分支不再提示（模型原来连这个键都没有）
+    ///
+    /// 提成有名字的派生属性而不是散在调用点里：三处都要用
+    /// （`needsAction`、KPI 的待合入分支数、看板列），抄三份必然漂移。
+    var isMergeCandidate: Bool {
+        aheadOfDefault > 0 && !isDefault && !merged
     }
 }
 
@@ -506,18 +531,53 @@ struct ProjectStatus: Decodable, Identifiable, Hashable {
     }
 
     /// 待处理信号：有未提交 / 未跟踪 / stash / 待合入的分支。
+    ///
+    /// ⚠️ 分支那一项原来写的是 `branches.contains { $0.pendingCommits > 0 && !$0.isDefault }`
+    /// —— **引擎已经明确说过这是错的**（`flow/dashboard.cj:200-208`）：
+    /// `pendingCommits` 是「引擎还没记录的提交数」，刚跑过 update 的分支恒为 0，
+    /// 而它与「这个分支能不能合」毫无关系。引擎为此专门写了回归测试
+    /// `testDashboardMergeCandidatesUsesAheadOfDefaultNotPending`，把 `mergeCandidates`
+    /// 的判据从 `pendingCommits` 改成 `aheadOfDefault`。
+    ///
+    /// **客户端把引擎刚修掉的那个错误又犯了一遍。** 实测（三个仓库、5 个分支）：
+    ///     分支 feature/b1..b3 / old/branch：aheadOfDefault = 1，pendingCommits = 0
+    ///     ⇒ 引擎 `work.mergeCandidates` = 5
+    ///     ⇒ 客户端 `needsAction` 判出 0 个项目
+    /// 后果是全链路的：侧栏「看板 0」、看板「待处理」列空、
+    /// 项目卡把有可合并分支的仓库显示成「正常」。
+    ///
+    /// ⇒ 判据**必须逐字对齐引擎**（`ahead > 0 && !isDefault && !merged`），
+    /// 不许客户端自己发明「能不能合」的判法。
     var needsAction: Bool {
         userDirtyCount > 0 || untrackedCount > 0 || stashCount > 0
-            || branches.contains { $0.pendingCommits > 0 && !$0.isDefault }
+            || branches.contains { $0.isMergeCandidate }
             || (mergeHint?.kind == "merge" || mergeHint?.kind == "fast-forward")
     }
 
     var liveness: Liveness {
         if isUnreadable { return .unreadable }
         if !isGit { return .notGit }
+        // ⚠️ **`needsAction` 必须排在 `engineStale` 前面**（2026-10-02 修）。
+        //
+        // 真 app 现场：侧栏「看板 **1**」而仪表盘「待处理 **3**」——
+        // 又是同一件事给了两个答案。根因不是两处用了不同算法（它们都走 liveness），
+        // 而是 liveness **内部**先判停滞：`primaryBranch?.status == "stale"`
+        // 一命中就 return，`needsAction` 根本没机会被问。
+        // 沙箱里 beacon / legacy 正是这种项目 —— 既有停滞的主分支，
+        // 又各有一条待合入分支，于是它们的「有活要干」被整段吞掉。
+        //
+        // 两条理由支持把「等我动手」排在「多久没动」前面：
+        //   1. 两者**不互斥**。先命中哪个纯属书写顺序，而书写顺序不该决定事实。
+        //   2. `.attention` 列自己的表头就是「有未提交、未跟踪、stash 或
+        //      **待合入的分支**」—— 按这句话的定义，一个有待合入分支的项目
+        //      无论主分支多停滞都该进这一列。旧顺序和列的定义是矛盾的。
+        //
+        // 代价照实说：「停滞」列会因为项目被更紧急的状态吸走而变少。
+        // 但**信息没有丢** —— 每张项目卡仍单独写着「main: 停滞」
+        // （`branchScopeLine` 那一行，与 liveness 无关），详情页也在。
+        if needsAction { return .needsAction }
         // 引擎的档位最精确，但**只在它真的给出一行分支记录时**才有。
         if primaryBranch?.status == "stale" { return .engineStale }
-        if needsAction { return .needsAction }
         guard let age = daysSinceLastCommit else { return .unknown }
         return age <= 30 ? .recent : .quiet
     }

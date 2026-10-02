@@ -120,14 +120,24 @@ restore
 # （第一版照着更早一版的 Model.swift 写锚点，而那时锁还在 Task 里面 ——
 #  锁挪到 Task 外之后这三行全部失配，负控没生效。现在锚点只认
 #  `busyAll = true` 那一行本身，与它在函数里的位置无关。）
+#
+# ⚠️ 2026-10-02：`startAgentBulk` 随按钮一起撤掉，执行体搬进 `updateAll`，
+#    冻结那行也从 `self.projects` 改成 `projects`（同层无需 self）。
+#    锚点跟着实际写法走 —— 负控的锚点失配时**判据是无辜的**，
+#    该改的是锚点，不是判据。
 mutate "$MODEL" 's/        busyAll = true\n//'
-mutate "$MODEL" 's/(            let targets = self\.projects\n)/$1            self.busyAll = true\n/'
+mutate "$MODEL" 's/(        let targets = projects\n)/$1        self.busyAll = true\n/'
 run "共用同一把锁" "变体6 锁放到第一个 await 之后"
 restore
 
-# ── 变体 7：按钮做出来但不挂 ──
-mutate "$BAR" 's/                AgentBulkButtons\(\)\n//s'
-run "必须真的挂在工作条上" "变体7 按钮不做入口（死功能）"
+# ── 变体 7：全量的那条链断一环（死功能） ──
+# ⚠️ 原来是「按钮做出来但不挂」—— 按钮已按用户要求撤掉，
+#    于是同一份担心换了个问法：**撤掉按钮之后，能力还接得上吗？**
+#    判据相应改成「全量入口不许在一屏里出现两次」，
+#    它同时钉「只有一处入口」与「这一处真能走通到 updateAll」。
+#    这里断掉双轨 → requestBulkUpdate 那一环。
+mutate "$MODEL" 's/            requestBulkUpdate\(deep: deep\)/            startUpdate(deep: deep)/s'
+run "不许在一屏里出现两次" "变体7 双轨到全量的链断一环"
 restore
 
 # ── 变体 8：视图里另写一份工具名字面量 ──
@@ -135,7 +145,10 @@ restore
 # （第一版这里先试着用正则改写 title 那行，正则里的嵌套引号转义炸了、
 #  报了一行 Perl 错才走兜底 —— 变体要的是「确定地改一处」，
 #  正则改不出确定性就不是负控，是碰运气。）
-mutate "$VIEW" 's/(            model\.startAgentBulk)/            let _literalToolName = "run_shallow_update"\n$1/s'
+# ⚠️ 2026-10-02：锚点原来挂在 `model.startAgentBulk` 上，
+#    而那个方法连同按钮一起撤掉了 ⇒ 变体失配、exit 2。
+#    换成挂**结构体声明**这一行 —— 它在文件重写后依然存在，且最稳定。
+mutate "$VIEW" 's/(struct AgentBulkResultSheet: View \{)/let _literalToolName = "run_shallow_update"\n$1/s'
 run "工具名不许在客户端另写一份字面量" "变体8 视图里写字面量工具名"
 restore
 
@@ -173,17 +186,18 @@ restore
 # ⚠️ 这里原本还有第三条 `s/(…refreshAll…\n            onDone\(report\))/$1/s` ——
 #    那是**替换成自身**的空操作，文件一个字节都不变。局部守卫当场拦下了它
 #    （这正是守卫存在的意义：空操作伪装成一次成功的改动）。
-mutate "$MODEL" 's/            await self\.refreshAll\(\)\n            let targets = self\.projects\n/            let targets = self.projects\n/s'
-mutate "$MODEL" 's/(            let targets = self\.projects\n)/$1            await self.refreshAll()\n/s'
+mutate "$MODEL" 's/        await refreshAll\(\)\n        let targets = projects\n/        let targets = projects\n/s'
+mutate "$MODEL" 's/(        let targets = projects\n)/$1        await refreshAll()\n/s'
 run "先刷新注册表再冻结名单" "变体14 冻结陈旧名单（静默漏仓库）"
 restore
 
 # ── 变体 15：标题取点击时的旧数（面板自相矛盾） ──
-# 锚点只取 `\(r.attempted) 个仓库` 这一小段。
+# 锚点只取 `attempted) 个仓库` 这一小段。
 # （第一版把整行 `title = "全量\(deep ? "深度" : "浅")更新 · \(r.attempted) 个仓库"`
 #  写进正则 —— 里面既有嵌套的 Swift 字符串引号又有未转义的括号，
 #  perl 直接报 Unmatched ( in regex 而**什么也没改**。）
-mutate "$VIEW" 's/r\.attempted\) 个仓库/model.projects.count) 个仓库/s'
+# 2026-10-02：绑定名从 `r` 改成 `report`（sheet 的入参），锚点同步。
+mutate "$VIEW" 's/attempted\) 个仓库/model.projects.count) 个仓库/s'
 run "先刷新注册表再冻结名单" "变体15 标题用点击时的旧数"
 restore
 

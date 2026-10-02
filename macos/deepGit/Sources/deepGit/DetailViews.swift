@@ -58,6 +58,12 @@ struct ProjectDetailView: View {
                     Card(title: "工程脉搏") { pulseCard(p) }
                     Card(title: "提交构成（近期）") { commitTypeCard(p) }
                 }
+                // ⚠️ 提交卡在页头那排按钮**下面**（不是原来的中下部）。
+                //    页头已经放了拉取/推送/抓取/暂存/恢复，
+                //    把提交留在四张卡之后等于「同一组动作被拆成两半、还隔了四张卡」。
+                if p.isGit {
+                    Card(title: "提交改动") { gitCard(p) }
+                }
                 // ⚠️ branches.count 是引擎**追踪到基线**的数量，不是仓库真实分支数。
                 // 实测 16 个分支的仓库这里只显示 7 个；刚注册还没 track 过的仓库显示 0，
                 // 而仓库实际有 2 个分支 —— 字面写「分支进度（0）」会让人认定仓库没有分支。
@@ -70,9 +76,6 @@ struct ProjectDetailView: View {
                 //    再去里程碑页用筛选器把它筛出来。
                 //    里程碑是「目标达成度」，正是管控页该回答的问题。
                 milestoneCard(p)
-                if p.isGit {
-                    Card(title: "Git 操作") { gitCard(p) }
-                }
                 if let journal = p.journal, !journal.isEmpty {
                     // 引擎的 journal 上限是 8 条（light=3 / JSON 恒 8），
                     // 而 progress.entryCount 是**真实条数**。数组长度当全量 ⇒
@@ -126,21 +129,31 @@ struct ProjectDetailView: View {
 
     // MARK: Git 操作
 
+    /// 页头那一排 git 操作按钮（拉取 / 推送 / 抓取 / 暂存 / 恢复）。
+    ///
+    /// ⚠️ 原来这张「Git 操作」卡里同时装着按钮排和提交表单。
+    /// 按钮排挪到页头之后，卡里只剩提交 ——
+    /// 标题也因此从「Git 操作」改成「提交改动」，
+    /// 否则一个只讲提交的卡顶着「Git 操作」的名字，与页头那排对不上。
+    /// 页头那一排 git 操作按钮。**唯一构造点** ——
+    /// 一旦下面那张提交卡里再抄一份 `gitOpButton(...)`，
+    /// 两处的可用性判定就会分叉（这里要判 `busyProject`），而那只有真点一次才发现。
+    private func gitOpButtons(_ p: ProjectStatus) -> some View {
+        HStack(spacing: DSSpacing.xs) {
+            gitOpButton(p, "拉取", "arrow.down.to.line", "pull")
+            gitOpButton(p, "推送", "arrow.up.to.line", "push")
+            gitOpButton(p, "抓取", "arrow.triangle.2.circlepath", "fetch")
+            Divider().frame(height: 14)
+            gitOpButton(p, "暂存", "archivebox", "stash")
+            gitOpButton(p, "恢复", "tray.and.arrow.down", "unstash")
+            if model.busyProject == p.name {
+                ProgressView().controlSize(.small)
+            }
+        }
+    }
+
     private func gitCard(_ p: ProjectStatus) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: DSSpacing.sm) {
-                gitOpButton(p, "拉取", "arrow.down.to.line", "pull")
-                gitOpButton(p, "推送", "arrow.up.to.line", "push")
-                gitOpButton(p, "抓取", "arrow.triangle.2.circlepath", "fetch")
-                Divider().frame(height: 16)
-                gitOpButton(p, "暂存", "archivebox", "stash")
-                gitOpButton(p, "恢复", "tray.and.arrow.down", "unstash")
-                Spacer()
-                if model.busyProject == p.name {
-                    ProgressView().controlSize(.small)
-                }
-            }
-
             HStack(spacing: DSSpacing.sm) {
                 TextField("提交信息（提交全部改动）", text: $commitMessage)
                     .textFieldStyle(.roundedBorder)
@@ -287,6 +300,19 @@ struct ProjectDetailView: View {
             VStack(alignment: .trailing, spacing: DSSpacing.sm) {
                 HStack(spacing: DSSpacing.sm) {
                     ProjectBriefButton(project: p)
+                    // ⚠️ 单一仓库的 git 操作**在页头**，与「项目说明」平齐。
+                    //    原来它们在页面中下部的「Git 操作」卡里，而页头右侧是
+                    //    「项目说明 + 更新」—— 于是最常用的两个动作被埋在
+                    //    分支进度、里程碑、日志、托管文档四张卡下面，
+                    //    第一屏根本看不到，而页头那一排却空着。
+                    //    用户 2026-10-02 明确要求「把单一仓库的 git 操作放到顶部，
+                    //    项目说明平齐」。
+                    //
+                    //    **提交不在这里**：它要一个提交信息输入框，按钮排塞不下，
+                    //    硬塞进去会让页头多出一整行输入框把标题挤掉。
+                    //    它留在下面的「提交改动」卡里。
+                    if p.isGit { gitOpButtons(p) }
+                    Divider().frame(height: 16)
                     UpdateActionMenu(project: p)
                 }
                 HStack(spacing: 10) {
@@ -783,7 +809,14 @@ struct DashboardView: View {
     }
 
     private func dashboardContent(_ d: Dashboard) -> some View {
-        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+        // ⚠️ **算一次，两处消费**。页头那句摘要与下面 4 张 KPI 卡以前各算各的，
+        // 于是同一屏给出两个「项目总数」和两个「待处理」：
+        // 页头用 `d.projects.total`（仅采集成功）+ `dirty + mergeCandidates + 布尔`
+        // （项目数 / 分支数 / 布尔三种单位相加），KPI 卡用 `listed` + 项目数。
+        // 用户先看到的是页头那个大数字。
+        // 现在两边都从这一个数组取 —— **不是加判据，是消掉分叉的那个源头**。
+        let kpis = DashKPIBuilder.kpis(d, projects: model.projects)
+        return VStack(alignment: .leading, spacing: DSSpacing.lg) {
             // ── 段 1：页头 ──
             // ⚠️ 原来这里是一整块紫蓝渐变 hero + **8 张平铺统计卡**
             // （项目/7天/30天/脏/分支/待合入/未跟踪/stash），每张只有
@@ -794,12 +827,7 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     Text("项目群脉搏")
                         .font(.title2.weight(.bold))
-                    let active = d.projects.active7d
-                    let risky = d.projects.dirty + d.work.mergeCandidates
-                        + (d.work.untrackedFiles > 0 ? 1 : 0)
-                    Text(active > 0
-                        ? "\(d.projects.total) 个项目 · \(active) 个近 7 天活跃\(risky > 0 ? " · \(risky) 项待处理" : "")"
-                        : "共 \(d.projects.total) 个项目")
+                    Text(DashKPIBuilder.summaryLine(kpis))
                         .font(.callout)
                         .foregroundStyle(DSColor.textSecondary)
                 }
@@ -829,7 +857,7 @@ struct DashboardView: View {
                 columns: Array(repeating: GridItem(.flexible(), spacing: DSSpacing.md), count: 4),
                 spacing: DSSpacing.md
             ) {
-                ForEach(DashKPIBuilder.kpis(d, projects: model.projects)) { k in
+                ForEach(kpis) { k in
                     KPIWideCard(kpi: k)
                 }
             }

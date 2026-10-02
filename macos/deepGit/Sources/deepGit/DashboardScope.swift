@@ -210,11 +210,18 @@ enum DashKPIBuilder {
         let listed = d.projects.listed
         let failed = d.projects.failed
 
-        // 1. 项目总数 —— 副说明必须带上「采集失败 N 个」，
-        //    否则 listed < registered 时失败的项目从视野里消失（本项目踩过）。
-        var projectsCaption = "近 7 天活跃 \(d.projects.active7d) · 近 30 天 \(d.projects.active30d)"
+        // 1. 项目总数 —— ⚠️ 主数字必须是 `listed`（注册表条数），不是 `total`。
+        //    `total` 只数**采集成功**的（引擎 `dashboard.cj` 显式 continue 跳过带 error 的）。
+        //    实测：注册 6 个、3 个采集失败 ⇒ 标题写「项目总数 3」，
+        //    而同一屏的侧栏写「仓库（6/6）」、范围选择器写「全部 6 个项目」——
+        //    **同一个问题在一屏内给了两个答案**，而且用户先看到的是大数字。
+        //    引擎的测试注释早就点名了这个坑
+        //    （`dashboard.cj:721-722`：「必须钉住『listed 才是注册表条数』这个前提，
+        //      否则下一个人又会去用 total」）—— 上一个「下一个人」就是这张卡。
+        //    失败数降级到副说明披露，那才是它该在的位置。
+        var projectsCaption = "可读取 \(d.projects.total)/\(listed) · 近 7 天活跃 \(d.projects.active7d)"
+            + " · 近 30 天 \(d.projects.active30d)"
         if failed > 0 { projectsCaption += " · 采集失败 \(failed) 个" }
-        if d.projects.total < listed { projectsCaption += " · 读得出来 \(d.projects.total)/\(listed)" }
 
         // 2. 里程碑完成率 —— 分母只取「达没达成有答案的」
         //    （done + open），**不把 unknown 塞进分母**：unknown 是「不知道」，
@@ -225,10 +232,24 @@ enum DashKPIBuilder {
         var msCaption = "进行中 \(ms.open) · 已达成 \(ms.done)"
         if ms.unknown > 0 { msCaption += " · \(ms.unknown) 个读不出来" }
 
-        // 3. 待处理项 —— 三类风险合并成一个「要你动手」的数，
-        //    因为拆成三张卡时用户要自己加；合并后它们各自仍然作为项目卡字段出现。
-        let attention = d.projects.dirty + d.work.mergeCandidates
-            + (d.work.untrackedFiles > 0 ? 1 : 0)
+        // 3. 待处理项 —— ⚠️ 必须是**项目数**，且必须与侧栏徽标 / 看板「待处理」列
+        //    **同一个规则**（`ProjectStatus.needsAction`）。
+        //
+        //    原来这里是 `dirty + mergeCandidates + (untracked > 0 ? 1 : 0)`：
+        //      · **单位混着加**：dirty 是项目数、mergeCandidates 是**分支数**、
+        //        第三项是个布尔。三种单位加成一个「待处理」，数字没有意义。
+        //      · **与同屏的侧栏徽标直接打架**：实测仪表盘「待处理 6」
+        //        而侧栏「看板 0」—— 一个数项、一个数项目，都叫「待处理」。
+        //        用户没有任何线索该信哪个。
+        //    修法：主数字取「有多少个项目要我动手」，与徽标、看板列同源；
+        //    构成（尤其是**分支数**）降级到副说明并写清单位。
+        let attentionProjects = projects.filter { $0.needsAction }
+        let mergeBranchCount = projects.reduce(0) { acc, p in
+            acc + p.branches.filter { $0.isMergeCandidate }.count
+        }
+        var attentionCaption = "有未提交/未跟踪/stash 的 \(d.projects.dirty) 个"
+        if mergeBranchCount > 0 { attentionCaption += " · 待合入分支 \(mergeBranchCount) 条" }
+        attentionCaption += " · 未跟踪文件 \(d.work.untrackedFiles) 个"
 
         // 4. 分支 —— ⚠️ **这里原本直接用 `d.work.branches`，是个谎报。**
         //    引擎的 `work.branches` = 各项目 `branches` **追踪数组**的长度之和
@@ -254,17 +275,32 @@ enum DashKPIBuilder {
         if tagKnown { reachCaption += " · \(tagCount) 个 tag" }
 
         return [
-            DashKPI(kind: .projects, title: "项目总数", value: d.projects.total,
+            DashKPI(kind: .projects, title: "项目总数", value: listed,
                     caption: projectsCaption),
             DashKPI(kind: .milestones, title: "里程碑完成率", value: pct,
                     caption: msCaption,
                     progress: decided > 0 ? Double(ms.done) / Double(decided) : nil),
-            DashKPI(kind: .attention, title: "待处理", value: attention,
-                    caption: "有改动的 \(d.projects.dirty) · 待合入 \(d.work.mergeCandidates)"
-                            + " · 未跟踪文件 \(d.work.untrackedFiles)",
-                    tint: attention > 0 ? 1 : 0),
+            DashKPI(kind: .attention, title: "待处理", value: attentionProjects.count,
+                    caption: attentionCaption,
+                    tint: attentionProjects.isEmpty ? 0 : 1),
             DashKPI(kind: .reach, title: "分支", value: realBranches,
                     caption: reachCaption),
         ]
+    }
+
+    /// 仪表盘页头那一行摘要。**必须从 `kpis` 数组里读，不许自己再算一遍。**
+    ///
+    /// 2026-10-02：页头原来是独立的一行 `"\(d.projects.total) 个项目 ·
+    /// \(active) 个近 7 天活跃 · \(risky) 项待处理"`，其中
+    /// `risky = dirty + mergeCandidates + (untracked > 0 ? 1 : 0)`
+    /// —— 同一屏里，页头给「待处理 6（项）」、KPI 卡给「待处理 5（项目）」。
+    /// 数字对不上不是显示问题，是**同一件事被算了两次**。
+    /// 所以这里的做法不是「把页头改对」，是**让页头没有自己的算法**。
+    static func summaryLine(_ kpis: [DashKPI]) -> String {
+        func value(_ kind: DashKPI.Kind) -> Int { kpis.first { $0.kind == kind }?.value ?? 0 }
+        let projects = value(.projects)
+        let attention = value(.attention)
+        guard attention > 0 else { return "共 \(projects) 个项目" }
+        return "\(projects) 个项目 · \(attention) 个项目待处理"
     }
 }

@@ -22,6 +22,9 @@ import Foundation
 
 enum AgentBulkUpdate {
 
+    /// 全量批次计数。只给 `Report.id` 用 —— 让结果面板能挂 `.sheet(item:)`。
+    private static var bulkRunCounter = 0
+
     /// 引擎导出的两个更新工具名。**不许在客户端另写一份字符串**：
     /// 引擎改名而客户端不改，失败会表现为「全量按钮点了没反应」，
     /// 而不是一条能被看见的报错。
@@ -38,7 +41,11 @@ enum AgentBulkUpdate {
     }
 
     /// 整批的结果。AI 简报是**可选的一层**，不是结果本身。
-    struct Report {
+    ///
+    /// `Identifiable` 是为了能挂 `.sheet(item:)`：结果要等跑完才知道，
+    /// 而 `.sheet(isPresented:)` 得配一个**独立**的 Bool，
+    /// 那个 Bool 与结果一旦不同步就会出现「空面板」或「面板关不掉」。
+    struct Report: Identifiable {
         let deep: Bool
         let outcomes: [Outcome]
         /// 本次实际尝试的仓库数（= 已注册项目数，一个不漏）。
@@ -48,6 +55,10 @@ enum AgentBulkUpdate {
         /// AI 那一层发生了什么/为什么没发生。**永远有值**（成功也给），
         /// 否则「没生成」和「生成了一篇空的」在界面上长得一样。
         let aiNote: String
+
+        /// 同一次全量可能连着跑（用户确认一次、再确认一次），
+        /// 身份按「跑了多少次」区分，不按内容 —— 内容会重复。
+        let id: Int = { AgentBulkUpdate.bulkRunCounter += 1; return AgentBulkUpdate.bulkRunCounter }()
 
         var succeeded: Int { outcomes.filter(\.ok).count }
         var failed: Int { outcomes.count - succeeded }

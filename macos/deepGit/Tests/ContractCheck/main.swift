@@ -1514,7 +1514,7 @@ check("分支新键真的从引擎输出里解出来了（完整 SHA · 原文�
 check("providerLabel 必须区分规则引擎与 AI（混成一种语气就是隐瞒来源）") {
     let rules = BranchStatus(name: "b", status: "active", statusLabel: "活跃",
                              headShort: "abc1234", headAgo: "刚刚", summary: "s",
-                             pendingCommits: 0, aheadOfDefault: 0, isCurrent: false, isDefault: false,
+                             pendingCommits: 0, aheadOfDefault: 0, isCurrent: false, isDefault: false, merged: false,
                              highlights: nil, nextSteps: nil, staleDays: 0,
                              headSubject: nil, provider: "rules", head: nil, baselineReset: false)
     guard rules.providerLabel == "规则" else {
@@ -1522,7 +1522,7 @@ check("providerLabel 必须区分规则引擎与 AI（混成一种语气就是�
     }
     let ai = BranchStatus(name: "b", status: "active", statusLabel: "活跃",
                           headShort: "abc1234", headAgo: "刚刚", summary: "s",
-                          pendingCommits: 0, aheadOfDefault: 0, isCurrent: false, isDefault: false,
+                          pendingCommits: 0, aheadOfDefault: 0, isCurrent: false, isDefault: false, merged: false,
                           highlights: nil, nextSteps: nil, staleDays: 0,
                           headSubject: nil, provider: "openai/gpt-4o", head: nil, baselineReset: false)
     guard ai.providerLabel == "openai/gpt-4o" else {
@@ -1530,7 +1530,7 @@ check("providerLabel 必须区分规则引擎与 AI（混成一种语气就是�
     }
     let missing = BranchStatus(name: "b", status: "unknown", statusLabel: "未知",
                                headShort: "abc1234", headAgo: "", summary: "s",
-                               pendingCommits: 0, aheadOfDefault: 0, isCurrent: false, isDefault: false,
+                               pendingCommits: 0, aheadOfDefault: 0, isCurrent: false, isDefault: false, merged: false,
                                highlights: nil, nextSteps: nil, staleDays: -1,
                                headSubject: nil, provider: nil, head: nil, baselineReset: false)
     guard missing.providerLabel == "规则" else {
@@ -1543,7 +1543,7 @@ check("staleText 对 -1 必须说「读不出来」，不许说成今天更新�
     func mk(_ days: Int) -> BranchStatus {
         BranchStatus(name: "b", status: "unknown", statusLabel: "未知",
                      headShort: "abc1234", headAgo: "", summary: "s",
-                     pendingCommits: 0, aheadOfDefault: 0, isCurrent: false, isDefault: false,
+                     pendingCommits: 0, aheadOfDefault: 0, isCurrent: false, isDefault: false, merged: false,
                      highlights: nil, nextSteps: nil, staleDays: days,
                      headSubject: nil, provider: "rules", head: nil, baselineReset: false)
     }
@@ -1565,7 +1565,7 @@ check("staleText 对 -1 必须说「读不出来」，不许说成今天更新�
 check("headTip 缺 head 时必须退回短 SHA，不许留下空括号") {
     let b = BranchStatus(name: "b", status: "active", statusLabel: "活跃",
                          headShort: "abc1234", headAgo: "刚刚", summary: "s",
-                         pendingCommits: 0, aheadOfDefault: 0, isCurrent: false, isDefault: false,
+                         pendingCommits: 0, aheadOfDefault: 0, isCurrent: false, isDefault: false, merged: false,
                          highlights: nil, nextSteps: nil, staleDays: 0,
                          headSubject: "修好了", provider: "rules", head: nil, baselineReset: false)
     guard b.headTip.contains("abc1234") else {
@@ -1666,6 +1666,101 @@ func requireDirty(_ p: ProjectStatus) throws -> DirtyInfo {
     }
     return d
 }
+
+// MARK: - 17. 「可合入分支」：客户端与引擎必须是同一个口径
+//
+// ⚠️ 这组是被**真 app** 逼出来的：侧栏「看板 0」而仪表盘「待处理 6」。
+//    根因是客户端 `ProjectStatus.needsAction` 用了
+//    `branches.contains { $0.pendingCommits > 0 && !$0.isDefault }` ——
+//    而引擎 `flow/dashboard.cj:200-208` 早就把这条判据换成 `aheadOfDefault`，
+//    还专门写了回归测试 `testDashboardMergeCandidatesUsesAheadOfDefaultNotPending`。
+//    **客户端把引擎刚修掉的错误又犯了一遍。**
+//
+// 放在契约检查里而不是 ClientCheck，是因为只有这里能同时拿到
+// 引擎真实输出的 `status_all.json` 与 `dashboard.json`（同一个沙箱），
+// 于是「两边是不是同一个口径」可以被**数据**判，而不是被源码字面量判。
+
+print("【17】「可合入分支」客户端 ⇄ 引擎（同一份数据，两个口径）")
+
+require("第 17 组的准备阶段", {
+    check("合并候选的条数：客户端 == 引擎 work.mergeCandidates") {
+        // 沙箱里必须有**非空**的 branches 样本，否则这条是 0 == 0 的空跑。
+        // 旧沙箱所有仓库都没有远端 ⇒ 追踪数组恒空 ⇒ 判据恒绿而缺陷照旧。
+        // 现在 contract-check.sh 造了一个有远端、且已跑过 update 的样本仓库，
+        // 它的 feature 分支恰好是「ahead=1 / pending=0」——
+        // 旧判据判 0、新判据判 1，与引擎的 1 差得很明显。
+        let env = try expectDecode("status_all", loadFixture("status_all"), as: StatusEnvelope.self)
+        let d = try expectDecode("dashboard", loadFixture("dashboard"), as: Dashboard.self)
+        let allBranches = env.projects.flatMap { $0.branches }
+        guard !allBranches.isEmpty else {
+            throw structError("status_all 的 branches 恒空 ⇒ 这条交叉验证会 0==0 空跑。" +
+                "契约沙箱必须造一个**有远端**的仓库（见 contract-check.sh 的 REPO_MERGE）")
+        }
+        // 样本必须落在「旧判据判错」的那一格里，否则断言对缺陷不敏感。
+        let oldWay = allBranches.filter { $0.pendingCommits > 0 && !$0.isDefault }.count
+        guard oldWay != d.work.mergeCandidates else {
+            throw structError("沙箱数据退化：旧判据（pendingCommits）判出 \(oldWay)，" +
+                "与引擎的 \(d.work.mergeCandidates) 相同 ⇒ 换判据这条测不出差别")
+        }
+        let mine = allBranches.filter { $0.isMergeCandidate }.count
+        guard mine == d.work.mergeCandidates else {
+            throw structError("客户端 isMergeCandidate 判出 \(mine)，"
+                + "引擎 work.mergeCandidates 是 \(d.work.mergeCandidates)"
+                + "（旧判据 pendingCommits 判出 \(oldWay)）⇒ 两边不是同一个口径")
+        }
+        return "\(allBranches.count) 条分支里客户端判 \(mine)，引擎 \(d.work.mergeCandidates)；"
+            + "旧判据会判 \(oldWay)"
+    }
+
+    check("isMergeCandidate 的三条条件必须与引擎逐字对齐") {
+        // 钉语义不钉写法：三条**条件**一个都不能少，
+        // 但写成 `if !isDefault && !merged && aheadOfDefault > 0` 也不该红。
+        //
+        // ⚠️ **局限要写明**：`!merged` 这一条在本组的数据上**无法被交叉验证独立承重**。
+        //    引擎的 `merged` 走 git 祖先关系（`update.cj:580` 的 isMergedBranch），
+        //    `aheadOfDefault` 也比本地默认分支算 —— 所以真实数据里
+        //    「已合入」必然推出「不领先」，两者互斥，造不出 `merged && ahead>0` 的样本
+        //    （试过两条路：从 feature 拉出被合并分支 ⇒ ahead 归零；
+        //      合入后不推远端 ⇒ ahead 仍是 0）。
+        //    这条判据因此**只能**保证「条件写全了」，保证不了「少写一条会红」。
+        //    少写的那一条由上面那条「客户端 == 引擎 mergeCandidates」在**别的**样本形状上兜。
+        let src = try sourceText("Models.swift")
+        guard let body = src.range(of: "var isMergeCandidate: Bool {"),
+              let tail = src[body.upperBound...].range(of: "}") else {
+            throw structError("Models.swift 里切不出 isMergeCandidate（结构变了，先更新这条判据）")
+        }
+        let expr = String(src[body.upperBound..<tail.lowerBound])
+        for term in ["aheadOfDefault > 0", "!isDefault", "!merged"] where !expr.contains(term) {
+            throw structError("isMergeCandidate 里没有「\(term)」⇒ 与引擎 dashboard.cj:206-209 不是同一个口径")
+        }
+        // 反向：pendingCommits 不许再出现。引擎对它的评价是「与能不能合毫无关系」。
+        if expr.contains("pendingCommits") {
+            throw structError("isMergeCandidate 又用上了 pendingCommits ⇒ 回到引擎已经修掉的那个错")
+        }
+        return "ahead>0 && !isDefault && !merged，与引擎逐字对齐"
+    }
+
+    check("merged 键必须真的解得出来（let + 初值 = 永不解码）") {
+        // 写成 `let merged: Bool = false` 会被合成的 init(from:) 跳过、永远是 false，
+        // 于是「已合并的分支不再提示」这条排除条件形同虚设（不变量 105 的整族）。
+        let src = try sourceText("Models.swift")
+        let defaulted = src.range(of: "let merged: Bool = false")
+        guard src.range(of: "let merged: Bool") != nil, defaulted == nil else {
+            throw structError("BranchStatus.merged 写成了「let + 初值」⇒ 合成解码会跳过它，永远是 false")
+        }
+        // ⚠️ 光看声明不够：得证明样本里 `merged` 真的出现过 **true**，
+        //    否则「解出来了」和「恒为 false」在数据上长得一样（老坑：判据空转）。
+        //    沙箱为此专门造了一个已合入 main 的 feature/done 分支。
+        let env = try expectDecode("status_all", loadFixture("status_all"), as: StatusEnvelope.self)
+        let all = env.projects.flatMap { $0.branches }
+        let mergedTrue = all.filter { $0.merged }.count
+        guard mergedTrue > 0 else {
+            throw structError("样本里没有一条分支 merged=true ⇒ 「这个键解得出来吗」仍是空跑。" +
+                "契约沙箱必须造一个**已合入默认分支**的分支（见 contract-check.sh 的 feature/done）")
+        }
+        return "merged 是裸 let；样本里 \(mergedTrue)/\(all.count) 条分支 merged=true（键真的解出来了）"
+    }
+})
 
 print("")
 if failures.isEmpty {

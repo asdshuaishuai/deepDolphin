@@ -193,6 +193,69 @@ mkdir -p "$REPO_STALE"
 "$ENGINE" add "$REPO_PLAIN" --name plain >/dev/null 2>&1
 "$ENGINE" add "$REPO_TYPES" --name types >/dev/null 2>&1
 "$ENGINE" add "$REPO_STALE" --name stale >/dev/null 2>&1
+
+# ── 有远端的样本仓库（2026-10-02 新增）────────────────────────────────
+# 上面几个仓库**都没有远端**，于是 `branches` 追踪数组**恒为空** ——
+# 后果是「客户端的『可合入分支』判据 == 引擎的 `work.mergeCandidates`」
+# 这条交叉验证会 0 == 0 空转着变绿，而客户端当时的判据恰恰是错的。
+#
+# ⚠️ 空转是这类判据最常见的死法：断言写对了，数据让它失去意义。
+#    所以这里要造出**旧判据判错、新判据判对**的那一份数据：
+#      远端 + 一个领先 main 的非默认分支 + 已经跑过 update
+#    ⇒ aheadOfDefault = 1（领先）
+#    ⇒ pendingCommits = 0（刚跑过 update，快照已归零）
+#    ⇒ isDefault = false / merged = false
+#    引擎 `work.mergeCandidates` = 1；
+#    而旧判据 `pendingCommits > 0 && !isDefault` 判出 0 —— 差 1，判据真的会红。
+REPO_REMOTE="$SANDBOX/remote.git"
+REPO_MERGE="$SANDBOX/mergeable"
+git init -q --bare "$REPO_REMOTE" >/dev/null 2>&1
+git clone -q "$REPO_REMOTE" "$REPO_MERGE" >/dev/null 2>&1
+(
+  cd "$REPO_MERGE" || exit 1
+  git config user.name t >/dev/null 2>&1
+  git config user.email t@t >/dev/null 2>&1
+  git checkout -q -b main >/dev/null 2>&1
+  echo base > a.txt
+  git add . >/dev/null 2>&1
+  git commit -q -m "feat: 基线" >/dev/null 2>&1
+  git push -q -u origin main >/dev/null 2>&1
+
+  # 分支一：**已合入**（从 main 拉出 → 合回 main）。
+  # 它的作用是让 `merged` 键在样本里**真的出现过 true** ——
+  # 契约里「这个键解得出来吗」原本是空跑的：沙箱所有分支 merged 全是 false，
+  # 于是「let merged: Bool = false（永不解码）」这个写法也能蒙对。
+  #
+  # ⚠️ 必须**从 main 拉出**。第一版把它从 feature/ahead 拉出，
+  #    合回 main 时把 ahead 的提交也带上了 → ahead 变成 0 且 merged 变成 true，
+  #    整个样本退化。第二版改成「不推 main」想造 merged && ahead 同时成立，
+  #    实测 aheadOfDefault 也是比本地默认分支算的，ahead 仍是 0 ——
+  #    引擎的 merged 与 aheadOfDefault 在真实数据里互斥，造不出来。
+  #    这条局限写进了 ContractCheck 第 17 组的注释里，不假装它是更强的保证。
+  git checkout -q -b feature/done
+  echo done > b.txt
+  git add . >/dev/null 2>&1
+  git commit -q -m "feat: 已合入的改动" >/dev/null 2>&1
+  git push -q -u origin feature/done >/dev/null 2>&1
+  git checkout -q main >/dev/null 2>&1
+  git merge -q --no-ff feature/done -m "merge: feature/done" >/dev/null 2>&1
+  git push -q origin main >/dev/null 2>&1
+
+  # 分支二：**待合入**（从 main 拉出，不合并），然后切回 main。
+  # 留在 feature 上会让它成为当前分支、形态与真 app 不同；
+  # 切回 main 才对应「我站在主干上、手下有活没合」。
+  git checkout -q -b feature/ahead
+  echo more >> a.txt
+  git add . >/dev/null 2>&1
+  git commit -q -m "feat: 待合入的改动" >/dev/null 2>&1
+  git push -q -u origin feature/ahead >/dev/null 2>&1
+  git checkout -q main >/dev/null 2>&1
+)
+"$ENGINE" add "$REPO_MERGE" --name mergeable >/dev/null 2>&1
+# ⚠️ 必须跑 update：pendingCommits 只在「跑过 update」之后才归零。
+#    不跑的话待合入那条分支 pendingCommits > 0，旧判据也判对 —— 交叉验证又空转了。
+"$ENGINE" update mergeable --quiet >/dev/null 2>&1
+
 # ⚠️ 必须先给仓库补一个提交再跑第二次 update：连续两次 update 之间
 # 什么都不变的话，引擎会判定「无变化」（它有「去时间戳后内容等价则不刷新」的设计），
 # 于是这份 fixture 里**根本没有「改动 + 备份」那一档**。
@@ -334,6 +397,10 @@ remove_path "$REPO_PENDING"
 # 忘了删的后果一模一样：还有一个项目活着 ⇒ 第 9 组前提塌成 exit=0。
 # 这已经是第三次栽在这一段，所以下面把「加项目」和「删项目」写死成对称的两段。
 remove_path "$REPO_STALE"
+# 第四次：有远端的 mergeable 样本仓库（本轮为验 mergeCandidates 交叉验证新增）。
+# 形状与上面两处完全相同：注册了、路径活着 ⇒ 第 9 组 exit 回到 0。
+# 规律不变 —— **这一段每加一行 remove_path，下一个加项目的人就会漏掉它**。
+remove_path "$REPO_MERGE"
 collect status_allfail status --json --quiet
 "$ENGINE" status --json --quiet >/dev/null 2>&1
 ALLFAIL_RC=$?

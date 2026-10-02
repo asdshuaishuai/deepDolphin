@@ -125,13 +125,13 @@ final class AppModel: ObservableObject {
     /// 所以待确认状态必须有一个跨视图的落脚点，由主面板 `DeepGitPanel` 渲染对话框。
     /// 同一动作在 `BarView`（菜单栏弹窗）也有入口，那里用自己的 `@State` 即可。
 
-    /// 「一键全量」正在跑哪一轨。nil = 没在跑。
+    /// 全量更新跑完之后的结果，**非 nil = 该把逐仓库面板摊给用户看**。
     ///
-    /// ⚠️ 它**不替代** `busyAll`：那个 bool 是所有批量更新的互斥闸门
-    /// （裸 `update-all`、定时更新、菜单栏批量都共用），
-    /// 「一键全量」同样要占着它 —— 否则它会和别的批量更新同时写托管区域。
-    /// 这里只记「是谁在跑」，供界面把按钮切成运行态。
-    @Published var agentBulkTrack: DSSyncTrack?
+    /// ⚠️ 它取代了原来的 `agentBulkTrack`（一键全量按钮的运行态）——
+    ///    按钮删掉之后那个标志就没有消费方了，留着就是死状态。
+    ///    同样放在 Model 而不是视图的 `@State`：确认框与菜单栏入口
+    ///    都要把结果交给同一块面板（和 `pendingBulkUpdate` 同一个理由）。
+    @Published var agentBulkResult: AgentBulkUpdate.Report?
 
     @Published var projectDocs: [String: [DocFile]] = [:]
     /// 每个项目的文档加载结果。理由同 `projectLoadErrors`（见 loadDocs 的注释）。
@@ -724,109 +724,67 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// 「一键全量」的发起入口：逐个已注册仓库走 agent 工具通道更新，
-    /// 再由 agent 生成一份全量简报。完成回调把结果交给界面呈现。
-    ///
-    /// ⚠️ 占的是 `busyAll` 同一个闸门，而且**在 Task 之外、任何 await 之前**占住 ——
-    /// 放到 await 之后再置位，两条路都能在 `busyAll` 还是 false 时通过 `guard`，
-    /// 然后两个更新同时改写多个仓库的 README / AGENTS.md。
-    ///
-    /// ⚠️ **必须先刷新再冻结名单**。这条是**真 app 截图抓到的**：
-    /// 用 CLI 在注册表里加了一个仓库之后立刻点「全量浅」，
-    /// 结果面板写「已注册项目 3 个，本次实际执行 3 个，成功 3 个」——
-    /// 而侧栏已经是「仓库（4/4）」。第 4 个仓库**整行消失**，
-    /// 面板还理直气壮地写着「全量完成」。
-    /// 病因不是漏遍历，是**冻结的是一份陈旧名单**：
-    /// app 不知道别的进程改过注册表，于是「所有仓库」= 「我上次加载时看到的仓库」。
-    /// 「全量」卖的就是「一个不漏」这一条，所以名单必须是**发起时的**注册表，
-    /// 不是**上次加载时**的注册表。
-    func startAgentBulk(deep: Bool, onDone: @escaping (AgentBulkUpdate.Report) -> Void) {
-        guard !busyAll else { return }
-        busyAll = true
-        agentBulkTrack = deep ? .deep : .shallow
-        updateAllTask = Task { [weak self] in
-            guard let self else { return }
-            // 先把注册表拉一遍，再冻结。顺序反了就等于冻结陈旧名单（见上）。
-            await self.refreshAll()
-            let targets = self.projects
-            let report = await AgentBulkUpdate.run(deep: deep, projects: targets)
-            self.agentBulkTrack = nil
-            self.busyAll = false
-            await self.refreshAll()
-            onDone(report)
-        }
-    }
-
     /// 发起一次批量更新，并把 Task 存下来以便 `stopUpdate` 能中止它。
     ///
     /// 原来 UI 直接 `Task { await model.updateAll(deep: false) }`，
     /// 任务在视图里、模型只有一个 bool —— 想停都不知道停谁。
-    func startUpdateAll(deep: Bool, silent: Bool = false) {
+    func startUpdateAll(deep: Bool, silent: Bool = false,
+                        onDone: ((AgentBulkUpdate.Report) -> Void)? = nil) {
         guard !busyAll else { return }
         updateAllTask?.cancel()
         updateAllTask = Task { [weak self] in
-            _ = await self?.updateAll(deep: deep, silent: silent)
+            await self?.updateAll(deep: deep, silent: silent, onDone: onDone)
         }
     }
 
+    /// 全量更新。⚠️ **走 agent 工具通道**，不是裸的 `EngineCLI.updateAll`。
+    ///
+    /// 2026-10-02 改动：原来这里是一次 `deepgit update-all` 裸调用 ——
+    /// 也就是说「全量更新」这条主路径**根本没有 AI agent 参与**，
+    /// AI 只在 `UpdateActionMenu` 的 AI 变体里事后写一份简报。
+    /// 用户明确要求「全量基于 AI agent 执行」，于是改走
+    /// `AgentBulkUpdate.run`（逐个仓库调 `AgentCore.executeTool`）。
+    ///
+    /// ⚠️ 入口按钮**没有新增**：顶栏双轨在全局范围下的标题本来就是
+    /// 「浅更新 · 全部 / 深更新 · 全部」，那才是全量的入口。
+    /// 曾经为它单独加过一对「全量浅 / 全量深」按钮，
+    /// 用户指出「仪表盘本来就有浅更新和深更新 全部，没必要多两个」——
+    /// 那个判断是对的：同一个动作在一屏里出现两次、措辞还不一样，
+    /// 用户会以为是两种不同的东西。**删的是按钮，不是能力。**
+    ///
+    /// 顺带得到的好处：逐仓库结果（改了哪些文档、备份在哪、哪个失败了）
+    /// 以前只有一条聚合通知，现在每一行都能说清。
     @discardableResult
-    func updateAll(deep: Bool, silent: Bool = false) async -> Bool {
+    func updateAll(deep: Bool, silent: Bool = false,
+                   onDone: ((AgentBulkUpdate.Report) -> Void)? = nil) async -> Bool {
         guard !busyAll else { return false }
         busyAll = true
         defer { busyAll = false }
-        do {
-            let data = try await EngineCLI.shared.updateAll(deep: deep)
-            guard !Task.isCancelled else { return false }
-            await refreshAll()
-            if !silent {
-                // 同样不许无条件说「已记录」：引擎可能一份文档都没动。
-                // ⚠️ 引擎的形状随项目数变：只有 1 个项目时给**裸的**
-                // `UpdateResultEnvelope`，多个项目才给 `{results,count,…}`。
-                // 两种都试一遍，按解得出的那个说话。
-                var body = "\(projects.count) 个项目已更新"
-                if let all = try? JSONDecoder().decode(UpdateAllEnvelope.self, from: data) {
-                    var touchedProjects = 0
-                    var changedDocs = 0
-                    for r in all.results {
-                        let o = updateOutcome((r.docs ?? []).map { $0.outcome })
-                        if o.anythingTouched {
-                            touchedProjects += 1
-                            changedDocs += o.touched.count
-                        }
-                    }
-                    body = all.failed > 0
-                        ? "\(all.succeeded) 个项目更新，\(all.failed) 个失败（详见上方错误）"
-                        : (changedDocs == 0
-                            ? "\(all.count) 个项目都没有需要更新的文档"
-                            : "\(all.count) 个项目，共更新 \(changedDocs) 份文档（\(touchedProjects) 个项目有改动）")
-                } else if let one = try? JSONDecoder().decode(UpdateResultEnvelope.self, from: data) {
-                    body = updateOutcomeSummary(one.outcome, project: one.project)
-                }
-                Notifier.shared.notify(
-                    title: deep ? "全部深度更新完成" : "全部进度已记录",
-                    body: body
-                )
-            }
-            return true
-        } catch let e as EngineError {
-            if case .cancelled = e {
-                if !silent { Notifier.shared.notify(title: "已停止", body: "批量更新被手动停止") }
-                return false
-            }
-            lastError = e.userMessage
-            if !silent {
-                Notifier.shared.notify(title: "批量更新失败", body: e.userMessage)
-            }
-            return false
-        } catch {
-            guard !Task.isCancelled else { return false }
-            lastError = EngineError.userMessage(for: error)
-            if !silent {
-                Notifier.shared.notify(title: "批量更新失败", body: EngineError.userMessage(for: error))
-            }
-            return false
+        // 名单在**发起时**重新取：界面那份是「上次加载时」的，
+        // 别的进程（CLI / 另一个终端）改过注册表它并不知道 ——
+        // 于是「全量」会用陈旧名单跑、漏掉新注册的仓库（见不变量 113）。
+        await refreshAll()
+        let targets = projects
+        let report = await AgentBulkUpdate.run(deep: deep, projects: targets)
+        guard !Task.isCancelled else { return false }
+        await refreshAll()
+        if !silent {
+            // 同样不许无条件说「已记录」：引擎可能一份文档都没动。
+            // 现在逐仓库结果已经在 report 里，通知只报总账。
+            let body = report.failed > 0
+                ? "\(report.succeeded) 个项目更新，\(report.failed) 个失败（详见面板）"
+                : (report.succeeded == 0
+                    ? "\(report.attempted) 个项目都没有需要更新的文档"
+                    : "\(report.attempted) 个项目已更新（\(report.succeeded) 个有进展）")
+            Notifier.shared.notify(
+                title: deep ? "全部深度更新完成" : "全部进度已记录",
+                body: body
+            )
         }
+        onDone?(report)
+        return true
     }
+
 
     // MARK: 里程碑动作（引擎侧执行）
 
