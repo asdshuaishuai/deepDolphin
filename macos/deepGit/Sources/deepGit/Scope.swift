@@ -1,13 +1,21 @@
 // Scope.swift — 顶栏双轨动作的**作用范围**。纯函数层，零 SwiftUI 依赖。
 //
-// 【为什么没有另做一个「范围选择器」下拉】
-// 设计稿顶栏左侧确实有一个范围选择器（🌐 全局视图 / 📦 项目[分支]），
-// 但在客户端里**侧栏导航已经承担了同一个角色**：选中项目详情 = 主区显示它，
-// 选中仪表盘/看板/里程碑 = 全局。照设计稿再加一个下拉，就是
-// 「当前看的是谁」这件事的**两个来源** —— 用户在侧栏点了 B，下拉还写着 A。
+// 【关于设计稿那个范围选择器：本文件曾经判定「不要做」，那个论证是错的】
+// 原论证：「侧栏导航已经承担了同一个角色（选中项目 = 主区显示它），再加一个下拉
+// 就是『当前看的是谁』的两个来源」。
 //
-// 所以这里不给新状态，只把**已有的 selection 翻译成范围**。
-// 判据钉的正是这条：范围必须由 selection 推导，不许有独立的 scope 字段。
+// 错在**把两个东西当成了同一个**：
+//   · 侧栏回答的是「看哪个**视图**」（仪表盘 / 看板 / 里程碑 / 某个项目）
+//   · 设计稿的下拉回答的是「看哪些**仓库**」（全局 / 单仓库）
+// 这是两个正交的选择。砍掉下拉的实际后果是：用户在仪表盘上看完概览，
+// 想进某个仓库只能退回侧栏重新找一次 —— 主链路断了一节。
+//
+// 【但「两个来源」这个担心是对的，所以纪律保留】
+// 范围选择器**不持有自己的状态**：读 `model.selection`、写 `model.go(_:)`。
+// 它是 selection 的一个**视图**，不是另一份真相。判据仍然钉着
+// 「不许有独立的 scope 字段」—— 这条没变，变的只是「要不要给它一个界面」。
+//
+// 所以这里不给新状态，只把**已有的 selection 翻译成范围**（两个方向都要）。
 
 import Foundation
 
@@ -15,6 +23,26 @@ import Foundation
 enum UpdateScope: Hashable {
     case all
     case project(String)
+}
+
+/// 范围选择器的取值（设计稿「全局视图 / 单仓库」）。
+///
+/// ⚠️ 与 `UpdateScope` 是**两个不同的东西**，别合并：
+///   · 这个管「主区现在显示谁」—— 界面导航
+///   · 那个管「更新动作打在谁身上」—— 动作范围
+/// 它们在「选中某个项目」时恰好相等，所以看起来能互相替代；
+/// 但用户在**项目详情页里点「全部更新」**时二者必须不同。
+enum ScopeChoice: Hashable {
+    case group
+    case project(String)
+
+    /// 对应的路由。写入口只有一个：`AppModel.go(_:)`。
+    var section: RootSection {
+        switch self {
+        case .group:             return .dashboard
+        case .project(let name): return .project(name)
+        }
+    }
 }
 
 enum ScopeRules {
@@ -75,6 +103,16 @@ enum ScopeRules {
         switch s {
         case .all: return allTotal
         case .project(let n): return byProject[n] ?? 0
+        }
+    }
+
+    /// selection → 范围选择器的取值。
+    /// 看板/里程碑是**全局视图**，选中它们时范围选择器显示「全局看板」——
+    /// 因为设计稿那条下拉只分「全局 / 单仓库」，不承载「看哪个视图」。
+    static func choice(for selection: RootSection?) -> ScopeChoice {
+        switch selection {
+        case .project(let name): return .project(name)
+        case .dashboard, .board, .milestones, .none: return .group
         }
     }
 

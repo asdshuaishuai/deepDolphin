@@ -138,6 +138,15 @@ final class AppModel: ObservableObject {
         didSet { NSLog("deepgit-bar: selection → \(String(describing: selection))") }
     }
     @Published var isLoading = false
+    /// 仪表盘 + 看板**共用**的那份筛选。
+    ///
+    /// ⚠️ 为什么放在这里而不是 `DashboardView` 的 `@State`：
+    ///   · `@State` 属于视图，视图重建即丢失 —— 切到看板再切回来，
+    ///     筛选会悄悄弹回「全量」，用户会以为筛选失灵；
+    ///   · 看板是第二个消费方。两个视图各存一份，就会在同一块屏幕上
+    ///     对「我现在在看什么」给出两个答案（实测：仪表盘筛到 1 个，看板还是 3 个）。
+    /// 判定在 `DashboardScope.swift`（纯函数，可单测）；这里只存值。
+    @Published var dashFilter = DashFilter()
     @Published var lastError: String?
     @Published var engineFound = true
     @Published var lastRefreshed: Date?

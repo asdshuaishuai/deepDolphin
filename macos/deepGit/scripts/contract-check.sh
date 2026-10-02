@@ -159,10 +159,40 @@ mkdir -p "$REPO_PENDING"
   git commit -q -m "feat: 基线" >/dev/null 2>&1
 )
 
+# 陈旧样本仓库（`status_all` fixture 里用来验时间窗真的在筛）
+#
+# ⚠️ 造它是因为判据「时间窗真的改变项目集合」曾经在数据上**空转**：
+# 那时 status fixture 只含 `ok`（一个当天提交的项目），于是
+# 「近 7 天」和「全量」收下同样多的项目 —— 而判据里写着
+# 「沙箱里项目可能全都新鲜，那就分不出来」并主动 return 通过。
+# 更糟的是这些仓库都没有远端，`branches` 追踪数组**恒为空**，
+# 于是旧实现（拿 `primaryBranch?.staleDays` 判定）对每个项目都走
+# 「没有分支记录 → 保留」，控件在任何数据下都是死的，而判据全绿。
+#
+# 所以这个仓库要同时满足两个条件，缺一个这条判据就又是空话：
+#   1. 最后提交在 40 天前        → 窗口必须把它分出去
+#   2. 没有远端、branches 为空   → 复现真形状（追踪数组拿不到）
+STALE_DATE="$(date -v-47d '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || date -d '47 days ago' '+%Y-%m-%dT%H:%M:%S%z')"
+REPO_STALE="$SANDBOX/stale"
+mkdir -p "$REPO_STALE"
+(
+  cd "$REPO_STALE" || exit 1
+  git init -q -b main >/dev/null 2>&1
+  git config user.name t >/dev/null 2>&1
+  git config user.email t@t >/dev/null 2>&1
+  echo old > o.txt
+  git add . >/dev/null 2>&1
+  # ⚠️ 必须同时改 AUTHOR 与 COMMITTER：引擎读的 `lastCommitAt` 取自提交者时间，
+  # 只改一个的话 log 里显示 47 天前而 JSON 里仍是今天（判据反而会绿）。
+  GIT_AUTHOR_DATE="$STALE_DATE" GIT_COMMITTER_DATE="$STALE_DATE" \
+    git commit -q -m "chore: 很久以前的提交" >/dev/null 2>&1
+)
+
 "$ENGINE" add "$REPO_OK" --name ok >/dev/null 2>&1
 "$ENGINE" add "$REPO_BAD" --name bad >/dev/null 2>&1
 "$ENGINE" add "$REPO_PLAIN" --name plain >/dev/null 2>&1
 "$ENGINE" add "$REPO_TYPES" --name types >/dev/null 2>&1
+"$ENGINE" add "$REPO_STALE" --name stale >/dev/null 2>&1
 # ⚠️ 必须先给仓库补一个提交再跑第二次 update：连续两次 update 之间
 # 什么都不变的话，引擎会判定「无变化」（它有「去时间戳后内容等价则不刷新」的设计），
 # 于是这份 fixture 里**根本没有「改动 + 备份」那一档**。
@@ -206,6 +236,9 @@ collect() {  # collect <fixture名> <引擎参数...>
 # ⚠️ 顺序要紧：这些 fixture 必须在删路径**之前**收。
 # git 那条尤其敏感 —— 路径失效后引擎返回 ok=false，测的就不是正常形状了。
 collect status        status ok --json --quiet
+# 全量项目清单：时间窗类判据必须用它，不能用上面那份只含 `ok` 的。
+# 单项目 fixture 里「新旧对比」根本不存在，判据只能空转。
+collect status_all    status --json --quiet
 # 待记录徽章的数据源样本（#213）：
 # pendingCommits 以前**恒为 0** —— status 读的是进度库里存的快照，
 # 而那个快照在 update 算完后立刻归零（flow/update.cj:591），
@@ -297,6 +330,10 @@ remove_path "$REPO_TYPES"
 # 于是第 9 组的前提又塌了：还有一个项目活着 ⇒ `status` 退出 0。
 # **凡是往注册表里加项目的场景，都要在这一段跟着删一次。**
 remove_path "$REPO_PENDING"
+# 同上：陈旧样本仓库（本轮为验时间窗新增）也得删。
+# 忘了删的后果一模一样：还有一个项目活着 ⇒ 第 9 组前提塌成 exit=0。
+# 这已经是第三次栽在这一段，所以下面把「加项目」和「删项目」写死成对称的两段。
+remove_path "$REPO_STALE"
 collect status_allfail status --json --quiet
 "$ENGINE" status --json --quiet >/dev/null 2>&1
 ALLFAIL_RC=$?

@@ -7,10 +7,53 @@ struct MilestonesView: View {
     @State private var showAddSheet = false
     /// 搜索词。空 = 不过滤。
     @State private var query = ""
+    /// 只看某一个仓库的里程碑。nil = 全部。
+    ///
+    /// ⚠️ **这里原来写的是「从 `model.selection` 读当前范围」——
+    ///    那是一个恒为 nil 的控件，本页是我亲手做出来的第二个「摆而不动」。**
+    ///    `MilestonesView` 只在 `model.selection == .milestones` 时才被渲染
+    ///    （PanelView 的 switch），所以 `case .project(let n)? = model.selection`
+    ///    在这个视图里**永远不成立**。
+    ///    实测：选中 atlas → 点侧栏「里程碑」→ 页面照样摊开 3 个仓库，
+    ///    因为切到里程碑的那一刻 selection 就变成 `.milestones` 了，
+    ///    上一个视图的范围根本没被记住。
+    ///    顶栏那个范围选择器也是同一套推导，所以它俩**看起来是一致的**
+    ///    （都显示「全局看板」），一致并不代表这个控件有用。
+    ///
+    ///    真正缺的能力是：里程碑是唯一能改数据的视图，却没法只管一个仓库。
+    ///    所以这里给它**自己的**筛选状态（就像搜索框那样），
+    ///    默认全部，用户自己收窄 —— 一个真能用的控件，
+    ///    好过一个原理上永远为 nil 的联动。
+    @State private var projectFilter: String?
 
-    /// 过滤后的里程碑。判定在 SearchFilter（纯函数，可测）。
+    /// 明细里有里程碑的项目名（按首现顺序）。
+    private var knownProjects: [String] {
+        var order: [String] = []
+        for m in model.milestones where !order.contains(m.projectName) {
+            order.append(m.projectName)
+        }
+        return order
+    }
+
+    /// 范围收窄后的明细。判定在 `DashMilestoneScope`（纯函数，可测）。
+    private var scoped: [MilestoneItem] {
+        DashMilestoneScope.items(model.milestones, project: projectFilter)
+    }
+
+    /// 再叠搜索词。判定在 SearchFilter（纯函数，可测）。
     private var shown: [MilestoneItem] {
-        SearchFilter.filter(model.milestones, query: query) { $0.name }
+        SearchFilter.filter(scoped, query: query) { $0.name }
+    }
+
+    /// 明细的分组统计。**不读全局 counts** —— 那个没有项目维度，
+    /// 收窄到单仓库后继续报它，就是把全局完成率说成这个仓库的。
+    private var tally: (open: Int, done: Int, dropped: Int, unknown: Int) {
+        DashMilestoneScope.tally(shown)
+    }
+
+    /// 明细是否等于全部。不完整时分组统计只是下界，必须说出来。
+    private var detailComplete: Bool {
+        DashMilestoneScope.isComplete(model.milestones, counts: model.dashboard?.milestones.counts)
     }
 
     var body: some View {
@@ -29,42 +72,77 @@ struct MilestonesView: View {
                 ProgressView("读取里程碑…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let reason = SearchFilter.emptyReason(
-                allCount: model.milestones.count, shownCount: shown.count, query: query) {
+                allCount: scoped.count, shownCount: shown.count, query: query) {
                 EmptyState(
                     icon: "flag.2.crossed",
                     title: SearchFilter.emptyText(reason, noun: "里程碑"),
-                    subtitle: reason == .noData
-                        ? "里程碑绑定 git tag 后，tag 出现即自动判定达成"
-                        : "换个关键词，或清空搜索框看全部"
+                    subtitle: emptySubtitle(reason)
                 )
             } else {
-                List {
-                    Section {
-                        ForEach(shown) { m in
-                            MilestoneRow(milestone: m)
-                        }
-                    } header: {
-                        HStack {
-                            Text("全部里程碑（\(model.milestones.count)）")
-                            Spacer()
-                            // 过滤生效时必须说清「这是过滤后的」，
-                            // 否则 8 条里只列 3 条会被读成「就这 3 个」
-                            if let s = SearchFilter.resultSummary(
-                                allCount: model.milestones.count, shownCount: shown.count,
-                                noun: "里程碑") {
-                                Text(s)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                VStack(spacing: 0) {
+                    milestoneFilterBar
+                    Divider()
+                    List {
+                    // ⚠️ 原来是一整个 `Section` 把所有仓库的里程碑摊平。
+                    //    里程碑是**绑在项目上**的，摊平之后「这条属于哪个仓库」
+                    //    只剩一行小字，多仓库时根本分不清谁是谁。
+                    ForEach(DashMilestoneScope.groups(shown), id: \.project) { group in
+                        Section {
+                            ForEach(group.items) { m in
+                                MilestoneRow(milestone: m)
                             }
-                            if let c = model.dashboard?.milestones.counts {
-                                Text("进行中 \(c.open) · 已达成 \(c.done) · 已放弃 \(c.dropped)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                        } header: {
+                            // 单仓库范围时分组标题就是那个仓库本身，
+                            // 不重复写「全部里程碑（N）」。
+                            HStack {
+                                Text(projectFilter == nil
+                                     ? group.project
+                                     : "\(group.project)（\(group.items.count)）")
+                                Spacer()
+                                if let s = SearchFilter.resultSummary(
+                                    allCount: scoped.count, shownCount: shown.count,
+                                    noun: "里程碑") {
+                                    Text(s)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
+
+                    // 统计**按明细算、按当前范围算**，不读全局 counts ——
+                    // 收窄到单仓库后继续报全局数字，等于把全局完成率
+                    // 说成这个仓库的完成率。unknown 单列，不混进任何一侧。
+                    Section {
+                        HStack(spacing: DSSpacing.md) {
+                            stat("进行中", tally.open, .secondary)
+                            stat("已达成", tally.done, .green)
+                            stat("已放弃", tally.dropped, .secondary)
+                            if tally.unknown > 0 {
+                                stat("读不出来", tally.unknown, .orange)
+                            }
+                            Spacer()
+                        }
+                        .font(.callout)
+                        .padding(.vertical, DSSpacing.xs)
+
+                        if !detailComplete {
+                            // 明细被窗口截过 ⇒ 上面那些数只是**下界**。
+                            // 静默报一个偏小的数，与「上限当全量」是同一族谎报。
+                            Label(
+                                "明细只给了 \(model.milestones.count) 条，"
+                                + "引擎读到 \(model.dashboard?.milestones.counts.readCount ?? 0) 条"
+                                + " —— 上面按明细统计，不是全量",
+                                systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                    } header: {
+                        Text(projectFilter.map { "\($0) 的里程碑" } ?? "全部项目")
+                    }
+                    }
+                    .listStyle(.inset)
                 }
-                .listStyle(.inset)
             }
         }
         .searchable(text: $query, placement: .toolbar, prompt: "搜索里程碑名称")
@@ -83,6 +161,64 @@ struct MilestonesView: View {
                 .environmentObject(model)
         }
         .task { await model.fetchMilestones() }
+    }
+
+    /// 仓库筛选条。**常驻内容区顶部**，不放工具栏。
+    ///
+    /// ⚠️ 原来放工具栏，实测 SwiftUI 在 1100pt 窗口下把 `Label` 的标题
+    /// 压掉只剩图标 —— 于是「正在筛 atlas」和「没筛」长得一模一样，
+    /// 而筛过之后列表变短，用户会以为里程碑被删了。
+    /// 一个看不出当前状态的筛选控件，等于没有状态。
+    /// 筛选条自己把「筛到谁 / 筛掉了多少」写出来。
+    private var milestoneFilterBar: some View {
+        HStack(spacing: DSSpacing.md) {
+            Text("仓库")
+                .font(DSTypography.label)
+                .foregroundStyle(DSColor.textSecondary)
+
+            Picker("", selection: $projectFilter) {
+                Text("全部项目").tag(String?.none)
+                ForEach(knownProjects, id: \.self) { name in
+                    Text(name).tag(String?.some(name))
+                }
+            }
+            .labelsHidden()
+            .frame(width: 180)
+            .help("只看某一个仓库的里程碑")
+            .accessibilityLabel(A11y.label("按仓库筛选里程碑"))
+            .disabled(knownProjects.isEmpty)
+
+            // 筛选生效时说清「从多少条里筛到多少条」——
+            // 只报筛后的条数，读者没法判断是被筛掉了还是本来就没那么多。
+            if projectFilter != nil || !query.isEmpty {
+                Text("筛出 \(shown.count) / \(scoped.count) 条")
+                    .font(DSTypography.label)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .monospacedDigit()
+            }
+            Spacer()
+        }
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.sm)
+    }
+
+    /// 空态副说明。**收窄到单仓库后，「没有里程碑」有两种完全不同的原因**：
+    /// 这个仓库真的没有 vs 这个仓库有但全被搜索词滤掉了 ——
+    /// 更要紧的是，还有一种是「范围里根本没有里程碑数据」。
+    private func emptySubtitle(_ reason: SearchFilter.Empty) -> String {
+        if let p = projectFilter, scoped.isEmpty, reason == .noData {
+            return "「\(p)」还没有里程碑。切到全局看板可以看其它仓库的。"
+        }
+        return reason == .noData
+            ? "里程碑绑定 git tag 后，tag 出现即自动判定达成"
+            : "换个关键词，或清空搜索框看全部"
+    }
+
+    private func stat(_ title: String, _ n: Int, _ tint: Color) -> some View {
+        HStack(spacing: DSSpacing.xs) {
+            Text("\(n)").font(.body.weight(.semibold)).foregroundStyle(tint)
+            Text(title).foregroundStyle(.secondary)
+        }
     }
 }
 

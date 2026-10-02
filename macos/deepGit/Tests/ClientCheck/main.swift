@@ -1452,17 +1452,44 @@ do {
 
     check("JournalEntry 模型必须解出三个口径字段") {
         let m = try sourceText("Models.swift")
-        // 匹配到类型：注释里出现同名字段、或字段名互为前缀都会假绿。
-        guard m.contains("let commitCountScope:") else {
-            throw fail("模型没解 commitCountScope —— 同名不同义被压成一种")
+        // ⚠️ 这里原来匹配的是 `let commitCountScope:` ——**按声明语法**判存在性。
+        // 后果有两个，第二个更糟：
+        //   1. 把它改成 `var` 就红（纯粹因为关键字变了，与对错无关）；
+        //   2. `let x: T? = nil` 这种**永不解码**的写法反而能通过 ——
+        //      字段在源码里「存在」，判据绿，而运行时永远是 nil。
+        //      本项目就靠这条假绿放过了 4 个死键，外加把时间窗筛选变成死控件。
+        // 改成按「声明里有没有初值」判：**带初值的不可变存储属性 Swift 不会解码它**，
+        // 那才是「解出来了」与「只是写着」的真正分界。
+        //
+        // ⚠️ 切片必须**限定在 JournalEntry 结构体里**：Models.swift 里
+        // `ProjectStatus` 也有一个同名 `repoBranchCount`，而且它是**合法的 let**
+        // （非可选、无默认值 → 一定会被解码）。文件级匹配会把它一起判红 ——
+        // 我第一版就栽在这儿，是把原注释警告的坑反向踩了一遍：那次是假绿，这次是假红。
+        let body = try slice(m, from: "struct JournalEntry", to: "\n}\n")
+            ?? "（切不出 JournalEntry 的声明）"
+        for name in ["commitCountScope", "commitCountTruncated", "repoBranchCount",
+                     "branchCountTruncated"] {
+            guard body.contains("\(name):") else {
+                throw fail("JournalEntry 没有字段 \(name)")
+            }
+            if body.contains("let \(name):") {
+                throw fail("JournalEntry.\(name) 声明成了 `let` —— Swift 合成解码器会跳过"
+                    + "带初值的不可变存储属性，这个键永远解不出来（必须写 var）")
+            }
+            guard body.contains("var \(name):") else {
+                throw fail("JournalEntry.\(name) 既不是 var 也不是可解码的 let，判据不知道它是什么")
+            }
         }
-        guard m.contains("let commitCountTruncated:") else {
-            throw fail("模型没解 commitCountTruncated")
+        // 反向自查：别把 ProjectStatus 那个合法的 let 也一起改了。
+        // 它非可选、无初值，合成解码器一定会解 —— 若哪天有人「顺手统一」成
+        // `var repoBranchCount: Int = 0`，老引擎缺键时就会静默变成 0 而不是解码失败。
+        let proj = try slice(m, from: "struct ProjectStatus", to: "\n}\n")
+            ?? "（切不出 ProjectStatus 的声明）"
+        if proj.contains("var repoBranchCount:") {
+            throw fail("ProjectStatus.repoBranchCount 被改成了 var + 初值 —— "
+                + "它是必填字段，不该有默认值（缺键应当解码失败，而不是静默变 0）")
         }
-        guard m.contains("let repoBranchCount:") else {
-            throw fail("模型没解 repoBranchCount")
-        }
-        return "三个字段都在"
+        return "四个口径字段都是 var（真会被解码）；ProjectStatus.repoBranchCount 仍是必填 let"
     }
 
     check("UI 必须走 commitCountBadge，且不得再有无口径的绿色 +N") {
@@ -2391,8 +2418,17 @@ do {
         // ⚠️ 边界用**代码**标记而不是 `// MARK:`：本文件真值是 `// MARK: 分支`
         // （没有那个短横），写成 `// MARK: - 分支` 就切不出来 —— 而切不出来时
         // 报的是「lint 判据坏了」，不是「代码有缺陷」，两者别混。
+        // ⚠️ 结束边界用**下一个分区标记**，不用「下一个函数」——
+        // 用 `private func branchCard(` 的话，后来插在中间的
+        // `milestoneCard`（含一个百分号字面量 `50%`）会被算进
+        // commitTypeCard 的函数体，判据报「出现取模」——
+        // 报错的是判据的边界，不是代码有缺陷，两者别混。
+        // 边界跟着文件里**实际的书写顺序**走：commitTypeCard 之后
+        // 紧跟的是 `// MARK: 里程碑`（本文件真值是 `// MARK: 里程碑`，
+        // 没有短横；写成 `// MARK: - 里程碑` 就切不出来）。
         let raw = try sourceText("DetailViews.swift")
-        guard let rawCard = slice(raw, from: "private func commitTypeCard(", to: "private func branchCard(") else {
+        guard let rawCard = slice(raw, from: "private func commitTypeCard(",
+                                  to: "// MARK: 里程碑") else {
             throw fail("切不出 commitTypeCard 的函数体 —— lint 判据本身坏了（不是缺陷）")
         }
         let card = swiftCode(rawCard)
@@ -3202,12 +3238,24 @@ do {
         guard ms.contains(".searchable") || ms.contains("TextField") else {
             throw fail("里程碑列表没有搜索")
         }
-        // ⚠️ 必须渲染 shown 而不是 model.milestones —— 否则搜索框是摆设
-        guard ms.contains("ForEach(shown)") else {
-            throw fail("里程碑列表仍渲染全量 ForEach(model.milestones) ⇒ 搜索是摆设")
-        }
+        // ⚠️ 必须渲染**过滤后**的数组 —— 否则搜索框是摆设。
+        // 这里原来写死 `ForEach(shown)`，里程碑页改成按项目分组后渲染的是
+        // `group.items`，判据就报「仍渲染全量」。
+        // 那是判据钉**写法**而不是钉**数据流**：分组渲染同样可以是摆设
+        // （`groups(model.milestones)` 就绕过了搜索）。
+        // 所以改成沿数据流追：groups 的入参必须是 shown，而 shown 必须过 SearchFilter。
         guard ms.contains("SearchFilter.emptyReason") else {
             throw fail("里程碑列表没有区分「没匹配」与「没有」")
+        }
+        guard ms.contains("SearchFilter.filter(scoped") else {
+            throw fail("shown 没走 SearchFilter ⇒ 搜索框是摆设")
+        }
+        guard ms.contains("groups(shown)") else {
+            throw fail("分组渲染的入参不是 shown ⇒ 绕过了搜索过滤")
+        }
+        // 反向自查：渲染处不许直接吃 model.milestones。
+        if ms.contains("groups(model.milestones)") || ms.contains("ForEach(model.milestones)") {
+            throw fail("里程碑渲染绕过了过滤链，直接吃全量")
         }
 
         // 项目列表：⚠️ 这里**刻意不用**系统 .searchable ——
@@ -4184,6 +4232,302 @@ do {
                 + "      但它就是第二个真相源 —— 改了模型层那处，这些地方不会跟着动。")
         }
         return "视图层 0 处自己推导；`if x.isCurrent` 的显示判断放行"
+    }
+
+    check("筛选控件必须真的改变渲染，不许是摆设（设计稿筛选行）") {
+        // 这条卡的是**最坏的一种控件**：摆在那里、用户拨了、什么也没变。
+        // 仪表盘顶部那条筛选行（时间跨度 / 提交类型 / 重新索引）就是这种风险。
+        //
+        // 这里只验**数据**层：档位窗口必须真的分档、提交类型筛选必须真的改条数。
+        // 「给定一个项目，两个档位给出不同答案」那一半由 ContractCheck 用
+        // **真 fixture** 验（那边能拿到 ProjectStatus 本体）。
+        guard DashSpan.all.maxDays == nil else {
+            throw fail("全量档位竟然带时间窗")
+        }
+        guard let d7 = DashSpan.d7.maxDays, let d30 = DashSpan.d30.maxDays else {
+            throw fail("近 7 天 / 近 30 天档位没有时间窗")
+        }
+        guard d7 < d30 else {
+            throw fail("近 7 天的窗口(\(d7))不比近 30 天(\(d30))窄 ⇒ 档位是反的")
+        }
+        // 提交类型筛选：只画被选中的那类
+        let stats = [CommitTypeStat(type: "feat", count: 3),
+                     CommitTypeStat(type: "fix", count: 2)]
+        guard DashFilter(span: .all, commits: .only("feat")).keptStats(stats).count == 1 else {
+            throw fail("提交类型筛选没有真的过滤堆叠条")
+        }
+        guard DashFilter(span: .all, commits: .all).keptStats(stats).count == 2 else {
+            throw fail("「所有提交类型」档位把东西也滤掉了")
+        }
+        return "时间窗 7 < 30 < 全量；提交类型筛选真的改变条数"
+    }
+
+    check("里程碑页必须接范围选择器，且不许拿全局 counts 冒充单仓库") {
+        // 造三条例：`MilestoneItem` 是 Decodable，构造要 20+ 个字段，
+        // 这里直接解 JSON —— 与契约检查同一套做法（验行为，不验字面量）。
+        func item(_ project: String, _ name: String, _ status: String) throws -> MilestoneItem {
+            try JSONDecoder().decode(MilestoneItem.self, from: Data("""
+            {"projectId":"p-\(project)","projectName":"\(project)","name":"\(name)",
+             "description":"","status":"\(status)","targetDate":"","daysToTarget":-1,
+             "overdue":false,"tag":"","tagName":"","tagReached":false,
+             "commitsSince":-1,"commitsSinceReadable":false,"gitReadable":true,
+             "createdAt":"","completedAt":"","unverifiedReason":""}
+            """.utf8))
+        }
+        let all = [
+            try item("atlas", "M1", "open"),
+            try item("atlas", "M2", "done"),
+            try item("beacon", "M1", "open"),
+            try item("beacon", "M2", "unknown"),
+        ]
+
+        // 1. 范围收窄真的收窄。
+        let onlyAtlas = DashMilestoneScope.items(all, project: "atlas")
+        guard onlyAtlas.count == 2 else {
+            throw fail("收窄到 atlas 后有 \(onlyAtlas.count) 条，应为 2")
+        }
+        guard DashMilestoneScope.items(all, project: nil).count == 4 else {
+            throw fail("全局范围被收窄了")
+        }
+        guard DashMilestoneScope.items(all, project: "不存在").isEmpty else {
+            throw fail("范围指向不存在的项目时应为空")
+        }
+
+        // 2. 分组按项目，且每条只出现在自己那一组。
+        let g = DashMilestoneScope.groups(all)
+        guard g.count == 2 else { throw fail("分成 \(g.count) 组，应为 2") }
+        for (_, items) in g {
+            guard Set(items.map(\.projectName)).count == 1 else {
+                throw fail("某一组里混了多个项目")
+            }
+        }
+
+        // 3. unknown 必须单列 —— 混进 open 或 done 都是把「不知道」说成事实。
+        let t = DashMilestoneScope.tally(all)
+        guard t.open == 2, t.done == 1, t.unknown == 1, t.dropped == 0 else {
+            throw fail("统计错了：open=\(t.open) done=\(t.done) "
+                + "dropped=\(t.dropped) unknown=\(t.unknown)")
+        }
+        // 收窄后统计也必须跟着收窄，否则就是把全局数说成单仓库的。
+        let ta = DashMilestoneScope.tally(onlyAtlas)
+        guard ta.open == 1, ta.done == 1, ta.unknown == 0 else {
+            throw fail("收窄后的统计没有跟着收窄：\(ta)")
+        }
+
+        // 4. 明细不等于引擎读到的条数时，必须能判出「不完整」。
+        let full = MilestoneCounts(open: 4, done: 0, dropped: 0, unknown: 0,
+                                   storeHealth: "ok", degraded: false,
+                                   readCount: 4, excludedDisabled: 0, orphaned: 0)
+        guard DashMilestoneScope.isComplete(all, counts: full) else {
+            throw fail("明细条数 == readCount 却判成不完整")
+        }
+        let cut = MilestoneCounts(open: 9, done: 0, dropped: 0, unknown: 0,
+                                   storeHealth: "ok", degraded: false,
+                                   readCount: 9, excludedDisabled: 0, orphaned: 0)
+        guard !DashMilestoneScope.isComplete(all, counts: cut) else {
+            throw fail("明细被截断（4/9）却判成完整 ⇒ 界面会把下界当全量报")
+        }
+        guard !DashMilestoneScope.isComplete(all, counts: nil) else {
+            throw fail("拿不到 counts 时判成完整 ⇒ 把「不知道」说成「就是全部」")
+        }
+        return "范围收窄 / 分组 / unknown 单列 / 截断可辨，四件事都对"
+    }
+
+    check("里程碑页的仓库筛选必须是它自己的状态，不许从 selection 推导") {
+        // 我在这一页犯过一次，且犯得很有代表性：
+        // 把「当前范围」写成 `if case .project(let n)? = model.selection`。
+        // 但 `MilestonesView` **只在** `selection == .milestones` 时才被渲染
+        // （PanelView 的 switch），于是这个分支**永远不成立** ——
+        // 控件在源码里存在、在判据里能测出逻辑、实际恒为 nil。
+        // 实测：选中 atlas → 点「里程碑」→ 3 个仓库照旧全列出来。
+        //
+        // 顶栏那个范围选择器也是同一套推导，所以两者「看起来一致」
+        // （都显示全局看板）—— **一致不等于有用**，
+        // 这正是「摆而不动」的伪装形态：不是明显地坏，而是默默地什么也没做。
+        // ⚠️ 必须**只切 MilestonesView 这一个结构体**：
+        // 同一个文件里的 `AddMilestoneSheet` 合法地用 `model.selection` 预选项目
+        // （新建里程碑时默认填当前项目），文件级匹配会把它一起判红。
+        let ms = try slice(try strippedCode("MilestonesView.swift"),
+                           from: "struct MilestonesView", to: "\n}\n")
+            ?? "（切不出 MilestonesView）"
+        if ms.contains("case .project(let") && ms.contains("model.selection") {
+            throw fail("里程碑页从 model.selection 推导项目范围：这个视图只在 "
+                + "selection == .milestones 时渲染，那个分支恒为 nil ⇒ 筛选是摆设。"
+                + "要筛就用本页自己的 @State。")
+        }
+        guard ms.contains("@State private var projectFilter") else {
+            throw fail("里程碑页没有自己的仓库筛选状态")
+        }
+        // 筛选必须真的接到数据链上，而不是只改个标题。
+        guard ms.contains("DashMilestoneScope.items(model.milestones, project: projectFilter)") else {
+            throw fail("projectFilter 没接到取数上 ⇒ 筛了不生效")
+        }
+        // 反向自查：渲染处不许吃全量。
+        if ms.contains("ForEach(model.milestones)") {
+            throw fail("里程碑渲染绕过了筛选链，直接吃全量")
+        }
+        return "仓库筛选是本页自己的 @State，且真的接在取数链上"
+    }
+
+    check("侧栏行不许用 .badge()（macOS 选择型 List 里它会吃掉点击）") {
+        // 实测（本机 macOS 26）：侧栏「里程碑」那一行带着 `.badge(...)`，
+        // 连点 5 次 `selection` 的 didSet **一次都没触发** —— `go()` 根本没被调用。
+        // 把 `.badge` 去掉后，同一次点击立刻生效。
+        // `.badge()` 在 `List(selection:)` 的行上会接管命中测试：
+        // 行的点击与选中高亮一起失效，而外观完全正常。
+        //
+        // 为什么这条值得单独立：那一行「看着没毛病」，⌘3 也能进，
+        // 只有真的用鼠标去点才会发现它是死的 ——
+        // 而对鼠标用户来说，进不去的导航项等于这个视图不存在。
+        // 判据查源码：选择型 List 的构造处附近不许出现 `.badge(`。
+        // ⚠️ 必须用 strippedCode：原文里**注释提到 `.badge(`** 就会自我判红。
+        //    这不是假警报那么简单 —— 一条会被自己的注释触发的判据，
+        //    下一次有人想在注释里解释这件事时就会莫名其妙地红，然后被人「修」掉。
+        let p = try strippedCode("PanelView.swift")
+        guard p.contains("List(selection:") else {
+            throw fail("PanelView 里找不到选择型 List，这条判据的前提没了")
+        }
+        if p.contains(".badge(") {
+            throw fail("侧栏用了 `.badge(...)`：它在 List(selection:) 的行上会吞掉点击，"
+                + "表现为「这一行点不动」而外观完全正常。计数请写进行内文字。")
+        }
+        return "侧栏没有 .badge()；里程碑计数走行内文字"
+    }
+
+    check("项目状态词只能有一处推导（看板列与项目卡必须说同一句话）") {
+        // 同一个问题「这个项目状态怎么样」被算过三遍，三遍都错：
+        //   · boardColumn(for:) 判 branches（追踪数组） ⇒ 「停滞」列恒 0
+        //   · DashboardParts.stateWord 判 primaryBranch?.status ⇒ 全部落进「正常」
+        //   · 修好第一个之后，第二个还在错 —— 两个界面同屏给出矛盾的词
+        // 修法是判定下沉到 `ProjectStatus.liveness` / `stateWord`，
+        // 视图只消费。这里钉住「只有模型层有一份」。
+        let m = try sourceText("Models.swift")
+        guard m.contains("enum Liveness") && m.contains("var liveness: Liveness")
+                && m.contains("var stateWord:") else {
+            throw fail("模型层没有 liveness / stateWord ⇒ 状态判定又散回视图了")
+        }
+        // 视图里不许再自己判「停滞 / 正常」——只许消费。
+        for f in ["BoardView.swift", "DashboardParts.swift", "DetailViews.swift"] {
+            // 同样要剥注释：这三个文件的注释里**正在解释**这个缺陷，
+            // 原文匹配会被自己的说明文字判红。
+            let s = try strippedCode(f)
+            // 视图里出现 `status == "stale"` / `"idle"` 这类档位字面量就是自己判了。
+            for literal in ["status == \"stale\"", "status == \"idle\"",
+                            "status == \"active\"", "status == \"merged\""] {
+                if s.contains(literal) {
+                    throw fail("\(f) 里出现 \(literal) —— 视图在自推档位。"
+                        + "引擎的档位在 `primaryBranch.status`，无追踪分支时读不到，"
+                        + "该走 `ProjectStatus.liveness`。")
+                }
+            }
+        }
+        // 看板列必须是纯映射：拿 liveness 换列，不自己判。
+        let b = try strippedCode("BoardView.swift")
+        guard b.contains("var boardColumn: BoardColumn") && b.contains("switch liveness") else {
+            throw fail("BoardView.boardColumn 必须只按 liveness 映射")
+        }
+        if b.contains("func boardColumn(for:") {
+            throw fail("BoardView 里还留着自由函数 `boardColumn(for:)` —— "
+                + "领域规则只许有一份，且必须在模型层")
+        }
+        if b.contains("prefix(4)") {
+            throw fail("看板还在 prefix(4) 截断：列头计数与真的列出来的行数对不上，"
+                + "多出来的项目永远点不到")
+        }
+        return "判定只有 Models.swift 一份；看板列是纯映射；没有静默截断"
+    }
+
+    check("筛选状态必须跨视图共享，且不能挂在视图的 @State 上") {
+        // 原来 `DashFilter` 是 `DashboardView` 的 `@State`：视图一重建就没了
+        // （切到看板再切回来，筛选悄悄弹回「全量」），
+        // 而且看板根本读不到它 —— 仪表盘筛到 1 个项目时看板还是 3 个。
+        let mdl = try sourceText("Model.swift")
+        guard mdl.contains("var dashFilter") else {
+            throw fail("AppModel 上没有 dashFilter ⇒ 筛选无法跨视图共享")
+        }
+        let dv = try strippedCode("DetailViews.swift")
+        if dv.contains("@State private var filter = DashFilter()") {
+            throw fail("筛选又回到 DashboardView 的 @State 上了："
+                + "视图重建即丢失，且看板读不到")
+        }
+        // 看板必须真的读它，否则「共享」是一句空话。
+        let bv = try strippedCode("BoardView.swift")
+        guard bv.contains("dashFilter.keeps(project:") else {
+            throw fail("看板没有消费 model.dashFilter ⇒ 两个视图对「在看什么」各说各话")
+        }
+        return "筛选在 AppModel 上；仪表盘与看板消费同一份"
+    }
+
+    check("时间窗的判定只许在模型层（档位线归引擎，视图层不许碰 staleDays）") {
+        // 引擎的档位线是 3/14 天（progress.cj:30-36）。客户端再写一个阈值
+        // 就是两个真相源。**上一组判据已经卡了 staleDays 不许出 Models.swift**，
+        // 这里补一条更细的：时间窗的**判定方法**必须在模型层，
+        // 免得有人为了绕过那条判据，把天数换个名字（`lastTouchDays`）再写一遍。
+        // strippedCode 返回非 Optional 的 String（读不到会直接抛），别写 guard let
+        let m = try strippedCode("Models.swift")
+        guard m.contains("func updatedWithin(days:") else {
+            throw fail("模型层没有 updatedWithin(days:) ⇒ 时间窗判定不知道放哪了")
+        }
+        // 「读不出来」必须保留 —— 那是这个方法存在的全部理由。
+        //
+        // ⚠️ 这里原来硬编码了机制 `w.contains("b.staleDays < 0")`。
+        // 判据钉**机制**而不是**意图**，于是实现换了数据源（staleDays → lastCommitAt，
+        // 因为追踪数组在无远端的仓库里恒空，判据自己反而在为死控件背书），
+        // 它就报红 —— 而那次的实现其实是对的。
+        // 正确写法：钉「读不出来 ⇒ 放行」这个**语义**，以及判定依据是模型层那个
+        // 有名字的派生属性（不是视图里临时算的天数，否则又变成第二真相源）。
+        let w = try slice(m, from: "func updatedWithin(days:", to: "\n    }")
+            ?? "（切不出 updatedWithin 的方法体）"
+        guard w.contains("daysSinceLastCommit") else {
+            throw fail("updatedWithin 没有走模型层的 daysSinceLastCommit：\n" + w
+                + "      判定依据必须是模型层那个有名字的派生属性，"
+                + "在视图里现算天数就是第二真相源")
+        }
+        // 读不出来的分支：拿不到 age 时必须 `return true`（保留），不许 return false。
+        // 这条是语义断言 —— 具体写法（guard let / if let / ?? true）随实现变。
+        let keepsUnknown = w.contains("else { return true }")
+            || w.contains("?? { return true }")
+            || (w.contains("guard let age") && w.contains("else { return true }"))
+        guard keepsUnknown else {
+            throw fail("updatedWithin 没有「读不出来就保留」的放行分支：\n" + w
+                + "      那会把「不知道」说成「不在近 7 天内」")
+        }
+        guard w.contains("return true") else {
+            throw fail("updatedWithin 没有任何放行分支 ⇒ 窗口会把所有项目滤空")
+        }
+        return "判定在模型层；依据 daysSinceLastCommit；读不出来一律保留"
+    }
+
+    check("分支 KPI 必须用 repoBranchCount，不许拿追踪数组长度当分支总数") {
+        // 引擎的 work.branches = 各项目 branches **追踪数组**长度之和
+        // （dashboard.cj:200）。追踪数组只含「引擎追踪到基线的那些」，
+        // 无远端基线的仓库会是空数组，而 repoBranchCount 仍是真实值。
+        // 实测：4 分支的仓库 → repoBranchCount=4、branches=[]、work.branches=0。
+        // 于是用 work.branches 会显示「分支 0」—— 把「明细读不到」说成「没有分支」。
+        let f = try strippedCode("DashboardScope.swift")
+        // ⚠️ 切片边界要按文件里**实际的书写顺序**取。`.reach` 那个 KPI 是
+        // `return [` 数组的第 4 项，所以「从 .reach 到 return [」永远切不出来 ——
+        // 我第一版就是这么写的。而 `repoBranchCount` 又不在数组元素体内
+        // （它在数组**之前**的 `let realBranches = …` 里），所以只切元素体也不够。
+        // 于是分两段验，各验各的职责。
+        guard let calc = try slice(f, from: "let realBranches", to: "return [") else {
+            throw fail("切不出分支数的计算区（结构变了？）")
+        }
+        guard let reach = try slice(f, from: "kind: .reach", to: "\n        ]") else {
+            throw fail("切不出 .reach 那个 KPI 的定义（结构变了？）")
+        }
+        guard calc.contains("repoBranchCount") else {
+            throw fail("分支数计算区没读 repoBranchCount ⇒ 主数字没有真实来源")
+        }
+        if reach.contains("value: d.work.branches") {
+            throw fail("分支 KPI 仍然用 work.branches（追踪数组长度）：\n" +
+                "      追踪数组为空时显示 0，用户读成「这个项目群一个分支都没有」。\n" +
+                "      主数字必须是 repoBranchCount（真实值），追踪长度只能作副说明")
+        }
+        guard reach.contains("value: realBranches") else {
+            throw fail("分支 KPI 的主数字没有用计算好的 realBranches")
+        }
+        return "主数字取 repoBranchCount，追踪长度降为副说明"
     }
 
     check("README 声明的 Dock 菜单必须真存在") {

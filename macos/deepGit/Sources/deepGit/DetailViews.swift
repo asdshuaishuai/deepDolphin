@@ -63,6 +63,13 @@ struct ProjectDetailView: View {
                 // 而仓库实际有 2 个分支 —— 字面写「分支进度（0）」会让人认定仓库没有分支。
                 // repoBranchCount = -1 时更要说明「读不出来」，不能显示 0。
                 Card(title: "分支进度 · \(p.branchScopeLine)") { branchCard(p) }
+                // ⚠️ 里程碑原来**只在里程碑页里有**。
+                //    而这一页才是「这个仓库的独立管控页」——
+                //    仪表盘卡、项目卡、管控页三处都不显示里程碑，
+                //    用户要管一个仓库的里程碑，得先记住它叫什么、
+                //    再去里程碑页用筛选器把它筛出来。
+                //    里程碑是「目标达成度」，正是管控页该回答的问题。
+                milestoneCard(p)
                 if p.isGit {
                     Card(title: "Git 操作") { gitCard(p) }
                 }
@@ -227,6 +234,11 @@ struct ProjectDetailView: View {
                 HStack(spacing: DSSpacing.sm) {
                     Text(p.name)
                         .font(.title.weight(.semibold))
+                    // ⚠️ 状态词原来只有仪表盘项目卡有，管控页没有。
+                    //    同一个仓库，仪表盘说「47 天没更新」、管控页什么都不说 ——
+                    //    用户会以为管控页漏了，而实际上是两处各算各的。
+                    //    现在统一走 `ProjectStatus.stateWord`（模型层那一份）。
+                    Chip(text: p.stateWord.text, tint: stateTint(p.stateWord.tone))
                     if !p.isGit {
                         Chip(text: "非 git", tint: .gray)
                     }
@@ -435,6 +447,76 @@ struct ProjectDetailView: View {
         }
     }
 
+
+    // MARK: 里程碑
+
+    /// `stateWord` 的语气 → 颜色。与看板、项目卡同一套映射。
+    private func stateTint(_ tone: ProjectStatus.Liveness) -> Color {
+        switch tone {
+        case .unreadable, .unknown: return .red
+        case .notGit:               return .gray
+        case .needsAction:          return .orange
+        case .engineStale, .quiet:  return .secondary
+        case .recent:               return .green
+        }
+    }
+
+    /// 这个仓库的里程碑。行内直接复用 `MilestoneRow`（达成 / 放弃 / 删除都在那）。
+    ///
+    /// 取数走 `DashMilestoneScope`（与里程碑页同一份口径）——
+    /// 两页各写一遍筛选就会出现「管控页 2 条、里程碑页 3 条」。
+    @ViewBuilder
+    private func milestoneCard(_ p: ProjectStatus) -> some View {
+        let mine = DashMilestoneScope.items(model.milestones, project: p.name)
+        let t = DashMilestoneScope.tally(mine)
+        Card(title: "里程碑 · \(mine.count) 条") {
+            if model.milestonesState.phase(hasContent: !model.milestones.isEmpty) == .loading {
+                ProgressView("读取里程碑…").frame(height: 60)
+            } else if mine.isEmpty {
+                // 两种「没有」必须说不同的话：这个仓库真的没建里程碑，
+                // 还是里程碑数据根本读不出来。后者显示「去建里程碑」是误导。
+                if case .failed(let msg) = model.milestonesState {
+                    Label(msg, systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                } else {
+                    EmptyState(icon: "flag.2.crossed", title: "还没有里程碑",
+                                subtitle: "在「里程碑」页新建，绑定 git tag 后 tag 出现即自动判定达成")
+                        .frame(height: 80)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                    // 分母只取「达没达成有答案的」（done + open）。
+                    // unknown 是「仓库读不出来」，算作「没达成」就是把无知说成事实。
+                    let decided = t.done + t.open
+                    if decided > 0 {
+                        HStack(spacing: DSSpacing.sm) {
+                            Text("达成率")
+                                .font(DSTypography.label)
+                                .foregroundStyle(DSColor.textSecondary)
+                            Text("\(Int((Double(t.done) * 100 / Double(decided)).rounded()))%")
+                                .font(.title3.weight(.semibold))
+                                .monospacedDigit()
+                            Text("\(t.done)/\(decided)")
+                                .font(DSTypography.label)
+                                .foregroundStyle(DSColor.textSecondary)
+                                .monospacedDigit()
+                            if t.unknown > 0 {
+                                Text("· \(t.unknown) 个读不出来（不计入分母）")
+                                    .font(DSTypography.label)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        ProgressView(value: Double(t.done), total: Double(decided))
+                    }
+                    Divider()
+                    ForEach(mine) { m in
+                        MilestoneRow(milestone: m)
+                    }
+                }
+            }
+        }
+    }
 
     // MARK: 分支
 
@@ -653,6 +735,15 @@ struct FlowLayout<Content: View>: View {
 
 struct DashboardView: View {
     @EnvironmentObject var model: AppModel
+    /// 筛选行。判定在 `DashboardScope.swift`（纯函数，可单测）——
+    /// 摆在界面上的控件若不影响数据，就只是装饰。
+    ///
+    /// ⚠️ 状态在 `AppModel.dashFilter`，**不在这里的 `@State`**：
+    ///   1. `@State` 挂在视图上，视图重建就没了 —— 切到看板再切回来，
+    ///      筛选悄悄弹回「全量」，用户会以为筛选失灵；
+    ///   2. 看板是**第二个消费方**（同屏里两个视图必须对「在看什么」说同一句话），
+    ///      各存一份就必然出现「仪表盘 1 个 / 看板 3 个」。
+    @State private var reindexing = false
 
     var body: some View {
         ScrollView {
@@ -686,51 +777,72 @@ struct DashboardView: View {
                         .frame(minHeight: 300)
                 }
             }
-            .padding(18)
+            .padding(DSSpacing.lg)
         }
         .task { await model.fetchDashboard() }
     }
 
     private func dashboardContent(_ d: Dashboard) -> some View {
         VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            // Hero：项目群一句话 + 一键说明
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 3) {
+            // ── 段 1：页头 ──
+            // ⚠️ 原来这里是一整块紫蓝渐变 hero + **8 张平铺统计卡**
+            // （项目/7天/30天/脏/分支/待合入/未跟踪/stash），每张只有
+            // 「数字 + 标签」，没有主次、没有解释，也没有筛选。
+            // 渐变没有信息量，却把页头和统计卡挤成同一团。
+            // 这一版按设计稿的四段式重排：**层次**问题优先于配色问题。
+            HStack(alignment: .firstTextBaseline, spacing: DSSpacing.md) {
+                VStack(alignment: .leading, spacing: DSSpacing.xs) {
                     Text("项目群脉搏")
                         .font(.title2.weight(.bold))
                     let active = d.projects.active7d
-                    let risky = d.projects.dirty + d.work.mergeCandidates + (d.work.untrackedFiles > 0 ? 1 : 0)
+                    let risky = d.projects.dirty + d.work.mergeCandidates
+                        + (d.work.untrackedFiles > 0 ? 1 : 0)
                     Text(active > 0
                         ? "\(d.projects.total) 个项目 · \(active) 个近 7 天活跃\(risky > 0 ? " · \(risky) 项待处理" : "")"
                         : "共 \(d.projects.total) 个项目")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DSColor.textSecondary)
                 }
-                Spacer()
+                Spacer(minLength: DSSpacing.md)
                 GroupBriefButton()
             }
-            .padding(DSSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                LinearGradient(colors: [.purple.opacity(0.12), .blue.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: DSRect.shape(DSRadius.card)
+
+            // ── 段 2：筛选行（设计稿有，我们原来没有）──
+            // 三个控件**都真的改变下面画什么**（判定见 DashboardScope.swift）：
+            //   时间跨度 → 项目卡网格里出现哪些项目（按最近更新天数）
+            //   提交类型 → 项目卡里堆叠条画哪几段、图例列哪几行
+            //   重新索引 → 真跑一次浅更新并重新拉数据
+            // 摆而不动的控件是最坏的一种控件，判据里专门钉住「它有效果」。
+            DashboardFilterBar(
+                filter: $model.dashFilter,
+                commitTypes: availableCommitTypes(),
+                reindexing: reindexing,
+                onReindex: reindex
             )
 
-            // 统计卡
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: DSSpacing.md) {
-                StatCard(label: "项目总数", value: "\(d.projects.total)", icon: "square.grid.2x2")
-                StatCard(label: "近 7 天活跃", value: "\(d.projects.active7d)", tint: .green, icon: "bolt.fill")
-                StatCard(label: "近 30 天活跃", value: "\(d.projects.active30d)", icon: "calendar")
-                StatCard(label: "有未提交改动", value: "\(d.projects.dirty)", tint: statTint(d.projects.dirty), icon: "pencil.line")
+            // ── 段 3：4 张精选 KPI ──
+            // 8 → 4 不是删信息，是把它们**归并成有主次的四个问**：
+            // 有多少东西 / 目标完成到什么程度 / 有多少事等着处理 / 仓库面有多宽。
+            // 少掉的 7天/30天/未跟踪/stash 变成 KPI 的**副说明**或项目卡字段，
+            // 删掉的是平铺，不是信息。口径在 DashKPIBuilder（纯函数，可单测）。
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: DSSpacing.md), count: 4),
+                spacing: DSSpacing.md
+            ) {
+                ForEach(DashKPIBuilder.kpis(d, projects: model.projects)) { k in
+                    KPIWideCard(kpi: k)
+                }
             }
 
-            // 工作面
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: DSSpacing.md) {
-                StatCard(label: "分支", value: "\(d.work.branches)", icon: "arrow.triangle.branch")
-                StatCard(label: "待合入分支", value: "\(d.work.mergeCandidates)", tint: statTint(d.work.mergeCandidates), icon: "arrow.merge")
-                StatCard(label: "未跟踪文件", value: "\(d.work.untrackedFiles)", tint: statTint(d.work.untrackedFiles), icon: "questionmark.folder")
-                StatCard(label: "stash", value: "\(d.work.stashes)", icon: "archivebox")
-            }
+            // ── 段 4：逐项目卡网格（设计稿的核心区块）──
+            // 设计稿这里是 2 列网格，每张卡：名称 + 版本徽标 / 大百分比 + 状态词 /
+            // 描述 / 里程碑进度 / 进度条 / 提交结构堆叠条 + 图例 / 最新 commit + 链路入口。
+            // 我们没有「版本号」这种数据（引擎不给，见 D2），
+            // 所以百分比换成**能诚实算出来的**逐项目里程碑完成率，
+            // 状态词从分支 staleDays 与脏文件数推出来 —— 都是事实，不是修辞。
+            // 每张卡同时是**进入该仓库独立管控页的入口**（用户点名要保留的第 2 点）。
+            projectGrid(d)
+
 
 
 
@@ -853,6 +965,77 @@ struct DashboardView: View {
             }
         }
     }
+
+    // MARK: 筛选用到的提交类型（只列**出现过**的，不编）
+
+    private func availableCommitTypes() -> [String] {
+        var seen: [String] = []
+        for p in model.projects {
+            for s in p.commitTypes ?? [] where !seen.contains(s.type) {
+                seen.append(s.type)
+            }
+        }
+        return seen.sorted()
+    }
+
+    // MARK: 重新索引
+
+    /// 真跑一次浅更新。**不是装饰按钮**。
+    /// 跑完必须重新拉仪表盘，否则用户点了看不到任何数字变化。
+    private func reindex() {
+        guard !reindexing else { return }
+        reindexing = true
+        Task {
+            await model.runUpdate(deep: false)
+            await model.fetchDashboard()
+            reindexing = false
+        }
+    }
+
+    // MARK: 段 4：逐项目卡网格
+
+    private func projectGrid(_ d: Dashboard) -> some View {
+        let all = model.projects
+        let shown = all.filter { model.dashFilter.keeps(project: $0) }
+        return VStack(alignment: .leading, spacing: DSSpacing.md) {
+            HStack {
+                Text("各项目演进进度与里程碑明细")
+                    .font(.headline)
+                Spacer()
+                // 明细标题必须**跟着筛选走**并说清被筛掉了多少 ——
+                // 标题写「（12）」而下面画 3 张卡，就是本项目踩过多次的那族缺陷。
+                Text(shown.count == all.count
+                     ? "共 \(all.count) 个项目"
+                     : "\(shown.count)/\(all.count) 个项目（最近更新在 \(model.dashFilter.span.label)）")
+                    .font(.caption)
+                    .foregroundStyle(DSColor.textSecondary)
+            }
+            if shown.isEmpty {
+                EmptyState(
+                    icon: "line.3.horizontal.decrease.circle",
+                    title: "这个时间跨度下没有项目",
+                    subtitle: "共 \(all.count) 个项目，最近 \(model.dashFilter.span.label)更新过。" +
+                             "读不出更新时间的项目始终保留，不会被筛掉"
+                )
+                .frame(minHeight: 120)
+            } else {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(minimum: 300),
+                                                       spacing: DSSpacing.md), count: 2),
+                    spacing: DSSpacing.md
+                ) {
+                    ForEach(shown) { p in
+                        ProjectProgressCard(
+                            project: p,
+                            milestones: d.milestones.items.filter { $0.projectId == p.id },
+                            filter: model.dashFilter
+                        )
+                    }
+                }
+            }
+        }
+    }
+
 
     private func milestoneRow(_ m: MilestoneItem) -> some View {
         HStack(spacing: DSSpacing.sm) {

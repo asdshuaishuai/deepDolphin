@@ -103,13 +103,15 @@ Sources/deepGit/
   AgentOutcome.swift            纯函数：撞轮次上限时怎么收尾（工具已执行 ≠ 失败）
   AgentView.swift               AI 助手：会话 UI + 工具调用循环（多轮上下文）
   BarView.swift                 菜单栏弹窗 UI
-  BoardView.swift               项目看板卡片（渲染 warnings）
+  BoardView.swift               看板页（按可执行性分列的原生分组列表）
   ChatMessage.swift             聊天消息模型（零依赖，供 agent-check 编译）
   ClientDecisions.swift         纯函数：刷新合并门闩等（撞上不丢弃，排队补跑）
   CommitCountScope.swift        纯函数：提交数分母口径
   CommitTypeComposition.swift   纯函数：提交类型构成 + 截断披露
   Components.swift              StatusDot / StatCard / SegmentedBar / Card 等基础件
   ContextEnvelope.swift         纯函数：agent 上下文包裁剪
+  DashboardParts.swift          仪表盘四段式零件：筛选行 / KPI 宽卡 / 逐项目进度卡（设计稿布局）
+  DashboardScope.swift          纯函数：时间窗 + 提交类型筛选、4 张 KPI 的归并口径
   DeepGitApp.swift              入口：MenuBarExtra(.window) + AppDelegate（深链/退出清理）+ CommandMenu（双轨动作 ⇧⌘U / ⌥⇧⌘D）
   DesignSystem.swift            设计系统视图层：DSColor / DSSpacing / DSRadius / DSTypography / Surface
   DesignTokens.swift            纯函数：色板（逐值等于设计稿 tailwind.config）/ 状态与量级分档
@@ -122,7 +124,7 @@ Sources/deepGit/
   MarkdownParser.swift          Markdown 解析（独立于视图，便于单测）
   MarkdownView.swift            轻量 Markdown 渲染（文档平铺与 AI 回答共用，解析结果记忆化）
   MilestoneCard.swift           纯函数：里程碑卡切片 + 截断披露
-  MilestonesView.swift          里程碑管理页（含新建 Sheet + 搜索 + 破坏性确认）
+  MilestonesView.swift          里程碑管理页（仓库筛选 + 搜索 + 按项目分组 + 新建/破坏性确认）
   Model.swift                   AppModel（数据编排/动作/提醒策略）+ 路由入口 `go(_:)` + 通知 + SMAppService
   Models.swift                  CLI `--json` 契约 Codable 模型（与引擎 flow 层 JSON 严格同名）
   ModelsDev.swift               models.dev 目录（vendor 快照 + 静默刷新）→ provider/model 元数据
@@ -133,6 +135,7 @@ Sources/deepGit/
   Router.swift                  纯函数：路由的唯一决策处（区分「不知道」与「确实没有」）
   ScanCoverage.swift            纯函数：扫描覆盖披露
   ScanSheet.swift               扫描面板（NSOpenPanel 选目录 + 拖放 + 实时判定）
+  WorkBar.swift                 主工作条（范围选择器 + 双轨链路）+ 侧栏状态条
   Scope.swift                   纯函数：顶栏双轨动作的范围与标题规则（范围由 selection 推导）
   ShortcutKey.swift             `Shortcut` → SwiftUI `KeyEquivalent` / `EventModifiers` 换算
   ShortcutMap.swift             纯函数：快捷键唯一声明处 + 撞键判定
@@ -159,7 +162,7 @@ Sources/deepGit/
 |---|---|---|
 | 顶栏双轨按钮**带文字** | 设计稿原文如此，图标 + 文字混排 | **已用离屏快照验证**（`run.sh <目录> panel`，1100×760）：双轨（⚡ AI / 法杖 agent）与右簇（✦ / ⚙ / 🔍）在 1100 宽下**不挤**，中间到窗口右缘全是空 ⇒ 无需退成纯图标。仍值得人眼确认一次的是**真窗口下的按钮命中区与深浅色主题**（快照拍不到 chrome） |
 | **不铺 entitlements** | 当前 ad-hoc 签名且未启用 hardened runtime，写了也是空操作 | 将来要**公证或上架**时必须补 sandbox / 网络 / 助手权限声明；到那一步要重新评估并实测 |
-| **不另造范围选择器** | 设计稿顶栏有范围下拉，但侧栏导航已承担同角色；再存一份就是两个真相源 | `Scope` 的范围由 `selection` 推导。哪天侧栏导航被去掉，这条要跟着回退 |
+| **保留顶栏范围选择器**（推翻本文件此前「不另造」的结论） | 此前论证是「侧栏导航已承担同角色，再存一份就是两个真相源」。**那条论证是错的**：侧栏管的是「看哪个视图」，顶栏范围管的是「看哪些仓库」，两者**正交**；而且推导式绑定（读 `selection`、写 `go(_:)`）**不是**第二真相源 —— 它没有自己的状态，只是 selection 的一个视图。设计稿里这条下拉正是「全局看板 ↔ 单仓库」的切换器，也就是用户点名要保留的两点之间的那座桥 | 范围选择器只在**有项目时**出现（没项目时它是根装饰条）。它不持有状态，所以切视图时不会丢；代价是「切到里程碑页时范围必然回到全局」—— 这也是里程碑页必须**自己**带仓库筛选的原因（见下） |
 | **D8：菜单栏弹窗不做成「纯启动器」** | 计划书问 BarView 与主面板重复约 60% 是否收敛为纯启动器。实测重复的是**内容**（项目行、刷新、批量更新、空/错三态），而菜单栏弹窗的价值恰恰是「不打开窗口就扫一眼」—— 收成纯启动器等于让菜单栏只剩一个「打开面板」按钮，用户还不如点 Dock 图标。macOS 平台惯例（Stats / Bartender 类）也是弹窗内要有内容 | **代价照实说**：两份渲染仍要各自维护外观。所以本轮不去「合并视图」（那是改布局），而是**把重复的领域规则收到唯一出处**：`ProjectStatus.primaryBranch`（原来被抄 3 份，其中 PanelView 一份还是内联的不同拼法）。已修的部分见下一行；未修的部分（刷新/批量更新各存一份 action、两个空/错态视图）**如实记为已知重复**，收敛它们要动交互，不在视觉验证可覆盖的范围内 |
 | 「当前分支」规则**只留一个出处** | 原来 `branches.first { $0.isCurrent } ?? branches.first` 被抄在 BarView / BoardView 的私有 computed property 与 PanelView 的内联 `else if` 里，共 3 份 | 规则提到 `ProjectStatus.primaryBranch`（模型层，不 import SwiftUI）。判据卡结构（`client-check.sh`「只能有一个出处」+ `contract-check.sh` 用**真 fixture** 验行为，含与引擎声明的 `currentBranch` 名字交叉验证），负控 NC82 5/5。**不叫 `currentBranch`** 是因为那个名字已被引擎给的分支名字符串占了 |
 | 规范与设计稿冲突时**以设计稿原文为准** | 已四次撞上（看板是否删、`MarkdownView` 缓存、⌘N 数量、侧栏三分组 IA） | 例：规范写侧栏分「引擎/协作/智能」，设计稿原文里根本没有这个分组；照表实现只会造一个空壳入口 |
@@ -170,8 +173,44 @@ Sources/deepGit/
 | spacing 只做**等值替换**（45 处） | 刻度值字面量与 token 同值不同源，改 token 时不跟着动（真缺陷） | 51 处散值**故意保留**：收进刻度是改布局，视觉未验证前不擅自做。见下方待确认清单 |
 | 圆角统一到**连续曲率**（`DSRect.shape` 唯一构造点） | 9 处 `RoundedRectangle` 里只有 `surface` 内部写了 `style: .continuous`，其余 8 处是默认 circular ⇒ 同一张 Card 里 Chip / 描边 / 彩色底接缝对不上 | **这是视觉改动，未验证**：连续曲率是 macOS 原生控件的做法，方向确定，但实际观感要人眼看。另有 `.quaternary` 等层级色走 `tinted` 的泛型参数，抹掉颜色会把「出错」和「中性」画成同一张卡 |
 | 动效**保持极少**（全项目只有 1 处） | §3.3 要求「统一缓动与时长，遵循 macOS 观感（**不过度**）」—— 不加错动效比加动频更重要 | 那唯一一处（agent 新消息自动滚动）已从裸 `withAnimation`（SwiftUI 默认 0.25s / default 缓动）改为 `DSMotion.standard`（0.20s easeInOut）。判据卡住「不许新增裸动效」，所以以后加动效必须走 token |
+| **看板保留，但重做成原生分组列表** | 看板回答的是仪表盘不回答的问题：「现在哪些项目要我动手」。它不是仪表盘的另一种排版。设计稿里没有看板页，按「规范优先」应当删掉 —— 但那是照着过期规范删可用功能，判据已明确不许（不变量 69） | 横向四列改成 `List` + `Section`：实测 1100pt 窗口下四列挤在左边约 1/3、右边整片空白还要横向滚动。同时删掉 `prefix(4)` 静默截断（列头写 7、只列 4 张，**另外 3 个永远点不到**）与 `BoardSection`（HEAD 起就无调用点的死代码） |
+| **里程碑页保留，并加自己的仓库筛选条** | 它是**唯一能改数据**的视图（新建/达成/放弃/删除），仪表盘与项目卡上的里程碑全是只读副本 | ⚠️ 我第一版把筛选写成「从 `model.selection` 读当前范围」，**那是个恒为 nil 的控件**：本页只在 `selection == .milestones` 时才渲染，那个分支永不成立。实测选中 atlas 再进里程碑页，3 个仓库照旧全列。**这是我亲手做出来的第二个「摆而不动」**，已改成页面自己的 `@State` 并配判据钉住。筛选条放**内容区顶部**不放工具栏：实测 SwiftUI 在 1100pt 下会把工具栏 `Label` 的标题压成纯图标，「正在筛 atlas」和「没筛」会长得一模一样 |
+| 状态词与看板分列**只推一份**（`ProjectStatus.liveness`） | 同一问题「这项目怎么样」被算过三遍，三遍都错：`boardColumn(for:)` 与 `stateWord` 都依赖 `branches`（**追踪数组**，无远端仓库恒空）。实测 47 天没提交的仓库：看板落进「活跃中」、「停滞」列**恒为 0**，项目卡显示「**正常**」 | 判据钉「视图层不许出现 `status == "stale"` 这类档位字面量」。`liveness` 的两条证据：引擎的 `b.status`（有追踪分支时最精确）+ `daysSinceLastCommit`（30 天线取自引擎自己的 `active30d` 桶，`dashboard.cj:224`，**不是客户端新造的阈值**）。措辞跟着依据走：30 天那条线说「N 天没更新」而不是「停滞」，因为「停滞」是引擎 14 天档位的词 |
+| 筛选状态放 `AppModel.dashFilter`，**不放视图 `@State`** | 仪表盘与看板是**两个消费方**。放 `@State` 会有两个后果：视图重建即丢失（切到看板再切回来，筛选悄悄弹回「全量」），以及看板根本读不到（实测仪表盘筛到 1 个时看板还是 3 个） | 判据钉住「`DashboardView` 里不许再出现 `@State private var filter`」且「看板必须真的消费 `model.dashFilter`」 |
+| 侧栏行**不许用 `.badge()`** | 实测（本机 macOS 26）侧栏「里程碑」带 `.badge(...)` 时连点 5 次，`selection` 的 didSet **一次都没触发** —— `go()` 根本没被调用。去掉后同一次点击立刻生效。`.badge()` 在 `List(selection:)` 的行上会接管命中测试，点击与选中高亮一起失效，而**外观完全正常** | 症状极隐蔽：那一行看着没毛病、⌘3 也能进。对鼠标用户来说进不去的导航项等于该视图不存在。计数改用行内文字（与「项目（3/3）」同一套做法） |
+| `let x: T? = nil` 的存储属性**必须写 `var`** | Swift 合成的 `init(from:)` 对「带初值的不可变存储属性」**直接跳过**，编译期有一句 `immutable property will not be decoded because it is declared with an initial value`。写成 `let` ⇒ 引擎恒发也解不出来，字段永远是默认值 | 本项目因此白丢 **5 个引擎键**（`JournalEntry` 四个 + `ProjectStatus.lastCommitAt`）。其中 `lastCommitAt` 直接让时间窗筛选**在任何数据下都是死控件**。判据改成**按写法**覆盖整族（原来那条是按字段点名，测的三个恰好不是这么写的，于是另外 4 个死键从头到尾没人看见） |
+| 时间窗判定挂 **`lastCommitAt`**，不挂 `staleDays` | 原来读 `primaryBranch?.staleDays`，而 `branches` 是追踪数组 ⇒ 无远端仓库恒判「保留」⇒ 「近 7 天」筛不掉任何项目。引擎自己算 `active7d/active30d` 用的是 `lastCommitAt`（`dashboard.cj:213-226`），客户端跟着走才是同一口径 | 算术逐字对齐引擎（毫秒差整除，不用浮点秒），否则边界上差一天。判据加了**与引擎 `active7d` 的交叉验证**，两端数字必须相等。`staleDays == -1`（读不出来）在任何窗口都保留 —— 滤掉等于把「不知道」说成「不在范围内」 |
+| 里程碑**分母不含 `unknown`**、明细被截时**必须说出来** | `unknown` 是「仓库读不出来」，算作「没达成」就是把无知说成事实。`items` 没有截断标志而 `readCount` 有，两者不等时按明细算出的分组统计只是**下界** | 里程碑页与管控页都按明细统计并按当前范围统计，**不读全局 `counts`** —— 那个没有项目维度，收窄到单仓库后继续报它就是把全局完成率说成这个仓库的 |
 
-### 视觉验证：三种离屏模式（`scripts/render-harness/`）
+### 视觉验证：真 app 截图（本机可直接自证，不必等人眼）
+
+⚠️ 本节此前的前提「无 UI session / 需要人眼」**是错的**，且已推翻：
+`launchctl managername` = `Aqua`，`osascript` 可用，`screencapture -x` 能拿到真实屏幕。
+所以现在**直接启动真 app、真实点击、截真窗口**：
+
+```sh
+export DEEPGIT_HOME=/tmp/dg-rich                      # 沙箱化，不碰用户数据
+export DEEPGIT_BIN="$PWD/engine/target/release/bin/main"
+nohup ./deepGit.app/Contents/MacOS/deepGit > /tmp/dg.log 2>&1 &
+osascript -e 'tell application "System Events" to tell process "deepGit" to set position of window 1 to {1750, 120}'
+osascript -e 'tell application "System Events" to set frontmost of (first process whose name is "deepGit") to true'
+screencapture -x -R1750,120,1100,720 /tmp/shot.png
+# 真实点击：AX click 无响应，必须走 CGEvent（先 move 再 down/up）
+```
+
+**靠它抓到的缺陷，离屏 harness 一个都抓不到**（离屏渲染不跑命中测试、
+不执行点击、也不加载真实 `NSToolbar`）：
+
+| 缺陷 | 离屏 harness | 真 app |
+|---|---|---|
+| 侧栏「里程碑」点不动（`.badge()` 吃掉点击） | 拍得到外观，看不出点不动 | 连点 5 次 `selection` 一次没变 ⇒ 抓到 |
+| 「近 7 天」筛不掉任何项目（判定挂在追踪分支数组上） | 拍得到筛选行，看不出点了没反应 | 截图对比：全量 3 张卡 → 近 7 天 1 张 |
+| 看板「停滞」列恒为 0、47 天的仓库落进「活跃中」 | 拍得到列，看不出分类是错的 | 同上 |
+
+> ⇒ **判据与真 app 截图是互补的，不是二选一**。判据能钉住「换一份变量名也逃不掉」，
+> 截图能钉住「只有真跑起来才暴露」。两边都要。
+
+### 离屏 harness：三种模式（`scripts/render-harness/`）
 
 `scripts/render-harness/run.sh <输出目录> [模式]` 会造沙箱项目、把真实视图
 **离屏渲染成 PNG** —— 于是「视觉未验证」不再是永久待办。已用它确认：三态空态文案、
@@ -197,11 +236,15 @@ EmptyState、卡片圆角与接缝、分段条配色、间距等值替换后的�
 > 那次崩溃是 harness 自己的一个无限递归 `log()` 造成的，与 `orderFront` 无关。
 > 修正后顶栏已可自动验证（见 `engine/AGENTS.md` 不变量 101）。
 
-### 还没做的（需要人眼或需要授权）
+### 还没做的
 
-- ~~**顶栏双轨按钮**在 1100 宽默认窗口下挤不挤得下~~ —— **本轮已用离屏快照验证：
-  不挤**（`run.sh <目录> panel`）。剩下人眼要看的只是真窗口的 chrome 层
-  （按钮命中区、深浅色主题、窗口缩到最小时的截断），快照拍不到那部分。
+- **侧栏分组计数徽标**：设计稿侧栏有分组 + 计数徽标。现在只有「项目（3/3）」这一处
+  计数与里程碑行内计数。**没做的原因**：`.badge()` 刚被证明会吃掉点击（见上），
+  要加徽标只能用行内文字，而行内文字在 210pt 宽的侧栏里会和标题抢位置 ——
+  属于改布局，需要先定下侧栏的分组结构再动，不夹带在这一轮。
+- ~~**顶栏双轨按钮**在 1100 宽默认窗口下挤不挤得下~~ —— 已用离屏快照 + 真 app
+  截图双重确认不挤。仍未覆盖的是**深浅色主题自动切换**与**窗口缩到最小宽度时的截断**
+  （这两项要改系统外观设置/改窗口宽度，本轮没做）。
 - **真机/真数据未跑**：本轮所有验证都在沙箱 `DEEPGIT_HOME=/tmp/...` 里做，
   `~/.deepgit/registry.json` 未动（保持 4710 字节 / sha `b61aaa5a…`）。
 

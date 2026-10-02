@@ -184,6 +184,170 @@ require("第 1 组的准备阶段", {
     //   1. 行为对不对（用**真实引擎 fixture**，不是造出来的数据）
     //   2. 与引擎自己声明的 currentBranch 名字是否自洽（交叉验证）
     //   3. 视图里不许再出现第二份推导（结构卡，见下面那条 check）
+    check("时间窗真的改变项目集合（设计稿筛选行 · 真 fixture）") {
+        // 「近 7 天 / 近 30 天」是**视图窗口**，不是引擎的档位线（3/14 天）。
+        // 它与 `BranchStatus.status` 回答的是两个问题，所以放在模型层
+        // `ProjectStatus.updatedWithin(days:)` 是对的。
+        //
+        // 用真 fixture 验，而不是造 ProjectStatus（它有 30+ 个必填字段，
+        // 造出来的数据只证明判据能跑，不证明判据对）。
+        // 时间窗类判据必须用**全量**项目 fixture：单项目（只有 ok）里没有「新旧对比」，判据只能空转。
+        let data = try loadFixture("status_all")
+        let env = try expectDecode("status", data, as: StatusEnvelope.self)
+        let readables = env.projects.filter { !$0.isUnreadable }
+        guard !readables.isEmpty else { throw structError("fixture 里没有可读项目") }
+
+        // 无分支记录 / 更新时间读不出来的项目，必须在任何窗口里都保留 ——
+        // 滤掉它等于对用户说「它不在近 7 天内」，而真相是「我们不知道」。
+        for p in env.projects where p.daysSinceLastCommit == nil {
+            guard p.updatedWithin(days: 7) else {
+                throw structError("更新时间读不出来的项目被「近 7 天」筛掉了")
+            }
+        }
+        // 「全量」不许按时间筛：任何项目都必须在。
+        for p in env.projects where !p.updatedWithin(days: nil) {
+            throw structError("\(p.name) 在全量档位被筛掉了 ⇒ 该档位不该有时间窗")
+        }
+        // 档位必须真的**分出不同结果**，否则筛选是摆设。
+        //
+        // ⚠️ 这里原来有个软逃生口：「沙箱里项目可能全都新鲜，那就分不出来」
+        //   然后 `return "窗口正确但分不出差异"` —— 全绿通过。
+        // 那个口子正是本缺陷能活下来的原因：真数据里 3 个仓库全都没远端、
+        // `branches` 全空，旧实现对每个项目都走「没有分支记录 → 保留」，
+        // 于是 `inD7 == 全量`，而判据因为「数据都新鲜」主动放过了它。
+        // **判据在自己覆盖不到的数据上放行，等于给缺陷发通行证。**
+        // 现在改成硬断言：分不出差异就是 fixture 不合格，必须先造出陈旧项目。
+        let inD30 = readables.filter { $0.updatedWithin(days: 30) }
+        let inD7 = readables.filter { $0.updatedWithin(days: 7) }
+        guard inD7.count <= inD30.count else {
+            throw structError("近 7 天收下的(\(inD7.count))比近 30 天(\(inD30.count))还多 ⇒ 档位是反的")
+        }
+        guard inD7.count < readables.count else {
+            throw structError("近 7 天收下了全部 \(readables.count) 个项目 ⇒ 它没在筛。"
+                + "若 fixture 里确实全新鲜，先造一个陈旧项目（lastCommitAt 拉到 30 天前）再验 —— "
+                + "不许用「数据如此」把自己放过去")
+        }
+        return "近 7 天 \(inD7.count) / 近 30 天 \(inD30.count) / 全量 \(readables.count) —— 窗口真的分档"
+    }
+
+    // 上面那条已经能抓住「筛选没在筛」，但它是在**整体**上比较三个集合；
+    // 缺陷的具体形状是「判定挂在追踪分支数组上，无远端的仓库恒判保留」。
+    // 下面这条直接钉住那个形状：只要 `lastCommitAt` 说得清多老，就不许被放过。
+    check("时间窗不许挂在追踪分支数组上（无远端仓库的真实形状）") {
+        // 时间窗类判据必须用**全量**项目 fixture：单项目（只有 ok）里没有「新旧对比」，判据只能空转。
+        let data = try loadFixture("status_all")
+        let env = try expectDecode("status", data, as: StatusEnvelope.self)
+        let readables = env.projects.filter { !$0.isUnreadable }
+
+        // 老实现的失效条件正是「branches 为空 + lastCommitAt 很旧」：
+        // 实测三个本地仓库全部落在这个形状里。找出它们，断言必须被筛掉。
+        let emptyBranchArray = readables.filter { $0.branches.isEmpty }
+        guard !emptyBranchArray.isEmpty else {
+            throw structError("fixture 里没有 branches 为空的项目 ⇒ 这条判据覆盖不到真形状，"
+                + "请在沙箱里留一个无远端的本地仓库")
+        }
+        for p in emptyBranchArray {
+            guard let age = p.daysSinceLastCommit else { continue }  // 读不出来 → 本就该保留
+            if age > 7 {
+                guard !p.updatedWithin(days: 7) else {
+                    throw structError("\(p.name)：branches 为空、最后提交 \(age) 天前，"
+                        + "却被「近 7 天」收下了 ⇒ 判定退化成了「没有分支记录就保留」")
+                }
+            }
+            if age > 30 {
+                guard !p.updatedWithin(days: 30) else {
+                    throw structError("\(p.name)：\(age) 天没提交，却被「近 30 天」收下了")
+                }
+            }
+        }
+
+        // 客户端与引擎必须是同一个口径：引擎用 `lastCommitAt` 算
+        // active7d/active30d（dashboard.cj:213-226），若客户端用别的依据，
+        // 筛选行分出来的集合会和 KPI 副说明里的活跃数自相矛盾。
+        // 交叉验证：客户端的 7 天窗口计数 == 引擎的 active7d。
+        guard let dash = try? expectDecode("dashboard", loadFixture("dashboard"), as: Dashboard.self) else {
+            return "无 dashboard fixture，跳过交叉验证"
+        }
+        let mine = readables.filter { $0.updatedWithin(days: 7) }.count
+        guard mine == dash.projects.active7d else {
+            throw structError("客户端「近 7 天」收下 \(mine) 个，引擎 active7d 是 \(dash.projects.active7d) "
+                + "⇒ 两边不是同一个口径")
+        }
+        return "\(emptyBranchArray.count) 个无追踪分支的项目按 lastCommitAt 正确分档；"
+            + "与引擎 active7d(\(dash.projects.active7d)) 一致"
+    }
+
+    // 上面那条是**症状**判据。这条是**病因**判据：把整族一起钉住。
+    //
+    // Swift 合成的 `init(from:)` 对「带初始值的不可变存储属性」直接跳过：
+    //     let x: Int? = nil        // 编译期 warning，运行时永远是 nil
+    // 写这种声明的人以为「默认值 = 缺键时的兜底」，实际是「默认值 = 永远的值」。
+    // 本项目有 5 个字段这么写（BranchStatus 四个 + ProjectStatus.lastCommitAt），
+    // 引擎恒发也解不出来，其中 lastCommitAt 直接让时间窗筛选变成死控件。
+    //
+    // 为什么必须单独立一条：原判据是**按字段点名**的（测了 head / headSubject /
+    // providerLabel），而那三个恰好不是这么写的 —— 于是判据全绿，
+    // 同一文件里另外 4 个死键从头到尾没人看见。
+    // 「点名式」判据只覆盖被点名的人；这条改成**按写法**覆盖整族。
+    check("带默认值的可选字段必须真的解得出来（let + 初值 = 永不解码）") {
+        // 造一份**键齐全**的 JSON 直接验解码通路。
+        // 这里造数据是正当的：断言的对象恰恰是「解码这一步」，
+        // 而不是「引擎会填什么值」——后者另有真 fixture 在管。
+        let entryJSON = """
+        {"id":"e1","at":"2026-10-01T10:00:00+08:00","mode":"update","branch":"main",
+         "summary":"s","providerLabel":"规则","commitCount":6,
+         "commitCountScope":"session","commitCountTruncated":true,
+         "repoBranchCount":16,"branchCountTruncated":true}
+        """
+        let b = try JSONDecoder().decode(JournalEntry.self, from: Data(entryJSON.utf8))
+        var missed: [String] = []
+        if b.commitCountScope == nil { missed.append("JournalEntry.commitCountScope") }
+        if b.commitCountTruncated == nil { missed.append("JournalEntry.commitCountTruncated") }
+        if b.repoBranchCount == nil { missed.append("JournalEntry.repoBranchCount") }
+        if b.branchCountTruncated == nil { missed.append("JournalEntry.branchCountTruncated") }
+        guard missed.isEmpty else {
+            throw structError("JSON 里有键，解出来却是 nil：\(missed.joined(separator: ", "))"
+                + " ⇒ 声明成了 `let x: T? = nil`，Swift 合成解码器会跳过它（该写 var）")
+        }
+        // 不许只是「非 nil」——值也要对，否则「解出来了但接错键」照样蒙混过关。
+        guard b.commitCountScope == "session" && b.commitCountTruncated == true
+                && b.repoBranchCount == 16 && b.branchCountTruncated == true else {
+            throw structError("解出来了但值不对：scope=\(b.commitCountScope ?? "nil") "
+                + "truncated=\(String(describing: b.commitCountTruncated)) "
+                + "repoBranchCount=\(String(describing: b.repoBranchCount))")
+        }
+
+        // 同样地验 ProjectStatus.lastCommitAt，并**顺带用真 fixture 交叉验证**：
+        // 引擎对每个 git 项目都发 lastCommitAt，解出来却全是 nil 就是没接上。
+        let env = try expectDecode("status_all", loadFixture("status_all"), as: StatusEnvelope.self)
+        let gitProjects = env.projects.filter { $0.isGit }
+        guard !gitProjects.isEmpty else { throw structError("fixture 里没有 git 项目") }
+        let noTime = gitProjects.filter { $0.lastCommitAt == nil }
+        guard noTime.isEmpty else {
+            throw structError("\(noTime.count) 个 git 项目的 lastCommitAt 解出来是 nil"
+                + "（引擎恒发）⇒ 字段没接上，时间窗会静默退化成「全保留」")
+        }
+        // 反向：非 git 项目本来就没有提交时间。
+        // ⚠️ 引擎对这种情况给的是**空串** `lastCommitAt: ""` 而不是缺键 ——
+        //   只判 `== nil` 会误报（我第一版就这么写的，红了才发现自己猜错了形状）。
+        // 真正要保证的是：无论空串还是缺键，都必须落到「读不出来」，
+        // 绝不能被当成「0 天前」而混进时间窗。
+        for p in env.projects where !p.isGit {
+            guard p.daysSinceLastCommit == nil else {
+                throw structError("\(p.name) 是非 git 项目，却算出 daysSinceLastCommit="
+                    + "\(p.daysSinceLastCommit!)（lastCommitAt=\(p.lastCommitAt ?? "<缺键>"))"
+                    + " ⇒ 读不出来被当成了具体天数")
+            }
+        }
+        // 空串在非 git 项目上是常态，但也不能让它污染 git 项目的判读：
+        // git 项目若解出空串，同样要落到「读不出来」而不是 0。
+        for p in gitProjects where (p.lastCommitAt ?? "").isEmpty && p.daysSinceLastCommit != nil {
+            throw structError("\(p.name) 的 lastCommitAt 是空串，却算出了天数")
+        }
+        return "5 个「默认值兜底」字段全部解码成功（scope/truncated/repoBranchCount/branchCountTruncated/lastCommitAt）；"
+            + "\(gitProjects.count) 个 git 项目的提交时间齐全，非 git 项目为 nil"
+    }
+
     check("primaryBranch 命中引擎标记的当前分支（真 fixture）") {
         let env = try expectDecode("status", data, as: StatusEnvelope.self)
         // 只在真有「标记为当前的分支」的项目上断言 —— 那是能交叉验证的场景。

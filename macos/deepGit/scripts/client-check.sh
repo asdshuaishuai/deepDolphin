@@ -35,6 +35,8 @@ ROUTE="$PKG_DIR/Sources/deepGit/Route.swift"
 ROUTER="$PKG_DIR/Sources/deepGit/Router.swift"
 SCOPE="$PKG_DIR/Sources/deepGit/Scope.swift"
 LDST="$PKG_DIR/Sources/deepGit/LoadState.swift"
+DASHSCOPE="$PKG_DIR/Sources/deepGit/DashboardScope.swift"
+MODELS="$PKG_DIR/Sources/deepGit/Models.swift"
 CHECKER="$PKG_DIR/Tests/ClientCheck/main.swift"
 
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/dg-client-XXXXXX")"
@@ -88,7 +90,7 @@ fi
 SDK="$(xcrun --show-sdk-path --sdk macosx 2>/dev/null)"
 BIN="$SANDBOX/client-check"
 echo "编译客户端检查（ClientDecisions + PathInput + StopDecision + LanguageCoverage + CommitCountScope + ContextEnvelope + EngineFailure + ScanCoverage + CommitTypeComposition + MilestoneCard + UpdateOutcome + DesignTokens + DestructiveGuard + A11yLabel + ShortcutMap 本体 + 检查程序）…"
-if ! swiftc -O -sdk "$SDK" "$DECISIONS" "$PATHINPUT" "$STOPDEC" "$LANGCOV" "$CCSCOPE" "$CTXENV" "$ENGFAIL" "$SCANCOV" "$CTCOMP" "$MSCARD" "$UPOUT" "$DSTOK" "$DSTRG" "$A11Y" "$SCL" "$ROUTE" "$ROUTER" "$SCOPE" "$LDST" "$CHECKER" -o "$BIN" 2>"$SANDBOX/compile.log"; then
+if ! swiftc -O -sdk "$SDK" "$DECISIONS" "$PATHINPUT" "$STOPDEC" "$LANGCOV" "$CCSCOPE" "$CTXENV" "$ENGFAIL" "$SCANCOV" "$CTCOMP" "$MSCARD" "$UPOUT" "$DSTOK" "$DSTRG" "$A11Y" "$SCL" "$ROUTE" "$ROUTER" "$SCOPE" "$LDST" "$DASHSCOPE" "$MODELS" "$CHECKER" -o "$BIN" 2>"$SANDBOX/compile.log"; then
   echo "✗ 编译失败：" >&2
   sed 's/^/  /' "$SANDBOX/compile.log" >&2
   exit 1

@@ -114,14 +114,25 @@ struct PanelView: View {
                 //    既破坏侧栏的信息架构，又让人以为它们是两种不同的东西。
                 viewShortcut(.dashboard, key: .dashboard)
                 viewShortcut(.board, key: .board)
-                Label("里程碑", systemImage: "flag.2.crossed")
-                    .tag(RootSection.milestones)
-                    .badge(model.dashboard.map { d in
-                        d.milestones.counts.open + d.milestones.counts.done
-                    } ?? 0)
-                    .keyboardShortcut(
-                        ShortcutMap.shortcut(for: .milestones)?.keyEquivalentSwiftUI ?? KeyEquivalent("\u{0}"),
-                        modifiers: ShortcutMap.shortcut(for: .milestones)?.modifiersSwiftUI ?? [.command])
+                // ⚠️ 这里**原来用的是 `.badge(...)`**，而那一行因此**点不动**。
+                //    实测（本机 macOS 26）：侧栏「里程碑」连点 5 次，
+                //    `selection` 的 didSet 一次都没触发 —— `go(.milestones)`
+                //    根本没被调用过；把 `.badge` 去掉后同一次点击立刻生效。
+                //    `.badge()` 在**选择型 List**（`List(selection:)`）的行上会
+                //    接管命中测试，行的点击与选中高亮一起失效。
+                //    症状极隐蔽：那一行看着完全正常、⌘3 也能进，
+                //    只有真去点它才会发现是死的 —— 而「进不去的导航项」
+                //    等于这个视图对鼠标用户不存在。
+                //    计数改用行内文字（与「项目（3/3）」同一套做法），不用 badge。
+                HStack(spacing: 6) {
+                    Label("里程碑", systemImage: "flag.2.crossed")
+                    Spacer(minLength: 8)
+                    milestoneCount
+                }
+                .tag(RootSection.milestones)
+                .keyboardShortcut(
+                    ShortcutMap.shortcut(for: .milestones)?.keyEquivalentSwiftUI ?? KeyEquivalent("\u{0}"),
+                    modifiers: ShortcutMap.shortcut(for: .milestones)?.modifiersSwiftUI ?? [.command])
             }
             Section {
                 Button {
@@ -182,13 +193,12 @@ struct PanelView: View {
         }
         .listStyle(.sidebar)
         .frame(minWidth: 210)
-        .overlay(alignment: .bottom) {
-            if let t = model.lastRefreshed {
-                Text("刷新于 \(t.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .padding(.bottom, 6)
-            }
+        // 设计稿侧栏底部有一条常驻状态条（Git Hook Active · Syncing / 上次操作时间）。
+        // 原来这里是 `.overlay(alignment: .bottom)` 把「刷新于」**浮在列表上面** ——
+        // 列表内容滚到底时会从它底下穿过去，看着像文字被压住了。
+        // `.safeAreaInset` 让它占据自己的布局空间，列表自动避开。
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            SidebarStatusStrip(model: model)
         }
         }
     }
@@ -235,6 +245,27 @@ struct PanelView: View {
             .keyboardShortcut(
                 ShortcutMap.shortcut(for: target)?.keyEquivalentSwiftUI ?? KeyEquivalent("\u{0}"),
                 modifiers: ShortcutMap.shortcut(for: target)?.modifiersSwiftUI ?? [.command])
+    }
+
+    /// 侧栏「里程碑」行尾的里程碑总数。
+    ///
+    /// 只数 `open + done`，**不含 `unknown`** —— unknown 是「读不出来」，
+    /// 把它算进「你有 N 个里程碑」就是把无知说成事实（同一个理由，
+    /// 仪表盘的里程碑完成率分母也不含 unknown）。
+    /// 读不出来时显示「—」而不是 0：`model.dashboard == nil` 是「还没读到」，
+    /// 与「确实一个都没有」是两件事。
+    @ViewBuilder
+    private var milestoneCount: some View {
+        if let d = model.dashboard {
+            Text("\(d.milestones.counts.open + d.milestones.counts.done)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        } else {
+            Text("—")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
     }
 
     private func title(for section: RootSection) -> String {
@@ -334,9 +365,22 @@ struct PanelView: View {
                 subtitle: model.lastError ?? "运行 deepgit scan <目录> 注册项目群"
             )
         } else {
-            switch model.selection {
-            case .dashboard:
-                DashboardView()
+            VStack(spacing: 0) {
+                // 设计稿的主工作条（范围选择器 + 双轨链路）。
+                // ⚠️ 放在内容区顶部而不是自绘标题栏：规范 §3.1 定了
+                // 「原生标题栏 + 分组侧栏工作台」（D3），自绘标题栏会丢掉
+                // 标准窗口行为（拖动 / 全屏 / 菜单栏）。工作条承载的是
+                // 「看哪些仓库 + 对它做什么」这条主链路，与工具栏上的
+                // 刷新/搜索/设置不是一类东西。
+                //
+                // ⚠️ 只在**引擎已就绪且有项目**时出现：没项目时
+                // 范围选择器没有第二个选项，它就是一根装饰条。
+                if !model.projects.isEmpty {
+                    WorkBar()
+                }
+                switch model.selection {
+                case .dashboard:
+                    DashboardView()
             case .board:
                 BoardPage()
             case .milestones:
@@ -345,6 +389,7 @@ struct PanelView: View {
                 ProjectDetailView(projectName: name)
             case nil:
                 DashboardView()
+                }
             }
         }
     }

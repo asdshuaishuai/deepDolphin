@@ -253,14 +253,26 @@ struct JournalEntry: Decodable, Identifiable, Hashable {
     /// 原来客户端既不解它也不显示它，于是日志里一个 `+6`（本轮新增）
     /// 和一个 `+6`（仓库一共 6 个）渲染成两个一模一样的绿色徽章。
     /// 缺这个字段不是解码容错，是把两种事实压成一种。
-    let commitCountScope: String? = nil
+    ///
+    /// ⚠️ **下面这四个字段必须是 `var`，不能是 `let`——这不是风格问题。**
+    /// Swift 合成的 `init(from:)` 对「带初始值的不可变存储属性」**直接跳过**：
+    ///     let x: Int? = nil
+    /// 编译期就有一句 `immutable property will not be decoded because it is
+    /// declared with an initial value which cannot be overwritten`。
+    /// 也就是说写成 `let`，这个键**引擎恒发也永远解不出来**，
+    /// 字段永远是默认值 —— 代码读起来完全正常，数据却从来没到过。
+    /// 本项目因此白丢过 4 个引擎键（下面四个）+ 1 个（`lastCommitAt`），
+    /// 代价是仪表盘的「近 7 天 / 近 30 天」筛选**在任何数据下都是死控件**。
+    /// 改成 `var` 之后，默认值只作为「缺键 = 旧版本引擎」的兜底，解码照常发生。
+    /// ⚠️ 下一个人若把它「整理」回 `let`，缺陷会原样复活。
+    var commitCountScope: String? = nil
     /// `commitCount` 是样本而非全量。引擎恒发（缺陷 #188）。
     /// 缺键 = 旧版本引擎，按 false 处理但不能当成「已确认没截断」。
-    let commitCountTruncated: Bool? = nil
+    var commitCountTruncated: Bool? = nil
     /// 仓库真实分支数，-1 = 读不出来。与「建立了基线的分支数」不是同一口径。
-    let repoBranchCount: Int? = nil
+    var repoBranchCount: Int? = nil
     /// 追踪分支数 < 仓库分支数。恒发。
-    let branchCountTruncated: Bool? = nil
+    var branchCountTruncated: Bool? = nil
 
     var modeLabel: String {
         switch mode {
@@ -293,6 +305,20 @@ struct ProjectStatus: Decodable, Identifiable, Hashable {
     /// 仓库提交总数。-1 = 读不出来。
     let commitCount: Int
     let lastCommitAgo: String
+    /// 最后一次提交时间（ISO8601 带时区）。nil = 引擎没给（非 git 项目）。
+    ///
+    /// ⚠️ 模型**原来没有这个键**。后果不是少显示一行，而是**筛选行整个是死的**：
+    /// 时间窗只能去读 `primaryBranch?.staleDays`，而 `branches` 是**追踪数组** ——
+    /// 没有远端基线的仓库它恒为空。实测三个本地仓库（atlas/beacon/legacy）：
+    ///     branches       = []      ← 三个全是空
+    ///     lastCommitAt   = "2026-08-16T10:00:00+08:00"  ← 唯一有效的活跃度证据
+    /// 于是 `updatedWithin` 每一次都走「没有分支记录 → 保留」，
+    /// 用户点「近 7 天」，三个项目**一个都不会被筛掉**，控件看起来能用、实际是空转。
+    /// 「摆而不动的控件」比没有控件更糟，而它之所以能蒙混过关，
+    /// 是因为判据拿**带分支记录的假数据**验的，真数据里那个数组根本没被覆盖（见不变量 104）。
+    /// ⚠️ 下面是 `var` 不是 `let`，理由见 `BranchStatus.commitCountScope` 的注释：
+    /// Swift 合成解码器会**跳过**带初始值的不可变存储属性，字段就永远解不出来。
+    var lastCommitAt: String? = nil
     let commitTypes: [CommitTypeStat]?
     /// commitTypes 是**最近 N 条的样本**，不是全量。引擎恒发这个标志。
     /// 原来客户端完全没建模，于是「类型分布」卡片把样本当全量展示。
@@ -388,6 +414,135 @@ struct ProjectStatus: Decodable, Identifiable, Hashable {
 
     /// 采集失败 ⇒ 上面所有计数都是未知（-1），不是 0。
     var isUnreadable: Bool { error != nil }
+
+    /// 距最后一次提交多少天。nil = **读不出来**（非 git 项目 / 时间解析不了 / 引擎没给键）。
+    ///
+    /// ⚠️ 算术必须与引擎**逐字一致**，否则筛选结果会和 KPI 里的
+    /// 「近 7 天活跃 / 近 30 天活跃」对不上 —— 那两个数是引擎自己算的：
+    ///     let ageDays = (nowMs - ms) / 86400000      // dashboard.cj:219，整数除法
+    ///     if (ageDays <= 7)  { commits7d  += 1 }
+    ///     if (ageDays <= 30) { commits30d += 1 }
+    /// 所以这里也先换算成毫秒差再**整除**，不用 `interval / 86400.0` 的浮点版本：
+    /// 两者在负数（未来时间戳）和边界上会差一天，而边界正好是筛选的分界线。
+    var daysSinceLastCommit: Int? {
+        guard let raw = lastCommitAt, !raw.isEmpty else { return nil }
+        guard let date = ProjectStatus.parseISO8601(raw) else { return nil }
+        let deltaMs = Int64((Date().timeIntervalSince1970 - date.timeIntervalSince1970) * 1000)
+        return Int(deltaMs / 86_400_000)
+    }
+
+    /// 引擎的时间戳形如 `2026-08-16T10:00:00+08:00`。
+    /// `ISO8601DateFormatter` 的默认策略**不吃带偏移量**的写法，
+    /// 解析失败返回 nil —— 而 nil 会被上层读成「读不出来」，
+    /// 于是所有项目都留在「全量」里，筛选静默失效。所以这里显式放行偏移量。
+    static func parseISO8601(_ raw: String) -> Date? {
+        let withOffset = ISO8601DateFormatter()
+        withOffset.formatOptions = [.withInternetDateTime]
+        if let d = withOffset.date(from: raw) { return d }
+        let withFrac = ISO8601DateFormatter()
+        withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return withFrac.date(from: raw)
+    }
+
+    /// 这个项目**在最近 `days` 天内更新过**吗？`days` 为 nil = 不按时间筛。
+    ///
+    /// ⚠️ **这不是「档位」判定，务必与 `BranchStatus.status` 分开。**
+    ///   · `status`（active / idle / stale / merged）是**引擎的档位线**（3/14 天），
+    ///     客户端只消费、绝不自己重算（判据「客户端不得拿 staleDays 自己推档位」卡着）。
+    ///   · 这里回答的是**另一个问题**：「设计稿仪表盘顶部那条
+    ///     「全量历史 / 近 30 天 / 近 7 天」要框住哪些项目」。
+    ///     那是**视图窗口**，不是状态分类。
+    ///
+    /// 判定依据是 `daysSinceLastCommit`（源自 `lastCommitAt`），
+    /// **不是** `primaryBranch?.staleDays` —— 后者是追踪分支的「距上次被引擎记录」，
+    /// 语义相近但两处不同：无远端基线时 `branches` 恒空、恒判「保留」；
+    /// 就算不空，追踪分支的更新也未必等于仓库最后一次提交。
+    /// 引擎算 active7d/active30d 用的是 `lastCommitAt`，这里跟着它走才是同一个口径。
+    ///
+    /// ⚠️ 读不出来（无 git / 时间解析不了）时一律**保留** ——
+    /// 滤掉它等于对用户说「它不在近 7 天内」，而真相是「我们不知道」。
+    /// 这与本项目最高发的那族缺陷（把「不知道」说成「没有」）同源。
+    func updatedWithin(days: Int?) -> Bool {
+        guard let days else { return true }          // 不按时间筛
+        guard let age = daysSinceLastCommit else { return true }  // 读不出来 → 保留
+        return age <= days
+    }
+
+    /// 这个项目**还在不在动**。看板分列与项目卡状态词的唯一依据。
+    ///
+    /// ⚠️ **为什么要有这一份，而不是各视图自己算**：
+    /// 同一个问题在代码里被算过两遍，两遍都错，而且错法不同 ——
+    ///   · `boardColumn(for:)`  判 `p.branches.contains { $0.status == "stale" }`
+    ///   · `ProjectProgressCard.stateWord` 判 `primaryBranch?.status`
+    /// 两者都依赖 `branches`（**追踪数组**），而无远端基线的仓库它恒为空。
+    /// 于是实测一个 47 天没提交的仓库：
+    ///     看板   → 落进 `.active`，「停滞」列**恒为 0**
+    ///     项目卡 → 落进 `default`，显示「**正常**」
+    /// 「47 天没人动的仓库」被两个界面同时说成活的，
+    /// 而根因是同一个：**把「追踪数组里没有」当成了「没有」。**
+    ///
+    /// 判据只用两类数据：
+    ///   1. `primaryBranch?.status` —— 引擎的档位判定（active/idle/stale/merged），
+    ///      **有追踪分支时它最精确**，优先采用；
+    ///   2. `daysSinceLastCommit` —— 引擎恒发的 `lastCommitAt` 推出来的天数，
+    ///      30 这条线是**引擎自己的**（`dashboard.cj:224` 的 `ageDays <= 30`，
+    ///      也就是 `active30d` 那个桶），不是客户端新造的阈值。
+    ///      没有追踪分支时它就是唯一可用的证据。
+    enum Liveness: Hashable {
+        /// 采集失败：所有计数都是未知。
+        case unreadable
+        /// 非 git 项目：没有提交历史可谈。
+        case notGit
+        /// 有东西等着动手。
+        case needsAction
+        /// 引擎判定为停滞（只有追踪到基线的分支才可能）。
+        case engineStale
+        /// 30 天以上没有新提交。
+        case quiet
+        /// 30 天内有新提交。
+        case recent
+        /// 提交时间读不出来 —— 「不知道」，不许折进上面任何一档。
+        case unknown
+    }
+
+    /// 待处理信号：有未提交 / 未跟踪 / stash / 待合入的分支。
+    var needsAction: Bool {
+        userDirtyCount > 0 || untrackedCount > 0 || stashCount > 0
+            || branches.contains { $0.pendingCommits > 0 && !$0.isDefault }
+            || (mergeHint?.kind == "merge" || mergeHint?.kind == "fast-forward")
+    }
+
+    var liveness: Liveness {
+        if isUnreadable { return .unreadable }
+        if !isGit { return .notGit }
+        // 引擎的档位最精确，但**只在它真的给出一行分支记录时**才有。
+        if primaryBranch?.status == "stale" { return .engineStale }
+        if needsAction { return .needsAction }
+        guard let age = daysSinceLastCommit else { return .unknown }
+        return age <= 30 ? .recent : .quiet
+    }
+
+    /// 状态词（项目卡用）。**只从事实推，不写修辞**。
+    ///
+    /// ⚠️ 这里原来写的是 `b.staleDays >= 14` —— 被自己的判据抓出来过：
+    /// 14 天是引擎 `progress.cj:30-36` 的档位线，客户端再写一遍就是两个真相源。
+    /// 改成读引擎的 `b.status` 之后**又错了**：那也是追踪数组，
+    /// 无远端仓库拿不到，于是全部落进 `default: 正常`。
+    /// 现在统一走 `liveness`，两条证据按可得性择一。
+    var stateWord: (text: String, tone: Liveness) {
+        switch liveness {
+        case .unreadable:  return ("读不出来", .unreadable)
+        case .notGit:      return ("非 git 目录", .notGit)
+        case .needsAction: return ("有未提交改动", .needsAction)
+        case .engineStale: return ("停滞", .engineStale)
+        case .quiet:
+            // ⚠️ 措辞跟着依据走：这里用的是 30 天那条线，
+            // 写「停滞」会让人以为是引擎的 14 天档位。
+            return ("\(daysSinceLastCommit ?? 0) 天没更新", .quiet)
+        case .recent:      return ("正常", .recent)
+        case .unknown:     return ("状态读不出来", .unknown)
+        }
+    }
 
     /// 「N 个已跟踪分支」＋「仓库共 M 个」的披露。
     /// M 读不出来时只报追踪数并说明，不能显示 0 也不能假装知道。
