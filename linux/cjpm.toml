@@ -1,0 +1,10 @@
+[package]
+  cjc-version = "1.0.5"
+  name          = "deepdolphin_linux"
+  version       = "0.1.0"
+  output-type   = "executable"
+  description   = "deepDolphin Linux 客户端 —— 仓颉 + CangjieGUI 桌面端，消费 moonGit 引擎的 --json 契约"
+  compile-option = "-O2"
+
+[dependencies]
+  cui = { path = "vendor/CangjieGUI" }
