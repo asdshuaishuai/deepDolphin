@@ -2205,15 +2205,35 @@ do {
 
     check("spacing 刻度值必须走 token；待确认的散值不许增长（§3.3）") {
         let scale = [4, 8, 12, 16, 20, 24]
-        // ⚠️ 散值（2/3/5/6/7/10/14）**故意保留**，不是漏掉：
+        // ⚠️ 散值**故意保留**，不是漏掉：
         // 收敛到刻度会改变布局（14→16 挤不挤？10→8 还是 12？），
-        // 而本项目还没做过任何视觉验证 —— 擅自收敛等于把猜测写进布局。
+        // 离屏快照虽能验观感却不是真窗口（深浅色主题、缩到最小时的截断都拍不到）
+        // —— 擅自收敛等于把猜测写进布局。
         // 它们记在 clients/macos/deepGit/README.md 的待人工确认清单里，
         // 这条判据负责盯着「不许再新增」。
-        let pending = [2, 3, 5, 6, 7, 10, 14]
-        let baseline = 51
+        //
+        // ⚠️ pending 从 7 档涨到 12 档，**不是新违规，是判据覆盖面被修好之后
+        // 才第一次看见的东西**：1（发丝线）、11、18、30、40 这五档此前完全没被计入，
+        // 因为老判据根本不匹配 `.padding(...)`。基线 51→87 同理。
+        // 30/40 明显不是节奏值而是结构性留白（面板分隔、hero 区），
+        // 记下来是为了将来有人收敛时知道它们存在，而不是漏了。
+        let pending = [1, 2, 3, 5, 6, 7, 10, 11, 14, 18, 30, 40]
+        let baseline = 87
         let SCALE_NAME: [Int: String] = [4: "xs", 8: "sm", 12: "md", 16: "lg", 20: "xl", 24: "xxl"]
-        let re = try NSRegularExpression(pattern: "(?<![A-Za-z0-9_])spacing: (\\d+)(?![\\d.])")
+        // ⚠️ **三种拼法都要查**，少查一种就等于给另一种开了后门。
+        //   原版只查 `spacing: N`（Stack 的参数），而 `.padding(.edge, N)` 与
+        //   `.padding(N)` 完全不在视野里 —— 于是「spacing 刻度值零字面量」
+        //   这句结论曾经只覆盖了一半：实测漏网 28 处（18 处 .padding(.edge,N)
+        //   + 10 处 .padding(N)），其中 11 处在 BarView.swift。
+        //   同族：不变量 99（声明存在 ≠ 真的生效）。判据的**覆盖面**本身
+        //   也得被当成产物来核，不能只看它「跑通了」。
+        //
+        //   每种拼法用独立命名组（sp / pe / pa），报错时要说清是哪一种，
+        //   否则「padding 里还有 12」这种话没法定位到具体写法。
+        let re = try NSRegularExpression(
+            pattern: "(?<![A-Za-z0-9_])spacing: (\\d+)(?![\\d.])"
+                    + "|\\.padding\\(\\s*\\.[a-zA-Z]+\\s*,\\s*(\\d+)(?![\\d.])"
+                    + "|\\.padding\\(\\s*(\\d+)(?![\\d.])")
         var bad: [String] = []
         var pendingCount = 0
         for name in try allSourceFileNames() {
@@ -2224,16 +2244,25 @@ do {
             for m in re.matches(in: code, range: full) {
                 // 同理别用 `ns.substring(with:)`：range(at:) 已 Swift 化成
                 // Range<String.Index>，两边类型对不上。
-                guard let r = Range(m.range(at: 1), in: code) else { continue }
-                let v = Int(code[r]) ?? -1
+                // ⚠️ 三个组只有一个会命中，取「有 range 的那个」——
+                //   固定读 group(1) 会把 padding 的值读成空。
+                var v = -1
+                var how = ""
+                for (group, name_) in [(1, "spacing:"), (2, ".padding(.edge,"), (3, ".padding(")] {
+                    if let r = Range(m.range(at: group), in: code) {
+                        v = Int(code[r]) ?? -1
+                        how = name_
+                    }
+                }
+                if v < 0 { continue }
                 if v == 0 { continue }          // 「无间距」是真实需求，不在刻度里
                 if scale.contains(v) {
-                    bad.append("\(name)：spacing: \(v) 等于刻度值 \(SCALE_NAME[v]!) ⇒ 必须写 token，"
+                    bad.append("\(name)：\(how) \(v) 等于刻度值 \(SCALE_NAME[v]!) ⇒ 必须写 token，"
                         + "否则改 DSSpacing 时这一处不会跟着动")
                 } else if pending.contains(v) {
                     pendingCount += 1
                 } else {
-                    bad.append("\(name)：spacing: \(v) 是新增散值（刻度只有 4/8/12/16/20/24）")
+                    bad.append("\(name)：\(how) \(v) 是新增散值（刻度只有 4/8/12/16/20/24）")
                 }
             }
         }
@@ -2245,7 +2274,7 @@ do {
             throw fail("待人工确认的散值从 \(baseline) 处涨到 \(pendingCount) 处：\n" +
                 "      要么把新值收进刻度（改 DSSpacing 或写 token），要么更新基线并在 README 说明理由")
         }
-        return "刻度值零字面量；待确认散值 \(pendingCount)/\(baseline)"
+        return "刻度值零字面量（3 种拼法）；待确认散值 \(pendingCount)/\(baseline)"
     }
 
     check("圆角矩形只能有一个构造点，且必须是连续曲率（§3.3 圆角收敛的下一层）") {
@@ -4116,6 +4145,46 @@ do {
 
 do {
     print("【V】文档声明必须兑现（README 写了就要真能做）")
+
+    check("「该显示哪个分支」只能有一个出处：ProjectStatus.primaryBranch") {
+        // 行为对不对由 ContractCheck 用**真实引擎 fixture** 验（那边能拿到
+        // Models.swift 本体和 status --json 的真实输出）。这里只卡**结构**：
+        // 视图里不许再自己推导一遍。
+        //
+        // ⚠️ 这条规则曾被抄三份：BarView / BoardView 各一个私有 computed property，
+        // PanelView 内联在 else if 里。字面相同、位置不同 ⇒ 改规则要找三处，
+        // 漏一处就出现「菜单栏说 feat、侧栏说 main」，而两个界面常常同屏。
+        //
+        // 放行 `if b.isCurrent {` 这种形状是**有意的**：那是「这一行要不要标
+        // 『当前』徽标」，是另一个问题，跟「挑哪一条当主分支」无关。
+        // 一刀切禁掉 isCurrent 会把正确的用法也一起打掉。
+        let re = try NSRegularExpression(pattern: "isCurrent")
+        // `if <标识符>.isCurrent` 才放行；其余（first/filter/first(where:)…）全红。
+        let displayUse = try NSRegularExpression(
+            pattern: "^\\s*if\\s+[A-Za-z_][A-Za-z0-9_]*\\.isCurrent\\b")
+        var spots: [String] = []
+        for name in try allSourceFileNames() where name != "Models.swift" {
+            let code = try strippedCode(name)
+            // ⚠️ split 出来的是 Substring，而 firstMatch(in:) 只收 String ——
+            // 少这一步就是 "cannot convert value of type 'String.SubSequence'"。
+            let lines = code.split(separator: "\n", omittingEmptySubsequences: false)
+                .map(String.init)
+            for (i, line) in lines.enumerated() {
+                let full = NSRange(line.startIndex..<line.endIndex, in: line)
+                guard re.firstMatch(in: line, range: full) != nil else { continue }
+                if displayUse.firstMatch(in: line, range: full) != nil { continue }
+                spots.append("\(name)：\(i + 1) 行 `\(line.trimmingCharacters(in: .whitespaces))`")
+            }
+        }
+        guard spots.isEmpty else {
+            throw fail("「当前分支」判定又出现了第 \(spots.count) 处自己推导：\n      "
+                + spots.prefix(3).joined(separator: "\n      ")
+                + "\n      规则只有一个出处：ProjectStatus.primaryBranch（Models.swift）。\n"
+                + "      视图里写 `p.branches.first { $0.isCurrent }` 看着没问题，\n"
+                + "      但它就是第二个真相源 —— 改了模型层那处，这些地方不会跟着动。")
+        }
+        return "视图层 0 处自己推导；`if x.isCurrent` 的显示判断放行"
+    }
 
     check("README 声明的 Dock 菜单必须真存在") {
         let readme = try pkgText("README.md")

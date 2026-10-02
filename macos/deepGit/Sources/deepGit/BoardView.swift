@@ -111,9 +111,9 @@ struct BoardCard: View {
     @State private var briefText = ""
     @State private var briefError: String?
 
-    private var currentBranch: BranchStatus? {
-        project.branches.first { $0.isCurrent } ?? project.branches.first
-    }
+    /// 当前分支。规则在 `ProjectStatus.primaryBranch`（模型层），
+    /// 这里只消费 —— 原来这里是本文件私有的第二份。
+    private var currentBranch: BranchStatus? { project.primaryBranch }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -244,7 +244,7 @@ struct BoardPage: View {
                     BoardColumnView(column: column, projects: list)
                 }
             }
-            .padding(16)
+            .padding(DSSpacing.lg)
         }
         .navigationTitle("看板")
     }

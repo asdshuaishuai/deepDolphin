@@ -182,7 +182,7 @@ struct AgentView: View {
                         }
                     }
                 }
-                .padding(16)
+                .padding(DSSpacing.lg)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .onChange(of: chat.history.count) { _, _ in
@@ -265,7 +265,7 @@ struct AgentView: View {
             .accessibilityLabel(A11y.label("重发上一条"))
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.vertical, DSSpacing.sm)
     }
 
     private var inputBar: some View {
@@ -298,7 +298,7 @@ struct AgentView: View {
             .accessibilityLabel(A11y.label(fromHelp: sendHelp, fallback: "发送"))
             .keyboardShortcut(.return, modifiers: .command)
         }
-        .padding(12)
+        .padding(DSSpacing.md)
     }
 
     /// 按钮灰着的时候要说为什么，否则用户只能猜。

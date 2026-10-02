@@ -77,7 +77,7 @@ struct ScanSheet: View {
                 Button(mode == 0 ? "添加" : "扫描") { submit() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(busy || currentProblem != nil)
-                    .padding(.leading, 8)
+                    .padding(.leading, DSSpacing.sm)
             }
             .padding()
         }

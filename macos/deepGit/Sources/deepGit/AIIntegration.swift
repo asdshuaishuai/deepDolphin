@@ -87,7 +87,7 @@ struct AIResultSheet: View {
             } else {
                 ScrollView {
                     MarkdownView(text: markdown)
-                        .padding(16)
+                        .padding(DSSpacing.lg)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }

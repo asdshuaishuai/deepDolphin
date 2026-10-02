@@ -31,7 +31,7 @@ struct ProjectDetailView: View {
                     title: "读不出来：\(projectName)",
                     subtitle: err
                 )
-                .padding(24)
+                .padding(DSSpacing.xxl)
             } else {
                 ProgressView("加载 \(projectName) …")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -50,7 +50,7 @@ struct ProjectDetailView: View {
                 if let err = p.error {
                     Label(err, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red)
-                        .padding(12)
+                        .padding(DSSpacing.md)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .tinted(.red.opacity(0.08))
                 }
@@ -318,7 +318,7 @@ struct ProjectDetailView: View {
                 Label(h.description, systemImage: h.kind == "fast-forward" ? "arrow.up.right" : "arrow.triangle.merge")
                     .font(.callout)
                     .foregroundStyle(h.kind == "fast-forward" ? .green : .orange)
-                    .padding(8)
+                    .padding(DSSpacing.sm)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .tinted((h.kind == "fast-forward" ? Color.green : Color.orange).opacity(0.08),
                             radius: DSRadius.control)
@@ -709,7 +709,7 @@ struct DashboardView: View {
                 Spacer()
                 GroupBriefButton()
             }
-            .padding(16)
+            .padding(DSSpacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 LinearGradient(colors: [.purple.opacity(0.12), .blue.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing),

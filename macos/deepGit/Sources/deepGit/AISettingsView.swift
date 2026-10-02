@@ -16,7 +16,7 @@ struct GeneralSettingsView: View {
                     ScheduleCard()
                     AISettingsView(onClose: onClose)
                 }
-                .padding(16)
+                .padding(DSSpacing.lg)
             }
             .environmentObject(AppModel.shared)  // 覆盖全部子树（ScheduleCard/AISettingsView 都要用）
         }
@@ -234,7 +234,7 @@ struct AISettingsView: View {
                     .keyboardShortcut(.cancelAction)
                 Button("保存") { save() }
                     .keyboardShortcut(.defaultAction)
-                    .padding(.leading, 8)
+                    .padding(.leading, DSSpacing.sm)
             }
             .padding()
         }

@@ -162,7 +162,7 @@ struct PanelView: View {
                             Image(systemName: "exclamationmark.circle.fill")
                                 .foregroundStyle(.red)
                                 .font(.caption2)
-                        } else if let b = p.branches.first(where: { $0.isCurrent }) ?? p.branches.first {
+                        } else if let b = p.primaryBranch {
                             StatusDot(status: b.status)
                         } else {
                             Circle().fill(.secondary).frame(width: 8, height: 8)
@@ -219,7 +219,7 @@ struct PanelView: View {
             }
         }
         .padding(.horizontal, 6)
-        .padding(.vertical, 4)
+        .padding(.vertical, DSSpacing.xs)
         .accessibilityLabel(A11y.label(fromHelp: "搜索项目或分支", fallback: "搜索"))
     }
 
@@ -279,7 +279,7 @@ struct PanelView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(A11y.label("关闭提示"))
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, DSSpacing.md)
             .padding(.vertical, 6)
             .background(.orange.opacity(0.12))
         }
@@ -310,7 +310,7 @@ struct PanelView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, DSSpacing.md)
                 .padding(.vertical, 6)
                 .background(.orange.opacity(0.12))
                 // ⚠️ 原来这里挂着 `.task { await model.refreshAll() }` ——

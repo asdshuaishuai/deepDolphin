@@ -16,7 +16,7 @@ struct BarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider().padding(.vertical, 4)
+            Divider().padding(.vertical, DSSpacing.xs)
 
             if !model.engineFound {
                 missingEngine
@@ -26,10 +26,10 @@ struct BarView: View {
                 projectRows
             }
 
-            Divider().padding(.vertical, 4)
+            Divider().padding(.vertical, DSSpacing.xs)
             footer
         }
-        .padding(.top, 8)
+        .padding(.top, DSSpacing.sm)
         .padding(.bottom, 6)
         .frame(width: 380)
         .onAppear {
@@ -62,8 +62,8 @@ struct BarView: View {
             .help("刷新")
             .accessibilityLabel(A11y.label("刷新"))
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 4)
+        .padding(.horizontal, DSSpacing.md)
+        .padding(.bottom, DSSpacing.xs)
     }
 
     // MARK: 项目行
@@ -84,8 +84,8 @@ struct BarView: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
+                .padding(.horizontal, DSSpacing.md)
+                .padding(.vertical, DSSpacing.xs)
             }
         }
     }
@@ -105,7 +105,7 @@ struct BarView: View {
             }
             .controlSize(.small)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, 6)
     }
 
@@ -132,7 +132,7 @@ struct BarView: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, 6)
     }
 
@@ -171,7 +171,7 @@ struct BarView: View {
             .help("完全退出")
             .accessibilityLabel(A11y.label("完全退出"))
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, DSSpacing.md)
         .confirmationDialog(
             pendingBulk.map { "全部\($0.label)？" } ?? "",
             isPresented: Binding(
@@ -206,9 +206,9 @@ struct MenuProjectRow: View {
     @EnvironmentObject var model: AppModel
     let project: ProjectStatus
 
-    private var currentBranch: BranchStatus? {
-        project.branches.first { $0.isCurrent } ?? project.branches.first
-    }
+    /// 当前分支。规则在 `ProjectStatus.primaryBranch`（模型层），
+    /// 这里只消费 —— 原来这里是本文件私有的第二份。
+    private var currentBranch: BranchStatus? { project.primaryBranch }
 
     var body: some View {
         Button {
@@ -259,7 +259,7 @@ struct MenuProjectRow: View {
                     }
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, DSSpacing.md)
             .padding(.vertical, 5)
             .contentShape(Rectangle())
         }

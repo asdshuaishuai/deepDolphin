@@ -95,7 +95,7 @@ struct MarkdownView: View {
                             .textSelection(.enabled)
                     }
                 }
-                .padding(8)
+                .padding(DSSpacing.sm)
             }
             .surface()
         }

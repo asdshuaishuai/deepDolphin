@@ -367,6 +367,25 @@ struct ProjectStatus: Decodable, Identifiable, Hashable {
 
     var isGit: Bool { kind == "git" }
 
+    /// 「这条项目该显示哪个分支」——标记为当前的那个，没有就退回第一个。
+    ///
+    /// ⚠️ **为什么不叫 `currentBranch`**：那个名字已经被引擎给的
+    /// **分支名字符串**占了（`currentBranch: String`，见上面字段列表）。
+    /// 两个同名不同义的东西并排放在一个类型上，是最容易被静默用错的形式 ——
+    /// `p.currentBranch.name` 能编过（String 没有 name…好吧会报错），
+    /// 但读代码的人得停下来想一秒才知道拿到的是名字还是对象。
+    /// 所以这里叫 `primaryBranch`：**主分支 = 界面上该代表这个项目的那一条**。
+    ///
+    /// ⚠️ 这条规则原来被**抄了三遍**，而且其中一份还是另一种拼法：
+    ///     BarView.swift     `private var currentBranch: BranchStatus? { … }`
+    ///     BoardView.swift   `private var currentBranch: BranchStatus? { … }`
+    ///     PanelView.swift   内联在 `ForEach` 的 `else if let` 里
+    /// 三份字面相同、位置不同 ⇒ 规则要改就得找三处，漏一处就出现
+    /// 「菜单栏说 feat、侧栏说 main」。领域规则属于模型层（见不变量 97）。
+    var primaryBranch: BranchStatus? {
+        branches.first { $0.isCurrent } ?? branches.first
+    }
+
     /// 采集失败 ⇒ 上面所有计数都是未知（-1），不是 0。
     var isUnreadable: Bool { error != nil }
 

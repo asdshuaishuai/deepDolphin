@@ -174,6 +174,65 @@ require("第 1 组的准备阶段", {
         }
         return "取到 \(one.name)（id=\(one.id)）"
     }
+    // ── 「这条项目该显示哪个分支」这条规则的唯一出处 ──
+    //
+    // ⚠️ 这条规则原来被**抄了三遍**（BarView / BoardView 各一个私有 computed
+    // property，PanelView 内联在 else if 里），字面相同、位置不同。
+    // 于是改规则要找三处，漏一处就出现「菜单栏说 feat、侧栏说 main」——
+    // 而两个界面同屏出现，用户会以为是两个不同的真相。
+    // 现在规则在 `ProjectStatus.primaryBranch`（模型层），下面卡三件事：
+    //   1. 行为对不对（用**真实引擎 fixture**，不是造出来的数据）
+    //   2. 与引擎自己声明的 currentBranch 名字是否自洽（交叉验证）
+    //   3. 视图里不许再出现第二份推导（结构卡，见下面那条 check）
+    check("primaryBranch 命中引擎标记的当前分支（真 fixture）") {
+        let env = try expectDecode("status", data, as: StatusEnvelope.self)
+        // 只在真有「标记为当前的分支」的项目上断言 —— 那是能交叉验证的场景。
+        // 没有 isCurrent 时规则退化成「第一个分支」，那只是兜底不是事实，
+        // 不该拿它去和引擎声明的名字对账（对不上是正常的）。
+        let withCurrent = env.projects.filter { $0.branches.contains { $0.isCurrent } }
+        guard !withCurrent.isEmpty else {
+            throw structError("fixture 里没有任何带 isCurrent 分支的项目 —— " +
+                "要么沙箱没造成功，要么引擎不再发 isCurrent，判据需要重新想")
+        }
+        for p in withCurrent {
+            guard let primary = p.primaryBranch else {
+                throw structError("\(p.name) 有 isCurrent 分支，primaryBranch 却是 nil")
+            }
+            guard primary.isCurrent else {
+                throw structError("\(p.name) 选中的 \(primary.name) 不是 isCurrent")
+            }
+            // 交叉验证：引擎声明的 currentBranch 名字必须就是这一条。
+            // 客户端从没读这个字段就自己挑了一条 ⇒ 两边对不上且用户无从察觉。
+            guard primary.name == p.currentBranch else {
+                throw structError("\(p.name)：primaryBranch=\(primary.name)，" +
+                    "但引擎声明 currentBranch=\(p.currentBranch)。" +
+                    "两边不一致 ⇒ 界面上显示的分支和引擎说的是同一个分支吗？")
+            }
+        }
+        return "\(withCurrent.count) 个项目的 primaryBranch 与引擎声明的名字一致"
+    }
+    check("primaryBranch 的兜底与空数组都对（真 fixture）") {
+        let env = try expectDecode("status", data, as: StatusEnvelope.self)
+        for p in env.projects {
+            if p.branches.isEmpty {
+                guard p.primaryBranch == nil else {
+                    throw structError("\(p.name) 没有分支，primaryBranch 却非 nil")
+                }
+                continue
+            }
+            // 有分支但没有一个标了 isCurrent ⇒ 必须退回第一个（不能 nil）
+            if !p.branches.contains(where: { $0.isCurrent }) {
+                guard let primary = p.primaryBranch else {
+                    throw structError("\(p.name) 有 \(p.branches.count) 个分支却取不到主分支")
+                }
+                guard primary.name == p.branches[0].name else {
+                    throw structError("\(p.name) 无 isCurrent 时应退回第一个" +
+                        "（\(p.branches[0].name)），实际取了 \(primary.name)")
+                }
+            }
+        }
+        return "\(env.projects.count) 个项目：空数组→nil / 无 isCurrent→第一个"
+    }
 })
 
 // MARK: - 2. 错误项目：-1 三态必须原样到达客户端

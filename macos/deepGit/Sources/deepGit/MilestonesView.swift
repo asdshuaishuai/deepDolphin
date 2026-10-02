@@ -332,7 +332,7 @@ struct AddMilestoneSheet: View {
                 Button("创建") { submit() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(project.isEmpty || name.isEmpty || submitting)
-                    .padding(.leading, 8)
+                    .padding(.leading, DSSpacing.sm)
             }
             .padding()
         }

@@ -160,6 +160,8 @@ Sources/deepGit/
 | 顶栏双轨按钮**带文字** | 设计稿原文如此，图标 + 文字混排 | **已用离屏快照验证**（`run.sh <目录> panel`，1100×760）：双轨（⚡ AI / 法杖 agent）与右簇（✦ / ⚙ / 🔍）在 1100 宽下**不挤**，中间到窗口右缘全是空 ⇒ 无需退成纯图标。仍值得人眼确认一次的是**真窗口下的按钮命中区与深浅色主题**（快照拍不到 chrome） |
 | **不铺 entitlements** | 当前 ad-hoc 签名且未启用 hardened runtime，写了也是空操作 | 将来要**公证或上架**时必须补 sandbox / 网络 / 助手权限声明；到那一步要重新评估并实测 |
 | **不另造范围选择器** | 设计稿顶栏有范围下拉，但侧栏导航已承担同角色；再存一份就是两个真相源 | `Scope` 的范围由 `selection` 推导。哪天侧栏导航被去掉，这条要跟着回退 |
+| **D8：菜单栏弹窗不做成「纯启动器」** | 计划书问 BarView 与主面板重复约 60% 是否收敛为纯启动器。实测重复的是**内容**（项目行、刷新、批量更新、空/错三态），而菜单栏弹窗的价值恰恰是「不打开窗口就扫一眼」—— 收成纯启动器等于让菜单栏只剩一个「打开面板」按钮，用户还不如点 Dock 图标。macOS 平台惯例（Stats / Bartender 类）也是弹窗内要有内容 | **代价照实说**：两份渲染仍要各自维护外观。所以本轮不去「合并视图」（那是改布局），而是**把重复的领域规则收到唯一出处**：`ProjectStatus.primaryBranch`（原来被抄 3 份，其中 PanelView 一份还是内联的不同拼法）。已修的部分见下一行；未修的部分（刷新/批量更新各存一份 action、两个空/错态视图）**如实记为已知重复**，收敛它们要动交互，不在视觉验证可覆盖的范围内 |
+| 「当前分支」规则**只留一个出处** | 原来 `branches.first { $0.isCurrent } ?? branches.first` 被抄在 BarView / BoardView 的私有 computed property 与 PanelView 的内联 `else if` 里，共 3 份 | 规则提到 `ProjectStatus.primaryBranch`（模型层，不 import SwiftUI）。判据卡结构（`client-check.sh`「只能有一个出处」+ `contract-check.sh` 用**真 fixture** 验行为，含与引擎声明的 `currentBranch` 名字交叉验证），负控 NC82 5/5。**不叫 `currentBranch`** 是因为那个名字已被引擎给的分支名字符串占了 |
 | 规范与设计稿冲突时**以设计稿原文为准** | 已四次撞上（看板是否删、`MarkdownView` 缓存、⌘N 数量、侧栏三分组 IA） | 例：规范写侧栏分「引擎/协作/智能」，设计稿原文里根本没有这个分组；照表实现只会造一个空壳入口 |
 | 代码结构清单**按磁盘重建** | 原清单 1 个文件不存在、18 个漏列 | 已加双向判据（`client-check.sh`），以后清单与磁盘不符会红 |
 | 文档区四态的**措辞由客户端定** | 引擎只给内容与 `unreadable` 列表，不给文案 | 判据卡的是「空与失败必须是两句不同的话」，不卡具体字词 —— 改文案不会红，改成同一句会红 |
@@ -203,24 +205,39 @@ EmptyState、卡片圆角与接缝、分段条配色、间距等值替换后的�
 - **真机/真数据未跑**：本轮所有验证都在沙箱 `DEEPGIT_HOME=/tmp/...` 里做，
   `~/.deepgit/registry.json` 未动（保持 4710 字节 / sha `b61aaa5a…`）。
 
-### 待人工确认：spacing 的 51 处散值
+### 待人工确认：spacing 的 87 处散值
 
-刻度值（4/8/12/16/20/24）已全部换成 `DSSpacing` token（45 处，**零视觉变化**，
-因为数值本来就相等）。剩下 51 处**故意保留**：
+刻度值（4/8/12/16/20/24）已全部换成 `DSSpacing` token（**73 处，零视觉变化**，
+因为数值本来就相等）—— 其中 45 处是 Stack 的 `spacing:`，28 处是 `.padding(...)`。
 
-| 值 | 处数 | 涉及文件 |
+剩下 87 处**故意保留**：
+
+| 值 | 处数 | 分布（文件:处数） |
 |---|---|---|
-| 10 | 13 | AIIntegration / AISettingsView / BoardView / Components / DetailViews / MilestonesView |
-| 14 | 8 | BoardView / DetailViews / PanelView |
-| 2 | 7 | BarView / Components / DetailViews / MarkdownView / MilestonesView |
-| 6 | 7 | AgentView / BarView / BoardView / DetailViews / PanelView |
-| 3 | 6 | DeepGitApp / DetailViews / MarkdownView / MilestonesView |
-| 5 | 6 | AIIntegration / BoardView / DetailViews |
-| 7 | 4 | BoardView / DetailViews / MarkdownView |
+| 40 | 2 | DetailViews(2) |
+| 30 | 1 | PanelView(1) |
+| 18 | 3 | DetailViews(3) |
+| 14 | 13 | DetailViews(6) / AISettingsView(2) / AgentView(2) / AIIntegration(1) / BoardView(1) / PanelView(1) |
+| 11 | 1 | BoardView(1) |
+| 10 | 20 | DetailViews(7) / BoardView(3) / AIIntegration(2) / AISettingsView(2) / AgentView(2) / MarkdownView(2) / Components(1) / MilestonesView(1) |
+| 7 | 5 | MarkdownView(2) / BoardView(1) / Components(1) / DetailViews(1) |
+| 6 | 15 | BarView(5) / PanelView(5) / DetailViews(3) / AgentView(1) / BoardView(1) |
+| 5 | 9 | AIIntegration(3) / BoardView(3) / DetailViews(2) / BarView(1) |
+| 3 | 8 | MilestonesView(3) / DetailViews(2) / MarkdownView(2) / DeepGitApp(1) |
+| 2 | 8 | BarView(3) / Components(2) / DetailViews(1) / MarkdownView(1) / MilestonesView(1) |
+| 1 | 2 | AIIntegration(1) / DetailViews(1)　— 发丝线，不是节奏值 |
+
+> ⚠️ **本节此前写的是「51 处 / 7 档」，那个数是漏算的。**
+> 旧判据的正则只匹配 `spacing: (\d+)`（Stack 参数），**完全不匹配
+> `.padding(.edge, N)` 与 `.padding(N)`** ⇒ 28 处刻度值 padding 逃过检查，
+> 1/11/18/30/40 五档散值也从未被计入，基线 51 其实是「被看见的数」不是「实际的数」。
+> 覆盖面补齐后重算为 87 处 / 12 档（**不是新增违规，是第一次被看见**）。
+> 30/40 明显不是节奏值而是结构性留白（面板分隔、hero 区），
+> 记在这里是为了将来收敛时知道它们存在。通用判据见 `deepgit-engine` 不变量 102。
 
 **为什么不一刀切收进刻度**：那是**改布局**、不是重构。14→16 挤不挤、
 10 该变 8 还是 12，得看着窗口才知道。离屏 harness 现在能给出**快照级**的观感
 （它已验过顶栏不挤、卡片间距与圆角接缝没问题），但**快照不是真窗口**：
 深浅色主题、窗口缩到最小时的截断、真实字体渲染都拍不到 ⇒ 仍不擅自收敛。
-等有人真正看过窗口，再逐档收掉。判据把基线钉死在 51 处
-（`client-check.sh` 不许它增长），通用判据见 `deepgit-engine` 的不变量 96。
+等有人真正看过窗口，再逐档收掉。判据把基线钉死在 87 处
+（`client-check.sh` 不许它增长，负控 NC81 5/5），通用判据见不变量 96。
