@@ -477,6 +477,165 @@ do {
         return "失败时留在原地并显示原因"
     }
 
+    // ── 设置分页签 ──
+    check("设置的页签与它的内容必须双向对齐（少一个 = 找得到入口、里面是空的）") {
+        // 摆而不动的控件是本项目反复在修的那族缺陷的近亲：
+        // 页签点得过去、内容却是上一张卡的残留，看起来完全正常。
+        //
+        // ⚠️ **必须双向比对**，单向的两次都漏过：
+        //   · 只查「switch 每个分支都挂了内容」⇒ 判据里没从 enum 的
+        //     `allCases` 出发，于是**从 enum 里删掉一个页签**时，
+        //     switch 反而多出一个无人能触达的分支 ⇒ 照样绿。
+        //     （负控变体 2 抓到的就是它。）
+        //   · 只查「enum 每个页签都有分支」⇒ switch 里多一个分支没人发现。
+        // 做法：把 enum 的 case 名集合与 switch 的分支集合**比成相等**。
+        let t = try codeOf("AISettingsView.swift")
+        guard t.contains("enum SettingsTab") else {
+            throw fail("SettingsTab 没了 ⇒ 页签的分类不再有唯一出处")
+        }
+        guard let decl = slice(t, from: "enum SettingsTab", to: "var id: String") else {
+            throw fail("切不出 SettingsTab 的声明（结构变了，先更新这条判据）")
+        }
+        // enum 的 case：兼容 `case a, b, c` 与一行一个两种写法。
+        var declared: Set<String> = []
+        for line in decl.split(separator: "\n") {
+            let s = line.trimmingCharacters(in: .whitespaces)
+            guard s.hasPrefix("case "), !s.contains("=") else { continue }
+            for name in s.dropFirst(5).split(separator: ",") {
+                let n = name.trimmingCharacters(in: .whitespaces)
+                if !n.isEmpty { declared.insert(n) }
+            }
+        }
+        guard !declared.isEmpty else {
+            throw fail("SettingsTab 里解析不到任何 case（结构变了，先更新这条判据）")
+        }
+
+        guard let pane = slice(t, from: "private var pane: some View", to: "private var footer: some View") else {
+            throw fail("切不出设置的内容区（结构变了，先更新这条判据）")
+        }
+        var wired: Set<String> = []
+        for line in pane.split(separator: "\n") {
+            let s = line.trimmingCharacters(in: .whitespaces)
+            guard s.hasPrefix("case .") else { continue }
+            let name = s.dropFirst("case .".count)
+                .prefix { $0 != ":" && $0 != " " }
+            if !name.isEmpty { wired.insert(String(name)) }
+        }
+        guard wired == declared else {
+            let missing = declared.subtracting(wired).sorted().joined(separator: "、")
+            let extra = wired.subtracting(declared).sorted().joined(separator: "、")
+            throw fail("页签与内容没对齐 ——"
+                + (missing.isEmpty ? "" : " enum 里有「\(missing)」但内容区没有它（点不到）")
+                + (extra.isEmpty ? "" : " 内容区有「\(extra)」但 enum 里没有（永远走不到）")
+                + (missing.isEmpty && extra.isEmpty ? " 集合相等却判红，判据自身需修" : ""))
+        }
+        // 对齐了还不够：每个分支得真的挂上自己那张卡。
+        let content: [String: String] = [
+            "general": "LoginItemCard()",
+            "automation": "ScheduleCard()",
+            "ai": "AISettingsPane(draft:",
+        ]
+        for (name, view) in content {
+            guard pane.contains("\(view)") else {
+                throw fail("页签「\(name)」没有挂上 \(view) ⇒ 有壳无内容")
+            }
+        }
+        // 恰好一次：写两遍就是同一个分支渲染两次（本项目反复修过的缺陷族）。
+        //
+        // ⚠️ 数的是**卡片本身**，不是 `case .x:` 标签。
+        // 只数标签的话，「标签只有一个、但分支体里摆了两张卡」照样绿 ——
+        // 那一屏里同一个设置出现两次，看起来像两个不同的东西。
+        // （负控变体 7 抓到的就是它。）
+        for (name, view) in content.sorted(by: { $0.key < $1.key }) {
+            let n = pane.components(separatedBy: view).count - 1
+            guard n == 1 else {
+                throw fail("「\(view)」在内容区里出现 \(n) 次（应为 1）⇒"
+                    + " 同一页渲染了 \(n) 次，同一个设置露出两个入口")
+            }
+        }
+        // 同样地，分支标签也必须一个不多一个不少。
+        for name in declared {
+            let branch = "case .\(name):"
+            let n = pane.components(separatedBy: branch).count - 1
+            guard n == 1 else {
+                throw fail("「\(branch)」在内容区里出现 \(n) 次（应为 1）⇒ 同一页渲染了 \(n) 次")
+            }
+        }
+        return "enum 的 \(declared.count) 个页签与内容区分支**集合相等**，且各恰好挂一张卡"
+    }
+
+    check("页脚不许出现死控件（保存按钮只在 AI 页，且没改动时不可点）") {
+        // 页脚被提到**所有页**共用之后，两类坑一起冒出来：
+        //   1. 「保存」在通用/自动化页也摆着 —— 可那两页是**即时写入**的，
+        //      那里没有未保存的改动，「保存」点了什么都不会发生。
+        //   2. AI 页即使一个字没改，「保存」也是灰的才诚实 ——
+        //      没改动的设置窗口开着一句「保存」点了等于没点。
+        let t = try codeOf("AISettingsView.swift")
+        // 墙必须是同名的真实声明。⚠️ 别用 `private func load()` 当墙：
+        // 加载搬进 AI 页之后，父层已经没有 load()，这个墙会一路跨过
+        // save()/close()/两张卡，切出来的「页脚」根本不是页脚。
+        guard let footer = slice(t, from: "private var footer: some View", to: "private func save()") else {
+            throw fail("切不出设置的页脚（结构变了，先更新这条判据）")
+        }
+        guard footer.contains("if tab == .ai") else {
+            throw fail("页脚没有把「保存」限制在 AI 页 ⇒\n" +
+                "      另两页是即时写入的，那里摆一个保存就是死控件")
+        }
+        guard footer.contains(".disabled(!aiDirty)") else {
+            throw fail("「保存」没有按「有没有改动」禁用 ⇒ 打开设置什么都不改也能点保存")
+        }
+        // 「取消」这个词只在 AI 页成立：另两页没有可回滚的改动。
+        // 判据钉「按钮文案随页签走」，不钉具体是哪个字。
+        guard footer.contains("tab == .ai ? \"取消\" : \"关闭\"") else {
+            throw fail("关闭按钮的文案没有随页签走 ⇒\n" +
+                "      在即时写入的两页上写「取消」会让人以为它能撤销什么")
+        }
+        // 保存失败的消息必须贴在**按钮旁边**而不是塞进某一页：
+        // 失败可能发生在用户已经切走之后，跟着页签走就看不见了。
+        guard footer.contains("saveProblem") else {
+            throw fail("页脚没有承接保存失败的消息 ⇒ 失败可能落在用户看不见的页上")
+        }
+        guard let save = slice(t, from: "private func save()", to: "\n    }"),
+              save.contains("tab = .ai") else {
+            throw fail("保存失败后没有把用户送回 AI 页 ⇒ 他可能停在一页无关的 tab 上")
+        }
+        return "保存只在 AI 页、按 dirty 禁用；文案随页签；失败消息贴在页脚并回 AI 页"
+    }
+
+    check("AI 草稿只能有一处真身（编辑的那份与保存的那份必须是同一份）") {
+        // 分页签之后，保存动作在**页脚**，而页脚不属于任何一页 ⇒ 草稿只能住在
+        // 父层，由 AI 页拿 `@Binding` 去编辑。
+        // 一旦 AI 页再自持一份可编辑的 `AIConfig`，就会出现「界面上改的是这一份、
+        // 存下去的是那一份」，而哪里出错**不报错**：保存照常成功、窗口照常关闭。
+        //
+        // ⚠️ 本条曾一度写成「TextField 绑成员不提交」——那是**误判**：
+        //    当时用合成按键打完字就立刻读 AX，读到的是滞后一次的界面，
+        //    于是把一个根本不存在的缺陷当成了实测结论，还照着它改了设计。
+        //    现在钉的是可静态验证、且确实会造成分叉的那一条。
+        let t = try codeOf("AISettingsView.swift")
+        guard let pane = slice(t, from: "struct AISettingsPane: View {", to: "private var catalogProvider") else {
+            throw fail("切不出 AI 页的声明（结构变了，先更新这条判据）")
+        }
+        if pane.contains("@State") && pane.contains("AIConfig(") {
+            throw fail("AI 页自持了一份 AIConfig 状态 ⇒ 编辑的那份与页脚保存的那份会分叉")
+        }
+        guard pane.contains("@Binding var draft: AIConfig") else {
+            throw fail("AI 页没有从父层接草稿 ⇒ 可编辑状态与保存动作落在了两个地方")
+        }
+        // 父层：草稿、基准、以及据此算出的 dirty 必须同处一处。
+        guard let host = slice(t, from: "struct GeneralSettingsView: View {", to: "var body: some View") else {
+            throw fail("切不出设置宿主的声明（结构变了，先更新这条判据）")
+        }
+        for need in ["@State private var draft = AIConfig()",
+                     "@State private var original = AIConfig()",
+                     "private var aiDirty: Bool { draft != original }"] {
+            guard host.contains(need) else {
+                throw fail("设置宿主缺少「\(need)」⇒ 草稿、基准、dirty 判定没有落在同一处")
+            }
+        }
+        return "草稿与基准都在宿主；AI 页只拿 @Binding，不自持第二份"
+    }
+
     check("isConfigured 不得在 keychain 写失败时仍报「已配置」") {
         let t = try codeOf("AISDK.swift")
         guard let body = slice(t, from: "var isConfigured: Bool", to: "\n    }") else {
