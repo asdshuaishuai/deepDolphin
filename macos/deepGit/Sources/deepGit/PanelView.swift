@@ -38,7 +38,7 @@ struct PanelView: View {
             detail
         }
         .frame(minWidth: 940, minHeight: 620)
-        .navigationTitle("deepGit 面板")
+        .navigationTitle(PanelWindow.title)
         .toolbarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
         .task {

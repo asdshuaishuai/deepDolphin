@@ -13,6 +13,50 @@ import SwiftUI
 import AppKit
 import UserNotifications
 
+/// 主面板窗口的**唯一出处**。
+///
+/// ⚠️ 原来标题字面量散在 4 处，而其中 2 处**判的字符串根本不会成立**：
+///     · `Window("deepGit", id: "panel")`     —— 场景的初始标题
+///     · `PanelView` 的 `.navigationTitle("deepGit 面板")` —— 实际生效的标题
+///     · `AppDelegate.openPanel()` 的 `w.title == "deepGit"`
+///     · `DockMenuTarget.openPanel()` 的 `w.title == "deepGit"`
+///
+/// `NSApp.windows[i].title` 取的是**导航标题**，也就是 `.navigationTitle`
+/// 覆盖之后的那个值（真 app 的 AX 窗口名读到的正是「deepGit 面板」）。
+/// ⇒ 后面那两处比较**永不成立**，「窗口已经开着就直接 focus」的快路径
+/// 从来没跑过，每次都落到后面的通知转发。
+///
+/// 功能**没坏**（`openWindow(id: "panel")` 同样会把已开的窗口带到前面），
+/// 但注释里写着「NSApp.windows 兜底」的那条其实才是唯一在跑的一条 ——
+/// 与本项目反复修过的「声明了 dismiss 却一次没用」是同一族。
+/// 顺带把两段逐字重复的「叫醒面板」也收了（原来 AppDelegate 与
+/// DockMenuTarget 各抄一份，改一处忘另一处必然发生）。
+enum PanelWindow {
+    /// 窗口标题。`Window(...)` 与 `.navigationTitle(...)` 都用它。
+    static let title = "deepGit 面板"
+
+    /// 这扇窗是不是主面板。
+    ///
+    /// 只认 `title` 那**一个**出处 —— 写第二份字面量就是等着它漂移。
+    static func isPanel(_ window: NSWindow) -> Bool {
+        window.title == title
+    }
+
+    /// 叫醒主面板。**Dock 菜单、通知点击、菜单栏三处共用这一条路。**
+    ///
+    /// 先找已存在的窗口并前置；找不到（首次启动 / 窗口被销毁）才发通知，
+    /// 由 SwiftUI 场景的 `openWindow` 兜底创建。
+    @MainActor
+    static func bringToFront() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let panel = NSApp.windows.first(where: isPanel) {
+            panel.makeKeyAndOrderFront(nil)
+            return
+        }
+        NotificationCenter.default.post(name: .openPanelRequest, object: nil)
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     /// Dock 右键菜单的动作接收者。
     ///
@@ -32,14 +76,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// 打开或激活主面板。通知点击与 Dock 菜单共用这一条路。
+    ///
+    /// 实现已收进 `PanelWindow.bringToFront()`：原来这里和 `DockMenuTarget`
+    /// 各抄了一份逐字相同的「activate → 找同名窗口 → 前置 → 否则发通知」。
+    ///
+    /// ⚠️ 用 `MainActor.assumeIsolated` 而不是把整个方法标 `@MainActor`：
+    /// `applicationDidFinishLaunching` 与 `NSMenuItem` 的 action 回调
+    /// 都不是 `@MainActor` 隔离的，而 `bringToFront()` 是。
+    /// 理由与 `buildDockMenu` / `shallowUpdateAll` 完全相同：
+    /// 这些回调**必在主线程**（AppKit 的 delegate 与 action 都在主线程），
+    /// `assumeIsolated` 在非主线程会直接断言，正好是「别这么用」的提示。
     func openPanel() {
-        NSApp.activate(ignoringOtherApps: true)
-        for w in NSApp.windows where w.title == "deepGit" {
-            w.makeKeyAndOrderFront(nil)
-            return
-        }
-        // 窗口已销毁：由 SwiftUI Window scene 的 openWindow 兜底（通知中心转发）
-        NotificationCenter.default.post(name: .openPanelRequest, object: nil)
+        MainActor.assumeIsolated { PanelWindow.bringToFront() }
     }
 
     /// Dock 图标右键菜单（README 声明过，此前**完全没实现**）。
@@ -90,13 +138,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
 /// Dock 菜单的 action 接收者（`@objc` 方法必须挂在一个 NSObject 上）。
 private final class DockMenuTarget: NSObject {
+    /// 与 `AppDelegate.openPanel()` **同一个实现**（`PanelWindow.bringToFront`）——
+    /// 原来这里抄了一份逐字相同的实现，两处各改各的，早晚会分叉。
+    /// `assumeIsolated` 的理由同上（action 回调必在主线程）。
     @objc func openPanel() {
-        NSApp.activate(ignoringOtherApps: true)
-        for w in NSApp.windows where w.title == "deepGit" {
-            w.makeKeyAndOrderFront(nil)
-            return
-        }
-        NotificationCenter.default.post(name: .openPanelRequest, object: nil)
+        MainActor.assumeIsolated { PanelWindow.bringToFront() }
     }
 
     @objc func shallowUpdateAll() {
@@ -126,7 +172,7 @@ struct DeepGitApp: App {
 
     var body: some Scene {
         // 主面板窗口（启动自动打开）
-        Window("deepGit", id: "panel") {
+        Window(PanelWindow.title, id: "panel") {
             DeepGitPanel()
                 .environmentObject(model)
                         }

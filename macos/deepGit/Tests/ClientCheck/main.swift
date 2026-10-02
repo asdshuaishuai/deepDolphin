@@ -5238,6 +5238,69 @@ do {
         }
         return "提交卡在页头按钮排之后、且是唯一提交入口"
     }
+
+    // ── W7：叫醒主面板这条路 ──
+    check("主面板窗口标题只能有一个出处（判的字符串必须就是显示的那个）") {
+        // 2026-10-02 定位到的缺陷：标题字面量散在 4 处，
+        // 而 `NSApp.windows[i].title` 取的是**导航标题**
+        // （`.navigationTitle` 覆盖了 `Window` 的初始标题）——
+        // 于是两处 `w.title == "deepGit"` **永不成立**，
+        // 「窗口已经开着就直接 focus」的快路径从来没跑过。
+        //
+        // 症状极隐蔽：功能没坏（通知转发那条兜底照样把窗口带出来），
+        // 于是它看起来像一段「保险起见」的多余代码，而不是一个坏掉的分支。
+        // 判据钉的是**唯一出处**：场景标题、导航标题、窗口识别三处
+        // 必须都走同一个常量，不许任何一处另写字面量。
+        let app = try strippedCode("DeepGitApp.swift")
+        let panel = try strippedCode("PanelView.swift")
+        guard app.contains("enum PanelWindow"),
+              app.contains("static let title =") else {
+            throw fail("PanelWindow 这个唯一出处没了 ⇒ 标题会重新散成多份字面量")
+        }
+        guard app.contains("Window(PanelWindow.title, id:") else {
+            throw fail("窗口场景没有走 PanelWindow.title（结构变了，先更新这条判据）")
+        }
+        guard panel.contains("navigationTitle(PanelWindow.title)") else {
+            throw fail("PanelView 的导航标题没有走 PanelWindow.title ⇒\n" +
+                "      `NSApp.windows[i].title` 取的是**它**，两者不一致时窗口识别会静默失效")
+        }
+        // 反向：任何一处都不许再写裸字面量。
+        // ⚠️ 必须剥注释后再查 —— 解释性注释里会引用旧写法。
+        for (where_, text) in [("DeepGitApp", app), ("PanelView", panel)] {
+            if text.contains("w.title == \"deepGit\"") {
+                throw fail("\(where_) 里又出现了 `w.title == \"deepGit\"` ⇒ 那个比较永不成立，\n" +
+                    "      而快路径会静默退化成「永远走通知转发」")
+            }
+        }
+        return "场景 / 导航 / 识别三处同走 PanelWindow.title；无裸字面量"
+    }
+
+    check("「叫醒主面板」只能有一份实现（Dock 菜单、通知点击共用）") {
+        // 原来 `AppDelegate.openPanel()` 与 `DockMenuTarget.openPanel()`
+        // 逐字抄了两份「activate → 找同名窗口 → 前置 → 否则发通知」。
+        // 两处各改各的，早晚会分叉 —— 与本项目反复修过的缺陷族同源。
+        let app = try strippedCode("DeepGitApp.swift")
+        guard let bring = slice(app, from: "static func bringToFront()", to: "\n    }") else {
+            throw fail("切不出 PanelWindow.bringToFront（结构变了，先更新这条判据）")
+        }
+        // 通知转发必须**在**实现里 —— 窗口被销毁时面板要能找回来。
+        guard bring.contains("openPanelRequest") else {
+            throw fail("bringToFront 里没有通知转发 ⇒ 窗口被销毁时面板找不回来")
+        }
+        // 调用点恰好两处（delegate + Dock target）。定义处是 `static func`，
+        // 不带括号，所以不会被算进来。
+        let n = app.components(separatedBy: "PanelWindow.bringToFront()").count - 1
+        guard n == 2 else {
+            throw fail("PanelWindow.bringToFront() 被调了 \(n) 次（应为 2：delegate + Dock target）")
+        }
+        // 反向：调用点里不许再内联一份 —— makeKeyAndOrderFront 只能出现在实现里一次。
+        let inline = app.components(separatedBy: "makeKeyAndOrderFront(nil)").count - 1
+        guard inline == 1 else {
+            throw fail("makeKeyAndOrderFront 出现 \(inline) 次（应为 1）⇒ " +
+                "「叫醒面板」又有了第二份实现")
+        }
+        return "一份实现、两个调用点；通知转发只在实现里"
+    }
 }
 
 print("")

@@ -308,7 +308,7 @@ EmptyState、卡片圆角与接缝、分段条配色、间距等值替换后的�
 - ~~**详情页页头 git 操作与项目说明并排没验过**~~ —— 已验（`/tmp/v3b.png`）：
   页头右侧一行是「项目说明 | 拉取 | 推送 | 抓取 | 暂存 | 恢复 | 更多」，
   「提交改动」卡紧跟其下不隔卡。
-- ⚠️ **一条「声明了却一次没用」的同类缺陷（已定位，未修）**：
+- ~~**一条「声明了却一次没用」的同类缺陷**~~ —— **已修**（2026-10-02，用户「继续」后）：
   `AppDelegate.openPanel()` 里那条「窗口已经开着就直接 focus」的快路径判的是
   `w.title == "deepGit"`，而 `PanelView.swift:41` 的 `.navigationTitle("deepGit 面板")`
   会覆盖窗口标题（真 app 的 AX 窗口名读到的正是「deepGit 面板」）
@@ -316,10 +316,19 @@ EmptyState、卡片圆角与接缝、分段条配色、间距等值替换后的�
   功能没坏（`openWindow(id: "panel")` 同样会把已开的窗口带到前面），
   但注释里写着「NSApp.windows **兜底**」，实际上**只有兜底那条在跑** ——
   与本项目反复修过的「声明了 dismiss 却一次没用」是同一族。
-  **没在本轮修**：它不在用户提的两条要求内，而要改就得决定窗口标题的唯一出处
-  （`Window(...)` 的标题 vs `.navigationTitle`），那是布局/文案层面的取舍，
-  该先问再做。已用判据确认 Dock 菜单「打开面板」与通知点击两条路都真的走到
-  `openPanel()`，只是快路径不生效。
+  - 顺带发现**同一段实现被逐字抄了两份**：`AppDelegate` 与 `DockMenuTarget`
+    各一份「activate → 找同名窗口 → 前置 → 否则发通知」。标题只是这两份会
+    一起漂移的那一部分 —— 换个别的字符串，它们照样会分叉。
+  - 修法两条一起走：标题收进 `PanelWindow.title` **一个出处**
+    （场景标题、导航标题、窗口识别三处都走它），
+    实现收进 `PanelWindow.bringToFront()` **一份**（两个调用点）。
+  - 隔离处理照抄本文件既有做法：`applicationDidFinishLaunching` 与
+    `NSMenuItem` 的 action 都不是 `@MainActor` 隔离的，而实现是
+    ⇒ 用 `MainActor.assumeIsolated`，理由与 `buildDockMenu` / `shallowUpdateAll`
+    相同（这些回调必在主线程；`assumeIsolated` 在非主线程会直接断言，
+    正好是「别这么用」的提示）。
+  - 推广：**一段代码长得像「保险起见的多余代码」时，先问它到底走不走** ——
+    走不上的分支不会报错、不会崩，只是让旁边的兜底一直在跑。
 - **真机/真数据未跑**：本轮所有验证都在沙箱 `DEEPGIT_HOME=/tmp/...` 里做，
   `~/.deepgit/registry.json` 未动（保持 4710 字节 / sha `b61aaa5a…`）。
 - ⚠️ **验证环境的一条记录**：中途出现过「app 进程活着、主线程空闲、无崩溃报告，

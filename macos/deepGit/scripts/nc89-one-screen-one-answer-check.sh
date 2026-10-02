@@ -19,11 +19,12 @@ SCOPE=Sources/deepGit/DashboardScope.swift
 VIEWS=Sources/deepGit/DetailViews.swift
 BAR=Sources/deepGit/WorkBar.swift
 PANEL=Sources/deepGit/PanelView.swift
+APP=Sources/deepGit/DeepGitApp.swift
 SRCDIR=Sources/deepGit
 # ⚠️ 备份清单必须**列全所有被 mutate 的文件**。
 #   漏一个 = 那个文件的还原靠不上，脚本中途非零退出时改坏的源码就留在工作区里。
 #   （本脚本第一版就是漏了 PanelView：变体 9 改它，而清单里没有它。）
-FILES="Models.swift DashboardScope.swift DetailViews.swift WorkBar.swift PanelView.swift"
+FILES="Models.swift DashboardScope.swift DetailViews.swift WorkBar.swift PanelView.swift DeepGitApp.swift"
 
 pass=0
 fail=0
@@ -219,6 +220,23 @@ restore
 # 所以没必要再多两个」。这个变体验证「不许在一屏里出现两次」那条钉得住。
 mutate "$BAR" 's/            pipeline/            AgentBulkButtons()\n            pipeline/s'
 run "不许在一屏里出现两次" "变体14 顶栏又摆一对全量按钮"
+restore
+
+# ── 变体 15：窗口标题又散成字面量（识别静默失效） ──
+# `NSApp.windows[i].title` 取的是**导航标题**。
+# 变体把导航标题改成另一个字面量 ⇒ 场景标题与实际显示的标题不再同源，
+# 而判据只钉「两处走同一个常量」，抓不到「常量被换成一个没人对过的值」——
+# 真正咬住它的是**唯一出处**那条：任何一处写裸字面量都会红。
+mutate "$PANEL" 's/navigationTitle\(PanelWindow\.title\)/navigationTitle("deepGit 主面板")/'
+run "只能有一个出处" "变体15 导航标题又写字面量"
+restore
+
+# ── 变体 16：「叫醒面板」又有了第二份实现 ──
+# 原来 AppDelegate 与 DockMenuTarget 各抄了一份逐字相同的实现。
+# 变体往 Dock target 里塞回一份内联实现（锚点用 `@objc func openPanel()` ——
+# `@objc` 只在这一个方法上，是最稳定的区分点，不吃整段多行构造）。
+mutate "$APP" 's/(@objc func openPanel\(\) \{\n        MainActor\.assumeIsolated \{ )PanelWindow\.bringToFront\(\)( \})/$1NSApp.activate(ignoringOtherApps: true)\n            if let p = NSApp.windows.first(where: { $0.title == "deepGit" }) { p.makeKeyAndOrderFront(nil) }\n        }\n        PanelWindow.bringToFront()$2/s'
+run "只能有一份实现" "变体16 Dock 菜单内联了第二份实现"
 restore
 
 echo ""
