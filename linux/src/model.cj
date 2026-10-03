@@ -495,9 +495,17 @@ public class MilestoneCounts {
 
 /// 一条里程碑。键集来自引擎 `src/cli/cli.cj` 的 `milestoneLine`（消费方解码处）。
 ///
-/// ⚠ **引擎不发 `projectId`**。macOS 端 `ProjectProgressCard` 用
-/// `$0.projectId == p.id` 挑出「属于这个项目」的里程碑，于是那个条件恒为假，
-/// 项目卡上的里程碑行一直是空的。这里改用 `projectName` 匹配 —— 那个键引擎恒发。
+/// ⚠ 项目归属用 **`projectName`** 而不是 `projectId`。
+///
+/// 更正一条我先前的错误断言：「引擎不发 projectId」是错的 ——
+/// `kernel.milestoneJson` = 存储侧 `toJson()` 全字段（含 projectId）+ 补充键。
+/// macOS 端 `ProjectProgressCard` 用 `$0.projectId == p.id` 是有依据的。
+///
+/// 那这里为什么仍用 projectName：**真实载荷里 `items` 恒为空**
+/// （实测 15 个项目时 `items: []`，而 `counts.readCount=1` / `orphaned=1`），
+/// 验不了 `projectId` 与 `ProjectStatus.id` 是否逐字相等。
+/// `projectName` 恒发、且与 `Project.name` 同源，必然匹配 ——
+/// 在无法验证的那条路上取**能验证的那条**。等有了真实 items 再评估。
 public class MilestoneItem {
     public let projectName: String
     public let name: String
@@ -510,6 +518,17 @@ public class MilestoneItem {
     public let commitsSince: Int64
     public let tagReached: Bool
     public let overdue: Bool
+    /// 仓库读不出来时，tagReached / commitsSince 都是「未知」而不是「没有」。
+    /// `status == "unknown"` 时它是原因，不是一句多余的说明。
+    public let gitReadable: Bool
+    /// 引擎给的「为什么核验不了」，**恒发**：可读时是空串。
+    ///
+    /// ⚠ 这条要接：引擎原话是「调用方只能靠『有没有这个键』反推出了故障」，
+    /// 所以改成恒发。我们若不读它，界面上就只能自己编一句「仓库读不出来」——
+    /// 而引擎已经写好了具体原因。
+    public let unverifiedReason: String
+    /// 里程碑绑定到哪个 tag（未显式绑定时用里程碑名兜底）。
+    public let tagName: String
 
     public init(
         projectName: String,
@@ -519,7 +538,10 @@ public class MilestoneItem {
         daysToTarget: Int64,
         commitsSince: Int64,
         tagReached: Bool,
-        overdue: Bool
+        overdue: Bool,
+        gitReadable: Bool,
+        unverifiedReason: String,
+        tagName: String
     ) {
         this.projectName = projectName
         this.name = name
@@ -529,6 +551,9 @@ public class MilestoneItem {
         this.commitsSince = commitsSince
         this.tagReached = tagReached
         this.overdue = overdue
+        this.gitReadable = gitReadable
+        this.unverifiedReason = unverifiedReason
+        this.tagName = tagName
     }
 
     public static func from(v: JsonValue): MilestoneItem {
@@ -540,7 +565,10 @@ public class MilestoneItem {
             Json.intAt(v, "daysToTarget", -1),
             Json.intAt(v, "commitsSince", 0),
             Json.boolAt(v, "tagReached", false),
-            Json.boolAt(v, "overdue", false)
+            Json.boolAt(v, "overdue", false),
+            Json.boolAt(v, "gitReadable", true),
+            Json.strAt(v, "unverifiedReason", ""),
+            Json.strAt(v, "tagName", Json.strAt(v, "name", ""))
         )
     }
 

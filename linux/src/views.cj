@@ -876,11 +876,20 @@ private func milestoneRow(m: MilestoneItem, dark: Bool): Unit {
     } else {
         "●"
     })
-    HStack {
-        Label("${mark} ${m.projectName} · ${m.name}").fontSize(11.0).wrap()
-        Spacer()
-        Label(milestoneDueText(m)).fontSize(10.0).muted()
-    }.hug()
+    VStack {
+        HStack {
+            Label("${mark} ${m.projectName} · ${m.name}").fontSize(11.0).wrap()
+            Spacer()
+            Label(milestoneDueText(m)).fontSize(10.0).muted()
+        }.hug()
+        // 核验不了时把**引擎给的原因**说出来。引擎的 `unverifiedReason` 是恒发键
+        // （可读时是空串），不读它就等于自己编一句「读不出来」——
+        // 而引擎已经把具体原因写好了。
+        if (m.status == "unknown" && !m.unverifiedReason.isEmpty()) {
+            Label(m.unverifiedReason).fontSize(10.0).wrap()
+                .foregroundColor(dsColor(C_ORANGE))
+        }
+    }.crossAxisAlignment(CrossAxisAlignment.Start).spacing(2.0.vp)
 }
 
 /// 到期文本。`daysToTarget == -1` 是「未设置**或日期无效**」——

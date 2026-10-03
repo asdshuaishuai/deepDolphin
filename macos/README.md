@@ -156,6 +156,32 @@ Sources/deepDolphin/
 > 后者描述的还是「serve 托管 + APIClient（URLSession）」这套 HTTP 架构。
 > 留着会让人去找不存在的文件、不存在的传输层。
 
+## 待验证 · 「项目卡里程碑行恒空」这一疑点（2026-10-03 记）
+
+Linux 端对齐仪表盘时顺带看了一眼 `ProjectProgressCard` 的这条：
+
+```swift
+milestones: d.milestones.items.filter { $0.projectId == p.id }
+```
+
+**疑点**：真实载荷里 `milestones.items` 恒为空数组（实测 15 个项目时
+`items: []`，而 `counts.readCount=1` / `orphaned=1`），
+所以卡片上的里程碑行从来没有任何数据可画 —— 看起来像恒空。
+
+**已排除的怀疑**：「引擎不发 `projectId`」是**错的**（我一度这么断言并推上去了，
+在此更正）。`kernel/milestoneJson` = 存储侧 `toJson()` 全字段（**含 projectId**）
++ 一组补充键，三个出口共用这一份形状。`ProjectProgressItem` 把它建模成必填非可选是对的。
+
+**仍未验证**：`projectId`（存储侧 `ProjectEntry.id`）与 `ProjectStatus.id`
+（载荷里的项目 `id`）是否**逐字相等**。相等则这行代码是对的，
+不相等则卡片恒空。真实数据 `items` 为空，验不了。
+
+Linux 端的处理是**取能验证的那条路**：项目归属按 `projectName` 匹配
+（引擎恒发，且与 `Project.name` 同源，必然匹配）。等有非空 items 时，
+两边都应该用判据确认一次，而不是继续猜。
+
+---
+
 ## 已知边界 · 按最佳预案定的取舍（2026-10-02 起）
 
 > 协作规约见 `moonGit/AGENTS.md` 的「协作规约」节：拿不准时按预案定、不停下来提问，
