@@ -281,15 +281,15 @@ done; done
 > 「验证」列的命令必须**实际跑过**并把结果贴进 §10，未跑的不许打 `☑`。
 
 ### M0 真机可用性
-- [ ] M0-1 重新检测引擎回灌 `setEngineBin`｜验证：桩引擎下重探测真出数据
-- [ ] M0-2 `EngineLocator` 异步化 + 忙态｜验证：无引擎启动 <1s 可见面板，点击不冻结
-- [ ] M0-3 `AiSettingsDialog` libsecret 读异步化｜验证：密钥环卡住不冻结
+- [x] M0-1 重新检测引擎回灌 `setEngineBin`｜验证：桩引擎下重探测真出数据（§10 2026-10-03）
+- [x] M0-2 `EngineLocator` 异步化 + 忙态｜验证：无引擎启动 <1s 可见面板，点击不冻结（§10 2026-10-03）
+- [x] M0-3 `AiSettingsDialog` libsecret 读异步化｜验证：密钥环卡住不冻结（§10 2026-10-03；真机密钥环卡住场景待真机复验）
 - [~] M0-4 `Settings` 不跨线程读写｜部分：libsecret 读已移出 GUI 线程（M0-3）；worker 侧配置快照未做
 - [ ] M0-5 agent 引擎子进程可 kill + 文案诚实｜未做
-- [ ] M0-6 批量闸门专用信号｜未做
-- [ ] M0-7 CLI 健壮性（mock 强制 / 快照等数据 / 版本单源）｜验证：`--version` 与 CMake 一致
-- [x] M0-8 系统 Qt6/DTK6 构建矩阵脚本 `scripts/build-system.sh`｜脚本已写；干净容器未实跑（本机只有 sysroot 工具链）
-- [ ] M0-9 关键路径日志 + journal appender + 「打开日志目录」｜验证：日志文件有内容
+- [x] M0-6 批量闸门专用信号（refreshAllFinished；轻刷新不再误触发 updateAll 闸门）
+- [x] M0-7 CLI 健壮性（mock 强制 / 快照等数据 / 版本单源）｜验证：`--version` 与 CMake 一致（§10 2026-10-03）
+- [~] M0-8 系统 Qt6/DTK6 构建矩阵脚本 `scripts/build-system.sh`｜脚本已写；干净容器未实跑（本机只有 sysroot 工具链）
+- [x] M0-9 关键路径日志 + journal appender + 「打开日志目录」（§10 2026-10-03；journalctl 真机检索待真机复验）
 
 ### M1 DTK 原生化
 - [~] M1a 控件替换表：**AI 设置页一行已完成**（DPasswordEdit + DLineEdit×3 + DComboBox×2 + DPushButton），其余未做
@@ -349,6 +349,7 @@ done; done
 - `2026-10-03 | orchestrator | M3-3 | DS::font() 改走 fontManager() 档位（metric=T4/sectionTitle=T5/cardTitle=T6/body·label=T7/badge=T8）；MD_H* 改 T3/T4/T5 派生`
 - `2026-10-03 | orchestrator | M3-4 | 新增 DS::tagSecondaryStyle/tagFont + DS::repolish()；main 接 paletteTypeChanged/themeTypeChanged/applicationPaletteChanged/fontChanged → 兜底 palette + 全树重算；28 处 color:%1 收编`
 - `2026-10-03 | orchestrator | M0-8/M-61 | scripts/build-system.sh + scripts/ci.sh + docs/snapshots 基线 7 张（light/dark × 3 页 + dark-setupguide）`
+- `2026-10-04 | orchestrator | M0-6 | AppModel 新增 refreshAllFinished(bool)：仅全量链（status→dashboard→milestones，含失败短路）收尾发；refreshCycleFinished 保留给托盘/侧栏（轻刷新照发）；updateAll 的 m_bulkGate 闸门改接 refreshAllFinished——此前接 refreshCycleFinished，300s 轻刷新收尾会在全量刷新落地前放行闸门 → 冻结名单漏掉刚注册的仓库 | build 通过、selfcheck 58/58（纯信号改接，无视觉变化，无截图矩阵） | 定时批量更新的真机 300s 窗口复验待真机`
 - （示例，可删）`2026-xx-xx | <agent> | M3-1 | 表面三级接 applicationPalette；--selfcheck 55/55 通过；截图基线 docs/snapshots/dark-dashboard.png 已更新 | AgentDialog 固定尺寸待 M3c 处理`
 
 ---

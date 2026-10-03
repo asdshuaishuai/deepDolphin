@@ -259,6 +259,7 @@ void AppModel::runRefreshAll()
             // 失败短路：不等 dashboard/milestones 的 180s
             leaveRefresh();
             emit refreshCycleFinished(false);
+            emit refreshAllFinished(false);
             return;
         }
         // status 落地即广播：看板/侧栏只认 projectsChanged，启动路径不发它们就永远空白
@@ -355,6 +356,7 @@ void AppModel::fetchMilestones()
                 postNotificationsIfNeeded();
                 leaveRefresh();
                 emit refreshCycleFinished(false);
+                emit refreshAllFinished(false);
                 return;
             }
             const auto e = MilestonesEnvelope::fromJson(res.payload->object());
@@ -366,6 +368,7 @@ void AppModel::fetchMilestones()
                 postNotificationsIfNeeded();
                 leaveRefresh();
                 emit refreshCycleFinished(false);
+                emit refreshAllFinished(false);
                 return;
             }
             applyMilestoneLoadRules(*e);
@@ -373,6 +376,7 @@ void AppModel::fetchMilestones()
             postNotificationsIfNeeded();
             leaveRefresh();
             emit refreshCycleFinished(true);
+            emit refreshAllFinished(true);
         });
 }
 
@@ -613,9 +617,11 @@ void AppModel::updateAll(bool deep, bool silent, std::function<void(const AgentB
     m_bulkStopRequested = false; // 新一轮全量开启：清除上一轮的停止请求
     // 闸门连接存成员（m_bulkGate）再回填：不能把 Connection 按值捕获进自身初始化器
     //（捕获到的是未初始化副本，disconnect 断不开真连接——循环重跑全量更新）
+    // 接 refreshAllFinished（专用信号）：refreshCycleFinished 被 300s 轻刷新共用，
+    // 接那里会让轻刷新在全量刷新落地前提前放行 → 冻结陈旧名单（M0-6）
     if (m_bulkGate)
         disconnect(m_bulkGate); // 理论不可达（busyAll 单锁期内不会有第二个闸门），防御性清理
-    m_bulkGate = connect(this, &AppModel::refreshCycleFinished, this,
+    m_bulkGate = connect(this, &AppModel::refreshAllFinished, this,
         [this, deep, silent, finish](bool) mutable {
             if (m_bulkGate) {
                 disconnect(m_bulkGate);

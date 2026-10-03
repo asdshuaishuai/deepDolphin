@@ -152,7 +152,10 @@ signals:
     void selectionChanged(Selection sel);
     void dashFilterChanged();
     void bulkReportReady(const AgentBulkReport &report);
-    void refreshCycleFinished(bool ok); // 一轮 refreshAll 收尾（托盘/侧栏状态条用）
+    void refreshCycleFinished(bool ok); // 一轮刷新收尾（全量与 300s 轻刷新都发；托盘/侧栏状态条用）
+    // 一轮 **全量** refreshAll（status→dashboard→milestones 完整链）收尾。批量更新的闸门只准接它：
+    // 轻刷新也发 refreshCycleFinished，若闸门接那里，300s 轻刷新会在全量刷新落地前把名单冻住（M0-6）
+    void refreshAllFinished(bool ok);
     // 「更新 + AI 摘要」收尾：ok=报告已生成（text=markdown）；!ok=没有生成（text=原因，
     // 可为空——更新本身失败时原因已走 lastError/通知，这里只撤 UI 的 busy 态）
     void updateDigestReady(bool ok, bool deep, const QString &project, const QString &text);
@@ -204,7 +207,7 @@ private:
     bool m_refreshing = false;
     bool m_refreshQueued = false;
     bool m_bulkStopRequested = false; // 「停止更新」置位：runBulkOverFrozenTargets 不再启动剩余仓库
-    QMetaObject::Connection m_bulkGate; // updateAll 等 refreshCycleFinished 的一次性闸门（存成员：disconnect 需要真连接）
+    QMetaObject::Connection m_bulkGate; // updateAll 等 refreshAllFinished 的一次性闸门（存成员：disconnect 需要真连接）
     bool m_engineFound = false;
     bool m_enginePending = false; // 发现链在跑（locateAsync 未收尾）；期间引擎未找到不算"连接失败"
     QString m_engineProblem;
