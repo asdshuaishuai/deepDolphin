@@ -191,6 +191,22 @@ public func dsMiniBar(value: Int64, full: Int64, color: Int64, dark: Bool): Widg
     }).height(6.vp)
 }
 
+/// 比例版小条（0.0–1.0）。里程碑完成率用这个 ——
+/// 它是**比例**不是计数，拿 `dsMiniBar(3, 4, …)` 去表达"75%"是绕路，
+/// 而且分母 0 时那条 `max(1, full)` 会把 0/0 画成满格。
+public func dsMiniBarRatio(ratio: Float64, color: Int64, dark: Bool): Widget {
+    return CanvasWidget({renderer: Renderer, rect: Rect =>
+        let radius = Float32(R_CHIP)
+        renderer.fillRoundedRect(rect, radius, dsColor(dsBorderOf(dark)))
+        // 夹到 0..1：比例算错时宁可画空也不要画出反方向的条。
+        let r = max(0.0, min(1.0, ratio))
+        if (r > 0.0) {
+            let w = rect.w * Float32(r)
+            renderer.fillRoundedRect(Rect(rect.x, rect.y, w, rect.h), radius, dsColor(color))
+        }
+    }).height(6.vp)
+}
+
 // ===========================================================================
 // 图例
 // ===========================================================================

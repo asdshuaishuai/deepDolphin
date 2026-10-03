@@ -220,6 +220,21 @@ public class Json {
         }
     }
 
+    /// 取**字符串数组**字段（引擎的 `tags` / `languagesFailedReasons` 就是这个形状）。
+    ///
+    /// 缺键、空数组、非数组三种情况都返回空列表而不是抛错 ——
+    /// 载荷里 `tags` 恒发但可能为 `[]`，模型层不该为此中断整份解析。
+    public static func strListAt(o: JsonValue, key: String): ArrayList<String> {
+        let out = ArrayList<String>()
+        for (item in arrAt(o, key)) {
+            match (asStr(item)) {
+                case Some(s) => out.add(s)
+                case None => ()
+            }
+        }
+        return out
+    }
+
     public static func strArrAt(o: JsonValue, key: String): ArrayList<String> {
         let out = ArrayList<String>()
         for (v in arrAt(o, key)) {

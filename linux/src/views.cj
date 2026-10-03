@@ -288,23 +288,35 @@ func emptyState(title: String, why: String, model: AppModel, app: DesktopApp, da
 // 页：仪表盘
 // ===========================================================================
 
+/// 仪表盘。段序与 macOS 端 `DashboardView.dashboardContent` **逐段对应**：
+///
+///   段 1  页头「项目群脉搏」+ 摘要行
+///   段 2  筛选行（时间跨度 / 提交类型 / 重新索引）—— 见 `dashFilterBar`
+///   段 3  4 张带副说明的 KPI
+///   段 4  逐项目卡网格
+///   段 5  语言分布 + 里程碑
+///
+/// 原来这里是「6 张只有数字的卡 + 语言分布 + 自造的待办卡」，
+/// 既没有页头也没有项目卡网格 —— 那不是 macOS 的仪表盘，
+/// 少掉的信息比多出来的还多。
 func dashboardPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     ScrollView(key: "dd-dash-scroll") {
         VStack {
-            kpiRow(model, dark)
+            // 失败面板必须在**最前**：它说的是「这一屏的数字有几个不可信」，
+            // 埋在下面等于让人先读一遍假数据再看到警告。
             if (let Some(p) <- model.snapshot.value) {
                 if (p.failedProjects > 0 || !p.failedKnown) {
                     failurePanel(p, dark)
                 }
             }
-            dashboardBody(model, dark)
+            dashboardBody(model, app, dark)
             Spacer()
-        }.spacing(12.0.vp).padding(16.0.vp)
+        }.spacing(20.0.vp).padding(20.0.vp)
     }
 }
 
 /// 仪表盘主体。**读不到就说原因，不画 0**。
-private func dashboardBody(model: AppModel, dark: Bool): Unit {
+private func dashboardBody(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     if (!model.dashboardProblem.value.isEmpty()) {
         Panel {
             VStack {
@@ -320,42 +332,98 @@ private func dashboardBody(model: AppModel, dark: Bool): Unit {
         dsEmptyState("正在读取仪表盘", "统计要遍历全部提交，稍等。", dark)
     } else {
         let d = model.dashboard.value.getOrThrow()
+        let projects = snapshotProjects(model)
+        let kpis = buildDashKpis(d, projects)
+
+        // ── 段 1：页头 ──
+        HStack {
+            VStack {
+                Label("项目群脉搏").fontSize(22.0).fontWeight(FontWeight.bold)
+                Label(dashSummaryLine(kpis)).fontSize(13.0).muted()
+            }.crossAxisAlignment(CrossAxisAlignment.Start).hug()
+            Spacer()
+        }.hug()
+
+        // ── 段 3：4 张带副说明的 KPI ──
+        kpiGrid(kpis, dark)
+
+        // ── 段 4：逐项目卡网格 ──
+        projectGrid(d, projects, dark)
+
+        // ── 段 5：语言分布 + 里程碑 ──
+        // 两张卡**都 hug**（按内容高度），不 `.flex()` 强制等高：
+        // 语言分布最多 8 行图例、里程碑最多 3 行，强行等高会把高的那张
+        // 尾部裁掉 —— 而且 CUI 的 `Flexible` 不会给内容让路，它只分配空间。
         HStack {
             Flexible { languageCard(d, dark) }
-            Flexible { workCard(d, dark) }
-        }.spacing(12.0.vp)
+            Flexible { milestoneCard(d, dark) }
+        }.spacing(14.0.vp)
     }
 }
 
-/// KPI 行。颜色**按这个数字的含义**给，不统一给强调色 ——
-/// 「读取失败 3」用蓝底等于把异常说成常态。
-private func kpiRow(model: AppModel, dark: Bool): Unit {
+/// 逐项目快照。仪表盘页的 KPI 与项目卡都要用，**取一次**。
+private func snapshotProjects(model: AppModel): ArrayList<Project> {
     match (model.snapshot.value) {
-        case Some(s) =>
+        case Some(s) => return s.projects
+        case None => return ArrayList<Project>()
+    }
+}
+
+/// 4 张 KPI 卡。**每张都必须有副说明** —— 没有副说明的数字只是数字。
+private func kpiGrid(kpis: Array<DashKpi>, dark: Bool): Unit {
+    HStack {
+        Flexible { kpiWideCard(kpis[0], dark) }
+        Flexible { kpiWideCard(kpis[1], dark) }
+    }.spacing(14.0.vp).hug()
+    HStack {
+        Flexible { kpiWideCard(kpis[2], dark) }
+        Flexible { kpiWideCard(kpis[3], dark) }
+    }.spacing(14.0.vp).hug()
+}
+
+/// 一张 KPI。大数字 + 标签 + **副说明** +（里程碑那张）进度条。
+private func kpiWideCard(k: DashKpi, dark: Bool): Unit {
+    let tint = kpiTintHex(k)
+    // 进度条的颜色：里程碑那张跟大数字同色，其余用主色。
+    let barColor = (if (tint.isSome()) { tint.getOrThrow() } else { C_ACCENT })
+    Panel {
+        VStack {
             HStack {
-                Flexible { dsStatCard("已注册", "${s.listedProjects}", C_ACCENT, dark) }
-                Flexible {
-                    dsStatCard("读取失败",
-                        s.failedLabel(),
-                        (if (!s.failedKnown) {
-                            C_GRAY
-                        } else {
-                            (if (s.failedProjects > 0) { C_RED } else { C_SLATE })
-                        }),
-                        dark)
+                Label(k.title).fontSize(12.0).muted()
+                Spacer()
+                // 「待处理 0」不该染红：没有待办不是坏事，
+                // 染红等于把常态说成异常（与「读取失败」用红一个道理）。
+                if (k.tint) {
+                    dsAlertPill("有事要做", DsAlert.Warn, dark)
                 }
-                Flexible { dsStatCard("活跃", "${s.activeProjects}", C_SHALLOW, dark) }
-                Flexible {
-                    dsStatCard("停滞", "${s.staleProjects}",
-                        dsStatColor(dsStatFrom(s.staleProjects)), dark)
-                }
-                Flexible {
-                    dsStatCard("未提交", "${s.dirtyProjects}",
-                        dsStatColor(dsStatFrom(s.dirtyProjects)), dark)
-                }
-                Flexible { dsStatCard("分支", "${s.branchCount}", C_SLATE, dark) }
-            }.spacing(10.0.vp).hug()
-        case None => ()
+            }.hug()
+            match (tint) {
+                case Some(c) =>
+                    Label("${k.value}").fontSize(30.0).fontWeight(FontWeight.bold)
+                        .foregroundColor(dsColor(c))
+                case None =>
+                    Label("${k.value}").fontSize(30.0).fontWeight(FontWeight.bold)
+            }
+            match (k.progress) {
+                case Some(r) => dsMiniBarRatio(r, barColor, dark)
+                case None => ()
+            }
+            Label(k.caption).fontSize(11.0).muted().wrap()
+        }.crossAxisAlignment(CrossAxisAlignment.Start).spacing(6.0.vp)
+    }.style(dsSurface(DsLevel.Card, dark)).contentPadding(14.0.vp).hug()
+}
+
+/// KPI 大数字要不要染色，返回 `None` 就是用主题默认文字色。
+///
+/// 没有「文字色」这个令牌是刻意的：设计令牌层只给**语义色**，
+/// 普通文字由主题管。凭空加一个 `C_TEXT` 会让「深浅色下文字该多深」
+/// 这件事同时受两处控制。
+private func kpiTintHex(k: DashKpi): Option<Int64> {
+    match (k.kind) {
+        case DashKpiKind.Milestones => return Some(C_ACCENT)
+        case DashKpiKind.Attention => return (if (k.tint) { Some(C_ORANGE) } else { None })
+        case DashKpiKind.Projects => return None
+        case DashKpiKind.Reach => return None
     }
 }
 
@@ -471,6 +539,269 @@ private func workRow(title: String, n: Int64, full: Int64, color: Int64, dark: B
         }.hug()
         dsMiniBar(n, full, color, dark)
     }.spacing(3.0.vp).hug()
+}
+
+// ---------------------------------------------------------------------------
+// 段 4：逐项目卡网格（macOS 端 `DashboardView.projectGrid`）
+// ---------------------------------------------------------------------------
+
+/// 逐项目卡网格。标题右侧**必须说清画了几个 / 一共几个** ——
+/// 标题写「（12）」而下面画 3 张卡，正是本项目栽过多次的那族缺陷。
+private func projectGrid(d: Dashboard, projects: ArrayList<Project>, dark: Bool): Unit {
+    VStack {
+        HStack {
+            Label("各项目演进进度与里程碑明细")
+                .fontSize(15.0).fontWeight(FontWeight.semiBold)
+            Spacer()
+            Label("共 ${projects.size} 个项目").fontSize(11.0).muted()
+        }.hug()
+        if (projects.isEmpty()) {
+            dsEmptyState("没有可展示的项目", "引擎没给出项目列表。", dark)
+        } else {
+            // 2 列网格。逐行手摆而不是找「网格」控件：CUI 没有 LazyVGrid。
+            // ⚠ 每张卡都 `.hug()`：`HStack` 给两个 `Flexible` 子项分配**同一行高**，
+            // 谁矮谁被裁。hug 让行高由最高的那张决定，短卡自己占上面那段。
+            var i: Int64 = 0
+            while (i < projects.size) {
+                // 闭包**不能捕获可变变量**，所以先把这一行的两张卡取成不可变值。
+                let left = projects[Int64(i)]
+                let right: Option<Project> = (if (i + 1 < projects.size) {
+                    Some(projects[i + 1])
+                } else {
+                    None
+                })
+                HStack {
+                    Flexible { projectCard(d, left, dark) }
+                    match (right) {
+                        case Some(rp) => Flexible { projectCard(d, rp, dark) }
+                        // 奇数张时补一个占位，否则最后一行只剩左半边，
+                        // 视觉上像「右边那块丢了」。
+                        case None => Flexible { VStack {} }
+                    }
+                }.spacing(14.0.vp).hug()
+                i += 2
+            }
+        }
+    }.crossAxisAlignment(CrossAxisAlignment.Start).spacing(12.0.vp)
+}
+
+/// 一张项目卡。行序对齐 macOS 端 `ProjectProgressCard`。
+private func projectCard(d: Dashboard, p: Project, dark: Bool): Unit {
+    let now = nowMillis()
+    Panel {
+        VStack {
+            // 行 1：项目名 + 状态词
+            HStack {
+                Label(p.name).fontSize(14.0).fontWeight(FontWeight.semiBold)
+                Flexible {}
+                dsPill(livenessLabel(projectLiveness(p, now)),
+                    boardColumnColor(boardColumnOf(projectLiveness(p, now))), dark)
+            }.hug()
+
+            // 行 2：一句描述。**读不出来时不能编一句**。
+            if (!p.error.isEmpty()) {
+                Label(p.error).fontSize(11.0).wrap()
+                    .foregroundColor(dsColor(C_RED))
+            } else if (p.headline.isEmpty()) {
+                Label("没有提交摘要").fontSize(11.0).muted()
+            } else {
+                Label(p.headline).fontSize(11.0).muted().wrap()
+            }
+
+            // 行 3：里程碑完成度 + 分支
+            HStack {
+                projectMilestoneLine(d, p)
+                Spacer()
+                Label("分支").fontSize(11.0).muted()
+                Label(primaryBranchLabel(p)).fontSize(11.0)
+            }.hug()
+
+            // 行 4：提交结构（堆叠条 + 图例）
+            if (p.commitTypes.isEmpty()) {
+                Label("提交类型读不出来").fontSize(11.0).muted()
+            } else {
+                Flexible { dsSegBar(commitTypeParts(p)) }
+                HStack {
+                    Flexible { commitTypeLegend(p) }
+                }.hug()
+            }
+
+            // 行 5：最近提交
+            recentCommitLine(p)
+        }.crossAxisAlignment(CrossAxisAlignment.Start).spacing(8.0.vp)
+    }.style(dsSurface(DsLevel.Card, dark)).contentPadding(14.0.vp).hug()
+}
+
+/// 分支名。**追踪数组空 ≠ 没有分支** —— 引擎恒发 `currentBranch`。
+/// 实测一个 4 分支、无远端基线的仓库：`branches=[]` 而 `currentBranch="main"`，
+/// 说成「无分支记录」就是把「明细没追踪到」说成「没有分支」。
+private func primaryBranchLabel(p: Project): String {
+    if (p.branches.size > 0) {
+        return p.branches[0].name
+    }
+    if (!p.currentBranch.isEmpty()) {
+        return p.currentBranch
+    }
+    return "无分支记录"
+}
+
+/// 里程碑完成度。分母只取「达没达成有答案的」，**不含 unknown**。
+private func projectMilestoneLine(d: Dashboard, p: Project): Widget {
+    var done: Int64 = 0
+    var open: Int64 = 0
+    var unknown: Int64 = 0
+    for (m in d.milestoneItems) {
+        if (m.projectName != p.name) {
+            continue
+        }
+        match (m.status) {
+            case "done" => done += 1
+            case "unknown" => unknown += 1
+            case _ => open += 1
+        }
+    }
+    if (done + open + unknown == 0) {
+        return Label("无里程碑").fontSize(11.0).muted()
+    }
+    let decided = done + open
+    var text = (if (decided > 0) { "里程碑 ${done * 100 / decided}%" } else { "里程碑无法核验" })
+    if (unknown > 0) {
+        text += " · ${unknown} 条读不出来"
+    }
+    return Label(text).fontSize(11.0)
+}
+
+/// 最近提交那一行。明细读不到时**必须说读不到**，不能画成空行。
+private func recentCommitLine(p: Project): Widget {
+    if (!p.error.isEmpty()) {
+        return Label("读不出来").fontSize(11.0).muted()
+    }
+    if (p.branches.size == 0) {
+        // 空着的一行会被读成「这个项目什么都没干」
+        return Label("分支明细未纳入追踪（提交类型分布仍可用）").fontSize(11.0).muted()
+    }
+    let b = p.branches[0]
+    let head = (if (b.headShort.isEmpty()) { b.name } else { b.headShort })
+    let subject = (if (b.headSubject.isEmpty()) { b.summary } else { b.headSubject })
+    return HStack {
+        Label(head).fontSize(11.0)
+        Flexible { Label(subject).fontSize(11.0).muted() }
+    }.hug()
+}
+
+/// 提交类型总量。**必须单独一个函数**：`VStack` 的闭包不能捕获可变变量，
+/// 在闭包外面用 `var` 累加再被闭包读到就编译不过。
+private func commitTypeTotal(parts: Array<DsPart>): Int64 {
+    var t: Int64 = 0
+    for (x in parts) {
+        t += x.value
+    }
+    return t
+}
+
+/// 图例：前 4 种 + 「还有 N 种」。
+private func commitTypeLegend(p: Project): Widget {
+    let parts = commitTypeParts(p)
+    let total = commitTypeTotal(parts)
+    VStack {
+        // 用 `for` 而不是 `while` + 计数器：闭包不能捕获可变变量，
+        // 而 CUI 的 VStack DSL 只在 `for` 里逐条放控件（没有 `add()`）。
+        for (x in parts) {
+            if (x.slot < 4) {
+                dsLegendRow(x, total)
+            }
+        }
+        if (parts.size > 4) {
+            Label("还有 ${parts.size - 4} 种").fontSize(10.0).muted()
+        }
+    }.crossAxisAlignment(CrossAxisAlignment.Start).spacing(3.0.vp)
+}
+
+// ---------------------------------------------------------------------------
+// 段 5 右卡：里程碑（macOS 端 `Card(title: milestoneCardTitle(...))`）
+// ---------------------------------------------------------------------------
+
+/// 里程碑卡标题。**只准用能诚实表达的那几个 counts 字段**。
+///
+/// 引擎的 counts 有 10 个键。`open`/`done` 是采集到的事实；
+/// `unknown` 是「读不出来」，**不能并进 open 或 done**（并进去等于假装它是目标）；
+/// `excludedDisabled`/`orphaned` 属于不该计入的，必须单列说清。
+/// 原来这里只写「进行中 N · 已达成 M」，unknown 被静默吞掉 ——
+/// 存储损坏时用户看到「进行中 0 · 已达成 0」，读出来是「这个项目群一个里程碑都没有」。
+private func milestoneCardTitle(c: MilestoneCounts): String {
+    var t = "里程碑 · 进行中 ${c.open} · 已达成 ${c.done}"
+    if (c.unknown > 0) {
+        t += " · ${c.unknown} 条无法核验"
+    }
+    if (c.orphaned > 0) {
+        t += " · ${c.orphaned} 条所属项目已不在"
+    }
+    if (c.excludedDisabled > 0) {
+        t += " · 已停用项目 ${c.excludedDisabled} 条未计入"
+    }
+    return t
+}
+
+private func milestoneCard(d: Dashboard, dark: Bool): Unit {
+    let c = d.milestoneCounts
+    Panel {
+        VStack {
+            Label(milestoneCardTitle(c))
+                .fontSize(15.0).fontWeight(FontWeight.semiBold).wrap()
+            Divider()
+            if (d.milestoneItems.isEmpty()) {
+                if (c.degraded || c.storeHealth != "ok") {
+                    // 「读不出来」与「没有」必须两种样子
+                    Label("里程碑读不出来（不是「没有」）").fontSize(12.0).muted()
+                    Label("milestones.json ${c.storeHealth}，读到 ${c.readCount} 条")
+                        .fontSize(11.0).muted().wrap()
+                } else {
+                    Label("暂无里程碑").fontSize(12.0).muted()
+                    Label("在「里程碑」页添加").fontSize(11.0).muted()
+                }
+            } else {
+                var i: Int64 = 0
+                while (i < d.milestoneItems.size) {
+                    milestoneRow(d.milestoneItems[Int64(i)], dark)
+                    i += 1
+                }
+            }
+        }.crossAxisAlignment(CrossAxisAlignment.Start).spacing(8.0.vp)
+    }.style(dsSurface(DsLevel.Card, dark)).contentPadding(14.0.vp).hug()
+}
+
+private func milestoneRow(m: MilestoneItem, dark: Bool): Unit {
+    // 状态用**形状**编码而不是颜色：颜色在灰度/色觉障碍下不可辨，
+    // 而 CUI 的行是纯文本，形状是唯一能可靠进文字的信息。
+    let mark = (if (m.status == "done") {
+        "✓"
+    } else if (m.status == "dropped") {
+        "✕"
+    } else if (m.status == "unknown") {
+        "?"
+    } else {
+        "●"
+    })
+    HStack {
+        Label("${mark} ${m.projectName} · ${m.name}").fontSize(11.0).wrap()
+        Spacer()
+        Label(milestoneDueText(m)).fontSize(10.0).muted()
+    }.hug()
+}
+
+/// 到期文本。`daysToTarget == -1` 是「未设置**或日期无效**」——
+/// 绝不能掉进「逾期 1 天」那一档：假数字没了，假断言还在。
+public func milestoneDueText(m: MilestoneItem): String {
+    if (m.targetDate.isEmpty()) {
+        return ""
+    }
+    if (m.daysToTarget < 0) {
+        return "${m.targetDate}（日期无效，算不出还剩天数）"
+    }
+    if (m.daysToTarget >= 0) {
+        return "还剩 ${m.daysToTarget} 天"
+    }
+    return "逾期 ${-m.daysToTarget} 天"
 }
 
 // ===========================================================================

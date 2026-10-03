@@ -700,16 +700,21 @@ public func loadProjectDetail(app: DesktopApp, model: AppModel): Unit {
 ///
 /// 只留「来源 + 末两段」：`仓内构建 · target/release/bin/main` 足够定位，
 /// 而要完整路径的人去设置里看。
+/// 顶栏那句。**只说用户能据此行动的话**。
+///
+/// 原来返回 `引擎 DEEPGIT_BIN · bin/main` —— 那是在报「我们是从哪个环境变量、
+/// 路径的哪两段找到引擎的」。这是**诊断信息，不是产品信息**：
+/// 用户看到 `DEEPGIT_BIN` 这个环境变量名，既不知道它指什么，也不知道该做什么；
+/// 而顶栏是整屏最贵的一行，标题右侧就那么一格。引擎找不到时该说的话在
+/// 引擎引导页（`setupGuide`）里说全了，不需要在顶栏再报一次来源。
+///
+/// `via` / `path` 仍作为参数收着：诊断信息在别处（问题条、引擎引导页）要用，
+/// 这里是明确**不往顶栏放**的取舍，不是漏了。
 public func engineLabelFor(via: String, path: String): String {
     if (path.isEmpty()) {
-        return (if (via.isEmpty()) { "未找到引擎" } else { "引擎 ${via}" })
+        return (if (via.isEmpty()) { "未找到引擎" } else { "引擎未就绪" })
     }
-    let tail = lastTwoSegments(path)
-    return (if (tail.isEmpty()) {
-        "引擎 ${via}"
-    } else {
-        "引擎 ${via} · ${tail}"
-    })
+    return "引擎已就绪"
 }
 
 private func lastTwoSegments(path: String): String {

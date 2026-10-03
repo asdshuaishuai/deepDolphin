@@ -184,7 +184,7 @@ func dashboardDecodesTheWorkSection(): Unit {
     {"projects":{"total":6,"registered":6,"failed":3,"dirty":0,"active7d":2,"active30d":2},
      "work":{"branches":8,"mergeCandidates":1,"untrackedFiles":4,"stashes":0},
      "languages":[{"language":"Swift","count":40},{"language":"Cangjie","count":12}],
-     "milestones":{"counts":{"total":5,"done":2}},
+     "milestones":{"counts":{"open":3,"done":2,"readCount":5,"storeHealth":"ok","degraded":false}},
      "activeProjects":[{"name":"atlas"}]}
     """).getOrThrow())
     @Expect(d.total, 6)
@@ -192,8 +192,11 @@ func dashboardDecodesTheWorkSection(): Unit {
     @Expect(d.branches, 8)
     @Expect(d.languages.size, 2)
     @Expect(d.languages[0].language, "Swift")
-    @Expect(d.milestoneTotal, 5)
-    @Expect(d.milestoneDone, 2)
+    // ⚠ 引擎**不发** counts.total。原来这条判据写的是 @Expect(d.milestoneTotal, 5)，
+    // 而夹具里正好编了那个不存在的键 —— 于是模型恒读成 0，判据却一直绿。
+    @Expect(d.milestoneCounts.readCount, 5)
+    @Expect(d.milestoneCounts.done, 2)
+    @Expect(d.milestoneCounts.decided(), 5)
     @Expect(d.activeProjectNames[0], "atlas")
 }
 
@@ -566,4 +569,164 @@ func contractGateIsPerShapeFamilyNotOneGlobalRule(): Unit {
     // 缺披露键的仍然要拒
     @Expect(!checkContractOf(Json.parse("{\"projects\":{},\"work\":{}}").getOrThrow(), PayloadShape.Dashboard))
     @Expect(!checkContractOf(Json.parse("{\"milestones\":[]}").getOrThrow(), PayloadShape.Milestones))
+}
+
+// ---------------------------------------------------------------------------
+// 仪表盘 KPI 口径 —— 与 macOS 端 `DashKPIBuilder` 逐条对应
+// ---------------------------------------------------------------------------
+
+/// 这份夹具的 counts 键**照抄引擎真实输出**（实测 `moongit dashboard --json`：
+/// `{"open","done","dropped","unknown","other","storeHealth","degraded",
+///   "readCount","excludedDisabled","orphaned"}`）。
+///
+/// ⚠ 原来这里写的是 `{"counts":{"total":5,"done":2}}` —— 那个 `total` 键
+/// **引擎根本不发**（真实键是 `readCount`）。于是模型读出来恒为 0，
+/// 而判据因为夹具里正好编了这个键，一直是绿的。
+/// 教训：判据夹具的键必须来自真实载荷，不能照着字段名想象着写。
+private let REAL_DASHBOARD = """
+{"projects":{"total":6,"listed":6,"registered":6,"excludedDisabled":1,"failed":3,
+ "dirty":2,"active7d":1,"active30d":2},
+ "work":{"branches":8,"mergeCandidates":5,"untrackedFiles":2,"stashes":0},
+ "languages":[{"language":"Swift","count":40}],
+ "languagesTruncated":false,"languagesTopCut":false,"languagesFailed":0,"languagesFailedReasons":[],
+ "milestones":{"counts":{"open":3,"done":1,"dropped":0,"unknown":2,"other":0,
+   "storeHealth":"ok","degraded":false,"readCount":6,"excludedDisabled":0,"orphaned":1},"items":[]},
+ "activeProjects":[{"name":"atlas"}],"fetchedAt":"x"}
+"""
+
+private func realDashboard(): Dashboard {
+    return Dashboard.from(Json.parse(REAL_DASHBOARD).getOrThrow())
+}
+
+private func realProjects(): ArrayList<Project> {
+    let s = StatusSnapshot.from(Json.parse(NEW_ENGINE_STATUS).getOrThrow())
+    return s.projects
+}
+
+@Test
+func dashboardReadsOnlyTheMilestoneCountKeysEngineActuallySends(): Unit {
+    let d = realDashboard()
+    let c = d.milestoneCounts
+    // 这五个键在真实载荷里逐个对上
+    @Expect(c.open, 3)
+    @Expect(c.done, 1)
+    @Expect(c.unknown, 2)
+    @Expect(c.orphaned, 1)
+    @Expect(c.readCount, 6)
+    @Expect(c.storeHealth, "ok")
+    @Expect(!c.degraded)
+    // ⚠ 负控：引擎**不发** counts.total。真实载荷里塞一个 total 也不该被当成
+    // 「总数」—— 那是「读到多少条」的 readCount，两者混同会凭空多出一批里程碑。
+    let withFake = MilestoneCounts.from(
+        Json.parse("{\"total\":99,\"readCount\":4,\"done\":1,\"open\":1}").getOrThrow())
+    @Expect(withFake.readCount, 4)
+    @Expect(withFake.decided(), 2)
+}
+
+@Test
+func milestoneUnknownStaysOutOfTheCompletionDenominator(): Unit {
+    let c = realDashboard().milestoneCounts
+    // unknown=2 是「读不出来」，不是「没达成」。塞进分母等于假装它是目标。
+    // 正确分母 = done + open = 1 + 3 = 4 ⇒ 25%
+    @Expect(c.decided(), 4)
+    let kpis = buildDashKpis(realDashboard(), realProjects())
+    @Expect(kpiValueOf(kpis, DashKpiKind.Milestones), 25)
+}
+
+@Test
+func projectTotalKpiUsesListedNotTotal(): Unit {
+    let kpis = buildDashKpis(realDashboard(), realProjects())
+    // listed=6（注册表条数）/ total=6（采集成功）。夹具里两者都是 6 时看不出差别，
+    // 所以再加一份 failed 存在的：标题绝不能写「项目总数 3」而侧栏写 6。
+    let d2 = Dashboard.from(Json.parse("""
+    {"projects":{"total":3,"listed":6,"registered":6,"failed":3,"dirty":0,"active7d":1,"active30d":2},
+     "work":{"branches":0,"mergeCandidates":0,"untrackedFiles":0,"stashes":0},
+     "languages":[],"milestones":{"counts":{"open":0,"done":0,"readCount":0,"storeHealth":"ok","degraded":false}}}
+    """).getOrThrow())
+    let k2 = buildDashKpis(d2, ArrayList<Project>())
+    @Expect(kpiValueOf(k2, DashKpiKind.Projects), 6)
+}
+
+@Test
+func everyKpiCarriesACaptionThatExplainsTheNumber(): Unit {
+    let kpis = buildDashKpis(realDashboard(), realProjects())
+    // 「没有副说明的数字只是数字」（macOS 端 KPIWideCard 的原话）。
+    for (k in kpis) {
+        @Expect(!k.caption.isEmpty())
+    }
+    // 四张卡的副说明必须真的在解释各自那个数
+    @Expect(kpis[0].caption.contains("可读取"))
+    @Expect(kpis[1].caption.contains("进行中"))
+    @Expect(kpis[2].caption.contains("未跟踪文件"))
+    @Expect(kpis[3].caption.contains("stash"))
+    // 第 4 张的副说明要披露「有项目的分支数读不出来」而不是静默少算
+    @Expect(kpis[3].caption.contains("已跟踪明细"))
+}
+
+@Test
+func summaryLineReadsFromKpisInsteadOfRecomputing(): Unit {
+    // 同一件事被算两次就会出现「页头 6 · KPI 5」这种同屏矛盾。
+    let kpis = buildDashKpis(realDashboard(), realProjects())
+    let line = dashSummaryLine(kpis)
+    @Expect(line.contains("${kpiValueOf(kpis, DashKpiKind.Projects)}"))
+    @Expect(line.contains("${kpiValueOf(kpis, DashKpiKind.Attention)}"))
+    // 待处理为 0 时不该出现「0 个项目待处理」这种别扭句子
+    let calm = buildDashKpis(
+        Dashboard.from(Json.parse("""
+        {"projects":{"total":1,"listed":1,"failed":0},"work":{"branches":0,"mergeCandidates":0,
+         "untrackedFiles":0,"stashes":0},"languages":[],
+         "milestones":{"counts":{"open":0,"done":0,"readCount":0,"storeHealth":"ok","degraded":false}}}
+        """).getOrThrow()), ArrayList<Project>())
+    @Expect(dashSummaryLine(calm), "共 1 个项目")
+}
+
+@Test
+func branchScopeLineCountsTrackedBranchesItselfNotFromAMissingKey(): Unit {
+    let s = StatusSnapshot.from(Json.parse(NEW_ENGINE_STATUS).getOrThrow())
+    let p = s.find("atlas").getOrThrow()
+    // 引擎项目对象**不发** branchCount（实测键表），所以「追踪到」只能是自己数。
+    let line = branchScopeLine(p)
+    @Expect(line.contains("引擎追踪到 1"))
+    // ⚠ 负控：塞一个 branchCount 也不该被采信 —— 那不是引擎发的键
+    let p2 = Project.from(Json.parse(
+        "{\"name\":\"x\",\"branchCount\":99,\"branches\":[{\"name\":\"main\"}]}").getOrThrow())
+    @Expect(branchScopeLine(p2).contains("引擎追踪到 1"))
+}
+
+@Test
+func engineLabelDoesNotLeakEnvironmentVariableNamesOrPaths(): Unit {
+    // 顶栏那格是整屏最贵的一行，放开发细节等于浪费。
+    // 用户看到 DEEPGIT_BIN 这个环境变量名，既不知道它指什么也不知道该做什么。
+    let via = "DEEPGIT_BIN"
+    let path = "/Volumes/data/dev/moonGit/target/release/bin/main"
+    @Expect(engineLabelFor(via, path), "引擎已就绪")
+    // ⚠ 负控：字符串里不许出现环境变量名，也不许出现路径的任何片段
+    let label = engineLabelFor(via, path)
+    @Expect(!label.contains(via))
+    @Expect(!label.contains("main"))
+    @Expect(!label.contains("/"))
+    // 引擎找不到时要说人话
+    @Expect(engineLabelFor("", ""), "未找到引擎")
+    @Expect(engineLabelFor(via, ""), "引擎未就绪")
+}
+
+@Test
+func milestoneItemStatusLabelsKeepUnknownApartFromDropped(): Unit {
+    // 「系统读不出来」和「明确放弃」是相反的两件事，混同会让故障被读成进度清零。
+    let unknown = MilestoneItem.from(Json.parse(
+        "{\"projectName\":\"a\",\"name\":\"v2\",\"status\":\"unknown\",\"targetDate\":\"\",\"daysToTarget\":-1}").getOrThrow())
+    let dropped = MilestoneItem.from(Json.parse(
+        "{\"projectName\":\"a\",\"name\":\"v2\",\"status\":\"dropped\"}").getOrThrow())
+    let done = MilestoneItem.from(Json.parse(
+        "{\"projectName\":\"a\",\"name\":\"v2\",\"status\":\"done\"}").getOrThrow())
+    @Expect(unknown.statusLabel().contains("无法核验"))
+    @Expect(dropped.statusLabel(), "已放弃")
+    @Expect(done.statusLabel(), "已达成")
+    @Expect(unknown.statusLabel() != dropped.statusLabel())
+    // daysToTarget = -1 是「未设置或日期无效」，绝不能变成「逾期 1 天」
+    @Expect(milestoneDueText(unknown), "")
+    let bad = MilestoneItem.from(Json.parse(
+        "{\"projectName\":\"a\",\"name\":\"v2\",\"status\":\"open\",\"targetDate\":\"2026-02-31\",\"daysToTarget\":-1}").getOrThrow())
+    @Expect(milestoneDueText(bad).contains("日期无效"))
+    @Expect(!milestoneDueText(bad).contains("逾期 1 天"))
 }

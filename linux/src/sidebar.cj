@@ -312,9 +312,14 @@ private func SidebarStatusStrip(model: AppModel, dark: Bool): Unit {
             }
         }.spacing(5.0.vp).hug()
         // 「读不出来」与「还没刷新过」是两件事，措辞必须不同。
+        //
+        // ⚠ 判据必须是**界面上有没有数据**，不是「内部有没有走过刷新流程」。
+        // 原来只看 `lastRefreshedMs == 0`，于是夹具模式（数据直接读盘、
+        // 不经过刷新流程）下状态条一直写「尚未刷新」—— 而同一屏上
+        // 项目列表、仪表盘全是实打实的数据。那句话不是描述，是自相矛盾。
         if (!model.problem.value.isEmpty() && model.snapshot.value.isNone()) {
             Label("引擎连接失败").fontSize(11.0).foregroundColor(dsColor(C_ORANGE)).maxLines(1)
-        } else if (model.lastRefreshedMs.value == 0) {
+        } else if (model.lastRefreshedMs.value == 0 && model.snapshot.value.isNone()) {
             Label("尚未刷新").fontSize(11.0).muted()
         }
     }.hug().spacing(2.0.vp).padding(10.0.vp, 8.0.vp)

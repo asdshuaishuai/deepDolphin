@@ -107,15 +107,18 @@ public class Project {
     public let stashCount: Int64
     public let worktreeCount: Int64
     public let commitCount: Int64
-    public let branchCount: Int64
     /// 仓库里**真实**的分支数。`-1` = 读不出来。
     ///
-    /// ⚠ 与 `branchCount` 是两回事：`branchCount` 是引擎**追踪到基线**的数量，
-    /// 实测 16 个分支的仓库只报 7 个，刚注册还没 track 的报 0 —— 而仓库实际有分支。
-    /// 字面写「分支进度（0）」会让人认定仓库没有分支。
+    /// ⚠ 引擎的项目对象**只发 `repoBranchCount`**（实测 `moongit status --json`
+    /// 的 `projects[i]` 键表里没有 `branchCount`，也没有 `branchCountTruncated`）。
+    /// 原来这里还有两个读这两个键的字段，于是 `branchCount` **恒为 0**、
+    /// `branchCountTruncated` 恒为 false —— 界面写「分支进度（0）」，
+    /// 而仓库实际有分支。已删掉那两个字段：留着一个恒 0 的读数，
+    /// 下一个人一定会拿它当事实用。
+    /// 需要「追踪到基线的分支数」时用 `branches.size`（本项目自己数）。
     public let repoBranchCount: Int64
-    /// 分支数被截断。截断时 branchCount **不是全量**。
-    public let branchCountTruncated: Bool
+    /// 引擎发的 `tags`（真实载荷是数组，可能为空）。
+    public let tags: ArrayList<String>
     public let lastCommitAgo: String
     /// ISO 8601 原始串。**看板分列靠它算天数**（`lastCommitAgo` 是给人看的相对串）。
     public let lastCommitAt: String
@@ -151,9 +154,8 @@ public class Project {
         stashCount: Int64,
         worktreeCount: Int64,
         commitCount: Int64,
-        branchCount: Int64,
         repoBranchCount: Int64,
-        branchCountTruncated: Bool,
+        tags: ArrayList<String>,
         lastCommitAgo: String,
         lastCommitAt: String,
         storeHealth: String,
@@ -179,9 +181,8 @@ public class Project {
         this.stashCount = stashCount
         this.worktreeCount = worktreeCount
         this.commitCount = commitCount
-        this.branchCount = branchCount
         this.repoBranchCount = repoBranchCount
-        this.branchCountTruncated = branchCountTruncated
+        this.tags = tags
         this.lastCommitAgo = lastCommitAgo
         this.lastCommitAt = lastCommitAt
         this.storeHealth = storeHealth
@@ -285,9 +286,8 @@ public class Project {
             Json.intAt(v, "stashCount", 0),
             Json.intAt(v, "worktreeCount", 0),
             Json.intAt(v, "commitCount", 0),
-            Json.intAt(v, "branchCount", 0),
             Json.intAt(v, "repoBranchCount", -1),
-            Json.boolAt(v, "branchCountTruncated", false),
+            Json.strListAt(v, "tags"),
             Json.strAt(v, "lastCommitAgo", ""),
             Json.strAt(v, "lastCommitAt", ""),
             Json.strAt(v, "storeHealth", ""),
@@ -420,9 +420,152 @@ public class LanguageCount {
 }
 
 /// `dashboard --json` 的聚合视图。
+/// 里程碑计数。**逐个键对应引擎 `dashboard --json` 的 `milestones.counts`**。
+///
+/// ⚠ 引擎不发 `total` 键（真实键是 `readCount`）。原来这里读 `counts.total`，
+/// 于是 `milestoneTotal` **恒为 0** —— 而判据用的是手写夹具
+/// `{"counts":{"total":5,"done":2}}`，里面正好有这个不存在的键，
+/// 所以判据一直绿着，真实载荷下却是坏的。
+/// 教训：**判据夹具的键必须来自真实载荷**，不能照着字段名想象着写。
+public class MilestoneCounts {
+    public let open: Int64
+    public let done: Int64
+    /// 「读不出达没达成」。**不能并进 open 或 done** ——
+    /// unknown 是「不知道」，不是「没达成」。引擎注释：
+    /// 「『我们不知道』和『没有达成』是两件相反的事，必须分开表达。」
+    public let unknown: Int64
+    public let dropped: Int64
+    public let other: Int64
+    /// 引擎实际读到的条数（`total` 键不存在，别再找它）。
+    public let readCount: Int64
+    public let excludedDisabled: Int64
+    public let orphaned: Int64
+    public let storeHealth: String
+    public let degraded: Bool
+
+    public init(
+        open: Int64,
+        done: Int64,
+        unknown: Int64,
+        dropped: Int64,
+        other: Int64,
+        readCount: Int64,
+        excludedDisabled: Int64,
+        orphaned: Int64,
+        storeHealth: String,
+        degraded: Bool
+    ) {
+        this.open = open
+        this.done = done
+        this.unknown = unknown
+        this.dropped = dropped
+        this.other = other
+        this.readCount = readCount
+        this.excludedDisabled = excludedDisabled
+        this.orphaned = orphaned
+        this.storeHealth = storeHealth
+        this.degraded = degraded
+    }
+
+    public static func empty(): MilestoneCounts {
+        return MilestoneCounts(0, 0, 0, 0, 0, 0, 0, 0, "unknown", false)
+    }
+
+    public static func from(v: JsonValue): MilestoneCounts {
+        return MilestoneCounts(
+            Json.intAt(v, "open", 0),
+            Json.intAt(v, "done", 0),
+            Json.intAt(v, "unknown", 0),
+            Json.intAt(v, "dropped", 0),
+            Json.intAt(v, "other", 0),
+            Json.intAt(v, "readCount", 0),
+            Json.intAt(v, "excludedDisabled", 0),
+            Json.intAt(v, "orphaned", 0),
+            Json.strAt(v, "storeHealth", "unknown"),
+            Json.boolAt(v, "degraded", false)
+        )
+    }
+
+    /// 分母只取「达没达成有答案的」（done + open）。
+    /// **不把 unknown 塞进分母** —— 那是假装它不是目标。
+    public func decided(): Int64 {
+        return this.done + this.open
+    }
+}
+
+/// 一条里程碑。键集来自引擎 `src/cli/cli.cj` 的 `milestoneLine`（消费方解码处）。
+///
+/// ⚠ **引擎不发 `projectId`**。macOS 端 `ProjectProgressCard` 用
+/// `$0.projectId == p.id` 挑出「属于这个项目」的里程碑，于是那个条件恒为假，
+/// 项目卡上的里程碑行一直是空的。这里改用 `projectName` 匹配 —— 那个键引擎恒发。
+public class MilestoneItem {
+    public let projectName: String
+    public let name: String
+    /// `open` / `done` / `dropped` / `unknown`。
+    /// `unknown` 是「仓库读不出来，没法核验」—— 与 `dropped`（明确放弃）是两件事。
+    public let status: String
+    public let targetDate: String
+    /// `-1` = 未设置**或日期无效**。绝不能当成 0 或某个逾期天数。
+    public let daysToTarget: Int64
+    public let commitsSince: Int64
+    public let tagReached: Bool
+    public let overdue: Bool
+
+    public init(
+        projectName: String,
+        name: String,
+        status: String,
+        targetDate: String,
+        daysToTarget: Int64,
+        commitsSince: Int64,
+        tagReached: Bool,
+        overdue: Bool
+    ) {
+        this.projectName = projectName
+        this.name = name
+        this.status = status
+        this.targetDate = targetDate
+        this.daysToTarget = daysToTarget
+        this.commitsSince = commitsSince
+        this.tagReached = tagReached
+        this.overdue = overdue
+    }
+
+    public static func from(v: JsonValue): MilestoneItem {
+        return MilestoneItem(
+            Json.strAt(v, "projectName", ""),
+            Json.strAt(v, "name", ""),
+            Json.strAt(v, "status", "unknown"),
+            Json.strAt(v, "targetDate", ""),
+            Json.intAt(v, "daysToTarget", -1),
+            Json.intAt(v, "commitsSince", 0),
+            Json.boolAt(v, "tagReached", false),
+            Json.boolAt(v, "overdue", false)
+        )
+    }
+
+    /// 状态词。`unknown` 与 `dropped` 必须分开 ——
+    /// 「系统读不出来」和「明确放弃」是相反的两件事，混同会让系统故障被读成进度清零。
+    public func statusLabel(): String {
+        match (this.status) {
+            case "done" => return "已达成"
+            case "dropped" => return "已放弃"
+            case "unknown" => return "无法核验（仓库读不出来）"
+            case _ => return (if (this.overdue) { "已逾期" } else { "进行中" })
+        }
+    }
+}
+
 public class Dashboard {
+    /// 采集成功的项目数（引擎遇到带 error 的会 continue 跳过）。
     public let total: Int64
+    /// **注册表条数**。界面上的「项目总数」必须用它，不能用 `total`。
+    /// 夹具实测：注册 6、3 个采集失败 ⇒ total=3 / listed=6。
+    /// 用错的话标题写「项目总数 3」，而侧栏写「仓库（6/6）」——
+    /// 同一屏两个答案，且用户先看到的是那个大数字。
+    public let listed: Int64
     public let registered: Int64
+    public let excludedDisabled: Int64
     public let failed: Int64
     public let dirty: Int64
     public let active7d: Int64
@@ -436,14 +579,20 @@ public class Dashboard {
     public let languages: ArrayList<LanguageCount>
     public let languagesTruncated: Bool
     public let languagesFailed: Int64
+    /// 头部因 `languagesTopCut` 被砍掉过 —— 与「总数被截断」是两回事。
+    public let languagesTopCut: Bool
+    public let languagesFailedReasons: ArrayList<String>
 
     public let activeProjectNames: ArrayList<String>
-    public let milestoneTotal: Int64
-    public let milestoneDone: Int64
+    public let milestoneCounts: MilestoneCounts
+    /// 逐条里程碑。项目卡上的里程碑行靠它（按 `projectName` 归属项目）。
+    public let milestoneItems: ArrayList<MilestoneItem>
 
     public init(
         total: Int64,
+        listed: Int64,
         registered: Int64,
+        excludedDisabled: Int64,
         failed: Int64,
         dirty: Int64,
         active7d: Int64,
@@ -455,12 +604,16 @@ public class Dashboard {
         languages: ArrayList<LanguageCount>,
         languagesTruncated: Bool,
         languagesFailed: Int64,
+        languagesTopCut: Bool,
+        languagesFailedReasons: ArrayList<String>,
         activeProjectNames: ArrayList<String>,
-        milestoneTotal: Int64,
-        milestoneDone: Int64
+        milestoneCounts: MilestoneCounts,
+        milestoneItems: ArrayList<MilestoneItem>
     ) {
         this.total = total
+        this.listed = listed
         this.registered = registered
+        this.excludedDisabled = excludedDisabled
         this.failed = failed
         this.dirty = dirty
         this.active7d = active7d
@@ -472,14 +625,17 @@ public class Dashboard {
         this.languages = languages
         this.languagesTruncated = languagesTruncated
         this.languagesFailed = languagesFailed
+        this.languagesTopCut = languagesTopCut
+        this.languagesFailedReasons = languagesFailedReasons
         this.activeProjectNames = activeProjectNames
-        this.milestoneTotal = milestoneTotal
-        this.milestoneDone = milestoneDone
+        this.milestoneCounts = milestoneCounts
+        this.milestoneItems = milestoneItems
     }
 
     public static func empty(): Dashboard {
-        return Dashboard(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ArrayList<LanguageCount>(),
-            false, 0, ArrayList<String>(), 0, 0)
+        return Dashboard(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ArrayList<LanguageCount>(),
+            false, 0, false, ArrayList<String>(), ArrayList<String>(), MilestoneCounts.empty(),
+            ArrayList<MilestoneItem>())
     }
 
     public static func from(v: JsonValue): Dashboard {
@@ -494,10 +650,11 @@ public class Dashboard {
             active.add(Json.strAt(a, "name", "?"))
         }
         let ms = Json.getOr(v, "milestones")
-        let counts = Json.getOr(ms, "counts")
         return Dashboard(
             Json.intAt(p, "total", 0),
+            Json.intAt(p, "listed", 0),
             Json.intAt(p, "registered", 0),
+            Json.intAt(p, "excludedDisabled", 0),
             Json.intAt(p, "failed", 0),
             Json.intAt(p, "dirty", 0),
             Json.intAt(p, "active7d", 0),
@@ -509,9 +666,11 @@ public class Dashboard {
             langs,
             Json.boolAt(v, "languagesTruncated", false),
             Json.intAt(v, "languagesFailed", 0),
+            Json.boolAt(v, "languagesTopCut", false),
+            Json.strListAt(v, "languagesFailedReasons"),
             active,
-            Json.intAt(counts, "total", 0),
-            Json.intAt(counts, "done", 0)
+            MilestoneCounts.from(Json.getOr(ms, "counts")),
+            milestoneItemsOf(ms)
         )
     }
 }
@@ -675,4 +834,15 @@ public func primaryBranchStatus(p: Project): String {
         case Some(b) => return b.status
         case None => return ""
     }
+}
+
+/// 解析 `milestones.items`。缺键 / 非数组都返回空列表 ——
+/// 真实载荷里这一项**经常是空的**（实测 15 个项目时 items 为 `[]`，
+/// 而 counts.readCount=1、orphaned=1），空列表是正常形态，不是错误。
+private func milestoneItemsOf(ms: JsonValue): ArrayList<MilestoneItem> {
+    let out = ArrayList<MilestoneItem>()
+    for (it in Json.arrAt(ms, "items")) {
+        out.add(MilestoneItem.from(it))
+    }
+    return out
 }

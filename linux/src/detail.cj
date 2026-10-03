@@ -210,9 +210,11 @@ private func detailHeader(model: AppModel, app: DesktopApp, p: Project, now: Int
             dsStatusPill(p.activity(), dark)
             dsPill(livenessLabel(projectLiveness(p, now)),
                 boardColumnColor(boardColumnOf(projectLiveness(p, now))), dark)
-            if (p.branchCountTruncated) {
-                dsAlertPill("分支数已截断", DsAlert.Warn, dark)
-            }
+            // 原来这里挂着一个「分支数已截断」告警，条件是 `p.branchCountTruncated` ——
+            // 而引擎的项目对象**不发这个键**，恒为 false，于是这个告警
+            // 从来没显示过。留着它等于让人以为「截断时有提示」。
+            // 分支截断只在上层 `summary.branchTruncatedProjects` 有**项目群级**计数，
+            // 单个项目层面引擎不说，详情页就不谎报。
             Spacer()
             Button("浅更新", {=> actUpdate(app, model, p.name, false)}).fontSize(12.0).enabled(busy)
             Button("深更新", {=> actUpdate(app, model, p.name, true)}, role: ButtonRole.Primary)
@@ -447,14 +449,18 @@ private func branchCard(p: Project, dark: Bool): Unit {
 }
 
 /// 分支计数那一行的口径。**必须把「追踪到的」和「仓库真实的」分开说**。
+///
+/// ⚠ 「追踪到的」必须自己数 `branches` 数组，不能读 `p.branchCount` ——
+/// 引擎的项目对象**不发这个键**（实测 `moongit status --json` 的
+/// `projects[i]` 键表里没有它，也没有 `branchCountTruncated`），
+/// 原来读它得到的是恒 0，于是这行长期显示
+/// 「引擎追踪到 0 / 仓库共 4 个」—— 那个 0 是引擎没说话被当成了事实。
 public func branchScopeLine(p: Project): String {
+    let tracked = p.branches.size
     if (p.repoBranchCount < 0) {
-        return "仓库真实分支数读不出，引擎追踪到 ${p.branchCount} 个"
+        return "仓库真实分支数读不出，引擎追踪到 ${tracked} 个"
     }
-    if (p.branchCountTruncated) {
-        return "已截断，引擎追踪到 ${p.branchCount} / 仓库共 ${p.repoBranchCount} 个"
-    }
-    return "引擎追踪到 ${p.branchCount} / 仓库共 ${p.repoBranchCount} 个"
+    return "引擎追踪到 ${tracked} / 仓库共 ${p.repoBranchCount} 个"
 }
 
 /// 卡 5：进度日志。
