@@ -113,7 +113,17 @@ private func aiMessageRow(m: ChatMessage, dark: Bool): Unit {
                 }
                 Spacer()
             }.spacing(4.vp).hug()
-            Label(aiMessageText(m)).fontSize(12.0).wrap()
+            if (chatRoleIs(m.role, ChatRole.Assistant) || chatRoleIs(m.role, ChatRole.User)) {
+                // 助手与用户的正文按 Markdown 渲染；工具结果不渲染
+                // （那是引擎原文，渲染它等于替引擎重新排版事实）。
+                //
+                // ⚠ 走 `mdView` 而不是 `mdBlocks`：`mdBlocks` 只返回块数组、
+                // **不发控件**，直接当语句写在这里会被编译器标成
+                // `unused expression`，正文一个字都不画。
+                mdView(aiMessageText(m), dark)
+            } else {
+                Label(aiMessageText(m)).fontSize(12.0).wrap()
+            }
         }.spacing(3.0.vp).hug()
     }.style(dsSurface(DsLevel.Nested, dark)).contentPadding(8.0.vp).hug()
 }
@@ -525,8 +535,14 @@ public func aiResultPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
         }
         Flexible {
             ScrollView(key: "dd-ai-sheet-scroll") {
-                Label(if (model.aiSheetBody.value.isEmpty()) { "（还没有内容）" } else { model.aiSheetBody.value })
-                    .fontSize(12.0).wrap()
+                // ⚠ 走 Markdown 渲染，不是一整块 Label。
+                // 整块 Label 的话 `## 标题`、`- 列表`、反引号全部原样露在屏幕上 ——
+                // 快照实测过，那是「模型回了东西但看起来像日志」的样子。
+                if (model.aiSheetBody.value.isEmpty()) {
+                    Label("（还没有内容）").fontSize(12.0).muted()
+                } else {
+                    mdView(model.aiSheetBody.value, dark)
+                }
             }.flex()
         }
         Divider()

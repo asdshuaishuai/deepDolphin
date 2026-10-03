@@ -5,6 +5,7 @@
 package deepdolphin_linux
 
 import cui.{AppMetadata, DesktopApp, WindowSpec}
+import std.collection.*
 import std.env.*
 import std.time.*
 
@@ -106,6 +107,60 @@ main(args: Array<String>): Int64 {
         if (aiPane == "chat" || aiPane == "settings") {
             openAIPane(model, if (aiPane == "chat") { 1 } else { 2 })
         }
+        // 对话页快照要给**预置对话**，否则拍到的是空态 ——
+        // 空态里没有消息卡，看不到 Markdown 在 `Panel` + `ScrollView`
+        // 这层嵌套里排得对不对（与 C5 面板的嵌套不同，得单独拍）。
+        if (aiPane == "chat" && getVariable("DD_SNAP_AI_CHAT").isSome()) {
+            seedSnapshotChat(model)
+        }
+        // C5 结果面板：给一段**预置正文**拍静态照。
+        // 不发真请求 —— 快照模式没有 provider 可打，而 C5 那块屏
+        // 要验的是「结果正文排得对不对」，不是「模型回不回得来」。
+        //
+        // ⚠ 正文刻意覆盖**八种块类型**，而且用的是**真实形状**：
+        // 有序列表带 GFM 悬挂缩进续行（这是本仓库 README 与模型输出的
+        // 常见写法，也是上一版渲染器会把清单打散的那一种），
+        // 表格照抄引擎 `context` 里的分支表。少覆盖一种，
+        // 快照就只是证明「标题和段落能显示」，证明不了渲染器。
+        let sheet = (getVariable("DD_SNAP_AI_SHEET") ?? "").trimAscii()
+        if (!sheet.isEmpty()) {
+            model.aiSheetTitle.value = "项目群说明"
+            model.aiSheetBody.value = """
+            ## 这一轮做了什么
+
+            - 模型先调了 `get_group_context` 拿到 15 个项目的确定性事实
+            - 再调 `get_milestones` 确认没有未达成项
+
+            ## 结论
+
+            项目群整体活跃：近 7 天 9 个项目有提交，7 个有未提交改动。
+            **待合入 4 个分支**是最该先看的 —— 它们已经做完但没并进去。
+
+            该先看的地方，按这个顺序：
+
+            1. **moonpainter 有 13 处未提交**，量最大。
+               这 13 处已经攒了三天，再拖下去会和 `main` 打架。
+            2. **deepOrca 16 处未提交**，其中 3 处是 `src` 下的重命名。
+               重命名没并进去会连带影响构建，建议单独一次提交。
+            3. 其余项目的未提交量都在 3 处以内，不急。
+
+            | 分支 | 状态 | 待记录 | 最近提交 |
+            |---|---|---|---|
+            | ▸main | 闲置 | 0 | 3 天前 merge: 合入远端 5 个提交 |
+            | feat/ai-panel | 活跃 | 2 | 今天 feat: 面板改版 |
+
+            复核命令长这样：
+
+            ```sh
+            moongit context --scope moonpainter
+            moongit journal moonpainter --limit 20
+            ```
+
+            > ⚠ 有 3 个项目读不出更新时间（`lastCommitAt` 缺失），
+            > 上面「近 7 天活跃 9」不含它们。
+            """
+            model.aiPane.value = 3
+        }
         let proj = (getVariable("DD_SNAP_PROJECT") ?? "").trimAscii()
         if (!proj.isEmpty()) {
             // 同理：走 `applyScope`，别自己拼那三个字段
@@ -194,6 +249,48 @@ main(args: Array<String>): Int64 {
         rootView(model, app)
     }
     return 0
+}
+
+/// 预置一段对话，给对话页快照用。
+///
+/// ⚠ 助手那条**刻意包含全部八种块类型**：标题、列表、有序清单（带悬挂缩进
+/// 续行）、表格、代码块、引用。少了任何一种，截图就只证明了「一部分能显示」。
+/// 工具结果那条是**不渲染 Markdown** 的对照：它是引擎原文，渲染它等于
+/// 替引擎重新排版事实 —— 快照上一眼能看出这条与助手那条长得不一样。
+private func seedSnapshotChat(model: AppModel): Unit {
+    let list = ArrayList<ChatMessage>()
+    list.add(ChatMessage(ChatRole.User, "moonpainter 现在什么状况？先说结论，再说依据。"))
+    list.add(ChatMessage(ChatRole.Tool, "get_project_context · payload 3.9 KB · 8 个分支 · 4 个里程碑"))
+    list.add(ChatMessage(ChatRole.Assistant, """
+        ## 结论
+
+        **moonpainter 有 13 处未提交改动**，其中 4 处是新增文件、9 处是修改。
+        分支 `main` 已并入远端，本地没有落后。
+
+        ## 依据
+
+        1. **未提交集中在 `src/` 下**。
+           13 处里有 9 处在 `src/`，其余 4 处在文档。
+        2. **里程碑还有 2 个没打勾**。
+           「深更新文档托管区域」和「接入 CI」都还在进行中。
+        3. 最近 7 天有 4 次提交，最近一次是昨天。
+
+        | 分支 | 状态 | 待记录 | 最近提交 |
+        |---|---|---|---|
+        | ▸main | 闲置 | 0 | 1 天前 docs: 补托管区域说明 |
+        | feat/ai-panel | 活跃 | 2 | 今天 feat: 面板改版 |
+
+        要看具体文件的话：
+
+        ```sh
+        moongit context moonpainter
+        moongit journal moonpainter --limit 20
+        ```
+
+        > ⚠ `lastCommitAt` 这个项目读不出来，所以「最近 7 天 4 次提交」
+        > 是按 journal 的行数数的，不是按时间戳。
+        """))
+    model.aiTranscript.value = Some(list)
 }
 
 /// 视图 → 侧栏下标（0 仪表盘 / 1 看板 / 2 里程碑）。
