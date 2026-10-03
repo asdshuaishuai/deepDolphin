@@ -1,11 +1,13 @@
 #include "EngineLocator.h"
+#include <DStandardPaths>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QProcess>
-#include <QStandardPaths>
 #include <QRunnable>
 #include <QThreadPool>
+
+DCORE_USE_NAMESPACE
 
 namespace {
 constexpr int kProbeTimeoutMs = 8000; // CONTRACT §1.1：version 探活 8s
@@ -44,11 +46,11 @@ QStringList candidatePaths(QStringList *problems)
         paths << dir + QStringLiteral("/deepgit");
     }
 
-    // 5. PATH
-    const QString moongit = QStandardPaths::findExecutable(QStringLiteral("moongit"));
+    // 5. PATH（findExecutable 走 DStandardPaths，口径与 DDE 一致，M1-1）
+    const QString moongit = DStandardPaths::findExecutable(QStringLiteral("moongit"));
     if (!moongit.isEmpty())
         paths << moongit;
-    const QString deepgit = QStandardPaths::findExecutable(QStringLiteral("deepgit"));
+    const QString deepgit = DStandardPaths::findExecutable(QStringLiteral("deepgit"));
     if (!deepgit.isEmpty())
         paths << deepgit;
 

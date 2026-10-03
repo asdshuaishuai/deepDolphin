@@ -1,10 +1,12 @@
 #include "AutostartManager.h"
+#include <DStandardPaths>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QStandardPaths>
 #include <QTextStream>
+
+DCORE_USE_NAMESPACE
 
 namespace {
 constexpr char kKeyEnabled[] = "X-deepDolphin-Autostart-enabled";
@@ -75,7 +77,8 @@ bool AutostartManager::setEnabled(bool enabled, QString *errOut)
     QString name = QStringLiteral("deepDolphin 面板");
     QString comment = QStringLiteral("moonGit/deepGit 项目群进度客户端");
     const QStringList candidates = {
-        QStandardPaths::locate(QStandardPaths::ApplicationsLocation,
+        // locate 走 DStandardPaths（口径与 DDE 一致，M1-1）；枚举值仍是 QStandardPaths 的
+        DStandardPaths::locate(QStandardPaths::ApplicationsLocation,
             QStringLiteral("cn.deepdolphin.app.desktop")),
         QStringLiteral("/usr/share/applications/cn.deepdolphin.app.desktop"),
     };
