@@ -12,9 +12,10 @@
 ## 当前状态
 
 - 计划文档已写入，**执行中**：见 `DDE-INTEGRATION-PLAN.md` §9 看板（`[x]`=已完成、`[~]`=部分、`□`=未做）与 §10 执行日志。
-- 已完成（按序）：M0-1/2/3/7/8/9、M1a 的 AI 设置页一行、M2-1~M2-4、M3-1~M3-4。
+- 已完成（按序）：M0-1/2/3/4/5/6/7/9（M0-8 脚本就绪待干净容器）、M1a 的 AI 设置页一行 + **输入件批 + 按钮批 + palette QSS 收编**（2026-10-04）、M1-4/M1-5、M2-1~M2-4、M3-1~M3-4。
 - **重大发现与修复**：M0-2 的 `locateAsync` 曾把 `this` 捕获进 `QMetaObject::invokeMethod`，QRunnable 自动删除 → use-after-free，**GUI 启动路径进事件循环即段错误**（`--snapshot` 路径不复现，极易漏到真机）。已改为 worker 内 swap 回调 + 值捕获投递；README 决策 65 记录了用 `DD_BISECT` 逐位二分的定位过程。
-- 未做（按 §7 的"第 2/3 波"继续）：M1a 其余控件替换、M1-1~M1-9、M2-5~M2-8、M3-5/M3b/M3c、M4。
+- 2026-10-04 批注：`--platform-probe` 未实现（M1-9）前会在 main.cpp 无头分支响应亮失败 exit 2——**不要移除**，否则未知 flag 落进 GUI 主路径单实例常驻，无头 ci.sh 步骤 4 挂死（踩过一次）。
+- 未做（按 §7 的"第 2/3 波"继续）：M1a 容器/视图批（SidebarNav DListView、BoardPage/MilestonesPage QTreeWidget→DTreeView——模型重构）、M1-1~M1-3/M1-6~M1-9、M2-5~M2-8、M3-5/M3b/M3c、M4。
 - 如果额度不足：先做 §7「极限最小可交付」剩余项（M3-5 几何收口 + M3b 组件化），它们不动架构、见效最快。
 
 ## 相关文档
