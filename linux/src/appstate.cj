@@ -113,6 +113,55 @@ public class AppModel {
     /// 用索引当唯一标识比在枚举里塞字符串更直接。
     /// 两组各自的选中下标是 `viewIndex` / `selected`（见各自的注释）。
     public let selectedProject = State<String>("")
+    // -------------------------------------------------------------- AI 面板
+    /// 主区当前显示哪个 AI 面板。0 = 不显示（走正常路由）。
+    ///
+    /// ⚠ 不是「开一个窗口」而是**换主区**：CUI 的 `DesktopApp` 只有一扇窗，
+    /// 没有 macOS 那个 `Settings` scene / `sheet`。
+    /// 所以「AI 助手」「AI 设置」做成主区里的两个视图，
+    /// 工具栏按钮来回切。副作用是聊天时不显示仪表盘 ——
+    /// 聊天里要看项目现状得先退出去，这是与 macOS 端的**已知差异**，
+    /// 如实记在 linux/README.md 里，不假装一致。
+    public let aiPane = State<Int64>(0)
+    /// AI 对话的完整消息流。`None` = 还没开始。
+    public let aiTranscript = State<Option<ArrayList<ChatMessage>>>(None)
+    /// 输入框草稿。
+    public let aiDraft = State<String>("")
+    /// 这一轮跑过哪些工具（人话），给「刚才做了什么」那一行。
+    public let aiExecuted = State<ArrayList<String>>(ArrayList<String>())
+    /// 这一轮收尾时给的说明（轮次上限之类）。空串 = 没什么要说的。
+    public let aiNote = State<String>("")
+    /// AI 动作在跑。与引擎动作**共用 `actionBusy` 闸门** ——
+    /// 深更新要跑 5 分钟，AI 一轮也可能几十秒，两个闸门会让
+    /// 「AI 正在调工具执行深更新」和「用户又点了深更新」撞在一起。
+    /// 引擎那边有锁，第二个进程只会一起超时。
+    public let aiStatus = State<String>("")
+    /// C5 的 AI 结果面板（项目简报 / 群组简报 / 更新后摘要）。空 = 不显示。
+    public let aiSheetTitle = State<String>("")
+    public let aiSheetBody = State<String>("")
+    /// C5 结果面板在跑。
+    public let aiSheetBusy = State<Bool>(false)
+    public let aiSheetError = State<String>("")
+
+    // ---- 设置页草稿（**不直接写配置**，保存时才落盘）----
+    // ⚠ 分草稿与落盘是刻意的：直接写配置的话，用户改到一半还没点保存
+    // 就已经生效了，而「保存并测试」这个按钮就失去了意义。
+    public let aiProviderIndex = State<Int64>(0)
+    public let aiModelIndex = State<Int64>(0)
+    public let aiModelManual = State<String>("")
+    public let aiKeyDraft = State<String>("")
+    public let aiBaseURLDraft = State<String>("")
+    public let aiTestResult = State<String>("")
+
+    // ---- 启动参数深链（C10）----
+    // ⚠ 用**普通字段**而不是 `State<T>`：这两个值只在启动时读一次、
+    // 应用一次，不该引起界面重建；而 `State` 的写会通知所有观察者。
+    //
+    // 为什么挂在模型上而不是 `main()` 的局部变量：`app.run` 的构建闭包
+    // **不能捕获可变变量**（仓颉限制），局部 `var` 一进闭包就编译不过。
+    public var launchRoute: LaunchRoute = LaunchRoute("", "")
+    public var launchPending: Bool = false
+
     /// 侧栏搜索词。空 = 不过滤。
     public let query = State<String>("")
     /// 范围（WorkBar 左段）。Group = 全局看板，One = 单仓库管控页。
@@ -438,7 +487,7 @@ private func sleepMs(total: Int64): Unit {
 /// 深更新跑 5 分钟，期间用户点「浅更新全部」并不会让两个引擎进程并行 ——
 /// 引擎侧有项目锁，并行只会让两边都等锁，最后一起超时。
 /// 一个全局闸门 + 明确的「正在执行：xxx」，比 N 个独立按钮清楚得多。
-private func beginAction(model: AppModel, label: String): Bool {
+public func beginAction(model: AppModel, label: String): Bool {
     if (model.actionBusy.value) {
         model.report("已有动作在跑（${model.actionLabel.value}），等它结束再试", false)
         return false
@@ -450,7 +499,7 @@ private func beginAction(model: AppModel, label: String): Bool {
     return true
 }
 
-private func endAction(model: AppModel, line: String, ok: Bool): Unit {
+public func endAction(model: AppModel, line: String, ok: Bool): Unit {
     model.actionBusy.value = false
     model.actionLabel.value = ""
     model.report(line, ok)
@@ -472,6 +521,19 @@ public func actUpdate(app: DesktopApp, model: AppModel, project: String, deep: B
                 "✗ " + label + "：" + p.problem
             }
             endAction(model, line, p.problem.isEmpty())
+            // 长任务结束发系统通知：深更新要跑 5 分钟，
+            // 那期间用户早就不在窗口前了 —— 不发通知等于
+            // 「点了就没下文」。
+            // ⚠ 通知失败**不弹到界面上**：任务本身已经成功，
+            // 在结果行旁边再报一句「发通知失败」会把它盖掉。
+            // 失败只在这一处 `model.report` 之外静默，
+            // 设置页里另有「本机没有 notify-send」的显式说明。
+            let notice = notifyUser("deepDolphin",
+                updateFinishedNotice(if (deep) { "深更新" } else { "浅更新" }, project, p.problem.isEmpty(),
+                    if (p.json.isSome()) { "" } else { "（" + p.problem + "）" }))
+            if (!notice.isEmpty()) {
+                println("deepdolphin: " + notice)
+            }
             // 写操作改变了事实，必须重读。放在写之后而不是之前，
             // 否则读到的还是旧状态。
             requestRefresh(app, model)
@@ -494,6 +556,11 @@ public func actUpdateAll(app: DesktopApp, model: AppModel, deep: Bool): Unit {
                 "✗ " + label + "：" + p.problem
             }
             endAction(model, line, p.problem.isEmpty())
+            let notice = notifyUser("deepDolphin",
+                updateFinishedNotice(if (deep) { "深更新" } else { "浅更新" }, "", p.problem.isEmpty(), line))
+            if (!notice.isEmpty()) {
+                println("deepdolphin: " + notice)
+            }
             requestRefresh(app, model)
         }
     }

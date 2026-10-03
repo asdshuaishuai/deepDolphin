@@ -41,6 +41,22 @@ private func realToolsPayload(): Payload {
     return Payload(Json.parse(REAL_TOOLS_PAYLOAD).getOrThrow(), "", false, 0, "", staleContract: false)
 }
 
+/// 一份**最小**项目夹具。只为界面判定用，不追求还原真实载荷 ——
+/// 那件事由 model_test.cj 的 `realEngineFixturesParseIntoModels` 负责。
+/// ⚠ 不复用 `model_test.cj` 里的 `SPAN_PROJECTS`：那是 `private`，
+/// 跨文件拿不到。与其把它改成 public（两个文件的夹具混在一起，
+/// 以后改一边会静默影响另一边），不如各自持有。
+private let UI_PROJECTS = """
+{"projects":[
+ {"name":"fresh","path":"/tmp/f","commitCount":3},
+ {"name":"old","path":"/tmp/o","commitCount":9}
+],"summary":{"projectCount":2,"listedProjects":2}}
+"""
+
+private func uiSnapshot(): StatusSnapshot {
+    return StatusSnapshot.from(Json.parse(UI_PROJECTS).getOrThrow())
+}
+
 private func realDocsPayload(): Payload {
     return Payload(Json.parse(REAL_DOCS_PAYLOAD).getOrThrow(), "", false, 0, "", staleContract: false)
 }
@@ -397,4 +413,139 @@ func TEMP_agentLoopCallsTheRealEngineAndConverges(): Unit {
     // 收尾状态必须是「已收尾」而不是「已达上限」——
     // 两轮就该结束，跑满 4 轮说明收敛判定坏了
     @Expect(agentOutcomeLabel(r.outcome.kind), "已收尾")
+}
+
+// ---------------------------------------------------------------------------
+// C10 系统集成
+// ---------------------------------------------------------------------------
+
+@Test
+func launchRouteParserHandlesBothKeysAndIgnoresTheRest(): Unit {
+    // 纯函数：判据直接喂 argv，不启窗口、不连引擎。
+    let r = parseLaunchRoute(["deepdolphin_linux", "--section", "board", "--project", "moonGit", "--unknown"])
+    @Expect(r.section, "board")
+    @Expect(r.project, "moonGit")
+    @Expect(!r.isEmpty())
+    // 缺值不许把下一个参数当值吃掉
+    @Expect(parseLaunchRoute(["--section"]).section, "")
+    // 顺序无关
+    @Expect(parseLaunchRoute(["--project", "x", "--section", "milestones"]).section, "milestones")
+    // 什么都没有
+    @Expect(parseLaunchRoute([]).isEmpty())
+}
+
+@Test
+func unknownSectionIsNamedInsteadOfSilentlyIgnored(): Unit {
+    // 「打错了一个字」与「这版还不支持」要给的提示不同 ——
+    // 静默忽略会让用户以为点错了没反应。
+    @Expect(sectionIndexOfName("board"), 1)
+    @Expect(sectionIndexOfName("milestones"), 2)
+    @Expect(sectionIndexOfName("dashboard"), 0)
+    @Expect(sectionIndexOfName("Boad"), -1) // 拼错
+    @Expect(sectionIndexOfName(""), -1)
+}
+
+@Test
+func autostartEntryEscapesSpacesBecauseTheXdgParserSplitsOnThem(): Unit {
+    // XDG 的 Exec= 按空白切分，引号会被当成命令名的一部分 ——
+    // 路径里有空格（`/home/kelthas/My Apps/…`）时必须转义。
+    @Expect(escapeDesktopExec("/home/kelthas/My Apps/main"), "/home/kelthas/My\\ Apps/main")
+    @Expect(escapeDesktopExec("/usr/bin/deepdolphin"), "/usr/bin/deepdolphin")
+    // 反斜杠本身也要转义，否则双重转义
+    @Expect(escapeDesktopExec("C:\\a b"), "C:\\\\a\\ b")
+    let e = autostartEntry("/usr/bin/deepdolphin", "/usr/bin/moongit")
+    @Expect(e.contains("[Desktop Entry]"))
+    @Expect(e.contains("Type=Application"))
+    @Expect(e.contains("Exec=/usr/bin/deepdolphin --engine /usr/bin/moongit"))
+    @Expect(e.contains("X-GNOME-Autostart-enabled=true"))
+    // 引擎为空时不能留下一截「--engine 」
+    @Expect(!autostartEntry("/usr/bin/deepdolphin", "").contains("--engine"))
+}
+
+@Test
+func longUpdateNoticeSaysWhatHappenedNotJustDone(): Unit {
+    // 深更新要跑 5 分钟。通知里只写「完成」的话，
+    // 用户在几十秒后已经忘了自己点了什么。
+    @Expect(updateFinishedNotice("深更新", "", true, ""), "深更新完成：全部项目")
+    @Expect(updateFinishedNotice("浅更新", "moonGit", true, ""), "浅更新完成：moonGit")
+    // 失败要说清是哪个范围 + 原因
+    @Expect(updateFinishedNotice("深更新", "moonGit", false, "（引擎退出码 1）"),
+        "深更新失败：moonGit（引擎退出码 1）")
+}
+
+// ---------------------------------------------------------------------------
+// 界面层的纯判定
+// ---------------------------------------------------------------------------
+
+@Test
+func aiScopeFollowsTheMainAreaSoTheQuestionMatchesWhatIsOnScreen(): Unit {
+    // 问的是屏幕上正看着的那个项目，还是整个项目群，必须说得准 ——
+    // 错了的后果是模型读了 A 的上下文、界面却是 B。
+    let s = uiSnapshot()
+    let model = AppModel(EngineLocation("", "", ""))
+    model.snapshot.value = Some(s)
+
+    // 默认：项目群
+    @Expect(aiScopeLabel(model).contains("项目群"))
+    match (aiTargetOf(model)) {
+        case AgentTarget.Group => ()
+        case AgentTarget.Project(_) => @Expect(false)
+    }
+
+    // 进到某个项目里
+    openProject(model, "fresh")
+    @Expect(aiScopeLabel(model).contains("fresh"))
+    match (aiTargetOf(model)) {
+        case AgentTarget.Project(n) => @Expect(n, "fresh")
+        case AgentTarget.Group => @Expect(false)
+    }
+}
+
+@Test
+func aiPaneIsNotConfusedWithTheNormalRoute(): Unit {
+    // AI 面板是主区里的另一个场景。开关它**不许**动侧栏高亮 ——
+    // 动了两边就再也说不清「我现在在哪个项目」。
+    let s = uiSnapshot()
+    let model = AppModel(EngineLocation("", "", ""))
+    model.snapshot.value = Some(s)
+    openProject(model, "fresh")
+    let beforeView = model.viewIndex.value
+    let beforeSel = model.selected.value
+    let beforeProject = model.selectedProject.value
+
+    openAIPane(model, 1)
+    @Expect(model.aiPane.value, 1)
+    openAIPane(model, 2)
+    @Expect(model.aiPane.value, 2)
+    closeAIPane(model)
+    @Expect(model.aiPane.value, 0)
+
+    @Expect(model.viewIndex.value, beforeView)
+    @Expect(model.selected.value, beforeSel)
+    @Expect(model.selectedProject.value, beforeProject)
+}
+
+@Test
+func toolResultsAreTruncatedInTheUiButNotInWhatTheModelSees(): Unit {
+    // 整段工具结果可能几百 KB。铺到界面上只会让人找不到助手答了什么，
+    // 但**给模型的必须完整** —— 截断的是显示，不是数据。
+    var big = ""
+    for (i in 0..5000) { big += "x" }
+    let short = aiMessageText(ChatMessage.tool("c1", big))
+    @Expect(short.size < big.size)
+    @Expect(short.contains("已交给模型"))
+    // 短的不该被截
+    let small = aiMessageText(ChatMessage.tool("c1", "一行结果"))
+    @Expect(small, "一行结果")
+}
+
+@Test
+func assistantToolCallIsNamedSoTheUserCanSeeWhatItTriedToDo(): Unit {
+    // 「模型做了什么都看不见」是 AI 助手最招人烦的一种体验。
+    let calls = ArrayList<ToolCallRequest>()
+    calls.add(ToolCallRequest("c1", "run_deep_update", "{}"))
+    calls.add(ToolCallRequest("c2", "git_commit", "{}"))
+    let text = aiMessageText(ChatMessage.assistant("我先看看", calls: calls))
+    @Expect(text.contains("深更新"))
+    @Expect(text.contains("提交"))
 }

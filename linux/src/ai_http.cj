@@ -81,6 +81,16 @@ public enum ChatRole {
     | Tool
 }
 
+/// 角色判等。仓颉枚举**不实现 `==`**，所以要显式谓词。
+public func chatRoleIs(a: ChatRole, b: ChatRole): Bool {
+    return (match (a) {
+        case ChatRole.System => (match (b) { case ChatRole.System => true; case _ => false })
+        case ChatRole.User => (match (b) { case ChatRole.User => true; case _ => false })
+        case ChatRole.Assistant => (match (b) { case ChatRole.Assistant => true; case _ => false })
+        case ChatRole.Tool => (match (b) { case ChatRole.Tool => true; case _ => false })
+    })
+}
+
 public class ChatMessage {
     public let role: ChatRole
     public let text: String

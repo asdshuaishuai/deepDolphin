@@ -74,8 +74,8 @@ func toolbar(model: AppModel, app: DesktopApp, dark: Bool): Unit {
             Divider(axis: Axis.Vertical).height(18.vp)
             Button("刷新", {=> requestRefresh(app, model)}, role: ButtonRole.Primary)
                 .fontSize(12.0).enabled(busy)
-            Button("AI 助手", {=> model.report("AI 助手尚未接入（见待办）", false)}).fontSize(12.0)
-            Button("AI 设置", {=> model.report("AI 设置尚未接入（见待办）", false)}).fontSize(12.0)
+            Button("AI 助手", {=> openAIPane(model, 1)}).fontSize(12.0)
+            Button("AI 设置", {=> openAIPane(model, 2)}).fontSize(12.0)
         }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
     }.style(toolbarSurface(dark)).contentPadding(12.0.vp, 8.0.vp)
 }
@@ -104,7 +104,27 @@ func DualTrackButtons(model: AppModel, app: DesktopApp, dark: Bool): Unit {
         }
         Button(deepLabelFor(scope), {=> actUpdate(app, model, updateTargetOf(model), true)}, role: ButtonRole.Primary)
             .fontSize(12.0).enabled(busy)
+        // C5：在**当前范围**上要一段说明。单项目范围给项目说明，全局给项目群说明。
+        // 不给「重新生成」—— 事实陈述重编一遍对用户没有价值，
+        // 只会让人分不清哪句是推出来的、哪句是引擎给的。
+        Button(aiBriefLabel(model), {=> runBriefForScope(app, model)}, role: ButtonRole.Normal)
+            .fontSize(12.0).enabled(!busy)
     }.spacing(6.0.vp).hug()
+}
+
+/// AI 说明按钮的标题。**跟着范围走** —— 按钮写「说明本项目」而它给的是
+/// 项目群简报，症状是用户点之前无法判断点完会看到什么。
+public func aiBriefLabel(model: AppModel): String {
+    return if (scopeIs(model.scope.value, ScopeChoice.One)) { "AI 说明" } else { "AI 项目群说明" }
+}
+
+/// 按当前范围跑说明。
+public func runBriefForScope(app: DesktopApp, model: AppModel): Unit {
+    if (scopeIs(model.scope.value, ScopeChoice.One)) {
+        runProjectBrief(app, model, model.selectedProject.value)
+        return
+    }
+    runGroupBrief(app, model)
 }
 
 /// 双轨动作的目标项目。空串 = 全部。
@@ -120,6 +140,22 @@ public func updateTargetOf(model: AppModel): String {
 // ===========================================================================
 
 func detail(model: AppModel, app: DesktopApp, dark: Bool): Unit {
+    // AI 面板**接管整个主区**，包括横幅 —— 它是另一个「场景」，
+    // 不是仪表盘上的一个叠加层。
+    // ⚠ 引擎缺失时 AI 也用不了（工具全靠引擎），但**设置页仍然要能进** ——
+    // 用户正是在「引擎没装」的时候才需要看设置。
+    if (model.aiPane.value == 1) {
+        aiChatPane(model, app, dark)
+        return
+    }
+    if (model.aiPane.value == 2) {
+        aiSettingsPane(model, app, dark)
+        return
+    }
+    if (model.aiPane.value == 3 && !model.aiSheetTitle.value.isEmpty()) {
+        aiResultPane(model, app, dark)
+        return
+    }
     VStack {
         if (!model.routeNotice.value.isEmpty()) {
             banner("提示", model.routeNotice.value, C_ORANGE, dark, {=> model.routeNotice.value = ""})

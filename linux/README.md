@@ -152,3 +152,51 @@ CUI 的 `--snapshot` 是「连续强制重绘 48 帧就拍照」，而引擎调�
 `DEEPGIT_BIN` / `DEEPGIT_HOME` 保持旧名；引擎数据目录 `~/.deepgit` 与文档托管标记
 `<!-- deepgit:begin -->` 是引擎侧的身份，本端不碰。详见
 [../../moonGit/README.md](../../moonGit/README.md) 的「命名」一节。
+
+## AI 通道（C5 / C6 / C7）与系统集成（C10）
+
+### 已实现
+
+| 能力 | 状态 |
+|---|---|
+| C7 AI 设置 | provider / 模型 / API Key / Base URL、测试连接、开机自启开关 |
+| C6 AI 助手 | 多轮 tool_calls agent 循环，对话界面 |
+| C5 AI 整合更新 | 单项目说明 / 项目群说明，结果面板 |
+| C10 通知 | `notify-send`，更新动作结束时发 |
+| C10 开机自启 | XDG `~/.config/autostart/deepdolphin.desktop` |
+| C10 深链 | `--section dashboard\|board\|milestones`、`--project <名>` |
+
+### 与 macOS 端的**已知差异**（如实记，不假装一致）
+
+1. **没有托盘**。CUI 不暴露托盘 API（无 `SDL_SetWindowIcon`、
+   无 StatusNotifier 绑定），所以 macOS 的「菜单栏速览」（`MenuBarExtra` + `BarView`）
+   在本端没有对应物。不拿「通知」冒充「托盘」—— 那不是同一件事。
+2. **AI 面板是主区视图，不是独立窗口/sheet**。CUI 的 `DesktopApp` 只有一扇窗。
+   代价：聊天时看不到仪表盘。
+3. **密钥降级到 600 权限文件**。macOS 走 Keychain；本端优先 libsecret
+   （`secret-tool`），没有时退到 `~/.config/deepdolphin/api-key`（chmod 600），
+   **并在设置页显式写明**。不静默降级。
+4. **`providerToolModels` 只列支持 tool_calls 的模型** —— 不支持的模型
+   在第一轮提问就会撞墙。与 macOS 端 `modelWithToolCall` 同一条规则。
+5. **对话没有「停止」按钮**。macOS 端有 `AgentChatModel.stop()`；
+   本端一轮跑完才回来，期间按钮禁用（`actionBusy`）。
+   杀一个跑着的 curl 子进程需要跨线程管道，CUI 这条路先没走通。
+
+### 怎么验
+
+```sh
+bash scripts/ai-e2e.sh     # 端到端：真 curl + 真引擎 + 假 provider
+cjpm test                  # 83 条判据（其中 2 条端到端标 @Skip，日常跳过）
+```
+
+端到端脚本会起一个**逐项校验请求体**的假 provider：中文有没有被转义坏、
+`stream` 是不是 false、`max_tokens` 是不是整数、工具的 JSON Schema 对不对 ——
+校验不过就回标记串让判据红。这一层不能省：纯函数判据只测 ASCII，
+而 UTF-8 转义、curl 调用、临时文件读写顺序这三类缺陷**只有真发一次请求才暴露**。
+
+### 依赖
+
+- **`curl`**（AI 通道）。仓颉没有 HTTP 客户端：`std.net` 只有裸 socket，
+  `std.crypto` 没有可用的 TLS。
+- **`secret-tool`**（可选，系统钥匙串）。没有就退到 0600 文件。
+- **`notify-send`**（可选，系统通知）。没有时设置页会写明。

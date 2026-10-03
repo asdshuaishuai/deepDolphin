@@ -56,7 +56,7 @@ private func wantsSnapshot(): Bool {
     return false
 }
 
-main(): Int64 {
+main(args: Array<String>): Int64 {
     // 字体必须在建窗之前装好。顺序反了窗口会先用系统字体排完版，
     // 中文全成豆腐块，而 CUI 不会自动重排。
     let fontProblem = installAppFonts()
@@ -107,6 +107,13 @@ main(): Int64 {
             }
         }
     }
+
+    // 启动参数深链（C10）。与 macOS 端 `handleLaunchArgs` 同一组键。
+    // ⚠ **在预载之后**才应用：项目列表还没加载时判断「项目不存在」
+    // 会把一个存在的项目误报成不存在（macOS 端 `Router.loadedNames`
+    // 专门处理了这一点，这里靠「等列表到了再判」达到同样效果）。
+    model.launchRoute = parseLaunchRoute(args)
+    model.launchPending = !model.launchRoute.isEmpty()
 
     // 快照模式下不走预载：**在 `app.run` 之前阻塞等引擎会死锁**
     // （栈停在 `semaphore_wait_trap`，主线程与读线程互相等）。
@@ -165,6 +172,16 @@ main(): Int64 {
             model.booted = true
             boot(app, model)
             startPolling(app, model)
+        }
+        // 深链**等项目列表到了才应用**。
+        //
+        // ⚠ 不能在 `boot` 之前判「项目存不存在」：那时 `allProjectsOf` 是空的，
+        // 一个真实存在的项目会被报成「找不到」并改道仪表盘 ——
+        // 而用户是从桌面通知点进来的，看到的是「那个项目被删了」。
+        // macOS 端 `Router.loadedNames(hasLoadedProjectsOnce:)` 处理的是同一件事。
+        if (model.launchPending && model.snapshot.value.isSome()) {
+            model.launchPending = false
+            applyLaunchRoute(model, model.launchRoute)
         }
         rootView(model, app)
     }
