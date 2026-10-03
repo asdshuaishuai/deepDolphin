@@ -22,7 +22,7 @@ CATALOG="$PKG_DIR/Sources/deepDolphin/ModelsDev.swift"
 # ModelsDev.popularProviders 的默认上限来自这里，编译时必须一起带上
 PICKER="$PKG_DIR/Sources/deepDolphin/ProviderPickerSlice.swift"
 CHECKER="$PKG_DIR/Tests/CatalogCheck/main.swift"
-SNAPSHOT="$PKG_DIR/Resources/models-dev.json"
+SNAPSHOT="$PKG_DIR/../assets/models/models-dev.json"
 
 if [[ ! -f "$SNAPSHOT" ]]; then
   echo "✗ 找不到 $SNAPSHOT —— 这个检查需要真实快照（打包时被读的那份）。" >&2

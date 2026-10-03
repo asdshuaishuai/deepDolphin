@@ -45,12 +45,13 @@ let snapshotURLs = [
         .deletingLastPathComponent()   // CatalogCheck
         .deletingLastPathComponent()   // Tests
         .deletingLastPathComponent()   // <pkg>
-        .appendingPathComponent("Resources/models-dev.json"),
+        .deletingLastPathComponent()   // <repo>
+        .appendingPathComponent("assets/models/models-dev.json"),
 ]
 
 guard let snapshot = snapshotURLs.first.flatMap({ try? Data(contentsOf: $0) }),
       !snapshot.isEmpty else {
-    print("✗ 读不到 Resources/models-dev.json，检查无法进行。")
+    print("✗ 读不到 assets/models/models-dev.json，检查无法进行。")
     exit(2)
 }
 let snapshotSize = snapshot.count

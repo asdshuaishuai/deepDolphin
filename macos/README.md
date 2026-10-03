@@ -17,7 +17,7 @@
 引擎是 **AI 无关**内核；AI 的目录、通道、配置与 agent 循环全部在本客户端，
 实现方式与 deepOrca 同构：**models.dev 目录 + ai-sdk 通道**。
 
-- **models.dev 目录**（`ModelsDev.swift`）：vendor 快照 `Resources/models-dev.json`
+- **models.dev 目录**（`ModelsDev.swift`）：vendor 快照 `../assets/models/models-dev.json`（仓库根公共资源）
   （从 deepOrca 的 models-dev/api.json 瘦身，225 家 provider）+ 启动后静默刷新最新目录。
   数据仅作选择器与通道元数据：模型 id、tool_call、reasoning、上下文窗口、成本、provider api 端点。
 - **ai-sdk 通道**（`AISDK.swift`）：`LanguageModel.generateText` ——

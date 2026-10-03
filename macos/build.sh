@@ -37,9 +37,20 @@ if [ ! -f "$ICON_ICNS" ]; then
 fi
 cp "$ICON_ICNS" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 
-if [ -f "$DIR/Resources/models-dev.json" ]; then
-  cp "$DIR/Resources/models-dev.json" "$APP_BUNDLE/Contents/Resources/models-dev.json"
+# models.dev 目录快照（AI 设置选择器数据骨干），同样取自**仓库根的公共资源**。
+#
+# ⚠ 这里**故意不静默跳过**：目录快照缺失时 AI 选择器是空的，
+# 而「打出一个 AI 永久不可用的 app」正是本项目踩过的 P0-1
+# （见下面 catalog-check 的说明）。图标缺失会失败，目录缺失也必须失败 ——
+# 两种资源同源，不该一个硬失败一个悄悄放过。
+CATALOG_JSON="$DIR/../assets/models/models-dev.json"
+if [ ! -f "$CATALOG_JSON" ]; then
+  echo "✗ 找不到公共模型目录：$CATALOG_JSON" >&2
+  echo "  AI 设置的 provider / 模型列表会整个是空的。" >&2
+  echo "  重新获取：curl -fsSL https://models.dev/api.json -o assets/models/models-dev.json" >&2
+  exit 1
 fi
+cp "$CATALOG_JSON" "$APP_BUNDLE/Contents/Resources/models-dev.json"
 # 中文本地化
 mkdir -p "$APP_BUNDLE/Contents/Resources/zh_CN.lproj"
 if [ -f "$DIR/Resources/zh_CN.lproj/InfoPlist.strings" ]; then
