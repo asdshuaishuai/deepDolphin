@@ -3,7 +3,7 @@
 // 【红线】判定顺序就是正确性（SPEC §3.7）：
 //   error→unreadable；kind≠git→notGit；needsAction→needsAction（**必须在 engineStale 前**
 //   ——旧顺序曾造成侧栏「看板 1」vs 仪表盘「待处理 3」）；primaryBranch status=="stale"
-//   →engineStale；daysSinceLastCommit==nil→unknown；age≤30→recent else quiet。
+//   →engineStale；daysSinceLastCommit==nil→unknown；age≤activeDays30（Thresholds.h）→recent else quiet。
 // · isMergeCandidate 逐字对齐引擎 `ahead>0 && !isDefault && !merged`，**禁用 pendingCommits**。
 // · 客户端不许拿 staleDays 自推 3/14 天档位线（那两根线归引擎）。
 // · `.quiet` 措辞是「N 天没更新」，**不说「停滞」**（停滞是引擎 14 天档位的词）。

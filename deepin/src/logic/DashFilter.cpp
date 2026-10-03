@@ -1,5 +1,6 @@
 #include "DashFilter.h"
 #include "Derived.h"
+#include "Thresholds.h"
 #include "../models/ProjectStatus.h"
 
 QString timeWindowLabel(TimeWindow w)
@@ -27,7 +28,8 @@ bool DashFilter::keeps(const ProjectStatus &p) const
     const std::optional<int> age = Derived::daysSinceLastCommit(p);
     if (!age.has_value())
         return true; // 读不出来 → 保留（不知道 ≠ 不在范围内）
-    const int days = (window == TimeWindow::days7) ? 7 : 30;
+    const int days = (window == TimeWindow::days7) ? Thresholds::activeDays7
+                                                   : Thresholds::activeDays30;
     return *age <= days;
 }
 

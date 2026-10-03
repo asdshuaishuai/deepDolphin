@@ -1,7 +1,10 @@
 #include "SelfCheck.h"
+#include "../logic/DashFilter.h"
+#include "../logic/Derived.h"
 #include "../logic/Route.h"
 #include "../logic/Router.h"
 #include "../logic/ShortcutMap.h"
+#include "../logic/Thresholds.h"
 #include "../models/ContextEnvelope.h"
 #include "../models/DashboardData.h"
 #include "../models/DocsEnvelope.h"
@@ -18,6 +21,7 @@
 #include "../models/StatusEnvelope.h"
 #include "../models/ToolsEnvelope.h"
 #include "../models/UpdateResult.h"
+#include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
 
@@ -477,6 +481,43 @@ int SelfCheck::run(QStringList &log)
             ShortcutMap::find(ShortcutMap::shortcutMap(3), QStringLiteral("view:currentProject"))
                     != nullptr
                 && ShortcutMap::shortcutMap(3).size() == 11);
+    }
+
+    // ── 10. Thresholds（M3-7）：阈值收口 + 两根消费边界 ──
+    {
+        // 审计口径（2026-10-04 grep 实证）：未提交通知满 10 处才报、按十位分桶去重
+        // （消费方 AppModel::postNotificationsIfNeeded）；时间桶线 7/30。
+        check(log, "Thresholds 审计口径：未提交 10/分桶 10 + active7d/30d 天线 7/30",
+            Thresholds::dirtyNotifyMinCount == 10 && Thresholds::dirtyBucketWidth == 10
+                && Thresholds::activeDays7 == 7 && Thresholds::activeDays30 == 30);
+
+        // recent/quiet 分界吃 activeDays30（Derived::liveness）：
+        // 干净项目（无未提交/分支/合入提示）恰 30 天 → recent（≤ 含端点），31 天 → quiet
+        ProjectStatus slow;
+        slow.storeHealth = QStringLiteral("ok");
+        slow.kind = QStringLiteral("git");
+        slow.name = QStringLiteral("slow");
+        slow.userDirtyCount = 0;
+        slow.untrackedCount = 0;
+        slow.stashCount = 0;
+        slow.lastCommitAt = QDateTime::currentDateTime().addDays(-30).toString(Qt::ISODate);
+        const bool at30 = Derived::liveness(slow) == Liveness::recent;
+        slow.lastCommitAt = QDateTime::currentDateTime().addDays(-31).toString(Qt::ISODate);
+        const bool at31 = Derived::liveness(slow) == Liveness::quiet;
+        check(log, "activeDays30 边界：恰 30 天=recent / 31 天=quiet", at30 && at31);
+
+        // 仪表盘时间窗吃 activeDays7/30（DashFilter::keeps）：
+        // 近 7 天窗——恰 7 天保留、8 天滤出、读不出来恒保留（不知道 ≠ 不在范围内）
+        DashFilter w7;
+        w7.window = TimeWindow::days7;
+        slow.lastCommitAt = QDateTime::currentDateTime().addDays(-7).toString(Qt::ISODate);
+        const bool keep7 = w7.keeps(slow);
+        slow.lastCommitAt = QDateTime::currentDateTime().addDays(-8).toString(Qt::ISODate);
+        const bool drop8 = !w7.keeps(slow);
+        slow.lastCommitAt = QString();
+        const bool keepUnknown = w7.keeps(slow);
+        check(log, "近 7 天窗（activeDays7）：7 天保留 / 8 天滤出 / 读不出来恒保留",
+            keep7 && drop8 && keepUnknown);
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

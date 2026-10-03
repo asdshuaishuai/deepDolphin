@@ -1,4 +1,5 @@
 #include "TrayController.h"
+#include "TrayGeometry.h"
 #include "TrayPopupWindow.h"
 #include "../platform/IconLoader.h"
 #include <QApplication>
@@ -8,10 +9,14 @@
 
 namespace {
 // 基础符号按 tint 染色（menuSymbol 五态的形状归一：感叹三角/感叹圆/双圆格/问号圆）。
-// 壳阶段先画几何占位；dd-*.svg 资源与 Qt6Svg 染色通道就位后替换（IconLoader::symbol）。
+// 壳阶段先画几何占位（画布/外环/内芯取 TrayGeometry；感叹三角与感叹点是
+// 一次性占位坐标，dd-*.svg 资源与 Qt6Svg 染色通道就位后连同整个 painter 替换）。
 QIcon tintedIcon(const QColor &tint, bool alert)
 {
-    QPixmap pm(32, 32);
+    const int canvas = TrayGeometry::iconCanvas;
+    const int ringD = canvas - 2 * TrayGeometry::iconRingInset;
+    const int coreD = canvas - 2 * TrayGeometry::iconCoreInset;
+    QPixmap pm(canvas, canvas);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);
@@ -26,9 +31,9 @@ QIcon tintedIcon(const QColor &tint, bool alert)
         p.drawRect(14.5, 11, 3, 8);
         p.drawEllipse(QPointF(16, 23), 1.6, 1.6);
     } else {
-        p.drawEllipse(4, 4, 24, 24);
+        p.drawEllipse(TrayGeometry::iconRingInset, TrayGeometry::iconRingInset, ringD, ringD);
         p.setBrush(Qt::white);
-        p.drawEllipse(11, 11, 10, 10);
+        p.drawEllipse(TrayGeometry::iconCoreInset, TrayGeometry::iconCoreInset, coreD, coreD);
     }
     return QIcon(pm);
 }

@@ -1,4 +1,5 @@
 #include "TrayPopupWindow.h"
+#include "TrayGeometry.h"
 #include "../ui/DesignTokens.h"
 #include <QApplication>
 #include <QHBoxLayout>
@@ -8,20 +9,16 @@
 #include <QScreen>
 #include <QVBoxLayout>
 
-namespace {
-constexpr int kPopupWidth = 380;
-constexpr int kMaxRows = 12; // 平铺 prefix(12)，不用滚动区（ScrollView 塌缩教训）
-} // namespace
-
 TrayPopupWindow::TrayPopupWindow(QWidget *parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)
 {
     setAttribute(Qt::WA_TranslucentBackground);
-    setFixedWidth(kPopupWidth);
+    setFixedWidth(TrayGeometry::popupWidth);
 
     auto *root = new QVBoxLayout(this);
-    root->setContentsMargins(12, 12, 12, 12);
-    root->setSpacing(8);
+    root->setContentsMargins(TrayGeometry::outerMargin, TrayGeometry::outerMargin,
+        TrayGeometry::outerMargin, TrayGeometry::outerMargin);
+    root->setSpacing(TrayGeometry::rootSpacing);
 
     // ── header ──
     auto *header = new QHBoxLayout;
@@ -45,7 +42,7 @@ TrayPopupWindow::TrayPopupWindow(QWidget *parent)
     m_body = new QWidget(this);
     m_bodyLayout = new QVBoxLayout(m_body);
     m_bodyLayout->setContentsMargins(0, 0, 0, 0);
-    m_bodyLayout->setSpacing(4);
+    m_bodyLayout->setSpacing(TrayGeometry::bodySpacing);
     root->addWidget(m_body);
 
     // ── footer：打开面板 / 全部浅更新 / 退出 ──
@@ -123,18 +120,19 @@ void TrayPopupWindow::popupNear(const QRect &trayIconGeometry)
                                : QRect(0, 0, 1280, 720);
     if (trayIconGeometry.isValid()) {
         target.moveCenter(trayIconGeometry.center());
-        target.moveLeft(trayIconGeometry.right() - width() + 8);
-        target.moveTop(trayIconGeometry.bottom() + 8);
+        target.moveLeft(trayIconGeometry.right() - width() + TrayGeometry::dockGap);
+        target.moveTop(trayIconGeometry.bottom() + TrayGeometry::dockGap);
     } else {
         // 取不到托盘几何 → 屏幕右上（PLAN §8 T4）
-        target.moveTopRight(avail.topRight() + QPoint(-16, 32));
+        target.moveTopRight(avail.topRight()
+            + QPoint(TrayGeometry::fallbackDx, TrayGeometry::fallbackDy));
     }
     target.setWidth(width());
     target.setHeight(height());
     if (target.bottom() > avail.bottom())
-        target.moveBottom(avail.bottom() - 16);
+        target.moveBottom(avail.bottom() - TrayGeometry::edgeMargin);
     if (target.left() < avail.left())
-        target.moveLeft(avail.left() + 8);
+        target.moveLeft(avail.left() + TrayGeometry::dockGap);
     move(target.topLeft());
     show();
     raise();
@@ -166,14 +164,14 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
         return;
     }
 
-    const int shown = qMin(kMaxRows, snapshot.rows.size());
+    const int shown = qMin(TrayGeometry::maxRows, snapshot.rows.size());
     for (int i = 0; i < shown; ++i) {
         const TraySnapshot::Row &row = snapshot.rows.at(i);
         auto *line = new QWidget(m_body);
         line->setProperty("projectName", row.name);
         auto *h = new QHBoxLayout(line);
-        h->setContentsMargins(0, 2, 0, 2);
-        h->setSpacing(6);
+        h->setContentsMargins(0, TrayGeometry::rowMarginV, 0, TrayGeometry::rowMarginV);
+        h->setSpacing(TrayGeometry::rowSpacing);
         auto *dot = new QLabel(line);
         QPixmap pm(DS::Height::dotLg, DS::Height::dotLg); // 托盘汇总行大点 = dotLg（M3-5）
         pm.fill(Qt::transparent);
@@ -185,7 +183,7 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
         dot->setPixmap(pm);
         h->addWidget(dot);
         auto *name = new QLabel(row.name, line);
-        name->setFixedWidth(120);
+        name->setFixedWidth(TrayGeometry::nameWidth);
         h->addWidget(name);
         // ●N 橙 chip（userDirtyCount>0）
         if (row.dirty > 0) {
@@ -210,26 +208,28 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
                 : QStringLiteral("color: %1;").arg(DS::textSecondary().name()));
         h->addWidget(sub, 1);
         if (row.pending > 0) {
-            // 右侧 pendingCommits 数字（蓝）+ 迷你进度条（min(pending,10)/10，宽 44）
+            // 右侧 pendingCommits 数字（accent）+ 迷你进度条（宽 miniBarWidth，
+            // 满宽档位 pendingBarCap：min(pending,10)/10）
             auto *pending = new QLabel(QStringLiteral("+%1").arg(row.pending), line);
             // 语义 accent 单点（此前的私有蓝值是审计点名的“第二种蓝”，归并）
             pending->setStyleSheet(
                 QStringLiteral("color: %1;").arg(DS::semColor(DS::SemColor::accent).name()));
             h->addWidget(pending);
             auto *bar = new QLabel(line);
-            bar->setFixedSize(44, DS::Height::barMini); // 迷你条高 = barMini（M3-5；宽 44 归 TrayGeometry，M3-7）
+            bar->setFixedSize(TrayGeometry::miniBarWidth, DS::Height::barMini); // 迷你条（M3-5/M3-7）
             h->addWidget(bar);
             // 迷你进度条（一次性画成 pixmap）
-            QPixmap barPm(44, DS::Height::barMini);
+            QPixmap barPm(TrayGeometry::miniBarWidth, DS::Height::barMini);
             barPm.fill(Qt::transparent);
             QPainter bp(&barPm);
             bp.setRenderHint(QPainter::Antialiasing);
             bp.setPen(Qt::NoPen);
             bp.setBrush(QColor(128, 128, 128, 60));
-            bp.drawRoundedRect(0, 0, 44, DS::Height::barMini, DS::Height::barMini / 2.0,
-                DS::Height::barMini / 2.0);
+            bp.drawRoundedRect(0, 0, TrayGeometry::miniBarWidth, DS::Height::barMini,
+                DS::Height::barMini / 2.0, DS::Height::barMini / 2.0);
             bp.setBrush(QColor(0x1E, 0x6F, 0xEB));
-            const int w = 44 * qMin(row.pending, 10) / 10;
+            const int w = TrayGeometry::miniBarWidth * qMin(row.pending, TrayGeometry::pendingBarCap)
+                / TrayGeometry::pendingBarCap;
             if (w > 0)
                 bp.drawRoundedRect(0, 0, w, DS::Height::barMini, DS::Height::barMini / 2.0,
                     DS::Height::barMini / 2.0);
@@ -243,9 +243,9 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
         line->installEventFilter(this);
         m_bodyLayout->addWidget(line);
     }
-    if (snapshot.rows.size() > kMaxRows) {
+    if (snapshot.rows.size() > TrayGeometry::maxRows) {
         auto *more = new QLabel(
-            QStringLiteral("还有 %1 个项目，打开面板查看…").arg(snapshot.rows.size() - kMaxRows),
+            QStringLiteral("还有 %1 个项目，打开面板查看…").arg(snapshot.rows.size() - TrayGeometry::maxRows),
             m_body);
         more->setStyleSheet(
             QStringLiteral("color: %1;").arg(DS::textSecondary().name()));

@@ -1,4 +1,5 @@
 #include "Derived.h"
+#include "Thresholds.h"
 #include "../models/ProjectStatus.h"
 #include <QDateTime>
 #include <QTimeZone>
@@ -67,7 +68,7 @@ Liveness liveness(const ProjectStatus &p)
     const std::optional<int> age = daysSinceLastCommit(p);
     if (!age.has_value())
         return Liveness::unknown;
-    return *age <= 30 ? Liveness::recent : Liveness::quiet;
+    return *age <= Thresholds::activeDays30 ? Liveness::recent : Liveness::quiet;
 }
 
 StateWord stateWord(const ProjectStatus &p)
@@ -82,7 +83,7 @@ StateWord stateWord(const ProjectStatus &p)
     case Liveness::engineStale:
         return { QStringLiteral("停滞"), Liveness::engineStale };
     case Liveness::quiet:
-        // 30 天线（引擎 active30d 桶）——说「N 天没更新」，不说「停滞」。
+        // activeDays30 线（引擎 active30d 桶）——说「N 天没更新」，不说「停滞」。
         return { QStringLiteral("%1 天没更新").arg(daysSinceLastCommit(p).value_or(0)),
             Liveness::quiet };
     case Liveness::recent:

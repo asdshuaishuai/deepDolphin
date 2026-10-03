@@ -1,4 +1,4 @@
-// TrayPopupWindow.h — 托盘速览弹窗壳（mac MenuBarExtra 富弹窗对位，宽 380，PLAN §6/§2.7）。
+// TrayPopupWindow.h — 托盘速览弹窗壳（mac MenuBarExtra 富弹窗对位，宽 TrayGeometry::popupWidth，PLAN §6/§2.7）。
 //
 // 结构（SPEC §1.7）：header「项目群进度」+ summaryLine + 刷新按钮
 //   → 三态主体（引擎未找到→说明+重新检测；空/错误→原因+重试；项目行平铺 prefix(12)）
