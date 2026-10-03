@@ -140,6 +140,17 @@ public class Project {
     public let progressUpdatedAt: String
     public let warnings: ArrayList<String>
     public let overallSummary: String
+    /// 引擎的 `overall.notes` —— **需要留意的点**。
+    ///
+    /// ⚠ 这一组事实**别处没有**。实测引擎会报：
+    /// · `工作区有 2 处未提交改动`（界面上只有一���裸数字，没人这么说过）
+    /// · `存在 2 条 stash，注意清理`（数字有，**「注意清理」这半句没有**）
+    /// · `非 git 仓库：进度基于文件活动时间，不含提交历史`
+    ///   （这一句是**唯一**说明「为什么这个项目提交数是 0」的地方）
+    ///
+    /// 引擎算了、模型收了、界面不说 ⇒ 等于没算。macOS 端
+    /// `DetailViews.swift:282` 有这条通路，本端原先**一个字段都没有**。
+    public let overallNotes: ArrayList<String>
 
     public init(
         name: String,
@@ -167,7 +178,8 @@ public class Project {
         progressEntryCount: Int64,
         progressUpdatedAt: String,
         warnings: ArrayList<String>,
-        overallSummary: String
+        overallSummary: String,
+        overallNotes!: ArrayList<String> = ArrayList<String>()
     ) {
         this.name = name
         this.path = path
@@ -195,6 +207,7 @@ public class Project {
         this.progressUpdatedAt = progressUpdatedAt
         this.warnings = warnings
         this.overallSummary = overallSummary
+        this.overallNotes = overallNotes
     }
 
     /// 采集失败的项目：分支/提交/文档全是空的，但**必须留在列表里**。
@@ -299,7 +312,12 @@ public class Project {
             Json.intAt(progress, "entryCount", 0),
             Json.strAt(progress, "updatedAt", ""),
             warns,
-            Json.strAt(overall, "summary", "")
+            Json.strAt(overall, "summary", ""),
+            // ⚠ `overall` 在采集失败时是**空对象 `{}`**，不是缺键。
+            // 两种都得拿到空数组 —— 写成 `Json.strArrAt(v, "overall.notes")`
+            // 之类会静默拿到空，而那恰好与非 git 项目的真实输出**长得一样**：
+            // 「读不出来」与「确实没有」被画成同一张脸。
+            overallNotes: Json.strArrAt(overall, "notes"),
         )
     }
 }

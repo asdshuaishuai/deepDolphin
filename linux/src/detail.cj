@@ -285,9 +285,27 @@ private func pulseCard(model: AppModel, p: Project, now: Int64, dark: Bool): Uni
                         Label("最近提交：${p.lastCommitAgo}").fontSize(12.0)
                     }
             }
-            if (!p.overallSummary.isEmpty()) {
+            if (overallSummaryShows(p)) {
                 Divider()
                 Label(p.overallSummary).fontSize(12.0).wrap()
+            }
+            // `overall.notes` 是引擎给的**另一批**事实，与 warnings 不是同一批。
+            // 引擎实测会报「存在 2 条 stash，注意清理」——
+            // 上面那排内联统计里有 stash 的**数字**，却**没有「注意清理」这半句**；
+            // 非 git 项目则靠它说明「为什么提交数是 0」。引擎算了、模型收了、
+            // 界面不说 ⇒ 等于没算。macOS 端 `DetailViews.swift:282` 有这条通路。
+            if (!p.overallNotes.isEmpty()) {
+                Divider()
+                HStack {
+                    dsAlertPill("引擎提示", DsAlert.Info, dark)
+                    Flexible {
+                        VStack {
+                            for (n in p.overallNotes) {
+                                Label("· ${n}").fontSize(11.0).wrap()
+                            }
+                        }.spacing(3.0.vp).hug()
+                    }
+                }.spacing(6.0.vp).hug()
             }
             if (p.storeHealth != "" && p.storeHealth != "ok") {
                 Divider()
@@ -375,6 +393,27 @@ public func commitTypeNotes(p: Project, shown: Int64): Array<String> {
         out.add("本卡只列前 ${shown} 种，引擎一共给了 ${p.commitTypes.size} 种")
     }
     return out.toArray()
+}
+
+/// 引擎那句 `overall.summary` 要不要显示。
+///
+/// **套的是 macOS 端同一条规则**（`DetailViews.swift:293`）：
+/// > `overall.summary` 是引擎对整条提交历史的概括。`commitTypeLine`
+/// > 说的是同一件事的另一种切法，重复画会显得啰嗦，
+/// > 所以这里只在**它没被别处说过**时才补位。
+///
+/// macOS 的判据是「我自己的提交构成行是不是空」，而那行在
+/// `commitTypes` 为空时才是 nil —— 所以规则等价于「没有提交类型时才补位」。
+/// 本端没有那条自己拼的行，但下面「提交构成」卡片在 `commitTypes` 非空时
+/// 一定在，所以「别处说过」同样等价于 `commitTypes` 非空。
+///
+/// ⚠ 不套这条规则的症状不是「啰嗦」，是**同一屏两套词表**：
+/// 引擎摘要写「最近 25 个提交：文档×7、修复×6」，紧挨着的图例写
+/// `feat / fix / docs / chore`。读者会以为是两个不同的统计口径。
+/// 引擎的词表是中文（新增/修复/文档/更新/构建·依赖/样式/界面），
+/// 与 `commitTypes` 的原始词表不是一套。
+public func overallSummaryShows(p: Project): Bool {
+    return p.commitTypes.isEmpty() && !p.overallSummary.isEmpty()
 }
 
 /// 卡 3：提交改动（git 动作）。**紧跟页头那一排按钮**，

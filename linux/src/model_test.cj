@@ -466,6 +466,135 @@ func commitTypeDisclosureStaysSilentWhenNothingIsCut(): Unit {
     @Expect(commitTypeNotes(p, 0).size == 0)
 }
 
+/// 非 git 项目。真实引擎对它给的是 `summary` 空串 + 一条 note，
+/// 而这条 note 是**唯一**说明「为什么提交数是 0」的地方。
+private let NON_GIT_OVERALL = """
+{"name":"plainly","path":"/tmp/dg-src/plainly","kind":"dir","storeHealth":"ok",
+ "userDirtyCount":1,"stashCount":0,"commitCount":0,"branches":[],
+ "overall":{"summary":"","notes":["非 git 仓库：进度基于文件活动时间，不含提交历史"]}}
+"""
+
+/// 真实引擎逐字截取的一个项目（`d2note`），
+/// 保留 `overall` 的两个键与 `commitTypes` 的形状。
+private let REAL_OVERALL_PROJECT = """
+{"storeHealth":"ok","name":"d2note","path":"/tmp/d2note","kind":"git",
+ "remote":"https://github.com/asdshuaishuai/d2note.git","tags":[],"headline":"main: 闲置 · 1 处未提交",
+ "currentBranch":"main","defaultBranch":"main","userDirtyCount":1,"stashCount":0,"commitCount":6,
+ "lastCommitAt":"2026-09-25T00:58:31+08:00","lastCommitAgo":"8 天前",
+ "commitTypes":[{"type":"feat","count":1},{"type":"fix","count":2},{"type":"docs","count":1},{"type":"other","count":2}],
+ "commitTypesTruncated":false,"repoBranchCount":1,
+ "overall":{"summary":"最近 6 个提交：修复×2、更新×1、新增×1","notes":["工作区有 1 处未提交改动"]},
+ "branches":[]}
+"""
+
+/// 采集失败时引擎把 `overall` 发成**空对象 `{}`**，不是缺这个键。
+/// 这一条盯的是它与「非 git 项目」的区别：
+/// 两者在 `summary` 上都是空串，**只有 notes 能分开** ——
+/// 分不开的话，「读不出来」和「确实没有提交历史」在界面上长得一模一样。
+private let EMPTY_OVERALL_PROJECT = """
+{"storeHealth":"ok","name":"gone","path":"/tmp/gone","kind":"dir",
+ "error":"路径不存在或卷未挂载：/tmp/gone","userDirtyCount":-1,"stashCount":-1,"commitCount":-1,
+ "branches":[],"overall":{}}
+"""
+
+// ---------------------------------------------------------------------------
+// overall.notes —— 引擎算了、界面不说的那批事实
+// ---------------------------------------------------------------------------
+
+@Test
+func engineNotesReachTheModelBecauseTheyCarryFactsNothingElseSays(): Unit {
+    // 实测的两种文案：未提交计数、stash 清理提醒。
+    // 后者尤其要紧：界面上有 stash 的**数字**，但「注意清理」这半句
+    // 只存在于引擎的 note 里 —— 引擎算了、模型收了、界面不说 ⇒ 等于没算。
+    let p = Project.from(Json.parse(REAL_OVERALL_PROJECT).getOrThrow())
+    @Expect(p.overallNotes.size == 1)
+    @Expect(p.overallNotes[0].contains("未提交"))
+    @Expect(p.overallSummary.contains("最近 6 个提交"))
+}
+
+@Test
+func anEmptyOverallObjectIsNotTheSameAsANonGitProject(): Unit {
+    // ⚠ 这两个在 `summary` 上都是空串。唯一能分开它们的是 notes。
+    let unreadable = Project.from(Json.parse(EMPTY_OVERALL_PROJECT).getOrThrow())
+    let nonGit = Project.from(Json.parse(NON_GIT_OVERALL).getOrThrow())
+    @Expect(unreadable.overallSummary.isEmpty())
+    @Expect(nonGit.overallSummary.isEmpty())
+    // 读不出来 → 没有任何 note
+    @Expect(unreadable.overallNotes.isEmpty())
+    // 非 git → 有一条**解释性** note
+    @Expect(nonGit.overallNotes.size == 1)
+    @Expect(nonGit.overallNotes[0].contains("非 git 仓库"))
+}
+
+// ---------------------------------------------------------------------------
+// overall.summary 的补位规则（macOS 端 DetailViews.swift:293）
+// ---------------------------------------------------------------------------
+
+@Test
+func theEngineSummaryOnlyFillsInWhenTheCommitChartHasNotSaidItYet(): Unit {
+    // 真实数据核对：本机 15 个项目里，`summary` 非空的有 11 个，
+    // **全部**同时有 `commitTypes`；反之 `summary` 非空而 `commitTypes` 为空的有 **0 个**。
+    // 所以这条规则的实际效果是：绝大多数情况下都不显示引擎那句。
+    //
+    // 不套规则的症状不是「啰嗦」，是**同一屏两套词表**：
+    // 引擎摘要写「最近 25 个提交：文档×7、修复×6」，紧挨着的图例写
+    // `feat / fix / docs / chore`。读者会当成两个统计口径。
+    let withTypes = Project.from(Json.parse(REAL_OVERALL_PROJECT).getOrThrow())
+    @Expect(withTypes.commitTypes.size > 0)
+    @Expect(!withTypes.overallSummary.isEmpty())
+    // 有提交类型 → 下面的图表已经说过 → 引擎那句不补位
+    @Expect(!overallSummaryShows(withTypes))
+
+    // 没有提交类型但引擎仍给了摘要 → 这时才轮到它补位
+    let fallback = Project.from(Json.parse(
+        """
+        {"name":"x","path":"/tmp/x","branches":[],"commitTypes":[],
+         "overall":{"summary":"最近 4 个提交：更新×2","notes":[]}}
+        """).getOrThrow())
+    @Expect(overallSummaryShows(fallback))
+
+    // 两者都没有 → 没有东西可显示
+    let neither = Project.from(Json.parse(
+        """
+        {"name":"y","path":"/tmp/y","branches":[],"commitTypes":[],"overall":{}}
+        """).getOrThrow())
+    @Expect(!overallSummaryShows(neither))
+}
+
+@Test
+func theOnDiskFixtureActuallyExercisesTheNotesPath(): Unit {
+    // ⚠ 这条是给**夹具自己**设的门槛。
+    // 原来的 `tests/fixtures/status.json` 六个项目里三个是「读不出来」
+    // （`overall` 为空对象），**没有一个非 git 项目** —— 于是
+    // 「非 git」这条最该显示的 note 在任何快照里都不会被触发，
+    // 而布局自查恰恰是靠快照做的：通路写了、快照里永远不出现，
+    // 等于没有证据说它工作过。
+    match (readTextFileOf("tests/fixtures/status.json")) {
+        case Some(text) =>
+            let snap = StatusSnapshot.from(Json.parse(text).getOrThrow())
+            var nonGit: Int64 = 0
+            var withNotes: Int64 = 0
+            var unreadable: Int64 = 0
+            for (p in snap.projects) {
+                if (!p.overallNotes.isEmpty()) {
+                    withNotes += 1
+                }
+                // 非 git = 读得出、但一个提交类型都没有、也没有采集错误
+                if (p.error.isEmpty() && p.commitCount == 0 && p.commitTypes.isEmpty()) {
+                    nonGit += 1
+                }
+                if (!p.error.isEmpty()) {
+                    unreadable += 1
+                }
+            }
+            @Expect(withNotes >= 2)
+            @Expect(nonGit >= 1)
+            // 「读不出来」的覆盖不能因为补了非 git 就丢掉
+            @Expect(unreadable >= 3)
+        case None => @Expect(false)
+    }
+}
+
 /// 空路径**不许**把进程带崩。
 ///
 /// `Path("")` 在仓颉里抛 `IllegalArgumentException`。而 `locateEngine`
@@ -505,7 +634,11 @@ func realEngineFixturesParseIntoModels(): Unit {
         case Some(text) =>
             let v = Json.parse(text).getOrThrow()
             let snap = StatusSnapshot.from(v)
-            @Expect(snap.projects.size == 6)
+            // 7 个：atlas/beacon/legacy（可读 git）、plainly（可读但非 git）、
+            // gone/newbie/fresh（读不出来）。
+            // ⚠ 别把 7 改回 6 来「修」这条判据 —— `theOnDiskFixtureActuallyExercisesTheNotesPath`
+            // 要求里面**必须**有一个非 git 项目，否则 note 通路在快照里永远不出现。
+            @Expect(snap.projects.size == 7)
             @Expect(snap.failedKnown)
             @Expect(snap.failedProjects == 3)
             // 契约闸门必须过
