@@ -17,8 +17,52 @@
   },
   "languages": [
     {
+      "language": "TypeScript",
+      "count": 777
+    },
+    {
+      "language": "MoonBit",
+      "count": 356
+    },
+    {
       "language": "其他",
-      "count": 39
+      "count": 210
+    },
+    {
+      "language": "JavaScript",
+      "count": 85
+    },
+    {
+      "language": "配置",
+      "count": 78
+    },
+    {
+      "language": "HTML",
+      "count": 65
+    },
+    {
+      "language": "Swift",
+      "count": 56
+    },
+    {
+      "language": "CSS",
+      "count": 45
+    },
+    {
+      "language": "C/C++",
+      "count": 34
+    },
+    {
+      "language": "Shell",
+      "count": 16
+    },
+    {
+      "language": "Python",
+      "count": 13
+    },
+    {
+      "language": "Rust",
+      "count": 11
     }
   ],
   "languagesTruncated": false,

@@ -802,6 +802,103 @@ func journalTruncationAndUnparsableLinesAreTwoDifferentDisclosures(): Unit {
     @Expect(fine.unparsableNote().isEmpty())
 }
 
+/// 语言分布的**四轴披露**，一条都不能少。
+///
+/// ⚠ 这条盯的是 macOS 缺陷 #205 的本端复现：`dashboard --json` 实测给
+/// **12 种**语言，而界面只画前 8 条，且 `languagesTruncated` 与
+/// `languagesTopCut` **都是 false** —— 于是连原有的「已截断」标记都不亮，
+/// 读者看到的是一条看起来完整的分段条。
+/// 实测被藏起来的是 C/C++ 34、Shell 16、Python 13、Rust 11。
+@Test
+func theLanguageCardSaysWhenItsOwnEightRowCapHidSomething(): Unit {
+    // 逐字取自本机 `dashboard --json` 的前 8 条 + 后 4 条
+    let d = Dashboard.from(Json.parse(
+        """
+        {"projects":{"total":1},"work":{"branches":1,"mergeCandidates":0,"untrackedFiles":0,"stashes":0},
+         "languages":[
+           {"language":"TypeScript","count":777},{"language":"MoonBit","count":356},
+           {"language":"其他","count":210},{"language":"JavaScript","count":85},
+           {"language":"配置","count":78},{"language":"HTML","count":65},
+           {"language":"Swift","count":56},{"language":"CSS","count":45},
+           {"language":"C/C++","count":34},{"language":"Shell","count":16},
+           {"language":"Python","count":13},{"language":"Rust","count":11}],
+         "languagesTruncated":false,"languagesTopCut":false,
+         "languagesFailed":0,"languagesFailedReasons":[],
+         "fetchedAt":"x"}
+        """).getOrThrow())
+
+    let parts = languageParts(d)
+    @Expect(parts.size, 8)
+    // 引擎两条轴都是 false —— 所以**只有**界面自己那条会响。
+    // 这正是它原先一个字都不说的原因。
+    @Expect(!d.languagesTruncated)
+    @Expect(!d.languagesTopCut)
+
+    let cov = languageCoverage(d, parts.size)
+    @Expect(cov.notes.size, 1)
+    // 披露里的数必须与**实际画出来的条数**和**引擎给的条数**都对得上
+    @Expect(cov.notes[0].contains("前 8 种"))
+    @Expect(cov.notes[0].contains("共 12 种"))
+    // 披露用的上限与切片用的上限必须是同一个常量
+    @Expect(LANGUAGE_CARD_MAX, 8)
+
+    // 引擎那两条轴各自独立：响了就是它自己那一句，不许互相顶替
+    let cut = Dashboard.from(Json.parse(
+        """
+        {"projects":{"total":1},"work":{"branches":1,"mergeCandidates":0,"untrackedFiles":0,"stashes":0},
+         "languages":[{"language":"Swift","count":56},{"language":"Rust","count":11}],
+         "languagesTruncated":true,"languagesTopCut":true,
+         "languagesFailed":2,"languagesFailedReasons":["listFiles 失败：/tmp/x"],
+         "fetchedAt":"x"}
+        """).getOrThrow())
+    let c2 = languageCoverage(cut, languageParts(cut).size)
+    @Expect(c2.notes.size, 3)
+    @Expect(c2.notes[0].contains("跟踪文件上限"))
+    @Expect(c2.notes[1].contains("引擎上限"))
+    @Expect(c2.notes[2].contains("2 个项目语言采集失败"))
+    @Expect(c2.notes[2].contains("listFiles 失败"))
+
+    // 采集失败 + 没有语言 → 空态标题必须说「未采集到」而不是「暂无数据」。
+    // 「暂无数据」会被读成「这个项目群真的没有这些语言」。
+    let blind = Dashboard.from(Json.parse(
+        """
+        {"projects":{"total":1},"work":{"branches":1,"mergeCandidates":0,"untrackedFiles":0,"stashes":0},
+         "languages":[],"languagesTruncated":false,"languagesTopCut":false,
+         "languagesFailed":3,"languagesFailedReasons":[],"fetchedAt":"x"}
+        """).getOrThrow())
+    @Expect(languageCoverage(blind, 0).emptyTitle, "未采集到语言数据")
+    @Expect(languageCoverage(d, parts.size).emptyTitle, "暂无数据")
+
+    // 什么都没发生时一句话都不说 —— 多余的披露和缺失的一样是噪声
+    let small = Dashboard.from(Json.parse(
+        """
+        {"projects":{"total":1},"work":{"branches":1,"mergeCandidates":0,"untrackedFiles":0,"stashes":0},
+         "languages":[{"language":"Swift","count":56}],
+         "languagesTruncated":false,"languagesTopCut":false,
+         "languagesFailed":0,"languagesFailedReasons":[],"fetchedAt":"x"}
+        """).getOrThrow())
+    @Expect(languageCoverage(small, 1).notes.size, 0)
+}
+
+@Test
+func theOnDiskFixtureHasMoreLanguagesThanTheCardCanShow(): Unit {
+    // 夹具原来只有 1 种语言 —— 于是这个缺陷在**任何快照里都不会出现**。
+    // 布局自查靠快照，夹具里没有的形状就等于没验证过。
+    // 这条是给夹具自己设的门槛。
+    match (readTextFileOf("tests/fixtures/dashboard.json")) {
+        case Some(text) =>
+            let d = Dashboard.from(Json.parse(text).getOrThrow())
+            @Expect(d.languages.size > LANGUAGE_CARD_MAX)
+            // 引擎那两条轴都是 false：唯一会响的必须是界面自己那条
+            @Expect(!d.languagesTruncated)
+            @Expect(!d.languagesTopCut)
+            let parts = languageParts(d)
+            @Expect(parts.size, LANGUAGE_CARD_MAX)
+            @Expect(languageCoverage(d, parts.size).notes.size, 1)
+        case None => @Expect(false)
+    }
+}
+
 /// 空路径**不许**把进程带崩。
 ///
 /// `Path("")` 在仓颉里抛 `IllegalArgumentException`。而 `locateEngine`

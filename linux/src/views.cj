@@ -555,6 +555,10 @@ private func failurePanel(snap: StatusSnapshot, dark: Bool): Unit {
 /// 图例是**必须**的：色点自己不会说话，读者按「颜色 ↔ 语言名」配对。
 private func languageCard(dash: Dashboard, dark: Bool): Unit {
     let parts = languageParts(dash)
+    // 四轴披露的唯一判定点。`shownCount` 传**实际画出来的条数**，
+    // 不是引擎给的条数 —— 传错的话披露按 12 算、界面画 8 条，
+    // 藏起来的那 4 种一个字都不提（macOS 缺陷 #205 的原样复现）。
+    let cov = languageCoverage(dash, parts.size)
     Panel {
         VStack {
             HStack {
@@ -568,23 +572,28 @@ private func languageCard(dash: Dashboard, dark: Bool): Unit {
                 }
             }.hug()
             if (parts.isEmpty()) {
-                Label("引擎没有给出语言分布").fontSize(12.0).muted()
+                Label(cov.emptyTitle).fontSize(12.0).muted()
             } else {
                 Flexible { dsSegBar(parts) }
                 for (p in parts) {
                     dsLegendRow(p, languageTotal(parts))
                 }
-                if (dash.languagesTruncated) {
-                    Label("（上面不是全部语言）").fontSize(11.0).muted()
-                }
+            }
+            for (n in cov.notes) {
+                Label(n).fontSize(11.0).muted().wrap()
             }
         }.spacing(8.0.vp)
     }.style(dsSurface(DsLevel.Card, dark)).contentPadding(14.0.vp).flex()
 }
 
+/// 语言分布卡**界面自己**的显示上限。提成常量是为了让判据能断言
+/// 「披露里的那条数与这个数一致」—— 原来它内联在切片里，
+/// 改上限时披露那句会跟着漂。
+public let LANGUAGE_CARD_MAX: Int64 = 8
+
 /// 语言分布的可见切片，**最多 8 档**。
 public func languageParts(dash: Dashboard): Array<DsPart> {
-    let cap: Int64 = 8
+    let cap: Int64 = LANGUAGE_CARD_MAX
     let out = ArrayList<DsPart>()
     var i: Int64 = 0
     for (l in dash.languages) {

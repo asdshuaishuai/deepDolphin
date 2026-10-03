@@ -975,6 +975,73 @@ public func boardColumnOf(l: Liveness): BoardColumn {
     }
 }
 
+/// 语言分布的覆盖度披露。**四轴彼此独立，少一条就撒谎。**
+///
+/// 与 macOS 端 `LanguageCoverage.languageCoverage` 逐条对齐。
+///
+/// ⚠⚠ 这不是理论风险，本机就在发生：`dashboard --json` 给出 **12 种**语言
+/// （TypeScript 777 / MoonBit 356 / 其他 210 / … / C/C++ 34 / Shell 16 /
+/// Python 13 / Rust 11），而界面 `languageParts` 只画前 8 条 ——
+/// **藏起 4 种、一个字都不提**。更糟的是 `languagesTruncated` 与
+/// `languagesTopCut` 实测都是 `false`，所以连原有的「已截断」标记都不亮：
+/// 读者看到的是一条看起来完整的分段条。macOS 那边把它记成缺陷 #205
+/// （14 种语言只列 8 条且零提示），本端原样复现。
+///
+/// 四个轴：
+///   · `truncated`  —— 文件被砍（引擎的跟踪文件上限），掉出去的文件里
+///                     可能还藏着**整类**语言
+///   · `topCut`     —— 语言**条数**被引擎上限砍掉
+///   · `shownCount` —— **界面自己**又砍了一层（本端上限 8）
+///   · `failed`     —— 压根没采到（与「这个项目群没有这些语言」无关）
+public class LanguageCoverage {
+    /// `languages` 为空时该显示什么。空数组有两种成因，文案必须不同：
+    /// 「暂无数据」会被读成「真的没有」，而真相可能是「没采到」。
+    public let emptyTitle: String
+    /// 卡片下方要补的说明；空 = 没什么要说的。
+    public let notes: ArrayList<String>
+
+    public init(emptyTitle: String, notes: ArrayList<String>) {
+        this.emptyTitle = emptyTitle
+        this.notes = notes
+    }
+}
+
+/// 覆盖度披露的**唯一**判定点。纯函数。
+///
+/// - `languageCount`: 引擎给出的语言条数（**含**界面上没画出来的那几条）
+/// - `shownCount`: 界面**实际画出来**的条数
+public func languageCoverage(d: Dashboard, shownCount: Int64): LanguageCoverage {
+    let languageCount = d.languages.size
+    let notes = ArrayList<String>()
+
+    if (d.languagesTruncated) {
+        notes.add("有项目撞到跟踪文件上限，被丢掉的文件里可能还有整类语言")
+    }
+    if (d.languagesTopCut) {
+        notes.add("语言种类超过引擎上限，只列了排名靠前的一部分（不是全部语言）")
+    }
+    if (shownCount < languageCount) {
+        // 界面自己砍的：这一句说的是**这张卡片**，与引擎那两条是两回事
+        notes.add("这张卡片只显示前 ${shownCount} 种语言（共 ${languageCount} 种）")
+    }
+    if (d.languagesFailed > 0) {
+        var line = "${d.languagesFailed} 个项目语言采集失败，未计入这份分布（不是「这个项目群没有这些语言」）"
+        if (!d.languagesFailedReasons.isEmpty()) {
+            line += "；原因示例：${d.languagesFailedReasons[0]}"
+        }
+        notes.add(line)
+    }
+
+    // 采集失败时 languages 为空是**正常结果**，不是「没数据」。
+    // 文案必须让用户知道该去查引擎，而不是以为项目群真的没这些语言。
+    let emptyTitle = (if (d.languagesFailed > 0 && languageCount == 0) {
+        "未采集到语言数据"
+    } else {
+        "暂无数据"
+    })
+    return LanguageCoverage(emptyTitle, notes)
+}
+
 /// 有没有东西等着动手。
 ///
 /// ⚠ 这条原先**故意少抄了** macOS 端的一条
