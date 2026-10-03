@@ -3,7 +3,10 @@
 // 【布局与 macOS 端 `PanelView.sidebar` 一比一】
 // 侧栏同时承载**两组**：视图（仪表盘 / 看板 / 里程碑）与仓库（受管项目）。
 // 顶部没有页签栏 —— 同一个项目在「顶部页签」和「侧栏」两处都能选，
-// 而选中状态只有一个，两处必然各说各话。导航只有一个入口：`goRow`。
+// 而选中状态只有一个，两处必然各说各话。
+// 导航只有两个写入口：切视图 `goView` / 进项目 `openProject`，
+// 侧栏之外的入口（范围下拉、看板卡）也必须走它们 ——
+// 绕过入口就会留下「主区是 B、侧栏亮着 A」。
 //
 // 行构成照抄 macOS 端：
 //   视图行：名称 + 行尾计数（读不出来时**不显示**，不是 0）
@@ -136,6 +139,8 @@ private func observeSelection(model: AppModel, app: DesktopApp): Unit {
     mountEffect("dd-observe-selected", {
         => model.selectedProject.observe({_, _ => loadProjectDetail(app, model)})
     })
+    // 侧栏两组的点击接回路由
+    observeSidebarSelection(model, app)
 }
 
 func sidebar(model: AppModel, app: DesktopApp, dark: Bool): Unit {
@@ -202,71 +207,135 @@ public func sidebarProjectLabels(ps: ArrayList<Project>, now: Int64): Array<Stri
     return out.toArray()
 }
 
-/// 视图组的选中下标。**只在当前选中确实是视图时**才有意义，
-/// 选中项目时返回 0 但界面高亮不会落在视图组上（由 `isViewSelected` 区分）。
-private func viewSelection(model: AppModel): State<Int64> {
-    if (rootSectionIs(model.root.value, RootSection.Project)) {
-        return State<Int64>(-1)
-    }
-    match (model.root.value) {
-        case RootSection.Dashboard => return State<Int64>(0)
-        case RootSection.Board => return State<Int64>(1)
-        case RootSection.Milestones => return State<Int64>(2)
-        case RootSection.Project => return State<Int64>(-1)
-    }
+/// 视图组的选中态。**直接返回持久 state，不是每次新建一个常量**。
+///
+/// ⚠ 原来这里是「每帧从 `root` 现算」：`if (是项目页) return State(-1)`，
+/// 然后 `match (root) { … }`，每次重建都造一个**新实例**。
+/// 而 CUI 的 `ListView` 点击**直接写**传入的 `selected`
+/// （`selection_widgets.cj` 的 handle）—— 写进那个临时实例，
+/// 下一帧重建就没了，于是**侧栏点了不换页**。
+/// 它自己的滚动状态特意用 `localState(key)` 持久化（注释写着
+/// 「a fresh State each frame would reset」），选中没做同样保护，
+/// 因为设计上就假定外部传进来的是**持久实例**。
+/// 更能说明问题的旁证：`goView` / `goProject` 两个写入口当时已写好，
+/// 却**从未被任何地方调用** —— 接线的那一步漏了。
+public func viewSelection(model: AppModel): State<Int64> {
+    return model.viewIndex
 }
 
 /// 项目组的选中下标。没选项目时是 -1（ListView 会当成没有高亮）。
-private func projectSelection(model: AppModel): State<Int64> {
-    if (!rootSectionIs(model.root.value, RootSection.Project)) {
-        return State<Int64>(-1)
-    }
-    let name = model.selectedProject.value
+/// 同样返回持久 state，理由见 `viewSelection`。
+public func projectSelection(model: AppModel): State<Int64> {
+    return model.selected
+}
+
+/// 把 ListView 的选中接回路由。
+///
+/// `mountEffect` 按 key 去重，重建时不会重复注册观察。
+/// ⚠ 无回环的要点：`goView(-1)` 是**哑操作**（viewAtIndex(-1) 返回 None），
+/// 所以「进项目详情时把 viewIndex 置 -1」不会又触发一次导航。
+private func observeSidebarSelection(model: AppModel, app: DesktopApp): Unit {
+    mountEffect("dd-obs-view", {
+        => model.viewIndex.observe({_, v => goView(model, v)})
+    })
+    mountEffect("dd-obs-proj", {
+        => model.selected.observe({_, v => goProject(model, v)})
+    })
+}
+
+/// 侧栏「仓库」组里某个项目所在的行号。
+///
+/// ⚠ **按侧栏真正显示的那份列表算**（过了搜索），不是按全量列表。
+/// 返回 -1 = 搜索把这一行滤掉了、界面上根本没有这一行 ——
+/// 「这一行看不见」和「这一行是第 0 行」是两件事，混起来就会高亮一个不相干的仓库。
+public func sidebarProjectIndex(model: AppModel, name: String): Int64 {
     let shown = filterProjects(allProjectsOf(model), model.query.value)
     var i: Int64 = 0
     for (p in shown) {
         if (p.name == name) {
-            return State<Int64>(i)
+            return i
         }
         i += 1
     }
-    return State<Int64>(-1)
+    return -1
 }
 
-/// 选中视图行 → 走唯一写入口。
-func goView(model: AppModel, app: DesktopApp, i: Int64): Unit {
+/// 切到某个视图的**唯一**写入口：路由 + 侧栏两组高亮**一起**写。
+///
+/// ⚠ **不收 `app`**：这个函数原来带着一个 `DesktopApp` 参数却根本没用它。
+/// 带着它就等于「这一步需要开窗口」，于是判据只能开窗才能验 ——
+///
+/// 能不开窗口就验的规则，绝不挪到视图测试里去。
+/// 真需要 app 的地方（加载详情）是 `loadProjectDetail`，由 `selectedProject`
+/// 的观察者调用，与「选谁」这一步分开。
+func goView(model: AppModel, i: Int64): Unit {
     match (viewAtIndex(i)) {
         case Some(r) =>
-            model.root.value = r
-            model.selectedProject.value = ""
-            syncScope(model)
+            if (!rootSectionIs(model.root.value, r)) {
+                model.root.value = r
+            }
+            if (!model.selectedProject.value.isEmpty()) {
+                model.selectedProject.value = ""
+            }
+            // 范围条不用在这里「同步」：上面清掉 `selectedProject` 之后，
+            // `scopeIndexOf` 自然回落成 0，下拉与主区不会分家。
+            // 侧栏：视图组亮这一行，仓库组撤掉高亮。
+            // `viewIndex` 就是本次点击写进来的那个值，这一句是给
+            // **不经过侧栏**的调用方（范围下拉选「全局」）补上的。
+            model.viewIndex.setIfChanged(i)
+            model.selected.setIfChanged(-1)
         case None => ()
     }
 }
 
+/// 进项目详情的**唯一**写入口 —— 侧栏点、范围下拉点、看板卡「打开」都走它。
+///
+/// ⚠ 五个字段必须**一起**写：路由三项（`selectedProject` / `root` / `scope`）
+/// 加侧栏两组高亮（`viewIndex` / `selected`）。只写路由不写高亮的症状很具体：
+/// **主区已经是 B，侧栏还亮着 A**。侧栏高亮改成持久 State 之前它是每帧
+/// 从 `selectedProject` 现算的，所以绕过侧栏也「碰巧对」；不再现算了，
+/// 每一处导航都得自己负责把高亮跟上。
+///
+/// ⚠ 全部「值变了才写」：写 `model.selected` 会触发它的观察者 `goProject`，
+/// 而 `goProject` 又调回本函数（幂等自愈）。普通 `State` 的 `value = x`
+/// 在**值没变时照样通知**（`state.cj` 的 setter 不比较旧值，
+/// 抑制要靠 `setIfChanged` 或带 mutation policy 的 State），
+/// 无条件写就是无限递归：写 → 通知 → 观察者 → 再写 → 再通知……
+/// 枚举（`RootSection` / `ScopeChoice`）本身不实现 `==`，
+/// 所以那两处用现成的 `rootSectionIs` / `scopeIs` 谓词判等。
+public func openProject(model: AppModel, name: String): Unit {
+    model.selectedProject.setIfChanged(name)
+    if (!rootSectionIs(model.root.value, RootSection.Project)) {
+        model.root.value = RootSection.Project
+    }
+    if (!scopeIs(model.scope.value, ScopeChoice.One)) {
+        model.scope.value = ScopeChoice.One
+    }
+    // 视图组这时**不该**高亮（项目详情不属于「仪表盘/看板/里程碑」中的任何一个）。
+    // 置 -1 不会回环：`goView(-1)` 的 `viewAtIndex(-1)` 返回 None，是哑操作。
+    model.viewIndex.setIfChanged(-1)
+    model.selected.setIfChanged(sidebarProjectIndex(model, name))
+}
+
 /// 选中项目行 → 走唯一写入口。
-func goProject(model: AppModel, app: DesktopApp, i: Int64): Unit {
+func goProject(model: AppModel, i: Int64): Unit {
     let shown = filterProjects(allProjectsOf(model), model.query.value)
     if (i < 0 || i >= shown.size) {
         // 点到不存在的行**什么都不做**。把选中改成某个不存在的项目、
         // 或者弹一个空详情页，那正是「点了没反应」的另一种形态。
         return
     }
-    model.selectedProject.value = shown[i].name
-    model.root.value = RootSection.Project
-    model.scope.value = ScopeChoice.One
+    openProject(model, shown[i].name)
 }
 
-/// 视图变更后同步范围。**只有「非项目视图」才把范围收回全局** ——
-/// 选了一个项目再点「仪表盘」，范围应该留在那个项目上（WorkBar 选的），
-/// 而不是被顺手重置掉。
-func syncScope(model: AppModel): Unit {
-    if (!rootSectionIs(model.root.value, RootSection.Project)) {
-        if (!model.selectedProject.value.isEmpty()) {
-            return
-        }
-    }
-}
+/// ~~视图变更后同步范围~~ —— 已删。
+///
+/// 它的函数体是空的（两条分支都直接落空），注释却宣称「把范围收回全局」：
+/// 一句描述了一个不存在的行为的注释，比没有注释更糟。
+/// 而它想做的事其实**已经发生了**：`goView` 对非项目视图会清掉
+/// `selectedProject`，`scopeIndexOf` 于是回落成 0，范围下拉自然跟着回到「全局」。
+/// 再加一个同步函数，只是让同一个结果有两个来源。
+/// macOS 端也没有对应物 —— 它的 `Model.go(_:)` 只写 `selection`，不碰 scope。
 
 /// 分组标题。`Label` 没有 `hug()`（那是 `Panel` / `VStack` 的方法），
 /// 所以用一层 Panel 承载内边距 —— 直接给 Label 加 padding 会连着

@@ -245,15 +245,21 @@ public func scopeLabels(model: AppModel, total: Int64): Array<String> {
 /// 下标 → 范围。**范围选择的唯一写入口** ——
 /// 原来三处各写一遍 `scope` / `selectedProject` / `root`，
 /// 漏写一处就会出现「标题说单仓库、内容是全局」。
+///
+/// ⚠ 两条分支都**转手给 `goView` / `openProject`**，不自己拼字段。
+/// 范围条是侧栏之外的第二个入口，它切了主区就得负责把侧栏两组高亮跟上；
+/// 自己写那三个字段的话，侧栏会停在旧地方不动。
 public func applyScope(model: AppModel, idx: Int64): Unit {
     let ps = allProjectsOf(model)
     if (idx <= 0) {
-        model.scope.value = ScopeChoice.Group
-        model.root.value = RootSection.Dashboard
+        // 「全局」= 回仪表盘。goView 会清掉 `selectedProject`，
+        // 于是 `scopeIndexOf` 自然回落成 0，下拉与主区不再分家。
+        if (!scopeIs(model.scope.value, ScopeChoice.Group)) {
+            model.scope.value = ScopeChoice.Group
+        }
+        goView(model, 0)
     } else if (idx - 1 < ps.size) {
-        model.scope.value = ScopeChoice.One
-        model.selectedProject.value = ps[Int64(idx - 1)].name
-        model.root.value = RootSection.Project
+        openProject(model, ps[Int64(idx - 1)].name)
     }
 }
 
@@ -1053,9 +1059,10 @@ private func boardCard(model: AppModel, app: DesktopApp, p: Project, now: Int64,
             Spacer()
             Button("打开", {
                 =>
-                    model.selectedProject.value = p.name
-                    model.root.value = RootSection.Project
-                    model.scope.value = ScopeChoice.One
+                    // 走唯一写入口，不自己拼那三个字段。
+                    // 绕过入口的后果不是「代码风格问题」：侧栏仓库组的高亮
+                    // 停在别的项目上，而主区已经换成这一个了。
+                    openProject(model, p.name)
             }).fontSize(11.0)
         }.spacing(8.0.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
     }.style(dsSurface(DsLevel.Nested, dark)).contentPadding(10.0.vp).hug()

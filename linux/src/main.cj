@@ -82,16 +82,29 @@ main(): Int64 {
         // CUI 快照只会启动即拍，用户点不到别的页 —— 没有这个开关，
         // 看板与项目详情就永远只能靠「代码读着像对的」来相信。
         let root = (getVariable("DD_SNAP_ROOT") ?? "").trimAscii()
-        if (root == "board") {
-            model.root.value = RootSection.Board
+        // ⚠ 这里原来**直接写 `model.root`**，绕过了 `goView` 这个唯一写入口，
+        // 于是侧栏高亮还停在「仪表盘」而主区已经是「看板」——
+        // 截图上一眼就是错的，而且它违反本仓自己的纪律：
+        // 「导航只有侧栏一个入口，不许在别处直接写 root / selectedProject」。
+        // 快照开关不能因为「只是自查」就享有特权。
+        let section: Option<RootSection> = (if (root == "board") {
+            Some(RootSection.Board)
         } else if (root == "milestones") {
-            model.root.value = RootSection.Milestones
+            Some(RootSection.Milestones)
+        } else {
+            None
+        })
+        match (section) {
+            case Some(r) => goView(model, sectionIndexOf(r))
+            case None => ()
         }
         let proj = (getVariable("DD_SNAP_PROJECT") ?? "").trimAscii()
         if (!proj.isEmpty()) {
-            model.root.value = RootSection.Project
-            model.selectedProject.value = proj
-            model.scope.value = ScopeChoice.One
+            // 同理：走 `applyScope`，别自己拼那三个字段
+            let idx = snapshotProjectIndex(model, proj)
+            if (idx > 0) {
+                applyScope(model, idx)
+            }
         }
     }
 
@@ -156,4 +169,35 @@ main(): Int64 {
         rootView(model, app)
     }
     return 0
+}
+
+/// 视图 → 侧栏下标（0 仪表盘 / 1 看板 / 2 里程碑）。
+/// 与 `viewAtIndex` 互逆；没有对应项时返回 -1。
+func sectionIndexOf(r: RootSection): Int64 {
+    if (rootSectionIs(r, RootSection.Dashboard)) {
+        return 0
+    }
+    if (rootSectionIs(r, RootSection.Board)) {
+        return 1
+    }
+    if (rootSectionIs(r, RootSection.Milestones)) {
+        return 2
+    }
+    return -1
+}
+
+/// 范围下拉里某个项目的下标（1 起）。找不到返回 -1。
+///
+/// 快照开关要跳到指定项目，就必须经过**下拉用的那套下标**，
+/// 直接写 `selectedProject` 会让下拉显示错的项 ——
+/// 与侧栏高亮失配是同一族问题。
+func snapshotProjectIndex(model: AppModel, name: String): Int64 {
+    var i: Int64 = 0
+    for (p in allProjectsOf(model)) {
+        if (p.name == name) {
+            return i + 1
+        }
+        i += 1
+    }
+    return -1
 }

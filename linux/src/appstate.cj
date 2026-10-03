@@ -24,7 +24,18 @@ public class AppModel {
     public let docs = State<Option<DocBundle>>(None)
 
     // -------------------------------------------------------------- 导航
+    /// 侧栏「仓库」组的选中下标。
+    ///
+    /// ⚠ 它**必须直接绑给 `ListView`**：CUI 的 ListView 点击直接写传入的
+    /// `selected`（`selection_widgets.cj` 的 handle），而它的滚动状态特意用
+    /// `localState(key)` 持久化以免「a fresh State each frame would reset」——
+    /// 选中没做同样保护，因为设计上就假定外部传进来的是**持久实例**。
+    /// 传一次性的 `State(0)` 的话，点击写进那个临时实例，下一帧重建就没了：
+    /// 侧栏点了不换页，而现场看起来「按钮高亮了但没反应」。
     public let selected = State<Int64>(0)
+    /// 侧栏「视图」组的选中下标（0 仪表盘 / 1 看板 / 2 里程碑，-1 = 不高亮）。
+    /// 同样必须持久，原因见 `selected`。
+    public let viewIndex = State<Int64>(0)
     /// 详情页内的子页：概览 / 提交构成 / 分支 / 日志 / git
     public let detailTab = State<Int64>(0)
     /// 文档页内的文件页签（README / AGENTS / CLAUDE）
@@ -99,12 +110,9 @@ public class AppModel {
     /// ⚠ 为什么与 `root` 分开而不是塞进一个枚举：macOS 端用
     /// `RootSection.project(String)` 一个枚举同时表达两者，本端拆开是因为
     /// CUI 的 `ListView` 用 Int64 索引、`LazyList` 用 Int64 索引，
-    /// 侧栏把两组渲染成**同一个列表**（macOS 端也是一个 `List(selection:)`），
     /// 用索引当唯一标识比在枚举里塞字符串更直接。
-    /// 两者的**组合关系**由 `selectedIsViewRow` / `selectedProject` 维护。
+    /// 两组各自的选中下标是 `viewIndex` / `selected`（见各自的注释）。
     public let selectedProject = State<String>("")
-    /// 侧栏里被选中的那一行的全局序号（视图组 + 仓库组连续编号）。
-    public let selectedRow = State<Int64>(0)
     /// 侧栏搜索词。空 = 不过滤。
     public let query = State<String>("")
     /// 范围（WorkBar 左段）。Group = 全局看板，One = 单仓库管控页。
@@ -360,9 +368,17 @@ func applyStatusCall(model: AppModel, statusCall: Payload): Unit {
     }
     if (let Some(v) <- statusCall.json) {
         model.snapshot.value = Some(StatusSnapshot.from(v))
-        let n = model.snapshot.value.getOrThrow().projects.size
-        if (model.selected.value >= n) {
-            model.selected.value = if (n > 0) { n - 1 } else { 0 }
+        // 项目列表变短时把选中下标收回范围里。
+        //
+        // ⚠ 上界必须用**侧栏真正显示的那份列表**（过了搜索框），
+        // 不是 `projects.size`：拿全量数目当上界，搜索生效时下标照样可能
+        // 越出可见范围。
+        // ⚠ 这个钳位现在**有副作用**了：`selected` 成了侧栏高亮的持久 state，
+        // 写它会触发 `goProject` 观察者 → 可能换项目。所以上界得准，
+        // 否则一次轮询就能把人从 A 弹到不相干的 B 上。
+        let shown = filterProjects(allProjectsOf(model), model.query.value).size
+        if (model.selected.value >= shown) {
+            model.selected.value = if (shown > 0) { shown - 1 } else { 0 }
         }
     }
     model.refreshLabels()
@@ -850,60 +866,18 @@ public func emptyText(r: EmptyReason, noun: String): String {
     }
 }
 
-/// 侧栏「视图」组的行数。视图行与仓库行**共用一个连续序号**，
-/// 所以这里的常量就是「第一行仓库在侧栏里的位置」。
-public const SIDEBAR_VIEW_ROWS: Int64 = 3
-
-/// 侧栏行的总数 = 视图组 + 仓库组。
-public func sidebarRowCount(projectCount: Int64): Int64 {
-    return SIDEBAR_VIEW_ROWS + projectCount
-}
-
-/// 第 `i` 行是哪个视图。**纯函数**，判据直接喂序号。
-public func viewRowAt(i: Int64): Option<RootSection> {
-    match (i) {
-        case 0 => return Some(RootSection.Dashboard)
-        case 1 => return Some(RootSection.Board)
-        case 2 => return Some(RootSection.Milestones)
-        case _ => return None
-    }
-}
-
-/// 第 `i` 行对应哪个项目（`i >= SIDEBAR_VIEW_ROWS`）。
-public func projectRowAt(i: Int64, projects: ArrayList<Project>): Option<Project> {
-    let k = i - SIDEBAR_VIEW_ROWS
-    if (k < 0 || k >= projects.size) {
-        return None
-    }
-    return Some(projects[k])
-}
-
-/// 选中行 → 当前视图。**只有一个写入口**，视图和详情都读它。
-///
-/// ⚠ 别在别处直接写 `root` / `selectedProject` —— 两处都能写就会出现
-/// 「侧栏高亮在 A、详情显示 B」。和 macOS 端 `model.go(_:)` 同一条纪律。
-public func goRow(model: AppModel, row: Int64, projects: ArrayList<Project>): Unit {
-    if (row < 0 || row >= sidebarRowCount(projects.size)) {
-        // 点到不存在的行**什么都不做**。把选中改成某个不存在的项目、
-        // 或者弹一个空详情页，那正是「点了没反应」的另一种形态。
-        return
-    }
-    match (viewRowAt(row)) {
-        case Some(r) =>
-            model.root.value = r
-            model.selectedRow.value = row
-            if (!rootSectionIs(r, RootSection.Project)) {
-                model.selectedProject.value = ""
-            }
-            return
-        case None => ()
-    }
-    if (let Some(p) <- projectRowAt(row, projects)) {
-        model.selectedProject.value = p.name
-        model.root.value = RootSection.Project
-        model.selectedRow.value = row
-    }
-}
+// ~~视图行 / 仓库行共用一个连续序号的那套行号模型~~ —— 已删
+// （`SIDEBAR_VIEW_ROWS` / `sidebarRowCount` / `viewRowAt` / `projectRowAt` /
+// `goRow`，以及它们配套的 `selectedRow`）。
+//
+// 侧栏早就改成**两个独立的 ListView**（`dd-view-list` + `dd-proj-list`），
+// 与 macOS 端一致，所以「视图行与仓库行共用一个下标」这个前提已经不成立了。
+// 留着它有两个实际代价：
+//   1. 它是**第二个能写路由的地方** —— 这正是它自己注释里警告的那个事故
+//      （「别在别处直接写 root / selectedProject」），而它自己就在别处写着；
+//   2. 它自称「导航的唯一写入口」，而真正在用的入口叫 `goView` / `openProject`
+//      —— 下一个读代码的人会照着注释去调一个没人调的函数。
+// 判据里也没有一条用到它（全仓无调用者），删掉不影响任何已验证行为。
 
 /// 当前选中的项目。**读不出来返回 `None`**，不回落成「第一个」。
 public func selectedProjectOf(model: AppModel): Option<Project> {

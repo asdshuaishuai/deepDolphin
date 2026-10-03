@@ -905,3 +905,147 @@ func applyScopeIsTheOnlyWriterAndItSetsAllThreeFieldsTogether(): Unit {
     @Expect(scopeIs(model.scope.value, ScopeChoice.One))
     @Expect(model.selectedProject.value, "noread")
 }
+
+// ---------------------------------------------------------------------------
+// 侧栏选中态：必须跨帧存活
+// ---------------------------------------------------------------------------
+
+@Test
+func sidebarSelectionSurvivesARebuildInsteadOfBeingRebornEachFrame(): Unit {
+    // CUI 的 `ListView` 点击**直接写**传入的 `selected`
+    // （`selection_widgets.cj` 的 handle），它自己的滚动状态特意用
+    // `localState(key)` 持久化，注释写着「a fresh State each frame would reset」——
+    // 选中没做同样保护，因为设计上假定外部传进来的是**持久实例**。
+    //
+    // 原来侧栏传的是 `State<Int64>(0)`：每次重建都造一个新实例，
+    // 点击写进那个临时实例，下一帧就没了 —— **侧栏点了不换页**。
+    // 旁证：`goView` / `goProject` 两个写入口当时已写好，却从未被任何地方调用。
+    let model = AppModel(EngineLocation("", "", ""))
+
+    // 模拟「用户点了第 2 行（看板）」→ 控件写入选中态
+    model.viewIndex.value = 1
+    model.selected.value = 2
+
+    // 下一帧重建：视图重新从模型取选中态
+    let viewSel = viewSelection(model)
+    let projSel = projectSelection(model)
+
+    // 重建后选中态必须还在。全新的 State 会把它们抹回初值。
+    @Expect(viewSel.value, 1)
+    @Expect(projSel.value, 2)
+}
+
+@Test
+func goViewAndGoProjectAreActuallyReachableFromTheSidebar(): Unit {
+    // 「写入口存在但没人调用」是接线漏掉的那一步，光看函数定义看不出来 ——
+    // 判据必须从**用户动作**出发，走完整条路。
+    let s = StatusSnapshot.from(Json.parse(SPAN_PROJECTS).getOrThrow())
+    let model = AppModel(EngineLocation("", "", ""))
+    model.snapshot.value = Some(s)
+
+    // 视图组：写入选中态 → goView → 路由真的变了
+    model.viewIndex.value = 1
+    goView(model, model.viewIndex.value)
+    @Expect(rootSectionIs(model.root.value, RootSection.Board))
+
+    // 越界/未选中的哑操作不许把路由写成垃圾
+    model.viewIndex.value = 9
+    goView(model, model.viewIndex.value)
+    @Expect(rootSectionIs(model.root.value, RootSection.Board))
+
+    // 仓库组：写入选中态 → goProject → 选中项目 + 进详情
+    model.selected.value = 0
+    goProject(model, model.selected.value)
+    @Expect(model.selectedProject.value, "fresh")
+    @Expect(rootSectionIs(model.root.value, RootSection.Project))
+    // 进详情时视图组撤掉高亮；这一步不能回环（goView(-1) 必须是哑操作）
+    @Expect(model.viewIndex.value, -1)
+    goView(model, model.viewIndex.value)
+    @Expect(rootSectionIs(model.root.value, RootSection.Project))
+}
+
+@Test
+func everyWayIntoAProjectAlsoMovesTheSidebarHighlightWithIt(): Unit {
+    // 侧栏高亮改成**持久 State** 之后，它不再每帧从 `selectedProject` 现算，
+    // 于是「碰巧对」的那个巧合没了：谁切了主区，谁就得负责把高亮跟上。
+    // 不跟上的症状不是抽象的 —— 主区已经是 B，侧栏还亮着 A。
+    //
+    // 这里是三条**互不相同**的入口，漏掉任何一条都会留下高亮错位：
+    // 侧栏点（`goProject`）、范围下拉（`applyScope`）、看板卡「打开」（`openProject`）。
+    let s = StatusSnapshot.from(Json.parse(SPAN_PROJECTS).getOrThrow())
+
+    // 路径 1：范围下拉选第 3 个项目（noread）
+    let a = AppModel(EngineLocation("", "", ""))
+    a.snapshot.value = Some(s)
+    applyScope(a, 3)
+    @Expect(a.selectedProject.value, "noread")
+    @Expect(a.selected.value, 2) // 侧栏仓库组亮第 3 行
+    @Expect(a.viewIndex.value, -1) // 视图组不亮：详情不属于那三个视图
+
+    // 路径 2：看板卡「打开」第 2 个项目（old）
+    let b = AppModel(EngineLocation("", "", ""))
+    b.snapshot.value = Some(s)
+    openProject(b, "old")
+    @Expect(b.selected.value, 1)
+    @Expect(b.viewIndex.value, -1)
+
+    // 路径 3：从全局回退到「仪表盘」→ 视图组必须亮回第 0 行，仓库组撤掉。
+    // 漏这一步的症状是：主区是仪表盘，侧栏的「看板」还亮着。
+    applyScope(a, 0)
+    @Expect(a.viewIndex.value, 0)
+    @Expect(a.selected.value, -1)
+}
+
+@Test
+func aProjectHiddenByTheSearchBoxGetsNoHighlightInsteadOfRowZero(): Unit {
+    // 「这一行看不见」与「这一行是第 0 行」是两件事。
+    // 搜索把目标项目滤掉时若回落成 0，侧栏就会高亮一个**不相干的仓库** ——
+    // 比不高亮更糟，因为用户会以为点错了。
+    let s = StatusSnapshot.from(Json.parse(SPAN_PROJECTS).getOrThrow())
+    let model = AppModel(EngineLocation("", "", ""))
+    model.snapshot.value = Some(s)
+    model.query.value = "noread" // 只剩第 1 个项目显示
+
+    @Expect(sidebarProjectIndex(model, "noread"), 0)
+    @Expect(sidebarProjectIndex(model, "fresh"), -1) // 看不见 → -1，不是 0
+}
+
+@Test
+func openProjectIsIdempotentInsteadOfRecursingThroughItsOwnObserver(): Unit {
+    // `openProject` 写 `model.selected`，那会触发 `selected` 的观察者
+    // `goProject`，而 `goProject` 又调回 `openProject`。
+    // 普通 `State` 的 `value = x` 在**值没变时照样通知**（`state.cj` 的 setter
+    // 不比较旧值），所以这里必须幂等 —— 否则是无条件写 → 通知 → 再写 → 再通知，
+    // 直接爆栈。
+    //
+    // ⚠ 这条判据**必须真的注册观察者**，否则测的是另一回事：
+    // 没人监听时，写多少遍都不会递归，判据恒绿。
+    // 所以这里手动装上 `sidebar.cj` 里那两个观察者（`observeSidebarSelection`
+    // 要 `mountEffect`，判据不开窗）。
+    // 不装 `selectedProject` 的那个 —— 它会真去拉引擎起子进程。
+    let s = StatusSnapshot.from(Json.parse(SPAN_PROJECTS).getOrThrow())
+    let model = AppModel(EngineLocation("", "", ""))
+    model.snapshot.value = Some(s)
+    model.selected.observe({_, v => goProject(model, v)})
+    model.viewIndex.observe({_, v => goView(model, v)})
+
+    openProject(model, "noread")
+    @Expect(model.selected.value, 2)
+    @Expect(model.viewIndex.value, -1)
+    @Expect(model.selectedProject.value, "noread")
+
+    // 再调两次同样的话：所有字段都不该变，而且**不许爆栈** ——
+    // 爆栈会让整条判据红，这就是它的判据。
+    openProject(model, "noread")
+    openProject(model, "noread")
+    @Expect(model.selectedProject.value, "noread")
+    @Expect(model.selected.value, 2)
+    @Expect(model.viewIndex.value, -1)
+    @Expect(rootSectionIs(model.root.value, RootSection.Project))
+
+    // 换个项目再回来：高亮必须跟着换，不能卡在上一行
+    openProject(model, "old")
+    @Expect(model.selected.value, 1)
+    openProject(model, "noread")
+    @Expect(model.selected.value, 2)
+}
