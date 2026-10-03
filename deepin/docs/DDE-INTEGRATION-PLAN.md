@@ -293,15 +293,15 @@ done; done
 
 ### M1 DTK 原生化
 - [~] M1a 控件替换表：**AI 设置页一行 + 输入件批 + 按钮批 + palette QSS 收编已完成**（DPasswordEdit/DLineEdit×7/DComboBox×4/DTextEdit×3/DSpinBox/DProgressBar×2/DScrollArea×5/DPushButton×4/DWarningButton/DIconButton×4/DSuggestButton；palette(mid/midlight/text) QSS 9 处 + tray 硬编码色 3 处归并 DS::*）；容器/视图批（DListView/DTreeView/DBlurEffectWidget/DButtonBox）未做。偏差两处：「AI 助手」与待记录徽章保持文字钮/语义色 QSS（freedesktop 无对应图标名/DTipLabel 承载不了语义色）
-- [ ] M1-1 `QStandardPaths` → `DStandardPaths`
+- [x] M1-1 `QStandardPaths` → `DStandardPaths`｜验证：DTK6 6.7.47 实证提供该类；A/B 探针默认 Auto 模式下 writableLocation/findExecutable/locate 与 QSP 逐字节一致；contract-check 10/10（§10 2026-10-04；真机安装态 locate 待复验）
 - [ ] M1-2 统一 `platform::icon()`（fallback 链 + 缺失告警 + DDciIcon 优先）
 - [ ] M1-3 托盘迁移 SNI（`KStatusNotifierItem` 或最小 SNI 服务）
 - [~] M1-4 通知 hint（desktop-entry/image-path）+ 分类 replaceId（失败/停滞同类别互相顶替，用户关闭后清归属）｜已做；`timeOut` 可配置未做
 - [x] M1-5 自启模板补 OnlyShowIn=Deepin/X-GNOME-Autostart-*/X-Deepin-Autostart + Exec 策略（已安装用安装名、开发树拒绝自启并说明）
-- [ ] M1-6 UOS AI `asyncCall` + `probe()` 加锁 + 接口 dump 进日志
+- [x] M1-6 UOS AI `asyncCall`+watcher 回 GUI 线程 + `probe()` 加锁缓存 + 接口 dump 哨兵｜验证：一次性桩对真 copilot 服务跨线程三连探全 Present、dump 恰一次（§10 2026-10-04）；异步回包路径未真机实测（真发会弹用户桌面窗口）
 - [ ] M1-7 `platform/Backend` 平台层
 - [ ] M1-8 Wayland 分支（弹窗定位 / `requestActivate` / 失焦收起）
-- [ ] M1-9 `--platform-probe` 夹具
+- [x] M1-9 `--platform-probe` 夹具｜backend/托盘 geometry/paletteType/五档字号逐行 key=value、恒 exit 0｜验证：探针实跑 8 行输出、修复析构挂死后 5/5 确定性退出（§10 2026-10-04）；托盘 geometry 真机断言待真机
 
 ### M2 DDE 生态
 - [x] M2-1 `setDesktopFileName`（另有 M2-2/M2-3/M2-4 完成）
@@ -309,7 +309,7 @@ done; done
 - [x] M2-3 DBus 服务（AppService: Ping/Activate/OpenProject/OpenPath）+ `DBusActivatable=true` + `.service` 安装｜真总线 `qdbus … Ping` 返回 ok
 - [x] M2-4 appdata/metainfo（data/metainfo/cn.deepdolphin.app.metainfo.xml + CMake 安装）｜`appstream-util` 本机没有，硬门待 CI 环境
 - [ ] M2-5 i18n（ts/qm/装载/安装）
-- [ ] M2-6 图标集（hicolor 多尺寸 + symbolic + `dd-*.svg`）
+- [x] M2-6 图标集（hicolor 8 档 + symbolic + `dd-*` 五枚，make-icons.py 单源生成）｜验证：make-icons --check / check-icon.sh 全绿、cmake --install 与 rcc 探针落位正确（§10 2026-10-04）；「托盘/菜单不再手绘占位方块」目视与 Qt6Svg 染色为真机项
 - [ ] M2-7 deb 打包 + `scripts/build-deb.sh`
 - [ ] M2-8 安装后零环境变量（`ldd` 断言）
 
@@ -318,16 +318,16 @@ done; done
 - [x] M3-2 accent 接 `LightLively`（与 DTK 推荐按钮同色；不自洽时退回规范蓝）
 - [~] M3-3 字号接 `DFontManager` 档位（T3–T8）+ MD_H* 改档位派生 + `DS::tagFont` 机制；老代码字号未全量登记
 - [x] M3-4 全局响应 theme/font/强调色变化（4 信号 → 兜底 palette + `DS::repolish` 全树重算；28 处次级文字色已收编）
-- [ ] M3-5 几何/metric 收口（Height/Radius/DStyle metric/按钮 padding）
-- [ ] M3-6 `Card::kPadding` + 重复边距回收
-- [ ] M3-7 `Thresholds`/`TrayGeometry` token
-- [ ] M3b `SecondaryLabel`/`FlatButton`/`BusyRow`/`EmptyState`/`SegmentedButton`/KPI 骨架屏
+- [x] M3-5 几何/metric 收口（Height bar=6/barMini=4/dot=8/dotLg=10、Radius pill=8/window/frame 接 DStyle metric、按钮 padding 4px16px 单点、游离圆角 4 处归位）｜验证：构建+selfcheck 58/58+agent-selftest 0+6 基线同 commit 重拍（§10 2026-10-04）；遗留：PM_ButtonMinimizedSize 未做（探针实测基类默认 36）、setupguide 基线未随错误条圆角重拍
+- [x] M3-6 `Card::kPadding` + 重复边距回收（12 处调用点 + SidebarNav 常量）｜验证：selfcheck 61/61；同码两跑 6/6 字节全等 + vs HEAD 仅时钟差 = 零视觉变化双证据（§10 2026-10-04）；docs 失败/空态两卡经 clearPadding() opt-out 守观感
+- [x] M3-7 `Thresholds`/`TrayGeometry` token｜验证：selfcheck +3（58→61）边界 fixtures、agent-selftest 0；token 与原字面量逐值相等故基线不重拍（§10 2026-10-04）；遗留：AppModel 通知 10/10 消费点（app 层）未接线，常量与锁值就位
+- [~] M3b 组件化：`SecondaryLabel`（29 处次级标签收编）/`SegmentedButton`（双份 segSheet 单一实现）/`BusyRow`（5 处散装 busy + 标题栏刷新钮转圈，尊重 HasAnimations）/`EmptyState`（iconTone 两档 + 主 CTA + compact）/`FlatButton`（24 处 flat 钮，paintEvent 读 DS::）均已完成（selfcheck 61→66；§10 2026-10-04）；遗留：KPI 骨架屏未做；分段钮/hover/busy 转圈观感真机目检待安排
 - [ ] M3c 清第二套色板、两种红/两种蓝、图标名、动效、响应式、HiDPI、分隔线、托盘 busy 态
 
 ### M4 工程
 - [~] M4a 拆分大文件｜顺手修掉一个 P0 段错误（M0-2 的 locateAsync 回调捕获 this → use-after-free，见 README 决策 65）；拆分未做
-- [ ] M4b `scripts/ci.sh`（selfcheck + 截图矩阵 + validate + probe + deb + 系统矩阵）
-- [~] M4c 崩溃 handler + journal appender｜journal appender 已注册（M0-9）；SIGSEGV handler 未做；本轮用 `DD_BISECT` 二分 + core dump 定位并修掉一个必现段错误（README 决策 65，二分脚手架已从 main 移除）
+- [~] M4b `scripts/ci.sh`：四处增强已做（selfcheck 正式断言 / 缺工具显式 SKIP / 探针正式断言 / D2 grep 门；§10 2026-10-04）；遗留：deb 构建与系统 Qt6/DTK6 矩阵两步未做
+- [x] M4c 崩溃 handler + journal appender｜journal appender 已注册（M0-9）；SIGSEGV/SIGABRT 最小 handler 已做（backtrace_symbols_fd 打栈后恢复默认处置 re-raise，exit 139/134 探针实证；README 决策 82）。此前 DD_BISECT 二分修掉必现段错误的记录见 README 决策 65（脚手架已从 main 移除）
 
 ---
 
@@ -355,6 +355,18 @@ done; done
 - `2026-10-04 | orchestrator | M1a(输入件) | QPlainTextEdit/QTextEdit→DTextEdit×3（AgentDialog 输入框/详情页 git 输出/新建里程碑描述）、QLineEdit→DLineEdit×4（里程碑搜索/提交信息框/添加项目名/AddMilestoneDialog 名称+tag）、QComboBox→DComboBox×3、QSpinBox→DSpinBox、QProgressBar→DProgressBar×2、QScrollArea→DScrollArea×5（DTK6 中即 QScrollArea 别名，dwidgetstype.h:87，换名表意）；--platform-probe 未实现前响应亮失败 exit 2（原先未知 flag 落进 GUI 主路径单实例常驻，ci.sh 步骤 4 挂死）| ci.sh 全绿（selfcheck 58/58 + 截图矩阵重拍 + agent-selftest exit 0）；基线 8 张随 DTK 观感更新 | DLineEdit 无 returnPressed：提交框回车改接 lineEdit()；connect 信号一律 &DLineEdit::textChanged`
 - `2026-10-04 | orchestrator | M1a(按钮) | MilestoneRowWidget 达成/重开→DPushButton、删除→DWarningButton（DTK6 无 text 构造，setText；自带警示红，删掉手写红 QSS）；PanelWindow 工具栏 刷新/设置/搜索/✕→DIconButton、AI 助手→DPushButton；DualTrackButtons 主操作→DSuggestButton（容器内 palette 不自洽才上 DS:: 兜底 QSS，判据与 main 同探针）| ci.sh 全绿（58/58 + 矩阵重拍 + selftest exit 0）| 两偏差：AI 助手无 freedesktop 图标名恒文字钮；无图标主题环境 makeToolButton 退文字平钮（DIconButton 不开放 setText，回退必须换类）——真机图标分支待真机目视`
 - `2026-10-04 | orchestrator | M1a(palette QSS) | palette(mid/midlight/text) QSS 9 处收编 DS::*（SidebarNav×2/TrayPopupWindow×4/PanelWindow routeNotice/DashboardFilterBar+AutomationPane segSheet）；顺带归并 tray 硬编码色 3 处（#DC2626→semColor(red)、#F59E0B→orange、第二蓝→accent）——tray 层色值 grep 门清零（全仓 D2 命中 24→4，余 4 处均为 M3-3 已登记的字号项）；AutomationPane segSheet 改自包含，消掉计划坑 #3 的跨函数 .arg 告警模式 | ci.sh 全绿（58/58 + 矩阵重拍 + selftest exit 0）| segSheet 双份实现合并（SegmentedButton）仍留 M3b`
+- `2026-10-04 | track-a | M3-5 | DS::Height(bar=6/barMini=4/dot=8/dotLg=10) 与 DS::Radius(pill=8/window/frame 接 DStyle pixelMetric——offscreen/fusion 探针实测基类默认 frame=8/window=18，非正值退 card/control 档绝不退 0) 落 DesignTokens；进度条 4 种→bar 统一 6（SegmentedBar 8→6 为刻意视觉变更）、托盘迷你条归 barMini=4；圆点 7 处→行内 dot=8、汇总态 dotLg=10；按钮 padding 4 种→buttonPaddingQss()=「4px 16px」（Spacing::xs×lg）单点四处 QSS 自包含拼入；游离圆角 4 处归 token（PanelWindow 错误条 4→control、DualTrackButtons 徽章 8→pill、AgentDialog 气泡 10→card、TrayPopupWindow 顶层 10→window()） | 构建过、selfcheck 58/58、--agent-selftest exit 0、6 基线同 commit 重拍（ea5cbff）；富状态仪表盘另拍 /tmp 目视（圆点 8px/dotLg 10px/padding 正确）后清理临时仓、收口 grep 无残留字面量 | PM_ButtonMinimizedSize 未做（探针实测基类默认 36，留主流程）；setupguide 两张基线未重拍（错误条圆角差 2px）；Radius::frame() 暂无消费点（M3b 预留）`
+- `2026-10-04 | track-a | M3-7 | 新 logic/Thresholds.h（quiet 30 天线 + activeDays7/30 时间窗；计划措辞的「未提交 10/分桶 10」实证是 AppModel 通知的改动条数门槛与十位分桶宽（AppModel.cpp:1110-1111），按真实语义命名 dirtyNotifyMinCount/dirtyBucketWidth 并写明出处）与 tray/TrayGeometry.h（380/12/44/4/120）；Derived.cpp:70/DashFilter.cpp:30 改 token 消费；selfcheck +3（58→61：口径断言 + activeDays30 恰 30/31 边界 + activeDays7 窗边界） | 构建过、selfcheck 61/61、--agent-selftest exit 0（0599d39）；基线不重拍：token 与原字面量逐值相等，实测 121px 差异裁剪目视为左下角时钟走时 | AppModel 10/10 接线留 app 轨（魔数暂留）；TrayPopupWindow 3 处色值留 M3c；Derived::statTint 量级界（2/9）未收编`
+- `2026-10-04 | track-a | M3-6 | Card::kPadding{lg,md,lg,md} 构造即设置；探针实证 widget contentsMargins 与布局默认边距（fusion 11px）叠加→12 个调用点一律 setContentsMargins(0,0,0,0)；docs 失败/空态两卡（ProjectDetailPage.cpp:827/835）历史走样式默认 11px，加 clearPadding() opt-out 守「观感零变化」；SidebarNav 行边距/行距收本文件常量；实测 12 处（ProjectDetailPage 7 + DashboardPage 4 + ProjectProgressCard 1，plan 行写 6 处已漂移） | 构建过、selfcheck 61/61；同码两跑 6/6 字节全等 + vs HEAD 每张仅 119px 时钟区差 = 零视觉变化双证据（f811747） | 覆盖 14 张卡中 12 张（两卡进单点约 5px 观感变化，属产品决策）`
+- `2026-10-04 | track-a | M3b-组件一 | 新 ui/common/SecondaryLabel（29 处「new QLabel+tagSecondaryStyle」收编；双态/三态着色站点刻意保留——收编会被 repolish 冲回次级色）与 ui/common/SegmentedButton（DashboardFilterBar/AutomationPane 双份 segSheet 单一实现，sheet() 纯函数自包含）；header-only：CMakeLists 在轨外不能加 .cpp 且 AUTOMOC 只收配对 header（header-only Q_OBJECT 链接期 vtable 未定义实证）→ SegmentedButton 无 Q_OBJECT、onClicked 走 std::function；selfcheck +2（61→63） | 构建过、selfcheck 63/63、GUI 12s 存活、--agent-selftest exit 0、6 基线重拍（556f646） | 分段钮新观感（钮距 sm→2px、圆角档）无快照覆盖待真机目检；dark-milestones 旧基线系加载态 flake，随本 commit 换稳态（3.29% 页面差属基线质量修正）`
+- `2026-10-04 | track-a | M3b-组件二 | 新 ui/common/BusyRow（DSpinner 16px+SecondaryLabel，构造即忙、setBusy 起停；HasAnimations 假不 start()——信息不丢不伪造动画）收编 5 处散装 busy（DualTrackButtons 静默禁用→转圈+「正在更新…」、DashboardFilterBar、TrayPopupWindow×2、PanelWindow 状态条）+ 标题栏刷新钮 busy 让位转圈；EmptyState 增强 iconTone 两档（空=dialog-information/读不出来=dialog-warning，selfcheck +1 锁契约）+ 主 CTA 槽（仪表盘空态「添加 / 扫描项目」接 openScanDialog）+ compact 卡内版收编 DashboardPage 4 处内联空态；selfcheck 63→64 | 构建过、selfcheck 64/64、--agent-selftest exit 0、6 基线重拍（dashboard 两张布局上移 = 预期观感变化）（1f92820） | MilestonesPage/详情页三处整页 loading 与 AgentDialog/AiResultDialog busy 不在本批口径；--snapshot 轮询判稳对 milestones 页时序敏感（两批均遇加载态 flake），建议 M4 CI 稳定性关注；标题栏 busy 时按钮排轻微回流`
+- `2026-10-04 | track-a | M3b-FlatButton | 新 ui/common/FlatButton（QPushButton 子类零接线改动；paintEvent 实时读 DS::textPrimary + hover≈10%/pressed≈18% 透明叠加，Card 范式零 QSS 颜色；字号经 tagFont 登记 repolish 跟随；padding=DS:: 4×16 与 buttonPaddingQss 同源被 selfcheck 锁死）收编 ui/+tray/ 24 处构造点（11 文件：页头工具钮 8 枚/托盘四钮/对话框操作排等）；主操作/空态 CTA/DDialog 行内钮/示例链接钮保留并逐处注记（决策 72）；selfcheck 64→66 | 构建过、selfcheck 66/66、GUI 6s 存活、--agent-selftest exit 0、8 基线同 commit 重拍（setupguide 按 DEEPGIT_BIN=/nonexistent-engine 配方还原）（73b48d5） | hover/pressed offscreen 无鼠标不可截图验证（人工审计位）；容器无图标主题时 fromTheme 图标为空（与原 QPushButton 一致，真机经 CE_PushButtonLabel 画图标）`
+- `2026-10-04 | track-b | M1-1 | 前置确认 DTK6 sysroot 提供 DStandardPaths（dstandardpaths.h，DCORE 命名空间，writableLocation/locate/findExecutable 签名兼容、枚举仍收 QStandardPaths::StandardLocation）后，四文件 8 处整体替换：EngineLocator findExecutable×2、SysOpen×3、AutostartManager locate ApplicationsLocation、ModelsDevCatalog writableLocation×2；按仓内惯例加 DCORE_USE_NAMESPACE | 构建过、selfcheck 58/58、--agent-selftest exit 0（真引擎经 DStandardPaths::findExecutable 发现）、contract-check 10/10；A/B 探针：默认 Auto 模式下 writableLocation/findExecutable/locate 与 QStandardPaths 逐字节一致（fd38c79） | 路径结果依赖 DTK 运行期行为（本应用不调 setMode 则与 QSP 一致）；真机安装态 locate 未复验`
+- `2026-10-04 | track-b | M1-6 | SystemAiEngine::launchChat 改 QDBusMessage::asyncCall+QDBusPendingCallWatcher——只捕获 watcher 不捕获 this（引擎本体是 AgentDialog lambda 栈上临时对象，决策 65 同款悬垂教训），回包 deleteLater 自清理、finished 在发起线程（GUI）派发；probe() mutable QMutex 锁「查缓存→探测→dump」整段（AgentCore 在 worker、AgentDialog 在 GUI，并发探测只跑一次）；首次探测对运行中服务 dump chat+主对象可 Introspect 接口名进日志（哨兵：未来冒程序化补全出口第一时间可见；仅可激活时不 introspect 防唤醒副作用） | 构建过、selfcheck 58/58、--agent-selftest exit 0；/tmp 一次性桩对真 copilot 服务 GUI×2+worker×1 三连探全 Present、dump 恰一次（2d146e1） | 返回值语义收窄「已派发」——调用失败不再让 AgentDialog 同步变红（轨外未改，只落日志）；真发 inputPrompt 会弹用户桌面窗口，异步回包未真机实测`
+- `2026-10-04 | track-b | M1-9 | main.cpp 无头分支落 --platform-probe（GUI 构造前）：backend/托盘 geometry/paletteType/五档字号逐行 key=value、恒 exit 0；只读不写（不 applyThemeOverride、不 setPalette 兜底）——报告平台现状不伪造状态；字号档位走 DS::font() 与页面同一消费出处；托盘 geometry 按计划只报告不断言 | 探针实跑 exit=0、8 行输出（backend=offscreen/trayGeometryValid=0/paletteType=dark/fontSize{Metric=18,…}Px）；修复静态析构挂死后 5/5 确定性退出——常规 exit() 在本容器 DTK/DBus 单例收尾 5/8 挂死，改 ::_exit(0)（3824960） | ::_exit 跳过全局析构（一次性只读探针无影响）；trayGeometryValid 真机应为 1 待真机回归；ci.sh 步骤 4 沿用「预置 QT_QPA_PLATFORM 优先」约定，沙箱实跑显示 backend=xcb 属环境使然`
+- `2026-10-04 | track-b | M4b | scripts/ci.sh 四处增强：selfcheck 输出正式断言（failed>0 或不可解析均 exit 1）、desktop-file-validate/appstream-util 缺失显式 SKIP、--platform-probe 正式断言（exit 0 + 含 backend=）、D2 grep 门（>4 判失败并列清单，阈值依据决策 72 存量 4 处）；顺带修两处既有缺陷——运行库环境导出提前并无条件前置 sysroot（原 ${VAR:-默认} 写法在预置 LD_LIBRARY_PATH 的容器下 sysroot 永远进不去，二进制 rc=127） | bash -n 过；失败分支模拟（57/1、不可解析、D2 5 命中、src 缺失）均 exit 1；真实树全跑步骤 1/3/4/5/6 绿（selfcheck 58/58 + SKIP + 探针 + D2 4/4 + selftest FINAL）（958f23a） | deb 构建与系统 Qt6/DTK6 矩阵两步未做；全量 ci.sh 归主流程统一跑`
+- `2026-10-04 | track-b | M4c | 新 platform/CrashHandler：SIGSEGV/SIGABRT 最小 handler——backtrace_symbols_fd 直接写 stderr（不 malloc，规避崩溃点持分配锁时 signal 内再 malloc 死锁）后恢复默认处置 re-raise；默认处置恢复提前到 handler 入口（回溯途中再崩按默认语义直落绝不递归）；main() 最顶注册，GUI + 五条无头路径全覆盖（CI 崩溃不再只有一行 Segmentation fault） | 构建过无告警、selfcheck 58/58；/tmp 探针（g++ 直编真实 CrashHandler.cpp）实证 SIGSEGV 6 帧 exit=139、SIGABRT 9 帧（abort→raise→handler 链）exit=134，均死于信号本身；addr2line 按打印偏移定位 main 成功（f0fa030） | 未开 -rdynamic（CMake 许可改动仅限新增源行）主程序帧只有地址需 addr2line；栈溢出型 SIGSEGV 无 sigaltstack 不救；backtrace() 栈展开不保证 async-signal-safe（「尽量」口径）`
+- `2026-10-04 | track-c | M2-6 | deepin/data/icons 落 hicolor 8 档（16–256）+ deepdolphin-symbolic + dd-git/dd-milestone/dd-warning/dd-circle-double/dd-ai 五枚两色调 SVG；产物全部由扩展后的 assets/icon/make-icons.py 单源生成（SVG 源内嵌脚本为唯一源、树下不留手写文件、--check 逐字节校验；既有 deepdolphin.svg 原样收编消除混源）；登记 resources.qrc（仅 5 枚 dd-* 走 IconLoader::symbol 免安装兜底，deepdolphin-symbolic 不进 qrc）+ install(DIRECTORY)；symbolic 实测装 share/icons/hicolor/symbolic（deepin 系 hicolor/index.theme 声明 [symbolic/apps] 档） | 构建过、selfcheck 58/58、--agent-selftest exit 0、make-icons --check 与 check-icon.sh 全绿、cmake --install 产物落位正确、rcc 探针 :/icons/dd-*.svg 全可达且含 currentColor、cairosvg 亮暗双底 16px 可读目视（32d3121） | 本容器无 Qt6Svg：染色通道整段编译不进，容器内 dd-* 走 tint 圆点占位，真机由 Qt6Svg 渲染；deepin 树 8 档与 out/ 旧产物 48px+ 逐字节差（Pillow 版本，out/ 已还原）；托盘/菜单「不再手绘占位方块」目视按 plan 属 M3 后真机项`
 - （示例，可删）`2026-xx-xx | <agent> | M3-1 | 表面三级接 applicationPalette；--selfcheck 55/55 通过；截图基线 docs/snapshots/dark-dashboard.png 已更新 | AgentDialog 固定尺寸待 M3c 处理`
 
 ---
