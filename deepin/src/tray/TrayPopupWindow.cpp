@@ -2,6 +2,7 @@
 #include "TrayGeometry.h"
 #include "../ui/DesignTokens.h"
 #include "../ui/common/BusyRow.h"
+#include "../ui/common/FlatButton.h"
 #include "../ui/common/SecondaryLabel.h"
 #include <QApplication>
 #include <QHBoxLayout>
@@ -30,8 +31,7 @@ TrayPopupWindow::TrayPopupWindow(QWidget *parent)
     m_title->setFont(titleFont);
     m_summary = new SecondaryLabel(this);
     m_summary->setWordWrap(true);
-    m_refreshBtn = new QPushButton(QStringLiteral("刷新"), this);
-    m_refreshBtn->setFlat(true);
+    m_refreshBtn = new FlatButton(QStringLiteral("刷新"), this);
     header->addWidget(m_title);
     header->addStretch(1);
     header->addWidget(m_refreshBtn);
@@ -45,12 +45,11 @@ TrayPopupWindow::TrayPopupWindow(QWidget *parent)
     m_bodyLayout->setSpacing(TrayGeometry::bodySpacing);
     root->addWidget(m_body);
 
-    // ── footer：打开面板 / 全部浅更新 / 退出 ──
+    // ── footer：打开面板 / 全部浅更新 / 退出（三枚均 FlatButton——M3b-FlatButton 收编）──
     auto *footer = new QHBoxLayout;
-    m_openPanelBtn = new QPushButton(QStringLiteral("打开面板"), this);
-    m_updateAllBtn = new QPushButton(QStringLiteral("全部浅更新"), this);
-    m_quitBtn = new QPushButton(QStringLiteral("退出"), this);
-    m_quitBtn->setFlat(true);
+    m_openPanelBtn = new FlatButton(QStringLiteral("打开面板"), this);
+    m_updateAllBtn = new FlatButton(QStringLiteral("全部浅更新"), this);
+    m_quitBtn = new FlatButton(QStringLiteral("退出"), this);
     footer->addWidget(m_openPanelBtn);
     footer->addWidget(m_updateAllBtn);
     footer->addStretch(1);

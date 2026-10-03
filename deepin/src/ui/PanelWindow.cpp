@@ -15,6 +15,7 @@
 #include "common/BusyRow.h"
 #include "common/ConfirmDialog.h"
 #include "common/EmptyState.h"
+#include "common/FlatButton.h"
 #include "dialogs/AddMilestoneDialog.h"
 #include "dialogs/AgentDialog.h"
 #include "dialogs/AiResultDialog.h"
@@ -29,7 +30,6 @@
 #include "pages/SetupGuidePage.h"
 #include <DGuiApplicationHelper>
 #include <DIconButton>
-#include <DPushButton>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QCursor>
@@ -52,16 +52,16 @@
 
 namespace {
 // 工具栏图标钮：主题图标在位 → DIconButton（DTK 尺寸/观感接管）；解析不到
-//（无图标主题的环境）→ 文字平钮。空按钮比非原生按钮更糟（R2 诚实降级）；
-// 真机 DDE 必有图标主题，恒走图标分支。DIconButton 不开放 setText，回退必须换类。
+//（无图标主题的环境）→ FlatButton 文字平钮（M3b-FlatButton 收编，原 DPushButton+setFlat）。
+// 空按钮比非原生按钮更糟（R2 诚实降级）；真机 DDE 必有图标主题，恒走图标分支。
+// DIconButton 不开放 setText，回退必须换类。
 QAbstractButton *makeToolButton(const QString &iconName, const QString &fallbackText,
     const QString &tooltip)
 {
     const QIcon icon = QIcon::fromTheme(iconName);
     if (icon.isNull()) {
-        auto *btn = new DPushButton;
+        auto *btn = new FlatButton;
         btn->setText(fallbackText);
-        btn->setFlat(true);
         btn->setToolTip(tooltip);
         return btn;
     }
@@ -557,9 +557,9 @@ void PanelWindow::buildMenu()
         m_refreshSpin->setBusy(false);
         tb->addWidget(refresh);
         tb->addWidget(m_refreshSpin);
-        auto *agentBtn = new DPushButton(this);
+        // 「AI 助手」无 freedesktop 标准图标名恒文字钮（决策 72）——M3b-FlatButton 收编
+        auto *agentBtn = new FlatButton(this);
         agentBtn->setText(QStringLiteral("AI 助手"));
-        agentBtn->setFlat(true);
         agentBtn->setToolTip(QStringLiteral("AI 助手对话"));
         connect(agentBtn, &QPushButton::clicked, this, &PanelWindow::showAgentDialog);
         QAbstractButton *settingsBtn = makeToolButton(QStringLiteral("preferences-system"),

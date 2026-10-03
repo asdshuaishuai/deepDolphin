@@ -1,9 +1,9 @@
 #include "MilestoneRowWidget.h"
-#include <DPushButton>
 #include <DWarningButton>
 #include "../../logic/Derived.h"
 #include "../DesignTokens.h"
 #include "../common/Chip.h"
+#include "../common/FlatButton.h"
 #include "../common/SecondaryLabel.h"
 #include <QContextMenuEvent>
 
@@ -164,14 +164,12 @@ void MilestoneRowWidget::setMilestone(const Milestone &m, bool showProjectName)
     auto *actions = new QHBoxLayout;
     actions->setSpacing(DS::Spacing::xs);
     if (m_isOpen) {
-        auto *done = new DPushButton(QStringLiteral("达成"), this);
-        done->setFlat(true);
+        auto *done = new FlatButton(QStringLiteral("达成"), this);
         connect(done, &QPushButton::clicked, this,
             [this] { emit doneClicked(m_project, m_name); });
         actions->addWidget(done);
     } else if (!m_isUnknown && !m_isDropped) {
-        auto *reopen = new DPushButton(QStringLiteral("重开"), this);
-        reopen->setFlat(true);
+        auto *reopen = new FlatButton(QStringLiteral("重开"), this);
         connect(reopen, &QPushButton::clicked, this,
             [this] { emit reopenClicked(m_project, m_name); });
         actions->addWidget(reopen);

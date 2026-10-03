@@ -22,11 +22,13 @@
 #include "../models/ToolsEnvelope.h"
 #include "../models/UpdateResult.h"
 #include "../ui/common/EmptyState.h"
+#include "../ui/common/FlatButton.h"
 #include "../ui/common/SegmentedButton.h"
 #include <QColor>
 #include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMargins>
 
 namespace {
 int g_pass = 0;
@@ -553,6 +555,24 @@ int SelfCheck::run(QStringList &log)
                     == QStringLiteral("dialog-information")
                 && EmptyState::toneIconName(EmptyState::Tone::Warning)
                     == QStringLiteral("dialog-warning"));
+    }
+
+    // ── 13. FlatButton 契约（M3b 组件三）：padding 一档与双态叠加（纯函数层）──
+    {
+        // 锁两条纯函数契约（QGuiApplication 构造前可跑，DS::Spacing 是 constexpr）：
+        // ① 带文字按钮 padding = xs×lg = 4×16，与 DS::buttonPaddingQss 同源（M3-5
+        //   「按钮 padding 收成一档」，两种取值途径必须永不漂移）；
+        // ② hover/pressed 叠加色半透明、互异且 pressed 更重（paintEvent/Card 范式，
+        //   颜色实时取 DS::textPrimary——此处只锁透明度关系，DS 接线是 GUI 侧人工审计位）。
+        check(log, "FlatButton padding：一档 4×16（xs×lg，与 buttonPaddingQss 同源）",
+            FlatButton::padding()
+                == QMargins(DS::Spacing::lg, DS::Spacing::xs, DS::Spacing::lg, DS::Spacing::xs));
+        const QColor base(QStringLiteral("#1a1a1a"));
+        const QColor hover = FlatButton::overlayColor(base, FlatButton::Tone::Hover);
+        const QColor pressed = FlatButton::overlayColor(base, FlatButton::Tone::Pressed);
+        check(log, "FlatButton 双态叠加：半透明互异且 pressed 更重（同 base 纯透明度差）",
+            hover.alpha() > 0 && hover.alpha() < 255 && pressed.alpha() > hover.alpha()
+                && hover.rgb() == pressed.rgb());
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

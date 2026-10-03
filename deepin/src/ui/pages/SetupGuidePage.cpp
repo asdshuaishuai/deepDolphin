@@ -1,5 +1,6 @@
 #include "SetupGuidePage.h"
 #include "../DesignTokens.h"
+#include "../common/FlatButton.h"
 #include "../common/SecondaryLabel.h"
 #include <DDialog>
 #include <DSpinner>
@@ -41,7 +42,7 @@ SetupGuidePage::SetupGuidePage(const QString &problem, QWidget *parent)
 
     auto *row = new QHBoxLayout;
     row->addStretch(1);
-    m_redetect = new QPushButton(QStringLiteral("重新检测引擎"), this);
+    m_redetect = new FlatButton(QStringLiteral("重新检测引擎"), this);
     connect(m_redetect, &QPushButton::clicked, this, &SetupGuidePage::redetectClicked);
     row->addWidget(m_redetect);
     row->addStretch(1);

@@ -1,6 +1,7 @@
 #include "DashboardFilterBar.h"
 #include "../DesignTokens.h"
 #include "../common/BusyRow.h"
+#include "../common/FlatButton.h"
 #include "../common/SegmentedButton.h"
 #include <QHBoxLayout>
 #include <QLabel>
@@ -45,7 +46,7 @@ DashboardFilterBar::DashboardFilterBar(QWidget *parent)
         emit typeChanged(t);
     });
 
-    m_reindex = new QPushButton(QStringLiteral("重新索引"), this);
+    m_reindex = new FlatButton(QStringLiteral("重新索引"), this);
     m_reindex->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
     m_reindex->setToolTip(QStringLiteral("真跑一次浅更新，然后重新拉取仪表盘"));
     h->addWidget(m_reindex);

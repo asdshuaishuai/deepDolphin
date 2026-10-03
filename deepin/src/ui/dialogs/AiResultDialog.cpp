@@ -29,7 +29,9 @@ AiResultDialog::AiResultDialog(QWidget *parent, const QString &title)
     v->addWidget(m_view, 1);
 
     addContent(content);
-    // 复制 Markdown + 关闭（重新生成按钮按需插入）
+    // 复制 Markdown + 关闭（重新生成按钮按需插入）。
+    // 不归 FlatButton（遗留，M3b-FlatButton）：此钮插进 DDialog 按钮行，观感由
+    // DDialog/样式统一管（与「复制/关闭」同排同款），换成平钮会与邻钮割裂
     m_regen = new QPushButton(QStringLiteral("重新生成"), this);
     addButton(QStringLiteral("复制 Markdown"), false);
     insertButton(1, m_regen, false);

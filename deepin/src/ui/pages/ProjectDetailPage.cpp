@@ -11,6 +11,7 @@
 #include "../common/ConfirmDialog.h"
 #include "../common/CountLabel.h"
 #include "../common/EmptyState.h"
+#include "../common/FlatButton.h"
 #include "../common/LegendRow.h"
 #include "../common/MarkdownView.h"
 #include "../common/SecondaryLabel.h"
@@ -33,15 +34,15 @@
 DWIDGET_USE_NAMESPACE
 
 namespace {
-// 页头小图标按钮（borderless；图标优先主题，文字兜底）
+// 页头小图标按钮（borderless；图标优先主题，文字兜底）。
+// M3b-FlatButton 收编：原先「new QPushButton + setFlat + 各写各的几何」就地散装，
+// 平钮观感/字号/hover 压语义全部归 FlatButton 单点（本助手即 plan §3b 的对位原型）。
 QPushButton *iconButton(const QString &iconName, const QString &text, const QString &tooltip,
     QWidget *parent)
 {
-    auto *b = new QPushButton(text, parent);
-    b->setFlat(true);
+    auto *b = new FlatButton(text, parent);
     b->setToolTip(tooltip);
     b->setIcon(QIcon::fromTheme(iconName));
-    b->setCursor(Qt::PointingHandCursor);
     return b;
 }
 
@@ -138,6 +139,8 @@ void ProjectDetailPage::rebuild()
         const QString reason = !m_loadError.isEmpty()
             ? m_loadError
             : (*m_project).error.value_or(QStringLiteral("读不出来"));
+        // 空态主 CTA 槽位（EmptyState：按钮类与语义由调用方定）——保持实底钮，
+        // 不随 FlatButton 收编（同「主操作不降平钮」口径）
         auto *retry = new QPushButton(QStringLiteral("重试"), m_content);
         connect(retry, &QPushButton::clicked, this, &ProjectDetailPage::retryRequested);
         m_contentLayout->addWidget(new EmptyState(QStringLiteral("data-warning"),
@@ -333,6 +336,8 @@ QWidget *ProjectDetailPage::buildCommitCard()
     m_commitInput->setPlaceholderText(QStringLiteral("提交信息（提交全部改动）"));
     m_commitInput->setEnabled(!m_busy);
     row->addWidget(m_commitInput, 1);
+    // 不归 FlatButton（M3b-FlatButton 收编边界）：主操作 = accent 实底，与
+    // DSuggestButton/双轨按钮同语义位（决策 72：主操作不降为平钮）
     m_commitBtn = new QPushButton(QStringLiteral("提交"), card);
     m_commitBtn->setStyleSheet(
         QStringLiteral("QPushButton { background: %1; color: white; border: none;"
@@ -359,8 +364,7 @@ QWidget *ProjectDetailPage::buildCommitCard()
                                     : DS::semColor(DS::SemColor::red).name()));
         head->addWidget(flag);
         head->addStretch(1);
-        auto *clear = new QPushButton(QStringLiteral("清除"), m_gitOutputHost);
-        clear->setFlat(true);
+        auto *clear = new FlatButton(QStringLiteral("清除"), m_gitOutputHost);
         connect(clear, &QPushButton::clicked, this, [this] {
             m_hasGitOutput = false;
             rebuild();

@@ -4,6 +4,7 @@
 #include "../../logic/Derived.h"
 #include "../DesignTokens.h"
 #include "../common/Chip.h"
+#include "../common/FlatButton.h"
 #include "../common/SecondaryLabel.h"
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -85,13 +86,11 @@ public:
         // 底排：浅更新 + AI 说明 + 右侧「N 天前提交」/「提交时间读不出来」
         auto *bottom = new QHBoxLayout;
         bottom->setSpacing(DS::Spacing::sm);
-        auto *shallow = new QPushButton(QStringLiteral("浅更新"), this);
-        shallow->setFlat(true);
+        auto *shallow = new FlatButton(QStringLiteral("浅更新"), this);
         connect(shallow, &QPushButton::clicked, this,
             [this, onShallow] { if (onShallow) onShallow(m_name); });
         bottom->addWidget(shallow);
-        auto *brief = new QPushButton(QStringLiteral("AI 说明"), this);
-        brief->setFlat(true);
+        auto *brief = new FlatButton(QStringLiteral("AI 说明"), this);
         connect(brief, &QPushButton::clicked, this,
             [this, onBrief] { if (onBrief) onBrief(m_name); });
         bottom->addWidget(brief);

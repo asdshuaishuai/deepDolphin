@@ -5,6 +5,7 @@
 #include "../../logic/SearchFilter.h"
 #include "../DesignTokens.h"
 #include "../common/EmptyState.h"
+#include "../common/FlatButton.h"
 #include "../common/SecondaryLabel.h"
 #include <DSpinner>
 #include <DComboBox>
@@ -37,7 +38,7 @@ MilestonesPage::MilestonesPage(QWidget *parent)
     });
     tools->addWidget(search);
     tools->addStretch(1);
-    auto *create = new QPushButton(this);
+    auto *create = new FlatButton(this);
     create->setText(QStringLiteral("新建里程碑"));
     create->setIcon(QIcon::fromTheme(QStringLiteral("list-add")));
     connect(create, &QPushButton::clicked, this, [this] { emit createRequested(m_projectFilter); });

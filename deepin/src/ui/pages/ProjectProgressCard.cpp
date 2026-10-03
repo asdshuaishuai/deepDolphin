@@ -4,6 +4,7 @@
 #include "../DesignTokens.h"
 #include "../common/Chip.h"
 #include "../common/LegendRow.h"
+#include "../common/FlatButton.h"
 #include "../common/SecondaryLabel.h"
 #include "../common/SegmentedBar.h"
 #include "../common/Card.h"
@@ -171,8 +172,7 @@ void ProjectProgressCard::setProject(const ProjectStatus &p, const DashFilter &f
     auto *recent = new SecondaryLabel(recentText, card);
     recent->setFont(DS::font(DS::FontT::label));
     row5->addWidget(recent, 1);
-    auto *go = new QPushButton(QStringLiteral("进入管控 →"), card);
-    go->setFlat(true);
+    auto *go = new FlatButton(QStringLiteral("进入管控 →"), card);
     go->setCursor(Qt::PointingHandCursor);
     connect(go, &QPushButton::clicked, this, [this] { emit goProject(m_name); });
     row5->addWidget(go);

@@ -6,6 +6,7 @@
 #include "../../ai/SystemAiEngine.h"
 #include "../../app/Settings.h"
 #include "../DesignTokens.h"
+#include "../common/FlatButton.h"
 #include "../common/MarkdownView.h"
 #include "../common/SecondaryLabel.h"
 #include <DSpinner>
@@ -177,8 +178,7 @@ void AgentDialog::buildUi()
     m_errorLabel->setStyleSheet(
         QStringLiteral("color: %1;").arg(DS::semColor(DS::SemColor::red).name()));
     m_errorLabel->setWordWrap(true);
-    m_resendBtn = new QPushButton(QStringLiteral("重发上一条"), m_errorBanner);
-    m_resendBtn->setFlat(true);
+    m_resendBtn = new FlatButton(QStringLiteral("重发上一条"), m_errorBanner);
     connect(m_resendBtn, &QPushButton::clicked, this, &AgentDialog::resendLast);
     errLay->addWidget(m_errorLabel, 1);
     errLay->addWidget(m_resendBtn, 0, Qt::AlignTop);
@@ -197,8 +197,8 @@ void AgentDialog::buildUi()
     inLay->addWidget(m_input, 1);
     auto *btnCol = new QVBoxLayout;
     btnCol->setSpacing(DS::Spacing::xs);
-    m_sendBtn = new QPushButton(QStringLiteral("发送"), inputRow);
-    m_stopBtn = new QPushButton(QStringLiteral("停止"), inputRow);
+    m_sendBtn = new FlatButton(QStringLiteral("发送"), inputRow);
+    m_stopBtn = new FlatButton(QStringLiteral("停止"), inputRow);
     m_stopBtn->setToolTip(QStringLiteral("终止当前回答；运行中的引擎调用会被终止"));
     m_stopBtn->hide();
     btnCol->addWidget(m_sendBtn);
@@ -211,10 +211,8 @@ void AgentDialog::buildUi()
     auto *footLay = new QHBoxLayout(footRow);
     footLay->setContentsMargins(0, 0, 0, 0);
     footLay->setSpacing(DS::Spacing::sm);
-    m_clearBtn = new QPushButton(QStringLiteral("清空对话"), footRow);
-    m_clearBtn->setFlat(true);
-    m_uosBtn = new QPushButton(QStringLiteral("用 UOS AI 打开这个问题"), footRow);
-    m_uosBtn->setFlat(true);
+    m_clearBtn = new FlatButton(QStringLiteral("清空对话"), footRow);
+    m_uosBtn = new FlatButton(QStringLiteral("用 UOS AI 打开这个问题"), footRow);
     m_uosBtn->setToolTip(QStringLiteral(
         "把问题交给 UOS AI 对话窗口继续（系统级 AI 不支持程序化补全，只能唤起窗口）"));
     footLay->addWidget(m_clearBtn);
@@ -287,6 +285,8 @@ void AgentDialog::rebuildTranscript()
     ev->addWidget(title);
     const QStringList samples = m_target.isGroup() ? groupSamples() : projectSamples();
     for (const QString &s : samples) {
+        // 不归 FlatButton（遗留，M3b-FlatButton）：示例条是「链接」语义——accent 文字 +
+        // 左对齐、无 hover 底， FlatButton 的文字钮观感承载不了（FlatButton 无文字色口）
         auto *btn = new QPushButton(s, m_emptyHint);
         btn->setFlat(true);
         btn->setCursor(Qt::PointingHandCursor);

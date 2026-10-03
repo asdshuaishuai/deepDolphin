@@ -80,7 +80,8 @@ SidebarNav::SidebarNav(QWidget *parent)
     m_list->setSelectionMode(QAbstractItemView::SingleSelection);
     layout->addWidget(m_list, 1);
 
-    // ── 底部动作区（列表外）：添加 / 扫描项目 ──
+    // ── 底部动作区（列表外）：添加 / 扫描项目（侧栏唯一主操作，带图标实底钮——
+    // 不随 FlatButton 收编，同「主操作不降平钮」口径）──
     m_addOrScan = new QPushButton(QStringLiteral("添加 / 扫描项目"), this);
     m_addOrScan->setIcon(QIcon::fromTheme(QStringLiteral("list-add")));
     layout->addWidget(m_addOrScan);

@@ -9,6 +9,7 @@
 #include "../../logic/MilestoneCardTitle.h"
 #include "../DesignTokens.h"
 #include "../common/EmptyState.h"
+#include "../common/FlatButton.h"
 #include "../common/FlowLayout.h"
 #include "../common/LegendRow.h"
 #include "../common/SecondaryLabel.h"
@@ -88,7 +89,8 @@ void DashboardPage::rebuild()
         return;
     }
     if (m_model->projects().empty()) {
-        // 主 CTA 槽位（plan §3b）：空态给「下一步」——「添加 / 扫描项目」（与侧栏同一动作）
+        // 主 CTA 槽位（plan §3b）：空态给「下一步」——「添加 / 扫描项目」（与侧栏同一动作）。
+        // 空态主 CTA 保持实底钮，不随 FlatButton 收编（同「主操作不降平钮」口径）
         auto *addBtn = new DPushButton(QStringLiteral("添加 / 扫描项目"), m_content);
         addBtn->setToolTip(QStringLiteral("注册项目后运行一次浅更新，仪表盘开始出数"));
         connect(addBtn, &QPushButton::clicked, this, &DashboardPage::addScanRequested);
@@ -111,7 +113,7 @@ void DashboardPage::rebuild()
     auto *hr = new QHBoxLayout;
     m_summary = new SecondaryLabel(summaryLine(k), header);
     hr->addWidget(m_summary, 1);
-    auto *brief = new QPushButton(header);
+    auto *brief = new FlatButton(header);
     brief->setText(QStringLiteral("项目群说明"));
     brief->setToolTip(QStringLiteral("AI 项目群说明（未配置 AI 时会给出配置指引）"));
     connect(brief, &QPushButton::clicked, this, &DashboardPage::briefRequested);

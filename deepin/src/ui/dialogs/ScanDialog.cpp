@@ -1,6 +1,7 @@
 #include "ScanDialog.h"
 #include "../../logic/PathInput.h"
 #include "../DesignTokens.h"
+#include "../common/FlatButton.h"
 #include <DFileDialog>
 #include <DTabBar>
 #include <QDragEnterEvent>
@@ -124,11 +125,11 @@ ScanDialog::ScanDialog(QWidget *parent)
     addButton(QStringLiteral("提交"), true, DDialog::ButtonRecommend);
     setOnButtonClickedClose(false);
 
-    auto *choose = new QPushButton(QStringLiteral("选择…"), content);
+    auto *choose = new FlatButton(QStringLiteral("选择…"), content);
     connect(choose, &QPushButton::clicked, this, [this] { pickPath(); });
     // 放进两页共用的路径行（同一个焦点绑定，切模式重送焦点）
     qobject_cast<QVBoxLayout *>(m_stack->widget(0)->layout())->insertWidget(1, choose);
-    auto *choose2 = new QPushButton(QStringLiteral("选择…"), content);
+    auto *choose2 = new FlatButton(QStringLiteral("选择…"), content);
     connect(choose2, &QPushButton::clicked, this, [this] { pickPath(); });
     qobject_cast<QVBoxLayout *>(m_stack->widget(1)->layout())->insertWidget(1, choose2);
 

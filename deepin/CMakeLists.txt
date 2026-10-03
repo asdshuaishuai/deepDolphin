@@ -100,6 +100,7 @@ add_executable(deepDolphin
     src/ui/SidebarNav.cpp
     src/ui/WorkBar.cpp
     src/ui/common/BusyRow.cpp
+    src/ui/common/FlatButton.cpp
     src/ui/common/MarkdownView.cpp
     src/ui/common/ConfirmDialog.cpp
     src/ui/pages/BoardPage.cpp
