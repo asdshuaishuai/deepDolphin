@@ -83,7 +83,7 @@ if [ ! -d "$SRC/src" ]; then
     exit 1
 fi
 D2_HITS="$(grep -rnE '#[0-9A-Fa-f]{6}|setPixelSize|font-size: *[0-9]+px' "$SRC/src" \
-    | grep -vE 'DesignTokens|CommitTypeComposition|src/platform/' || true)"
+    | grep -vE 'DesignTokens|CommitTypeComposition|src/platform/|app/SelfCheck.cpp' || true)"
 D2_COUNT=0
 [ -n "$D2_HITS" ] && D2_COUNT="$(printf '%s\n' "$D2_HITS" | grep -c . || true)"
 if [ "$D2_COUNT" -gt 4 ]; then

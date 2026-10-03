@@ -409,10 +409,11 @@ DEEPGIT_BIN=<桩引擎> ./build/deepDolphin --agent-selftest     # 必须走 moc
 
 ### 12.2 单点真相源（D2 的 CI grep 门）
 ```sh
-# 只允许 DesignTokens.cpp / platform/* / logic/CommitTypeComposition.cpp 命中
-grep -rnE "#[0-9A-Fa-f]{6}|setPixelSize|font-size: *[0-9]+px" deepin/src | grep -vE "DesignTokens|CommitTypeComposition|src/platform/"
+# 只允许 DesignTokens.cpp / platform/* / logic/CommitTypeComposition.cpp / app/SelfCheck.cpp 命中
+#（SelfCheck 是主题断言夹具：测试里合法引用期望色值，不属散落的生产 UI 色，2026-10-04 补入白名单）
+grep -rnE "#[0-9A-Fa-f]{6}|setPixelSize|font-size: *[0-9]+px" deepin/src | grep -vE "DesignTokens|CommitTypeComposition|src/platform/|app/SelfCheck.cpp"
 ```
-新增命中 = 未完成，打回。
+新增命中 = 未完成，打回（存量余量 4 处字号项归 M3-3，只减不增）。
 
 ### 12.3 文档同步（R7）
 每完成一个任务：在 `deepin/README.md`「取舍与已知边界」追加「决策 N（28 起）」：**为什么这么定 + 已知代价**；若涉及 CLI 或快捷键，同步「快捷键映射表」与「C1–C11 逐项实现位置」两表。
