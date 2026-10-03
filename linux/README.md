@@ -126,8 +126,9 @@ bash ../assets/icon/check-icon.sh   # 图标一致性
 
 实机（本机 macOS）已验：
 
-- 引擎定位命中仓内 release，窗口以 metal 后端跑起来，1180×760
-- 空态 8 次文本绘制 → 引擎结果经 `post` 回来触发 2 个状态帧 → 稳定到 44 次/帧
+- 引擎定位命中仓内 release
+- `SDL_VIDEODRIVER=dummy` 下渲染循环跑得起来（帧计数、空态绘制、
+  引擎结果经 `post` 回来触发状态更新）
 
 **布局自查**（走文件夹具，不起引擎子进程）：
 
@@ -143,10 +144,43 @@ CUI 的 `--snapshot` 是「连续强制重绘 48 帧就拍照」，而引擎调�
 `DD_SNAP_ROOT` / `DD_SNAP_PROJECT` 指定拍哪一页。仪表盘、看板、项目详情
 三页都用这个路径看过。
 
-**未验**：真窗口的**交互**没验过。显示器全程熄屏，SDL 报
-`No available video device`，`caffeinate -u` 与合成按键都无效 ——
-需要在本机物理操作唤醒屏幕。快照只能证明静态布局对，
-证明不了点击、滚动、悬停。
+**未验，且已查明是框架级阻塞**：真窗口的**交互**（点击、滚动、悬停）没验过。
+
+⚠ 此前这里写的是「显示器全程熄屏导致 `No available video device`」——**那个解释是错的**，
+已按实测推翻。真实原因与屏幕亮不亮无关：
+
+1. 显示器是**亮的**（`IOPMrootDomain` = ON，`PreventUserIdleDisplaySleep` = 1），
+   会话是 **Aqua**（`__CFBundleIdentifier = com.apple.Terminal`），
+   `screencapture` 能正常抓整屏。
+2. 同一时刻、同一会话、**同一份 SDL3**（app 加载的是
+   `/opt/homebrew/Cellar/sdl3/3.4.18/lib/libSDL3.0.dylib`；仓内
+   `vendor/CangjieSDL/.sdl3/libSDL3.dylib` 的 install_name 正是这个路径，
+   两者是同一个文件）——一个纯 C 探针调 `SDL_Init(SDL_INIT_VIDEO)`
+   **成功**，`SDL_GetCurrentVideoDriver()` 返回 `cocoa`。
+   仓颉进程内插桩同样返回 `Init=true cur=cocoa`。
+3. 但紧接着建窗必失败，且报的是：
+   `SDL_CreateWindowAndRenderer failed: NSWindow should only be instantiated on the main thread!`
+   同一处插桩里 `pthread_main_np()` 返回**真** —— 进程主线程是对的。
+
+也就是说：pthread 上确实是主线程，但 AppKit 不认。
+`[NSThread isMainThread]` 比对的是「Foundation 首次初始化时记下的那个线程」，
+仓颉运行时若在别的线程上先碰了 Foundation / `NSApplication`，
+AppKit 就会在真正的主线程上同样判定「不是主线程」。
+
+**为什么改不了**：要让 `DesktopApp` 建成，得让 CangjieGUI 在 AppKit 认可的那个线程上
+建窗 —— 要么改仓颉运行时的线程模型（**1.0.5 锁定，不升级**），
+要么改 vendored CangjieGUI/CangjieSDL（第三方，本仓纪律是不改）。
+本机**试过并且都不行**的路，留在这儿免得下个人再走一遍：
+
+- 显式 `SDL_VIDEODRIVER=cocoa`：失败信息从 `No available video device`
+  变成 `cocoa not available` —— 更早暴露，但不是同一个病
+- `nohup … &` 后台起：与前台起**无差别**，不是后台化的问题
+- 换 SDL 来源（仓内 vendored ↔ Homebrew）：install_name 相同，是同一个文件
+- 预载 `libSDL3_image` / `libSDL3_ttf` / 仓颉运行时后再 `SDL_Init`：都不影响结果
+- 在工作线程而非主线程调 `SDL_Init`：C 探针里照样成功，不是线程的问题
+
+所以：**快照能证明静态布局对，证明不了交互。** 交互验收需要先解决上面的
+AppKit 线程问题（或换一台非 macOS 的 Linux 机器直接验）。
 
 ## 命名边界
 
