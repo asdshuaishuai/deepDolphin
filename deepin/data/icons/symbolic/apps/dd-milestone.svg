@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- dd-milestone：里程碑（对位主题名 flag）。主调：旗面；次调（40%）：旗杆。 -->
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path d="M6.6 3.4 V20.6" fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round" stroke-opacity=".4"/>
+  <path d="M6.6 4.6 H17.8 L14.9 8.5 L17.8 12.4 H6.6 Z" fill="currentColor"/>
+</svg>

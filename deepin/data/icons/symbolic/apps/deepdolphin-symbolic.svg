@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- deepdolphin-symbolic：母版 mark.png 的单色符号化（鲸/海豚 = 主调实底，
+     e 环与圆角框 = 次调 40%）。装到 hicolor/symbolic/apps，主题查找名
+     deepdolphin-symbolic。 -->
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <rect x="10" y="10" width="108" height="108" rx="24" fill="none"
+        stroke="currentColor" stroke-width="7" stroke-opacity=".4"/>
+  <path fill-rule="evenodd" fill="currentColor" fill-opacity=".4"
+        d="M64 52 a30 30 0 1 0 .02 0 Z M64 65 a17 17 0 1 1 -.02 0 Z M64 76 h30 v12 h-30 Z"/>
+  <path fill-rule="evenodd" fill="currentColor"
+        d="M25 68 C27 48 47 34 70 35 C87 35.8 99 44 104 56
+           C96 57.5 91 62 88.5 69 C85 77 76 80 67 80 L38 80 C29.5 80 23.8 75 25 68 Z
+           M100 54 C109 48.5 115 40 116.5 30 C106 32.8 98 38.5 93.5 46 Z
+           M38 50 a3 3 0 1 0 .02 0 Z"/>
+</svg>

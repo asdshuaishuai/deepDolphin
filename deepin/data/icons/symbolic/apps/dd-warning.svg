@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- dd-warning：警示/attention（托盘 alert 同款感叹三角）。
+     感叹号用 evenodd 镂空而不是降透明度：同色半透明叠在同色实底上仍是
+     同色（渲染实测不可见），镂空才在任意底色下保住 16px 可读性。 -->
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path fill-rule="evenodd" fill="currentColor"
+        d="M12 3.4 L21.6 19.8 H2.4 Z M11 9.2 h2 v6 h-2 Z
+           M12 16.4 a1.25 1.25 0 1 0 .01 0 Z"/>
+</svg>

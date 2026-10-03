@@ -7,7 +7,8 @@
 「所有平台用同一套 icon」这句话很容易退化成「大家各自拷贝一份 png，
 以后慢慢长得不一样」。这份脚本把那句话变成可执行的约束：平台**不许**
 自带图标文件，只许引用 `out/` 下的产物，而 `out/` 里的一切都从这里生成。
-`scripts/check-icon.sh` 会验证这一点。
+`scripts/check-icon.sh` 会验证这一点。deepin 客户端的 `deepin/data/icons/`
+同理：位图从母版缩放、symbolic/dd-* 的 SVG 源内嵌在本脚本，树下不留手写文件。
 
 ## 母版
 
@@ -80,6 +81,110 @@ ICONSET_NAMES = [
 
 APP_ID = "deepdolphin"
 APP_NAME = "deepDolphin"
+
+# deepin 客户端产物树（deepin/data/icons，M2-6）：与 out/ 同一个母版唯一原则 ——
+# 树下不许出现手写文件，一切由本脚本生成。与 out/linux 的差异只有两点：
+# ① 尺寸集合按 plan §3 M2-6 取 8 档（含工具栏 22px 档；512 在桌面端用不上）；
+# ② 多一套 symbolic 矢量层。母版是位图，矢量派生不出来，所以 SVG 源以常量
+# 内嵌在本脚本：改符号 = 改这里的源再重跑，产物永远可复现。
+DEEPIN_ICONS_DIR = os.path.normpath(os.path.join(HERE, "..", "..", "deepin", "data", "icons"))
+DEEPIN_HICOLOR_SIZES = [16, 22, 24, 32, 48, 64, 128, 256]
+
+# 既有应用图标（深蓝圆角底 + 海豚意象，非染色件，允许写死色值）。
+# 原先是 data/icons 下的手写文件；原样收编进脚本，字节不变（--check 会校验）。
+DEEPIN_APP_SVG = """<?xml version="1.0" encoding="UTF-8"?>
+<!-- deepDolphin 应用图标（占位：深蓝圆角底 + 海豚意象曲线）。
+     Icon=deepdolphin 与 desktop 文件、IconLoader::app() 的主题查找名一致。 -->
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <rect x="6" y="6" width="116" height="116" rx="26" fill="#1E6FEB"/>
+  <path d="M30 84 C36 56, 58 38, 88 36 C96 35.4, 102 38, 102 44
+           C102 50, 94 52, 86 55 C74 59.4, 66 68, 62 80
+           C58 92, 46 96, 38 92 C42 88, 44 84, 42 78 Z"
+        fill="#FFFFFF" opacity="0.95"/>
+  <circle cx="88" cy="47" r="3.4" fill="#1E6FEB"/>
+</svg>
+"""
+
+# 染色件（symbolic 应用图标 + dd-* 符号）的硬规矩：颜色只写 currentColor
+# 占位符 —— deepin/src/platform/IconLoader.cpp 的 tintedSvg 按字面替换它。
+# 两色调 = 主调实底 currentColor + 次调同色但 fill-opacity/stroke-opacity 降档；
+# 出现任何写死的色值都会让亮/暗主题下的染色变成补丁色（check_outputs 会拦）。
+DEEPIN_SYMBOLIC_APP_SVG = """<?xml version="1.0" encoding="UTF-8"?>
+<!-- deepdolphin-symbolic：母版 mark.png 的单色符号化（鲸/海豚 = 主调实底，
+     e 环与圆角框 = 次调 40%）。装到 hicolor/symbolic/apps，主题查找名
+     deepdolphin-symbolic。 -->
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <rect x="10" y="10" width="108" height="108" rx="24" fill="none"
+        stroke="currentColor" stroke-width="7" stroke-opacity=".4"/>
+  <path fill-rule="evenodd" fill="currentColor" fill-opacity=".4"
+        d="M64 52 a30 30 0 1 0 .02 0 Z M64 65 a17 17 0 1 1 -.02 0 Z M64 76 h30 v12 h-30 Z"/>
+  <path fill-rule="evenodd" fill="currentColor"
+        d="M25 68 C27 48 47 34 70 35 C87 35.8 99 44 104 56
+           C96 57.5 91 62 88.5 69 C85 77 76 80 67 80 L38 80 C29.5 80 23.8 75 25 68 Z
+           M100 54 C109 48.5 115 40 116.5 30 C106 32.8 98 38.5 93.5 46 Z
+           M38 50 a3 3 0 1 0 .02 0 Z"/>
+</svg>
+"""
+
+# dd-* 符号（24 网格，两色调 symbolic 风格）。名字与代码语义一一对应：
+#   git           仓库/项目（侧栏「仓库」组、项目相关状态）
+#   milestone     里程碑（里程碑视图/创建入口；与主题 fallback 名 flag 同语义）
+#   warning       警示/attention（托盘 alert 感叹三角、异常状态行）
+#   circle-double 托盘正常态「双圆」（外环+内点，与 TrayController 壳阶段占位同构）
+#   ai            AI 助手（freedesktop 无标准名；装进主题后 makeToolButton
+#                 的 fromTheme("dd-ai") 也能命中，决策 72 的「恒文字钮」就此补齐）
+DEEPIN_SYMBOL_SVGS = {
+    "git": """<?xml version="1.0" encoding="UTF-8"?>
+<!-- dd-git：git 仓库/项目。主调：主干与两端节点；次调（40%）：分支走线与节点。 -->
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path d="M7 7.6 V16.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="7" cy="5.2" r="2.4" fill="currentColor"/>
+  <circle cx="7" cy="18.8" r="2.4" fill="currentColor"/>
+  <path d="M7 8.8 C7 12.6 11.5 13.4 16.6 13.6" fill="none" stroke="currentColor"
+        stroke-width="1.8" stroke-linecap="round" stroke-opacity=".4"/>
+  <circle cx="17" cy="5.2" r="2.4" fill="currentColor" fill-opacity=".4"/>
+  <circle cx="17" cy="16" r="2.4" fill="currentColor" fill-opacity=".4"/>
+</svg>
+""",
+    "milestone": """<?xml version="1.0" encoding="UTF-8"?>
+<!-- dd-milestone：里程碑（对位主题名 flag）。主调：旗面；次调（40%）：旗杆。 -->
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path d="M6.6 3.4 V20.6" fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round" stroke-opacity=".4"/>
+  <path d="M6.6 4.6 H17.8 L14.9 8.5 L17.8 12.4 H6.6 Z" fill="currentColor"/>
+</svg>
+""",
+    "warning": """<?xml version="1.0" encoding="UTF-8"?>
+<!-- dd-warning：警示/attention（托盘 alert 同款感叹三角）。
+     感叹号用 evenodd 镂空而不是降透明度：同色半透明叠在同色实底上仍是
+     同色（渲染实测不可见），镂空才在任意底色下保住 16px 可读性。 -->
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path fill-rule="evenodd" fill="currentColor"
+        d="M12 3.4 L21.6 19.8 H2.4 Z M11 9.2 h2 v6 h-2 Z
+           M12 16.4 a1.25 1.25 0 1 0 .01 0 Z"/>
+</svg>
+""",
+    "circle-double": """<?xml version="1.0" encoding="UTF-8"?>
+<!-- dd-circle-double：托盘正常态「双圆」（外环+内点；空态/未知态亦用）。 -->
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" stroke-width="2.2"/>
+  <circle cx="12" cy="12" r="3.2" fill="currentColor" fill-opacity=".45"/>
+</svg>
+""",
+    "ai": """<?xml version="1.0" encoding="UTF-8"?>
+<!-- dd-ai：AI 助手。主调：大四角星；次调（40%）：两颗小星。 -->
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path d="M11.6 3.2 C12.5 8.3 14.7 10.5 19.8 11.4 C14.7 12.3 12.5 14.5 11.6 19.6
+           C10.7 14.5 8.5 12.3 3.4 11.4 C8.5 10.5 10.7 8.3 11.6 3.2 Z" fill="currentColor"/>
+  <path d="M18.4 13.8 C18.9 16 19.8 16.9 22 17.4 C19.8 17.9 18.9 18.8 18.4 21
+           C17.9 18.8 17 17.9 14.8 17.4 C17 16.9 17.9 16 18.4 13.8 Z"
+        fill="currentColor" fill-opacity=".4"/>
+  <path d="M18.6 2.6 C19 4.3 19.7 5 21.4 5.4 C19.7 5.8 19 6.5 18.6 8.2
+           C18.2 6.5 17.5 5.8 15.8 5.4 C17.5 5 18.2 4.3 18.6 2.6 Z"
+        fill="currentColor" fill-opacity=".4"/>
+</svg>
+""",
+}
 
 # Linux 的应用身份全靠三个同名的东西串起来：
 #   .desktop 文件名 = hicolor 图标名 = SDL 的 AppMetadata.identifier
@@ -157,6 +262,95 @@ def assert_full_bleed(img, label: str) -> None:
 def save_png(img, path: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     img.save(path, format="PNG", optimize=True)
+
+
+def write_text(path: str, text: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+
+
+def deepin_path(rel: str) -> str:
+    return os.path.join(DEEPIN_ICONS_DIR, rel)
+
+
+def build_deepin(mark) -> None:
+    """deepin/data/icons 全树产物（M2-6）。
+
+    位图与 out/linux 同一满幅几何（桌面环境自套圆角遮罩），只差尺寸集合；
+    symbolic 层写进 symbolic/apps/（安装规则把它落到 hicolor/symbolic/apps ——
+    深色/浅色主题按 currentColor 染色，qrc 与主题查找共用同一份文件）。
+    """
+    for s in DEEPIN_HICOLOR_SIZES:
+        save_png(
+            mark.resize((s, s), _lanczos()),
+            deepin_path("hicolor/%dx%d/apps/%s.png" % (s, s, APP_ID)),
+        )
+    write_text(deepin_path("deepdolphin.svg"), DEEPIN_APP_SVG)
+    write_text(deepin_path("symbolic/apps/deepdolphin-symbolic.svg"),
+               DEEPIN_SYMBOLIC_APP_SVG)
+    for name, svg in DEEPIN_SYMBOL_SVGS.items():
+        write_text(deepin_path("symbolic/apps/dd-%s.svg" % name), svg)
+
+
+def check_deepin() -> int:
+    """deepin 树的 --check：位图尺寸、SVG 良构、染色件无写死色值且带次调。"""
+    import xml.etree.ElementTree as ET
+    from PIL import Image
+
+    bad = 0
+    for s in DEEPIN_HICOLOR_SIZES:
+        p = deepin_path("hicolor/%dx%d/apps/%s.png" % (s, s, APP_ID))
+        if not os.path.exists(p):
+            print("  ✗ 缺 %s" % os.path.relpath(p, HERE))
+            bad += 1
+            continue
+        im = Image.open(p)
+        if im.size != (s, s):
+            print("  ✗ %s 尺寸 %s，期望 (%d, %d)"
+                  % (os.path.relpath(p, HERE), im.size, s, s))
+            bad += 1
+
+    tinted = [("deepdolphin-symbolic.svg", DEEPIN_SYMBOLIC_APP_SVG)]
+    tinted += [("dd-%s.svg" % n, s) for n, s in DEEPIN_SYMBOL_SVGS.items()]
+    for name, source in tinted:
+        p = deepin_path("symbolic/apps/%s" % name)
+        if not os.path.exists(p):
+            print("  ✗ 缺 %s" % os.path.relpath(p, HERE))
+            bad += 1
+            continue
+        with open(p, encoding="utf-8") as fh:
+            text = fh.read()
+        if text != source:
+            print("  ✗ %s 与脚本内源不一致（树下不许手改，重跑本脚本）"
+                  % os.path.relpath(p, HERE))
+            bad += 1
+        try:
+            ET.fromstring(text)
+        except ET.ParseError as e:
+            print("  ✗ %s 不是良构 XML：%s" % (os.path.relpath(p, HERE), e))
+            bad += 1
+        # 染色契约：占位符必须在，写死色值必须无；两色调 = 必须带降透明度。
+        if "currentColor" not in text:
+            print("  ✗ %s 丢了 currentColor 占位符，染色通道会失明" % name)
+            bad += 1
+        if "#" in text:
+            print("  ✗ %s 出现写死色值（#…），亮/暗主题会变补丁色" % name)
+            bad += 1
+        # 两色调标记：次调走降透明度；warning 类「实底上的记号」用 evenodd
+        # 镂空表达（同色半透明叠实底不可见，渲染实测）。二者必须有其一。
+        if "opacity" not in text and "evenodd" not in text:
+            print("  ✗ %s 没有次调（opacity 或 evenodd 镂空），两色调名不副实" % name)
+            bad += 1
+
+    p = deepin_path("deepdolphin.svg")
+    if not os.path.exists(p):
+        print("  ✗ 缺 %s" % os.path.relpath(p, HERE))
+        bad += 1
+    elif open(p, encoding="utf-8").read() != DEEPIN_APP_SVG:
+        print("  ✗ deepin/data/icons/deepdolphin.svg 与脚本内源不一致")
+        bad += 1
+    return bad
 
 
 def build_macos_canvas(mark) -> "Image.Image":
@@ -381,6 +575,7 @@ def check_outputs() -> int:
         if ("Icon=%s\n" % APP_ID) not in txt:
             print("  ✗ .desktop 的 Icon= 不是 %s，与 hicolor 文件名对不上" % APP_ID)
             bad += 1
+    bad += check_deepin()
     return bad
 
 
@@ -413,6 +608,13 @@ def main() -> int:
                          "%s.png" % APP_ID),
         )
     print("  · out/linux/hicolor/{16,24,32,48,64,128,256,512}x…/apps/%s.png" % APP_ID)
+
+    build_deepin(mark)
+    print("  · deepin/data/icons/hicolor/{%s}x…/apps/%s.png"
+          % (",".join(str(s) for s in DEEPIN_HICOLOR_SIZES), APP_ID))
+    print("  · deepin/data/icons/symbolic/apps/{deepdolphin-symbolic,%s}.svg"
+          % ",".join("dd-%s" % n for n in DEEPIN_SYMBOL_SVGS))
+    print("  · deepin/data/icons/deepdolphin.svg（原样收编，字节不变）")
 
     build_ico(mark)
     if build_icns(mark):
