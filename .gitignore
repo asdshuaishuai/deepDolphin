@@ -5,3 +5,7 @@ DerivedData/
 # App bundle（build.sh 重新生成）
 **/*.app/
 .DS_Store
+
+# Python 生成脚本的字节码缓存
+__pycache__/
+*.pyc

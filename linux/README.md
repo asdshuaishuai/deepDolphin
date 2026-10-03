@@ -5,8 +5,11 @@ CUI 本身跨平台（Windows / macOS / Linux），所以这一份代码在 macO
 **本机验证就是在 macOS 上做的**，不需要 Linux 机器。
 
 > 定位见 [../PLATFORM-CHARTER.md](../PLATFORM-CHARTER.md)：交互 UI 各平台自由，**能力必须一致**。
-> 这一份目前实现了 C1（项目列表）、C2（现状/仪表盘）、C3（分支进度）、C5（失败披露），
-> 写操作（更新 / 里程碑 / git 操作）尚未接入。
+> 这一份实现了 C1（引擎发现与拉起）、C2（状态轮询）、C3（面板四页）、C4（更新动作）、
+> C8（git 操作）、C9（里程碑管理）、C11（文档只经引擎），
+> 并按 macOS 端**一比一镜像**了布局。尚未接入：C5/C6/C7（AI 三项）、C10（系统集成）。
+>
+> 图标与其他平台共用一套，见 [../assets/icon/README.md](../assets/icon/README.md)。
 
 ## 快速开始
 
@@ -43,14 +46,25 @@ linux/
   scripts/
     fetch-deps.sh   拉第三方依赖 + 放 SDL3 动态库
     run.sh          构建并启动（自动配运行时路径与引擎定位）
+    dev-launch.sh   跳过构建直接启动（布局自查用）
+    install-icon.sh 把公共图标装进 ~/.local/share（.desktop + hicolor）
   src/
     json.cj         只读 JSON 解析（移植自引擎，零第三方依赖）
-    engine.cj       引擎子进程通道：定位、调用、失败披露
+    engine.cj       引擎子进程通道：定位、调用、契约闸门、失败披露
+    engine_ops.cj   每个引擎操作声明自己的载荷形状与超时
+    isotime.cj      ISO8601 → 天数（与引擎逐字一致的整数除法）
     model.cj        引擎载荷 → 数据模型（唯一与引擎耦合的地方）
     appstate.cj     全部界面状态 + 后台取数
-    views.cj        怎么显示
+    tokens.cj       设计令牌（纯数据：色板 / 间距 4-8-12-16-20-24 / 字号）
+    theme.cj        视图层：令牌 → 具体颜色
+    components.cj   基础视图件（胶囊 / 分段条 / 统计卡 / 告警）
+    appearance.cj   深浅色探测与三档覆盖
+    sidebar.cj      侧栏（视图组 + 仓库组 + 状态条）
+    views.cj        根 / 工具栏 / WorkBar / 看板 / 引擎引导
+    detail.cj       里程碑页 + 项目详情一列长卡片
     main.cj         入口
-    model_test.cj   判据（纯函数，19 项）
+    model_test.cj   判据（纯函数）
+  tests/fixtures/   引擎真实输出（布局自查的夹具）
   vendor/           第三方依赖，git 忽略
 ```
 
@@ -103,7 +117,9 @@ linux/
 export CANGJIE_HOME="$HOME/.local/share/cangjie/current"
 source "$CANGJIE_HOME/envsetup.sh"
 export SDKROOT="$HOME/.local/share/sdks/MacOSX.minimal/latest"
-cjpm build && cjpm test     # 19 项，全绿
+cjpm build && cjpm test     # 35 项，全绿
+
+bash ../assets/icon/check-icon.sh   # 图标一致性
 ```
 
 实机（本机 macOS）已验：
@@ -111,10 +127,24 @@ cjpm build && cjpm test     # 19 项，全绿
 - 引擎定位命中仓内 release，窗口以 metal 后端跑起来，1180×760
 - 空态 8 次文本绘制 → 引擎结果经 `post` 回来触发 2 个状态帧 → 稳定到 44 次/帧
 
-**未验**：窗口**像素**没看过。本机 `screencapture` 抓不到 CUI 的 Metal 窗口
-（官方示例 `calculator` 同样抓不到，而它的 `--profile` 显示渲染正常），
-所以「画面对不对」目前只有帧统计与语义树作为间接证据。要看画面需在有
-GUI session 的 Linux 桌面上跑，或用 CUI 的 `WidgetTestHost` 截图比对。
+**布局自查**（走文件夹具，不起引擎子进程）：
+
+```sh
+DD_FIXTURE_DIR="$PWD/tests/fixtures" DD_SNAP_PROJECT=atlas \
+  SDL_VIDEODRIVER=dummy bash scripts/dev-launch.sh --snapshot /tmp/x.bmp
+sips -s format png /tmp/x.bmp --out /tmp/x.png
+```
+
+CUI 的 `--snapshot` 是「连续强制重绘 48 帧就拍照」，而引擎调用走后台线程要
+两秒 —— 拍到的永远是「读取项目群…」。所以改用 `DD_FIXTURE_DIR` 从磁盘读
+**引擎真实输出**（由 `moongit --json` 直接导出到 `tests/fixtures/`），
+`DD_SNAP_ROOT` / `DD_SNAP_PROJECT` 指定拍哪一页。仪表盘、看板、项目详情
+三页都用这个路径看过。
+
+**未验**：真窗口的**交互**没验过。显示器全程熄屏，SDL 报
+`No available video device`，`caffeinate -u` 与合成按键都无效 ——
+需要在本机物理操作唤醒屏幕。快照只能证明静态布局对，
+证明不了点击、滚动、悬停。
 
 ## 命名边界
 

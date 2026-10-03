@@ -9,13 +9,19 @@
 
 ```
 deepDolphin/
+  assets/icon/  全平台唯一应用图标（母版 mark.png + 派生 out/ + 判据 check-icon.sh）
   macos/        macOS 客户端（SwiftUI，已实现）——菜单栏常驻 + 主面板窗口
-  linux/        Linux 客户端（仓颉 + CangjieGUI，已实现读侧）
+  linux/        Linux 客户端（仓颉 + CangjieGUI，已实现读侧与写侧）
   windows/      Windows 客户端（规划中：WinUI 3 / WPF，消费同一套 CLI 契约）
   harmonyos/    鸿蒙 PC 客户端（规划中：ArkUI，消费同一套 CLI 契约）
 ```
 
 > 引擎是多平台共用的唯一核心；新平台客户端只需实现「引擎发现 + 拉起 + CLI 调用 + 原生 UI」。
+>
+> **图标不按平台分家**：唯一母版在 `assets/icon/mark.png`，各平台产物由
+> `assets/icon/make-icons.py` 生成、只许引用不许复制，
+> `assets/icon/check-icon.sh` 守住这条线。详见
+> [assets/icon/README.md](assets/icon/README.md)。
 
 ## 引擎 / 客户端职责边界
 

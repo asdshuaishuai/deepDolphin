@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=deepDolphin
+GenericName=Git 项目面板
+Comment=通过 moongit 引擎查看与更新受管项目
+Exec=__EXEC__
+Icon=deepdolphin
+Terminal=false
+Categories=Development;Utility;VersionControl;
+# X11 下窗口类与 .desktop 关联用的键。Wayland 走 app_id（= AppMetadata.identifier）。
+# 若图标仍不显示，先用 `xprop WM_CLASS <窗口>` 看真实的类名，再改这一行 ——
+# 它必须与窗口实际报告的类一致，而不是与图标名一致。
+StartupWMClass=deepdolphin

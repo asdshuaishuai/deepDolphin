@@ -4,7 +4,7 @@
 // 的 `--json` 输出，本端不落任何业务数据，与 macOS 端同一边界。
 package deepdolphin_linux
 
-import cui.{DesktopApp, WindowSpec}
+import cui.{AppMetadata, DesktopApp, WindowSpec}
 import std.env.*
 import std.time.*
 
@@ -122,7 +122,20 @@ main(): Int64 {
     }
     let app = DesktopApp(
         WindowSpec("deepDolphin", winW, winH, scale: 1.0),
-        theme: (if (dark) { ddDarkTheme() } else { ddLightTheme() })
+        theme: (if (dark) { ddDarkTheme() } else { ddLightTheme() }),
+        // 桌面环境靠这三样东西串起来才认得出「这是 deepDolphin」：
+        //   .desktop 文件名  hicolor 图标名  这里的 identifier
+        // 三者必须**同名**。任何一个对不上，症状都一样 —— 窗口照常起来，
+        // 任务栏/启动器里却没有图标（或干脆没有这个应用的条目），
+        // 而这个原因极难从现象反推出来。
+        //
+        // SDL 的映射：Wayland 下 identifier → app_id（XDG desktop file 的
+        // basename）；X11 下 → WM_CLASS。所以两个后端都要它在。
+        //
+        // ⚠ CUI 没有暴露 `SDL_SetWindowIcon`，所以**运行时窗口图标**这条路
+        // 在本框架下走不通（vendor 是第三方，不改）。图标由
+        // `linux/scripts/install-icon.sh` 装进 hicolor + 装 .desktop 来兑现。
+        metadata: Some(AppMetadata(name: Some("deepDolphin"), identifier: Some("deepdolphin")))
     )
     // 与 macOS 端一致的下限：低于这个宽度侧栏与 KPI 行会挤成不可用。
     app.setMinimumSize(940, 640)

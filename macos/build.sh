@@ -20,9 +20,23 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 # 应用图标 + models.dev 目录快照（AI 设置选择器数据骨干）
-if [ -f "$DIR/AppIcon.icns" ]; then
-  cp "$DIR/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+#
+# ⚠ 图标来自**仓库根的公共资源**，平台目录里不再放第二份。
+# 「所有平台用同一套 icon」这句话很容易退化成「每个平台各自拷一份 png，
+# 以后慢慢长得不一样」——所以平台只许**引用** `assets/icon/out/` 下的产物，
+# 那里的东西由 `assets/icon/make-icons.py` 从唯一母版 `assets/icon/mark.png`
+# 生成（几何差异见 assets/icon/README.md）。
+#
+# 这里**故意不静默跳过**：图标产物缺失说明公共资源没生成或被误删，
+# 继续打出一个没图标的 app，比直接失败更难排查。
+ICON_ICNS="$DIR/../assets/icon/out/macos/AppIcon.icns"
+if [ ! -f "$ICON_ICNS" ]; then
+  echo "✗ 找不到公共图标：$ICON_ICNS" >&2
+  echo "  先跑：python3 assets/icon/make-icons.py" >&2
+  exit 1
 fi
+cp "$ICON_ICNS" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+
 if [ -f "$DIR/Resources/models-dev.json" ]; then
   cp "$DIR/Resources/models-dev.json" "$APP_BUNDLE/Contents/Resources/models-dev.json"
 fi

@@ -65,8 +65,10 @@
   确认框挂在面板上，窗口没开就没人呈现，只设 pending 会表现为「点了没反应」。
 - **引擎发现**：打开面板时定位引擎二进制（`DEEPGIT_BIN` → 内嵌副本 → 常见安装路径 → PATH），
   之后所有数据操作都以 CLI 子进程方式调用；**没有本地服务、没有端口**
-- **应用图标**：`AppIcon.png`（PIL 生成的 git 分支拓扑 + ◆ 记号）→ `AppIcon.icns`，
-  build.sh 自动拷入 bundle（CFBundleIconFile）。
+- **应用图标**：来自**全平台共用的公共资源** `assets/icon/`（海豚 + Git 章鱼，
+  唯一母版 `mark.png`），`build.sh` 从 `assets/icon/out/macos/AppIcon.icns`
+  拷入 bundle（CFBundleIconFile）。macOS 目录里不再放自己的那一份 ——
+  三平台同一套图标，母版与派生关系见 [../assets/icon/README.md](../assets/icon/README.md)。
 - **深链启动参数**（解析规则在 `Route.swift`，纯函数可单测）：
   - `deepDolphin --open-panel` 启动即开主面板
   - `--project <名称>` 直达项目详情
