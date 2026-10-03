@@ -136,6 +136,9 @@ public class AppModel {
     /// 「AI 正在调工具执行深更新」和「用户又点了深更新」撞在一起。
     /// 引擎那边有锁，第二个进程只会一起超时。
     public let aiStatus = State<String>("")
+    /// AI 那一轮在跑。**与 `actionBusy` 分开**：闸门可能被「停止」提前放开，
+    /// 而「正在跑」这件事本身还要用来决定「停止」按钮显不显示。
+    public let aiRunning = State<Bool>(false)
     /// C5 的 AI 结果面板（项目简报 / 群组简报 / 更新后摘要）。空 = 不显示。
     public let aiSheetTitle = State<String>("")
     public let aiSheetBody = State<String>("")

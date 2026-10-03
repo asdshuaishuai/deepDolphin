@@ -327,6 +327,8 @@ public enum AgentOutcomeKind {
     | AtRoundLimit
     /// 失败。`problem` 里有原因。
     | Failed
+    /// 用户中途按了停止。**已写出来的内容照样交付**。
+    | Stopped
 }
 
 public class AgentOutcome {
@@ -355,6 +357,7 @@ public func agentOutcomeLabel(k: AgentOutcomeKind): String {
         case AgentOutcomeKind.Finished => "已收尾"
         case AgentOutcomeKind.AtRoundLimit => "已达轮次上限"
         case AgentOutcomeKind.Failed => "失败"
+        case AgentOutcomeKind.Stopped => "已停止"
     })
 }
 
@@ -376,8 +379,60 @@ public func toolShortLabel(name: String): String {
 }
 
 // ---------------------------------------------------------------------------
-// 主循环
+// 停止
 // ---------------------------------------------------------------------------
+
+/// 用户是否按了停止。
+///
+/// ⚠ **为什么不杀掉跑着的 curl**：`SubProcess` 的句柄由派发它的那条线程
+/// 持有并在里面 `wait()`，从 UI 线程对同一个句柄调 `terminate` 是跨线程操作，
+/// CUI/SDL 都没承诺它安全 —— 赌它不崩，不如换一条**确定不崩**的路。
+///
+/// 所以停止的语义是「**立刻放弃这一轮**」：
+///   · UI 马上解锁、立刻显示已写出来的内容（按钮不再是死的）
+///   · 主循环在**每个工具调用之前**与**每轮之间**检查本标志，不再执行任何动作
+///   · 迟到的 `app.post` 被 `aiRoundIsCurrent` 拦住，不会覆盖新界面
+///   · 已经发出��那次 HTTP 请求仍然会跑完（最多到它自己的超时），
+///     但结果被丢弃 —— 这一点在界面上如实写出来，不假装「立刻断网」
+public var aiStopRequested: Bool = false
+
+/// 「在第 N 个工具调用之前停」—— **测试与自测用的精确定位旋钮**，默认 -1 = 不用。
+///
+/// ⚠ 为什么不只靠 `aiStopRequested`：那个全局标志只能从**外部线程**置位，
+/// 而它一置真，主循环就在**轮次顶部**先返回了 —— 根本走不到
+/// 「模型一次返回多个 tool_calls，逐个执行前各查一次」那个检查点。
+/// 端到端第一次就是这么自欺的：判据绿了，而假 provider 日志是空的，
+/// 它压根没收到那个三工具请求。
+///
+/// 做成纯函数的第三个入参，检查点才**可寻址**：判据能精确地在第 0 个、
+/// 第 1 个、第 2 个工具调用之前触发，不用跟线程赛跑。
+public var aiStopAfterTools: Int64 = -1
+
+/// 「该不该在下一个工具调用之前停」。**纯函数** —— 判据直接喂三个数。
+///
+/// - `executedCount` 已经执行了几个
+/// - `stopRequested` 用户按了停止
+/// - `stopAfterTools` 定位旋钮（-1 = 不用）
+public func shouldStopBeforeToolCall(executedCount: Int64, stopRequested: Bool, stopAfterTools: Int64): Bool {
+    if (stopRequested) {
+        return true
+    }
+    return stopAfterTools >= 0 && executedCount >= stopAfterTools
+}
+
+/// 每一轮的**代号**。UI 线程只在代号不变时才接受迟到的回写。
+/// 没有它的话：用户停止 → 立刻发新���问 → 上一轮迟到 → **覆盖新对话**。
+public var aiRoundSeq: Int64 = 0
+
+/// 某次回写是不是当前这一轮。
+public func aiRoundIsCurrent(seq: Int64): Bool {
+    return seq == aiRoundSeq
+}
+
+/// 主循环是否应当继续。
+public func aiShouldStop(): Bool {
+    return aiStopRequested
+}
 
 public class AgentRunResult {
     public let outcome: AgentOutcome
@@ -440,6 +495,15 @@ public func runAgent(
     var lastText = ""
     var round: Int64 = 1
     while (round <= maxRounds) {
+        // 轮次顶部**只看用户标志**，不看定位旋钮：
+        // 旋钮是给「工具调用检查点」用的，让它也管轮次顶部
+        // 会让端到端在发出请求之前就返回（等于没测到东西）。
+        if (aiStopRequested) {
+            return AgentRunResult(
+                AgentOutcome(AgentOutcomeKind.Stopped, "", executed, "已停止（还没开始新一轮）"),
+                seedConversation(history, question)
+            )
+        }
         let resp = generateText(cfg, system, transcript, defs, maxTokens: 4000, timeoutMs: timeoutMs)
         if (!resp.ok()) {
             return AgentRunResult(
@@ -460,6 +524,18 @@ public func runAgent(
         }
         transcript.add(ChatMessage.assistant(text, calls: resp.result.toolCalls))
         for (tc in resp.result.toolCalls) {
+            // ⚠ 每个工具调用**之前**都查一次。模型一轮可以返回多个 tool_calls，
+            // 不查的话用户按下停止后剩下那几个照样会执行 ——
+            // 其中可能有「深更新」或「提交」。
+            if (shouldStopBeforeToolCall(executed.size, aiShouldStop(), aiStopAfterTools)) {
+                transcript.add(ChatMessage.assistant(lastText))
+                return AgentRunResult(
+                    AgentOutcome(AgentOutcomeKind.Stopped, lastText, executed,
+                        "已停止。这一轮模型已经写出的内容在上面；" +
+                        "已发出但还没回来的那次请求会跑完就被丢弃。"),
+                    transcript
+                )
+            }
             let r = executeEngineTool(bin, tc.name, tc.argumentsJSON)
             let withId = ToolCallResponse(tc.id, tc.name, r.content, isError: r.isError)
             transcript.add(ChatMessage.tool(withId.id, withId.content, isError: withId.isError))

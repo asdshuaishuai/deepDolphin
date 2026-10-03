@@ -52,6 +52,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._reply({"choices": [{"message": {"content": "E2E-OK" if ok else "E2E-WRONG"}}]})
             return
         # agent 模式：第一轮要工具，第二轮收尾。
+        if MODE == "multi" and not any(m["role"] == "tool" for m in body["messages"]):
+            # 一次要**三个**工具：用来验「按停止之后剩下那几个不执行」。
+            # 三个都是读操作 —— 真去跑写操作会改用户仓库，不该由测试触发。
+            log("MULTI_CALLS=3")
+            msg = {"role": "assistant", "content": "我并行看三处。",
+                   "tool_calls": [
+                       {"id": "c1", "type": "function",
+                        "function": {"name": "get_milestones", "arguments": "{}"}},
+                       {"id": "c2", "type": "function",
+                        "function": {"name": "get_group_context", "arguments": "{}"}},
+                       {"id": "c3", "type": "function",
+                        "function": {"name": "get_milestones", "arguments": "{}"}}]}
+            self._reply({"choices": [{"message": msg}]})
+            return
         has_tool = any(m["role"] == "tool" for m in body["messages"])
         if has_tool:
             tool_text = [m for m in body["messages"] if m["role"] == "tool"][0]["content"]

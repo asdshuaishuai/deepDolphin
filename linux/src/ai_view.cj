@@ -54,12 +54,19 @@ public func aiChatPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
             if (!model.aiExecuted.value.isEmpty()) {
                 Label("刚才：${joinList(model.aiExecuted.value.toArray())}").fontSize(10.0).muted().maxLines(1)
             }
-            Button("清空", {=>
-                model.aiTranscript.value = None
-                model.aiExecuted.value = ArrayList<String>()
-                model.aiNote.value = ""
-            }).fontSize(12.0)
-            Button("关闭", {=> closeAIPane(model)}).fontSize(12.0)
+            // 停止只在**真的在跑**时出现。一直挂着一个能按的「停止」，
+            // 用户会按了发现没反应 —— 那是「按钮不反映状态」这一族缺陷。
+            if (model.aiRunning.value) {
+                Button("停止", {=> stopAI(model)}, role: ButtonRole.Danger).fontSize(12.0)
+            }
+            if (!model.aiExecuted.value.isEmpty()) {
+                Button("清空", {=>
+                    model.aiTranscript.value = None
+                    model.aiExecuted.value = ArrayList<String>()
+                    model.aiNote.value = ""
+                }).fontSize(12.0)
+            }
+            Button("关闭", {=> closeAIWithCheck(model)}).fontSize(12.0)
         }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
         Divider()
         // ⚠ 不要用 `Flexible { … }` 包住内容区。
@@ -69,6 +76,19 @@ public func aiChatPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
         Divider()
         aiComposer(model, app, dark)
     }.spacing(0.vp)
+}
+
+/// 关面板前先看一眼有没有在跑。
+///
+/// 正在跑时**不关**：关了之后那一轮还会往回写状态，
+/// 而 `aiPane` 已经回到 0 —— 用户看着仪表盘，对话内容在背后自己变。
+/// 提示语给的是**下一步**（先按停止），不是一句「无法关闭」。
+public func closeAIWithCheck(model: AppModel): Unit {
+    if (model.aiRunning.value) {
+        model.routeNotice.value = "AI 助手还在跑 —— 先按「停止」再关闭。"
+        return
+    }
+    closeAIPane(model)
 }
 
 /// 消息角色 → (名字, 色)。**按角色给不同色** ——
@@ -201,19 +221,41 @@ public func sendAI(app: DesktopApp, model: AppModel): Unit {
     model.aiTranscript.value = Some(shown)
     model.aiStatus.value = "正在思考…"
     model.aiNote.value = ""
+    model.aiRunning.value = true
+    aiStopRequested = false
+    aiRoundSeq += 1
+    let seq = aiRoundSeq
 
     spawn {
         let r = runAgent(cfg, bin, target, question, history)
+        // ⚠ 回写前先对代号。没有这道守卫：用户「停止 → 立刻发新问题」之后，
+        // 上一轮迟到的回写会**覆盖掉新对话** —— 用户的下一条提问凭空消失。
+        // 「状态被迟到回写覆盖」是这一族里最招人烦的一种。
         app.post {
+            if (!aiRoundIsCurrent(seq)) {
+                return
+            }
             endAction(model, "AI 助手", r.outcome.problem.isEmpty())
+            model.aiRunning.value = false
             model.aiStatus.value = ""
             model.aiExecuted.value = ArrayList<String>(r.outcome.executed.toArray())
             model.aiNote.value = agentNoteOf(r.outcome)
-            if (r.outcome.problem.isEmpty()) {
+            if (r.outcome.problem.isEmpty() || agentOutcomeWasStopped(r.outcome)) {
                 model.aiTranscript.value = Some(r.transcript)
             }
         }
     }
+}
+
+/// 用户按停止。**UI 线程立刻给反馈**，不等后台那条线程。
+public func stopAI(model: AppModel): Unit {
+    aiStopRequested = true
+    model.aiStatus.value = "已停止 — 正在进行的那次请求会跑完就被丢弃"
+    model.aiRunning.value = false
+    // 闸门在这里**先放开**：用户可能立刻想发新问题，
+    // 而闸门要等后台线程回写才关 —— 那会让「停止」之后的下一个动作被静默拒绝。
+    // 代价是可能有一轮旧请求还在收尾，`aiRoundIsCurrent` 负责不让它覆盖界面。
+    endAction(model, "AI 助手", false)
 }
 
 /// 收尾说明。**正常收尾就是空** —— 每次都显示一句「已完成」是噪音。
@@ -222,6 +264,14 @@ public func agentNoteOf(o: AgentOutcome): String {
         return ""
     }
     return o.problem
+}
+
+/// 这一轮是不是被用户停掉的。仓颉枚举没有 `==`，只能显式判。
+public func agentOutcomeWasStopped(o: AgentOutcome): Bool {
+    return (match (o.kind) {
+        case AgentOutcomeKind.Stopped => true
+        case _ => false
+    })
 }
 
 // ---------------------------------------------------------------------------

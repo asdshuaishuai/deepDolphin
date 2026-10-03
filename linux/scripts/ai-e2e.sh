@@ -35,8 +35,11 @@ fi
 
 PLAIN_PORT=18741
 AGENT_PORT=18742
+MULTI_PORT=18743
 PLAIN_LOG=/tmp/deepdolphin-mock-plain.log
 AGENT_LOG=/tmp/deepdolphin-mock-agent.log
+MULTI_LOG=/tmp/deepdolphin-mock-multi.log
+MULTI_ERR=/tmp/deepdolphin-mock-multi.err
 PLAIN_ERR=/tmp/deepdolphin-mock-plain.err
 AGENT_ERR=/tmp/deepdolphin-mock-agent.err
 
@@ -45,6 +48,7 @@ cleanup() {
   # 「Terminated: 15 …」，看起来像出了事故。
   [[ -n "${PLAIN_PID:-}" ]] && { kill "$PLAIN_PID" 2>/dev/null; wait "$PLAIN_PID" 2>/dev/null; }
   [[ -n "${AGENT_PID:-}" ]] && { kill "$AGENT_PID" 2>/dev/null; wait "$AGENT_PID" 2>/dev/null; }
+  [[ -n "${MULTI_PID:-}" ]] && { kill "$MULTI_PID" 2>/dev/null; wait "$MULTI_PID" 2>/dev/null; }
   # ⚠ 判据文件必须恢复，哪怕脚本是在失败路径上退出的。
   # 少这一句的话，一次失败就会把摘掉 @Skip 的判据留在工作区里 ——
   # 之后每次日常 cjpm test 都会去连一个不存在的假 provider。
@@ -67,6 +71,8 @@ MOCK_MODE=plain MOCK_PORT=$PLAIN_PORT MOCK_LOG=$PLAIN_LOG python3 tests/mock_age
 PLAIN_PID=$!
 MOCK_MODE=agent MOCK_PORT=$AGENT_PORT MOCK_LOG=$AGENT_LOG python3 tests/mock_agent.py >"$AGENT_ERR" 2>&1 &
 AGENT_PID=$!
+MOCK_MODE=multi MOCK_PORT=$MULTI_PORT MOCK_LOG=$MULTI_LOG python3 tests/mock_agent.py >"$MULTI_ERR" 2>&1 &
+MULTI_PID=$!
 sleep 2
 
 # ⚠⚠ 必须**真的确认服务在监听**。
@@ -76,7 +82,7 @@ sleep 2
 # 脚本最后打印「✓ AI 通道端到端通过」，而实际这次一条都没验。
 # 「构建/检查对自己的成败说谎」正是本项目反复修的那族缺陷，
 # 写检查脚本时最容易自己又犯一遍。
-for pair in "$PLAIN_PORT:$PLAIN_PID" "$AGENT_PORT:$AGENT_PID"; do
+for pair in "$PLAIN_PORT:$PLAIN_PID" "$AGENT_PORT:$AGENT_PID" "$MULTI_PORT:$MULTI_PID"; do
   PORT_N="${pair%%:*}"; PID_N="${pair##*:}"
   if ! kill -0 "$PID_N" 2>/dev/null; then
     echo "✗ 假 provider 没起来（端口 $PORT_N 可能被占用）：" >&2
@@ -116,6 +122,7 @@ fi
 
 export DD_E2E_PLAIN_PORT=$PLAIN_PORT
 export DD_E2E_AGENT_PORT=$AGENT_PORT
+export DD_E2E_MULTI_PORT=$MULTI_PORT
 export DD_E2E_BIN="$ENGINE"
 
 echo "› 跑判据…"
@@ -129,7 +136,7 @@ CLEAN="$(printf '%s' "$OUT" | sed 's/\x1b\[[0-9;]*m//g')"
 # Summary 是**四行**（TOTAL / PASSED / FAILED 分布在后两行），
 # 只取第一行会连 "FAILED: 0" 一起丢掉 —— 判定就永远不成立。
 SUMMARY="$(printf '%s' "$CLEAN" | grep -A3 -E '^Summary: TOTAL:' | tail -4 | tr '\n' ' ')"
-printf '%s\n' "$CLEAN" | grep -E '^\s*TCS: TestCase_TEMP_|^E2E-AGENT|Expect Failed:|^Summary: TOTAL:|^\s+(PASSED|FAILED|ERROR):' || true
+printf '%s\n' "$CLEAN" | grep -E '^\s*TCS: TestCase_TEMP_|^E2E-|Expect Failed:|^Summary: TOTAL:|^\s+(PASSED|FAILED|ERROR):' || true
 
 E2E_FAIL=0
 # 1) 编译/运行整体必须成功
@@ -150,7 +157,7 @@ if ! printf '%s' "$SUMMARY" | grep -qE 'ERROR: 0'; then
   E2E_FAIL=1
 fi
 # 3) 两条端到端判据必须**真的跑过**（TCS 行存在），而不是被悄悄跳过
-for t in TEMP_e2eRequestBodySurvivesTheRealCurlRoundTrip TEMP_agentLoopCallsTheRealEngineAndConverges; do
+for t in TEMP_e2eRequestBodySurvivesTheRealCurlRoundTrip TEMP_agentLoopCallsTheRealEngineAndConverges TEMP_stoppingBeforeToolCallsExecutesNoneOfThem; do
   if ! printf '%s' "$CLEAN" | grep -q "TCS: TestCase_${t},"; then
     echo "" >&2
     echo "✗ 端到端判据 $t 没被跑到" >&2

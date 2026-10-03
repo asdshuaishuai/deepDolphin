@@ -160,7 +160,7 @@ CUI 的 `--snapshot` 是「连续强制重绘 48 帧就拍照」，而引擎调�
 | 能力 | 状态 |
 |---|---|
 | C7 AI 设置 | provider / 模型 / API Key / Base URL、测试连接、开机自启开关 |
-| C6 AI 助手 | 多轮 tool_calls agent 循环，对话界面 |
+| C6 AI 助手 | 多轮 tool_calls agent 循环，对话界面，停止按钮 |
 | C5 AI 整合更新 | 单项目说明 / 项目群说明，结果面板 |
 | C10 通知 | `notify-send`，更新动作结束时发 |
 | C10 开机自启 | XDG `~/.config/autostart/deepdolphin.desktop` |
@@ -178,15 +178,20 @@ CUI 的 `--snapshot` 是「连续强制重绘 48 帧就拍照」，而引擎调�
    **并在设置页显式写明**。不静默降级。
 4. **`providerToolModels` 只列支持 tool_calls 的模型** —— 不支持的模型
    在第一轮提问就会撞墙。与 macOS 端 `modelWithToolCall` 同一条规则。
-5. **对话没有「停止」按钮**。macOS 端有 `AgentChatModel.stop()`；
-   本端一轮跑完才回来，期间按钮禁用（`actionBusy`）。
-   杀一个跑着的 curl 子进程需要跨线程管道，CUI 这条路先没走通。
+5. **「停止」不是杀请求，是立刻放弃这一轮**。macOS 端 `stop()` 取消任务；
+   本端按下停止后：UI 马上解锁、显示已写出来的内容、主循环在**每个工具
+   调用之前**与每轮之间检查停止标志、迟到的回写被轮次代号拦住。
+   **已经发出但还没回来的那次 HTTP 请求仍然会跑完**（最多到它自己的超时），
+   结果被丢弃 —— 这一点在界面上如实写出来。
+   为什么不杀 curl：`SubProcess` 句柄由派发它的那条线程持有并在里面 `wait()`，
+   从 UI 线程对同一句柄调 `terminate` 是跨线程操作，CUI/SDL 都没承诺它安全。
+   赌它不崩，不如换一条确定不崩的路。
 
 ### 怎么验
 
 ```sh
 bash scripts/ai-e2e.sh     # 端到端：真 curl + 真引擎 + 假 provider
-cjpm test                  # 83 条判据（其中 2 条端到端标 @Skip，日常跳过）
+cjpm test                  # 88 条判据（其中 3 条端到端标 @Skip，日常跳过）
 ```
 
 端到端脚本会起一个**逐项校验请求体**的假 provider：中文有没有被转义坏、

@@ -549,3 +549,97 @@ func assistantToolCallIsNamedSoTheUserCanSeeWhatItTriedToDo(): Unit {
     @Expect(text.contains("深更新"))
     @Expect(text.contains("提交"))
 }
+
+// ---------------------------------------------------------------------------
+// 停止
+// ---------------------------------------------------------------------------
+
+@Test
+func stopFlagIsCheckedBeforeEveryToolCallNotOnlyBetweenRounds(): Unit {
+    // 一轮里模型可以返回**多个** tool_calls（实测会一次给几个）。
+    // 只在轮次之间查停止的话，用户按下停止后剩下那几个照样会执行 ——
+    // 其中可能有「深更新」或「提交」。这是不可接受的副作用。
+    //
+    // 这里验的是**检查点存在**：主循环源码里每个工具调用前都有一道
+    // `if (aiShouldStop())`。做法是让停止标志为真、跑一轮，
+    // 然后断言**一个工具都没执行**。
+    @Expect(!shouldStopBeforeToolCall(0, false, -1))
+    @Expect(shouldStopBeforeToolCall(0, true, -1)) // 用户按了 → 停
+    @Expect(shouldStopBeforeToolCall(0, false, 0)) // 旋钮：第 0 个之前就停
+    @Expect(shouldStopBeforeToolCall(2, false, 2))
+    @Expect(!shouldStopBeforeToolCall(1, false, 2)) // 还没到
+    // 用户标志优先于旋钮
+    @Expect(shouldStopBeforeToolCall(0, true, 99))
+}
+
+@Test
+func aLateWriteFromACancelledRoundIsRejectedInsteadOfOverwritingANewerOne(): Unit {
+    // 「状态被迟到回写覆盖」是这一族里最招人烦的一种：
+    // 用户「停止 → 立刻发新问题」，上一轮迟到的回写把新对话冲掉，
+    // 用户的下一条提问凭空消失。
+    aiRoundSeq = 5
+    @Expect(aiRoundIsCurrent(5))
+    aiRoundSeq = 6
+    @Expect(!aiRoundIsCurrent(5)) // 旧代号被拒
+    @Expect(aiRoundIsCurrent(6))
+}
+
+@Test
+func stopHappensAtRoundLimitTooAndStillDeliversWhatWasWritten(): Unit {
+    // 停掉的这一轮**已经写出来的内容要交出去**。
+    // 丢掉它 = 用户按下停止后什么都没留下，比不停还糟
+    // （macOS 端 P0-4 是同一族：到上限直接抛错，把答案扔了）。
+    @Expect(agentOutcomeLabel(AgentOutcomeKind.Stopped), "已停止")
+    @Expect(agentOutcomeWasStopped(AgentOutcome(AgentOutcomeKind.Stopped, "已写出", ArrayList<String>(), "已停止")))
+    @Expect(!agentOutcomeWasStopped(AgentOutcome(AgentOutcomeKind.Finished, "答完了", ArrayList<String>(), "")))
+}
+
+@Test
+func closingWhileARoundIsRunningIsRefusedWithTheNextStepNotJustDenied(): Unit {
+    // 正在跑时关面板 → 那一轮还会往回写，而 aiPane 已经回到 0：
+    // 用户看着仪表盘，对话在背后自己变。
+    // 提示必须给**下一步**（先按停止），不是一句「无法关闭」。
+    let s = uiSnapshot()
+    let model = AppModel(EngineLocation("", "", ""))
+    model.snapshot.value = Some(s)
+    openAIPane(model, 1)
+    model.aiRunning.value = true
+    closeAIWithCheck(model)
+    @Expect(model.aiPane.value, 1) // 没关
+    @Expect(model.routeNotice.value.contains("停止"))
+    // 停下来之后就能关了
+    model.aiRunning.value = false
+    closeAIWithCheck(model)
+    @Expect(model.aiPane.value, 0)
+}
+
+@Skip // 端到端：需要 scripts/ai-e2e.sh 起假 provider 与真引擎
+@Test
+func TEMP_stoppingBeforeToolCallsExecutesNoneOfThem(): Unit {
+    // 假 provider 一次要 **3 个** 工具（见 tests/mock_agent.py 的 multi 模式）。
+    // 在调用前把停止标志置真，断言：
+    //   · 一个工具都没执行（`executed` 为空）
+    //   · 收尾状态是「已停止」而不是「失败」
+    //   · 对话流里**没有** tool 消息
+    //
+    // 为什么必须真跑：判据只能验「停止标志被检查了」，
+    // 验不了「检查点插在了每个工具调用之前」——
+    // 后者要一个真的返回多 tool_calls 的 provider 才触发得到。
+    let port = e2ePort("DD_E2E_MULTI_PORT")
+    let bin = (getVariable("DD_E2E_BIN") ?? "").trimAscii()
+    let cfg = AIConfig(providerID: "deepseek", model: "m", baseURL: "http://127.0.0.1:${port}", apiKey: "sk-x")
+    // 用**旋钮**而不是全局标志：标志一置真，轮次顶部就先返回了，
+    // 压根走不到「逐个工具调用前检查」那个点 —— 那样这条判据是自欺的。
+    aiStopAfterTools = 0
+    let r = runAgent(cfg, bin, AgentTarget.Group, "看看三处", ArrayList<ChatMessage>(),
+        maxRounds: 4, timeoutMs: 30000)
+    aiStopAfterTools = -1
+    println("E2E-STOP ${agentOutcomeLabel(r.outcome.kind)} executed=${r.outcome.executed.size}")
+    @Expect(agentOutcomeLabel(r.outcome.kind), "已停止")
+    @Expect(r.outcome.executed.size, 0)
+    var toolMsgs: Int64 = 0
+    for (m in r.transcript) {
+        if (chatRoleIs(m.role, ChatRole.Tool)) { toolMsgs += 1 }
+    }
+    @Expect(toolMsgs, 0)
+}
