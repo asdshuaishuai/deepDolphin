@@ -189,7 +189,7 @@ void DashboardPage::rebuild()
         msBar->setRange(0, 100);
         msBar->setValue(k.milestonePct);
         msBar->setTextVisible(false);
-        msBar->setFixedHeight(6);
+        msBar->setFixedHeight(DS::Height::bar);
     }
     kpiGrid->addWidget(mkCard(QStringLiteral("项目总数"), QString::number(k.projects), k.totalSub,
                            false, nullptr),
@@ -376,13 +376,13 @@ QWidget *DashboardPage::buildActiveCard()
         h->setContentsMargins(0, 0, 0, 0);
         h->setSpacing(DS::Spacing::sm);
         auto *dot = new QLabel(row);
-        QPixmap pm(8, 8);
+        QPixmap pm(DS::Height::dot, DS::Height::dot); // 状态点统一 8px（M3-5）
         pm.fill(Qt::transparent);
         QPainter p(&pm);
         p.setRenderHint(QPainter::Antialiasing);
         p.setPen(Qt::NoPen);
         p.setBrush(DS::semColor(DS::SemColor::shallow));
-        p.drawEllipse(0, 0, 8, 8);
+        p.drawEllipse(0, 0, DS::Height::dot, DS::Height::dot);
         dot->setPixmap(pm);
         auto *name = new QLabel(a.name, row);
         h->addWidget(dot);

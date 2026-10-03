@@ -32,14 +32,14 @@ public:
         }
         for (const auto &e : entries) {
             auto *dot = new QLabel(this);
-            dot->setFixedSize(8, 8);
-            QPixmap pm(8, 8);
+            dot->setFixedSize(DS::Height::dot, DS::Height::dot); // 状态点统一 8px（M3-5）
+            QPixmap pm(DS::Height::dot, DS::Height::dot);
             pm.fill(Qt::transparent);
             QPainter p(&pm);
             p.setRenderHint(QPainter::Antialiasing);
             p.setPen(Qt::NoPen);
             p.setBrush(e.first);
-            p.drawEllipse(0, 0, 8, 8);
+            p.drawEllipse(0, 0, DS::Height::dot, DS::Height::dot);
             dot->setPixmap(pm);
             dot->setToolTip(e.second);
             auto *label = new QLabel(e.second, this);

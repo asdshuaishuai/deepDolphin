@@ -8,7 +8,8 @@
 //   控件的强调底色），这样原生控件与我们的强调色永远同色；
 // · 字号接 DFontManager 档位（T1..T11，T5=14/T6=12/T7=11/T8=10），用户在控制中心放大
 //   字号时全应用一起放大——不再各自 setPixelSize；
-// · 间距 6 档 + 圆角 3 档（chip=3/control=6/card=10）逐值对齐 mac DSSpacing/DSRadius；
+// · 间距 6 档 + 圆角档（chip=3/control=6/pill=8/card=10，window/frame 接 DStyle metric）
+//   + 高度档（bar/barMini/dot/dotLg，M3-5）逐值对齐 mac DSSpacing/DSRadius；
 // · 12 色序列色板在 logic/CommitTypeComposition（容量外不取模，越界返回无效 QColor）。
 //
 // 【实证边界（本仓 README 决策 13 同源，2026-10-03 offscreen 探针复测）】
@@ -21,6 +22,7 @@
 #include "DesignTokens.h"
 #include <DGuiApplicationHelper>
 #include <DFontManager>
+#include <DStyle>
 #include <QGuiApplication>
 #include <QLabel>
 #include <QPalette>
@@ -28,6 +30,7 @@
 #include <dtkgui_global.h>
 
 DGUI_USE_NAMESPACE
+DWIDGET_USE_NAMESPACE // DStyle/DStyleHelper（Radius::window/frame 接 DStyle metric，M3-5）
 
 namespace DS {
 
@@ -114,6 +117,27 @@ QColor semColor(SemColor c)
 bool isDarkTheme()
 {
     return effectiveTheme() == DGuiApplicationHelper::DarkType;
+}
+
+// 圆角 metric 接 DTK 样式（M3-5）：DStyleHelper 对非 DTK 样式（offscreen 的 fusion、
+// 无 chameleon 插件的 dev 容器）走 DStyle 基类默认值（实测 6.7.47：frame=8/window=18），
+// 真机 chameleon 下随 DDE 圆角设置走。取非正值一律退既有档位，绝不退 0。
+int Radius::window()
+{
+    const int v = DStyleHelper().pixelMetric(DStyle::PM_TopLevelWindowRadius);
+    return v > 0 ? v : Radius::card;
+}
+
+int Radius::frame()
+{
+    const int v = DStyleHelper().pixelMetric(DStyle::PM_FrameRadius);
+    return v > 0 ? v : Radius::control;
+}
+
+// 按钮 padding 一档（M3-5）：4px 16px = Spacing::xs × Spacing::lg，全仓按钮 QSS 唯一来源。
+QString buttonPaddingQss()
+{
+    return QStringLiteral("padding: %1px %2px;").arg(Spacing::xs).arg(Spacing::lg);
 }
 
 // 无 DTK 配置环境（offscreen/无样式插件）的一整套应用调色板——**只由 DS:: 值构造**，

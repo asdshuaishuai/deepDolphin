@@ -69,13 +69,13 @@ void ProjectProgressCard::setProject(const ProjectStatus &p, const DashFilter &f
 
     const Derived::StateWord sw = Derived::stateWord(p);
     auto *dot = new QLabel(card);
-    QPixmap pm(8, 8);
+    QPixmap pm(DS::Height::dot, DS::Height::dot); // 状态点统一 8px（M3-5）
     pm.fill(Qt::transparent);
     QPainter dp(&pm);
     dp.setRenderHint(QPainter::Antialiasing);
     dp.setPen(Qt::NoPen);
     dp.setBrush(Derived::livenessColor(sw.tone));
-    dp.drawEllipse(0, 0, 8, 8);
+    dp.drawEllipse(0, 0, DS::Height::dot, DS::Height::dot);
     dot->setPixmap(pm);
     auto *state = new QLabel(sw.text, card);
     state->setFont(DS::font(DS::FontT::label));

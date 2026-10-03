@@ -23,10 +23,11 @@ DualTrackButtons::DualTrackButtons(QWidget *parent)
     if (!DS::paletteIsThemeConsistent()) {
         m_shallow->setStyleSheet(
             QStringLiteral("DSuggestButton, QPushButton { background: %1; color: white;"
-                           " border: none; border-radius: %2px; padding: 4px 14px; }"
-                           "DSuggestButton:disabled, QPushButton:disabled { background: %3; }")
+                           " border: none; border-radius: %2px; %3 }"
+                           "DSuggestButton:disabled, QPushButton:disabled { background: %4; }")
                 .arg(DS::semColor(DS::SemColor::accent).name())
                 .arg(DS::Radius::control)
+                .arg(DS::buttonPaddingQss()) // 按钮 padding 一档（M3-5，原 4px 14px 自成一档）
                 .arg(DS::textSecondary().name()));
     }
     connect(m_shallow, &QPushButton::clicked, this, &DualTrackButtons::shallowClicked);
@@ -36,9 +37,10 @@ DualTrackButtons::DualTrackButtons(QWidget *parent)
     // 浅绿是跨页状态语义色（mac 对位契约，D-2），DTipLabel 的灰色气泡承载不了它
     m_badge = new QLabel(this);
     m_badge->setStyleSheet(
-        QStringLiteral("QLabel { background: %1; color: white; border-radius: 8px;"
+        QStringLiteral("QLabel { background: %1; color: white; border-radius: %2px;"
                        " padding: 1px 7px; font-size: 11px; }")
-            .arg(DS::semColor(DS::SemColor::shallow).name()));
+            .arg(DS::semColor(DS::SemColor::shallow).name())
+            .arg(DS::Radius::pill)); // 胶囊徽章 = pill 档（M3-5，原 8 硬编码）
     m_badge->hide();
     h->addWidget(m_badge);
 

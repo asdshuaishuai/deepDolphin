@@ -124,10 +124,12 @@ void PanelWindow::buildUi()
     eh->setContentsMargins(12, 4, 12, 4);
     eh->setSpacing(8);
     m_errorBar = new QLabel(errorRow);
+    // 游离 4px 圆角归位 control 档（M3-5 审计点名）
     m_errorBar->setStyleSheet(QStringLiteral(
-        "QLabel { color: %1; background: %2; padding: 6px 12px; border-radius: 4px; }")
-        .arg(DS::semColor(DS::SemColor::orange).name(),
-            QColor(DS::semColor(DS::SemColor::orange)).lighter(180).name()));
+        "QLabel { color: %1; background: %2; padding: 6px 12px; border-radius: %3px; }")
+        .arg(DS::semColor(DS::SemColor::orange).name())
+        .arg(QColor(DS::semColor(DS::SemColor::orange)).lighter(180).name())
+        .arg(DS::Radius::control));
     m_errorBar->setWordWrap(true);
     eh->addWidget(m_errorBar, 1);
     QAbstractButton *errClose = makeToolButton(QStringLiteral("window-close"),

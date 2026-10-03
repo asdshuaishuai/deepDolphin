@@ -70,11 +70,13 @@ TrayPopupWindow::TrayPopupWindow(QWidget *parent)
 
 void TrayPopupWindow::paintEvent(QPaintEvent *)
 {
-    // 圆角 + 半透明底（模糊窗口效果留给后续 DBlurEffectWidget 阶段）
+    // 圆角 + 半透明底（模糊窗口效果留给后续 DBlurEffectWidget 阶段）。
+    // 顶层自绘窗口圆角接 DStyle metric（M3-5）——真机随 DDE 圆角设置走，原 10 硬编码废弃
+    const int r = DS::Radius::window();
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     QPainterPath path;
-    path.addRoundedRect(rect().adjusted(1, 1, -1, -1), 10, 10);
+    path.addRoundedRect(rect().adjusted(1, 1, -1, -1), r, r);
     p.fillPath(path, palette().window());
     p.setPen(palette().mid().color());
     p.drawPath(path);
@@ -173,13 +175,13 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
         h->setContentsMargins(0, 2, 0, 2);
         h->setSpacing(6);
         auto *dot = new QLabel(line);
-        QPixmap pm(10, 10);
+        QPixmap pm(DS::Height::dotLg, DS::Height::dotLg); // 托盘汇总行大点 = dotLg（M3-5）
         pm.fill(Qt::transparent);
         QPainter p(&pm);
         p.setRenderHint(QPainter::Antialiasing);
         p.setBrush(row.dot.isValid() ? row.dot : QColor(0x9C, 0xA3, 0xAF));
         p.setPen(Qt::NoPen);
-        p.drawEllipse(0, 0, 10, 10);
+        p.drawEllipse(0, 0, DS::Height::dotLg, DS::Height::dotLg);
         dot->setPixmap(pm);
         h->addWidget(dot);
         auto *name = new QLabel(row.name, line);
@@ -215,20 +217,22 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
                 QStringLiteral("color: %1;").arg(DS::semColor(DS::SemColor::accent).name()));
             h->addWidget(pending);
             auto *bar = new QLabel(line);
-            bar->setFixedSize(44, 4);
+            bar->setFixedSize(44, DS::Height::barMini); // 迷你条高 = barMini（M3-5；宽 44 归 TrayGeometry，M3-7）
             h->addWidget(bar);
             // 迷你进度条（一次性画成 pixmap）
-            QPixmap barPm(44, 4);
+            QPixmap barPm(44, DS::Height::barMini);
             barPm.fill(Qt::transparent);
             QPainter bp(&barPm);
             bp.setRenderHint(QPainter::Antialiasing);
             bp.setPen(Qt::NoPen);
             bp.setBrush(QColor(128, 128, 128, 60));
-            bp.drawRoundedRect(0, 0, 44, 4, 2, 2);
+            bp.drawRoundedRect(0, 0, 44, DS::Height::barMini, DS::Height::barMini / 2.0,
+                DS::Height::barMini / 2.0);
             bp.setBrush(QColor(0x1E, 0x6F, 0xEB));
             const int w = 44 * qMin(row.pending, 10) / 10;
             if (w > 0)
-                bp.drawRoundedRect(0, 0, w, 4, 2, 2);
+                bp.drawRoundedRect(0, 0, w, DS::Height::barMini, DS::Height::barMini / 2.0,
+                    DS::Height::barMini / 2.0);
             bar->setPixmap(barPm);
         }
         // 点击行 = go(.project) + bringToFront + loadProject（经 eventFilter 捕获点击发 openProject）；

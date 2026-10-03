@@ -16,9 +16,11 @@ const char *kLabels[] = { "关闭", "每 1 小时", "每 3 小时", "每 6 小�
 // 取值（原 palette(midlight)/palette(text)——与全仓同一颜色语言）
 QString segSheet(bool checked)
 {
+    // 按钮 padding 一档 = buttonPaddingQss（M3-5，原 3px 12px 自成一档）；仍自包含（坑 #3）
     const QString base = QStringLiteral(
-        "QPushButton { border: none; border-radius: %1px; padding: 3px 12px; }")
-        .arg(DS::Radius::chip);
+        "QPushButton { border: none; border-radius: %1px; %2 }")
+        .arg(DS::Radius::chip)
+        .arg(DS::buttonPaddingQss());
     if (checked)
         return base + QStringLiteral("QPushButton { background: %1; color: white; }")
             .arg(DS::semColor(DS::SemColor::accent).name());

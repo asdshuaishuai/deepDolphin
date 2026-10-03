@@ -10,8 +10,11 @@ namespace {
 // 没有第二个占位符，颜色喂进去只换来 6 条「Argument missing」告警。
 QString segSheet(bool checked)
 {
+    // 按钮 padding 一档 = buttonPaddingQss（M3-5，原 3px 12px 自成一档）；仍自包含（坑 #3）
     const QString base = QStringLiteral(
-        "QPushButton { border: none; border-radius: %1px; padding: 3px 12px; }");
+        "QPushButton { border: none; border-radius: %1px; %2 }")
+        .arg(DS::Radius::chip)
+        .arg(DS::buttonPaddingQss());
     if (checked)
         return base.arg(DS::Radius::chip)
             + QStringLiteral("QPushButton { background: %1; color: white; }")

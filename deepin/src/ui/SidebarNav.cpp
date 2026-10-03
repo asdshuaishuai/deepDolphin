@@ -289,13 +289,14 @@ void SidebarNav::setStatusStrip(const QString &text, Liveness dot)
     m_statusLiveness = dot;
     m_statusText->setText(text);
     const QColor c = Derived::livenessColor(dot);
-    QPixmap pm(10, 10);
+    // 汇总态大点 = dotLg（M3-5）；行内点已统一 8px（StatusDot）
+    QPixmap pm(DS::Height::dotLg, DS::Height::dotLg);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);
     p.setBrush(c);
     p.setPen(Qt::NoPen);
-    p.drawEllipse(0, 0, 10, 10);
+    p.drawEllipse(0, 0, DS::Height::dotLg, DS::Height::dotLg);
     m_statusDot->setPixmap(pm);
 }
 

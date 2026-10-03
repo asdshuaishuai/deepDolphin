@@ -12,7 +12,7 @@ public:
     explicit StatusDot(QWidget *parent = nullptr)
         : QWidget(parent)
     {
-        setFixedSize(10, 10);
+        setFixedSize(DS::Height::dot, DS::Height::dot); // 状态点统一 8px（M3-5，原 10 自成一档）
         setLiveness(Liveness::unknown);
     }
 

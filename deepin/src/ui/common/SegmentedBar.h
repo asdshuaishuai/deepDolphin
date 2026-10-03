@@ -14,7 +14,7 @@ public:
     explicit SegmentedBar(QWidget *parent = nullptr)
         : QWidget(parent)
     {
-        setFixedHeight(8);
+        setFixedHeight(DS::Height::bar); // M3-5：与 DProgressBar 同高（原 8 自成一档）
         setRadius(DS::Radius::chip);
     }
 

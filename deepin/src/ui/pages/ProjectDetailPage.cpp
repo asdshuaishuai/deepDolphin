@@ -337,9 +337,10 @@ QWidget *ProjectDetailPage::buildCommitCard()
     m_commitBtn = new QPushButton(QStringLiteral("提交"), card);
     m_commitBtn->setStyleSheet(
         QStringLiteral("QPushButton { background: %1; color: white; border: none;"
-                       " border-radius: %2px; padding: 4px 16px; }")
+                       " border-radius: %2px; %3 }")
             .arg(DS::semColor(DS::SemColor::accent).name())
-            .arg(DS::Radius::control));
+            .arg(DS::Radius::control)
+            .arg(DS::buttonPaddingQss())); // 按钮 padding 一档（M3-5）
     m_commitBtn->setEnabled(!m_busy);
     row->addWidget(m_commitBtn);
     v->addLayout(row);
@@ -573,13 +574,13 @@ QWidget *ProjectDetailPage::buildBranchesCard(const ProjectStatus &p)
         h->setContentsMargins(0, 0, 0, 0);
         h->setSpacing(DS::Spacing::xs);
         auto *dot = new QLabel(row1);
-        QPixmap pm(8, 8);
+        QPixmap pm(DS::Height::dot, DS::Height::dot); // 状态点统一 8px（M3-5）
         pm.fill(Qt::transparent);
         QPainter dp(&pm);
         dp.setRenderHint(QPainter::Antialiasing);
         dp.setPen(Qt::NoPen);
         dp.setBrush(Derived::branchStatusColor(b.status));
-        dp.drawEllipse(0, 0, 8, 8);
+        dp.drawEllipse(0, 0, DS::Height::dot, DS::Height::dot);
         dot->setPixmap(pm);
         h->addWidget(dot);
 
@@ -687,7 +688,7 @@ QWidget *ProjectDetailPage::buildMilestoneCard()
         bar->setRange(0, 100);
         bar->setValue(pct);
         bar->setTextVisible(false);
-        bar->setFixedHeight(6);
+        bar->setFixedHeight(DS::Height::bar);
         rateRow->addWidget(bar, 1);
         auto *pctLabel = new QLabel(QStringLiteral("%1%").arg(pct), card);
         pctLabel->setFont(DS::font(DS::FontT::label));

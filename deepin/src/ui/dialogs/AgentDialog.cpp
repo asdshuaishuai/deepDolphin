@@ -322,13 +322,15 @@ void AgentDialog::rebuildTranscript()
             auto *lab = new QLabel(e.text, w);
             lab->setWordWrap(true);
             lab->setTextInteractionFlags(Qt::TextSelectableByMouse);
-            // 用户气泡 = accent 蓝 18% 透明底（对位 mac tinted accentColor.opacity(0.18)）
+            // 用户气泡 = accent 蓝 18% 透明底（对位 mac tinted accentColor.opacity(0.18)）；
+            // 圆角归 card 档（M3-5，原 10 硬编码同值入 token）
             const QColor accent = DS::semColor(DS::SemColor::accent);
             lab->setStyleSheet(QStringLiteral(
-                "background: rgba(%1, %2, %3, 0.18); border-radius: 10px; padding: 10px;")
+                "background: rgba(%1, %2, %3, 0.18); border-radius: %4px; padding: 10px;")
                 .arg(accent.red())
                 .arg(accent.green())
-                .arg(accent.blue()));
+                .arg(accent.blue())
+                .arg(DS::Radius::card));
             lay->addStretch(40);
             lay->addWidget(lab, 160);
             bubble = w;
