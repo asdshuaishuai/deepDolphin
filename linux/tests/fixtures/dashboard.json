@@ -1,0 +1,128 @@
+{
+  "projects": {
+    "total": 3,
+    "listed": 6,
+    "registered": 6,
+    "excludedDisabled": 0,
+    "failed": 3,
+    "dirty": 0,
+    "active7d": 1,
+    "active30d": 2
+  },
+  "work": {
+    "branches": 8,
+    "mergeCandidates": 5,
+    "untrackedFiles": 2,
+    "stashes": 0
+  },
+  "languages": [
+    {
+      "language": "其他",
+      "count": 39
+    }
+  ],
+  "languagesTruncated": false,
+  "languagesTopCut": false,
+  "languagesFailed": 0,
+  "languagesFailedReasons": [],
+  "milestones": {
+    "counts": {
+      "open": 3,
+      "done": 1,
+      "dropped": 0,
+      "unknown": 0,
+      "other": 0,
+      "storeHealth": "ok",
+      "degraded": false,
+      "readCount": 4,
+      "excludedDisabled": 0,
+      "orphaned": 0
+    },
+    "items": [
+      {
+        "projectId": "p_f6630122ab2e",
+        "name": "接入统一登录",
+        "description": "",
+        "targetDate": "2026-11-01",
+        "tag": "",
+        "status": "open",
+        "createdAt": "2026-10-02T13:09:22.851242+08:00",
+        "completedAt": "",
+        "projectName": "atlas",
+        "tagName": "接入统一登录",
+        "tagReached": false,
+        "commitsSince": 4,
+        "commitsSinceReadable": true,
+        "daysToTarget": 29,
+        "overdue": false,
+        "gitReadable": true,
+        "unverifiedReason": ""
+      },
+      {
+        "projectId": "p_f6630122ab2e",
+        "name": "临时里程碑",
+        "description": "形状探测",
+        "targetDate": "2026-12-31",
+        "tag": "v0.0.1",
+        "status": "done",
+        "createdAt": "2026-10-03T12:12:52.600934+08:00",
+        "completedAt": "2026-10-03T12:12:52.62313+08:00",
+        "projectName": "atlas",
+        "tagName": "v0.0.1",
+        "tagReached": false,
+        "commitsSince": 2,
+        "commitsSinceReadable": true,
+        "daysToTarget": 89,
+        "overdue": false,
+        "gitReadable": true,
+        "unverifiedReason": ""
+      },
+      {
+        "projectId": "p_f6630122ab2e",
+        "name": "性能基线达标",
+        "description": "",
+        "targetDate": "",
+        "tag": "",
+        "status": "open",
+        "createdAt": "2026-10-02T13:09:22.875553+08:00",
+        "completedAt": "",
+        "projectName": "atlas",
+        "tagName": "性能基线达标",
+        "tagReached": false,
+        "commitsSince": 4,
+        "commitsSinceReadable": true,
+        "daysToTarget": -1,
+        "overdue": false,
+        "gitReadable": true,
+        "unverifiedReason": ""
+      },
+      {
+        "projectId": "p_835dc72b196f",
+        "name": "灰度发布",
+        "description": "",
+        "targetDate": "",
+        "tag": "",
+        "status": "open",
+        "createdAt": "2026-10-02T13:09:22.901097+08:00",
+        "completedAt": "",
+        "projectName": "beacon",
+        "tagName": "灰度发布",
+        "tagReached": false,
+        "commitsSince": 1,
+        "commitsSinceReadable": true,
+        "daysToTarget": -1,
+        "overdue": false,
+        "gitReadable": true,
+        "unverifiedReason": ""
+      }
+    ]
+  },
+  "activeProjects": [
+    {
+      "name": "atlas",
+      "lastCommitAgo": "1 天前",
+      "headline": "main: 活跃"
+    }
+  ],
+  "fetchedAt": "2026-10-03T14:30:34.074799+08:00"
+}

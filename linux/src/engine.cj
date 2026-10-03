@@ -45,7 +45,7 @@ private const KILL_GRACE_MS: Int64 = 2000
 /// - 管道读取放 spawned 线程（读到 EOF），否则大输出写满管道缓冲会卡死子进程
 /// - **先等管道读到 EOF，再 wait() 拿退出码** —— 顺序是承重的
 /// - `timeoutMs` 是**整次调用**的等待预算，不是每个阶段各给一份
-private func execCapture(cmd: String, args: Array<String>, timeoutMs: Int64): ExecResult {
+func execCapture(cmd: String, args: Array<String>, timeoutMs: Int64): ExecResult {
     var sub: SubProcess
     try {
         sub = launch(
@@ -209,7 +209,7 @@ private func splitOnByte(s: String, sep: UInt8): Array<String> {
 ///
 /// Cangjie 的 `String.lastIndexOf` 返回 `Option<Int64>`，直接参与算术要
 /// 先解包，而这里恰恰是「可能没有」的那一半 —— 单独一个函数把两种情况收干净。
-private func lastSlash(s: String): Int64 {
+func lastSlash(s: String): Int64 {
     match (s.lastIndexOf("/")) {
         case Some(i) => return i
         case None => return -1
@@ -217,7 +217,7 @@ private func lastSlash(s: String): Int64 {
 }
 
 /// 用分隔符连接字符串。
-private func joinAll(items: Array<String>, sep: String): String {
+func joinAll(items: Array<String>, sep: String): String {
     let sb = StringBuilder()
     var first = true
     for (x in items) {
@@ -428,17 +428,120 @@ public class EngineCall {
 /// 而用户没有任何线索能发现。
 ///
 /// 所以这里把契约缺字段当成**错误**上报，而不是当成 0。
-public func checkContract(payload: JsonValue): Bool {
-    if (!Json.has(payload, "projects")) {
-        return false
+/// 读载荷的**形状族**。
+///
+/// ⚠ 为什么必须分族：契约闸门要卡的是「这份载荷有没有把失败说清楚」。
+/// 而**每个命令说的字段名不一样**：
+///   status  → `summary.failedProjects` / `summary.listedProjects`
+///   dashboard → `projects.failed` / `work.*`（**根本没有 `summary` 键**）
+///   milestone → `storeHealth` / `readCount`
+///   docs    → `docs` / `project`
+///   journal → `entries` / `limit`
+///
+/// 拿 status 的键去卡所有读载荷的后果（**已经犯过**）：
+/// dashboard / milestone / docs / journal 的载荷**全部**被判成「契约过旧」，
+/// 界面回落到全 0 并且**一句解释都没有** —— 用户看到「语言分布：没有采集到」，
+/// 真实情况是「载荷被闸门丢了」。把「读不出来」画成「确实没有」，
+/// 是本项目最不该犯的一类错（不变量 81）。
+public enum PayloadShape {
+    | Status
+    | Dashboard
+    | Milestones
+    | Docs
+    | Journal
+    /// 形状随参数变（update / git / milestone 写 / context / tools），不做闸门。
+    | Free
+}
+
+/// 这个族**必须**有的披露键。缺任何一个就判「契约过旧」。
+private func requiredKeysOf(shape: PayloadShape): Array<String> {
+    match (shape) {
+        case PayloadShape.Status => return ["projects", "summary"]
+        case PayloadShape.Dashboard => return ["projects", "work", "languages"]
+        case PayloadShape.Milestones => return ["milestones", "storeHealth", "readCount"]
+        case PayloadShape.Docs => return ["docs", "project"]
+        case PayloadShape.Journal => return ["entries", "limit"]
+        case PayloadShape.Free => return []
     }
-    let s = Json.getOr(payload, "summary")
-    for (k in ["failedProjects", "listedProjects"]) {
-        if (!Json.has(s, k)) {
+}
+
+/// `status` 这一族要额外查 `summary` 里的两个计数 ——
+/// 它是唯一把失败数放在 `summary` 下的命令。
+public func checkContract(payload: JsonValue): Bool {
+    return checkContractOf(payload, PayloadShape.Status)
+}
+
+/// 按形状族做契约闸门。
+public func checkContractOf(payload: JsonValue, shape: PayloadShape): Bool {
+    let required = requiredKeysOf(shape)
+    if (required.isEmpty()) {
+        return true
+    }
+    for (k in required) {
+        if (!Json.has(payload, k)) {
             return false
         }
     }
+    if (shapeIs(shape, PayloadShape.Status)) {
+        let s = Json.getOr(payload, "summary")
+        for (k in ["failedProjects", "listedProjects"]) {
+            if (!Json.has(s, k)) {
+                return false
+            }
+        }
+    }
     return true
+}
+
+public func shapeIs(a: PayloadShape, b: PayloadShape): Bool {
+    // ⚠⚠ 这里**绝不能写成自调用**。
+    //
+    // 第一版我写的是 `case PayloadShape.Status => return shapeIs(b, PayloadShape.Status)`，
+    // 想「复用一遍判断」——结果 `a == b == Status` 时它自己调自己，
+    // **无限递归**。后果不是报错，是**挂死**：进程 0% CPU、栈无限深，
+    // 界面上永远停在「读取项目群…」，而原因（栈太深）在界面上一个字都看不到。
+    //
+    // 之所以能溜过去：这条路径只在**真数据**上才走到，
+    // 而当时的判据用的都是几百字节的手写夹具 —— 见 `realEngineFixturesParseIntoModels`。
+    // 顺带说明：仓颉枚举也不实现 `==`，所以这里必须用 `match` 逐档比。
+    match (a) {
+        case PayloadShape.Status => return match (b) {
+            case PayloadShape.Status => true
+            case _ => false
+        }
+        case PayloadShape.Dashboard => return match (b) {
+            case PayloadShape.Dashboard => true
+            case _ => false
+        }
+        case PayloadShape.Milestones => return match (b) {
+            case PayloadShape.Milestones => true
+            case _ => false
+        }
+        case PayloadShape.Docs => return match (b) {
+            case PayloadShape.Docs => true
+            case _ => false
+        }
+        case PayloadShape.Journal => return match (b) {
+            case PayloadShape.Journal => true
+            case _ => false
+        }
+        case PayloadShape.Free => return match (b) {
+            case PayloadShape.Free => true
+            case _ => false
+        }
+    }
+}
+
+/// 形状族的中文名。披露文案要用。
+public func shapeLabel(shape: PayloadShape): String {
+    match (shape) {
+        case PayloadShape.Status => return "状态"
+        case PayloadShape.Dashboard => return "仪表盘"
+        case PayloadShape.Milestones => return "里程碑"
+        case PayloadShape.Docs => return "文档"
+        case PayloadShape.Journal => return "日志"
+        case PayloadShape.Free => return "结果"
+    }
 }
 
 /// 调一次引擎并解析它的 `--json` 输出。
@@ -489,7 +592,7 @@ private func engineVersionOf(bin: String): String {
     return r.stdout.trimAscii()
 }
 
-private func staleContractMessage(ver: String): String {
+func staleContractMessage(ver: String): String {
     let who = if (ver.isEmpty()) { "找到的引擎" } else { "引擎 ${ver}" }
     return "${who} 的输出缺少本客户端依赖的披露字段（failedProjects / listedProjects / 逐项目 error）。" +
         "这种情况下读不到的项目会被显示成「没有数据」，与真的空项目无法区分。" +
@@ -501,7 +604,7 @@ private func staleContractMessage(ver: String): String {
 /// 引擎的全部项目采集失败时会打印完整 JSON 再 exit 1，stderr 是空的。
 /// 只报「引擎退出码 1」等于把载荷白留；所以这里优先读 `error` /
 /// `failedProjects` 里的原文。
-private func describeEngineFailure(res: ExecResult): String {
+func describeEngineFailure(res: ExecResult): String {
     match (Json.parse(res.stdout)) {
         case Some(v) =>
             let top = Json.strAt(v, "error", "")
@@ -538,7 +641,18 @@ private func engineRuns(path: String): Bool {
 }
 
 /// 是常规文件（不是目录）。
-private func isRegularFile(path: String): Bool {
+///
+/// ⚠ **空路径必须在这里挡掉**。`Path("")` 在仓颉里是
+/// `IllegalArgumentException: The path cannot be empty!`，
+/// 而 `locateEngine` 的候选表里**天然会出现空串**
+/// （`DEEPGIT_BIN` 未设、`repoEngineBinary()` 上溯失败、PATH 里没找到）。
+/// 之前这里没挡，结果是：**没有装引擎的机器上，应用一启动就崩** ——
+/// 界面上那句「请运行 install.sh 安装，或设置 DEEPGIT_BIN」
+/// 永远显示不出来。披露做得再全，崩在披露之前就等于没有。
+func isRegularFile(path: String): Bool {
+    if (path.isEmpty()) {
+        return false
+    }
     let p = Path(path)
     if (!exists(p)) {
         return false

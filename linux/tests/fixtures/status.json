@@ -1,0 +1,1231 @@
+{
+  "projects": [
+    {
+      "storeHealth": "ok",
+      "id": "p_f6630122ab2e",
+      "name": "atlas",
+      "path": "/tmp/dg-rich-src/atlas",
+      "kind": "git",
+      "remote": "",
+      "tags": [],
+      "headline": "main: 活跃",
+      "currentBranch": "main",
+      "defaultBranch": "main",
+      "dirty": {
+        "clean": false,
+        "ok": true,
+        "staged": 0,
+        "modified": 2,
+        "untracked": 0,
+        "conflicts": 0,
+        "total": 2,
+        "files": [
+          "AGENTS.md",
+          "README.md"
+        ]
+      },
+      "userDirtyCount": 0,
+      "stashCount": 0,
+      "commitCount": 25,
+      "lastCommitAt": "2026-10-02T10:00:00+08:00",
+      "lastCommitAgo": "1 天前",
+      "branches": [
+        {
+          "name": "main",
+          "status": "active",
+          "statusLabel": "活跃",
+          "head": "b211b67d88536b172e34e512dd1f027888752b7c",
+          "headShort": "b211b67d",
+          "headDate": "2026-10-02T10:00:00+08:00",
+          "headAgo": "1 天前",
+          "headSubject": "docs(atlas): 补齐托管文档",
+          "summary": "最近 25 个提交：文档×7、修复×6、构建/依赖×6、其他1类×6",
+          "highlights": [
+            "文档：“补齐托管文档”",
+            "修复：“第 24 次改动”",
+            "文档：“第 23 次改动”",
+            "构建/依赖：“第 22 次改动”",
+            "新增：“第 21 次改动”",
+            "（另有 20 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [],
+          "aheadOfDefault": 0,
+          "merged": false,
+          "pendingCommits": 0,
+          "baselineReset": false,
+          "provider": "rules",
+          "isCurrent": true,
+          "isDefault": true,
+          "updatedAt": "2026-10-03T12:36:55.405792+08:00",
+          "staleDays": 1
+        },
+        {
+          "name": "feature/b3",
+          "status": "active",
+          "statusLabel": "活跃",
+          "head": "f4b11a71cc67edad0d23406717c39f142e3865d3",
+          "headShort": "f4b11a71",
+          "headDate": "2026-10-04T10:00:00+08:00",
+          "headAgo": "刚刚",
+          "headSubject": "feat(atlas): 分支 b3 的改动",
+          "summary": "最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6",
+          "highlights": [
+            "新增：“分支 b3 的改动”",
+            "修复：“第 24 次改动”",
+            "文档：“第 23 次改动”",
+            "构建/依赖：“第 22 次改动”",
+            "新增：“第 21 次改动”",
+            "（另有 20 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [],
+          "aheadOfDefault": 1,
+          "merged": false,
+          "pendingCommits": 0,
+          "baselineReset": false,
+          "provider": "rules",
+          "isCurrent": false,
+          "isDefault": false,
+          "updatedAt": "2026-10-03T12:36:55.443571+08:00",
+          "staleDays": 0
+        },
+        {
+          "name": "feature/b2",
+          "status": "active",
+          "statusLabel": "活跃",
+          "head": "b0ebf98d97d19738a9723999a03844fac86099c6",
+          "headShort": "b0ebf98d",
+          "headDate": "2026-10-03T10:00:00+08:00",
+          "headAgo": "4 小时前",
+          "headSubject": "feat(atlas): 分支 b2 的改动",
+          "summary": "最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6",
+          "highlights": [
+            "新增：“分支 b2 的改动”",
+            "修复：“第 24 次改动”",
+            "文档：“第 23 次改动”",
+            "构建/依赖：“第 22 次改动”",
+            "新增：“第 21 次改动”",
+            "（另有 20 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [],
+          "aheadOfDefault": 1,
+          "merged": false,
+          "pendingCommits": 0,
+          "baselineReset": false,
+          "provider": "rules",
+          "isCurrent": false,
+          "isDefault": false,
+          "updatedAt": "2026-10-03T12:36:55.481945+08:00",
+          "staleDays": 0
+        },
+        {
+          "name": "feature/b1",
+          "status": "active",
+          "statusLabel": "活跃",
+          "head": "0f7bd6654cf99d3d38513ab3e3b5854676098e29",
+          "headShort": "0f7bd665",
+          "headDate": "2026-10-02T10:00:00+08:00",
+          "headAgo": "1 天前",
+          "headSubject": "feat(atlas): 分支 b1 的改动",
+          "summary": "最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6",
+          "highlights": [
+            "新增：“分支 b1 的改动”",
+            "修复：“第 24 次改动”",
+            "文档：“第 23 次改动”",
+            "构建/依赖：“第 22 次改动”",
+            "新增：“第 21 次改动”",
+            "（另有 20 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [],
+          "aheadOfDefault": 1,
+          "merged": false,
+          "pendingCommits": 0,
+          "baselineReset": false,
+          "provider": "rules",
+          "isCurrent": false,
+          "isDefault": false,
+          "updatedAt": "2026-10-03T12:36:55.520623+08:00",
+          "staleDays": 1
+        }
+      ],
+      "repoBranchCount": 4,
+      "overall": {
+        "summary": "最近 25 个提交：文档×7、修复×6、构建/依赖×6、其他1类×6；最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6；最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6",
+        "notes": []
+      },
+      "docs": [
+        {
+          "file": "README.md",
+          "exists": true
+        },
+        {
+          "file": "AGENTS.md",
+          "exists": true
+        }
+      ],
+      "manifests": [],
+      "commitTypes": [
+        {
+          "type": "feat",
+          "count": 3
+        },
+        {
+          "type": "fix",
+          "count": 4
+        },
+        {
+          "type": "docs",
+          "count": 5
+        },
+        {
+          "type": "chore",
+          "count": 3
+        }
+      ],
+      "commitTypesTruncated": true,
+      "untrackedCount": 0,
+      "worktreeCount": 1,
+      "progress": {
+        "updatedAt": "2026-10-03T12:36:55.525873+08:00",
+        "lastUpdateAt": "2026-10-03T12:36:54.924981+08:00",
+        "lastTrackAt": "",
+        "lastDeepAt": "2026-10-03T02:38:18.779281+08:00",
+        "entryCount": 14,
+        "entryCountTruncated": false,
+        "entriesKept": 14,
+        "runCount": 14
+      },
+      "journal": [
+        {
+          "id": "j_1791002215520_0",
+          "at": "2026-10-03T12:36:54.924981+08:00",
+          "project": "atlas",
+          "projectId": "p_f6630122ab2e",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 0,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 4,
+          "branchCountTruncated": false,
+          "summary": "最近 25 个提交：文档×7、修复×6、构建/依赖×6、其他1类×6；最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6；最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6",
+          "highlights": [
+            "文档：“补齐托管文档”",
+            "修复：“第 24 次改动”",
+            "文档：“第 23 次改动”",
+            "构建/依赖：“第 22 次改动”",
+            "新增：“第 21 次改动”",
+            "（另有 20 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [],
+          "notes": [],
+          "docs": [
+            "README.md",
+            "AGENTS.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1791000772542_0",
+          "at": "2026-10-03T12:12:52.091602+08:00",
+          "project": "atlas",
+          "projectId": "p_f6630122ab2e",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 0,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 4,
+          "branchCountTruncated": false,
+          "summary": "最近 25 个提交：文档×7、修复×6、构建/依赖×6、其他1类×6；最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6；最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6",
+          "highlights": [
+            "文档：“补齐托管文档”",
+            "修复：“第 24 次改动”",
+            "文档：“第 23 次改动”",
+            "构建/依赖：“第 22 次改动”",
+            "新增：“第 21 次改动”",
+            "（另有 20 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [],
+          "notes": [],
+          "docs": [
+            "README.md",
+            "AGENTS.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790966299275_0",
+          "at": "2026-10-03T02:38:18.779281+08:00",
+          "project": "atlas",
+          "projectId": "p_f6630122ab2e",
+          "branch": "main",
+          "mode": "deep",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 25,
+          "commitCountScope": "repoTotal",
+          "commitCountTruncated": false,
+          "branchCountTruncated": false,
+          "repoBranchCount": 4,
+          "summary": "深度更新 README.md、AGENTS.md（基于 25 个提交）",
+          "highlights": [],
+          "docs": [
+            "README.md",
+            "AGENTS.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790966155798_0",
+          "at": "2026-10-03T02:35:55.201194+08:00",
+          "project": "atlas",
+          "projectId": "p_f6630122ab2e",
+          "branch": "main",
+          "mode": "deep",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 25,
+          "commitCountScope": "repoTotal",
+          "commitCountTruncated": false,
+          "branchCountTruncated": false,
+          "repoBranchCount": 4,
+          "summary": "深度更新 README.md、AGENTS.md（基于 25 个提交）",
+          "highlights": [],
+          "docs": [
+            "README.md",
+            "AGENTS.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790952341450_0",
+          "at": "2026-10-02T22:45:40.91021+08:00",
+          "project": "atlas",
+          "projectId": "p_f6630122ab2e",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 0,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 4,
+          "branchCountTruncated": false,
+          "summary": "最近 25 个提交：文档×7、修复×6、构建/依赖×6、其他1类×6；最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6；最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6",
+          "highlights": [
+            "文档：“补齐托管文档”",
+            "修复：“第 24 次改动”",
+            "文档：“第 23 次改动”",
+            "构建/依赖：“第 22 次改动”",
+            "新增：“第 21 次改动”",
+            "（另有 20 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [],
+          "notes": [],
+          "docs": [
+            "README.md",
+            "AGENTS.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790950883671_0",
+          "at": "2026-10-02T22:21:23.004036+08:00",
+          "project": "atlas",
+          "projectId": "p_f6630122ab2e",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 0,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 4,
+          "branchCountTruncated": false,
+          "summary": "最近 25 个提交：文档×7、修复×6、构建/依赖×6、其他1类×6；最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6；最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6",
+          "highlights": [
+            "文档：“补齐托管文档”",
+            "修复：“第 24 次改动”",
+            "文档：“第 23 次改动”",
+            "构建/依赖：“第 22 次改动”",
+            "新增：“第 21 次改动”",
+            "（另有 20 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [],
+          "notes": [],
+          "docs": [
+            "README.md",
+            "AGENTS.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790923813113_0",
+          "at": "2026-10-02T14:50:12.542734+08:00",
+          "project": "atlas",
+          "projectId": "p_f6630122ab2e",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 0,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 4,
+          "branchCountTruncated": false,
+          "summary": "最近 25 个提交：文档×7、修复×6、构建/依赖×6、其他1类×6；最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6；最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6",
+          "highlights": [
+            "文档：“补齐托管文档”",
+            "修复：“第 24 次改动”",
+            "文档：“第 23 次改动”",
+            "构建/依赖：“第 22 次改动”",
+            "新增：“第 21 次改动”",
+            "（另有 20 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [],
+          "notes": [],
+          "docs": [
+            "README.md",
+            "AGENTS.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790922596867_0",
+          "at": "2026-10-02T14:29:56.304172+08:00",
+          "project": "atlas",
+          "projectId": "p_f6630122ab2e",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 0,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 4,
+          "branchCountTruncated": false,
+          "summary": "最近 25 个提交：文档×7、修复×6、构建/依赖×6、其他1类×6；最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6；最近 25 个提交：新增×7、修复×6、文档×6、其他1类×6",
+          "highlights": [
+            "文档：“补齐托管文档”",
+            "修复：“第 24 次改动”",
+            "文档：“第 23 次改动”",
+            "构建/依赖：“第 22 次改动”",
+            "新增：“第 21 次改动”",
+            "（另有 20 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [],
+          "notes": [],
+          "docs": [
+            "README.md",
+            "AGENTS.md"
+          ],
+          "providerLabel": "规则引擎"
+        }
+      ],
+      "journalTruncated": true,
+      "journalLimit": 8,
+      "journalUnparsableLines": 0,
+      "warnings": [],
+      "fetchedAt": "2026-10-03T14:30:33.624905+08:00"
+    },
+    {
+      "storeHealth": "ok",
+      "id": "p_835dc72b196f",
+      "name": "beacon",
+      "path": "/tmp/dg-rich-src/beacon",
+      "kind": "git",
+      "remote": "",
+      "tags": [],
+      "headline": "main: 停滞",
+      "currentBranch": "main",
+      "defaultBranch": "main",
+      "dirty": {
+        "clean": false,
+        "ok": true,
+        "staged": 0,
+        "modified": 0,
+        "untracked": 1,
+        "conflicts": 0,
+        "total": 1,
+        "files": [
+          "README.md"
+        ]
+      },
+      "userDirtyCount": 0,
+      "stashCount": 0,
+      "commitCount": 9,
+      "lastCommitAt": "2026-09-10T10:00:00+08:00",
+      "lastCommitAgo": "23 天前",
+      "branches": [
+        {
+          "name": "main",
+          "status": "stale",
+          "statusLabel": "停滞",
+          "head": "e6c21d8f73e813bc7d326d4a2f41d9118de38e84",
+          "headShort": "e6c21d8f",
+          "headDate": "2026-09-10T10:00:00+08:00",
+          "headAgo": "23 天前",
+          "headSubject": "feat(beacon): 第 9 次改动",
+          "summary": "最近 9 个提交：新增×3、修复×2、文档×2、其他1类×2",
+          "highlights": [
+            "新增：“第 9 次改动”",
+            "修复：“第 8 次改动”",
+            "文档：“第 7 次改动”",
+            "构建/依赖：“第 6 次改动”",
+            "新增：“第 5 次改动”",
+            "（另有 4 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [
+            "分支已多日无提交，确认是否合并或关闭"
+          ],
+          "aheadOfDefault": 0,
+          "merged": false,
+          "pendingCommits": 0,
+          "baselineReset": false,
+          "provider": "rules",
+          "isCurrent": true,
+          "isDefault": true,
+          "updatedAt": "2026-10-03T12:36:55.808847+08:00",
+          "staleDays": 23
+        },
+        {
+          "name": "feature/b1",
+          "status": "active",
+          "statusLabel": "活跃",
+          "head": "e68e08de9a7768fee9d2636277ef9430b4210ac8",
+          "headShort": "e68e08de",
+          "headDate": "2026-10-02T10:00:00+08:00",
+          "headAgo": "1 天前",
+          "headSubject": "feat(beacon): 分支 b1 的改动",
+          "summary": "最近 10 个提交：新增×4、修复×2、文档×2、其他1类×2",
+          "highlights": [
+            "新增：“分支 b1 的改动”",
+            "新增：“第 9 次改动”",
+            "修复：“第 8 次改动”",
+            "文档：“第 7 次改动”",
+            "构建/依赖：“第 6 次改动”",
+            "（另有 5 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [],
+          "aheadOfDefault": 1,
+          "merged": false,
+          "pendingCommits": 0,
+          "baselineReset": false,
+          "provider": "rules",
+          "isCurrent": false,
+          "isDefault": false,
+          "updatedAt": "2026-10-03T12:36:55.845762+08:00",
+          "staleDays": 1
+        }
+      ],
+      "repoBranchCount": 2,
+      "overall": {
+        "summary": "最近 9 个提交：新增×3、修复×2、文档×2、其他1类×2；最近 10 个提交：新增×4、修复×2、文档×2、其他1类×2",
+        "notes": []
+      },
+      "docs": [
+        {
+          "file": "README.md",
+          "exists": true
+        }
+      ],
+      "manifests": [],
+      "commitTypes": [
+        {
+          "type": "feat",
+          "count": 3
+        },
+        {
+          "type": "fix",
+          "count": 2
+        },
+        {
+          "type": "docs",
+          "count": 2
+        },
+        {
+          "type": "chore",
+          "count": 2
+        }
+      ],
+      "commitTypesTruncated": false,
+      "untrackedCount": 1,
+      "worktreeCount": 1,
+      "progress": {
+        "updatedAt": "2026-10-03T12:36:55.848038+08:00",
+        "lastUpdateAt": "2026-10-03T12:36:55.528597+08:00",
+        "lastTrackAt": "",
+        "lastDeepAt": "2026-10-03T02:38:19.321638+08:00",
+        "entryCount": 12,
+        "entryCountTruncated": false,
+        "entriesKept": 12,
+        "runCount": 12
+      },
+      "journal": [
+        {
+          "id": "j_1791002215845_1",
+          "at": "2026-10-03T12:36:55.528597+08:00",
+          "project": "beacon",
+          "projectId": "p_835dc72b196f",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 0,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 2,
+          "branchCountTruncated": false,
+          "summary": "最近 9 个提交：新增×3、修复×2、文档×2、其他1类×2；最近 10 个提交：新增×4、修复×2、文档×2、其他1类×2",
+          "highlights": [
+            "新增：“第 9 次改动”",
+            "修复：“第 8 次改动”",
+            "文档：“第 7 次改动”",
+            "构建/依赖：“第 6 次改动”",
+            "新增：“第 5 次改动”",
+            "（另有 4 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [
+            "分支已多日无提交，确认是否合并或关闭"
+          ],
+          "notes": [],
+          "docs": [
+            "README.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790966156202_0",
+          "at": "2026-10-03T02:35:55.850815+08:00",
+          "project": "beacon",
+          "projectId": "p_835dc72b196f",
+          "branch": "main",
+          "mode": "deep",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 9,
+          "commitCountScope": "repoTotal",
+          "commitCountTruncated": false,
+          "branchCountTruncated": false,
+          "repoBranchCount": 2,
+          "summary": "深度更新 README.md（基于 9 个提交）",
+          "highlights": [],
+          "docs": [
+            "README.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790950884155_0",
+          "at": "2026-10-02T22:21:23.753942+08:00",
+          "project": "beacon",
+          "projectId": "p_835dc72b196f",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 0,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 2,
+          "branchCountTruncated": false,
+          "summary": "最近 9 个提交：新增×3、修复×2、文档×2、其他1类×2；最近 10 个提交：新增×4、修复×2、文档×2、其他1类×2",
+          "highlights": [
+            "新增：“第 9 次改动”",
+            "修复：“第 8 次改动”",
+            "文档：“第 7 次改动”",
+            "构建/依赖：“第 6 次改动”",
+            "新增：“第 5 次改动”",
+            "（另有 4 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [
+            "分支已多日无提交，确认是否合并或关闭"
+          ],
+          "notes": [],
+          "docs": [
+            "README.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790922401345_0",
+          "at": "2026-10-02T14:26:40.984014+08:00",
+          "project": "beacon",
+          "projectId": "p_835dc72b196f",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 0,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 2,
+          "branchCountTruncated": false,
+          "summary": "最近 9 个提交：新增×3、修复×2、文档×2、其他1类×2；最近 10 个提交：新增×4、修复×2、文档×2、其他1类×2",
+          "highlights": [
+            "新增：“第 9 次改动”",
+            "修复：“第 8 次改动”",
+            "文档：“第 7 次改动”",
+            "构建/依赖：“第 6 次改动”",
+            "新增：“第 5 次改动”",
+            "（另有 4 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [
+            "分支已多日无提交，确认是否合并或关闭"
+          ],
+          "notes": [],
+          "docs": [
+            "README.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790922364306_0",
+          "at": "2026-10-02T14:26:03.894106+08:00",
+          "project": "beacon",
+          "projectId": "p_835dc72b196f",
+          "branch": "main",
+          "mode": "deep",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 9,
+          "commitCountScope": "repoTotal",
+          "commitCountTruncated": false,
+          "branchCountTruncated": false,
+          "repoBranchCount": 2,
+          "summary": "深度更新 README.md（基于 9 个提交）",
+          "highlights": [],
+          "docs": [
+            "README.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790922342054_0",
+          "at": "2026-10-02T14:25:41.677669+08:00",
+          "project": "beacon",
+          "projectId": "p_835dc72b196f",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 0,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 2,
+          "branchCountTruncated": false,
+          "summary": "最近 9 个提交：新增×3、修复×2、文档×2、其他1类×2；最近 10 个提交：新增×4、修复×2、文档×2、其他1类×2",
+          "highlights": [
+            "新增：“第 9 次改动”",
+            "修复：“第 8 次改动”",
+            "文档：“第 7 次改动”",
+            "构建/依赖：“第 6 次改动”",
+            "新增：“第 5 次改动”",
+            "（另有 4 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [
+            "分支已多日无提交，确认是否合并或关闭"
+          ],
+          "notes": [],
+          "docs": [
+            "README.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790921695784_0",
+          "at": "2026-10-02T14:14:55.425429+08:00",
+          "project": "beacon",
+          "projectId": "p_835dc72b196f",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 19,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 2,
+          "branchCountTruncated": false,
+          "summary": "最近 9 个提交：新增×3、修复×2、文档×2、其他1类×2；最近 10 个提交：新增×4、修复×2、文档×2、其他1类×2",
+          "highlights": [
+            "新增：“第 9 次改动”",
+            "修复：“第 8 次改动”",
+            "文档：“第 7 次改动”",
+            "构建/依赖：“第 6 次改动”",
+            "新增：“第 5 次改动”",
+            "（另有 4 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [
+            "分支已多日无提交，确认是否合并或关闭"
+          ],
+          "notes": [],
+          "docs": [
+            "README.md"
+          ],
+          "providerLabel": "规则引擎"
+        }
+      ],
+      "journalTruncated": false,
+      "journalLimit": 8,
+      "journalUnparsableLines": 0,
+      "warnings": [],
+      "fetchedAt": "2026-10-03T14:30:33.597321+08:00"
+    },
+    {
+      "storeHealth": "ok",
+      "id": "p_723ce00d071e",
+      "name": "legacy",
+      "path": "/tmp/dg-rich-src/legacy",
+      "kind": "git",
+      "remote": "",
+      "tags": [],
+      "headline": "main: 停滞",
+      "currentBranch": "main",
+      "defaultBranch": "main",
+      "dirty": {
+        "clean": false,
+        "ok": true,
+        "staged": 0,
+        "modified": 0,
+        "untracked": 1,
+        "conflicts": 0,
+        "total": 1,
+        "files": [
+          "README.md"
+        ]
+      },
+      "userDirtyCount": 0,
+      "stashCount": 0,
+      "commitCount": 6,
+      "lastCommitAt": "2026-08-16T10:00:00+08:00",
+      "lastCommitAgo": "1 个月前",
+      "branches": [
+        {
+          "name": "main",
+          "status": "stale",
+          "statusLabel": "停滞",
+          "head": "72e254b3d2cd6bba414fbf4a415c6e2c964b75b2",
+          "headShort": "72e254b3",
+          "headDate": "2026-08-16T10:00:00+08:00",
+          "headAgo": "1 个月前",
+          "headSubject": "feat(legacy): 很久以前的改动 6",
+          "summary": "最近 6 个提交：新增×6",
+          "highlights": [
+            "新增：“很久以前的改动 6”",
+            "新增：“很久以前的改动 5”",
+            "新增：“很久以前的改动 4”",
+            "新增：“很久以前的改动 3”",
+            "新增：“很久以前的改动 2”",
+            "（另有 1 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [
+            "分支已多日无提交，确认是否合并或关闭"
+          ],
+          "aheadOfDefault": 0,
+          "merged": false,
+          "pendingCommits": 0,
+          "baselineReset": false,
+          "provider": "rules",
+          "isCurrent": true,
+          "isDefault": true,
+          "updatedAt": "2026-10-03T12:36:56.144516+08:00",
+          "staleDays": 48
+        },
+        {
+          "name": "old/branch",
+          "status": "stale",
+          "statusLabel": "停滞",
+          "head": "78e6ff2b41d9602f352e9d69d0beb41948ee1e7b",
+          "headShort": "78e6ff2b",
+          "headDate": "2026-08-20T10:00:00+08:00",
+          "headAgo": "1 个月前",
+          "headSubject": "chore(legacy): 老分支",
+          "summary": "最近 7 个提交：新增×6、构建/依赖×1",
+          "highlights": [
+            "构建/依赖：“老分支”",
+            "新增：“很久以前的改动 6”",
+            "新增：“很久以前的改动 5”",
+            "新增：“很久以前的改动 4”",
+            "新增：“很久以前的改动 3”",
+            "（另有 2 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [
+            "分支已多日无提交，确认是否合并或关闭"
+          ],
+          "aheadOfDefault": 1,
+          "merged": false,
+          "pendingCommits": 0,
+          "baselineReset": false,
+          "provider": "rules",
+          "isCurrent": false,
+          "isDefault": false,
+          "updatedAt": "2026-10-03T12:36:56.183286+08:00",
+          "staleDays": 44
+        }
+      ],
+      "repoBranchCount": 2,
+      "overall": {
+        "summary": "最近 6 个提交：新增×6；最近 7 个提交：新增×6、构建/依赖×1",
+        "notes": []
+      },
+      "docs": [
+        {
+          "file": "README.md",
+          "exists": true
+        }
+      ],
+      "manifests": [],
+      "commitTypes": [
+        {
+          "type": "feat",
+          "count": 6
+        }
+      ],
+      "commitTypesTruncated": false,
+      "untrackedCount": 1,
+      "worktreeCount": 1,
+      "progress": {
+        "updatedAt": "2026-10-03T12:36:56.184732+08:00",
+        "lastUpdateAt": "2026-10-03T12:36:55.850127+08:00",
+        "lastTrackAt": "",
+        "lastDeepAt": "2026-10-03T02:38:19.815741+08:00",
+        "entryCount": 12,
+        "entryCountTruncated": false,
+        "entriesKept": 12,
+        "runCount": 12
+      },
+      "journal": [
+        {
+          "id": "j_1791002216183_2",
+          "at": "2026-10-03T12:36:55.850127+08:00",
+          "project": "legacy",
+          "projectId": "p_723ce00d071e",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 0,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 2,
+          "branchCountTruncated": false,
+          "summary": "最近 6 个提交：新增×6；最近 7 个提交：新增×6、构建/依赖×1",
+          "highlights": [
+            "新增：“很久以前的改动 6”",
+            "新增：“很久以前的改动 5”",
+            "新增：“很久以前的改动 4”",
+            "新增：“很久以前的改动 3”",
+            "新增：“很久以前的改动 2”",
+            "（另有 1 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [
+            "分支已多日无提交，确认是否合并或关闭",
+            "分支已多日无提交，确认是否合并或关闭"
+          ],
+          "notes": [],
+          "docs": [
+            "README.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790966156690_0",
+          "at": "2026-10-03T02:35:56.337065+08:00",
+          "project": "legacy",
+          "projectId": "p_723ce00d071e",
+          "branch": "main",
+          "mode": "deep",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 6,
+          "commitCountScope": "repoTotal",
+          "commitCountTruncated": false,
+          "branchCountTruncated": false,
+          "repoBranchCount": 2,
+          "summary": "深度更新 README.md（基于 6 个提交）",
+          "highlights": [],
+          "docs": [
+            "README.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790922401776_0",
+          "at": "2026-10-02T14:26:41.412557+08:00",
+          "project": "legacy",
+          "projectId": "p_723ce00d071e",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 0,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 2,
+          "branchCountTruncated": false,
+          "summary": "最近 6 个提交：新增×6；最近 7 个提交：新增×6、构建/依赖×1",
+          "highlights": [
+            "新增：“很久以前的改动 6”",
+            "新增：“很久以前的改动 5”",
+            "新增：“很久以前的改动 4”",
+            "新增：“很久以前的改动 3”",
+            "新增：“很久以前的改动 2”",
+            "（另有 1 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [
+            "分支已多日无提交，确认是否合并或关闭",
+            "分支已多日无提交，确认是否合并或关闭"
+          ],
+          "notes": [],
+          "docs": [
+            "README.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790922364742_0",
+          "at": "2026-10-02T14:26:04.331665+08:00",
+          "project": "legacy",
+          "projectId": "p_723ce00d071e",
+          "branch": "main",
+          "mode": "deep",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 6,
+          "commitCountScope": "repoTotal",
+          "commitCountTruncated": false,
+          "branchCountTruncated": false,
+          "repoBranchCount": 2,
+          "summary": "深度更新 README.md（基于 6 个提交）",
+          "highlights": [],
+          "docs": [
+            "README.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790922342503_0",
+          "at": "2026-10-02T14:25:42.107244+08:00",
+          "project": "legacy",
+          "projectId": "p_723ce00d071e",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 0,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 2,
+          "branchCountTruncated": false,
+          "summary": "最近 6 个提交：新增×6；最近 7 个提交：新增×6、构建/依赖×1",
+          "highlights": [
+            "新增：“很久以前的改动 6”",
+            "新增：“很久以前的改动 5”",
+            "新增：“很久以前的改动 4”",
+            "新增：“很久以前的改动 3”",
+            "新增：“很久以前的改动 2”",
+            "（另有 1 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [
+            "分支已多日无提交，确认是否合并或关闭",
+            "分支已多日无提交，确认是否合并或关闭"
+          ],
+          "notes": [],
+          "docs": [
+            "README.md"
+          ],
+          "providerLabel": "规则引擎"
+        },
+        {
+          "id": "j_1790921696209_0",
+          "at": "2026-10-02T14:14:55.857218+08:00",
+          "project": "legacy",
+          "projectId": "p_723ce00d071e",
+          "branch": "main",
+          "mode": "shallow",
+          "source": "cli",
+          "provider": "rules",
+          "commitCount": 13,
+          "commitCountScope": "new",
+          "commitCountTruncated": false,
+          "repoBranchCount": 2,
+          "branchCountTruncated": false,
+          "summary": "最近 6 个提交：新增×6；最近 7 个提交：新增×6、构建/依赖×1",
+          "highlights": [
+            "新增：“很久以前的改动 6”",
+            "新增：“很久以前的改动 5”",
+            "新增：“很久以前的改动 4”",
+            "新增：“很久以前的改动 3”",
+            "新增：“很久以前的改动 2”",
+            "（另有 1 个提交未展开，见 journal）"
+          ],
+          "nextSteps": [
+            "分支已多日无提交，确认是否合并或关闭",
+            "分支已多日无提交，确认是否合并或关闭"
+          ],
+          "notes": [],
+          "docs": [
+            "README.md"
+          ],
+          "providerLabel": "规则引擎"
+        }
+      ],
+      "journalTruncated": false,
+      "journalLimit": 8,
+      "journalUnparsableLines": 0,
+      "warnings": [],
+      "fetchedAt": "2026-10-03T14:30:33.596956+08:00"
+    },
+    {
+      "storeHealth": "ok",
+      "id": "p_f958a2e13c80",
+      "name": "gone",
+      "path": "/tmp/dg-bad-src/gone",
+      "kind": "dir",
+      "remote": "",
+      "error": "路径不存在或卷未挂载：/tmp/dg-bad-src/gone",
+      "headline": "状态获取失败",
+      "currentBranch": "",
+      "defaultBranch": "",
+      "userDirtyCount": -1,
+      "untrackedCount": -1,
+      "stashCount": -1,
+      "worktreeCount": -1,
+      "lastCommitAgo": "",
+      "commitTypes": [],
+      "branches": [],
+      "repoBranchCount": -1,
+      "journal": [],
+      "journalTruncated": false,
+      "journalLimit": 0,
+      "journalUnparsableLines": -1,
+      "warnings": [],
+      "tags": [],
+      "dirty": {},
+      "commitCount": -1,
+      "lastCommitAt": "",
+      "commitTypesTruncated": false,
+      "overall": {},
+      "docs": [],
+      "manifests": [],
+      "progress": {
+        "updatedAt": "",
+        "lastUpdateAt": "",
+        "lastTrackAt": "",
+        "lastDeepAt": "",
+        "entryCount": 0,
+        "entryCountTruncated": false,
+        "entriesKept": 0,
+        "runCount": 0
+      },
+      "fetchedAt": "2026-10-03T14:30:33.331057+08:00"
+    },
+    {
+      "storeHealth": "ok",
+      "id": "p_da01ac8bb44e",
+      "name": "newbie",
+      "path": "/tmp/dg-bad-src/newbie",
+      "kind": "dir",
+      "remote": "",
+      "error": "路径不存在或卷未挂载：/tmp/dg-bad-src/newbie",
+      "headline": "状态获取失败",
+      "currentBranch": "",
+      "defaultBranch": "",
+      "userDirtyCount": -1,
+      "untrackedCount": -1,
+      "stashCount": -1,
+      "worktreeCount": -1,
+      "lastCommitAgo": "",
+      "commitTypes": [],
+      "branches": [],
+      "repoBranchCount": -1,
+      "journal": [],
+      "journalTruncated": false,
+      "journalLimit": 0,
+      "journalUnparsableLines": -1,
+      "warnings": [],
+      "tags": [],
+      "dirty": {},
+      "commitCount": -1,
+      "lastCommitAt": "",
+      "commitTypesTruncated": false,
+      "overall": {},
+      "docs": [],
+      "manifests": [],
+      "progress": {
+        "updatedAt": "",
+        "lastUpdateAt": "",
+        "lastTrackAt": "",
+        "lastDeepAt": "",
+        "entryCount": 0,
+        "entryCountTruncated": false,
+        "entriesKept": 0,
+        "runCount": 0
+      },
+      "fetchedAt": "2026-10-03T14:30:33.327629+08:00"
+    },
+    {
+      "storeHealth": "ok",
+      "id": "p_25d5cfab9141",
+      "name": "fresh",
+      "path": "/tmp/dg-bad-src/fresh",
+      "kind": "dir",
+      "remote": "",
+      "error": "路径不存在或卷未挂载：/tmp/dg-bad-src/fresh",
+      "headline": "状态获取失败",
+      "currentBranch": "",
+      "defaultBranch": "",
+      "userDirtyCount": -1,
+      "untrackedCount": -1,
+      "stashCount": -1,
+      "worktreeCount": -1,
+      "lastCommitAgo": "",
+      "commitTypes": [],
+      "branches": [],
+      "repoBranchCount": -1,
+      "journal": [],
+      "journalTruncated": false,
+      "journalLimit": 0,
+      "journalUnparsableLines": -1,
+      "warnings": [],
+      "tags": [],
+      "dirty": {},
+      "commitCount": -1,
+      "lastCommitAt": "",
+      "commitTypesTruncated": false,
+      "overall": {},
+      "docs": [],
+      "manifests": [],
+      "progress": {
+        "updatedAt": "",
+        "lastUpdateAt": "",
+        "lastTrackAt": "",
+        "lastDeepAt": "",
+        "entryCount": 0,
+        "entryCountTruncated": false,
+        "entriesKept": 0,
+        "runCount": 0
+      },
+      "fetchedAt": "2026-10-03T14:30:33.331659+08:00"
+    }
+  ],
+  "summary": {
+    "projectCount": 3,
+    "degradedStores": 0,
+    "listedProjects": 6,
+    "failedProjects": 3,
+    "activeProjects": 2,
+    "staleProjects": 2,
+    "dirtyProjects": 0,
+    "branchCount": 8,
+    "repoBranchTotal": 8,
+    "branchTruncatedProjects": 0,
+    "branchUnknownProjects": 0,
+    "generatedAt": "2026-10-03T14:30:33.624943+08:00"
+  },
+  "language": "zh"
+}

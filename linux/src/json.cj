@@ -57,6 +57,22 @@ public class Json {
         }
     }
 
+    /// 对象的全部键（保持插入顺序）。
+    ///
+    /// 存在的理由：载荷形状对不上时，**把引擎给的键名原样打出来**比报
+    /// 「解析失败」有用得多 —— 前者一眼能看出是契约变了还是数据坏了。
+    public static func objKeys(v: JsonValue): Array<String> {
+        match (asObj(v)) {
+            case Some(m) =>
+                let out = ArrayList<String>()
+                for ((k, _) in m) {
+                    out.add(k)
+                }
+                return out.toArray()
+            case None => return Array<String>()
+        }
+    }
+
     public static func has(o: JsonValue, key: String): Bool {
         return get(o, key).isSome()
     }

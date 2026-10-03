@@ -25,6 +25,8 @@ public class Branch {
     public let aheadOfDefault: Int64
     public let merged: Bool
     public let staleDays: Int64
+    public let pendingCommits: Int64
+    public let baselineReset: Bool
 
     public init(
         name: String,
@@ -38,7 +40,9 @@ public class Branch {
         isDefault: Bool,
         aheadOfDefault: Int64,
         merged: Bool,
-        staleDays: Int64
+        staleDays: Int64,
+        pendingCommits: Int64,
+        baselineReset: Bool
     ) {
         this.name = name
         this.status = status
@@ -52,6 +56,8 @@ public class Branch {
         this.aheadOfDefault = aheadOfDefault
         this.merged = merged
         this.staleDays = staleDays
+        this.pendingCommits = pendingCommits
+        this.baselineReset = baselineReset
     }
 
     public static func from(v: JsonValue): Branch {
@@ -67,8 +73,21 @@ public class Branch {
             Json.boolAt(v, "isDefault", false),
             Json.intAt(v, "aheadOfDefault", 0),
             Json.boolAt(v, "merged", false),
-            Json.intAt(v, "staleDays", -1)
+            Json.intAt(v, "staleDays", -1),
+            Json.intAt(v, "pendingCommits", 0),
+            Json.boolAt(v, "baselineReset", false)
         )
+    }
+
+    /// 待合入候选：领先默认分支、且不是默认分支本身、且没被合掉。
+    /// 三条都要 —— 只看 `aheadOfDefault > 0` 会把默认分支自己也算进去。
+    public func isMergeCandidate(): Bool {
+        return this.aheadOfDefault > 0 && !this.isDefault && !this.merged
+    }
+
+    /// 停滞了几天。`-1` = **读不出来**，不是 0 天。
+    public func staleText(): String {
+        return (if (this.staleDays < 0) { "停滞天数读不出" } else { "停滞 ${this.staleDays} 天" })
     }
 }
 
@@ -89,7 +108,17 @@ public class Project {
     public let worktreeCount: Int64
     public let commitCount: Int64
     public let branchCount: Int64
+    /// 仓库里**真实**的分支数。`-1` = 读不出来。
+    ///
+    /// ⚠ 与 `branchCount` 是两回事：`branchCount` 是引擎**追踪到基线**的数量，
+    /// 实测 16 个分支的仓库只报 7 个，刚注册还没 track 的报 0 —— 而仓库实际有分支。
+    /// 字面写「分支进度（0）」会让人认定仓库没有分支。
+    public let repoBranchCount: Int64
+    /// 分支数被截断。截断时 branchCount **不是全量**。
+    public let branchCountTruncated: Bool
     public let lastCommitAgo: String
+    /// ISO 8601 原始串。**看板分列靠它算天数**（`lastCommitAgo` 是给人看的相对串）。
+    public let lastCommitAt: String
     public let storeHealth: String
 
     /// 引擎采集这个项目时出的错。**非空就是失败项目**，界面必须显示出来。
@@ -97,6 +126,12 @@ public class Project {
 
     public let branches: ArrayList<Branch>
     public let commitTypes: ArrayList<(String, Int64)>
+    /// 引擎的**采样窗口**截断了提交类型（近 N 条 vs 全仓 M 条）。
+    ///
+    /// ⚠ 与「界面自己只列前 8 种」是**两条独立的轴**。
+    /// 只披露一条就是撒谎：引擎给全量而界面藏起一半，读者会把
+    /// 看到的 8 种当成这个项目的全部提交类型。
+    public let commitTypesTruncated: Bool
     public let docs: ArrayList<String>
     public let progressEntryCount: Int64
     public let progressUpdatedAt: String
@@ -117,11 +152,15 @@ public class Project {
         worktreeCount: Int64,
         commitCount: Int64,
         branchCount: Int64,
+        repoBranchCount: Int64,
+        branchCountTruncated: Bool,
         lastCommitAgo: String,
+        lastCommitAt: String,
         storeHealth: String,
         error: String,
         branches: ArrayList<Branch>,
         commitTypes: ArrayList<(String, Int64)>,
+        commitTypesTruncated: Bool,
         docs: ArrayList<String>,
         progressEntryCount: Int64,
         progressUpdatedAt: String,
@@ -141,11 +180,15 @@ public class Project {
         this.worktreeCount = worktreeCount
         this.commitCount = commitCount
         this.branchCount = branchCount
+        this.repoBranchCount = repoBranchCount
+        this.branchCountTruncated = branchCountTruncated
         this.lastCommitAgo = lastCommitAgo
+        this.lastCommitAt = lastCommitAt
         this.storeHealth = storeHealth
         this.error = error
         this.branches = branches
         this.commitTypes = commitTypes
+        this.commitTypesTruncated = commitTypesTruncated
         this.docs = docs
         this.progressEntryCount = progressEntryCount
         this.progressUpdatedAt = progressUpdatedAt
@@ -242,12 +285,16 @@ public class Project {
             Json.intAt(v, "stashCount", 0),
             Json.intAt(v, "worktreeCount", 0),
             Json.intAt(v, "commitCount", 0),
-            Json.intAt(v, "repoBranchCount", 0),
+            Json.intAt(v, "branchCount", 0),
+            Json.intAt(v, "repoBranchCount", -1),
+            Json.boolAt(v, "branchCountTruncated", false),
             Json.strAt(v, "lastCommitAgo", ""),
+            Json.strAt(v, "lastCommitAt", ""),
             Json.strAt(v, "storeHealth", ""),
             Json.strAt(v, "error", ""),
             brs,
             types,
+            Json.boolAt(v, "commitTypesTruncated", false),
             docs,
             Json.intAt(progress, "entryCount", 0),
             Json.strAt(progress, "updatedAt", ""),
@@ -466,5 +513,166 @@ public class Dashboard {
             Json.intAt(counts, "total", 0),
             Json.intAt(counts, "done", 0)
         )
+    }
+}
+
+// ===========================================================================
+// 看板分列 —— 与 macOS 端 `BoardColumn` / `ProjectStatus.liveness` 逐条对应
+// ===========================================================================
+
+/// 项目活跃度。**顺序与判定与 macOS 端完全一致**。
+///
+/// ⚠ 「待处理」必须排在「停滞」前面（macOS 端 2026-10-02 修的同一个 bug）。
+/// macOS 现场症状：侧栏「看板 1」而仪表盘「待处理 3」—— 同一件事两个答案。
+/// 根因不是两处算法不同（都走 liveness），而是 liveness **内部**先判停滞：
+/// `primaryBranch.status == "stale"` 一命中就 return，「有活要干」根本没机会被问。
+/// 两条理由支持「等我动手」优先：
+///   1. 两者**不互斥**，先命中哪个纯属书写顺序，而书写顺序不该决定事实；
+///   2. 「待处理」列的表头定义就包含「待合入的分支」——
+///      有待合入分支的项目无论主分支多停滞都该进这一列。
+/// 代价照实说：「久未更新」列会因此变少，但信息没丢 ——
+/// 每张项目卡仍单独写着主分支的停滞状态。
+public enum Liveness {
+    | Unreadable  // 采集失败：所有计数都是未知，不是 0
+    | NotGit      // 非 git 项目
+    | NeedsAction // 有东西等着动手
+    | EngineStale // 引擎判定为停滞（只有追踪到基线的分支才可能）
+    | Quiet       // 30 天以上没有新提交
+    | Recent      // 30 天内有新提交
+    | Unknown     // 提交时间读不出来 —— 不许折进上面任何一档
+}
+
+public func livenessLabel(l: Liveness): String {
+    match (l) {
+        case Liveness.Unreadable => return "读不出来"
+        case Liveness.NotGit => return "非 git"
+        case Liveness.NeedsAction => return "待处理"
+        case Liveness.EngineStale => return "停滞"
+        case Liveness.Quiet => return "久未更新"
+        case Liveness.Recent => return "活跃"
+        case Liveness.Unknown => return "未知"
+    }
+}
+
+/// 看板的四列。空列也带 `basis`（为什么空）——
+/// 「0」既可能是「真没有」也可能是「没量出来」，只显示数字分不开。
+public enum BoardColumn {
+    | Attention
+    | Active
+    | Quiet
+    | Other
+}
+
+public func boardColumnLabel(c: BoardColumn): String {
+    match (c) {
+        case BoardColumn.Attention => return "待处理"
+        case BoardColumn.Active => return "活跃中"
+        case BoardColumn.Quiet => return "久未更新"
+        case BoardColumn.Other => return "其他"
+    }
+}
+
+public func boardColumnBasis(c: BoardColumn): String {
+    match (c) {
+        case BoardColumn.Attention => return "有未提交、未跟踪、stash 或待合入的分支"
+        case BoardColumn.Active => return "30 天内有过新提交"
+        case BoardColumn.Quiet => return "超过 30 天没有新提交"
+        case BoardColumn.Other => return "采集失败、非 git，或提交时间读不出来"
+    }
+}
+
+public func boardColumnOf(l: Liveness): BoardColumn {
+    match (l) {
+        case Liveness.NeedsAction => return BoardColumn.Attention
+        case Liveness.EngineStale => return BoardColumn.Quiet
+        case Liveness.Quiet => return BoardColumn.Quiet
+        case Liveness.Recent => return BoardColumn.Active
+        case Liveness.Unreadable => return BoardColumn.Other
+        case Liveness.NotGit => return BoardColumn.Other
+        case Liveness.Unknown => return BoardColumn.Other
+    }
+}
+
+/// 有没有东西等着动手。
+///
+/// ⚠ macOS 端这里还有一条 `mergeHint?.kind == "merge" || == "fast-forward"`。
+/// **本端不抄那条**：`status --json` 的项目键里**根本没有 `mergeHint`**
+/// （实测 33 个键，见 model_test.cj 的载荷夹具），macOS 端把它解成可选、
+/// 在真实载荷下恒为 nil，那条分支**从来没被触发过**。
+/// 照抄等于把一段死代码搬过来冒充能力。待合入的判定走
+/// `branches[].isMergeCandidate`（`aheadOfDefault > 0 && !isDefault && !merged`），
+/// 那条是真有数据的。
+public func projectNeedsAction(p: Project): Bool {
+    if (p.userDirtyCount > 0 || p.untrackedCount > 0 || p.stashCount > 0) {
+        return true
+    }
+    for (b in p.branches) {
+        if (b.isMergeCandidate()) {
+            return true
+        }
+    }
+    return false
+}
+
+public func branchIsMergeCandidate(b: Branch): Bool {
+    return b.aheadOfDefault > 0 && !b.isDefault && !b.merged
+}
+
+/// 距最后一次提交多少天。`None` = **读不出来**（非 git / 时间解析不了 / 引擎没给键）。
+///
+/// ⚠ 算术必须与引擎**逐字一致**，否则看板分列会和仪表盘 KPI 对不上：
+///     let ageDays = (nowMs - ms) / 86400000      // 引擎 dashboard.cj，整数除法
+/// 所以这里也是整数除法，且**不四舍五入**。差一天就会让一个 30.6 天的项目
+/// 掉进「活跃中」还是「久未更新」——而这两列是互斥的。
+public func daysSinceLastCommit(p: Project, nowMs: Int64): Option<Int64> {
+    match (parseIso8601Ms(p.lastCommitAt)) {
+        case Some(ms) =>
+            if (nowMs < ms) {
+                return Some(0)
+            }
+            return Some((nowMs - ms) / 86400000)
+        case None => return None
+    }
+}
+
+/// 项目的活跃度判定。**纯函数**（收 nowMs）—— 判据要能喂固定时刻，
+/// 不然同一个项目在测试跑两次可能是两个答案。
+public func projectLiveness(p: Project, nowMs: Int64): Liveness {
+    if (p.failed()) {
+        return Liveness.Unreadable
+    }
+    if (p.kind != "git") {
+        return Liveness.NotGit
+    }
+    if (projectNeedsAction(p)) {
+        return Liveness.NeedsAction
+    }
+    // 引擎的档位最精确，但**只在它真的给出一行分支记录时**才有。
+    if (primaryBranchStatus(p) == "stale") {
+        return Liveness.EngineStale
+    }
+    match (daysSinceLastCommit(p, nowMs)) {
+        case Some(age) => return (if (age <= 30) { Liveness.Recent } else { Liveness.Quiet })
+        case None => return Liveness.Unknown
+    }
+}
+
+/// 「这条项目该显示哪个分支」—— 标记为当前的那个，没有就退回第一个。
+public func primaryBranch(p: Project): Option<Branch> {
+    for (b in p.branches) {
+        if (b.isCurrent) {
+            return Some(b)
+        }
+    }
+    if (p.branches.size > 0) {
+        return Some(p.branches[0])
+    }
+    return None
+}
+
+public func primaryBranchStatus(p: Project): String {
+    match (primaryBranch(p)) {
+        case Some(b) => return b.status
+        case None => return ""
     }
 }
