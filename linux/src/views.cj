@@ -19,9 +19,9 @@ package deepdolphin_linux
 
 import std.collection.ArrayList
 
-import cui.{Axis, Badge, BadgeKind, Button, ButtonRole, Color, CrossAxisAlignment, DesktopApp, Divider, Flexible,
-    FontWeight, HStack, Label, LengthUnits, Panel, ScrollView, Spacer, State, SurfaceStyle, TextArea, TextField,
-    VStack, Widget}
+import cui.{Axis, Badge, BadgeKind, Button, ButtonRole, Color, CrossAxisAlignment, DesktopApp, Divider, Dropdown,
+    Flexible, FontWeight, HStack, Label, LengthUnits, Panel, ScrollView, Spacer, State, SurfaceStyle, TextArea,
+    TextField, VStack, Widget}
 import cui.LengthUnits
 import cui.{mountEffect, rememberState}
 
@@ -200,6 +200,7 @@ func route(model: AppModel, app: DesktopApp, dark: Bool): Unit {
 /// 那会丢掉标准窗口行为（拖动 / 全屏 / 菜单栏）。
 /// 合理化的做法就是把它放在**内容区顶部**，原生工具栏只留工具类动作。
 private func workBar(model: AppModel, app: DesktopApp, dark: Bool): Unit {
+    observeScope(model)
     let total = allProjectsOf(model).size
     Panel {
         HStack {
@@ -212,30 +213,82 @@ private func workBar(model: AppModel, app: DesktopApp, dark: Bool): Unit {
         .contentPadding(12.0.vp, 8.0.vp)
 }
 
-/// 范围选择器。**只列真实存在的项目** —— 空项目列表时这一项不会被选中，
-/// 不会「选了一个不存在的仓库」。
+/// 范围选择器（WorkBar 左段）。
 ///
-/// 用一排按钮而不是下拉：项目多时下拉要滚动才能看全，
-/// 而这一段是「我现在在看哪一片」的主链路，需要一眼看到。
+/// ⚠ 用**下拉**而不是一排按钮 —— 这不是审美问题，是功能问题：
+/// 15 个项目时一排按钮排到第 11 个就被右缘截断，而右侧
+/// 「浅更新 / 深更新」两个主链路按钮**整个被挤出窗口**（实测，夹具扩到 15 个项目复现）。
+/// macOS 端用的是 `Picker` + `.frame(maxWidth: 320)`，CUI 的 `Dropdown` 是对应物
+/// （弹层内可滚动、宽度按最长项自适应）。
+///
+/// 原来那句注释写「用一排按钮而不是下拉：项目多时下拉要滚动才能看全」——
+/// 在 macOS 上成立，在 CUI 上不成立：这里没有下拉，于是自己排了一排，
+/// 而一排在项目变多时会把**别的控件**挤掉。拿不到的控件不能成为
+/// 排版失控的理由。
 private func scopeButtons(model: AppModel, app: DesktopApp, total: Int64, dark: Bool): Unit {
-    HStack {
-        Button("全局（${total} 个项目）", {
-            =>
-                model.scope.value = ScopeChoice.Group
-                model.root.value = RootSection.Dashboard
-        }).fontSize(12.0).style(scopeStyle(scopeIs(model.scope.value, ScopeChoice.Group), dark))
-        for (p in allProjectsOf(model)) {
-            Button(p.name, {
-                =>
-                    model.scope.value = ScopeChoice.One
-                    model.selectedProject.value = p.name
-                    model.root.value = RootSection.Project
-            }).fontSize(12.0)
-            .style(scopeStyle(
-                p.name == model.selectedProject.value && scopeIs(model.scope.value, ScopeChoice.One),
-                dark))
+    // 「范围」这个标签由外层 workBar 出，这里不再重复一遍 ——
+    // 重复的标签在窄窗口下会显得像有两个同名控件。
+    Flexible { Dropdown(scopeLabels(model, total), model.scopeIndex, key: "dd-scope") }
+}
+
+/// 范围下拉的选项：**只列真实存在的项目**。项目列表为空时那一项不会被选中，
+/// 不会「选了一个不存在的仓库」。
+public func scopeLabels(model: AppModel, total: Int64): Array<String> {
+    let out = ArrayList<String>()
+    out.add("全局（${total} 个项目）")
+    for (p in allProjectsOf(model)) {
+        out.add(p.name)
+    }
+    return out.toArray()
+}
+
+/// 下标 → 范围。**范围选择的唯一写入口** ——
+/// 原来三处各写一遍 `scope` / `selectedProject` / `root`，
+/// 漏写一处就会出现「标题说单仓库、内容是全局」。
+public func applyScope(model: AppModel, idx: Int64): Unit {
+    let ps = allProjectsOf(model)
+    if (idx <= 0) {
+        model.scope.value = ScopeChoice.Group
+        model.root.value = RootSection.Dashboard
+    } else if (idx - 1 < ps.size) {
+        model.scope.value = ScopeChoice.One
+        model.selectedProject.value = ps[Int64(idx - 1)].name
+        model.root.value = RootSection.Project
+    }
+}
+
+/// 范围 → 下标。0 = 全局，-1 = 不在范围里（下拉退回显示全局）。
+public func scopeIndexOf(model: AppModel): Int64 {
+    if (!scopeIs(model.scope.value, ScopeChoice.One)) {
+        return 0
+    }
+    let name = model.selectedProject.value
+    var i: Int64 = 0
+    for (p in allProjectsOf(model)) {
+        if (p.name == name) {
+            return i + 1
         }
-    }.spacing(6.0.vp).hug()
+        i += 1
+    }
+    return 0
+}
+
+/// 把下拉的写入接到路由上。`mountEffect` 按 key 去重，重建时不会重复注册。
+private func observeScope(model: AppModel): Unit {
+    mountEffect("dd-observe-scope", {
+        => model.scopeIndex.observe({_, v => applyScope(model, v)})
+    })
+    // 反向：别处（侧栏 / 详情页返回）改了范围，下拉要跟着显示对的那一项。
+    mountEffect("dd-sync-scope", {
+        => model.scope.observe({_, _ => syncScopeIndex(model)})
+    })
+}
+
+private func syncScopeIndex(model: AppModel): Unit {
+    let want = scopeIndexOf(model)
+    if (model.scopeIndex.value != want) {
+        model.scopeIndex.value = want
+    }
 }
 
 /// 范围按钮的底色：选中用强调色的淡底，未选中用中性底。

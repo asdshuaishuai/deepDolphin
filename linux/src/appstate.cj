@@ -88,6 +88,9 @@ public class AppModel {
     public let dashSpan = State<DashSpan>(DashSpan.All)
     /// 提交类型筛选。**只作用于项目卡的提交结构条**，不改 KPI 数字。
     public let dashCommits = State<DashCommitFilter>(DashCommitFilter.AllCommits)
+    /// 范围选择器（WorkBar 左段）的当前项。**必须是持久 State** ——
+    /// 控件写进来，下一帧还要读同一个实例才知道现在选的是哪一项。
+    public let scopeIndex = State<Int64>(0)
 
     // -------------------------------------------------------------- 导航
     /// 当前选中的**视图**（侧栏「视图」组）。项目是另一维，见 `selectedProject`。

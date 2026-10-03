@@ -852,3 +852,56 @@ func gridTitleSaysHowManyWereFilteredOut(): Unit {
     // 筛选生效时标题必须跟着变，且带上档位名 —— 让人知道被什么筛了
     @Expect(!gridCountLine(1, 3, f).contains("共 3"))
 }
+
+// ---------------------------------------------------------------------------
+// 范围选择器
+// ---------------------------------------------------------------------------
+
+@Test
+func scopeOptionsAlwaysLeadWithTheGroupAndOnlyListRealProjects(): Unit {
+    // 下拉第 0 项必须是「全局」，下标 1..N 才是项目 ——
+    // 于是「下标 ↔ 范围」的映射只有一个真相，不会两处各数一次。
+    let s = StatusSnapshot.from(Json.parse(SPAN_PROJECTS).getOrThrow())
+    let model = AppModel(EngineLocation("", "", ""))
+    model.snapshot.value = Some(s)
+    let labels = scopeLabels(model, 3)
+    @Expect(labels.size, 4)
+    @Expect(labels[0].contains("全局"))
+    @Expect(labels[0].contains("3"))
+    @Expect(labels[1], "fresh")
+    @Expect(labels[3], "noread")
+    // 项目列表为空时也不该出现一个假的项目项
+    let empty = AppModel(EngineLocation("", "", ""))
+    @Expect(scopeLabels(empty, 0).size, 1)
+}
+
+@Test
+func applyScopeIsTheOnlyWriterAndItSetsAllThreeFieldsTogether(): Unit {
+    // 原来三处各写一遍 scope / selectedProject / root，漏写一处就会
+    // 「标题说单仓库、内容是全局」—— 范围错了主区内容就全错。
+    let s = StatusSnapshot.from(Json.parse(SPAN_PROJECTS).getOrThrow())
+    let model = AppModel(EngineLocation("", "", ""))
+    model.snapshot.value = Some(s)
+
+    applyScope(model, 0)
+    @Expect(scopeIs(model.scope.value, ScopeChoice.Group))
+    @Expect(rootSectionIs(model.root.value, RootSection.Dashboard))
+    @Expect(scopeIndexOf(model), 0)
+
+    // 下标 1 = 第 1 个项目（fresh）
+    applyScope(model, 1)
+    @Expect(scopeIs(model.scope.value, ScopeChoice.One))
+    @Expect(model.selectedProject.value, "fresh")
+    @Expect(rootSectionIs(model.root.value, RootSection.Project))
+    @Expect(scopeIndexOf(model), 1)
+
+    // 下标 → 范围 → 下标 往返要闭合，否则下拉会显示错的项
+    applyScope(model, 3)
+    @Expect(model.selectedProject.value, "noread")
+    @Expect(scopeIndexOf(model), 3)
+
+    // 越界不许把范围写成垃圾值
+    applyScope(model, 99)
+    @Expect(scopeIs(model.scope.value, ScopeChoice.One))
+    @Expect(model.selectedProject.value, "noread")
+}
