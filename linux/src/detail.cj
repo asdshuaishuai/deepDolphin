@@ -621,8 +621,14 @@ private func journalCard(model: AppModel, p: Project, dark: Bool): Unit {
                                     Flexible { Label(e.summary).fontSize(11.0).muted().maxLines(2) }
                                 }.spacing(8.0.vp).hug()
                             }
+                            // 两条披露是**两件事**，各占一行，不许合并成一句。
+                            // 「已截断」说的是「后面还有」，
+                            // 「N 行读不出来」说的是「中间有你看漏的」。
                             if (!j.truncatedNote().isEmpty()) {
                                 Label(j.truncatedNote()).fontSize(11.0).muted().wrap()
+                            }
+                            if (!j.unparsableNote().isEmpty()) {
+                                Label(j.unparsableNote()).fontSize(11.0).muted().wrap()
                             }
                         }
                 }

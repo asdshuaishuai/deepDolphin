@@ -760,6 +760,48 @@ func theFixtureCarriesMergeHintAndDirtySoThosePathsAreActuallyDrawn(): Unit {
     }
 }
 
+/// 日志的两条披露是**两件事**，合并成一句就会把「后面还有」与
+/// 「中间有你看漏的」糊在一起 —— 用户会把那条分界线当成历史的终点。
+///
+/// 与 macOS 端 `DetailViews.swift:717` 同一条规则与同一句措辞。
+/// ⚠ 这是**防御性**通路：本机 `journal --json` 实测 `unparsableLines: 0`。
+/// 留着是因为字段在契约里，引擎换日志格式那天它就会变成非 0。
+@Test
+func journalTruncationAndUnparsableLinesAreTwoDifferentDisclosures(): Unit {
+    let cut = Journal.from(Json.parse(
+        """
+        {"entries":[],"limit":20,"windowExhausted":true,"unparsableLines":0}
+        """).getOrThrow())
+    @Expect(cut.truncatedNote().contains("已截断"))
+    @Expect(cut.truncatedNote().contains("20"))
+    @Expect(cut.unparsableNote().isEmpty())
+
+    let blind = Journal.from(Json.parse(
+        """
+        {"entries":[],"limit":20,"windowExhausted":false,"unparsableLines":3}
+        """).getOrThrow())
+    @Expect(blind.truncatedNote().isEmpty())
+    let note = blind.unparsableNote()
+    @Expect(note.contains("3 行"))
+    // 措辞不许含糊：必须明确说「不是日志到此为止」
+    @Expect(note.contains("不是「日志到此为止」"))
+
+    // 两个同时发生时两句都在，谁也不许吞掉谁
+    let both = Journal.from(Json.parse(
+        """
+        {"entries":[],"limit":8,"windowExhausted":true,"unparsableLines":1}
+        """).getOrThrow())
+    @Expect(!both.truncatedNote().isEmpty())
+    @Expect(!both.unparsableNote().isEmpty())
+    // 都正常时一句都不说 —— 多余的披露和缺失的一样是噪声
+    let fine = Journal.from(Json.parse(
+        """
+        {"entries":[],"limit":20,"windowExhausted":false,"unparsableLines":0}
+        """).getOrThrow())
+    @Expect(fine.truncatedNote().isEmpty())
+    @Expect(fine.unparsableNote().isEmpty())
+}
+
 /// 空路径**不许**把进程带崩。
 ///
 /// `Path("")` 在仓颉里抛 `IllegalArgumentException`。而 `locateEngine`

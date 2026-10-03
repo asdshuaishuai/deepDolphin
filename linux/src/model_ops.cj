@@ -263,6 +263,24 @@ public class Journal {
         return ""
     }
 
+    /// 解析不了的行数要说出来，而且**措辞不许含糊**。
+    ///
+    /// 与 macOS 端 `DetailViews.swift:717` 同一条：
+    /// 「有 N 行读不出来」和「日志到此为止」是两件完全不同的事 ——
+    /// 前者意味着**中间有内容你看漏了**，后者意味着没有更多了。
+    /// 写成一句「部分日志不可用」会把这两者糊在一起，而用户会
+    /// 以为那条分界线就是历史的终点。
+    ///
+    /// ⚠ 这是**防御性**通路：本机 `journal --json` 实测
+    /// `unparsableLines: 0`。留着是因为字段在契约里，
+    /// 引擎哪次换了日志格式它就会变成非 0，而那时界面必须已经会说这句话。
+    public func unparsableNote(): String {
+        if (this.unparsableLines > 0) {
+            return "另有 ${this.unparsableLines} 行日志解析不了（不是「日志到此为止」）"
+        }
+        return ""
+    }
+
     public static func from(v: JsonValue): Journal {
         let es = ArrayList<JournalEntry>()
         for (e in Json.arrAt(v, "entries")) {
