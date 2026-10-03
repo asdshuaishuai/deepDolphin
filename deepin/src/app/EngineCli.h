@@ -18,6 +18,7 @@
 #include "../models/EngineError.h"
 #include "ProcessRegistry.h"
 #include <QElapsedTimer>
+#include <QAtomicInt>
 #include <QObject>
 #include <QPointer>
 #include <QString>
@@ -76,8 +77,11 @@ public:
     void callJson(const QStringList &args, int timeoutMs,
                   std::function<void(const EngineResult &)> onDone);
 
-    // 同步调用：仅引擎探活/自检/测试路径使用，不得在 UI 热路径使用。
-    static EngineResult runSync(const QStringList &args, int timeoutMs, const QString &bin = {});
+    // 同步调用：引擎探活/自检与 agent worker 使用，不得在 UI 热路径使用。
+    // cancelled 非空时切片等待（M0-5）：旗标置位 → terminate（2s 后 kill）+ cancelled 结果，
+    // 「停止」不必再等当前引擎命令跑完（deep 最长 600s）。
+    static EngineResult runSync(const QStringList &args, int timeoutMs, const QString &bin = {},
+                                const QAtomicInt *cancelled = nullptr);
 
     ProcessRegistry *registry() { return &m_registry; }
 

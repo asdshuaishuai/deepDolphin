@@ -195,6 +195,7 @@ void AgentDialog::buildUi()
     btnCol->setSpacing(DS::Spacing::xs);
     m_sendBtn = new QPushButton(QStringLiteral("发送"), inputRow);
     m_stopBtn = new QPushButton(QStringLiteral("停止"), inputRow);
+    m_stopBtn->setToolTip(QStringLiteral("终止当前回答；运行中的引擎调用会被终止"));
     m_stopBtn->hide();
     btnCol->addWidget(m_sendBtn);
     btnCol->addWidget(m_stopBtn);
@@ -377,7 +378,7 @@ void AgentDialog::setBusy(bool busy)
         m_spinner->start();
     else
         m_spinner->stop();
-    m_busyLabel->setText(m_cancelled ? QStringLiteral("正在停止…")
+    m_busyLabel->setText(m_cancelled ? QStringLiteral("正在停止…（运行中的引擎调用将被终止）")
                                      : QStringLiteral("AI 正在思考…"));
     m_eventRow->setVisible(busy && !m_eventLabel->text().isEmpty());
     if (busy) {
@@ -494,8 +495,8 @@ void AgentDialog::stop()
     if (!AgentConversation::canStop(m_busy, m_cancelled))
         return;
     m_cancelled = true;
-    m_cancelFlag->storeRelaxed(1);
-    m_busyLabel->setText(QStringLiteral("正在停止…"));
+    m_cancelFlag->storeRelaxed(1); // 运行中的引擎调用在 ≤200ms 内被 terminate（M0-5 切片响应）
+    m_busyLabel->setText(QStringLiteral("正在停止…（运行中的引擎调用将被终止）"));
     refreshSendButton();
 }
 

@@ -17,6 +17,9 @@ QString lossy(const QByteArray &raw)
     return QString::fromUtf8(raw);
 }
 
+// runSync 切片等待粒度：取消旗标的最大响应延迟上界（M0-5）
+constexpr int kSyncSliceMs = 200;
+
 bool parseObject(const QByteArray &raw, QJsonDocument *out)
 {
     QJsonParseError err{};
@@ -206,7 +209,8 @@ void EngineCli::callJson(const QStringList &args, int timeoutMs,
     proc->start();
 }
 
-EngineCli::EngineResult EngineCli::runSync(const QStringList &args, int timeoutMs, const QString &bin)
+EngineCli::EngineResult EngineCli::runSync(const QStringList &args, int timeoutMs,
+    const QString &bin, const QAtomicInt *cancelled)
 {
     EngineCli::EngineResult r;
     const QString program = bin.isEmpty() ? qEnvironmentVariable("DEEPGIT_BIN") : bin;
@@ -226,13 +230,28 @@ EngineCli::EngineResult EngineCli::runSync(const QStringList &args, int timeoutM
             QStringLiteral("无法启动引擎（%1）。").arg(program));
         return r;
     }
-    if (!proc.waitForFinished(timeoutMs)) {
-        proc.terminate();
-        if (!proc.waitForFinished(2000))
-            proc.kill();
-        r.timedOut = true;
-        r.error = EngineError::makeTimeout(timeoutMs / 1000);
-        return r;
+    // 切片等待（M0-5）：一次性 waitForFinished 会让「停止」等当前命令跑完（deep 最长
+    // 600s）。切片间查取消旗标；取消与超时同款收尾：terminate → 2s → kill。
+    const QString cmdLabel = args.value(0, QStringLiteral("引擎命令"));
+    QElapsedTimer total;
+    total.start();
+    while (!proc.waitForFinished(kSyncSliceMs)) {
+        if (cancelled && cancelled->loadRelaxed()) {
+            proc.terminate();
+            if (!proc.waitForFinished(2000))
+                proc.kill();
+            r.cancelled = true;
+            r.error = EngineError::makeCancelled(cmdLabel);
+            return r;
+        }
+        if (total.elapsed() >= timeoutMs) {
+            proc.terminate();
+            if (!proc.waitForFinished(2000))
+                proc.kill();
+            r.timedOut = true;
+            r.error = EngineError::makeTimeout(timeoutMs / 1000);
+            return r;
+        }
     }
     return classifyResult(&proc, args, false, false);
 }

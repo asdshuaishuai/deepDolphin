@@ -43,23 +43,27 @@ public:
     // 引擎 tools --json（30s）→ ToolDef（params "a,b,c" 全部 string 型必填）+
     // 清单原文（进系统提示词）+ name → parametersJSON（必填校验唯一来源）。
     bool loadToolManifest(QVector<ToolDef> *defs, QMap<QString, QString> *paramsByTool,
-        QString *toolsText, QString *err);
+        QString *toolsText, QString *err, const QAtomicInt *cancelled = nullptr);
 
     // 工具执行（本机 CLI 子进程）。必填校验在**执行点内部**（NC31 收口）。
-    // 返回 (ok, 结果文本)；params 已是解码后的对象。
+    // 返回 (ok, 结果文本)；params 已是解码后的对象。cancelled 透传给引擎调用（M0-5）。
     bool executeTool(const QString &name, const QJsonObject &params,
-        const QMap<QString, QString> &paramsByTool, QString *outText);
+        const QMap<QString, QString> &paramsByTool, QString *outText,
+        const QAtomicInt *cancelled = nullptr);
 
     // 完整 agent 循环，返回**追加后**的完整历史（调用方存回 @State 等价物）。
     // 失败：*errorOut 非空；调用方把已发提问留回 history（用户的问题不消失）。
-    // cancelled：逐轮检查的取消旗标（已 spawn 的引擎子进程由 CLI 超时兜底——与 mac 相同限制）。
+    // cancelled：逐轮检查 + 工具执行中切片响应（M0-5）；置位后运行中的引擎子进程被
+    // terminate（2s 后 kill）——写类工具（update/deep/git）半途被终止的残留风险与
+    // 「停止更新」批量链同款，由引擎侧收尾语义兜底。
     QList<ChatMessage> run(const QString &question, QList<ChatMessage> history,
         const Target &target, const AIConfig &cfg, int maxRounds = 4,
         const std::function<void(const QString &)> &onEvent = {},
         QString *errorOut = nullptr, QAtomicInt *cancelled = nullptr);
 
 private:
-    bool runEngineRaw(const QStringList &args, int timeoutMs, QString *rawOut, QString *err);
+    bool runEngineRaw(const QStringList &args, int timeoutMs, QString *rawOut, QString *err,
+        const QAtomicInt *cancelled = nullptr);
 
     QString m_bin; // 引擎二进制；空 = 未找到（工具一律报 notFound 原文，不静默）
 };

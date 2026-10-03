@@ -29,9 +29,10 @@ QString clipNote(int original, int clip)
 }
 } // namespace
 
-bool AgentCore::runEngineRaw(const QStringList &args, int timeoutMs, QString *rawOut, QString *err)
+bool AgentCore::runEngineRaw(const QStringList &args, int timeoutMs, QString *rawOut, QString *err,
+    const QAtomicInt *cancelled)
 {
-    const EngineCli::EngineResult res = EngineCli::runSync(args, timeoutMs, m_bin);
+    const EngineCli::EngineResult res = EngineCli::runSync(args, timeoutMs, m_bin, cancelled);
     if (!res.ok()) {
         if (err)
             *err = res.error.userMessage();
@@ -43,11 +44,11 @@ bool AgentCore::runEngineRaw(const QStringList &args, int timeoutMs, QString *ra
 }
 
 bool AgentCore::loadToolManifest(QVector<ToolDef> *defs, QMap<QString, QString> *paramsByTool,
-    QString *toolsText, QString *err)
+    QString *toolsText, QString *err, const QAtomicInt *cancelled)
 {
     QString raw;
     if (!runEngineRaw({ QStringLiteral("tools"), QStringLiteral("--json") },
-            EngineTimeouts::Tools, &raw, err))
+            EngineTimeouts::Tools, &raw, err, cancelled))
         return false;
     if (toolsText)
         *toolsText = raw; // 清单**原文**进系统提示词（mac 同款）
@@ -86,7 +87,7 @@ bool AgentCore::loadToolManifest(QVector<ToolDef> *defs, QMap<QString, QString> 
 }
 
 bool AgentCore::executeTool(const QString &name, const QJsonObject &params,
-    const QMap<QString, QString> &paramsByTool, QString *outText)
+    const QMap<QString, QString> &paramsByTool, QString *outText, const QAtomicInt *cancelled)
 {
     // ⚠️ 必填校验放在执行点内部（不是调用方）：清单只有一个来源——已发给模型的那份。
     const QStringList requiredList = ToolArgs::required(paramsByTool, name);
@@ -108,7 +109,7 @@ bool AgentCore::executeTool(const QString &name, const QJsonObject &params,
     if (name == QLatin1String("get_group_context")) {
         ok = runEngineRaw({ QStringLiteral("context"), QStringLiteral("--budget"),
                                 QString::number(kToolContextBudget), QStringLiteral("--json") },
-            EngineTimeouts::Context, &raw, &err);
+            EngineTimeouts::Context, &raw, &err, cancelled);
         if (ok && outText) {
             ContextEnvelope::Note note;
             if (const auto env = ContextEnvelope::decode(raw.toUtf8(), &note))
@@ -120,7 +121,7 @@ bool AgentCore::executeTool(const QString &name, const QJsonObject &params,
         ok = runEngineRaw({ QStringLiteral("context"), str(QStringLiteral("name")),
                                 QStringLiteral("--budget"), QString::number(kToolContextBudget),
                                 QStringLiteral("--json") },
-            EngineTimeouts::Context, &raw, &err);
+            EngineTimeouts::Context, &raw, &err, cancelled);
         if (ok && outText) {
             ContextEnvelope::Note note;
             if (const auto env = ContextEnvelope::decode(raw.toUtf8(), &note))
@@ -131,28 +132,28 @@ bool AgentCore::executeTool(const QString &name, const QJsonObject &params,
     } else if (name == QLatin1String("get_project_docs")) {
         ok = runEngineRaw({ QStringLiteral("docs"), str(QStringLiteral("name")),
                                 QStringLiteral("--json") },
-            EngineTimeouts::Docs, &raw, &err);
+            EngineTimeouts::Docs, &raw, &err, cancelled);
     } else if (name == QLatin1String("get_journal")) {
         ok = runEngineRaw({ QStringLiteral("journal"), str(QStringLiteral("name")),
                                 QStringLiteral("--json") },
-            EngineTimeouts::Journal, &raw, &err);
+            EngineTimeouts::Journal, &raw, &err, cancelled);
     } else if (name == QLatin1String("get_milestones")) {
         ok = runEngineRaw({ QStringLiteral("milestone"), QStringLiteral("list"),
                                 QStringLiteral("--json") },
-            EngineTimeouts::Milestones, &raw, &err);
+            EngineTimeouts::Milestones, &raw, &err, cancelled);
     } else if (name == QLatin1String("run_shallow_update")) {
         ok = runEngineRaw({ QStringLiteral("update"), str(QStringLiteral("name")),
                                 QStringLiteral("--json"), QStringLiteral("--quiet") },
-            EngineTimeouts::Update, &raw, &err);
+            EngineTimeouts::Update, &raw, &err, cancelled);
     } else if (name == QLatin1String("run_deep_update")) {
         ok = runEngineRaw({ QStringLiteral("deep"), str(QStringLiteral("name")),
                                 QStringLiteral("--json"), QStringLiteral("--quiet") },
-            EngineTimeouts::Deep, &raw, &err);
+            EngineTimeouts::Deep, &raw, &err, cancelled);
     } else if (name == QLatin1String("git_commit")) {
         ok = runEngineRaw({ QStringLiteral("git"), QStringLiteral("commit"),
                                 str(QStringLiteral("name")), QStringLiteral("--message"),
                                 str(QStringLiteral("message")), QStringLiteral("--json") },
-            EngineTimeouts::Git, &raw, &err);
+            EngineTimeouts::Git, &raw, &err, cancelled);
     } else if (name == QLatin1String("git_pull_push")) {
         // 引擎 git 白名单里 agent 工具只该碰 pull/push——越界明说，不转交
         QString op = str(QStringLiteral("op"));
@@ -167,12 +168,12 @@ bool AgentCore::executeTool(const QString &name, const QJsonObject &params,
         }
         ok = runEngineRaw({ QStringLiteral("git"), op, str(QStringLiteral("name")),
                                 QStringLiteral("--json") },
-            EngineTimeouts::Git, &raw, &err);
+            EngineTimeouts::Git, &raw, &err, cancelled);
     } else if (name == QLatin1String("milestone_done")) {
         ok = runEngineRaw({ QStringLiteral("milestone"), QStringLiteral("done"),
                                 str(QStringLiteral("project")), str(QStringLiteral("name")),
                                 QStringLiteral("--json") },
-            EngineTimeouts::Milestones, &raw, &err);
+            EngineTimeouts::Milestones, &raw, &err, cancelled);
     } else {
         if (outText)
             *outText = QStringLiteral("未知工具：%1").arg(name);
@@ -214,7 +215,7 @@ QList<ChatMessage> AgentCore::run(const QString &question, QList<ChatMessage> hi
             << QStringLiteral("--json");
     QString ctxRaw;
     QString err;
-    if (!runEngineRaw(ctxArgs, EngineTimeouts::Context, &ctxRaw, &err))
+    if (!runEngineRaw(ctxArgs, EngineTimeouts::Context, &ctxRaw, &err, cancelled))
         return fail(err);
     // 「没解出来」≠「没有」：三种失败（非 JSON/缺键/空串）的说明与正文一起给模型。
     ContextEnvelope::Note note;
@@ -228,7 +229,7 @@ QList<ChatMessage> AgentCore::run(const QString &question, QList<ChatMessage> hi
     QVector<ToolDef> toolDefs;
     QMap<QString, QString> paramsByTool;
     QString toolsText;
-    if (!loadToolManifest(&toolDefs, &paramsByTool, &toolsText, &err))
+    if (!loadToolManifest(&toolDefs, &paramsByTool, &toolsText, &err, cancelled))
         return fail(err);
 
     // ④ 系统提示词 + 当前范围事实
@@ -278,9 +279,10 @@ QList<ChatMessage> AgentCore::run(const QString &question, QList<ChatMessage> hi
                 continue;
             }
 
-            // ② 必填校验在 executeTool 内部（同一份清单）；③ 截断自报家门。
+            // ② 必填校验在 executeTool 内部（同一份清单）；③ 截断自报家门；
+            // ④ cancelled 透传：工具执行中也能被「停止」终止（M0-5）。
             QString out;
-            const bool ok = executeTool(call.name, decoded.obj, paramsByTool, &out);
+            const bool ok = executeTool(call.name, decoded.obj, paramsByTool, &out, cancelled);
             const QString clipped = out.size() > kToolOutputClip
                 ? out.left(kToolOutputClip) + clipNote(out.size(), kToolOutputClip)
                 : out;
