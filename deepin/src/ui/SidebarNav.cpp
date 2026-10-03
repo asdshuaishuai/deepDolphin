@@ -3,6 +3,7 @@
 #include "../logic/Derived.h"
 #include "DesignTokens.h"
 #include "common/CountLabel.h"
+#include "common/SecondaryLabel.h"
 #include "common/StatusDot.h"
 #include <QColor>
 #include <QHBoxLayout>
@@ -87,8 +88,7 @@ SidebarNav::SidebarNav(QWidget *parent)
     // ── 状态条：圆点 + 文案（正在采集…/空闲/引擎连接失败/尚未刷新）──
     auto *strip = new QHBoxLayout;
     m_statusDot = new QLabel(this);
-    m_statusText = new QLabel(m_statusTextCache, this);
-    DS::tagSecondaryStyle(m_statusText); // 次级文字色单点（原 QSS palette(mid)）
+    m_statusText = new SecondaryLabel(m_statusTextCache, this); // 次级文字色单点（原 QSS palette(mid)）
     strip->addWidget(m_statusDot);
     strip->addWidget(m_statusText);
     strip->addStretch(1);

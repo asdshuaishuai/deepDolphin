@@ -4,13 +4,14 @@
 // 无类型时禁用 + 说明原因（tooltip）。
 #pragma once
 #include "../../logic/DashFilter.h"
-#include <QButtonGroup>
 #include <QPushButton>
 #include <QWidget>
 
 #include <DComboBox>
 
 DWIDGET_USE_NAMESPACE
+
+class SegmentedButton;
 
 class DashboardFilterBar : public QWidget {
     Q_OBJECT
@@ -30,8 +31,7 @@ signals:
 private:
     void reflectWindow();
 
-    QButtonGroup *m_windowGroup = nullptr;
-    QPushButton *m_windowBtns[3] = { nullptr, nullptr, nullptr };
+    SegmentedButton *m_windowSeg = nullptr; // 时间跨度三档（ui/common 单一实现，M3b）
     DComboBox *m_typeBox = nullptr;
     QPushButton *m_reindex = nullptr;
     TimeWindow m_window = TimeWindow::all;

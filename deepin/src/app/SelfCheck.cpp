@@ -21,6 +21,8 @@
 #include "../models/StatusEnvelope.h"
 #include "../models/ToolsEnvelope.h"
 #include "../models/UpdateResult.h"
+#include "../ui/common/SegmentedButton.h"
+#include <QColor>
 #include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -518,6 +520,26 @@ int SelfCheck::run(QStringList &log)
         const bool keepUnknown = w7.keeps(slow);
         check(log, "近 7 天窗（activeDays7）：7 天保留 / 8 天滤出 / 读不出来恒保留",
             keep7 && drop8 && keepUnknown);
+    }
+
+    // ── 11. SegmentedButton 样式（M3b）：两档 sheet 不再有未填占位符（plan §4.3 / 坑 #3）──
+    {
+        // 纯字符串层：--selfcheck 跑在 QGuiApplication 构造前（main.cpp 无头分支），
+        // 不实例化控件、不调 DS 取色（DGuiApplicationHelper 无 app 即段错误，
+        // 2026-10-04 探针实证）——颜色喂固定值，锁的是「占位符就地填满 + 两档各带
+        // 自己档的颜色」这条契约；DS::semColor(accent)/surfaceAlt()/textPrimary()
+        // 的接线由 SegmentedButton::restyle() 在 GUI 侧完成（人工审计位）。
+        const QColor accent(QStringLiteral("#0081ff"));
+        const QColor bg(QStringLiteral("#252525"));
+        const QColor fg(QStringLiteral("#ffffff"));
+        const QString on = SegmentedButton::sheet(true, accent, bg, fg);
+        const QString off = SegmentedButton::sheet(false, accent, bg, fg);
+        check(log, "SegmentedButton sheet：两档占位符全填满（坑 #3 不复活）",
+            !on.contains(QStringLiteral("%1")) && !on.contains(QStringLiteral("%2"))
+                && !off.contains(QStringLiteral("%1")) && !off.contains(QStringLiteral("%2")));
+        check(log, "SegmentedButton sheet：选中=accent 底白字 / 未选中=bg 底 fg 字且两档互异",
+            on.contains(accent.name()) && on.contains(QStringLiteral("color: white"))
+                && off.contains(bg.name()) && off.contains(fg.name()) && on != off);
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

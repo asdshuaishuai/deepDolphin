@@ -4,6 +4,7 @@
 #include "../DesignTokens.h"
 #include "../common/Chip.h"
 #include "../common/LegendRow.h"
+#include "../common/SecondaryLabel.h"
 #include "../common/SegmentedBar.h"
 #include "../common/Card.h"
 #include "../../models/ProjectStatus.h"
@@ -104,21 +105,19 @@ void ProjectProgressCard::setProject(const ProjectStatus &p, const DashFilter &f
             msLabel->setStyleSheet(
                 QStringLiteral("color: %1;").arg(DS::semColor(DS::SemColor::orange).name()));
         } else {
-            msLabel = new QLabel(QStringLiteral("未设里程碑"), card);
-            DS::tagSecondaryStyle(msLabel);
+            msLabel = new SecondaryLabel(QStringLiteral("未设里程碑"), card);
         }
     } else {
         const int decided = ms->done + ms->open;
         const int pct = qRound(ms->done * 100.0 / decided);
-        msLabel = new QLabel(QStringLiteral("%1/%2 · %3%").arg(ms->done).arg(decided).arg(pct), card);
-        DS::tagSecondaryStyle(msLabel);
+        msLabel = new SecondaryLabel(
+            QStringLiteral("%1/%2 · %3%").arg(ms->done).arg(decided).arg(pct), card);
     }
     msLabel->setFont(DS::font(DS::FontT::label));
     row3->addWidget(msLabel);
     row3->addStretch(1);
-    auto *branch = new QLabel(QStringLiteral("分支 %1").arg(branchDisplayName(p)), card);
+    auto *branch = new SecondaryLabel(QStringLiteral("分支 %1").arg(branchDisplayName(p)), card);
     branch->setFont(DS::font(DS::FontT::label));
-    DS::tagSecondaryStyle(branch);
     row3->addWidget(branch);
     v->addLayout(row3);
 
@@ -126,9 +125,8 @@ void ProjectProgressCard::setProject(const ProjectStatus &p, const DashFilter &f
     const auto entries = CommitTypes::filtered(CommitTypes::toEntries(p.commitTypes),
         filter.commitType);
     if (entries.isEmpty()) {
-        auto *empty = new QLabel(QStringLiteral("该筛选下这个项目没有匹配的提交类型"), card);
+        auto *empty = new SecondaryLabel(QStringLiteral("该筛选下这个项目没有匹配的提交类型"), card);
         empty->setFont(DS::font(DS::FontT::label));
-        DS::tagSecondaryStyle(empty);
         v->addWidget(empty);
     } else {
         auto *bar = new SegmentedBar(card);
@@ -170,9 +168,8 @@ void ProjectProgressCard::setProject(const ProjectStatus &p, const DashFilter &f
         recentText = QStringLiteral("%1 · %2").arg(pb->name, pb->headAgo);
     else
         recentText = QStringLiteral("分支明细未纳入追踪（提交类型分布仍可用）");
-    auto *recent = new QLabel(recentText, card);
+    auto *recent = new SecondaryLabel(recentText, card);
     recent->setFont(DS::font(DS::FontT::label));
-    DS::tagSecondaryStyle(recent);
     row5->addWidget(recent, 1);
     auto *go = new QPushButton(QStringLiteral("进入管控 →"), card);
     go->setFlat(true);

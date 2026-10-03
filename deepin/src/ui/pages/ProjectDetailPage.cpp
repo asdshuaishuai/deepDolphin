@@ -12,6 +12,7 @@
 #include "../common/EmptyState.h"
 #include "../common/LegendRow.h"
 #include "../common/MarkdownView.h"
+#include "../common/SecondaryLabel.h"
 #include "../common/SegmentedBar.h"
 #include "../pages/MilestoneRowWidget.h"
 #include "../../models/ProjectStatus.h"
@@ -206,17 +207,15 @@ QWidget *ProjectDetailPage::buildHeader(const ProjectStatus &p)
     v->addLayout(row1);
 
     if (!p.headline.isEmpty()) {
-        auto *headline = new QLabel(p.headline, header);
-        DS::tagSecondaryStyle(headline);
+        auto *headline = new SecondaryLabel(p.headline, header);
         headline->setWordWrap(true);
         v->addWidget(headline);
     }
 
     // path 可复制（caption）
     auto *pathRow = new QHBoxLayout;
-    auto *path = new QLabel(p.path, header);
+    auto *path = new SecondaryLabel(p.path, header);
     path->setFont(DS::font(DS::FontT::label));
-    DS::tagSecondaryStyle(path);
     pathRow->addWidget(path, 1);
     auto *copy = iconButton(QStringLiteral("edit-copy"), QString(),
         QStringLiteral("复制路径"), header);

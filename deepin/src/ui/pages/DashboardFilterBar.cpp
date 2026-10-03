@@ -1,29 +1,8 @@
 #include "DashboardFilterBar.h"
 #include "../DesignTokens.h"
+#include "../common/SegmentedButton.h"
 #include <QHBoxLayout>
 #include <QLabel>
-
-namespace {
-// 三档分段（实测 libdtk6widget 6.7.47 导出类无 DSegmentedControl）：
-// 三枚 QPushButton 组，选中态用 QSS 高亮（accent 底 + 白字）。
-// 占位符在函数内就地填满——之前 %1/%2 留给调用方两级 .arg，未选中分支
-// 没有第二个占位符，颜色喂进去只换来 6 条「Argument missing」告警。
-QString segSheet(bool checked)
-{
-    // 按钮 padding 一档 = buttonPaddingQss（M3-5，原 3px 12px 自成一档）；仍自包含（坑 #3）
-    const QString base = QStringLiteral(
-        "QPushButton { border: none; border-radius: %1px; %2 }")
-        .arg(DS::Radius::chip)
-        .arg(DS::buttonPaddingQss());
-    if (checked)
-        return base.arg(DS::Radius::chip)
-            + QStringLiteral("QPushButton { background: %1; color: white; }")
-                  .arg(DS::semColor(DS::SemColor::accent).name());
-    return base.arg(DS::Radius::chip)
-        + QStringLiteral("QPushButton { background: %1; color: %2; }")
-              .arg(DS::surfaceAlt().name(), DS::textPrimary().name());
-}
-} // namespace
 
 DashboardFilterBar::DashboardFilterBar(QWidget *parent)
     : QWidget(parent)
@@ -35,22 +14,19 @@ DashboardFilterBar::DashboardFilterBar(QWidget *parent)
     auto *timeLabel = new QLabel(QStringLiteral("时间跨度"), this);
     h->addWidget(timeLabel);
 
-    m_windowGroup = new QButtonGroup(this);
-    m_windowGroup->setExclusive(true);
+    // 时间跨度三档：ui/common/SegmentedButton 单一实现（本文件与 AutomationPane 原各自
+    // 持有一份 segSheet，M3b 收编；libdtk6widget 6.7.47 无导出 DSegmentedControl）
+    m_windowSeg = new SegmentedButton(this);
     const TimeWindow windows[3] = { TimeWindow::all, TimeWindow::days30, TimeWindow::days7 };
-    for (int i = 0; i < 3; ++i) {
-        m_windowBtns[i] = new QPushButton(timeWindowLabel(windows[i]), this);
-        m_windowBtns[i]->setCheckable(true);
-        m_windowBtns[i]->setToolTip(timeWindowHelp());
-        m_windowBtns[i]->setStyleSheet(segSheet(windows[i] == TimeWindow::all));
-        m_windowGroup->addButton(m_windowBtns[i], i);
-        h->addWidget(m_windowBtns[i]);
-        connect(m_windowBtns[i], &QPushButton::clicked, this, [this, windows, i] {
-            m_window = windows[i];
-            reflectWindow();
-            emit windowChanged(m_window);
-        });
-    }
+    for (int i = 0; i < 3; ++i)
+        m_windowSeg->addButton(timeWindowLabel(windows[i]), timeWindowHelp());
+    h->addWidget(m_windowSeg);
+    m_windowSeg->onClicked = [this, windows](int id) {
+        m_window = windows[id];
+        reflectWindow();
+        emit windowChanged(m_window);
+    };
+
     auto *help = new QLabel(this);
     help->setText(QStringLiteral("ⓘ"));
     help->setToolTip(timeWindowHelp());
@@ -108,7 +84,9 @@ void DashboardFilterBar::reflectWindow()
 {
     const TimeWindow windows[3] = { TimeWindow::all, TimeWindow::days30, TimeWindow::days7 };
     for (int i = 0; i < 3; ++i) {
-        m_windowBtns[i]->setChecked(m_window == windows[i]);
-        m_windowBtns[i]->setStyleSheet(segSheet(m_window == windows[i]));
+        if (m_window == windows[i]) {
+            m_windowSeg->setChecked(i); // 内部按选中态重刷两档 QSS
+            return;
+        }
     }
 }

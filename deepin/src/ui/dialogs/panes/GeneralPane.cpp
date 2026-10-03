@@ -3,6 +3,7 @@
 #include "../../../platform/AutostartManager.h"
 #include "../../../platform/SysOpen.h"
 #include "../../DesignTokens.h"
+#include "../../common/SecondaryLabel.h"
 #include <DLog>
 #include <DPushButton>
 #include <DSwitchButton>
@@ -27,9 +28,8 @@ GeneralPane::GeneralPane(QWidget *parent)
     auto *title = new QLabel(QStringLiteral("开机自启"), card);
     title->setFont(DS::font(DS::FontT::cardTitle));
     textCol->addWidget(title);
-    auto *sub = new QLabel(QStringLiteral("登录桌面后自动在后台启动 deepDolphin 面板并常驻托盘。"), card);
+    auto *sub = new SecondaryLabel(QStringLiteral("登录桌面后自动在后台启动 deepDolphin 面板并常驻托盘。"), card);
     sub->setFont(DS::font(DS::FontT::label));
-    DS::tagSecondaryStyle(sub);
     textCol->addWidget(sub);
     m_status = new QLabel(card);
     m_status->setFont(DS::font(DS::FontT::label));
@@ -49,10 +49,9 @@ GeneralPane::GeneralPane(QWidget *parent)
     auto *logTitle = new QLabel(QStringLiteral("日志"), logCard);
     logTitle->setFont(DS::font(DS::FontT::cardTitle));
     logCol->addWidget(logTitle);
-    m_logPath = new QLabel(logCard);
+    m_logPath = new SecondaryLabel(logCard);
     m_logPath->setFont(DS::font(DS::FontT::label));
     m_logPath->setWordWrap(true);
-    DS::tagSecondaryStyle(m_logPath);
     logCol->addWidget(m_logPath);
     logRow->addLayout(logCol, 1);
     m_logButton = new DPushButton(QStringLiteral("打开日志目录"), logCard);

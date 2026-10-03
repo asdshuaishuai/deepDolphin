@@ -4,6 +4,7 @@
 #include "../../logic/Derived.h"
 #include "../DesignTokens.h"
 #include "../common/Chip.h"
+#include "../common/SecondaryLabel.h"
 #include <QContextMenuEvent>
 
 DWIDGET_USE_NAMESPACE
@@ -96,9 +97,8 @@ void MilestoneRowWidget::setMilestone(const Milestone &m, bool showProjectName)
     auto *row1 = new QHBoxLayout;
     row1->setSpacing(DS::Spacing::xs);
     if (showProjectName) {
-        auto *proj = new QLabel(m.projectName, this);
+        auto *proj = new SecondaryLabel(m.projectName, this);
         proj->setFont(DS::font(DS::FontT::label));
-        DS::tagSecondaryStyle(proj);
         row1->addWidget(proj);
     }
     auto *name = new QLabel(m.name, this);
@@ -117,15 +117,13 @@ void MilestoneRowWidget::setMilestone(const Milestone &m, bool showProjectName)
     auto *row2 = new QHBoxLayout;
     row2->setSpacing(DS::Spacing::xs);
     if (!m.description.isEmpty()) {
-        auto *desc = new QLabel(m.description, this);
+        auto *desc = new SecondaryLabel(m.description, this);
         desc->setFont(DS::font(DS::FontT::label));
-        DS::tagSecondaryStyle(desc);
         row2->addWidget(desc);
     }
     if (!m.tagReached && !m.tag.isEmpty()) {
-        auto *tag = new QLabel(QStringLiteral("tag %1").arg(m.tag), this);
+        auto *tag = new SecondaryLabel(QStringLiteral("tag %1").arg(m.tag), this);
         tag->setFont(DS::font(DS::FontT::label));
-        DS::tagSecondaryStyle(tag);
         row2->addWidget(tag);
     }
     // 「创建以来 N 提交」或橙 unverifiedNote（commitsSinceReadable==false 时）
@@ -156,9 +154,8 @@ void MilestoneRowWidget::setMilestone(const Milestone &m, bool showProjectName)
     right->addWidget(status);
     const QString due = Derived::milestoneDueText(m);
     if (!due.isEmpty() && !m.targetDate.isEmpty()) {
-        auto *dueLabel = new QLabel(QStringLiteral("目标 %1 · %2").arg(m.targetDate, due), this);
+        auto *dueLabel = new SecondaryLabel(QStringLiteral("目标 %1 · %2").arg(m.targetDate, due), this);
         dueLabel->setFont(DS::font(DS::FontT::label));
-        DS::tagSecondaryStyle(dueLabel);
         right->addWidget(dueLabel);
     }
     h->addLayout(right);

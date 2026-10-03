@@ -1,5 +1,6 @@
 #include "SetupGuidePage.h"
 #include "../DesignTokens.h"
+#include "../common/SecondaryLabel.h"
 #include <DDialog>
 #include <DSpinner>
 #include <QLabel>
@@ -32,10 +33,9 @@ SetupGuidePage::SetupGuidePage(const QString &problem, QWidget *parent)
     m_title->setAlignment(Qt::AlignCenter);
     v->addWidget(m_title);
 
-    m_problem = new QLabel(this);
+    m_problem = new SecondaryLabel(this);
     m_problem->setWordWrap(true);
     m_problem->setAlignment(Qt::AlignCenter);
-    DS::tagSecondaryStyle(m_problem);
     v->addWidget(m_problem);
     setProblem(problem);
 

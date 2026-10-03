@@ -2,6 +2,7 @@
 // 无 Q_OBJECT：纯呈现。
 #pragma once
 #include "../DesignTokens.h"
+#include "SecondaryLabel.h"
 #include <QColor>
 #include <QPair>
 #include <QPainter>
@@ -42,9 +43,8 @@ public:
             p.drawEllipse(0, 0, DS::Height::dot, DS::Height::dot);
             dot->setPixmap(pm);
             dot->setToolTip(e.second);
-            auto *label = new QLabel(e.second, this);
+            auto *label = new SecondaryLabel(e.second, this);
             label->setFont(DS::font(DS::FontT::label));
-            label->setStyleSheet(QStringLiteral("color: %1;").arg(DS::textSecondary().name()));
             auto *cell = new QWidget(this);
             auto *h = new QHBoxLayout(cell);
             h->setContentsMargins(0, 0, 0, 0);

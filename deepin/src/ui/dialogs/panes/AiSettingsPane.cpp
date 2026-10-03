@@ -6,6 +6,7 @@
 #include "../../../ai/SecretStore.h"
 #include "../../../app/Settings.h"
 #include "../../DesignTokens.h"
+#include "../../common/SecondaryLabel.h"
 #include <QFormLayout>
 #include <QFrame>
 #include <QLabel>
@@ -45,14 +46,12 @@ AiSettingsPane::AiSettingsPane(QWidget *parent)
     m_provider = new DComboBox(this);
     m_provider->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     v->addWidget(m_provider);
-    m_providerNote = new QLabel(this);
+    m_providerNote = new SecondaryLabel(this);
     m_providerNote->setFont(DS::font(DS::FontT::label));
-    DS::tagSecondaryStyle(m_providerNote);
     m_providerNote->setWordWrap(true);
     v->addWidget(m_providerNote);
-    m_endpoint = new QLabel(this);
+    m_endpoint = new SecondaryLabel(this);
     m_endpoint->setFont(DS::font(DS::FontT::label));
-    DS::tagSecondaryStyle(m_endpoint);
     m_endpoint->setWordWrap(true);
     v->addWidget(m_endpoint);
 
@@ -65,9 +64,8 @@ AiSettingsPane::AiSettingsPane(QWidget *parent)
     m_model = new DComboBox(this);
     m_model->setEditable(false);
     v->addWidget(m_model);
-    m_badges = new QLabel(this);
+    m_badges = new SecondaryLabel(this);
     m_badges->setFont(DS::font(DS::FontT::label));
-    DS::tagSecondaryStyle(m_badges);
     m_badges->setWordWrap(true);
     v->addWidget(m_badges);
     m_modelManual = new DLineEdit(this);
@@ -93,11 +91,9 @@ AiSettingsPane::AiSettingsPane(QWidget *parent)
     m_testResult->setWordWrap(true);
     v->addWidget(m_testResult);
 
-    auto *disclosure = new QLabel(this);
-    disclosure->setText(QStringLiteral(
-        "AI 全部在客户端执行：项目路径、分支、文档摘要等上下文会发送到你所配置的 provider 服务器。"));
+    auto *disclosure = new SecondaryLabel(QStringLiteral(
+        "AI 全部在客户端执行：项目路径、分支、文档摘要等上下文会发送到你所配置的 provider 服务器。"), this);
     disclosure->setFont(DS::font(DS::FontT::label));
-    DS::tagSecondaryStyle(disclosure);
     disclosure->setWordWrap(true);
     v->addWidget(disclosure);
     v->addStretch(1);

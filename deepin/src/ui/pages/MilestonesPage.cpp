@@ -5,6 +5,7 @@
 #include "../../logic/SearchFilter.h"
 #include "../DesignTokens.h"
 #include "../common/EmptyState.h"
+#include "../common/SecondaryLabel.h"
 #include <DSpinner>
 #include <DComboBox>
 #include <QHBoxLayout>
@@ -58,9 +59,8 @@ MilestonesPage::MilestonesPage(QWidget *parent)
         rebuild();
     });
     filterRow->addWidget(m_projectBox);
-    m_filterCount = new QLabel(this);
+    m_filterCount = new SecondaryLabel(this);
     m_filterCount->setFont(DS::font(DS::FontT::label));
-    DS::tagSecondaryStyle(m_filterCount);
     m_filterCount->hide();
     filterRow->addWidget(m_filterCount);
     filterRow->addStretch(1);
@@ -126,8 +126,7 @@ void MilestonesPage::rebuild()
         auto *v = new QVBoxLayout(loading);
         auto *sp = new DSpinner(loading);
         sp->start();
-        auto *lb = new QLabel(QStringLiteral("读取里程碑…"), loading);
-        DS::tagSecondaryStyle(lb);
+        auto *lb = new SecondaryLabel(QStringLiteral("读取里程碑…"), loading);
         v->addStretch(1);
         v->addWidget(sp, 0, Qt::AlignHCenter);
         v->addWidget(lb, 0, Qt::AlignHCenter);
@@ -220,8 +219,7 @@ void MilestonesPage::rebuild()
         statWidget);
     statTitle->setFont(DS::font(DS::FontT::cardTitle));
     sv->addWidget(statTitle);
-    auto *statLine = new QLabel(segs.join(QStringLiteral(" · ")), statWidget);
-    DS::tagSecondaryStyle(statLine);
+    auto *statLine = new SecondaryLabel(segs.join(QStringLiteral(" · ")), statWidget);
     sv->addWidget(statLine);
     // 明细 ≠ readCount → 披露「下界」。对账对象是**引擎信封**（milestones.size() vs
     // readCount），不是搜索/项目筛选后的 shown——筛选是用户意图，不是引擎截断；

@@ -1,6 +1,7 @@
 #include "TrayPopupWindow.h"
 #include "TrayGeometry.h"
 #include "../ui/DesignTokens.h"
+#include "../ui/common/SecondaryLabel.h"
 #include <QApplication>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -26,10 +27,8 @@ TrayPopupWindow::TrayPopupWindow(QWidget *parent)
     QFont titleFont = m_title->font();
     titleFont.setBold(true);
     m_title->setFont(titleFont);
-    m_summary = new QLabel(this);
+    m_summary = new SecondaryLabel(this);
     m_summary->setWordWrap(true);
-    m_summary->setStyleSheet(
-        QStringLiteral("color: %1;").arg(DS::textSecondary().name()));
     m_refreshBtn = new QPushButton(QStringLiteral("刷新"), this);
     m_refreshBtn->setFlat(true);
     header->addWidget(m_title);
@@ -193,9 +192,7 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
             h->addWidget(dirty);
         }
         if (row.rowBusy) {
-            auto *busy = new QLabel(QStringLiteral("…"), line);
-            busy->setStyleSheet(
-                QStringLiteral("color: %1;").arg(DS::textSecondary().name()));
+            auto *busy = new SecondaryLabel(QStringLiteral("…"), line);
             h->addWidget(busy);
         }
         auto *sub = new QLabel(row.unreadable ? row.subtitle
@@ -244,11 +241,9 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
         m_bodyLayout->addWidget(line);
     }
     if (snapshot.rows.size() > TrayGeometry::maxRows) {
-        auto *more = new QLabel(
+        auto *more = new SecondaryLabel(
             QStringLiteral("还有 %1 个项目，打开面板查看…").arg(snapshot.rows.size() - TrayGeometry::maxRows),
             m_body);
-        more->setStyleSheet(
-            QStringLiteral("color: %1;").arg(DS::textSecondary().name()));
         m_bodyLayout->addWidget(more);
     }
 }

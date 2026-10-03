@@ -7,6 +7,7 @@
 #include "../../app/Settings.h"
 #include "../DesignTokens.h"
 #include "../common/MarkdownView.h"
+#include "../common/SecondaryLabel.h"
 #include <DSpinner>
 #include <QEvent>
 #include <QFrame>
@@ -156,9 +157,8 @@ void AgentDialog::buildUi()
     busyLay->setContentsMargins(0, 0, 0, 0);
     busyLay->setSpacing(DS::Spacing::xs);
     m_spinner = new DSpinner(busyRow);
-    m_busyLabel = new QLabel(QStringLiteral("AI 正在思考…"), busyRow);
+    m_busyLabel = new SecondaryLabel(QStringLiteral("AI 正在思考…"), busyRow);
     m_busyLabel->setFont(DS::font(DS::FontT::label));
-    DS::tagSecondaryStyle(m_busyLabel);
     busyLay->addWidget(m_spinner);
     busyLay->addWidget(m_busyLabel);
     busyLay->addStretch(1);

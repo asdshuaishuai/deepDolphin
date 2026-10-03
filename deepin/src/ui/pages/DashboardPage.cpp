@@ -11,6 +11,7 @@
 #include "../common/EmptyState.h"
 #include "../common/FlowLayout.h"
 #include "../common/LegendRow.h"
+#include "../common/SecondaryLabel.h"
 #include "../common/SegmentedBar.h"
 #include <DSpinner>
 #include <QGridLayout>
@@ -77,8 +78,7 @@ void DashboardPage::rebuild()
         auto *v = new QVBoxLayout(loading);
         auto *sp = new DSpinner(loading);
         sp->start();
-        auto *lb = new QLabel(QStringLiteral("汇总项目群…"), loading);
-        DS::tagSecondaryStyle(lb);
+        auto *lb = new SecondaryLabel(QStringLiteral("汇总项目群…"), loading);
         v->addStretch(1);
         v->addWidget(sp, 0, Qt::AlignHCenter);
         v->addWidget(lb, 0, Qt::AlignHCenter);
@@ -104,8 +104,7 @@ void DashboardPage::rebuild()
 
     const KpiSet k = kpis(*m_model->dashboard(), m_model->projects());
     auto *hr = new QHBoxLayout;
-    m_summary = new QLabel(summaryLine(k), header);
-    DS::tagSecondaryStyle(m_summary);
+    m_summary = new SecondaryLabel(summaryLine(k), header);
     hr->addWidget(m_summary, 1);
     auto *brief = new QPushButton(header);
     brief->setText(QStringLiteral("项目群说明"));
@@ -176,9 +175,8 @@ void DashboardPage::rebuild()
         cv->addWidget(vLabel);
         if (bar)
             cv->addWidget(bar);
-        auto *subLabel = new QLabel(sub.join(QStringLiteral(" · ")), card);
+        auto *subLabel = new SecondaryLabel(sub.join(QStringLiteral(" · ")), card);
         subLabel->setFont(DS::font(DS::FontT::label));
-        DS::tagSecondaryStyle(subLabel);
         subLabel->setWordWrap(true);
         cv->addWidget(subLabel);
         return card;
@@ -228,9 +226,8 @@ void DashboardPage::rebuild()
                         .arg(kept.size())
                         .arg(total)
                         .arg(m_filter.windowLabel());
-    auto *countLabel = new QLabel(countText, projHead);
+    auto *countLabel = new SecondaryLabel(countText, projHead);
     countLabel->setFont(DS::font(DS::FontT::label));
-    DS::tagSecondaryStyle(countLabel);
     ph->addWidget(countLabel);
     m_contentLayout->addWidget(projHead);
 
@@ -245,9 +242,8 @@ void DashboardPage::rebuild()
     for (const auto &g : groups)
         msByProject.insert(g.first, milestoneTally(g.second, nullptr));
     if (kept.isEmpty()) {
-        auto *emptyTip = new QLabel(
+        auto *emptyTip = new SecondaryLabel(
             QStringLiteral("读不出更新时间的项目始终保留，不会被筛掉。当前筛选下没有项目。"), flowHost);
-        DS::tagSecondaryStyle(emptyTip);
         flow->addWidget(emptyTip);
     } else {
         for (const ProjectStatus *p : kept) {
@@ -283,8 +279,7 @@ QWidget *DashboardPage::buildLanguagesCard()
 
     const auto cov = LanguageCoverage::coverage(*m_model->dashboard());
     if (cov.rows.isEmpty()) {
-        auto *empty = new QLabel(cov.emptyTitle, card);
-        DS::tagSecondaryStyle(empty);
+        auto *empty = new SecondaryLabel(cov.emptyTitle, card);
         v->addWidget(empty);
     } else {
         auto *bar = new SegmentedBar(card);
@@ -333,8 +328,7 @@ QWidget *DashboardPage::buildMilestonesCard()
         return card;
     }
     if (d.milestones.items.empty()) {
-        auto *empty = new QLabel(QStringLiteral("还没有里程碑"), card);
-        DS::tagSecondaryStyle(empty);
+        auto *empty = new SecondaryLabel(QStringLiteral("还没有里程碑"), card);
         v->addWidget(empty);
         return card;
     }
@@ -387,12 +381,10 @@ QWidget *DashboardPage::buildActiveCard()
         auto *name = new QLabel(a.name, row);
         h->addWidget(dot);
         h->addWidget(name);
-        auto *ago = new QLabel(a.lastCommitAgo, row);
-        DS::tagSecondaryStyle(ago);
+        auto *ago = new SecondaryLabel(a.lastCommitAgo, row);
         h->addWidget(ago);
         h->addStretch(1);
-        auto *headline = new QLabel(a.headline, row);
-        DS::tagSecondaryStyle(headline);
+        auto *headline = new SecondaryLabel(a.headline, row);
         headline->setMaximumWidth(300);
         v->addWidget(row);
     }

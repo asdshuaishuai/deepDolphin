@@ -2,6 +2,7 @@
 // 无 Q_OBJECT：纯呈现。
 #pragma once
 #include "../DesignTokens.h"
+#include "SecondaryLabel.h"
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -31,11 +32,10 @@ public:
         v->addWidget(t);
 
         if (!subtitle.isEmpty()) {
-            auto *s = new QLabel(subtitle, this);
+            auto *s = new SecondaryLabel(subtitle, this);
             s->setAlignment(Qt::AlignCenter);
             s->setWordWrap(true);
             s->setFont(DS::font(DS::FontT::body));
-            s->setStyleSheet(QStringLiteral("color: %1;").arg(DS::textSecondary().name()));
             v->addWidget(s);
         }
         if (accessory) {

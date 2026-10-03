@@ -3,8 +3,8 @@
 #pragma once
 #include <QWidget>
 
-class QButtonGroup;
 class QLabel;
+class SegmentedButton;
 
 class AutomationPane : public QWidget {
     Q_OBJECT
@@ -17,6 +17,6 @@ signals:
 private:
     void reflect(int hours);
 
-    QButtonGroup *m_group = nullptr;
+    SegmentedButton *m_seg = nullptr; // 定时分段（ui/common 单一实现，M3b）
     QLabel *m_current = nullptr;
 };

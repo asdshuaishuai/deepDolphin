@@ -4,6 +4,7 @@
 #include "../../logic/Derived.h"
 #include "../DesignTokens.h"
 #include "../common/Chip.h"
+#include "../common/SecondaryLabel.h"
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -102,9 +103,8 @@ public:
             ageText = QStringLiteral("%1 天前提交").arg(*age);
         else
             ageText = QStringLiteral("提交时间读不出来");
-        auto *age = new QLabel(ageText, this);
+        auto *age = new SecondaryLabel(ageText, this);
         age->setFont(DS::font(DS::FontT::label));
-        DS::tagSecondaryStyle(age);
         bottom->addWidget(age);
         v->addLayout(bottom);
 
