@@ -730,3 +730,125 @@ func milestoneItemStatusLabelsKeepUnknownApartFromDropped(): Unit {
     @Expect(milestoneDueText(bad).contains("日期无效"))
     @Expect(!milestoneDueText(bad).contains("逾期 1 天"))
 }
+
+// ---------------------------------------------------------------------------
+// 仪表盘筛选行 —— 判定「它真的有效果」
+// ---------------------------------------------------------------------------
+
+/// 三个项目：一个 7 天前动过、一个 61 天前、一个**读不出更新时间**。
+/// 第三个是这份夹具存在的全部理由。
+private let SPAN_PROJECTS = """
+{"projects":[
+ {"name":"fresh","path":"/tmp/f","lastCommitAt":"2025-12-25T00:00:00+08:00","commitTypes":[
+   {"type":"feat","count":3},{"type":"fix","count":5}]},
+ {"name":"old","path":"/tmp/o","lastCommitAt":"2025-11-01T00:00:00+08:00","commitTypes":[
+   {"type":"fix","count":9}]},
+ {"name":"noread","path":"/tmp/n","commitTypes":[{"type":"chore","count":1}]}
+],"summary":{"listedProjects":3,"projectCount":3}}
+"""
+
+private func spanProjects(): ArrayList<Project> {
+    return StatusSnapshot.from(Json.parse(SPAN_PROJECTS).getOrThrow()).projects
+}
+
+private func spanNow(): Int64 {
+    return parseIso8601Ms("2026-01-01T00:00:00+08:00").getOrThrow()
+}
+
+@Test
+func dashSpanActuallyFiltersProjectsInsteadOfJustLookingLikeItDoes(): Unit {
+    // 筛选控件最常见的失败不是「不好看」，是摆在那里不起作用。
+    // 换一档结果必须真的变 —— 这是它成立的前提，不是锦上添花。
+    let all = spanProjects()
+    let now = spanNow()
+    @Expect(filteredProjects(DashFilter(DashSpan.All, DashCommitFilter.AllCommits), all, now).size, 3)
+    @Expect(filteredProjects(DashFilter(DashSpan.D30, DashCommitFilter.AllCommits), all, now).size, 2)
+    // D7 = fresh + noread = 2 而不是 1：读不出更新时间的项目**一律保留**
+    // （见下一条判据）。这条判据最初写成 1，与那条自相矛盾 ——
+    // 两处都得对，缺一处就说明规则没想清楚。
+    @Expect(filteredProjects(DashFilter(DashSpan.D7, DashCommitFilter.AllCommits), all, now).size, 2)
+    // 档位必须**从宽到严**递增，否则「近 7 天」比「全量」还宽就是反的
+    @Expect(spanMaxDays(DashSpan.D7).getOrThrow() < spanMaxDays(DashSpan.D30).getOrThrow())
+    @Expect(spanMaxDays(DashSpan.All).isNone())
+    // 切档循环要回到起点
+    var s = DashSpan.All
+    s = spanNext(s)
+    s = spanNext(s)
+    s = spanNext(s)
+    @Expect(spanIs(s, DashSpan.All))
+}
+
+@Test
+func projectsWithUnreadableLastCommitAreNeverFilteredOut(): Unit {
+    // 「读不出更新时间」的真实状态是**不知道**，不是「不在范围内」。
+    // 筛掉它等于把「我们没读到」说成「这项目很久没动了」——
+    // 本项目最高发的那族缺陷就是这句。
+    let now = spanNow()
+    let keep = filteredProjects(DashFilter(DashSpan.D7, DashCommitFilter.AllCommits),
+        spanProjects(), now)
+    var hasNoread = false
+    for (p in keep) {
+        if (p.name == "noread") {
+            hasNoread = true
+        }
+    }
+    @Expect(hasNoread)
+    // 而 fresh 确实留下了（7 天档含 7 天）
+    @Expect(keepsProject(DashFilter(DashSpan.D7, DashCommitFilter.AllCommits),
+        spanProjects()[0], now))
+    // old 61 天前，两档都该被筛掉
+    @Expect(!keepsProject(DashFilter(DashSpan.D30, DashCommitFilter.AllCommits),
+        spanProjects()[1], now))
+}
+
+@Test
+func commitFilterOnlyChangesCompositionNotTheKpis(): Unit {
+    // `commitTypes` 是引擎给的**最近 N 条样本**（`commitTypesTruncated` 恒发），
+    // 拿样本去重算「全局提交总数」是拿小样本充总量。
+    // 所以这个筛选只能作用在结构条上，绝不能接到 KPI。
+    let ps = spanProjects()
+    let onlyFix = DashFilter(DashSpan.All, DashCommitFilter.Only("fix"))
+    @Expect(keptCommitTypes(onlyFix, ps[0]).size, 1)
+    @Expect(keptCommitTypes(onlyFix, ps[0])[0][0], "fix")
+    @Expect(keptCommitTypes(DashFilter.none(), ps[0]).size, 2)
+    // KPI 走的是另一套数据（dashboard 的 languages + projects），与本筛选无关
+    @Expect(commitAllowed(onlyFix.commits, "feat"), false)
+    @Expect(commitAllowed(onlyFix.commits, "fix"), true)
+}
+
+@Test
+func commitSlotMatchesPositionSoBarLegendAndColorAgree(): Unit {
+    // 堆叠条的段顺序、图例的行顺序、颜色号必须**三者自洽**。
+    // 曾经试过按「跨项目全局累计名次」取色，于是名次第 1 的段排在第 2 位 ——
+    // 读者在堆叠条里看到第 1 段是紫色、在图例里第 1 行却是蓝色。
+    // macOS 端就是按引擎给的顺序取序号，这里与它一致。
+    let ps = spanProjects()
+    let all = keptCommitParts(DashFilter.none(), ps[0])
+    @Expect(all[0].label, "feat")
+    @Expect(all[0].slot, 0)
+    @Expect(all[1].label, "fix")
+    @Expect(all[1].slot, 1)
+
+    // 筛选只改变**看得见多少**，不重排：留下的是第 2 项，slot 仍是它自己的名次，
+    // 不会因为前面那项被筛掉就顶上来变成第 1 名。
+    let onlyFix = keptCommitParts(DashFilter(DashSpan.All, DashCommitFilter.Only("fix")), ps[0])
+    @Expect(onlyFix.size, 1)
+    @Expect(onlyFix[0].label, "fix")
+
+    // 筛选行的选项列表按累计条数降序（fix=14 > feat=3 > chore=1）
+    let kinds = allCommitTypes(ps)
+    @Expect(kinds[0].name, "fix")
+    @Expect(kinds[1].name, "feat")
+    @Expect(kinds[2].name, "chore")
+    @Expect(kinds[0].total, 14)
+}
+
+@Test
+func gridTitleSaysHowManyWereFilteredOut(): Unit {
+    // 标题写「（12）」而下面画 3 张卡，正是本项目栽过多次的那族缺陷。
+    let f = DashFilter(DashSpan.D7, DashCommitFilter.AllCommits)
+    @Expect(gridCountLine(3, 3, DashFilter.none()), "共 3 个项目")
+    @Expect(gridCountLine(1, 3, f), "1/3 个项目（最近更新在 近 7 天）")
+    // 筛选生效时标题必须跟着变，且带上档位名 —— 让人知道被什么筛了
+    @Expect(!gridCountLine(1, 3, f).contains("共 3"))
+}

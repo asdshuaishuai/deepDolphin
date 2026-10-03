@@ -81,10 +81,17 @@ public class AppModel {
 
     public var booted: Bool = false
 
+    // ------------------------------------------------- 仪表盘筛选（段 2）
+    /// 时间跨度。**状态必须在模型上，不能挂视图**：看板是第二个消费方
+    /// （同屏里两个视图必须对「在看什么」说同一句话），各存一份就必然出现
+    /// 「仪表盘 1 个 / 看板 3 个」。macOS 端 2026-10 修的正是这个。
+    public let dashSpan = State<DashSpan>(DashSpan.All)
+    /// 提交类型筛选。**只作用于项目卡的提交结构条**，不改 KPI 数字。
+    public let dashCommits = State<DashCommitFilter>(DashCommitFilter.AllCommits)
+
     // -------------------------------------------------------------- 导航
     /// 当前选中的**视图**（侧栏「视图」组）。项目是另一维，见 `selectedProject`。
-    public let root = State<RootSection>(RootSection.Dashboard)
-    /// 当前选中的**项目名**。空串 = 没选。
+    public let root = State<RootSection>(RootSection.Dashboard)    /// 当前选中的**项目名**。空串 = 没选。
     ///
     /// ⚠ 为什么与 `root` 分开而不是塞进一个枚举：macOS 端用
     /// `RootSection.project(String)` 一个枚举同时表达两者，本端拆开是因为

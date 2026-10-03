@@ -344,11 +344,14 @@ private func dashboardBody(model: AppModel, app: DesktopApp, dark: Bool): Unit {
             Spacer()
         }.hug()
 
+        // ── 段 2：筛选行 ──
+        dashFilterBar(model, app, projects, dark)
+
         // ── 段 3：4 张带副说明的 KPI ──
         kpiGrid(kpis, dark)
 
         // ── 段 4：逐项目卡网格 ──
-        projectGrid(d, projects, dark)
+        projectGrid(model, app, d, projects, dark)
 
         // ── 段 5：语言分布 + 里程碑 ──
         // 两张卡**都 hug**（按内容高度），不 `.flex()` 强制等高：
@@ -542,38 +545,122 @@ private func workRow(title: String, n: Int64, full: Int64, color: Int64, dark: B
 }
 
 // ---------------------------------------------------------------------------
+// 段 2：筛选行
+// ---------------------------------------------------------------------------
+
+/// 当前筛选。**唯一出处** —— 标题计数、网格过滤、提交结构条都从这里取，
+/// 不许各自再读一遍 `dashSpan` / `dashCommits`。
+public func currentDashFilter(model: AppModel): DashFilter {
+    return DashFilter(model.dashSpan.value, model.dashCommits.value)
+}
+
+/// 筛选行。**三个控件都真的改变下面画什么**：
+///   时间跨度 → 网格里出现哪些项目（按最近更新天数）
+///   提交类型 → 项目卡里堆叠条画哪几段、图例列哪几行
+///   重新索引 → 真跑一次浅更新并重拉
+/// 摆而不动的控件是最坏的一种控件，判据里专门钉住「它有效果」。
+private func dashFilterBar(
+    model: AppModel,
+    app: DesktopApp,
+    projects: ArrayList<Project>,
+    dark: Bool
+): Unit {
+    let f = currentDashFilter(model)
+    Panel {
+        HStack {
+            // 时间跨度：点一下切下一档。**标签写「最近更新」而不是「提交」** ——
+            // 引擎没有逐项目的提交时间序列，我们只能按最后更新天数分档。
+            Button("最近更新：${spanLabel(f.span)}", {=> model.dashSpan.value = spanNext(f.span)})
+                .fontSize(12.0)
+            dsCommitsPicker(model, projects, dark)
+            Spacer()
+            // 用 `busy` 而不是另设一个 `reindexing` 标志：
+            // `busy` 才是「有没有东西真在跑」的真值；另设标志只会带来
+            // 「什么时候把它复位回来」这个假问题（写操作跑完才复位，
+            // 而 CUI 没有回调可以挂这个点）。
+            Button(
+                (if (model.busy.value) { "重新索引中…" } else { "重新索引" }),
+                {=> actUpdate(app, model, "", false)},
+                role: ButtonRole.Primary
+            ).fontSize(12.0).enabled(!model.busy.value && !model.actionBusy.value)
+        }.spacing(8.0.vp).hug()
+    }.style(dsSurface(DsLevel.Nested, dark)).contentPadding(10.0.vp, 8.0.vp).hug()
+}
+
+/// 提交类型选择器。**选项来自引擎真给的数据**（逐项目 commitTypes 求并集），
+/// 不是写死一份列表 —— 写死的话引擎新增一个类型时这个控件就落下一项。
+private func dsCommitsPicker(model: AppModel, projects: ArrayList<Project>, dark: Bool): Unit {
+    let kinds = allCommitTypes(projects)
+    HStack {
+        dsFilterChip("所有提交类型", commitFilterIsAll(model.dashCommits.value), {
+            => model.dashCommits.value = DashCommitFilter.AllCommits
+        }, dark)
+        for (k in kinds) {
+            // 6 个之后再排就挤了；引擎给了 12 档色板，但这里选 6 个是**排版**取舍，
+            // 不是数据取舍 —— 剩下的通过「所有提交类型」能看到。
+            if (k.index < 6) {
+                dsFilterChip(k.name, commitFilterEquals(model.dashCommits.value,
+                    DashCommitFilter.Only(k.name)), {
+                    => model.dashCommits.value = DashCommitFilter.Only(k.name)
+                }, dark)
+            }
+        }
+    }.spacing(6.0.vp).hug()
+}
+
+private func dsFilterChip(label: String, on: Bool, tap: () -> Unit, dark: Bool): Unit {
+    Button(label, tap).fontSize(12.0)
+        .style(if (on) {
+            dsTinted(C_ACCENT, dark, strong: true)
+        } else {
+            dsSurface(DsLevel.Card, dark)
+        })
+}
+
+// ---------------------------------------------------------------------------
 // 段 4：逐项目卡网格（macOS 端 `DashboardView.projectGrid`）
 // ---------------------------------------------------------------------------
 
 /// 逐项目卡网格。标题右侧**必须说清画了几个 / 一共几个** ——
 /// 标题写「（12）」而下面画 3 张卡，正是本项目栽过多次的那族缺陷。
-private func projectGrid(d: Dashboard, projects: ArrayList<Project>, dark: Bool): Unit {
+private func projectGrid(
+    model: AppModel,
+    app: DesktopApp,
+    d: Dashboard,
+    projects: ArrayList<Project>,
+    dark: Bool
+): Unit {
+    let f = currentDashFilter(model)
+    let now = nowMillis()
+    let shown = filteredProjects(f, projects, now)
     VStack {
         HStack {
             Label("各项目演进进度与里程碑明细")
                 .fontSize(15.0).fontWeight(FontWeight.semiBold)
             Spacer()
-            Label("共 ${projects.size} 个项目").fontSize(11.0).muted()
+            // 标题必须**跟着筛选走**并说清被筛掉了多少 ——
+            // 标题写「（12）」而下面画 3 张卡，正是本项目踩过多次的那族缺陷。
+            Label(gridCountLine(shown.size, projects.size, f)).fontSize(11.0).muted()
         }.hug()
-        if (projects.isEmpty()) {
+        if (shown.isEmpty()) {
             dsEmptyState("没有可展示的项目", "引擎没给出项目列表。", dark)
         } else {
             // 2 列网格。逐行手摆而不是找「网格」控件：CUI 没有 LazyVGrid。
             // ⚠ 每张卡都 `.hug()`：`HStack` 给两个 `Flexible` 子项分配**同一行高**，
             // 谁矮谁被裁。hug 让行高由最高的那张决定，短卡自己占上面那段。
             var i: Int64 = 0
-            while (i < projects.size) {
+            while (i < shown.size) {
                 // 闭包**不能捕获可变变量**，所以先把这一行的两张卡取成不可变值。
-                let left = projects[Int64(i)]
-                let right: Option<Project> = (if (i + 1 < projects.size) {
-                    Some(projects[i + 1])
+                let left = shown[Int64(i)]
+                let right: Option<Project> = (if (i + 1 < shown.size) {
+                    Some(shown[i + 1])
                 } else {
                     None
                 })
                 HStack {
-                    Flexible { projectCard(d, left, dark) }
+                    Flexible { projectCard(model, d, left, dark) }
                     match (right) {
-                        case Some(rp) => Flexible { projectCard(d, rp, dark) }
+                        case Some(rp) => Flexible { projectCard(model, d, rp, dark) }
                         // 奇数张时补一个占位，否则最后一行只剩左半边，
                         // 视觉上像「右边那块丢了」。
                         case None => Flexible { VStack {} }
@@ -586,8 +673,9 @@ private func projectGrid(d: Dashboard, projects: ArrayList<Project>, dark: Bool)
 }
 
 /// 一张项目卡。行序对齐 macOS 端 `ProjectProgressCard`。
-private func projectCard(d: Dashboard, p: Project, dark: Bool): Unit {
+private func projectCard(model: AppModel, d: Dashboard, p: Project, dark: Bool): Unit {
     let now = nowMillis()
+    let f = currentDashFilter(model)
     Panel {
         VStack {
             // 行 1：项目名 + 状态词
@@ -617,12 +705,19 @@ private func projectCard(d: Dashboard, p: Project, dark: Bool): Unit {
             }.hug()
 
             // 行 4：提交结构（堆叠条 + 图例）
-            if (p.commitTypes.isEmpty()) {
-                Label("提交类型读不出来").fontSize(11.0).muted()
+            let parts = keptCommitParts(f, p)
+            if (parts.isEmpty()) {
+                // ⚠ 与「提交类型读不出来」要分开说：一个是引擎没给，
+                // 一个是筛选把它筛掉了。混同会让用户以为项目没有提交类型。
+                Label((if (p.commitTypes.isEmpty()) {
+                    "提交类型读不出来"
+                } else {
+                    "此筛选下没有可画的提交类型"
+                })).fontSize(11.0).muted()
             } else {
-                Flexible { dsSegBar(commitTypeParts(p)) }
+                Flexible { dsSegBar(parts) }
                 HStack {
-                    Flexible { commitTypeLegend(p) }
+                    Flexible { commitTypeLegendOf(parts) }
                 }.hug()
             }
 
@@ -700,8 +795,7 @@ private func commitTypeTotal(parts: Array<DsPart>): Int64 {
 }
 
 /// 图例：前 4 种 + 「还有 N 种」。
-private func commitTypeLegend(p: Project): Widget {
-    let parts = commitTypeParts(p)
+private func commitTypeLegendOf(parts: Array<DsPart>): Widget {
     let total = commitTypeTotal(parts)
     VStack {
         // 用 `for` 而不是 `while` + 计数器：闭包不能捕获可变变量，
