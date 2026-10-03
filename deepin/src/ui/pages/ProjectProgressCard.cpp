@@ -45,7 +45,7 @@ void ProjectProgressCard::setProject(const ProjectStatus &p, const DashFilter &f
     auto *card = new Card(this);
     outer->addWidget(card);
     auto *v = new QVBoxLayout(card);
-    v->setContentsMargins(DS::Spacing::lg, DS::Spacing::md, DS::Spacing::lg, DS::Spacing::md);
+    v->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
     v->setSpacing(DS::Spacing::sm);
 
     // ── 行 1：项目名（等宽，中段截断）+ 状态词（圆点，色随 tone）──

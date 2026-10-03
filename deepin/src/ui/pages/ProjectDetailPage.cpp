@@ -322,7 +322,7 @@ QWidget *ProjectDetailPage::buildCommitCard()
     const ProjectStatus &p = *m_project;
     auto *card = new Card(m_content);
     auto *v = new QVBoxLayout(card);
-    v->setContentsMargins(DS::Spacing::lg, DS::Spacing::md, DS::Spacing::lg, DS::Spacing::md);
+    v->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
     v->setSpacing(DS::Spacing::sm);
 
     auto *title = new QLabel(QStringLiteral("提交改动"), card);
@@ -400,7 +400,7 @@ QWidget *ProjectDetailPage::buildPulseCard(const ProjectStatus &p)
 {
     auto *card = new Card(m_content);
     auto *v = new QVBoxLayout(card);
-    v->setContentsMargins(DS::Spacing::lg, DS::Spacing::md, DS::Spacing::lg, DS::Spacing::md);
+    v->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
     v->setSpacing(DS::Spacing::sm);
     auto *title = new QLabel(QStringLiteral("工程脉搏"), card);
     title->setFont(DS::font(DS::FontT::cardTitle));
@@ -515,7 +515,7 @@ QWidget *ProjectDetailPage::buildCommitCompositionCard(const ProjectStatus &p)
 {
     auto *card = new Card(m_content);
     auto *v = new QVBoxLayout(card);
-    v->setContentsMargins(DS::Spacing::lg, DS::Spacing::md, DS::Spacing::lg, DS::Spacing::md);
+    v->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
     v->setSpacing(DS::Spacing::sm);
     auto *title = new QLabel(QStringLiteral("提交构成（近期）"), card);
     title->setFont(DS::font(DS::FontT::cardTitle));
@@ -552,7 +552,7 @@ QWidget *ProjectDetailPage::buildBranchesCard(const ProjectStatus &p)
 {
     auto *card = new Card(m_content);
     auto *v = new QVBoxLayout(card);
-    v->setContentsMargins(DS::Spacing::lg, DS::Spacing::md, DS::Spacing::lg, DS::Spacing::md);
+    v->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
     v->setSpacing(DS::Spacing::sm);
 
     // 标题三形态（branchScopeLine）
@@ -666,7 +666,7 @@ QWidget *ProjectDetailPage::buildMilestoneCard()
 {
     auto *card = new Card(m_content);
     auto *v = new QVBoxLayout(card);
-    v->setContentsMargins(DS::Spacing::lg, DS::Spacing::md, DS::Spacing::lg, DS::Spacing::md);
+    v->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
     v->setSpacing(DS::Spacing::sm);
     auto *title = new QLabel(QStringLiteral("里程碑 · %1 条").arg(m_milestones.size()), card);
     title->setFont(DS::font(DS::FontT::cardTitle));
@@ -728,7 +728,7 @@ QWidget *ProjectDetailPage::buildJournalCard(const ProjectStatus &p)
 {
     auto *card = new Card(m_content);
     auto *v = new QVBoxLayout(card);
-    v->setContentsMargins(DS::Spacing::lg, DS::Spacing::md, DS::Spacing::lg, DS::Spacing::md);
+    v->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
     v->setSpacing(DS::Spacing::sm);
 
     // 标题「进度日志 · <entryCountLine>」（「N 条」或「kept/entryCount 条（已截断）」）
@@ -825,6 +825,7 @@ QWidget *ProjectDetailPage::buildDocsArea()
     }
     if (m_docsState.state == LoadState::failed) {
         auto *card = new Card(host);
+        card->clearPadding(); // 历史样式：该卡内容布局未设边距（走样式默认），kPadding 会叠双份
         auto *cv = new QVBoxLayout(card);
         cv->addWidget(smallLabel(QStringLiteral("读不出来：%1").arg(m_docsState.message), card,
             DS::semColor(DS::SemColor::orange)));
@@ -833,6 +834,7 @@ QWidget *ProjectDetailPage::buildDocsArea()
     }
     if (!m_docs.has_value() || m_docs->docs.empty()) {
         auto *card = new Card(host);
+        card->clearPadding(); // 历史样式：该卡内容布局未设边距（走样式默认），kPadding 会叠双份
         auto *cv = new QVBoxLayout(card);
         cv->addWidget(smallLabel(
             QStringLiteral("这个项目还没有受管的文档。跑一次浅更新会生成 README / AGENTS / CLAUDE。"),
@@ -845,7 +847,7 @@ QWidget *ProjectDetailPage::buildDocsArea()
     for (const DocFile &f : m_docs->docs) {
         auto *card = new Card(host);
         auto *cv = new QVBoxLayout(card);
-        cv->setContentsMargins(DS::Spacing::lg, DS::Spacing::md, DS::Spacing::lg, DS::Spacing::md);
+        cv->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
         cv->setSpacing(DS::Spacing::sm);
         auto *title = new QLabel(f.file, card);
         title->setFont(DS::font(DS::FontT::cardTitle));

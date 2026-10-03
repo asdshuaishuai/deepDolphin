@@ -8,6 +8,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QMargins>
 #include <QPainter>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -24,6 +25,10 @@ constexpr int kRoleProjectName = Qt::UserRole + 2;
 constexpr int kRoleIsHeader = Qt::UserRole + 3;
 constexpr int kRoleIsView = Qt::UserRole + 4;
 
+// 侧栏行（countedRow 与项目行两处共用）行内边距/行距（M3-6：复制收成一点）
+constexpr QMargins kRowMargins{4, 2, 6, 2};
+constexpr int kRowSpacing = 6;
+
 // countedRow（PanelView.swift:127-140 对位）：行 widget = 图标 + 名称 + 拉伸 + 行内计数。
 // 子控件全部 WA_TransparentForMouseEvents → 点击落回列表项；
 // 计数控件经 row property「countLabel」回取（避免 findChildren 的 Q_OBJECT 约束）。
@@ -31,8 +36,8 @@ QWidget *countedRow(const QIcon &icon, const QString &text, QWidget *parent)
 {
     auto *w = new QWidget(parent);
     auto *h = new QHBoxLayout(w);
-    h->setContentsMargins(4, 2, 6, 2);
-    h->setSpacing(6);
+    h->setContentsMargins(kRowMargins);
+    h->setSpacing(kRowSpacing);
     auto *ic = new QLabel(w);
     ic->setPixmap(icon.pixmap(14, 14));
     ic->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -228,8 +233,8 @@ void SidebarNav::rebuildProjectRows()
         }
         auto *row = new QWidget(this);
         auto *h = new QHBoxLayout(row);
-        h->setContentsMargins(4, 2, 6, 2);
-        h->setSpacing(6);
+        h->setContentsMargins(kRowMargins);
+        h->setSpacing(kRowSpacing);
         h->addWidget(dot);
         auto *name = new QLabel(p.name, row);
         name->setAttribute(Qt::WA_TransparentForMouseEvents);

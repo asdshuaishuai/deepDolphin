@@ -163,7 +163,7 @@ void DashboardPage::rebuild()
                             QWidget *bar) {
         auto *card = new Card(kpiHost);
         auto *cv = new QVBoxLayout(card);
-        cv->setContentsMargins(DS::Spacing::lg, DS::Spacing::md, DS::Spacing::lg, DS::Spacing::md);
+        cv->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
         cv->setSpacing(DS::Spacing::xs);
         auto *tLabel = new QLabel(t, card);
         tLabel->setFont(DS::font(DS::FontT::cardTitle));
@@ -275,7 +275,7 @@ QWidget *DashboardPage::buildLanguagesCard()
 {
     auto *card = new Card(this);
     auto *v = new QVBoxLayout(card);
-    v->setContentsMargins(DS::Spacing::lg, DS::Spacing::md, DS::Spacing::lg, DS::Spacing::md);
+    v->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
     v->setSpacing(DS::Spacing::sm);
     auto *title = new QLabel(QStringLiteral("语言分布（跟踪文件数）"), card);
     title->setFont(DS::font(DS::FontT::cardTitle));
@@ -312,7 +312,7 @@ QWidget *DashboardPage::buildMilestonesCard()
 {
     auto *card = new Card(this);
     auto *v = new QVBoxLayout(card);
-    v->setContentsMargins(DS::Spacing::lg, DS::Spacing::md, DS::Spacing::lg, DS::Spacing::md);
+    v->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
     v->setSpacing(DS::Spacing::sm);
 
     const DashboardData &d = *m_model->dashboard();
@@ -365,7 +365,7 @@ QWidget *DashboardPage::buildActiveCard()
 {
     auto *card = new Card(this);
     auto *v = new QVBoxLayout(card);
-    v->setContentsMargins(DS::Spacing::lg, DS::Spacing::md, DS::Spacing::lg, DS::Spacing::md);
+    v->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
     v->setSpacing(DS::Spacing::sm);
     auto *title = new QLabel(QStringLiteral("近 7 天活跃项目"), card);
     title->setFont(DS::font(DS::FontT::cardTitle));
