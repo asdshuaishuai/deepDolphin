@@ -1631,3 +1631,58 @@ func theFixtureLoaderActuallyPutsJournalAndDocsIntoTheModel(): Unit {
     }
     @Expect(!model.dashboardProblem.value.isEmpty() == false)
 }
+
+/// 侧栏**点击**必须真的换页（ListView → State → 路由 这条反向链路）。
+///
+/// ⚠ 此前 118 条判据里没有一条覆盖它，原因是接线整段塞在 `mountEffect`
+/// 的闭包里 —— 闭包要活动的 StateStore 才能执行，判据不开窗就跑不了。
+/// 于是「把 `sidebar()` 里那行调用删掉」是完全静默的：
+/// 侧栏从此点了不换页，而所有判据照绿。
+///
+/// 已有判据验的是**正方向**（`applyScope` / `openProject` / 回退
+/// 三个入口把高亮写对，见 `everyWayIntoAProjectAlsoMovesTheSidebarHighlightWithIt`），
+/// 唯独少了这一条：UI 上**写** `selected` 之后有没有人接。
+///
+/// 顺带验一件容易踩空的事：`observe` 返回的 `StateObservation` 是
+/// `Resource`，而 `installSidebarSelectionObservers` 把它**丢掉了**。
+/// 若丢弃等于注销，观察者等于没装 —— 本条会红。
+@Test
+func clickingTheSidebarActuallyRoutesBecauseSomebodyIsListening(): Unit {
+    let s = StatusSnapshot.from(Json.parse(SPAN_PROJECTS).getOrThrow())
+    let model = AppModel(EngineLocation("", "", ""))
+
+    // 不装观察者时，写 `selected` 什么都不会发生 —— 这就是「接线被删」的症状。
+    // 先记下这个「坏掉的基线」，免得后面的绿没有参照。
+    model.snapshot.value = Some(s)
+    model.selected.value = 1
+    @Expect(model.selectedProject.value.isEmpty())
+
+    // 装上侧栏接线（`sidebar()` 里走 mountEffect 的那条）。
+    // ⚠ 必须把返回值绑住：`StateObservation` 是 Resource，析构即 close()，
+    // 不绑住等于装上又立刻取消 —— 那正是本条要防的「静默失效」的另一种形状。
+    let obs = installSidebarSelectionObservers(model)
+
+    // 点「视图」组第 1 行（看板）→ 主区必须是看板，且仓库组撤掉高亮
+    model.viewIndex.value = 1
+    @Expect(rootSectionIs(model.root.value, RootSection.Board))
+    @Expect(model.selectedProject.value.isEmpty())
+    @Expect(model.selected.value, -1)
+
+    // 点「仓库」组第 2 个项目 → 主区必须是它的详情
+    model.selected.value = 1
+    @Expect(model.selectedProject.value, "old")
+    @Expect(rootSectionIs(model.root.value, RootSection.Project))
+    @Expect(model.viewIndex.value, -1)
+
+    // goView(-1) 必须是哑操作，否则「进详情时撤掉视图组高亮」会自触发回环
+    model.viewIndex.value = -1
+    @Expect(model.selectedProject.value, "old")
+
+    // 收尾：显式 close 之后，观察者必须**真的不再被叫**。
+    // 这一条同时验住了上面那个「析构即取消」的判断 ——
+    // 若 close 形同虚设，close 之后再写 `selected` 仍会换页，本条红。
+    obs.close()
+    let before = model.selectedProject.value
+    model.selected.value = 2
+    @Expect(model.selectedProject.value, before)
+}

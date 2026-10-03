@@ -236,6 +236,37 @@ main(args: Array<String>): Int64 {
             boot(app, model)
             startPolling(app, model)
         }
+        // `DD_SNAP_CLICK=<行号>`：模拟「点侧栏仓库组第 N 行」。
+        //
+        // ⚠ 为什么需要它：侧栏的点击路由装在 `sidebar()` → `mountEffect` 里，
+        // 单元判据不开窗就执行不到那个闭包。所以即便接线函数本身已被
+        // `clickingTheSidebarActuallyRoutesBecauseSomebodyIsListening` 覆盖，
+        // 「**sidebar() 到底还调不调它**」这一截仍然只有读代码能验。
+        // 这里让**真实构建**先装上观察者，再写 `selected` ——
+        // 快照上侧栏高亮换到了第 N 行，就说明整条链接通了。
+        //
+        // ⚠⚠ 必须**在 `app.run` 之后**由后台线程 post 回来，不能写在
+        // 构建闭包里 —— 闭包是**单次**执行（夹具模式下无状态变化，48 帧
+        // 渲染期间它不会重跑），而首次构建时 `mountEffect` 的 prepare 阶段
+        // **还没跑**（它在构建体之后），那时的点击必然无人接。
+        // 症状与「接线被摘了」一模一样：快照上高亮纹丝不动。实测踩过。
+        if (snapMode && !model.snapClickFired) {
+            let clickRow = envInt("DD_SNAP_CLICK", -1)
+            if (clickRow >= 0) {
+                model.snapClickFired = true
+                spawn {
+                    // 等首帧与 mountEffect 的 prepare 跑完再点。
+                    // 48 帧在 1400×2400 下约两秒，1.2 秒落在这中间，
+                    // 剩下的帧足够把换页后的界面重画出来。
+                    sleepMs(1200)
+                    // ⚠ 留这一行不是为了好看：这条路径**失败时完全静默**
+                    // （症状就是「快照上高亮没动」，和「点了没反应」一模一样）。
+                    if (!app.post({=> model.selected.value = Int64(clickRow)})) {
+                        println("[DD_SNAP_CLICK] post 失败：应用已停止，这次快照没验到东西")
+                    }
+                }
+            }
+        }
         // 深链**等项目列表到了才应用**。
         //
         // ⚠ 不能在 `boot` 之前判「项目存不存在」：那时 `allProjectsOf` 是空的，

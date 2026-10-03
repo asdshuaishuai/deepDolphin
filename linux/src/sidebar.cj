@@ -30,6 +30,7 @@ import std.collection.ArrayList
 import cui.{Button, Color, CrossAxisAlignment, DesktopApp, Divider, EventHandler, FontWeight, HStack, Key, Label,
     ListView, LengthUnits, Panel, Spacer, State, TextField, UiEvent, VStack}
 import cui.mountEffect
+import cui.{EffectCleanup}
 
 /// 侧栏最小宽度。与 macOS 端 `minWidth: 210` 同量级。
 /// 再窄时项目名会先于计数被切掉，而项目名是这一行唯一不可替代的信息。
@@ -140,7 +141,7 @@ private func observeSelection(model: AppModel, app: DesktopApp): Unit {
         => model.selectedProject.observe({_, _ => loadProjectDetail(app, model)})
     })
     // 侧栏两组的点击接回路由
-    observeSidebarSelection(model, app)
+    observeSidebarSelection(model)
 }
 
 func sidebar(model: AppModel, app: DesktopApp, dark: Bool): Unit {
@@ -232,15 +233,35 @@ public func projectSelection(model: AppModel): State<Int64> {
 /// 把 ListView 的选中接回路由。
 ///
 /// `mountEffect` 按 key 去重，重建时不会重复注册观察。
+/// 两个观察者合成**一个** effect：它们同生同灭（都随侧栏一起挂载/卸载），
+/// 拆成两个 key 只是多一次去重表查找，没有语义差别。
 /// ⚠ 无回环的要点：`goView(-1)` 是**哑操作**（viewAtIndex(-1) 返回 None），
 /// 所以「进项目详情时把 viewIndex 置 -1」不会又触发一次导航。
-private func observeSidebarSelection(model: AppModel, app: DesktopApp): Unit {
-    mountEffect("dd-obs-view", {
-        => model.viewIndex.observe({_, v => goView(model, v)})
-    })
-    mountEffect("dd-obs-proj", {
-        => model.selected.observe({_, v => goProject(model, v)})
-    })
+private func observeSidebarSelection(model: AppModel): Unit {
+    mountEffect("dd-obs-sidebar-sel", {=> installSidebarSelectionObservers(model)})
+}
+
+/// ⚠⚠ **接线本体**。这里不是「顺手写的辅助函数」——
+/// 它是「侧栏点一下会不会换页」这条规则的**唯一实现**，
+/// 原来整段塞在 `mountEffect` 的闭包里，而闭包要活动的 StateStore
+/// 才能执行（`declareLifecycleEffect` → `currentStateStore()`），
+/// 判据不开窗就跑不了。后果是：
+/// **把 `sidebar()` 里那行调用删掉，118 条判据全绿，侧栏从此点了不换页。**
+///
+/// 拆出来的理由与 `goView` 去掉 `app` 参数一样：
+/// 能不开窗口就验的规则，绝不因为「它住在闭包里」就变成只能读代码相信。
+///
+/// 装上之后，`model.selected` / `model.viewIndex` 被写（ListView 点击就是
+/// 直接写这两个 State，见 `AppModel.selected` 的注释）就会走路由。
+///
+/// ⚠ 返回值**必须被持有**：`observe` 返回的 `StateObservation` 是
+/// `Resource`，析构会 `close()`，而 `close()` 就是「取消以后的回调」。
+/// 丢在当场 = 装上又立刻取消 = 侧栏点了不换页，且没有任何报错。
+/// 用 CUI 自己的 `EffectCleanup` 包一层，不要自己再造一个 Resource。
+public func installSidebarSelectionObservers(model: AppModel): Resource {
+    let v = model.viewIndex.observe({_, v => goView(model, v)})
+    let p = model.selected.observe({_, v => goProject(model, v)})
+    return EffectCleanup({=> v.close(); p.close()})
 }
 
 /// 侧栏「仓库」组里某个项目所在的行号。

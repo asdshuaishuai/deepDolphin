@@ -1,8 +1,12 @@
 # deepDolphin — Linux 客户端
 
 **仓颉 + [CangjieGUI](https://github.com/SunriseSummer/CangjieGUI)（CUI）的桌面实现**，消费 moonGit 引擎的 `--json` 契约。
-CUI 本身跨平台（Windows / macOS / Linux），所以这一份代码在 macOS 上也能构建和运行 ——
+CUI 本身跨平台（Windows / macOS / Linux），所以这一份代码在 macOS 上也能**构建**，
 **本机验证就是在 macOS 上做的**，不需要 Linux 机器。
+
+⚠ 但**在 macOS 上开不出真窗口** —— AppKit 的主线程判定，见下文「验证」一节。
+真要在这个平台跑起来，得先解决仓颉运行时与 AppKit 的线程问题。
+Linux / Windows 上没有这个障碍。
 
 > 定位见 [../PLATFORM-CHARTER.md](../PLATFORM-CHARTER.md)：交互 UI 各平台自由，**能力必须一致**。
 > 这一份实现了 C1（引擎发现与拉起）、C2（状态轮询）、C3（面板四页）、C4（更新动作）、
@@ -144,7 +148,46 @@ CUI 的 `--snapshot` 是「连续强制重绘 48 帧就拍照」，而引擎调�
 `DD_SNAP_ROOT` / `DD_SNAP_PROJECT` 指定拍哪一页。仪表盘、看板、项目详情
 三页都用这个路径看过。
 
-**未验，且已查明是框架级阻塞**：真窗口的**交互**（点击、滚动、悬停）没验过。
+### 模拟一次点击（验侧栏接线）
+
+```sh
+DD_FIXTURE_DIR="$PWD/tests/fixtures" DD_SNAP_PROJECT=atlas DD_SNAP_CLICK=1 \
+  DD_SNAP_W=1400 DD_SNAP_H=2400 SDL_VIDEODRIVER=dummy \
+  bash scripts/dev-launch.sh --snapshot /tmp/click.bmp
+sips -s format png /tmp/click.bmp --out /tmp/click.png
+```
+
+`DD_SNAP_CLICK=<行号>` 会在渲染途中由后台线程 `post` 一次
+`model.selected = 行号` —— **就是 ListView 点击时写的那一个 State**。
+快照上侧栏高亮换到那一行、主区跟着换成那个项目，说明
+`sidebar()` → `mountEffect` → 接线 → 路由 整条链是通的。
+
+**为什么需要它**：这条接线住在 `mountEffect` 的闭包里，
+单元判据不开窗就执行不到那个闭包。把 `sidebar()` 里的调用删掉，
+119 条判据**照样全绿**，而侧栏从此点了不换页。
+（接线函数本身已由 `clickingTheSidebarActuallyRoutesBecauseSomebodyIsListening`
+覆盖；`DD_SNAP_CLICK` 守的是「sidebar() 还调不调它」这一截。）
+
+⚠ 负控已验，两张图可直接对比：
+
+| 状态 | 侧栏高亮 | 主区 |
+|---|---|---|
+| 接线在 | beacon | **beacon** ✓ |
+| 接线被摘 | beacon | **atlas** ✗ |
+
+接线被摘时高亮仍跟着动（`selected` 写进去了），但**没人路由** ——
+主区停在 atlas 而侧栏亮着 beacon，正是本仓反复警告的
+「主区是 B、侧栏亮着 A」分家。
+
+⚠ 试过并且都不行的两条路：写在 `app.run` 的构建闭包里（夹具模式下
+无状态变化，闭包**只跑一遍**，而首遍时 `mountEffect` 的 prepare 阶段
+还没执行，那时的点击必然无人接 —— 症状与「接线被摘」一模一样）；
+以及用「构建遍数计数」等第 2 遍（同样等不到，闭包根本不重跑）。
+
+**未验，且已查明是框架级阻塞**：真窗口的**交互**（滚动、悬停、真实输入）
+没验过 —— `DD_SNAP_CLICK` 能证明**点击的路由**通了，但它仍然走的是
+`post` 而不是真的鼠标事件，也证明不了滚动与悬停。
+真窗口在本机开不出来，原因如下：
 
 ⚠ 此前这里写的是「显示器全程熄屏导致 `No available video device`」——**那个解释是错的**，
 已按实测推翻。真实原因与屏幕亮不亮无关：

@@ -92,6 +92,13 @@ public class AppModel {
 
     public var booted: Bool = false
 
+    /// `DD_SNAP_CLICK` 的一次性闸门：模拟点击**只发一次**。
+    ///
+    /// `app.run` 的构建闭包每次状态变化都重跑，不挡住的话会每帧写一次
+    /// `selected` —— 而 `State` 的 setter 值没变也照样通知，
+    /// 于是变成一个永不停歇的导航回环。
+    public var snapClickFired: Bool = false
+
     // ------------------------------------------------- 仪表盘筛选（段 2）
     /// 时间跨度。**状态必须在模型上，不能挂视图**：看板是第二个消费方
     /// （同屏里两个视图必须对「在看什么」说同一句话），各存一份就必然出现
@@ -492,7 +499,10 @@ public func startPolling(app: DesktopApp, model: AppModel): Unit {
 
 /// 睡指定毫秒。拆成小段是为了能被 Ctrl-C 及时打断 ——
 /// 一次睡 5 分钟的话，关闭应用要等它睡醒。
-private func sleepMs(total: Int64): Unit {
+///
+/// `public` 是因为 `main.cj` 的快照点击模拟也要用（后台线程等首帧过去再 post）。
+/// 别复制第二份实现：两份 sleep 语义一旦漂移，快照的可复现性就没了。
+public func sleepMs(total: Int64): Unit {
     var left = total
     while (left > 0) {
         let chunk = (if (left > 200) { 200 } else { left })
