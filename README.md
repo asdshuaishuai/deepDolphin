@@ -12,6 +12,7 @@ deepDolphin/
   assets/icon/  全平台唯一应用图标（母版 mark.png + 派生 out/ + 判据 check-icon.sh）
   macos/        macOS 客户端（SwiftUI，已实现）——菜单栏常驻 + 主面板窗口
   linux/        Linux 客户端（仓颉 + CangjieGUI，已实现读侧与写侧）
+  deepin/       deepin 客户端（DDE 专属，DTK6 原生，已实现）——1:1 复刻 macos/ 功能基准
   windows/      Windows 客户端（规划中：WinUI 3 / WPF，消费同一套 CLI 契约）
   harmonyos/    鸿蒙 PC 客户端（规划中：ArkUI，消费同一套 CLI 契约）
 ```
@@ -55,3 +56,22 @@ open deepDolphin.app
 ## Linux 客户端
 
 见 [linux/README.md](linux/README.md)。
+
+## deepin 客户端（DDE 专属）
+
+见 [deepin/README.md](deepin/README.md)。
+
+```sh
+cd deepin
+python3 scripts/bootstrap-deps.py --download   # 用户态工具链 sysroot（无需 root，详见 deepin/README.md）
+sh scripts/setup-deps.sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel 4
+./build/deepDolphin --selfcheck                # 模型层自检（55 例）
+./build/deepDolphin                            # 或先 scripts/smoke.sh
+```
+
+DTK6/Qt6 原生（QWidget），放在专属目录 `deepin/`，与 `linux/`（仓颉 + CangjieGUI 通用版）互不影响；
+功能以 `macos/` 为 1:1 基准，C1–C11 逐项实现位置与快捷键映射见 deepin/README.md。
+AI 未显式配置时默认走系统级 AI（UOS AI 只能唤起对话窗口，如实降级、不假装补全）；
+显式配置的 OpenAI 兼容 / Anthropic 渠道优先。

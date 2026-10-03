@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- deepDolphin 应用图标（占位：深蓝圆角底 + 海豚意象曲线）。
+     Icon=deepdolphin 与 desktop 文件、IconLoader::app() 的主题查找名一致。 -->
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <rect x="6" y="6" width="116" height="116" rx="26" fill="#1E6FEB"/>
+  <path d="M30 84 C36 56, 58 38, 88 36 C96 35.4, 102 38, 102 44
+           C102 50, 94 52, 86 55 C74 59.4, 66 68, 62 80
+           C58 92, 46 96, 38 92 C42 88, 44 84, 42 78 Z"
+        fill="#FFFFFF" opacity="0.95"/>
+  <circle cx="88" cy="47" r="3.4" fill="#1E6FEB"/>
+</svg>

@@ -1,0 +1,32 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=deepDolphin
+Name[zh_CN]=deepDolphin 面板
+GenericName=项目群进度面板
+GenericName[zh_CN]=项目群进度面板
+Comment=moonGit project-group progress client
+Comment[zh_CN]=deepGit/moonGit 项目群进度客户端
+Exec=deepDolphin %f
+Icon=deepdolphin
+Categories=Utility;Development;
+Keywords=git;progress;panel;milestone;dashboard;
+Keywords[zh_CN]=git;项目;进度;面板;里程碑;仪表盘;
+MimeType=inode/directory;
+Terminal=false
+StartupNotify=true
+StartupWMClass=deepDolphin
+SingleMainWindow=true
+X-Deepin-Vendor=deepin
+DBusActivatable=true
+Actions=open;scan;
+
+[Desktop Action open]
+Name=打开面板
+Name[zh_CN]=打开面板
+Exec=deepDolphin
+
+[Desktop Action scan]
+Name=扫描项目
+Name[zh_CN]=扫描项目
+Exec=deepDolphin --scan

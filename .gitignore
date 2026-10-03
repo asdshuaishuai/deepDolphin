@@ -9,3 +9,7 @@ DerivedData/
 # Python 生成脚本的字节码缓存
 __pycache__/
 *.pyc
+# 代理/会话内部状态（不随仓库分发）
+.stepcode/
+# deepin 客户端构建产物（cmake -S deepin -B deepin/build）
+deepin/build/

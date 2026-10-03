@@ -1,0 +1,12 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <!-- 应用图标兜底（IconLoader::app）：主题缺失时仍可显示 -->
+    <qresource prefix="/icons">
+        <file alias="deepdolphin.svg">../data/icons/deepdolphin.svg</file>
+    </qresource>
+    <!-- models.dev 快照（macos/Resources 原样拷入；免安装运行/缓存缺失时的兜底目录）。
+         访问路径 = :/resources/models-dev.json（ai/ModelsDevCatalog::loadCached） -->
+    <qresource prefix="/resources">
+        <file alias="models-dev.json">models-dev.json</file>
+    </qresource>
+</RCC>

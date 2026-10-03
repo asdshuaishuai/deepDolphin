@@ -1,0 +1,5 @@
+// Version.h.in — 版本号单一来源（CMake project() VERSION → configure_file）。
+// 用法：#include "Version.h"，取 DD_VERSION_STRING。
+// 为什么：--version 字面量曾与 CMakeLists 的 project(VERSION 0.1.0) 各写一份，改一处忘一处。
+#pragma once
+#define DD_VERSION_STRING "@PROJECT_VERSION@"

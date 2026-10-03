@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>cn.deepdolphin.app</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>deepDolphin</name>
+  <name xml:lang="zh_CN">deepDolphin 面板</name>
+  <summary>Project-group progress panel for moonGit repositories</summary>
+  <summary xml:lang="zh_CN">moonGit/deepgit 项目群进度面板</summary>
+  <description>
+    <p>
+      deepDolphin is the deepin/DDE client for the moonGit engine. It shows the progress of
+      every registered repository at a glance — KPI cards, language coverage, milestone state,
+      branch pulses and commit composition — and drives the engine for updates, git operations
+      and milestone management.
+    </p>
+    <p xml:lang="zh_CN">
+      deepDolphin 是 moonGit 引擎的 deepin/DDE 客户端：一眼看全项目群的进度（KPI 卡片、
+      语言分布、里程碑、工程脉搏、提交构成），并对接引擎完成更新、git 操作与里程碑管理。
+      AI 摘要与 AI 助手在客户端本地完成，未配置时如实降级。
+    </p>
+    <p>Highlights:</p>
+    <ul>
+      <li>Four views: dashboard, board, milestones, project detail.</li>
+      <li>Shallow/deep updates, single project or the whole group, with optional AI digests.</li>
+      <li>Tray quick-look popup and system notifications.</li>
+      <li>DTK native, light/dark and font-size aware.</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">cn.deepdolphin.app.desktop</launchable>
+  <url type="homepage">https://github.com/asdshuaishuai/moongit</url>
+  <url type="bugtracker">https://github.com/asdshuaishuai/moongit/issues</url>
+  <categories>
+    <category>Utility</category>
+    <category>Development</category>
+  </categories>
+  <provides>
+    <binary>deepDolphin</binary>
+    <dbus type="session">cn.deepdolphin.app</dbus>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-10-04">
+      <description>
+        <p>First deepin/DDE release: DTK native, engine discovery, AI integrations.</p>
+        <p xml:lang="zh_CN">首个 deepin/DDE 版本：DTK 原生、引擎发现、AI 整合。</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>

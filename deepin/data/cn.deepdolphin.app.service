@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=cn.deepdolphin.app
+Exec=deepDolphin --dbus-service
+# DBusActivatable=true（data/cn.deepdolphin.app.desktop）：面板没起来时，
+# 会话总线自动拉起本服务——拉起后由 AppService::registerOnBus 接管名字。
