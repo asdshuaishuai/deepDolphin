@@ -1,5 +1,6 @@
 #include "DashboardFilterBar.h"
 #include "../DesignTokens.h"
+#include "../common/BusyRow.h"
 #include "../common/SegmentedButton.h"
 #include <QHBoxLayout>
 #include <QLabel>
@@ -50,6 +51,12 @@ DashboardFilterBar::DashboardFilterBar(QWidget *parent)
     h->addWidget(m_reindex);
     connect(m_reindex, &QPushButton::clicked, this, &DashboardFilterBar::reindexClicked);
 
+    // 忙态 = BusyRow 转圈 + 文案（plan §3b 五处 busy 表达之一）；按钮文案恒定，
+    // 不再换字「重新索引…」（换字让按钮宽度跳动，BusyRow 说出「在忙」就够了）
+    m_reindexBusy = new BusyRow(QStringLiteral("正在重新索引…"), this);
+    m_reindexBusy->setBusy(false);
+    h->addWidget(m_reindexBusy);
+
     h->addStretch(1);
     reflectWindow();
 }
@@ -77,7 +84,7 @@ void DashboardFilterBar::setTypeOptions(const QStringList &types, bool enabled,
 void DashboardFilterBar::setReindexBusy(bool busy)
 {
     m_reindex->setEnabled(!busy);
-    m_reindex->setText(busy ? QStringLiteral("重新索引…") : QStringLiteral("重新索引"));
+    m_reindexBusy->setBusy(busy); // 转圈 + 「正在重新索引…」（按钮文字不再换字）
 }
 
 void DashboardFilterBar::reflectWindow()

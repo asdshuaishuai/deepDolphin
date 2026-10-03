@@ -13,6 +13,7 @@
 #include "../common/LegendRow.h"
 #include "../common/SecondaryLabel.h"
 #include "../common/SegmentedBar.h"
+#include <DPushButton>
 #include <DSpinner>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -61,7 +62,7 @@ void DashboardPage::rebuild()
     }
 
     if (!m_model || !m_model->engineFound()) {
-        m_contentLayout->addWidget(new EmptyState(QStringLiteral("dialog-warning"),
+        m_contentLayout->addWidget(new EmptyState(EmptyState::Tone::Warning,
             QStringLiteral("引擎未找到"), QStringLiteral("安装引擎后「重新检测引擎」即可开始。")));
         return;
     }
@@ -69,7 +70,7 @@ void DashboardPage::rebuild()
     // ── 相位判定（每数据源一份自己的 LoadState；SPEC §3.5 四分支）──
     const LoadStateBox st = m_model->dashboardState();
     if (st.state == LoadState::failed) {
-        m_contentLayout->addWidget(new EmptyState(QStringLiteral("dialog-warning"),
+        m_contentLayout->addWidget(new EmptyState(EmptyState::Tone::Warning,
             QStringLiteral("仪表盘读不出来"), st.message));
         return;
     }
@@ -87,9 +88,13 @@ void DashboardPage::rebuild()
         return;
     }
     if (m_model->projects().empty()) {
+        // 主 CTA 槽位（plan §3b）：空态给「下一步」——「添加 / 扫描项目」（与侧栏同一动作）
+        auto *addBtn = new DPushButton(QStringLiteral("添加 / 扫描项目"), m_content);
+        addBtn->setToolTip(QStringLiteral("注册项目后运行一次浅更新，仪表盘开始出数"));
+        connect(addBtn, &QPushButton::clicked, this, &DashboardPage::addScanRequested);
         m_contentLayout->addWidget(new EmptyState(QStringLiteral("folder-new"),
             QStringLiteral("仪表盘还没有数据"),
-            QStringLiteral("注册项目后运行一次浅更新，这里会出现项目群脉搏。")));
+            QStringLiteral("注册项目后运行一次浅更新，这里会出现项目群脉搏。"), addBtn));
         return;
     }
 
@@ -242,9 +247,10 @@ void DashboardPage::rebuild()
     for (const auto &g : groups)
         msByProject.insert(g.first, milestoneTally(g.second, nullptr));
     if (kept.isEmpty()) {
-        auto *emptyTip = new SecondaryLabel(
-            QStringLiteral("读不出更新时间的项目始终保留，不会被筛掉。当前筛选下没有项目。"), flowHost);
-        flow->addWidget(emptyTip);
+        // 卡内空态 = EmptyState::compact（iconTone 分档，plan §3b；原一句话裸标签无图标）
+        flow->addWidget(EmptyState::compact(EmptyState::Tone::Empty,
+            QStringLiteral("读不出更新时间的项目始终保留，不会被筛掉。当前筛选下没有项目。"),
+            flowHost));
     } else {
         for (const ProjectStatus *p : kept) {
             auto *card = new ProjectProgressCard(flowHost);
@@ -279,8 +285,12 @@ QWidget *DashboardPage::buildLanguagesCard()
 
     const auto cov = LanguageCoverage::coverage(*m_model->dashboard());
     if (cov.rows.isEmpty()) {
-        auto *empty = new SecondaryLabel(cov.emptyTitle, card);
-        v->addWidget(empty);
+        // 「空」与「读不出来」图标分档（plan §3b）：采集失败（failed>0）是读不出来，
+        // 不是「这个项目群没有语言」——语言口径在 logic 层，图标档在这里跟着 failed 走
+        const EmptyState::Tone tone = m_model->dashboard()->languagesFailed > 0
+            ? EmptyState::Tone::Warning
+            : EmptyState::Tone::Empty;
+        v->addWidget(EmptyState::compact(tone, cov.emptyTitle, card));
     } else {
         auto *bar = new SegmentedBar(card);
         bar->setData(cov.barData);
@@ -319,17 +329,16 @@ QWidget *DashboardPage::buildMilestonesCard()
     title->setWordWrap(true);
     v->addWidget(title);
 
-    // degraded 空态：读不出来（不是「没有」）
+    // degraded 空态：读不出来（不是「没有」）——Warning 档图标承载区分（plan §3b；
+    // 原橙字让位给告警图标，语义色不进卡内正文）
     if (counts.degraded && d.milestones.items.empty()) {
-        auto *empty = new QLabel(QStringLiteral("里程碑读不出来（不是「没有」）"), card);
-        empty->setStyleSheet(
-            QStringLiteral("color: %1;").arg(DS::semColor(DS::SemColor::orange).name()));
-        v->addWidget(empty);
+        v->addWidget(EmptyState::compact(EmptyState::Tone::Warning,
+            QStringLiteral("里程碑读不出来（不是「没有」）"), card));
         return card;
     }
     if (d.milestones.items.empty()) {
-        auto *empty = new SecondaryLabel(QStringLiteral("还没有里程碑"), card);
-        v->addWidget(empty);
+        v->addWidget(
+            EmptyState::compact(EmptyState::Tone::Empty, QStringLiteral("还没有里程碑"), card));
         return card;
     }
 

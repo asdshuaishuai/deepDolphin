@@ -12,6 +12,7 @@
 #include "DualTrackButtons.h"
 #include "SidebarNav.h"
 #include "WorkBar.h"
+#include "common/BusyRow.h"
 #include "common/ConfirmDialog.h"
 #include "common/EmptyState.h"
 #include "dialogs/AddMilestoneDialog.h"
@@ -207,6 +208,7 @@ void PanelWindow::wirePages()
     connect(m_dashboard, &DashboardPage::goProject, this,
         [this](const QString &name) { m_model->go(Selection::project(name)); bringToFront(); });
     connect(m_dashboard, &DashboardPage::briefRequested, this, [this] { showBrief(QString()); });
+    connect(m_dashboard, &DashboardPage::addScanRequested, this, [this] { openScanDialog(); });
     connect(m_board, &BoardPage::goProject, this, [this](const QString &name) {
         m_model->go(Selection::project(name));
         bringToFront();
@@ -437,18 +439,27 @@ void PanelWindow::refreshChrome()
         m_sidebar->setMilestoneCount(std::nullopt);
 
     // 状态条四文案：正在检测引擎…/正在采集…/空闲/引擎连接失败/尚未刷新
+    // （忙两态带 BusyRow 转圈——plan §3b 收编；文案原样，M0-2 口径不动）
     if (m_model->enginePending()) {
-        m_sidebar->setStatusStrip(QStringLiteral("正在检测引擎…"), Liveness::unknown);
+        m_sidebar->setStatusStrip(QStringLiteral("正在检测引擎…"), Liveness::unknown, true);
     } else if (!m_model->engineFound()) {
         m_sidebar->setStatusStrip(QStringLiteral("引擎连接失败"), Liveness::unreadable);
     } else if (m_model->isLoading()) {
-        m_sidebar->setStatusStrip(QStringLiteral("正在采集…"), Liveness::unknown);
+        m_sidebar->setStatusStrip(QStringLiteral("正在采集…"), Liveness::unknown, true);
     } else if (m_model->lastRefreshedMs() > 0) {
         const QString t = QLocale().toString(
             QDateTime::fromMSecsSinceEpoch(m_model->lastRefreshedMs()), QStringLiteral("HH:mm"));
         m_sidebar->setStatusStrip(QStringLiteral("空闲 · 上次刷新 %1").arg(t), Liveness::recent);
     } else {
         m_sidebar->setStatusStrip(QStringLiteral("尚未刷新"), Liveness::unknown);
+    }
+
+    // 标题栏刷新钮 busy 转圈（plan §3b「标题栏刷新按钮 busy 时转圈」）：忙时按钮让位
+    // 转圈——同一位置同一语义，不会误点出一个注定被 busy 锁拒绝的刷新
+    if (m_refreshBtn && m_refreshSpin) {
+        const bool loading = m_model->isLoading();
+        m_refreshBtn->setVisible(!loading);
+        m_refreshSpin->setBusy(loading);
     }
     Q_UNUSED(failed);
 
@@ -541,6 +552,11 @@ void PanelWindow::buildMenu()
         QAbstractButton *refresh = makeToolButton(QStringLiteral("view-refresh"),
             QStringLiteral("刷新"), QStringLiteral("刷新（Ctrl+R）"));
         connect(refresh, &QAbstractButton::clicked, this, [this] { m_model->refreshAll(); });
+        m_refreshBtn = refresh; // busy 时让位转圈（refreshChrome 拨），收尾换回
+        m_refreshSpin = new BusyRow(QString(), this); // 只转圈不说话（紧凑位）
+        m_refreshSpin->setBusy(false);
+        tb->addWidget(refresh);
+        tb->addWidget(m_refreshSpin);
         auto *agentBtn = new DPushButton(this);
         agentBtn->setText(QStringLiteral("AI 助手"));
         agentBtn->setFlat(true);
@@ -552,7 +568,6 @@ void PanelWindow::buildMenu()
         QAbstractButton *searchBtn = makeToolButton(QStringLiteral("system-search"),
             QStringLiteral("搜索"), QStringLiteral("搜索（Ctrl+F，焦点送进侧栏搜索框）"));
         connect(searchBtn, &QAbstractButton::clicked, this, [this] { m_sidebar->focusSearch(); });
-        tb->addWidget(refresh);
         tb->addWidget(agentBtn);
         tb->addWidget(settingsBtn);
         tb->addWidget(searchBtn);

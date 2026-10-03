@@ -13,6 +13,7 @@
 #include <QWidget>
 
 class QLabel;
+class BusyRow;
 
 DWIDGET_USE_NAMESPACE
 
@@ -38,4 +39,5 @@ private:
     DSuggestButton *m_shallow = nullptr;
     DPushButton *m_deep = nullptr;
     QLabel *m_badge = nullptr;
+    BusyRow *m_busyRow = nullptr; // 忙态行（BusyRow 单点）：转圈 + 文案，原「静默禁用」收编
 };

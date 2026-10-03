@@ -17,8 +17,10 @@
 
 class QStackedWidget;
 class QSplitter;
+class QAbstractButton;
 class SidebarNav;
 class WorkBar;
+class BusyRow;
 class DashboardPage;
 class BoardPage;
 class MilestonesPage;
@@ -80,6 +82,9 @@ private:
     QLabel *m_routeNotice = nullptr;
     QLabel *m_errorBar = nullptr;
     WorkBar *m_workBar = nullptr;
+    // 标题栏刷新钮 busy 转圈（plan §3b）：忙时按钮让位 BusyRow 转圈，收尾换回
+    QAbstractButton *m_refreshBtn = nullptr;
+    BusyRow *m_refreshSpin = nullptr;
 
     SetupGuidePage *m_setupPage = nullptr;
     DashboardPage *m_dashboard = nullptr;

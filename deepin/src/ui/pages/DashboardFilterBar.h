@@ -12,6 +12,7 @@
 DWIDGET_USE_NAMESPACE
 
 class SegmentedButton;
+class BusyRow;
 
 class DashboardFilterBar : public QWidget {
     Q_OBJECT
@@ -34,5 +35,6 @@ private:
     SegmentedButton *m_windowSeg = nullptr; // 时间跨度三档（ui/common 单一实现，M3b）
     DComboBox *m_typeBox = nullptr;
     QPushButton *m_reindex = nullptr;
+    BusyRow *m_reindexBusy = nullptr; // 忙态行（BusyRow 单点）：原「重新索引…」按钮换字收编
     TimeWindow m_window = TimeWindow::all;
 };

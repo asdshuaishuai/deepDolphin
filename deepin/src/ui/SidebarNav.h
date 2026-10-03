@@ -20,6 +20,7 @@ class QLabel;
 class QListWidget;
 class QListWidgetItem;
 class QPushButton;
+class BusyRow;
 
 namespace Dtk {
 namespace Widget {
@@ -36,7 +37,9 @@ public:
     void setProjects(const QVector<ProjectStatus> &projects, int shown, int total);
     void setAttentionCount(std::optional<int> n); // 看板行尾（不受时间窗筛选）
     void setMilestoneCount(std::optional<int> n); // 里程碑行尾（open+done；读不出 → 不显示）
-    void setStatusStrip(const QString &text, Liveness dot);
+    // busy=true 时文案前加 BusyRow 转圈（plan §3b：状态条的「正在采集…/正在检测引擎…」
+    // 忙态收编 BusyRow 单点；文案原样，M0-2 口径不动）
+    void setStatusStrip(const QString &text, Liveness dot, bool busy = false);
 
     void focusSearch(); // Ctrl+F 直达（系统 searchable 收不到外部焦点 → 自建框）
 
@@ -57,6 +60,7 @@ private:
     QListWidget *m_list = nullptr;
     QPushButton *m_addOrScan = nullptr;
     QLabel *m_statusDot = nullptr;
+    BusyRow *m_statusBusy = nullptr; // 状态条忙态转圈（BusyRow 只转圈；文案在 m_statusText）
     QLabel *m_statusText = nullptr;
 
     QVector<ProjectStatus> m_projects;

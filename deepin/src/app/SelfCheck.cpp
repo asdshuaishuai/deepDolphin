@@ -21,6 +21,7 @@
 #include "../models/StatusEnvelope.h"
 #include "../models/ToolsEnvelope.h"
 #include "../models/UpdateResult.h"
+#include "../ui/common/EmptyState.h"
 #include "../ui/common/SegmentedButton.h"
 #include <QColor>
 #include <QDateTime>
@@ -540,6 +541,18 @@ int SelfCheck::run(QStringList &log)
         check(log, "SegmentedButton sheet：选中=accent 底白字 / 未选中=bg 底 fg 字且两档互异",
             on.contains(accent.name()) && on.contains(QStringLiteral("color: white"))
                 && off.contains(bg.name()) && off.contains(fg.name()) && on != off);
+    }
+
+    // ── 12. EmptyState iconTone（M3b 组件二）：「空」与「读不出来」图标分档锁死 ──
+    {
+        // 纯字符串层（QGuiApplication 构造前可跑，不实例化控件）：tone→图标名契约——
+        // 空态=dialog-information / 读不出来=dialog-warning，两档必须互异（plan §3b
+        // 「"空"与"读不出来"在图标上区分」）。DS 取色不在其中（取色无 app 即段错误）。
+        check(log, "EmptyState iconTone：空=dialog-information / 读不出来=dialog-warning 且互异",
+            EmptyState::toneIconName(EmptyState::Tone::Empty)
+                    == QStringLiteral("dialog-information")
+                && EmptyState::toneIconName(EmptyState::Tone::Warning)
+                    == QStringLiteral("dialog-warning"));
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

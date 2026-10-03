@@ -2,6 +2,7 @@
 #include "../logic/DashFilter.h"
 #include "../logic/Derived.h"
 #include "DesignTokens.h"
+#include "common/BusyRow.h"
 #include "common/CountLabel.h"
 #include "common/SecondaryLabel.h"
 #include "common/StatusDot.h"
@@ -85,11 +86,15 @@ SidebarNav::SidebarNav(QWidget *parent)
     layout->addWidget(m_addOrScan);
     connect(m_addOrScan, &QPushButton::clicked, this, &SidebarNav::addOrScanClicked);
 
-    // ── 状态条：圆点 + 文案（正在采集…/空闲/引擎连接失败/尚未刷新）──
+    // ── 状态条：圆点 + 忙态转圈 + 文案（正在采集…/空闲/引擎连接失败/尚未刷新）──
     auto *strip = new QHBoxLayout;
     m_statusDot = new QLabel(this);
+    // 忙态转圈（BusyRow 只转圈，plan §3b 收编）：文案原样保留，转圈只加「在动」的事实
+    m_statusBusy = new BusyRow(QString(), this);
+    m_statusBusy->setBusy(false);
     m_statusText = new SecondaryLabel(m_statusTextCache, this); // 次级文字色单点（原 QSS palette(mid)）
     strip->addWidget(m_statusDot);
+    strip->addWidget(m_statusBusy);
     strip->addWidget(m_statusText);
     strip->addStretch(1);
     layout->addLayout(strip);
@@ -288,11 +293,12 @@ void SidebarNav::setMilestoneCount(std::optional<int> n)
     rebuildViewRowLabels();
 }
 
-void SidebarNav::setStatusStrip(const QString &text, Liveness dot)
+void SidebarNav::setStatusStrip(const QString &text, Liveness dot, bool busy)
 {
     m_statusTextCache = text;
     m_statusLiveness = dot;
     m_statusText->setText(text);
+    m_statusBusy->setBusy(busy); // 忙态转圈（BusyRow 单点）；关动画时退化为静态弧
     const QColor c = Derived::livenessColor(dot);
     // 汇总态大点 = dotLg（M3-5）；行内点已统一 8px（StatusDot）
     QPixmap pm(DS::Height::dotLg, DS::Height::dotLg);

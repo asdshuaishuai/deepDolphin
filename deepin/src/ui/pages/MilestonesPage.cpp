@@ -115,8 +115,8 @@ void MilestonesPage::rebuild()
 
     // ── 判定顺序（刻意）：先 failed → loading → 搜索空 → 列表 ──
     if (m_state.state == LoadState::failed) {
-        // 「读取失败」与「真的还没有里程碑」必须长得不同
-        m_bodyLayout->addWidget(new EmptyState(QStringLiteral("dialog-warning"),
+        // 「读取失败」与「真的还没有里程碑」必须长得不同（iconTone 分档，plan §3b）
+        m_bodyLayout->addWidget(new EmptyState(EmptyState::Tone::Warning,
             QStringLiteral("里程碑读不出来"), m_state.message));
         return;
     }

@@ -1,5 +1,6 @@
 #include "DualTrackButtons.h"
 #include "DesignTokens.h"
+#include "common/BusyRow.h"
 #include <DPushButton>
 #include <DSuggestButton>
 #include <QHBoxLayout>
@@ -52,6 +53,12 @@ DualTrackButtons::DualTrackButtons(QWidget *parent)
     connect(m_deep, &QPushButton::clicked, this, &DualTrackButtons::deepClicked);
     h->addWidget(m_deep);
 
+    // 忙态 = BusyRow 转圈 + 文案（plan §3b 五处 busy 表达之一，原 reflect 只静默禁用
+    // 两钮、不说「在忙」——忙态必须说出来，与决策 59 同一原则）
+    m_busyRow = new BusyRow(QStringLiteral("正在更新…"), this);
+    m_busyRow->setBusy(false);
+    h->addWidget(m_busyRow);
+
     reflect();
 }
 
@@ -80,6 +87,7 @@ void DualTrackButtons::reflect()
     m_deep->setText(QStringLiteral("深更新 %1").arg(range));
     m_shallow->setEnabled(!m_busy);
     m_deep->setEnabled(!m_busy);
+    m_busyRow->setBusy(m_busy); // 忙态说出来（转圈 + 「正在更新…」），禁用只是附带结果
     // 浅更新按钮仅在 pending>0 时显示待记录徽章
     m_badge->setText(QString::number(m_pending));
     m_badge->setVisible(m_pending > 0);

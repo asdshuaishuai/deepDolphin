@@ -1,6 +1,7 @@
 #include "TrayPopupWindow.h"
 #include "TrayGeometry.h"
 #include "../ui/DesignTokens.h"
+#include "../ui/common/BusyRow.h"
 #include "../ui/common/SecondaryLabel.h"
 #include <QApplication>
 #include <QHBoxLayout>
@@ -155,11 +156,16 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
         return;
     }
     if (snapshot.rows.isEmpty()) {
-        auto *msg = new QLabel(snapshot.busy ? QStringLiteral("读取中…")
-                                             : QStringLiteral("暂无已注册项目。运行「扫描项目」注册项目群。"),
-            m_body);
-        msg->setWordWrap(true);
-        m_bodyLayout->addWidget(msg);
+        if (snapshot.busy) {
+            // 忙态 = BusyRow 转圈 + 文案（plan §3b 五处 busy 表达之一，原「读取中…」
+            // 裸 QLabel 无 spinner——弹窗在忙时必须既说出来又看得见在动）
+            m_bodyLayout->addWidget(new BusyRow(QStringLiteral("读取中…"), m_body));
+        } else {
+            auto *msg = new QLabel(
+                QStringLiteral("暂无已注册项目。运行「扫描项目」注册项目群。"), m_body);
+            msg->setWordWrap(true);
+            m_bodyLayout->addWidget(msg);
+        }
         return;
     }
 
@@ -192,8 +198,8 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
             h->addWidget(dirty);
         }
         if (row.rowBusy) {
-            auto *busy = new SecondaryLabel(QStringLiteral("…"), line);
-            h->addWidget(busy);
+            // 行内忙 = BusyRow 只转圈不说话（紧凑位；原「…」文字散装表达收编）
+            h->addWidget(new BusyRow(QString(), line));
         }
         auto *sub = new QLabel(row.unreadable ? row.subtitle
                                               : (row.subtitle.isEmpty() ? QStringLiteral("—")

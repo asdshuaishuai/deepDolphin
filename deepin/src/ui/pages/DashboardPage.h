@@ -32,6 +32,7 @@ public:
 signals:
     void goProject(const QString &name);
     void briefRequested(); // 「项目群说明」（AI 层落地前的诚实降级在 PanelWindow 接）
+    void addScanRequested(); // 空态主 CTA「添加 / 扫描项目」（openScanDialog 在 PanelWindow 接）
 
 private:
     void rebuild();

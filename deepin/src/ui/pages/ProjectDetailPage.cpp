@@ -6,6 +6,7 @@
 #include "../../logic/MilestoneCardTitle.h"
 #include "../../platform/SysOpen.h"
 #include "../DesignTokens.h"
+#include "../common/BusyRow.h"
 #include "../common/Chip.h"
 #include "../common/ConfirmDialog.h"
 #include "../common/CountLabel.h"
@@ -144,7 +145,7 @@ void ProjectDetailPage::rebuild()
         return;
     }
     if (!m_project.has_value()) {
-        m_contentLayout->addWidget(new EmptyState(QStringLiteral("dialog-information"),
+        m_contentLayout->addWidget(new EmptyState(EmptyState::Tone::Empty,
             QStringLiteral("还没有选择项目"), QStringLiteral("从侧栏选择一个项目查看详情。")));
         return;
     }
@@ -199,10 +200,9 @@ QWidget *ProjectDetailPage::buildHeader(const ProjectStatus &p)
     }
     row1->addStretch(1);
     if (m_busy) {
-        auto *sp = new DSpinner(header);
-        sp->start();
-        sp->setFixedSize(16, 16);
-        row1->addWidget(sp);
+        // 忙态 = BusyRow 只转圈（plan §3b 收编；原 16px 手拼 DSpinner，PanelWindow
+        // setBusy 驱动的同一个忙态）
+        row1->addWidget(new BusyRow(QString(), header));
     }
     v->addLayout(row1);
 
