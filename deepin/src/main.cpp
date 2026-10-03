@@ -15,6 +15,7 @@
 #include "app/Settings.h"
 #include "app/Version.h"
 #include "platform/AppService.h"
+#include "platform/CrashHandler.h"
 #include "logic/Liveness.h"
 #include "logic/Route.h"
 #include "tray/TrayController.h"
@@ -24,6 +25,10 @@
 #include <DGuiApplicationHelper>
 #include <DLog>
 #include <QCoreApplication>
+#include <unistd.h>
+#include <QElapsedTimer>
+#include <QEventLoop>
+#include <QSystemTrayIcon>
 #include <QThread>
 #include <QTimer>
 
@@ -166,9 +171,77 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
     return rc;
 }
 
+// ── 无头平台探针（M1-9，PLAN §4.3：真机回归可断言的平台事实）──
+// 用法：deepDolphin --platform-probe（配合 QT_QPA_PLATFORM=offscreen 亦可用）。
+// 逐行 key=value 打印，供 ci.sh / 真机回归脚本 grep 断言；**只报告不断言**——
+// offscreen 下托盘 geometry 无效属预期，探针本身恒 exit 0（断言归 CI 门）。
+// stdout：
+//   backend=<QGuiApplication::platformName()>   真机 x11/wayland；离屏 offscreen
+//   trayGeometryValid=<0|1>                     真机托盘在位应为 1；offscreen 0 属预期
+//   paletteType=<unknown|light|dark>            DGuiApplicationHelper 运行期判定
+//   fontSize{Metric|SectionTitle|CardTitle|Body|Badge}Px=<px>
+//                                               DS::font 档位实际像素（T4..T8，
+//                                               DesignTokens.cpp:182 同一根系）——真机
+//                                               改控制中心字号档位后重跑，这些值应整体变大
+static int headlessPlatformProbe(int argc, char *argv[])
+{
+    int rc = 0;
+    {
+        // DApplication 而非 QGuiApplication：paletteType 与字号档位都要 DTK 配置就位才是
+        // 平台事实（与 --snapshot 同一套构造口径）。探针只读不写——不 applyThemeOverride、
+        // 不 setPalette 兜底，否则报告的就是我们伪造的状态，不是平台现状。
+        DApplication app(argc, argv);
+        app.setApplicationName(QStringLiteral("deepDolphin"));
+        app.setOrganizationName(QStringLiteral("deepin"));
+
+        fprintf(stdout, "backend=%s\n", qPrintable(QGuiApplication::platformName()));
+
+        // 托盘 geometry：先置可见才有平台集成可言；真机托盘嵌入是异步的（毫秒级），
+        // 自旋泵事件等它变有效（上限 500ms）；offscreen 无系统托盘，等满 500ms 后
+        // 如实报 0——只报告不断言（PLAN §4 注意事项 7：offscreen 托盘判定一律无效）。
+        QSystemTrayIcon tray;
+        tray.setVisible(true);
+        QElapsedTimer spin;
+        spin.start();
+        while (!tray.geometry().isValid() && spin.elapsed() < 500)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        fprintf(stdout, "trayGeometryValid=%d\n", tray.geometry().isValid() ? 1 : 0);
+
+        const auto palette = DGuiApplicationHelper::instance()->paletteType();
+        const char *paletteName = palette == DGuiApplicationHelper::LightType ? "light"
+            : palette == DGuiApplicationHelper::DarkType ? "dark"
+                                                         : "unknown";
+        fprintf(stdout, "paletteType=%s\n", paletteName);
+
+        // 字号档位：走 DS::font()（应用实际消费的同一出处，DesignTokens.cpp 档位映射），
+        // 不在此处复述 T 档映射；真机改控制中心字号档位后重跑，这些值应整体变大。
+        fprintf(stdout, "fontSizeMetricPx=%d\n", DS::font(DS::FontT::metric).pixelSize());
+        fprintf(stdout, "fontSizeSectionTitlePx=%d\n", DS::font(DS::FontT::sectionTitle).pixelSize());
+        fprintf(stdout, "fontSizeCardTitlePx=%d\n", DS::font(DS::FontT::cardTitle).pixelSize());
+        fprintf(stdout, "fontSizeBodyPx=%d\n", DS::font(DS::FontT::body).pixelSize());
+        fprintf(stdout, "fontSizeBadgePx=%d\n", DS::font(DS::FontT::badge).pixelSize());
+        fflush(stdout);
+    } // app/tray 在此正常析构：真机上托盘图标被正确摘除，不留残影
+
+    // 不能走常规 return→exit()：探针启动后 ~1s 即返回 main，进程退出时的**静态析构**
+    // 会在 DTK/DBus 全局单例收尾上无限等 futex（本容器实测 5/8 次挂死；GUI 常规退出
+    // 事件循环跑得久、异步初始化早已落地，不复现）。探针只读不写、输出已 flush、
+    // 无需收口的资源（不碰引擎子进程/Settings），::_exit 跳过静态析构是此处唯一的
+    // 确定性退出方式。代价：Qt/DTK 全局单例不走析构——对一次性只读探针无影响。
+    ::_exit(rc);
+}
+
 int main(int argc, char *argv[])
 {
-    // ── 无头分支：--selfcheck / --version / --agent-selftest（GUI 应用构造前解析）──
+    // 崩溃可观测（M4c）：装在无头分支分派之前——GUI 路径必装；无头路径
+    //（--selfcheck/--version/--platform-probe/--agent-selftest/--snapshot）也装：
+    // CI 里崩了若只留一行 "Segmentation fault" 无从排障。取舍：崩溃时 stderr
+    // 多十几行栈回溯（未开 -rdynamic，主程序帧只有地址），但退出码/信号语义
+    // 不变（打完栈恢复默认处置并 re-raise，core 照常），ci.sh 成败判定不受影响。
+    CrashHandler::install();
+
+    // ── 无头分支：--selfcheck / --version / --platform-probe / --agent-selftest
+    //（GUI 应用构造前解析——未知 flag 落进 GUI 主路径会以单实例常驻，无头 CI 挂死）──
     QStringList rawArgs;
     rawArgs.reserve(argc);
     for (int i = 0; i < argc; ++i)
@@ -186,10 +259,9 @@ int main(int argc, char *argv[])
         return 0;
     }
     if (rawArgs.contains(QStringLiteral("--platform-probe"))) {
-        // M1-9 未实现前必须在此响应亮失败：未知 flag 落进 GUI 主路径会以单实例常驻，
-        // 无头 CI（ci.sh 步骤 4）就挂死——比"探针缺功能"糟得多。
-        fprintf(stderr, "--platform-probe 尚未实现（计划任务 M1-9）\n");
-        return 2;
+        // 必须留在无头分支：否则未知 flag 落进 GUI 主路径单实例常驻，ci.sh 步骤 4 挂死
+        //（M1a 期实测）。M1-9 起返回探针事实，不再快速失败。
+        return headlessPlatformProbe(argc, argv);
     }
     const LaunchRoute preRoute = Route::parseArgs(rawArgs);
     if (preRoute.agentSelftest)

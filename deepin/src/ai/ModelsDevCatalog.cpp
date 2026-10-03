@@ -1,5 +1,6 @@
 #include "ModelsDevCatalog.h"
 #include "../app/Settings.h"
+#include <DStandardPaths>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -8,9 +9,10 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QStandardPaths>
 #include <QTimer>
 #include <algorithm>
+
+DCORE_USE_NAMESPACE
 
 ModelsDevCatalog ModelsDevCatalog::parse(const QByteArray &data)
 {
@@ -110,7 +112,7 @@ ModelsDevCatalog ModelsDevCatalog::loadCached()
 {
     // 顺序：缓存（Application Support/deepDolphin/models-dev.json）→ qrc 快照兜底。
     // mac 的顺序是缓存→bundle 快照，这里一致。
-    const QString cachePath = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+    const QString cachePath = DStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
         + QStringLiteral("/deepDolphin/models-dev.json");
     QFile cache(cachePath);
     if (cache.open(QIODevice::ReadOnly)) {
@@ -147,7 +149,7 @@ void ModelsDevCatalog::refreshAsync()
         if (ModelsDevCatalog::parse(data).providers.empty())
             return; // 解析失败不当成功
         const QString cachePath =
-            QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+            DStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
             + QStringLiteral("/deepDolphin/models-dev.json");
         QDir().mkpath(QFileInfo(cachePath).absolutePath());
         QFile cache(cachePath);

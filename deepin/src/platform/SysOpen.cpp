@@ -1,15 +1,17 @@
 #include "SysOpen.h"
+#include <DStandardPaths>
 #include <QDesktopServices>
 #include <QFileInfo>
 #include <QProcess>
-#include <QStandardPaths>
+
+DCORE_USE_NAMESPACE
 
 namespace SysOpen {
 
 void revealInFileManager(const QString &path)
 {
     const QString dir = QFileInfo(path).isDir() ? path : QFileInfo(path).absolutePath();
-    const QString fm = QStandardPaths::findExecutable(QStringLiteral("dde-file-manager"));
+    const QString fm = DStandardPaths::findExecutable(QStringLiteral("dde-file-manager"));
     if (!fm.isEmpty()) {
         QProcess::startDetached(fm, { QStringLiteral("--show-folder"), dir });
         return;
@@ -19,12 +21,12 @@ void revealInFileManager(const QString &path)
 
 void openTerminal(const QString &path)
 {
-    const QString deepinTerm = QStandardPaths::findExecutable(QStringLiteral("deepin-terminal"));
+    const QString deepinTerm = DStandardPaths::findExecutable(QStringLiteral("deepin-terminal"));
     if (!deepinTerm.isEmpty()) {
         QProcess::startDetached(deepinTerm, { QStringLiteral("-w"), path });
         return;
     }
-    const QString fallback = QStandardPaths::findExecutable(QStringLiteral("x-terminal-emulator"));
+    const QString fallback = DStandardPaths::findExecutable(QStringLiteral("x-terminal-emulator"));
     if (!fallback.isEmpty()) {
         QProcess::startDetached(fallback, { QStringLiteral("-w"), path });
         return;
