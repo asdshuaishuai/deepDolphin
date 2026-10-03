@@ -9,9 +9,12 @@
 #include "../logic/Scope.h"
 #include <QPushButton>
 #include <DPushButton>
+#include <DSuggestButton>
 #include <QWidget>
 
 class QLabel;
+
+DWIDGET_USE_NAMESPACE
 
 class DualTrackButtons : public QWidget {
     Q_OBJECT
@@ -32,7 +35,7 @@ private:
     UpdateScope m_scope;
     int m_pending = 0;
     bool m_busy = false;
-    QPushButton *m_shallow = nullptr;
-    Dtk::Widget::DPushButton *m_deep = nullptr;
+    DSuggestButton *m_shallow = nullptr;
+    DPushButton *m_deep = nullptr;
     QLabel *m_badge = nullptr;
 };

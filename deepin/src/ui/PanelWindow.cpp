@@ -27,6 +27,8 @@
 #include "pages/ProjectDetailPage.h"
 #include "pages/SetupGuidePage.h"
 #include <DGuiApplicationHelper>
+#include <DIconButton>
+#include <DPushButton>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QCursor>
@@ -48,6 +50,26 @@
 #include <memory>
 
 namespace {
+// 工具栏图标钮：主题图标在位 → DIconButton（DTK 尺寸/观感接管）；解析不到
+//（无图标主题的环境）→ 文字平钮。空按钮比非原生按钮更糟（R2 诚实降级）；
+// 真机 DDE 必有图标主题，恒走图标分支。DIconButton 不开放 setText，回退必须换类。
+QAbstractButton *makeToolButton(const QString &iconName, const QString &fallbackText,
+    const QString &tooltip)
+{
+    const QIcon icon = QIcon::fromTheme(iconName);
+    if (icon.isNull()) {
+        auto *btn = new DPushButton;
+        btn->setText(fallbackText);
+        btn->setFlat(true);
+        btn->setToolTip(tooltip);
+        return btn;
+    }
+    auto *btn = new DIconButton;
+    btn->setIcon(icon);
+    btn->setToolTip(tooltip);
+    return btn;
+}
+
 constexpr int kMinW = 940, kMinH = 620;
 constexpr int kDefaultW = 1100, kDefaultH = 720;
 constexpr int kSidebarMinWidth = 210;
@@ -107,10 +129,11 @@ void PanelWindow::buildUi()
             QColor(DS::semColor(DS::SemColor::orange)).lighter(180).name()));
     m_errorBar->setWordWrap(true);
     eh->addWidget(m_errorBar, 1);
-    auto *errClose = new QPushButton(QStringLiteral("✕"), errorRow);
-    errClose->setFlat(true);
-    errClose->setFixedWidth(28);
-    connect(errClose, &QPushButton::clicked, errorRow, &QWidget::hide);
+    QAbstractButton *errClose = makeToolButton(QStringLiteral("window-close"),
+        QStringLiteral("✕"), QStringLiteral("关闭提示"));
+    errClose->setParent(errorRow);
+    errClose->setFixedSize(28, 28);
+    connect(errClose, &QAbstractButton::clicked, errorRow, &QWidget::hide);
     eh->addWidget(errClose);
     errorRow->hide();
     m_errorBar->setProperty("hostRow", QVariant::fromValue<QWidget *>(errorRow));
@@ -509,26 +532,23 @@ void PanelWindow::buildMenu()
         // 工具栏**只挂一处**：刷新 / AI 助手 / AI 设置 / 搜索。
         // 【偏差记录】双轨按钮按 PLAN §2.6 同时列在「工具栏」与 WorkBar 两处；
         // 为守「全量更新入口唯一」红线（§3.3-1），只保留 WorkBar 一处（与范围选择器同排）。
-        auto *refresh = new QPushButton(this);
-        refresh->setText(QStringLiteral("刷新"));
-        refresh->setFlat(true);
-        refresh->setToolTip(QStringLiteral("刷新（Ctrl+R）"));
-        connect(refresh, &QPushButton::clicked, this, [this] { m_model->refreshAll(); });
-        auto *agentBtn = new QPushButton(this);
+        // 标准动作 = DIconButton（图标走 freedesktop 主题名；尺寸 DStyle::PM_IconButtonIconSize
+        // 由 DTK 样式接管）。图标名解析不到（无图标主题的环境）退回文字平钮——空按钮
+        // 比非原生按钮更糟（R2 诚实降级）。「AI 助手」无 freedesktop 标准图标名，恒文字钮。
+        QAbstractButton *refresh = makeToolButton(QStringLiteral("view-refresh"),
+            QStringLiteral("刷新"), QStringLiteral("刷新（Ctrl+R）"));
+        connect(refresh, &QAbstractButton::clicked, this, [this] { m_model->refreshAll(); });
+        auto *agentBtn = new DPushButton(this);
         agentBtn->setText(QStringLiteral("AI 助手"));
         agentBtn->setFlat(true);
         agentBtn->setToolTip(QStringLiteral("AI 助手对话"));
         connect(agentBtn, &QPushButton::clicked, this, &PanelWindow::showAgentDialog);
-        auto *settingsBtn = new QPushButton(this);
-        settingsBtn->setIcon(QIcon::fromTheme(QStringLiteral("preferences-system")));
-        settingsBtn->setFlat(true);
-        settingsBtn->setToolTip(QStringLiteral("设置（Ctrl+,）"));
-        connect(settingsBtn, &QPushButton::clicked, this, &PanelWindow::showSettings);
-        auto *searchBtn = new QPushButton(this);
-        searchBtn->setText(QStringLiteral("搜索项目"));
-        searchBtn->setFlat(true);
-        searchBtn->setToolTip(QStringLiteral("搜索（Ctrl+F，焦点送进侧栏搜索框）"));
-        connect(searchBtn, &QPushButton::clicked, this, [this] { m_sidebar->focusSearch(); });
+        QAbstractButton *settingsBtn = makeToolButton(QStringLiteral("preferences-system"),
+            QStringLiteral("设置"), QStringLiteral("设置（Ctrl+,）"));
+        connect(settingsBtn, &QAbstractButton::clicked, this, &PanelWindow::showSettings);
+        QAbstractButton *searchBtn = makeToolButton(QStringLiteral("system-search"),
+            QStringLiteral("搜索"), QStringLiteral("搜索（Ctrl+F，焦点送进侧栏搜索框）"));
+        connect(searchBtn, &QAbstractButton::clicked, this, [this] { m_sidebar->focusSearch(); });
         tb->addWidget(refresh);
         tb->addWidget(agentBtn);
         tb->addWidget(settingsBtn);

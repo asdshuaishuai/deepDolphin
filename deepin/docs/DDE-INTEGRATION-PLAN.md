@@ -292,7 +292,7 @@ done; done
 - [x] M0-9 关键路径日志 + journal appender + 「打开日志目录」（§10 2026-10-03；journalctl 真机检索待真机复验）
 
 ### M1 DTK 原生化
-- [~] M1a 控件替换表：**AI 设置页一行 + 输入件批已完成**（DPasswordEdit/DLineEdit×7/DComboBox×4/DTextEdit×3/DSpinBox/DProgressBar×2/DScrollArea×5）；按钮批（DPushButton/DWarningButton/DIconButton/DSuggestButton）与容器/视图批（DListView/DTreeView/DBlurEffectWidget/DButtonBox）未做
+- [~] M1a 控件替换表：**AI 设置页一行 + 输入件批 + 按钮批已完成**（DPasswordEdit/DLineEdit×7/DComboBox×4/DTextEdit×3/DSpinBox/DProgressBar×2/DScrollArea×5/DPushButton×4/DWarningButton/DIconButton×4/DSuggestButton）；容器/视图批（DListView/DTreeView/DBlurEffectWidget/DButtonBox）未做。偏差两处：「AI 助手」与待记录徽章保持文字钮/语义色 QSS（freedesktop 无对应图标名/DTipLabel 承载不了语义色）
 - [ ] M1-1 `QStandardPaths` → `DStandardPaths`
 - [ ] M1-2 统一 `platform::icon()`（fallback 链 + 缺失告警 + DDciIcon 优先）
 - [ ] M1-3 托盘迁移 SNI（`KStatusNotifierItem` 或最小 SNI 服务）
@@ -353,6 +353,7 @@ done; done
 - `2026-10-04 | orchestrator | M0-5 | EngineCli::runSync 改 200ms 切片等待，取消旗标置位 → terminate（2s→kill）+ makeCancelled；AgentCore 把 cancelled 穿透 runEngineRaw/loadToolManifest/executeTool（10 工具全覆盖）；AgentDialog 停止文案改「正在停止…（运行中的引擎调用将被终止）」+ tooltip；原先旗标只在轮间检查，agent 跑 deep（600s 预算）时点停止要等子进程跑完 | build 通过、selfcheck 58/58、--agent-selftest exit 0（README 决策 70） | 真机「deep 途中停止 ≤200ms 收 SIGTERM」待真机复验`
 - `2026-10-04 | orchestrator | M0-4 | AIConfig::loadKey 去掉内部 Settings 读（明文回退键改调用方显式传入）；新增 loadAiConfigWithFallbackKey（GUI 线程读 Settings 身份+明文回退）+ loadAiKeyInWorker（worker 只做同步 libsecret 读）；8 处 worker（AppModel 定时简报/摘要/批量×2、AgentDialog probe/send、PanelWindow brief、AiSettingsPane 测试连接、AiSettingsDialog key 回填）全部改为「GUI 线程快照按值带进 worker」——worker 0 处直接碰 Settings 单例 | build 通过、selfcheck 58/58、--agent-selftest exit 0、offscreen 快照正常（README 决策 71） | 运行期 QSettings 跨线程告警消失的最终确认待真机`
 - `2026-10-04 | orchestrator | M1a(输入件) | QPlainTextEdit/QTextEdit→DTextEdit×3（AgentDialog 输入框/详情页 git 输出/新建里程碑描述）、QLineEdit→DLineEdit×4（里程碑搜索/提交信息框/添加项目名/AddMilestoneDialog 名称+tag）、QComboBox→DComboBox×3、QSpinBox→DSpinBox、QProgressBar→DProgressBar×2、QScrollArea→DScrollArea×5（DTK6 中即 QScrollArea 别名，dwidgetstype.h:87，换名表意）；--platform-probe 未实现前响应亮失败 exit 2（原先未知 flag 落进 GUI 主路径单实例常驻，ci.sh 步骤 4 挂死）| ci.sh 全绿（selfcheck 58/58 + 截图矩阵重拍 + agent-selftest exit 0）；基线 8 张随 DTK 观感更新 | DLineEdit 无 returnPressed：提交框回车改接 lineEdit()；connect 信号一律 &DLineEdit::textChanged`
+- `2026-10-04 | orchestrator | M1a(按钮) | MilestoneRowWidget 达成/重开→DPushButton、删除→DWarningButton（DTK6 无 text 构造，setText；自带警示红，删掉手写红 QSS）；PanelWindow 工具栏 刷新/设置/搜索/✕→DIconButton、AI 助手→DPushButton；DualTrackButtons 主操作→DSuggestButton（容器内 palette 不自洽才上 DS:: 兜底 QSS，判据与 main 同探针）| ci.sh 全绿（58/58 + 矩阵重拍 + selftest exit 0）| 两偏差：AI 助手无 freedesktop 图标名恒文字钮；无图标主题环境 makeToolButton 退文字平钮（DIconButton 不开放 setText，回退必须换类）——真机图标分支待真机目视`
 - （示例，可删）`2026-xx-xx | <agent> | M3-1 | 表面三级接 applicationPalette；--selfcheck 55/55 通过；截图基线 docs/snapshots/dark-dashboard.png 已更新 | AgentDialog 固定尺寸待 M3c 处理`
 
 ---

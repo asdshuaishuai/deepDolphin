@@ -1,8 +1,13 @@
 #include "MilestoneRowWidget.h"
+#include <DPushButton>
+#include <DWarningButton>
 #include "../../logic/Derived.h"
 #include "../DesignTokens.h"
 #include "../common/Chip.h"
 #include <QContextMenuEvent>
+
+DWIDGET_USE_NAMESPACE
+
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenu>
@@ -162,22 +167,22 @@ void MilestoneRowWidget::setMilestone(const Milestone &m, bool showProjectName)
     auto *actions = new QHBoxLayout;
     actions->setSpacing(DS::Spacing::xs);
     if (m_isOpen) {
-        auto *done = new QPushButton(QStringLiteral("达成"), this);
+        auto *done = new DPushButton(QStringLiteral("达成"), this);
         done->setFlat(true);
         connect(done, &QPushButton::clicked, this,
             [this] { emit doneClicked(m_project, m_name); });
         actions->addWidget(done);
     } else if (!m_isUnknown && !m_isDropped) {
-        auto *reopen = new QPushButton(QStringLiteral("重开"), this);
+        auto *reopen = new DPushButton(QStringLiteral("重开"), this);
         reopen->setFlat(true);
         connect(reopen, &QPushButton::clicked, this,
             [this] { emit reopenClicked(m_project, m_name); });
         actions->addWidget(reopen);
     }
-    auto *remove = new QPushButton(QStringLiteral("删除"), this);
+    // 破坏性动作 = DWarningButton（DTK 语义件自带警示红，不再手写色值）
+    auto *remove = new DWarningButton(this); // DTK6 只有默认构造（dwarningbutton.h:16）
+    remove->setText(QStringLiteral("删除"));
     remove->setFlat(true);
-    remove->setStyleSheet(
-        QStringLiteral("QPushButton { color: %1; }").arg(DS::semColor(DS::SemColor::red).name()));
     connect(remove, &QPushButton::clicked, this,
         [this] { emit removeClicked(m_project, m_name); });
     actions->addWidget(remove);
