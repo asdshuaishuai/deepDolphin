@@ -595,6 +595,171 @@ func theOnDiskFixtureActuallyExercisesTheNotesPath(): Unit {
     }
 }
 
+// ---------------------------------------------------------------------------
+// mergeHint / dirty / manifests —— 三个真实存在、而本端一度当它们不存在的键
+// ---------------------------------------------------------------------------
+
+/// 真实载荷逐字截取（`moonpainter`）。关键形状：
+/// **一个可合并分支都没有**，工作区干净、没有 stash ——
+/// 只看分支与脏度的判据会把它显示成「一切正常」，
+/// 而它其实欠着一次 154 个提交的 fast-forward。
+private let REAL_MERGE_HINT_PROJECT = """
+{"storeHealth":"ok","name":"moonpainter","path":"/tmp/moonpainter","kind":"git",
+ "userDirtyCount":0,"untrackedCount":0,"stashCount":0,"worktreeCount":1,"commitCount":155,
+ "tags":[],"manifests":["package.json"],
+ "mergeHint":{"kind":"fast-forward","ahead":154,"behind":0,"defaultBranch":"main",
+   "target":"dev","description":"main 可直接 fast-forward 到 dev（154 个新提交）"},
+ "dirty":{"clean":false,"ok":true,"staged":0,"modified":2,"untracked":1,"conflicts":3,
+   "total":6,"files":["agent/index.js","docs/plan.md","package.json"]},
+ "branches":[{"name":"main","status":"idle","statusLabel":"闲置","isCurrent":true,"isDefault":true,
+   "aheadOfDefault":0,"merged":false}],"overall":{}}
+"""
+
+@Test
+func aFastForwardableBranchIsAnActionEvenWithNoMergeCandidateBranch(): Unit {
+    // 这条是 `mergeHint` 存在的全部理由。原来的注释断言这个键不存在，
+    // 理由是「实测 33 个键」—— 量的是**载荷夹具**，不是真实输出。
+    // 真实输出里本机 15 个项目有 3 个带它。
+    let p = Project.from(Json.parse(REAL_MERGE_HINT_PROJECT).getOrThrow())
+    // 前置事实：这个项目确实「没有别的信号」
+    @Expect(p.userDirtyCount == 0)
+    @Expect(p.untrackedCount == 0)
+    @Expect(p.stashCount == 0)
+    var candidates: Int64 = 0
+    for (b in p.branches) {
+        if (b.isMergeCandidate()) { candidates += 1 }
+    }
+    @Expect(candidates == 0)
+    // 但它欠着一次合并 —— 少了这条判据它显示成「一切正常」
+    @Expect(projectNeedsAction(p))
+    match (p.mergeHint) {
+        case Some(h) =>
+            @Expect(h.kind == "fast-forward")
+            @Expect(h.ahead == 154)
+            @Expect(h.behind == 0)
+            @Expect(h.target == "dev")
+            @Expect(h.description.contains("154"))
+        case None => @Expect(false)
+    }
+    // `merged` 是「已经合过了」，不是待办
+    @Expect(!MergeHint.from(Json.parse(
+        """
+        {"kind":"merged","ahead":0,"behind":0}
+        """).getOrThrow()).actionable())
+    // 没有 mergeHint 时判据不受影响
+    let bare = Project.from(Json.parse(
+        """
+        {"name":"b","path":"/tmp/b","userDirtyCount":0,"untrackedCount":0,"stashCount":0,"branches":[]}
+        """).getOrThrow())
+    @Expect(!projectNeedsAction(bare))
+}
+
+@Test
+func dirtyDisclosurePutsConflictsFirstAndNeverReportsZeroWhenUnreadable(): Unit {
+    let p = Project.from(Json.parse(REAL_MERGE_HINT_PROJECT).getOrThrow())
+    match (p.dirtyInfo) {
+        case Some(d) =>
+            @Expect(d.readable())
+            @Expect(d.conflicts == 3)
+            // 冲突（会丢代码的那种）必须压在最前面，混进「N 处未提交」
+            // 会被当成一条普通改动
+            let line = dirtyLine(d)
+            @Expect(line.startsWith("6 处未提交"))
+            @Expect(line.contains("⚠ 冲突 3"))
+            // 仓颉的 `indexOf` 返回 `Option<Int64>`，不能直接比大小 ——
+            // 先确认两段都在（都在才谈得上谁在前），再解包比下标。
+            @Expect(line.contains("已修改"))
+            @Expect(line.contains("未跟踪"))
+            let iConflict = line.indexOf("冲突").getOrThrow()
+            let iModified = line.indexOf("已修改").getOrThrow()
+            @Expect(iConflict < iModified)
+            // 「哪几个文件」也要能拿到，且截断自报
+            @Expect(dirtyFilesLine(d).contains("agent/index.js"))
+        case None => @Expect(false)
+    }
+    // ⚠ 下面是**防御性**断言，不是实测形状：本机 13 个 `dirty` 对象
+    // **全是 `ok=true`**，引擎没发过 `ok=false`。但字段在代码里存在、
+    // 读不出来时又必须与「干净」分开，所以这条留着。
+    // （别把 `ok=false` 写进夹具去「演示」它 —— 夹具里没有的形状
+    // 就是没有，本轮 mergeHint 那条注释就是这么错的。）
+    let blind = DirtyInfo(false, 0, 0, 0, 0, 0, ArrayList<String>())
+    @Expect(dirtyLine(blind).contains("读不出来"))
+    @Expect(dirtyFilesLine(blind).isEmpty())
+    // 真的干净就说干净
+    let clean = DirtyInfo(true, 0, 0, 0, 0, 0, ArrayList<String>())
+    @Expect(dirtyLine(clean), "工作区干净")
+}
+
+@Test
+func readOnlyFactsDoNotOccupySpaceWhenTheyAreEmptyAndSayHowManyTheyHid(): Unit {
+    // 空数组**不占位**：画一个空的「标签」行只会让人以为这里本来该有东西而没采到。
+    @Expect(projectFactsLine("标签", ArrayList<String>()).isEmpty())
+    @Expect(projectFactsLine("依赖清单", ArrayList<String>()).isEmpty())
+
+    let two = ArrayList<String>()
+    two.add("package.json")
+    two.add("Cargo.toml")
+    @Expect(projectFactsLine("依赖清单", two), "依赖清单：package.json、Cargo.toml")
+
+    // 静默截会让人以为标签只有前几个 —— 必须自报
+    let many = ArrayList<String>()
+    for (i in 0..10) {
+        many.add("t${i}")
+    }
+    let line = projectFactsLine("标签", many)
+    @Expect(line.startsWith("标签：t0、t1"))
+    @Expect(line.contains("还有 2 个"))
+}
+
+@Test
+func theFixtureCarriesMergeHintAndDirtySoThosePathsAreActuallyDrawn(): Unit {
+    // 与 `theOnDiskFixtureActuallyExercisesTheNotesPath` 同一条道理：
+    // 布局自查靠快照，通路写了而夹具里没有这个形状，就永远没有证据说它工作过。
+    match (readTextFileOf("tests/fixtures/status.json")) {
+        case Some(text) =>
+            let snap = StatusSnapshot.from(Json.parse(text).getOrThrow())
+            var hints: Int64 = 0
+            var dirties: Int64 = 0
+            var manifests: Int64 = 0
+            for (p in snap.projects) {
+                match (p.mergeHint) {
+                    case Some(h) => if (h.actionable()) { hints += 1 }
+                    case None => ()
+                }
+                match (p.dirtyInfo) {
+                    case Some(d) => if (d.readable()) { dirties += 1 }
+                    case None => ()
+                }
+                if (!p.manifests.isEmpty()) { manifests += 1 }
+            }
+            @Expect(hints >= 1)
+            @Expect(dirties >= 1)
+            @Expect(manifests >= 1)
+            // 还要保证夹具里**至少有一个项目只靠 mergeHint 一个信号**。
+            // 否则「未跟踪 1」会先把 needsAction 置真，截图看上去
+            // 待处理徽标亮着，而它其实与 mergeHint 无关 ——
+            // 夹具会替这段代码说它工作过，而它没被验证过。
+            var onlySignal: Int64 = 0
+            for (p in snap.projects) {
+                match (p.mergeHint) {
+                    case Some(h) =>
+                        if (!h.actionable()) { continue }
+                        if (p.userDirtyCount != 0 || p.untrackedCount != 0 || p.stashCount != 0) {
+                            continue
+                        }
+                        var cands: Int64 = 0
+                        for (b in p.branches) {
+                            if (b.isMergeCandidate()) { cands += 1 }
+                        }
+                        if (cands == 0) { onlySignal += 1 }
+                    case None => ()
+                }
+            }
+            @Expect(onlySignal >= 1)
+        case None => @Expect(false)
+    }
+}
+
 /// 空路径**不许**把进程带崩。
 ///
 /// `Path("")` 在仓颉里抛 `IllegalArgumentException`。而 `locateEngine`

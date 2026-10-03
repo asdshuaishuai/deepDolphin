@@ -11,6 +11,143 @@ package deepdolphin_linux
 
 import std.collection.*
 
+/// 引擎给的合并提示。**它真的在载荷里** —— 本机 15 个项目里 3 个有值：
+/// `deepOrca` / `moonviz` / `moonpainter`。
+///
+/// ⚠⚠ 本文件原先有条注释断言「`status --json` 的项目键里根本没有 `mergeHint`
+/// （实测 33 个键）」，于是这条通路被**当成死代码**整条删掉了。
+/// 那次「实测」量的是 `model_test.cj` 的**载荷夹具**，不是真实输出 ——
+/// 与 markdown 夹具栽的是同一个坑。载荷里没有 ≠ 引擎不发；
+/// 夹具没写 ≠ 引擎没有。
+public class MergeHint {
+    /// `fast-forward` / `merge` / `merged`
+    public let kind: String
+    public let ahead: Int64
+    public let behind: Int64
+    public let defaultBranch: String
+    public let target: String
+    /// 引擎写好的整句人话。**优先用它**，不要在客户端重拼 ——
+    /// 「需三方合并（领先 20 / 落后 4）」这种口径只有引擎知道。
+    public let description: String
+
+    public init(kind: String, ahead: Int64, behind: Int64,
+        defaultBranch: String, target: String, description: String) {
+        this.kind = kind
+        this.ahead = ahead
+        this.behind = behind
+        this.defaultBranch = defaultBranch
+        this.target = target
+        this.description = description
+    }
+
+    /// 这条提示要不要占位。`merged` 是「已经合过了」，不是待办。
+    public func actionable(): Bool {
+        return this.kind == "merge" || this.kind == "fast-forward"
+    }
+
+    public static func from(v: JsonValue): MergeHint {
+        return MergeHint(
+            Json.strAt(v, "kind", ""),
+            Json.intAt(v, "ahead", 0),
+            Json.intAt(v, "behind", 0),
+            Json.strAt(v, "defaultBranch", ""),
+            Json.strAt(v, "target", ""),
+            Json.strAt(v, "description", "")
+        )
+    }
+}
+
+/// 引擎判的**工作区脏度**（与 `userDirtyCount` 是两个口径）。
+///
+/// 上面那排内联统计的「未提交 / 未跟踪」是**用户改的**，
+/// 这个对象是**引擎读到的**，带 `ok` —— 读不出来时 `ok` 缺席或 false，
+/// 底下所有数字都不可信。两行数字并排却不标口径，用户会以为它们矛盾。
+public class DirtyInfo {
+    /// 引擎是否成功读到工作区。**非 true ⇒ 下面所有数字都不可信。**
+    public let ok: Bool
+    public let total: Int64
+    public let modified: Int64
+    public let staged: Int64
+    public let untracked: Int64
+    /// 冲突数。会**丢代码**的那种，必须压在披露最前面单独说。
+    public let conflicts: Int64
+    /// 脏文件路径。引擎给的，可能含目录。
+    public let files: ArrayList<String>
+
+    public init(ok: Bool, total: Int64, modified: Int64, staged: Int64,
+        untracked: Int64, conflicts: Int64, files: ArrayList<String>) {
+        this.ok = ok
+        this.total = total
+        this.modified = modified
+        this.staged = staged
+        this.untracked = untracked
+        this.conflicts = conflicts
+        this.files = files
+    }
+
+    public func readable(): Bool {
+        return this.ok
+    }
+
+    public static func from(v: JsonValue): DirtyInfo {
+        return DirtyInfo(
+            Json.boolAt(v, "ok", false),
+            Json.intAt(v, "total", 0),
+            Json.intAt(v, "modified", 0),
+            Json.intAt(v, "staged", 0),
+            Json.intAt(v, "untracked", 0),
+            Json.intAt(v, "conflicts", 0),
+            Json.strArrAt(v, "files")
+        )
+    }
+}
+
+/// 人话版脏度披露。**读不出来时必须说读不出来，不能报 0。**
+///
+/// 与 macOS 端 `Models.swift` 的 `DirtyInfo.dirtyLine` 同一条规则。
+/// 分档不是装饰：冲突（`conflicts > 0`）是会丢代码的那种，
+/// 混在「N 处未提交」里会被当成一条普通改动。
+public func dirtyLine(d: DirtyInfo): String {
+    if (!d.readable()) {
+        return "工作区读不出来（文件数不可信）"
+    }
+    if (d.total <= 0) {
+        return "工作区干净"
+    }
+    let parts = ArrayList<String>()
+    if (d.conflicts > 0) { parts.add("⚠ 冲突 ${d.conflicts}") }
+    if (d.staged > 0) { parts.add("已暂存 ${d.staged}") }
+    if (d.modified > 0) { parts.add("已修改 ${d.modified}") }
+    if (d.untracked > 0) { parts.add("未跟踪 ${d.untracked}") }
+    if (parts.isEmpty()) {
+        return "${d.total} 处未提交"
+    }
+    return "${d.total} 处未提交（${joinList(parts.toArray())}）"
+}
+
+/// 哪些文件脏。`dirtyLine` 说的是「几处」，用户要动手时需要「哪几个」。
+///
+/// 截断必须自报：静默砍掉前 8 个会让人以为只脏了这几个。
+public func dirtyFilesLine(d: DirtyInfo): String {
+    if (!d.readable() || d.files.isEmpty()) {
+        return ""
+    }
+    let cap: Int64 = 8
+    let sb = StringBuilder()
+    var i: Int64 = 0
+    for (f in d.files) {
+        if (i >= cap) { break }
+        if (i > 0) { sb.append(" · ") }
+        sb.append(f)
+        i += 1
+    }
+    let hidden = d.files.size - cap
+    if (hidden > 0) {
+        sb.append(" · 还有 ${hidden} 个")
+    }
+    return sb.toString()
+}
+
 /// 一个分支的进度行。
 public class Branch {
     public let name: String
@@ -151,6 +288,18 @@ public class Project {
     /// 引擎算了、模型收了、界面不说 ⇒ 等于没算。macOS 端
     /// `DetailViews.swift:282` 有这条通路，本端原先**一个字段都没有**。
     public let overallNotes: ArrayList<String>
+    /// 引擎给的合并提示。`None` = 引擎这次没报（大多数项目）。
+    ///
+    /// ⚠ 载荷里**真的有**这个键，本机 15 个项目里 3 个有值。
+    /// 少了它：一个 154 个提交可直接 fast-forward、却没有任何可合并分支的
+    /// 仓库（实测 `moonpainter`），界面上**一个字提示都没有** ——
+    /// 而这是用户最想知道的那句话。
+    public let mergeHint: Option<MergeHint>
+    /// 引擎判的工作区脏度。`None` = 引擎没发这个对象。
+    public let dirtyInfo: Option<DirtyInfo>
+    /// 依赖清单（`package.json` / `Package.swift` / `Cargo.toml` / `moon.mod.json`）。
+    /// 空数组**不占位**（实测刚注册的项目就是空）。
+    public let manifests: ArrayList<String>
 
     public init(
         name: String,
@@ -179,7 +328,10 @@ public class Project {
         progressUpdatedAt: String,
         warnings: ArrayList<String>,
         overallSummary: String,
-        overallNotes!: ArrayList<String> = ArrayList<String>()
+        overallNotes!: ArrayList<String> = ArrayList<String>(),
+        mergeHint!: Option<MergeHint> = None,
+        dirtyInfo!: Option<DirtyInfo> = None,
+        manifests!: ArrayList<String> = ArrayList<String>()
     ) {
         this.name = name
         this.path = path
@@ -208,6 +360,9 @@ public class Project {
         this.warnings = warnings
         this.overallSummary = overallSummary
         this.overallNotes = overallNotes
+        this.mergeHint = mergeHint
+        this.dirtyInfo = dirtyInfo
+        this.manifests = manifests
     }
 
     /// 采集失败的项目：分支/提交/文档全是空的，但**必须留在列表里**。
@@ -318,6 +473,28 @@ public class Project {
             // 之类会静默拿到空，而那恰好与非 git 项目的真实输出**长得一样**：
             // 「读不出来」与「确实没有」被画成同一张脸。
             overallNotes: Json.strArrAt(overall, "notes"),
+            // ⚠ 三个键都**真的在真实载荷里**（本机 15 个项目实测：
+            //    mergeHint 3 个、dirty 13 个、manifests 8 个）。
+            //
+            // 「引擎没发」与「引擎发了个 null」要分开：前者是 None，
+            // 后者会解出一个全零的 MergeHint，界面上画出一条
+            // 「可快进」而 description 是空串 —— 比不画更糟。
+            // 所以这里用 `asObj` 把非对象一律当「没发」。
+            mergeHint: (match (Json.get(v, "mergeHint")) {
+                case Some(mh) => (match (Json.asObj(mh)) {
+                    case Some(_) => Some(MergeHint.from(mh))
+                    case None => None
+                })
+                case None => None
+            }),
+            dirtyInfo: (match (Json.get(v, "dirty")) {
+                case Some(dt) => (match (Json.asObj(dt)) {
+                    case Some(_) => Some(DirtyInfo.from(dt))
+                    case None => None
+                })
+                case None => None
+            }),
+            manifests: Json.strArrAt(v, "manifests")
         )
     }
 }
@@ -800,13 +977,19 @@ public func boardColumnOf(l: Liveness): BoardColumn {
 
 /// 有没有东西等着动手。
 ///
-/// ⚠ macOS 端这里还有一条 `mergeHint?.kind == "merge" || == "fast-forward"`。
-/// **本端不抄那条**：`status --json` 的项目键里**根本没有 `mergeHint`**
-/// （实测 33 个键，见 model_test.cj 的载荷夹具），macOS 端把它解成可选、
-/// 在真实载荷下恒为 nil，那条分支**从来没被触发过**。
-/// 照抄等于把一段死代码搬过来冒充能力。待合入的判定走
-/// `branches[].isMergeCandidate`（`aheadOfDefault > 0 && !isDefault && !merged`），
-/// 那条是真有数据的。
+/// ⚠ 这条原先**故意少抄了** macOS 端的一条
+/// （`mergeHint?.kind == "merge" || == "fast-forward"`），
+/// 理由写的是「`status --json` 的项目键里根本没有 `mergeHint`」
+/// —— **那句是错的**。那次「实测 33 个键」量的是 `model_test.cj` 的
+/// **载荷夹具**，不是真实输出。本机 `moongit status --json` 里
+/// 15 个项目有 3 个带 `mergeHint`（`deepOrca` / `moonviz` / `moonpainter`）。
+///
+/// 载荷里没有 ≠ 引擎不发；夹具没写 ≠ 引擎没有。删一条通路之前，
+/// 判据得建立在**真实载荷**上，不是夹具上。
+///
+/// 实测的量化后果：`moonpainter` 有 154 个提交可直接 fast-forward、
+/// 却**没有任何可合并分支** —— 只看分支的话它显示成「一切正常」，
+/// 而它其实欠着一次合并。macOS 端把它算进待处理。
 public func projectNeedsAction(p: Project): Bool {
     if (p.userDirtyCount > 0 || p.untrackedCount > 0 || p.stashCount > 0) {
         return true
@@ -816,7 +999,10 @@ public func projectNeedsAction(p: Project): Bool {
             return true
         }
     }
-    return false
+    match (p.mergeHint) {
+        case Some(h) => return h.actionable()
+        case None => return false
+    }
 }
 
 public func branchIsMergeCandidate(b: Branch): Bool {

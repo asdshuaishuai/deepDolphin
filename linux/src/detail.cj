@@ -238,6 +238,32 @@ private func pulseCard(model: AppModel, p: Project, now: Int64, dark: Bool): Uni
     Panel {
         VStack {
             dsCardTitle("工程脉搏")
+            // 合并提示**顶在最前面**。它是这张卡里唯一一句「现在该动手做什么」的话，
+            // 埋在中间会被当背景噪音。实测 moonpainter 有 154 个提交可直接
+            // fast-forward 却没有任何可合并分支 —— 少了这一条它显示成「一切正常」。
+            match (p.mergeHint) {
+                case Some(h) =>
+                    if (h.actionable()) {
+                        // fast-forward 绿 / merge 橙，与 macOS 端
+                        // `DetailViews.swift:355` 的取色同一条。
+                        // `DsAlert` 只有 Info/Warn/Error 三档、没有「好」，
+                        // 所以这里不用 `dsAlertPill`（它按档取色），
+                        // 改用 `dsTinted` 自己上色。
+                        let tint = (if (h.kind == "fast-forward") { C_SHALLOW } else { C_ORANGE })
+                        Panel {
+                            HStack {
+                                dsPill(
+                                    (if (h.kind == "fast-forward") { "可快进" } else { "需合并" }),
+                                    tint, dark)
+                                // 用引擎写好的整句，不在客户端重拼 ——
+                                // 「需三方合并（领先 20 / 落后 4）」这种口径只有引擎知道。
+                                Flexible { Label(h.description).fontSize(12.0).wrap() }
+                            }.spacing(8.0.vp).hug()
+                        }.style(dsTinted(tint, dark)).contentPadding(10.vp).hug()
+                        Divider()
+                    }
+                case None => ()
+            }
             Divider()
             // ⚠ Spacer 只能有**一个且放最后**。
             //
@@ -269,6 +295,39 @@ private func pulseCard(model: AppModel, p: Project, now: Int64, dark: Bool): Uni
                 Divider()
                 Label(dsStatLine(p.userDirtyCount, "未提交改动")).fontSize(12.0)
                     .foregroundColor(dsColor(dsStatColor(dsStatFrom(p.userDirtyCount))))
+            }
+            // `dirty` 是**另一个口径**：上面那排数字是「用户改的」，
+            // 这个对象是**引擎读到的**（带 `ok` —— 读不出来时底下数字全是 0）。
+            // 两行数字并排却不标口径，用户会以为它们矛盾。
+            // 冲突（会丢代码的那种）由 `dirtyLine` 压在最前面单独说。
+            match (p.dirtyInfo) {
+                case Some(d) =>
+                    Divider()
+                    HStack {
+                        dsAlertPill("引擎口径", DsAlert.Info, dark)
+                        Flexible { Label(dirtyLine(d)).fontSize(12.0).wrap() }
+                    }.spacing(8.0.vp).hug()
+                    let files = dirtyFilesLine(d)
+                    if (!files.isEmpty()) {
+                        Label(files).fontSize(11.0).muted().wrap()
+                    }
+                case None => ()
+            }
+            // tags / manifests 是引擎给的「这是个什么项目」的事实。
+            // 实测刚注册的项目两个都是空数组，所以空数组**一律不占位** ——
+            // 画一个空的「标签」行只会让人以为这里本来该有东西而没采到。
+            let tagLine = projectFactsLine("标签", p.tags)
+            let manifestLine = projectFactsLine("依赖清单", p.manifests)
+            if (!tagLine.isEmpty() || !manifestLine.isEmpty()) {
+                Divider()
+                VStack {
+                    if (!tagLine.isEmpty()) {
+                        Label(tagLine).fontSize(12.0).wrap()
+                    }
+                    if (!manifestLine.isEmpty()) {
+                        Label(manifestLine).fontSize(12.0).wrap()
+                    }
+                }.spacing(3.0.vp).crossAxisAlignment(CrossAxisAlignment.Start).hug()
             }
             Divider()
             // 只说一遍。引擎的 `lastCommitAgo` 是给人看的相对串，
@@ -414,6 +473,33 @@ public func commitTypeNotes(p: Project, shown: Int64): Array<String> {
 /// 与 `commitTypes` 的原始词表不是一套。
 public func overallSummaryShows(p: Project): Bool {
     return p.commitTypes.isEmpty() && !p.overallSummary.isEmpty()
+}
+
+/// 一行「标题：值、值、值」。tags / manifests 共用。
+///
+/// ⚠ 不用胶囊也不用按钮：这两样都是**只读事实**，
+/// 做成可点/有底色的样子会让人以为点得动。
+/// 一行放不下必须截断**并说「还有 N 个」** —— 静默截会让人以为标签只有前几个。
+public func projectFactsLine(title: String, values: ArrayList<String>): String {
+    if (values.isEmpty()) {
+        return ""
+    }
+    let cap: Int64 = 8
+    let sb = StringBuilder()
+    sb.append(title)
+    sb.append("：")
+    var i: Int64 = 0
+    for (v in values) {
+        if (i >= cap) { break }
+        if (i > 0) { sb.append("、") }
+        sb.append(v)
+        i += 1
+    }
+    let hidden = values.size - cap
+    if (hidden > 0) {
+        sb.append("、还有 ${hidden} 个")
+    }
+    return sb.toString()
 }
 
 /// 卡 3：提交改动（git 动作）。**紧跟页头那一排按钮**，

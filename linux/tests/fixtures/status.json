@@ -7,21 +7,26 @@
       "path": "/tmp/dg-rich-src/atlas",
       "kind": "git",
       "remote": "",
-      "tags": [],
+      "tags": [
+        "v0.9",
+        "wip"
+      ],
       "headline": "main: 活跃",
       "currentBranch": "main",
       "defaultBranch": "main",
       "dirty": {
         "clean": false,
         "ok": true,
-        "staged": 0,
+        "staged": 1,
         "modified": 2,
-        "untracked": 0,
-        "conflicts": 0,
-        "total": 2,
+        "untracked": 1,
+        "conflicts": 2,
+        "total": 4,
         "files": [
           "AGENTS.md",
-          "README.md"
+          "README.md",
+          "src/panel.cj",
+          "src/view.cj"
         ]
       },
       "userDirtyCount": 0,
@@ -164,7 +169,9 @@
           "exists": true
         }
       ],
-      "manifests": [],
+      "manifests": [
+        "package.json"
+      ],
       "commitTypes": [
         {
           "type": "feat",
@@ -446,16 +453,14 @@
       "currentBranch": "main",
       "defaultBranch": "main",
       "dirty": {
-        "clean": false,
+        "clean": true,
         "ok": true,
         "staged": 0,
         "modified": 0,
-        "untracked": 1,
+        "untracked": 0,
         "conflicts": 0,
-        "total": 1,
-        "files": [
-          "README.md"
-        ]
+        "total": 0,
+        "files": []
       },
       "userDirtyCount": 0,
       "stashCount": 0,
@@ -465,63 +470,12 @@
       "branches": [
         {
           "name": "main",
-          "status": "stale",
-          "statusLabel": "停滞",
-          "head": "e6c21d8f73e813bc7d326d4a2f41d9118de38e84",
-          "headShort": "e6c21d8f",
-          "headDate": "2026-09-10T10:00:00+08:00",
-          "headAgo": "23 天前",
-          "headSubject": "feat(beacon): 第 9 次改动",
-          "summary": "最近 9 个提交：新增×3、修复×2、文档×2、其他1类×2",
-          "highlights": [
-            "新增：“第 9 次改动”",
-            "修复：“第 8 次改动”",
-            "文档：“第 7 次改动”",
-            "构建/依赖：“第 6 次改动”",
-            "新增：“第 5 次改动”",
-            "（另有 4 个提交未展开，见 journal）"
-          ],
-          "nextSteps": [
-            "分支已多日无提交，确认是否合并或关闭"
-          ],
-          "aheadOfDefault": 0,
-          "merged": false,
-          "pendingCommits": 0,
-          "baselineReset": false,
-          "provider": "rules",
+          "status": "idle",
+          "statusLabel": "闲置",
           "isCurrent": true,
           "isDefault": true,
-          "updatedAt": "2026-10-03T12:36:55.808847+08:00",
-          "staleDays": 23
-        },
-        {
-          "name": "feature/b1",
-          "status": "active",
-          "statusLabel": "活跃",
-          "head": "e68e08de9a7768fee9d2636277ef9430b4210ac8",
-          "headShort": "e68e08de",
-          "headDate": "2026-10-02T10:00:00+08:00",
-          "headAgo": "1 天前",
-          "headSubject": "feat(beacon): 分支 b1 的改动",
-          "summary": "最近 10 个提交：新增×4、修复×2、文档×2、其他1类×2",
-          "highlights": [
-            "新增：“分支 b1 的改动”",
-            "新增：“第 9 次改动”",
-            "修复：“第 8 次改动”",
-            "文档：“第 7 次改动”",
-            "构建/依赖：“第 6 次改动”",
-            "（另有 5 个提交未展开，见 journal）"
-          ],
-          "nextSteps": [],
-          "aheadOfDefault": 1,
-          "merged": false,
-          "pendingCommits": 0,
-          "baselineReset": false,
-          "provider": "rules",
-          "isCurrent": false,
-          "isDefault": false,
-          "updatedAt": "2026-10-03T12:36:55.845762+08:00",
-          "staleDays": 1
+          "aheadOfDefault": 0,
+          "merged": false
         }
       ],
       "repoBranchCount": 2,
@@ -535,7 +489,9 @@
           "exists": true
         }
       ],
-      "manifests": [],
+      "manifests": [
+        "Cargo.toml"
+      ],
       "commitTypes": [
         {
           "type": "feat",
@@ -555,7 +511,7 @@
         }
       ],
       "commitTypesTruncated": false,
-      "untrackedCount": 1,
+      "untrackedCount": 0,
       "worktreeCount": 1,
       "progress": {
         "updatedAt": "2026-10-03T12:36:55.848038+08:00",
@@ -775,7 +731,15 @@
       "journalLimit": 8,
       "journalUnparsableLines": 0,
       "warnings": [],
-      "fetchedAt": "2026-10-03T14:30:33.597321+08:00"
+      "fetchedAt": "2026-10-03T14:30:33.597321+08:00",
+      "mergeHint": {
+        "kind": "fast-forward",
+        "ahead": 9,
+        "behind": 0,
+        "defaultBranch": "main",
+        "target": "feat/panel",
+        "description": "main 可直接 fast-forward 到 feat/panel（9 个新提交）"
+      }
     },
     {
       "storeHealth": "ok",
@@ -1080,7 +1044,15 @@
       "journalLimit": 8,
       "journalUnparsableLines": 0,
       "warnings": [],
-      "fetchedAt": "2026-10-03T14:30:33.596956+08:00"
+      "fetchedAt": "2026-10-03T14:30:33.596956+08:00",
+      "mergeHint": {
+        "kind": "merge",
+        "ahead": 6,
+        "behind": 2,
+        "defaultBranch": "main",
+        "target": "release/1.0",
+        "description": "需三方合并（领先 6 / 落后 2）"
+      }
     },
     {
       "storeHealth": "ok",
@@ -1251,7 +1223,9 @@
         ]
       },
       "docs": [],
-      "manifests": [],
+      "manifests": [
+        "moon.mod.json"
+      ],
       "commitTypes": [],
       "commitTypesTruncated": false,
       "untrackedCount": 1,
