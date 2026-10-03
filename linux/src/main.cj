@@ -98,6 +98,14 @@ main(args: Array<String>): Int64 {
             case Some(r) => goView(model, sectionIndexOf(r))
             case None => ()
         }
+        // 自查开关：直接打开某个 AI 面板。
+        // 与 DD_SNAP_ROOT 同一族用途 —— CUI 快照只在启动即拍，
+        // 没有这个开关，AI 面板就只能靠「代码读着像对的」来相信。
+        // 走 `openAIPane` 而不是直接写 `aiPane`，与其他入口同一条路。
+        let aiPane = (getVariable("DD_SNAP_AI") ?? "").trimAscii()
+        if (aiPane == "chat" || aiPane == "settings") {
+            openAIPane(model, if (aiPane == "chat") { 1 } else { 2 })
+        }
         let proj = (getVariable("DD_SNAP_PROJECT") ?? "").trimAscii()
         if (!proj.isEmpty()) {
             // 同理：走 `applyScope`，别自己拼那三个字段

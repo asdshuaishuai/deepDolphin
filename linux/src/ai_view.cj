@@ -62,7 +62,10 @@ public func aiChatPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
             Button("关闭", {=> closeAIPane(model)}).fontSize(12.0)
         }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
         Divider()
-        Flexible { aiTranscriptView(model, dark) }
+        // ⚠ 不要用 `Flexible { … }` 包住内容区。
+        // 实测：那样内容区会被顶到**输入框上面** —— VStack 里的顺序变成
+        // 「标题 / 输入框 / 内容」。要撑满剩余空间用控件自己的 `.flex()`。
+        aiTranscriptView(model, dark)
         Divider()
         aiComposer(model, app, dark)
     }.spacing(0.vp)
@@ -120,15 +123,20 @@ public func aiMessageText(m: ChatMessage): String {
 private func aiTranscriptView(model: AppModel, dark: Bool): Unit {
     match (model.aiTranscript.value) {
         case None =>
+            // 空态用 HStack + Spacer 做水平居中：VStack 的
+            // `crossAxisAlignment(Center)` 不会把「按内容宽度」的 Label 撑开居中，
+            // 实际渲染出来那段文字是**贴左边**的（快照实测）。
             Panel {
-                VStack {
+                HStack {
                     Spacer()
-                    Label("还没聊过").fontSize(15.0).muted()
-                    Label("问项目群现状、问某个项目的分支、让它跑一次浅更新。\n" +
-                        "它只根据引擎返回的事实回答 —— 工具没给的数据，它会说「不知道」。")
-                        .fontSize(12.0).muted().wrap()
+                    VStack {
+                        Label("还没聊过").fontSize(15.0).muted()
+                        Label("问项目群现状、问某个项目的分支、让它跑一次浅更新。\n" +
+                            "它只根据引擎返回的事实回答 —— 工具没给的数据，它会说「不知道」。")
+                            .fontSize(12.0).muted().wrap().width(520.0.vp)
+                    }.spacing(6.vp)
                     Spacer()
-                }.spacing(6.vp).crossAxisAlignment(CrossAxisAlignment.Center)
+                }.spacing(0.vp)
             }.style(dsSurface(DsLevel.Card, dark)).contentPadding(24.0.vp).flex()
         case Some(list) =>
             ScrollView(key: "dd-ai-scroll") {
@@ -152,9 +160,17 @@ public func canSendAI(model: AppModel): Bool {
     return !model.actionBusy.value && !model.aiDraft.value.trimAscii().isEmpty()
 }
 
+/// 输入区。
+///
+/// ⚠ `TextArea` **必须定高**，而且整行用 `.hug()`。
+/// 只写 `.flex()`（撑满剩余空间）时，快照实测：输入框**纵向也撑满了整个主区**，
+/// 消息流被顶到窗口外面 —— 画面上只剩一个巨大的空输入框。
+/// 「看起来顺序不对」的现象，根因是这块控件在抢高度，不是布局顺序。
+/// 三行高足够写一个具体问题；再高就该拖窗口了。
 private func aiComposer(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     HStack {
-        TextArea(model.aiDraft, key: "dd-ai-draft").placeholder("问点什么…").wrap().flex()
+        TextArea(model.aiDraft, key: "dd-ai-draft").placeholder("问点什么…").wrap()
+            .height(72.0.vp).flex()
         Button("发送", {=> sendAI(app, model)}, role: ButtonRole.Primary)
             .fontSize(12.0).enabled(canSendAI(model))
     }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.End).hug()
@@ -232,30 +248,38 @@ private func aiSettingsBody(model: AppModel, app: DesktopApp, dark: Bool): Unit 
             if (!cat.isEmpty()) {
                 aiProblemCard("模型目录不可用", cat, dark)
             }
-            aiField("Provider", aiProviderRow(model, dark), dark,
+            aiField("Provider", {=> aiProviderRow(model, dark)}, dark,
                 "目录里共 ${cov.total} 家，其中 ${cov.withEndpoint} 家有可用端点。" +
                 (if (cov.cut) { cov.note } else { "已全部列出。" }))
-            aiField("模型", aiModelRow(model, dark), dark,
+            aiField("模型", {=> aiModelRow(model, dark)}, dark,
                 "只列支持原生工具调用的模型 —— 不支持的模型在第一轮提问就会撞墙。" +
                 "也可以在右边手填模型 id。")
-            aiField("API Key", aiKeyRow(model, dark), dark,
+            aiField("API Key", {=> aiKeyRow(model, dark)}, dark,
                 "优先存系统钥匙串（libsecret）。没有钥匙串时退到 600 权限的文件 —— " +
                 "那种情况下面会写明，不静默降级。")
-            aiField("Base URL（留空 = 用目录里的端点）", aiBaseURLRow(model, dark), dark,
+            aiField("Base URL（留空 = 用目录里的端点）", {=> aiBaseURLRow(model, dark)}, dark,
                 "只接受 https，或 127.0.0.1 / localhost 的 http（本地模型）。")
             aiKeyStoreCard(dark)
-            aiField("开机自启", aiAutostartRow(model, app, dark), dark,
+            aiField("开机自启", {=> aiAutostartRow(model, app, dark)}, dark,
                 "写 XDG 的 ~/.config/autostart/deepdolphin.desktop。开关读的是**系统真值**，不是上次点了什么。")
             aiTestCard(model, app, dark)
         }.spacing(10.0.vp)
     }.flex()
 }
 
-private func aiField(label: String, body: Widget, dark: Bool, note: String): Unit {
+/// 一个带标题 + 控件 + 说明的字段块。
+///
+/// ⚠ `body` 收**闭包**而不是 `Widget`。
+/// 收 Widget 时（`aiField("Provider", aiProviderRow(model, dark), …)`），
+/// `aiProviderRow` 会在**实参求值**的那一刻就把控件发射到**外层**的 VStack ——
+/// 快照实测的结果是每个字段的控件都跑到了自己标题的**上方**，
+/// 标题与说明留在一个空 Panel 里。
+/// CUI 的 DSL 是「调用即发射」，所以要让它落在 Panel 内部就必须延迟到闭包里。
+private func aiField(label: String, body: () -> Unit, dark: Bool, note: String): Unit {
     Panel {
         VStack {
             Label(label).fontSize(12.0).fontWeight(FontWeight.semiBold)
-            body
+            body()
             Label(note).fontSize(10.0).muted().wrap()
         }.spacing(4.0.vp).hug()
     }.style(dsSurface(DsLevel.Card, dark)).contentPadding(10.0.vp).hug()
@@ -289,7 +313,10 @@ private func aiProviderRow(model: AppModel, dark: Bool): Widget {
     for (p in list) {
         labels.add("${p.name}（${p.id} · ${p.models.size} 模型）")
     }
-    return Flexible { Dropdown(labels.toArray(), model.aiProviderIndex, key: "dd-ai-provider").flex() }
+    // ⚠ 不要包 `Flexible`。它在 `VStack` 里会抢走布局 —— 控件被提到 Panel 之外、
+    // 渲染到**标题上方**（快照实测：五个字段全中这个症状）。
+    // `Dropdown` 自己 `.flex()` 就够。
+    return Dropdown(labels.toArray(), model.aiProviderIndex, key: "dd-ai-provider").flex()
 }
 
 private func aiModelRow(model: AppModel, dark: Bool): Widget {
@@ -302,7 +329,7 @@ private func aiModelRow(model: AppModel, dark: Bool): Widget {
     let picker: Widget = (if (models.isEmpty()) {
         Label("先选一个 provider").fontSize(12.0).muted()
     } else {
-        Flexible { Dropdown(labels.toArray(), model.aiModelIndex, key: "dd-ai-model").flex() }
+        Dropdown(labels.toArray(), model.aiModelIndex, key: "dd-ai-model").flex()
     })
     return HStack {
         picker
