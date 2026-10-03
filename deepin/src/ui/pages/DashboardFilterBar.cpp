@@ -17,7 +17,8 @@ QString segSheet(bool checked)
             + QStringLiteral("QPushButton { background: %1; color: white; }")
                   .arg(DS::semColor(DS::SemColor::accent).name());
     return base.arg(DS::Radius::chip)
-        + QStringLiteral("QPushButton { background: palette(midlight); color: palette(text); }");
+        + QStringLiteral("QPushButton { background: %1; color: %2; }")
+              .arg(DS::surfaceAlt().name(), DS::textPrimary().name());
 }
 } // namespace
 

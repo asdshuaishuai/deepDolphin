@@ -12,13 +12,18 @@ const int kHours[] = { 0, 1, 3, 6, 12, 24 };
 const char *kLabels[] = { "关闭", "每 1 小时", "每 3 小时", "每 6 小时", "每 12 小时",
     "每 24 小时" };
 
+// 自包含（坑 #3 的反面教材位：跨函数 .arg 曾让 %1 落空刷告警）；未选中档从 DS::*
+// 取值（原 palette(midlight)/palette(text)——与全仓同一颜色语言）
 QString segSheet(bool checked)
 {
     const QString base = QStringLiteral(
-        "QPushButton { border: none; border-radius: %1px; padding: 3px 12px; }");
+        "QPushButton { border: none; border-radius: %1px; padding: 3px 12px; }")
+        .arg(DS::Radius::chip);
     if (checked)
-        return base + QStringLiteral("QPushButton { background: %2; color: white; }");
-    return base + QStringLiteral("QPushButton { background: palette(midlight); color: palette(text); }");
+        return base + QStringLiteral("QPushButton { background: %1; color: white; }")
+            .arg(DS::semColor(DS::SemColor::accent).name());
+    return base + QStringLiteral("QPushButton { background: %1; color: %2; }")
+        .arg(DS::surfaceAlt().name(), DS::textPrimary().name());
 }
 } // namespace
 
@@ -77,9 +82,7 @@ void AutomationPane::reflect(int hours)
     for (int i = 0; i < 6; ++i) {
         if (QAbstractButton *b = m_group->button(i)) {
             b->setChecked(kHours[i] == hours);
-            b->setStyleSheet(segSheet(kHours[i] == hours)
-                    .arg(DS::Radius::chip)
-                    .arg(DS::semColor(DS::SemColor::accent).name()));
+            b->setStyleSheet(segSheet(kHours[i] == hours));
         }
     }
     m_current->setText(hours <= 0

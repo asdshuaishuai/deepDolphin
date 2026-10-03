@@ -83,7 +83,7 @@ SidebarNav::SidebarNav(QWidget *parent)
     auto *strip = new QHBoxLayout;
     m_statusDot = new QLabel(this);
     m_statusText = new QLabel(m_statusTextCache, this);
-    m_statusText->setStyleSheet(QStringLiteral("color: palette(mid);"));
+    DS::tagSecondaryStyle(m_statusText); // 次级文字色单点（原 QSS palette(mid)）
     strip->addWidget(m_statusDot);
     strip->addWidget(m_statusText);
     strip->addStretch(1);
@@ -97,7 +97,7 @@ SidebarNav::SidebarNav(QWidget *parent)
         f.setBold(true);
         item->setFont(f);
         item->setData(kRoleIsHeader, true);
-        item->setForeground(palette().mid());
+        item->setForeground(QBrush(DS::textSecondary())); // 原 palette().mid()：与全仓同一颜色语言
     };
     addHeader(QStringLiteral("视图"));
     const QVector<QPair<QString, Selection::Kind>> views = {

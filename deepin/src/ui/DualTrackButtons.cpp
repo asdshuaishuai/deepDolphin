@@ -15,7 +15,7 @@ DualTrackButtons::DualTrackButtons(QWidget *parent)
     h->setSpacing(DS::Spacing::xs);
 
     // 主操作 = DSuggestButton（DTK 推荐按钮：真机上是强调色实底，与 DDE 内建应用同源，
-    // 且随系统强调色走——手写 #0081FF 做不到）。dev 容器 chameleon 插件不加载时
+    // 且随系统强调色走——手写死蓝值做不到）。dev 容器 chameleon 插件不加载时
     // DSuggestButton 画成白底白字（真机截图实证），此时才上 DS:: 取值的兜底 QSS
     //（原则 R2：兜底只准从 DS::* 取值）；判据与 main 的调色板兜底同一探针。
     m_shallow = new DSuggestButton(this);

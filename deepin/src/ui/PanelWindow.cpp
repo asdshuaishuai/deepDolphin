@@ -112,7 +112,8 @@ void PanelWindow::buildUi()
     m_routeNotice = new QLabel(central);
     m_routeNotice->setObjectName(QStringLiteral("routeNotice"));
     m_routeNotice->setStyleSheet(
-        QStringLiteral("QLabel#routeNotice { background: palette(midlight); padding: 6px 12px; }"));
+        QStringLiteral("QLabel#routeNotice { background: %1; padding: 6px 12px; }")
+            .arg(DS::surfaceAlt().name()));
     m_routeNotice->setWordWrap(true);
     m_routeNotice->setVisible(false);
     v->addWidget(m_routeNotice);

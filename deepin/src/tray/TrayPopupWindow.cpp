@@ -1,4 +1,5 @@
 #include "TrayPopupWindow.h"
+#include "../ui/DesignTokens.h"
 #include <QApplication>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -30,7 +31,8 @@ TrayPopupWindow::TrayPopupWindow(QWidget *parent)
     m_title->setFont(titleFont);
     m_summary = new QLabel(this);
     m_summary->setWordWrap(true);
-    m_summary->setStyleSheet(QStringLiteral("color: palette(mid);"));
+    m_summary->setStyleSheet(
+        QStringLiteral("color: %1;").arg(DS::textSecondary().name()));
     m_refreshBtn = new QPushButton(QStringLiteral("刷新"), this);
     m_refreshBtn->setFlat(true);
     header->addWidget(m_title);
@@ -186,25 +188,31 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
         // ●N 橙 chip（userDirtyCount>0）
         if (row.dirty > 0) {
             auto *dirty = new QLabel(QStringLiteral("●%1").arg(row.dirty), line);
-            dirty->setStyleSheet(QStringLiteral("color: #F59E0B;"));
+            dirty->setStyleSheet(
+                QStringLiteral("color: %1;").arg(DS::semColor(DS::SemColor::orange).name()));
             h->addWidget(dirty);
         }
         if (row.rowBusy) {
             auto *busy = new QLabel(QStringLiteral("…"), line);
-            busy->setStyleSheet(QStringLiteral("color: palette(mid);"));
+            busy->setStyleSheet(
+                QStringLiteral("color: %1;").arg(DS::textSecondary().name()));
             h->addWidget(busy);
         }
         auto *sub = new QLabel(row.unreadable ? row.subtitle
                                               : (row.subtitle.isEmpty() ? QStringLiteral("—")
                                                                         : row.subtitle),
             line);
-        sub->setStyleSheet(row.unreadable ? QStringLiteral("color: #DC2626;")
-                                          : QStringLiteral("color: palette(mid);"));
+        // 红 = 语义红单点（tray 层不得持有色值，D2 grep 门）；次级 = DS 单点
+        sub->setStyleSheet(row.unreadable
+                ? QStringLiteral("color: %1;").arg(DS::semColor(DS::SemColor::red).name())
+                : QStringLiteral("color: %1;").arg(DS::textSecondary().name()));
         h->addWidget(sub, 1);
         if (row.pending > 0) {
             // 右侧 pendingCommits 数字（蓝）+ 迷你进度条（min(pending,10)/10，宽 44）
             auto *pending = new QLabel(QStringLiteral("+%1").arg(row.pending), line);
-            pending->setStyleSheet(QStringLiteral("color: #1E6FEB;"));
+            // 语义 accent 单点（此前的私有蓝值是审计点名的“第二种蓝”，归并）
+            pending->setStyleSheet(
+                QStringLiteral("color: %1;").arg(DS::semColor(DS::SemColor::accent).name()));
             h->addWidget(pending);
             auto *bar = new QLabel(line);
             bar->setFixedSize(44, 4);
@@ -235,7 +243,8 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
         auto *more = new QLabel(
             QStringLiteral("还有 %1 个项目，打开面板查看…").arg(snapshot.rows.size() - kMaxRows),
             m_body);
-        more->setStyleSheet(QStringLiteral("color: palette(mid);"));
+        more->setStyleSheet(
+            QStringLiteral("color: %1;").arg(DS::textSecondary().name()));
         m_bodyLayout->addWidget(more);
     }
 }
