@@ -88,6 +88,7 @@ add_executable(deepDolphin
     # ── platform/ ──
     src/platform/AppService.cpp
     src/platform/AutostartManager.cpp
+    src/platform/CrashHandler.cpp
     src/platform/IconLoader.cpp
     src/platform/SysOpen.cpp
     # ── tray/ ──

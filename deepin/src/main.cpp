@@ -15,6 +15,7 @@
 #include "app/Settings.h"
 #include "app/Version.h"
 #include "platform/AppService.h"
+#include "platform/CrashHandler.h"
 #include "logic/Liveness.h"
 #include "logic/Route.h"
 #include "tray/TrayController.h"
@@ -232,6 +233,13 @@ static int headlessPlatformProbe(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
+    // 崩溃可观测（M4c）：装在无头分支分派之前——GUI 路径必装；无头路径
+    //（--selfcheck/--version/--platform-probe/--agent-selftest/--snapshot）也装：
+    // CI 里崩了若只留一行 "Segmentation fault" 无从排障。取舍：崩溃时 stderr
+    // 多十几行栈回溯（未开 -rdynamic，主程序帧只有地址），但退出码/信号语义
+    // 不变（打完栈恢复默认处置并 re-raise，core 照常），ci.sh 成败判定不受影响。
+    CrashHandler::install();
+
     // ── 无头分支：--selfcheck / --version / --platform-probe / --agent-selftest
     //（GUI 应用构造前解析——未知 flag 落进 GUI 主路径会以单实例常驻，无头 CI 挂死）──
     QStringList rawArgs;
