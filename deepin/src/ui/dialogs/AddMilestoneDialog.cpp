@@ -2,13 +2,13 @@
 #include <QAbstractButton>
 #include "../DesignTokens.h"
 #include <QCheckBox>
-#include <QComboBox>
+#include <DComboBox>
 #include <QDateEdit>
 #include <QFormLayout>
 #include <QLabel>
-#include <QLineEdit>
+#include <DLineEdit>
 #include <QPushButton>
-#include <QTextEdit>
+#include <DTextEdit>
 #include <QVBoxLayout>
 
 AddMilestoneDialog::AddMilestoneDialog(QWidget *parent, const QStringList &projects,
@@ -24,7 +24,7 @@ AddMilestoneDialog::AddMilestoneDialog(QWidget *parent, const QStringList &proje
     auto *form = new QFormLayout(content);
     form->setSpacing(DS::Spacing::sm);
 
-    m_project = new QComboBox(content);
+    m_project = new DComboBox(content);
     m_project->addItems(projects);
     if (!defaultProject.isEmpty()) {
         const int idx = m_project->findText(defaultProject);
@@ -33,12 +33,12 @@ AddMilestoneDialog::AddMilestoneDialog(QWidget *parent, const QStringList &proje
     }
     form->addRow(QStringLiteral("项目"), m_project);
 
-    m_name = new QLineEdit(content);
+    m_name = new DLineEdit(content);
     m_name->setPlaceholderText(QStringLiteral("里程碑名称"));
     m_name->setClearButtonEnabled(true);
     form->addRow(QStringLiteral("名称"), m_name);
 
-    m_tag = new QLineEdit(content);
+    m_tag = new DLineEdit(content);
     m_tag->setPlaceholderText(QStringLiteral("tag 存在即自动达成（可选）"));
     m_tag->setClearButtonEnabled(true);
     form->addRow(QStringLiteral("绑定 tag"), m_tag);
@@ -57,7 +57,7 @@ AddMilestoneDialog::AddMilestoneDialog(QWidget *parent, const QStringList &proje
     dh->addWidget(m_date, 1);
     form->addRow(QString(), dateRow);
 
-    m_desc = new QTextEdit(content);
+    m_desc = new DTextEdit(content);
     m_desc->setPlaceholderText(QStringLiteral("描述（可选）"));
     m_desc->setFixedHeight(64);
     form->addRow(QStringLiteral("描述"), m_desc);
@@ -77,7 +77,7 @@ AddMilestoneDialog::AddMilestoneDialog(QWidget *parent, const QStringList &proje
     // 「创建」仅在 project 与 name 非空时可用（defaultAction 的可用性纪律）
     if (QAbstractButton *create = getButton(1))
         create->setEnabled(false);
-    connect(m_name, &QLineEdit::textChanged, this, [this](const QString &t) {
+    connect(m_name, &DLineEdit::textChanged, this, [this](const QString &t) {
         if (QAbstractButton *create = getButton(1))
             create->setEnabled(!t.trimmed().isEmpty()
                 && !m_project->currentText().trimmed().isEmpty());

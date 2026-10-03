@@ -4,11 +4,11 @@
 // 失败红字贴表单下**不关窗**；日期格式 yyyy-MM-dd。
 #pragma once
 #include <DDialog>
+#include <DComboBox>
+#include <DLineEdit>
+#include <DTextEdit>
 #include <QDate>
 
-class QComboBox;
-class QLineEdit;
-class QTextEdit;
 class QCheckBox;
 class QDateEdit;
 class QLabel;
@@ -30,11 +30,11 @@ public:
     void setError(const QString &message);
 
 private:
-    QComboBox *m_project = nullptr;
-    QLineEdit *m_name = nullptr;
-    QLineEdit *m_tag = nullptr;
+    DComboBox *m_project = nullptr;
+    DLineEdit *m_name = nullptr;
+    DLineEdit *m_tag = nullptr;
     QCheckBox *m_hasDate = nullptr;
     QDateEdit *m_date = nullptr;
-    QTextEdit *m_desc = nullptr;
+    DTextEdit *m_desc = nullptr;
     QLabel *m_error = nullptr;
 };

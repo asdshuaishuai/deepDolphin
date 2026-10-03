@@ -6,7 +6,7 @@
 #include "../DesignTokens.h"
 #include "../common/EmptyState.h"
 #include <DSpinner>
-#include <QComboBox>
+#include <DComboBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -26,11 +26,11 @@ MilestonesPage::MilestonesPage(QWidget *parent)
 
     // 工具行：搜索「里程碑名称」+ 新建里程碑（标题栏不放——1100pt 下会被压成图标）
     auto *tools = new QHBoxLayout;
-    auto *search = new QLineEdit(this);
+    auto *search = new DLineEdit(this);
     search->setPlaceholderText(QStringLiteral("搜索里程碑名称"));
     search->setClearButtonEnabled(true);
     search->setMaximumWidth(280);
-    connect(search, &QLineEdit::textChanged, this, [this](const QString &t) {
+    connect(search, &DLineEdit::textChanged, this, [this](const QString &t) {
         m_query = t;
         rebuild();
     });
@@ -47,7 +47,7 @@ MilestonesPage::MilestonesPage(QWidget *parent)
     auto *filterRow = new QHBoxLayout;
     filterRow->setSpacing(DS::Spacing::sm);
     filterRow->addWidget(new QLabel(QStringLiteral("仓库"), this));
-    m_projectBox = new QComboBox(this);
+    m_projectBox = new DComboBox(this);
     m_projectBox->setMaxVisibleItems(20);
     m_projectBox->setMinimumContentsLength(24);
     m_projectBox->setSizeAdjustPolicy(QComboBox::AdjustToContents);

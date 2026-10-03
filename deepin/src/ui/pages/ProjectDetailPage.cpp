@@ -23,7 +23,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
-#include <QProgressBar>
+#include <DProgressBar>
 #include <QPushButton>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -58,7 +58,7 @@ ProjectDetailPage::ProjectDetailPage(QWidget *parent)
 {
     auto *outer = new QVBoxLayout(this);
     outer->setContentsMargins(0, 0, 0, 0);
-    m_scroll = new QScrollArea(this);
+    m_scroll = new DScrollArea(this);
     m_scroll->setFrameShape(QFrame::NoFrame);
     m_scroll->setWidgetResizable(true);
     m_content = new QWidget(this);
@@ -330,7 +330,7 @@ QWidget *ProjectDetailPage::buildCommitCard()
     v->addWidget(title);
 
     auto *row = new QHBoxLayout;
-    m_commitInput = new QLineEdit(card);
+    m_commitInput = new DLineEdit(card);
     m_commitInput->setPlaceholderText(QStringLiteral("提交信息（提交全部改动）"));
     m_commitInput->setEnabled(!m_busy);
     row->addWidget(m_commitInput, 1);
@@ -367,7 +367,7 @@ QWidget *ProjectDetailPage::buildCommitCard()
         });
         head->addWidget(clear);
         gv->addLayout(head);
-        auto *output = new QPlainTextEdit(m_gitOutputHost);
+        auto *output = new DTextEdit(m_gitOutputHost);
         output->setPlainText(m_gitOutput.output);
         output->setReadOnly(true);
         output->setMaximumHeight(130);
@@ -391,7 +391,7 @@ QWidget *ProjectDetailPage::buildCommitCard()
             emit gitOpRequested(QStringLiteral("commit"), m_name, msg);
     };
     connect(m_commitBtn, &QPushButton::clicked, this, doCommit);
-    connect(m_commitInput, &QLineEdit::returnPressed, this, doCommit); // 回车也触发
+    connect(m_commitInput->lineEdit(), &QLineEdit::returnPressed, this, doCommit); // 回车也触发（DLineEdit 转发内层输入框）
     return card;
 }
 
@@ -683,7 +683,7 @@ QWidget *ProjectDetailPage::buildMilestoneCard()
     auto *rateRow = new QHBoxLayout;
     if (decided > 0) {
         const int pct = qRound(t.done * 100.0 / decided);
-        auto *bar = new QProgressBar(card);
+        auto *bar = new DProgressBar(card);
         bar->setRange(0, 100);
         bar->setValue(pct);
         bar->setTextVisible(false);

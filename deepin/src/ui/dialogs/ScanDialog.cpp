@@ -79,7 +79,7 @@ ScanDialog::ScanDialog(QWidget *parent)
     m_addPath->setPlaceholderText(QStringLiteral("/home/me/work/my-project"));
     av->addWidget(m_addPath);
     av->addWidget(new QLabel(QStringLiteral("项目名（可选；缺省用目录名）"), addPage));
-    m_addName = new QLineEdit(addPage);
+    m_addName = new DLineEdit(addPage);
     m_addName->setPlaceholderText(QStringLiteral("my-project"));
     av->addWidget(m_addName);
     av->addStretch(1);
@@ -95,7 +95,7 @@ ScanDialog::ScanDialog(QWidget *parent)
     sv->addWidget(m_scanRoot);
     auto *depthRow = new QHBoxLayout;
     depthRow->addWidget(new QLabel(QStringLiteral("扫描深度"), scanPage));
-    m_depth = new QSpinBox(scanPage);
+    m_depth = new DSpinBox(scanPage);
     m_depth->setRange(1, 6);
     m_depth->setValue(2);
     depthRow->addWidget(m_depth);

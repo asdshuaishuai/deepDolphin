@@ -292,7 +292,7 @@ done; done
 - [x] M0-9 关键路径日志 + journal appender + 「打开日志目录」（§10 2026-10-03；journalctl 真机检索待真机复验）
 
 ### M1 DTK 原生化
-- [~] M1a 控件替换表：**AI 设置页一行已完成**（DPasswordEdit + DLineEdit×3 + DComboBox×2 + DPushButton），其余未做
+- [~] M1a 控件替换表：**AI 设置页一行 + 输入件批已完成**（DPasswordEdit/DLineEdit×7/DComboBox×4/DTextEdit×3/DSpinBox/DProgressBar×2/DScrollArea×5）；按钮批（DPushButton/DWarningButton/DIconButton/DSuggestButton）与容器/视图批（DListView/DTreeView/DBlurEffectWidget/DButtonBox）未做
 - [ ] M1-1 `QStandardPaths` → `DStandardPaths`
 - [ ] M1-2 统一 `platform::icon()`（fallback 链 + 缺失告警 + DDciIcon 优先）
 - [ ] M1-3 托盘迁移 SNI（`KStatusNotifierItem` 或最小 SNI 服务）
@@ -352,6 +352,7 @@ done; done
 - `2026-10-04 | orchestrator | M0-6 | AppModel 新增 refreshAllFinished(bool)：仅全量链（status→dashboard→milestones，含失败短路）收尾发；refreshCycleFinished 保留给托盘/侧栏（轻刷新照发）；updateAll 的 m_bulkGate 闸门改接 refreshAllFinished——此前接 refreshCycleFinished，300s 轻刷新收尾会在全量刷新落地前放行闸门 → 冻结名单漏掉刚注册的仓库 | build 通过、selfcheck 58/58（纯信号改接，无视觉变化，无截图矩阵） | 定时批量更新的真机 300s 窗口复验待真机`
 - `2026-10-04 | orchestrator | M0-5 | EngineCli::runSync 改 200ms 切片等待，取消旗标置位 → terminate（2s→kill）+ makeCancelled；AgentCore 把 cancelled 穿透 runEngineRaw/loadToolManifest/executeTool（10 工具全覆盖）；AgentDialog 停止文案改「正在停止…（运行中的引擎调用将被终止）」+ tooltip；原先旗标只在轮间检查，agent 跑 deep（600s 预算）时点停止要等子进程跑完 | build 通过、selfcheck 58/58、--agent-selftest exit 0（README 决策 70） | 真机「deep 途中停止 ≤200ms 收 SIGTERM」待真机复验`
 - `2026-10-04 | orchestrator | M0-4 | AIConfig::loadKey 去掉内部 Settings 读（明文回退键改调用方显式传入）；新增 loadAiConfigWithFallbackKey（GUI 线程读 Settings 身份+明文回退）+ loadAiKeyInWorker（worker 只做同步 libsecret 读）；8 处 worker（AppModel 定时简报/摘要/批量×2、AgentDialog probe/send、PanelWindow brief、AiSettingsPane 测试连接、AiSettingsDialog key 回填）全部改为「GUI 线程快照按值带进 worker」——worker 0 处直接碰 Settings 单例 | build 通过、selfcheck 58/58、--agent-selftest exit 0、offscreen 快照正常（README 决策 71） | 运行期 QSettings 跨线程告警消失的最终确认待真机`
+- `2026-10-04 | orchestrator | M1a(输入件) | QPlainTextEdit/QTextEdit→DTextEdit×3（AgentDialog 输入框/详情页 git 输出/新建里程碑描述）、QLineEdit→DLineEdit×4（里程碑搜索/提交信息框/添加项目名/AddMilestoneDialog 名称+tag）、QComboBox→DComboBox×3、QSpinBox→DSpinBox、QProgressBar→DProgressBar×2、QScrollArea→DScrollArea×5（DTK6 中即 QScrollArea 别名，dwidgetstype.h:87，换名表意）；--platform-probe 未实现前响应亮失败 exit 2（原先未知 flag 落进 GUI 主路径单实例常驻，ci.sh 步骤 4 挂死）| ci.sh 全绿（selfcheck 58/58 + 截图矩阵重拍 + agent-selftest exit 0）；基线 8 张随 DTK 观感更新 | DLineEdit 无 returnPressed：提交框回车改接 lineEdit()；connect 信号一律 &DLineEdit::textChanged`
 - （示例，可删）`2026-xx-xx | <agent> | M3-1 | 表面三级接 applicationPalette；--selfcheck 55/55 通过；截图基线 docs/snapshots/dark-dashboard.png 已更新 | AgentDialog 固定尺寸待 M3c 处理`
 
 ---

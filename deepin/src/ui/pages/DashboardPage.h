@@ -7,8 +7,10 @@
 #pragma once
 #include "../../logic/DashFilter.h"
 #include "../common/Card.h"
-#include <QScrollArea>
+#include <DScrollArea>
 #include <QWidget>
+
+DWIDGET_USE_NAMESPACE
 
 class QLabel;
 class QPushButton;
@@ -42,7 +44,7 @@ private:
     AppModel *m_model = nullptr;
     DashFilter m_filter;
 
-    QScrollArea *m_scroll = nullptr;
+    DScrollArea *m_scroll = nullptr;
     QWidget *m_content = nullptr;
     QVBoxLayout *m_contentLayout = nullptr;
 

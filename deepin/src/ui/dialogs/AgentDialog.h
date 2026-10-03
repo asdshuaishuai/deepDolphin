@@ -8,6 +8,8 @@
 #include "../../ai/AgentCore.h"
 #include "../../ai/AgentConversation.h"
 #include <DDialog>
+#include <DScrollArea>
+#include <DTextEdit>
 #include <DSpinner> // DSpinner 直接带头（避免 using-namespace 下前向声明歧义）
 #include <QAtomicInt>
 #include <QPointer>
@@ -15,9 +17,7 @@
 #include <QSharedPointer>
 
 class QLabel;
-class QPlainTextEdit;
 class QPushButton;
-class QScrollArea;
 class QVBoxLayout;
 DWIDGET_USE_NAMESPACE
 
@@ -58,7 +58,7 @@ private:
     //（置位当前旗标）不会让它悬空——裸 &m_cancelFlag 是退出期的窄窗口 UAF
     QSharedPointer<QAtomicInt> m_cancelFlag;
 
-    QScrollArea *m_scroll = nullptr;
+    DScrollArea *m_scroll = nullptr; // DTK6 中 DScrollArea 即 QScrollArea 别名（dwidgetstype.h），换名表意
     QWidget *m_transcriptHost = nullptr;
     QVBoxLayout *m_transcriptLayout = nullptr;
     QWidget *m_emptyHint = nullptr;
@@ -68,7 +68,7 @@ private:
     QLabel *m_eventLabel = nullptr;
     QWidget *m_errorBanner = nullptr;
     QLabel *m_errorLabel = nullptr;
-    QPlainTextEdit *m_input = nullptr;
+    DTextEdit *m_input = nullptr;
     QPushButton *m_sendBtn = nullptr;
     QPushButton *m_stopBtn = nullptr;
     QPushButton *m_clearBtn = nullptr;

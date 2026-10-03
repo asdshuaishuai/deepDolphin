@@ -16,7 +16,7 @@
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QProgressBar>
+#include <DProgressBar>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -27,7 +27,7 @@ DashboardPage::DashboardPage(QWidget *parent)
 {
     auto *outer = new QVBoxLayout(this);
     outer->setContentsMargins(0, 0, 0, 0);
-    m_scroll = new QScrollArea(this);
+    m_scroll = new DScrollArea(this);
     m_scroll->setFrameShape(QFrame::NoFrame);
     m_scroll->setWidgetResizable(true);
     m_content = new QWidget(this);
@@ -183,9 +183,9 @@ void DashboardPage::rebuild()
         cv->addWidget(subLabel);
         return card;
     };
-    QProgressBar *msBar = nullptr;
+    QProgressBar *msBar = nullptr; // DProgressBar 即 QProgressBar 子类
     if (k.milestoneProgress >= 0) {
-        msBar = new QProgressBar(kpiHost);
+        msBar = new DProgressBar(kpiHost);
         msBar->setRange(0, 100);
         msBar->setValue(k.milestonePct);
         msBar->setTextVisible(false);

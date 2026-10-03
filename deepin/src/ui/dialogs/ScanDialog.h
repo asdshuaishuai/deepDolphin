@@ -6,11 +6,13 @@
 #pragma once
 #include <DDialog>
 #include <dtabbar.h>
+#include <DLineEdit>
+#include <DSpinBox>
 
-class QLineEdit;
+
 class QLabel;
 class QStackedWidget;
-class QSpinBox;
+
 
 DWIDGET_USE_NAMESPACE
 
@@ -35,9 +37,9 @@ private:
     DTabBar *m_tabs = nullptr;
     QStackedWidget *m_stack = nullptr;
     QLineEdit *m_addPath = nullptr;
-    QLineEdit *m_addName = nullptr;
+    DLineEdit *m_addName = nullptr;
     QLineEdit *m_scanRoot = nullptr;
-    QSpinBox *m_depth = nullptr;
+    DSpinBox *m_depth = nullptr;
     QLabel *m_verdict = nullptr;
     QLabel *m_result = nullptr;
     bool m_addMode = true;

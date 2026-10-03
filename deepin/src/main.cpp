@@ -185,6 +185,12 @@ int main(int argc, char *argv[])
         fprintf(stdout, "deepDolphin %s\n", DD_VERSION_STRING);
         return 0;
     }
+    if (rawArgs.contains(QStringLiteral("--platform-probe"))) {
+        // M1-9 未实现前必须在此响应亮失败：未知 flag 落进 GUI 主路径会以单实例常驻，
+        // 无头 CI（ci.sh 步骤 4）就挂死——比"探针缺功能"糟得多。
+        fprintf(stderr, "--platform-probe 尚未实现（计划任务 M1-9）\n");
+        return 2;
+    }
     const LaunchRoute preRoute = Route::parseArgs(rawArgs);
     if (preRoute.agentSelftest)
         return headlessAgentSelftest(argc, argv, preRoute.selftestQuestion);

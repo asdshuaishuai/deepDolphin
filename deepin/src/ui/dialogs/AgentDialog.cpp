@@ -13,12 +13,12 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
-#include <QPlainTextEdit>
+#include <DTextEdit>
 #include <QPointer>
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QScrollBar>
-#include <QScrollArea>
+#include <DScrollArea>
 #include <QShortcut>
 #include <QThreadPool>
 #include <QTimer>
@@ -130,7 +130,7 @@ void AgentDialog::buildUi()
     m_transcriptLayout->setContentsMargins(0, 0, 0, 0);
     m_transcriptLayout->setSpacing(DS::Spacing::md);
     m_transcriptLayout->addStretch(1);
-    m_scroll = new QScrollArea(content);
+    m_scroll = new DScrollArea(content);
     m_scroll->setWidgetResizable(true);
     m_scroll->setFrameShape(QFrame::NoFrame);
     m_scroll->setWidget(m_transcriptHost);
@@ -190,7 +190,7 @@ void AgentDialog::buildUi()
     auto *inLay = new QHBoxLayout(inputRow);
     inLay->setContentsMargins(0, 0, 0, 0);
     inLay->setSpacing(DS::Spacing::sm);
-    m_input = new QPlainTextEdit(inputRow);
+    m_input = new DTextEdit(inputRow);
     m_input->setPlaceholderText(QStringLiteral("问点什么…（Ctrl+Return 发送）"));
     m_input->setFixedHeight(72);
     m_input->setTabChangesFocus(true);
@@ -228,7 +228,7 @@ void AgentDialog::buildUi()
     connect(m_sendBtn, &QPushButton::clicked, this, &AgentDialog::send);
     connect(m_stopBtn, &QPushButton::clicked, this, &AgentDialog::stop);
     connect(m_clearBtn, &QPushButton::clicked, this, &AgentDialog::clearChat);
-    connect(m_input, &QPlainTextEdit::textChanged, this, &AgentDialog::refreshSendButton);
+    connect(m_input, &DTextEdit::textChanged, this, &AgentDialog::refreshSendButton);
     // Ctrl+Return / Ctrl+Enter 发送（mac ⌘↩ 对位）
     auto *ret = new QShortcut(QKeySequence(QStringLiteral("Ctrl+Return")), this);
     connect(ret, &QShortcut::activated, this, &AgentDialog::send);

@@ -8,7 +8,9 @@
 #include <QPushButton>
 #include <QWidget>
 
-class QComboBox;
+#include <DComboBox>
+
+DWIDGET_USE_NAMESPACE
 
 class DashboardFilterBar : public QWidget {
     Q_OBJECT
@@ -30,7 +32,7 @@ private:
 
     QButtonGroup *m_windowGroup = nullptr;
     QPushButton *m_windowBtns[3] = { nullptr, nullptr, nullptr };
-    QComboBox *m_typeBox = nullptr;
+    DComboBox *m_typeBox = nullptr;
     QPushButton *m_reindex = nullptr;
     TimeWindow m_window = TimeWindow::all;
 };

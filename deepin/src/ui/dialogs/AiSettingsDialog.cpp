@@ -11,7 +11,7 @@
 #include <QLabel>
 #include <QMetaObject>
 #include <QPointer>
-#include <QScrollArea>
+#include <DScrollArea>
 #include <QStackedWidget>
 #include <QThreadPool>
 #include <QVBoxLayout>
@@ -42,13 +42,13 @@ AiSettingsDialog::AiSettingsDialog(QWidget *parent)
 
     // 【滚动归属逐页写死】通用/自动化两页套 QScrollArea；**AI 页不套**
     //（其内容自滚，再套外层会滚不动且把页脚顶出窗口——mac 实测教训）
-    auto *wrapGeneral = new QScrollArea(content);
+    auto *wrapGeneral = new DScrollArea(content);
     wrapGeneral->setWidgetResizable(true);
     wrapGeneral->setFrameShape(QFrame::NoFrame);
     wrapGeneral->setWidget(new GeneralPane(wrapGeneral));
     m_generalPane = wrapGeneral->widget();
 
-    auto *wrapAutomation = new QScrollArea(content);
+    auto *wrapAutomation = new DScrollArea(content);
     wrapAutomation->setWidgetResizable(true);
     wrapAutomation->setFrameShape(QFrame::NoFrame);
     m_automationWidget = new AutomationPane(wrapAutomation);

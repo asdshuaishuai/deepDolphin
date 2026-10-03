@@ -11,12 +11,16 @@
 #include "../../models/Milestone.h"
 #include "../../models/ProjectStatus.h"
 #include "../common/Card.h"
-#include <QScrollArea>
+#include <DScrollArea>
+#include <DLineEdit>
+#include <DTextEdit>
 #include <QWidget>
 
+DWIDGET_USE_NAMESPACE
+
 class QLabel;
-class QLineEdit;
-class QPlainTextEdit;
+
+
 class QPushButton;
 class QComboBox;
 class QVBoxLayout;
@@ -71,10 +75,10 @@ private:
     bool m_hasGitOutput = false;
     bool m_busy = false;
 
-    QScrollArea *m_scroll = nullptr;
+    DScrollArea *m_scroll = nullptr;
     QWidget *m_content = nullptr;
     QVBoxLayout *m_contentLayout = nullptr;
-    QLineEdit *m_commitInput = nullptr;
+    DLineEdit *m_commitInput = nullptr;
     QPushButton *m_commitBtn = nullptr;
     QWidget *m_gitOutputHost = nullptr;
     QWidget *m_headerHost = nullptr;

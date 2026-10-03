@@ -7,12 +7,16 @@
 #include "../../logic/DashFilter.h"
 #include "../../models/LoadState.h"
 #include "../../models/Milestone.h"
+#include <DComboBox>
+#include <DLineEdit>
 #include <QWidget>
 
-class QComboBox;
+
+DWIDGET_USE_NAMESPACE
+
 class QLabel;
 class QVBoxLayout;
-class QLineEdit;
+
 class QTreeWidget;
 
 class MilestonesPage : public QWidget {
@@ -38,7 +42,7 @@ private:
     QString m_query;           // 搜索里程碑名称
     QString m_projectFilter;   // 页面自有状态；空 = 全部
     QStringList m_projectNames;
-    QComboBox *m_projectBox = nullptr;
+    DComboBox *m_projectBox = nullptr;
     QLabel *m_filterCount = nullptr;
     QTreeWidget *m_tree = nullptr;
     QWidget *m_body = nullptr;

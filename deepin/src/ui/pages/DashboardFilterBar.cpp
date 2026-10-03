@@ -1,6 +1,5 @@
 #include "DashboardFilterBar.h"
 #include "../DesignTokens.h"
-#include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
 
@@ -57,7 +56,7 @@ DashboardFilterBar::DashboardFilterBar(QWidget *parent)
 
     auto *typeLabel = new QLabel(QStringLiteral("提交类型"), this);
     h->addWidget(typeLabel);
-    m_typeBox = new QComboBox(this);
+    m_typeBox = new DComboBox(this);
     m_typeBox->setMaxVisibleItems(16);
     h->addWidget(m_typeBox, 1);
     connect(m_typeBox, &QComboBox::currentIndexChanged, this, [this](int idx) {
