@@ -375,6 +375,27 @@ public func loadFromFixtureDir(model: AppModel, dir: String): Int64 {
             model.milestones.value = None
             model.milestonesProblem.value = "读不到夹具 ${dir}/milestones.json"
     }
+    // journal / docs 同理：它们走的是 `loadProjectDetail` 里的真实子进程调用，
+    // 而夹具模式**不起引擎**，所以这两张卡在任何快照里都是空态 ——
+    // 布局、换行、口径披露那一行挂在哪儿，全都没有证据。
+    match (loadOneFixture(model, dir, "journal.json", PayloadShape.Journal)) {
+        case Some(v) =>
+            model.journal.value = Some(Journal.from(v))
+            model.journalProblem.value = ""
+            n += 1
+        case None =>
+            model.journal.value = None
+            model.journalProblem.value = "读不到夹具 ${dir}/journal.json"
+    }
+    match (loadOneFixture(model, dir, "docs.json", PayloadShape.Docs)) {
+        case Some(v) =>
+            model.docs.value = Some(DocBundle.from(v))
+            model.docsProblem.value = ""
+            n += 1
+        case None =>
+            model.docs.value = None
+            model.docsProblem.value = "读不到夹具 ${dir}/docs.json"
+    }
     model.refreshLabels()
     return n
 }

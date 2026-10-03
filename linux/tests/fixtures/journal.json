@@ -1,0 +1,66 @@
+{
+  "entries": [
+    {
+      "id": "j_fx_0",
+      "at": "2026-10-01T00:05:35.417426+08:00",
+      "project": "atlas",
+      "projectId": "p_atlas",
+      "branch": "main",
+      "mode": "shallow",
+      "source": "cli",
+      "provider": "rules",
+      "commitCount": 14,
+      "summary": "最近 14 个提交：新增×5、修复×4、文档×2",
+      "highlights": [],
+      "nextSteps": [],
+      "notes": [],
+      "providerLabel": "规则引擎"
+    },
+    {
+      "id": "j_fx_1",
+      "at": "2026-10-01T02:42:12.706803+08:00",
+      "project": "atlas",
+      "projectId": "p_atlas",
+      "branch": "dev",
+      "mode": "deep",
+      "source": "cli",
+      "provider": "rules",
+      "commitCount": 154,
+      "commitCountScope": "repoTotal",
+      "summary": "深度更新 README.md、AGENTS.md（基于 154 个提交）",
+      "highlights": [],
+      "docs": [
+        "README.md",
+        "AGENTS.md"
+      ],
+      "providerLabel": "规则引擎"
+    },
+    {
+      "id": "j_fx_2",
+      "at": "2026-09-28T09:12:00+08:00",
+      "project": "atlas",
+      "projectId": "p_atlas",
+      "branch": "main",
+      "mode": "shallow",
+      "source": "cli",
+      "provider": "rules",
+      "commitCount": -1,
+      "summary": "提交数读不出来",
+      "highlights": [],
+      "nextSteps": [],
+      "notes": [],
+      "providerLabel": "规则引擎"
+    }
+  ],
+  "limit": 20,
+  "branches": [
+    "main",
+    "dev"
+  ],
+  "projects": [
+    "atlas"
+  ],
+  "unparsableLines": 0,
+  "windowExhausted": false,
+  "branchWindowExhausted": {}
+}

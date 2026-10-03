@@ -613,13 +613,22 @@ private func journalCard(model: AppModel, p: Project, dark: Bool): Unit {
                             Label("这个项目还没有进度日志。跑一次浅更新会生成。").fontSize(12.0).muted()
                         } else {
                             for (e in j.entries) {
-                                HStack {
-                                    Label(e.at).fontSize(11.0).muted().width(110.0.vp)
-                                    Label(e.branch).fontSize(11.0).maxLines(1).width(120.0.vp)
-                                    dsTrackPill(if (e.mode == "deep") { DsTrack.Deep } else { DsTrack.Shallow }, dark)
-                                    Label(e.commitText()).fontSize(11.0).muted().width(140.0.vp)
-                                    Flexible { Label(e.summary).fontSize(11.0).muted().maxLines(2) }
-                                }.spacing(8.0.vp).hug()
+                                VStack {
+                                    HStack {
+                                        Label(e.at).fontSize(11.0).muted().width(110.0.vp)
+                                        Label(e.branch).fontSize(11.0).maxLines(1).width(120.0.vp)
+                                        dsTrackPill(if (e.mode == "deep") { DsTrack.Deep } else { DsTrack.Shallow }, dark)
+                                        Label(e.commitText()).fontSize(11.0).muted().width(140.0.vp)
+                                        Flexible { Label(e.summary).fontSize(11.0).muted().maxLines(2) }
+                                    }.spacing(8.0.vp).hug()
+                                    // 口径说明挂在**这一条下面**，不塞进那 140vp 的窄列 ——
+                                    // 挤成「+6 口径未知；这是采样值…」会被截掉后半句，
+                                    // 而那半句正是「别把它当增量看」的全部理由。
+                                    let cn = e.commitNote()
+                                    if (!cn.isEmpty()) {
+                                        Label(cn).fontSize(10.0).muted().wrap()
+                                    }
+                                }.spacing(2.0.vp).crossAxisAlignment(CrossAxisAlignment.Start).hug()
                             }
                             // 两条披露是**两件事**，各占一行，不许合并成一句。
                             // 「已截断」说的是「后面还有」，

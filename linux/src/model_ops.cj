@@ -195,11 +195,20 @@ public class JournalEntry {
     public let provider: String
     public let commitCount: Int64
     public let commitCountScope: String
+    /// 这条提交数是不是采样值。
+    ///
+    /// ⚠ 实测 journal entry **没有**这个键（真实 57 条的键集是
+    /// id/at/project/projectId/branch/mode/source/provider/commitCount/
+    /// summary/highlights/nextSteps/notes/providerLabel），
+    /// 所以它恒为 false。字段留着是因为契约里给了位置，
+    /// 引擎哪天补上时披露已经就位。
+    public let truncated: Bool
     public let summary: String
 
     public init(
         id: String, at: String, branch: String, mode: String, source: String,
-        provider: String, commitCount: Int64, commitCountScope: String, summary: String
+        provider: String, commitCount: Int64, commitCountScope: String, summary: String,
+        truncated!: Bool = false
     ) {
         this.id = id
         this.at = at
@@ -210,18 +219,36 @@ public class JournalEntry {
         this.commitCount = commitCount
         this.commitCountScope = commitCountScope
         this.summary = summary
+        this.truncated = truncated
     }
 
     /// 「本次记录 N 个提交」里 N 的写法。
     ///
-    /// `commitCountScope` 是引擎给的统计口径（`all` / `branch` 等），
-    /// 拿它出来是必要的 —— 不写口径的话，「8 个提交」在不同口径下
-    /// 含义不同，读者会以为自己记错了。
+    /// ⚠⚠ 这里原先的注释写着「`commitCountScope` 是引擎给的统计口径
+    /// （`all` / `branch` 等）」—— **那个词汇表不存在**。实测本机
+    /// `journal --json` 的 57 条 entry **根本没有 `commitCountScope` 这个键**，
+    /// 而 macOS 端 `CommitCountScope.swift` 记录的两个真实取值是
+    /// `new` / `repoTotal`。三方对不上，所以下面按 macOS 的规则重写：
+    /// **认不出就认不出，不许默认成任何一种。**
+    ///
+    /// 引擎侧缺陷 #188：`commitCount` 在两条路径上装的是不同的东西 ——
+    /// 浅更新 = 本轮真正新记录的提交数，深更新 = 仓库提交总数（无上限）。
+    /// 引擎的注释写明「靠 mode 字段去猜口径不行：那是约定不是契约」。
+    ///
+    /// 症状：日志里一个「本轮新增 6」和一个「仓库一共 6 个」渲染成两个
+    /// 一模一样的 `6 个提交`，读者会得出「深更新也新增了 6 个」——
+    /// 而那个数会随仓库一直涨。
     public func commitText(): String {
-        if (this.commitCountScope == "") {
-            return "${this.commitCount} 个提交"
+        let b = commitCountBadge(this.commitCount, this.commitCountScope, this.truncated)
+        if (b.text.isEmpty()) {
+            return ""
         }
-        return "${this.commitCount} 个提交（口径 ${this.commitCountScope}）"
+        return b.text
+    }
+
+    /// 与 `commitText` 配套的补充说明（空串 = 无）。
+    public func commitNote(): String {
+        return commitCountBadge(this.commitCount, this.commitCountScope, this.truncated).note
     }
 
     public static func from(v: JsonValue): JournalEntry {
@@ -234,9 +261,98 @@ public class JournalEntry {
             Json.strAt(v, "provider", ""),
             Json.intAt(v, "commitCount", 0),
             Json.strAt(v, "commitCountScope", ""),
-            Json.strAt(v, "summary", "")
+            Json.strAt(v, "summary", ""),
+            truncated: Json.boolAt(v, "commitCountTruncated", false)
         )
     }
+}
+
+/// journal 条目里那个 `+N` 的**口径**。纯函数。
+///
+/// 四种状态必须分开，合并任何两个都会撒谎：
+/// 口径、读不出来、零、口径未知。
+public enum CommitScope {
+    | NewCommits   // 本轮新增
+    | RepoTotal    // 仓库提交总数
+    | Unknown      // 口径没标出来 —— **不能**默认成上面任何一个
+    | Unreadable   // -1，整个数字没意义
+}
+
+public class CommitCountBadge {
+    /// 空串 = 不显示徽章（0 个提交不是一条值得占位的信息）。
+    public let text: String
+    public let scope: CommitScope
+    /// 必须写进界面的补充说明；空串 = 无。
+    public let note: String
+
+    public init(text: String, scope: CommitScope, note: String) {
+        this.text = text
+        this.scope = scope
+        this.note = note
+    }
+}
+
+public func commitScopeOf(raw: String, commitCount: Int64): CommitScope {
+    // 读不出来绝不能显示成 0 —— -1 是「整个数字没意义」，不是「没提交」。
+    if (commitCount < 0) {
+        return CommitScope.Unreadable
+    }
+    if (raw == "new") {
+        return CommitScope.NewCommits
+    }
+    if (raw == "repoTotal") {
+        return CommitScope.RepoTotal
+    }
+    return CommitScope.Unknown
+}
+
+private func commitScopeSuffix(s: CommitScope): String {
+    return match (s) {
+        case CommitScope.NewCommits => "新增"
+        case CommitScope.RepoTotal => "累计"
+        case CommitScope.Unknown => "口径未知"
+        case CommitScope.Unreadable => "读不出来"
+    }
+}
+
+/// 口径不是「本轮新增」时**不能**继续用增量绿 ——
+/// 绿 + 无限定词 = 「这次变好了这么多」，那是把累计量说成增量。
+public func commitScopeIsIncremental(s: CommitScope): Bool {
+    return match (s) {
+        case CommitScope.NewCommits => return true
+        case _ => return false
+    }
+}
+
+/// `+N` 该显示成什么。**纯函数**。
+///
+/// ⚠ `truncated` 走 `Bool` 而不是三态：实测 journal entry **没有**截断标志
+/// （键只有 id/at/project/projectId/branch/mode/source/provider/commitCount/
+/// summary/highlights/nextSteps/notes/providerLabel），传 nil 时这一轴不响。
+/// 别为了「与 macOS 签名一致」把它编成三态。
+public func commitCountBadge(commitCount: Int64, scope: String, truncated: Bool): CommitCountBadge {
+    let s = commitScopeOf(scope, commitCount)
+
+    if (match (s) { case CommitScope.Unreadable => true; case _ => false }) {
+        return CommitCountBadge("提交数读不出来", s, "不是「这轮没有提交」")
+    }
+    // 0 不是徽章要表达的事
+    if (commitCount == 0) {
+        return CommitCountBadge("", s, "")
+    }
+
+    let notes = ArrayList<String>()
+    if (match (s) { case CommitScope.Unknown => true; case _ => false }) {
+        notes.add("这条的提交数口径没标出来，无法判断是本轮新增还是仓库累计")
+    }
+    if (truncated) {
+        notes.add("这是采样值，不是全量")
+    }
+    var note = ""
+    if (!notes.isEmpty()) {
+        note = joinList(notes.toArray())
+    }
+    return CommitCountBadge("+${commitCount} ${commitScopeSuffix(s)}", s, note)
 }
 
 public class Journal {

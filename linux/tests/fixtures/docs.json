@@ -1,0 +1,18 @@
+{
+  "project": "atlas",
+  "docs": [
+    {
+      "file": "README.md",
+      "content": "# atlas\n\n项目说明。\n",
+      "project": "atlas"
+    },
+    {
+      "file": "AGENTS.md",
+      "content": "# AGENTS\n\n托管区。\n",
+      "project": "atlas"
+    }
+  ],
+  "unreadable": [
+    "NOTES.md"
+  ]
+}

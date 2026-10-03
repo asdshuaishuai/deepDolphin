@@ -899,6 +899,92 @@ func theOnDiskFixtureHasMoreLanguagesThanTheCardCanShow(): Unit {
     }
 }
 
+/// journal 里那个 `+N` 的口径（引擎侧缺陷 #188）。
+///
+/// 原实现是 `${n} 个提交`，而实测本机 `journal --json` 的 57 条 entry
+/// **根本没有 `commitCountScope` 键** —— 于是每一行都渲染成裸数字，
+/// 浅更新的「本轮新增 6」和深更新的「仓库一共 6 个」长得一模一样，
+/// 读者会得出「深更新也新增了 6 个」，而那个数会随仓库一直涨。
+///
+/// 注释里写的词汇表（`all` / `branch`）也是凭想象的：真实取值按
+/// macOS 端 `CommitCountScope.swift` 是 `new` / `repoTotal`。
+@Test
+func aCommitCountWithoutAScopeSaysItsScopeIsUnknown(): Unit {
+    // 口径认得出
+    @Expect(commitCountBadge(6, "new", false).text, "+6 新增")
+    @Expect(commitCountBadge(1397, "repoTotal", false).text, "+1397 累计")
+    // 只有「本轮新增」才配得上增量绿 —— 绿 + 无限定词 = 把累计量说成增量
+    @Expect(commitScopeIsIncremental(commitScopeOf("new", 6)))
+    @Expect(!commitScopeIsIncremental(commitScopeOf("repoTotal", 6)))
+    @Expect(!commitScopeIsIncremental(commitScopeOf("", 6)))
+
+    // 引擎没给口径（本机真实形状）→ 认不出就是认不出，不许默认
+    let unknown = commitCountBadge(6, "", false)
+    @Expect(unknown.text, "+6 口径未知")
+    @Expect(unknown.note.contains("无法判断是本轮新增还是仓库累计"))
+    // 也不能当成新增
+    @Expect(!commitScopeIsIncremental(unknown.scope))
+
+    // 读不出来绝不能显示成 0
+    let blind = commitCountBadge(-1, "", false)
+    @Expect(blind.text, "提交数读不出来")
+    @Expect(blind.note.contains("不是「这轮没有提交」"))
+    // 有 scope 也一样：-1 优先
+    @Expect(commitCountBadge(-1, "new", false).text, "提交数读不出来")
+
+    // 0 不是徽章要表达的事，不占位
+    @Expect(commitCountBadge(0, "new", false).text.isEmpty())
+    @Expect(commitCountBadge(0, "", false).note.isEmpty())
+
+    // 采样值是**另一条**轴，两条一起发生时都要说
+    let both = commitCountBadge(15, "new", true)
+    @Expect(both.text, "+15 新增")
+    @Expect(both.note.contains("采样值"))
+}
+
+/// 夹具必须能撑起日志卡与文档卡，否则这两块布局**永远没有证据**。
+///
+/// 它们走的是 `loadProjectDetail` 里的真实子进程调用，而夹具模式不起引擎
+/// —— 加载器原先只认 status/dashboard/milestones，于是任何快照里
+/// 「进度日志」和「托管文档」都是空态。空态证明不了任何排版。
+@Test
+func theOnDiskFixtureCoversJournalAndDocsToo(): Unit {
+    match (readTextFileOf("tests/fixtures/journal.json")) {
+        case Some(text) =>
+            let j = Journal.from(Json.parse(text).getOrThrow())
+            @Expect(j.entries.size >= 3)
+            // 三种口径状态都要在，披露的每一条分支才有东西可验
+            var unknown = 0
+            var repoTotal = 0
+            var unreadable = 0
+            for (e in j.entries) {
+                if (!e.commitText().isEmpty()) {
+                    if (e.commitText().contains("口径未知")) { unknown += 1 }
+                    if (e.commitText().contains("累计")) { repoTotal += 1 }
+                }
+                if (e.commitText() == "提交数读不出来") { unreadable += 1 }
+            }
+            @Expect(unknown >= 1)
+            @Expect(repoTotal >= 1)
+            @Expect(unreadable >= 1)
+            // 「口径未知」这一条必须**带着说明**，否则又是一个裸数字
+            for (e in j.entries) {
+                if (e.commitText().contains("口径未知")) {
+                    @Expect(e.commitNote().contains("无法判断"))
+                }
+            }
+        case None => @Expect(false)
+    }
+    match (readTextFileOf("tests/fixtures/docs.json")) {
+        case Some(text) =>
+            let d = DocBundle.from(Json.parse(text).getOrThrow())
+            @Expect(d.docs.size >= 1)
+            // 「读不出来」也要有一份，否则那条披露在快照里不出现
+            @Expect(d.unreadable.size >= 1)
+        case None => @Expect(false)
+    }
+}
+
 /// 空路径**不许**把进程带崩。
 ///
 /// `Path("")` 在仓颉里抛 `IllegalArgumentException`。而 `locateEngine`
@@ -1485,4 +1571,63 @@ func openProjectIsIdempotentInsteadOfRecursingThroughItsOwnObserver(): Unit {
     @Expect(model.selected.value, 1)
     openProject(model, "noread")
     @Expect(model.selected.value, 2)
+}
+
+/// 夹具加载器必须真的把日志与文档**灌进 model**。
+///
+/// 【为什么单独一条】`theOnDiskFixtureCoversJournalAndDocsToo` 只读文件，
+/// 验的是「夹具内容够不够」。可它**绕过了加载器** —— 于是把
+/// `loadFromFixtureDir` 里 journal/docs 那两段 `match` 整段删掉，
+/// 那条判据照样绿，而每一张快照里的「进度日志」「托管文档」会退回空态。
+/// 空态不报错、不留痕，正是自查最怕的那种静默失效。
+///
+/// 加载器不依赖 UI：`EngineLocation` 是纯数据构造，`syncLabels` 只改 State，
+/// 整条路径不碰引擎子进程、也不读写用户注册表。
+///
+/// 负控：删掉 `loadFromFixtureDir` 里的 journal 或 docs 分支，
+/// 本条的 `entries` / `docs` 断言与 `n == 5` 会同时红。
+@Test
+func theFixtureLoaderActuallyPutsJournalAndDocsIntoTheModel(): Unit {
+    let model = AppModel(EngineLocation("", "", ""))
+    let n = loadFromFixtureDir(model, "tests/fixtures")
+
+    // 5 份：status / dashboard / milestones / journal / docs。
+    // 少任何一份都会在这里露出来，而不是等到看快照时才发现卡片是空的。
+    @Expect(n, 5)
+
+    // 日志：三种口径状态都得进得来，口径披露那一行才有东西可排版
+    match (model.journal.value) {
+        case Some(j) =>
+            @Expect(j.entries.size >= 3)
+            var unknown = 0
+            var repoTotal = 0
+            var blind = 0
+            for (e in j.entries) {
+                if (e.commitText().contains("口径未知")) { unknown += 1 }
+                if (e.commitText().contains("累计")) { repoTotal += 1 }
+                if (e.commitText() == "提交数读不出来") { blind += 1 }
+            }
+            @Expect(unknown >= 1)
+            @Expect(repoTotal >= 1)
+            @Expect(blind >= 1)
+        case None => @Expect(false)
+    }
+    // 契约闸门过了才会是 Some，所以 Problem 必须是空的
+    @Expect(model.journalProblem.value.isEmpty())
+
+    // 文档：两份可读 + 一份读不出来，那条披露才有素材
+    match (model.docs.value) {
+        case Some(d) =>
+            @Expect(d.docs.size >= 2)
+            @Expect(d.unreadable.size >= 1)
+        case None => @Expect(false)
+    }
+    @Expect(model.docsProblem.value.isEmpty())
+
+    // 走完这一轮，状态栏不许说「尚未读取」—— 它读到了
+    match (model.snapshot.value) {
+        case Some(_) => @Expect(true)
+        case None => @Expect(false)
+    }
+    @Expect(!model.dashboardProblem.value.isEmpty() == false)
 }
