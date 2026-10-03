@@ -3,6 +3,16 @@
     <!-- 应用图标兜底（IconLoader::app）：主题缺失时仍可显示 -->
     <qresource prefix="/icons">
         <file alias="deepdolphin.svg">../data/icons/deepdolphin.svg</file>
+        <!-- dd-* 符号（M2-6）：IconLoader::symbol 的染色兜底通道（:/icons/dd-*.svg，
+             currentColor 占位符按 tint 替换）。与 data/icons/symbolic/apps/ 同一份
+             源文件（assets/icon/make-icons.py 生成）；安装后同名进 hicolor 主题，
+             fromTheme("dd-*") 命中主题、免安装走这里的 qrc。deepdolphin-symbolic
+             不进 qrc：代码不消费，主题查找在安装后覆盖。 -->
+        <file alias="dd-git.svg">../data/icons/symbolic/apps/dd-git.svg</file>
+        <file alias="dd-milestone.svg">../data/icons/symbolic/apps/dd-milestone.svg</file>
+        <file alias="dd-warning.svg">../data/icons/symbolic/apps/dd-warning.svg</file>
+        <file alias="dd-circle-double.svg">../data/icons/symbolic/apps/dd-circle-double.svg</file>
+        <file alias="dd-ai.svg">../data/icons/symbolic/apps/dd-ai.svg</file>
     </qresource>
     <!-- models.dev 快照（macos/Resources 原样拷入；免安装运行/缓存缺失时的兜底目录）。
          访问路径 = :/resources/models-dev.json（ai/ModelsDevCatalog::loadCached） -->

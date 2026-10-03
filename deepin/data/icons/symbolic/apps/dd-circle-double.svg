@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- dd-circle-double：托盘正常态「双圆」（外环+内点；空态/未知态亦用）。 -->
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="12" cy="12" r="8.2" fill="none" stroke="currentColor" stroke-width="2.2"/>
+  <circle cx="12" cy="12" r="3.2" fill="currentColor" fill-opacity=".45"/>
+</svg>

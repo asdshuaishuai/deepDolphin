@@ -155,4 +155,12 @@ install(FILES data/metainfo/cn.deepdolphin.app.metainfo.xml
         DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
 install(FILES data/icons/deepdolphin.svg
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+# 图标集（M2-6）：hicolor 8 档位图 + symbolic 矢量层。symbolic 落到
+# hicolor/symbolic/apps（本机实证：/usr/share/icons/hicolor/index.theme 声明
+# [symbolic/apps] 档，Size=16/MinSize=8/MaxSize=512），装后
+# fromTheme("deepdolphin-symbolic"/"dd-*") 直接命中；免安装走 resources.qrc。
+install(DIRECTORY data/icons/hicolor
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons)
+install(DIRECTORY data/icons/symbolic
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor)
 # 注意：desktop 的 Icon=deepdolphin 与这里的安装名一致（图标查找排查见 SKILL gotchas §3）
