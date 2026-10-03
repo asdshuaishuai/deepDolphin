@@ -8,8 +8,11 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 export CANGJIE_HOME="${CANGJIE_HOME:-$HOME/.local/share/cangjie/current}"
-export DYLD_LIBRARY_PATH="${DYLD_LIBRARY_PATH:-}"
-export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+# 仓颉运行时环境。**逻辑在 cj-env.sh 里**，与 run.sh 共用同一份 ——
+# 原来两处各抄一遍，而两遍都写错了 Linux 分支（见 cj-env.sh 顶部注释）。
+# shellcheck disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/cj-env.sh"
+dd_cj_pre_source
 # shellcheck disable=SC1091
 source "$CANGJIE_HOME/envsetup.sh"
 
@@ -17,13 +20,7 @@ if [[ -d "$HOME/.local/share/sdks/MacOSX.minimal/latest" ]]; then
   export SDKROOT="$HOME/.local/share/sdks/MacOSX.minimal/latest"
 fi
 
-ARCH="$(uname -m)"
-case "$ARCH" in
-  arm64) CJO="darwin_aarch64_cjnative" ;;
-  *)     CJO="$(ls "$CANGJIE_HOME/runtime/lib" | grep -m1 "^darwin_")" ;;
-esac
-export DYLD_LIBRARY_PATH="$CANGJIE_HOME/runtime/lib/$CJO:$CANGJIE_HOME/tools/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
-export LD_LIBRARY_PATH="$CANGJIE_HOME/runtime/lib/$CJO:$CANGJIE_HOME/tools/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+dd_cj_setup_runtime
 
 # SDL3 动态库：仓内 vendor 里那份，与构建时链的是同一个。
 export DYLD_LIBRARY_PATH="$HERE/vendor/CangjieSDL/.sdl3:$DYLD_LIBRARY_PATH"

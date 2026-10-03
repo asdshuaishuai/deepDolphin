@@ -19,6 +19,10 @@ Linux / Windows 上没有这个障碍。
 
 ## 快速开始
 
+> ⚠ **在 Linux 上跑之前先读 [VERIFY-ON-LINUX.md](VERIFY-ON-LINUX.md)** ——
+> 本客户端的全部开发与自动化验证都在 **macOS** 上做，跨平台 ≠ 已验证。
+> 那份文档逐条列了「哪些结论还没在 Linux 上核对过、怎么查、期望看到什么」。
+
 ```sh
 # 1. 拉第三方依赖（CangjieGUI + CangjieSDL + SDL3 动态库）
 sh scripts/fetch-deps.sh

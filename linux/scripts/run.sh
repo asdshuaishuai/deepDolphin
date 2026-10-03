@@ -21,10 +21,11 @@ if [[ ! -f "$CANGJIE_HOME/envsetup.sh" ]]; then
   echo "装 1.0.5 LTS 后重试，或先 export CANGJIE_HOME=..." >&2
   exit 1
 fi
-# 仓颉的 envsetup.sh 会直接读这两个变量，而 `set -u` 会让未定义时报错退出。
-# 先给空值再 source，别指望 `set -u` 兼容外部脚本。
-export DYLD_LIBRARY_PATH="${DYLD_LIBRARY_PATH:-}"
-export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+# 仓颉运行时环境。**逻辑在 cj-env.sh 里**，`dev-launch.sh` 也用同一份 ——
+# 原来两处各抄一遍，而两遍都写错了 Linux 分支（见 cj-env.sh 顶部注释）。
+# shellcheck disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/cj-env.sh"
+dd_cj_pre_source
 # shellcheck disable=SC1091
 source "$CANGJIE_HOME/envsetup.sh"
 
@@ -39,14 +40,7 @@ if [[ -d "$HOME/.local/share/sdks/MacOSX.minimal/latest" ]]; then
   export SDKROOT="$HOME/.local/share/sdks/MacOSX.minimal/latest"
 fi
 
-ARCH="$(uname -m)"
-case "$ARCH" in
-  arm64) CJO="darwin_aarch64_cjnative" ;;
-  *)     CJO="$(ls "$CANGJIE_HOME/runtime/lib" | grep -m1 "^darwin_")" ;;
-esac
-
-export DYLD_LIBRARY_PATH="$CANGJIE_HOME/runtime/lib/$CJO:$CANGJIE_HOME/tools/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
-export LD_LIBRARY_PATH="$CANGJIE_HOME/runtime/lib/$CJO:$CANGJIE_HOME/tools/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+dd_cj_setup_runtime
 
 # ⚠️ 上面所有 `$VAR` 紧跟中文时都必须写成 `${VAR}`：
 # bash 在 UTF-8 locale 下会把多字节字符的**首字节**当成变量名的合法延续，
