@@ -88,8 +88,10 @@ AiSettingsDialog::AiSettingsDialog(QWidget *parent)
     m_keyPending = true;
 
     QPointer<AiSettingsDialog> guard(this);
-    QThreadPool::globalInstance()->start([this, guard, loaded, store = m_store] {
-        const QString key = AIConfig::loadKey(store);
+    // 明文回退键在 GUI 线程读好带进 worker（M0-4：worker 不自读 Settings）
+    const QString fallbackKey = Settings::instance().aiApiKeyPlaintext();
+    QThreadPool::globalInstance()->start([this, guard, loaded, store = m_store, fallbackKey] {
+        const QString key = AIConfig::loadKey(store, fallbackKey);
         if (!guard)
             return;
         QMetaObject::invokeMethod(

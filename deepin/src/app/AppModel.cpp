@@ -39,14 +39,22 @@ QString milestoneActionLabel(const QString &action)
     return action;
 }
 
-// AI 配置快照：key 从安全存储读（同步 libsecret）——**只允许在 worker 线程调**
-//（PLAN §2.5：GLib 同步 API 不阻塞 UI；钥匙串迟缓时不能冻住界面）。
-AIConfig loadAiConfigWithKey()
+// AI 配置快照（M0-4 拆两半）：本函数**GUI 线程专用**——只读 Settings（身份 + 明文回退键，
+// 仅 mock/headless 有值）；同步 libsecret 读在 worker 侧用 loadAiKeyInWorker 补齐。
+// worker 不得直接碰 Settings 单例（QSettings/QObject 跨线程访问告警的根因）。
+AIConfig loadAiConfigWithFallbackKey()
 {
     AIConfig cfg = AIConfig::load();
-    SecretStore store;
-    cfg.apiKey = AIConfig::loadKey(&store);
+    cfg.apiKey = Settings::instance().aiApiKeyPlaintext();
     return cfg;
+}
+
+// worker 线程专用：同步 libsecret 读（阻塞不进 GUI 线程，PLAN §2.5）；
+// 明文回退键用 GUI 线程快照带进来的那份。
+void loadAiKeyInWorker(AIConfig *cfg)
+{
+    SecretStore store;
+    cfg->apiKey = AIConfig::loadKey(&store, cfg->apiKey);
 }
 
 // 项目按系统本地化排序（QString::localeAwareCompare，mac localizedStandardCompare 对位）
@@ -149,8 +157,10 @@ void AppModel::start()
                 // 未配置（T8 降级）：不伪造摘要，完成通知照发
                 QPointer<AppModel> guard(this);
                 const QString engineBin = m_cli->engineBin();
-                QThreadPool::globalInstance()->start([this, guard, engineBin, doneBody] {
-                    AIConfig cfg = loadAiConfigWithKey();
+                AIConfig identity = loadAiConfigWithFallbackKey(); // Settings 只在 GUI 线程读（M0-4）
+                QThreadPool::globalInstance()->start([this, guard, engineBin, doneBody, identity] {
+                    AIConfig cfg = identity;
+                    loadAiKeyInWorker(&cfg);
                     QString why;
                     if (!AIEngineFactory::create(cfg)->isConfigured(&why)) {
                         if (!guard)
@@ -547,8 +557,10 @@ void AppModel::runUpdateDigest(const QString &name, bool deep)
         // 两件事都不进 GUI 线程（PLAN §2.5）
         QPointer<AppModel> guard(this);
         const QString engineBin = m_cli->engineBin();
-        QThreadPool::globalInstance()->start([this, guard, name, deep, engineBin] {
-            AIConfig cfg = loadAiConfigWithKey();
+        AIConfig identity = loadAiConfigWithFallbackKey(); // Settings 只在 GUI 线程读（M0-4）
+        QThreadPool::globalInstance()->start([this, guard, name, deep, engineBin, identity] {
+            AIConfig cfg = identity;
+            loadAiKeyInWorker(&cfg);
             AiDigests::Outcome d;
             QString why;
             if (!AIEngineFactory::create(cfg)->isConfigured(&why)) {
@@ -646,8 +658,10 @@ void AppModel::runBulkOverFrozenTargets(bool deep, bool silent,
         // aiNote 三态之一：没东西可跑也要说明 AI 层发生了什么。
         // key 读取（同步 libsecret）走 worker（PLAN §2.5）；结论回 GUI 再 finish。
         QPointer<AppModel> guard(this);
-        QThreadPool::globalInstance()->start([this, guard, report, finish] {
-            AIConfig cfg = loadAiConfigWithKey();
+        AIConfig identity = loadAiConfigWithFallbackKey(); // Settings 只在 GUI 线程读（M0-4）
+        QThreadPool::globalInstance()->start([this, guard, report, finish, identity] {
+            AIConfig cfg = identity;
+            loadAiKeyInWorker(&cfg);
             QString why;
             const bool aiUsable = AIEngineFactory::create(cfg)->isConfigured(&why);
             report->aiNote = aiUsable
@@ -682,9 +696,11 @@ void AppModel::runBulkOverFrozenTargets(bool deep, bool silent,
         QPointer<AppModel> guard(this);
         const QString engineBin = m_cli->engineBin();
         const QString table = out.outcomeTable();
+        AIConfig identity = loadAiConfigWithFallbackKey(); // Settings 只在 GUI 线程读（M0-4）
         QThreadPool::globalInstance()->start([this, guard, deep, silent, finish, engineBin, out,
-                                                 table] {
-            AIConfig cfg = loadAiConfigWithKey();
+                                             table, identity] {
+            AIConfig cfg = identity;
+            loadAiKeyInWorker(&cfg);
             QString why;
             const bool aiUsable = AIEngineFactory::create(cfg)->isConfigured(&why);
             if (!guard)

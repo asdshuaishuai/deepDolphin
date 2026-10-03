@@ -38,14 +38,14 @@ bool AIConfig::saveTo(SecretStore *store, QString *errOut)
     return true;
 }
 
-QString AIConfig::loadKey(SecretStore *store)
+QString AIConfig::loadKey(SecretStore *store, const QString &plaintextFallback)
 {
     if (store) {
         const SecretStore::LoadResult r = store->load();
         if (r.st == SecretStore::Status::Ok && !r.key.isEmpty())
             return r.key;
     }
-    return Settings::instance().aiApiKeyPlaintext(); // 明文回退（仅 headless/mock 用）
+    return plaintextFallback; // GUI 线程自 Settings 取来的明文回退（仅 headless/mock 用）
 }
 
 bool AIConfig::isConfigured(QString *whyNot) const

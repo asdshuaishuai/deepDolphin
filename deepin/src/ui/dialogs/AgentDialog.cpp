@@ -4,6 +4,7 @@
 #include "../../ai/AgentConversation.h"
 #include "../../ai/SecretStore.h"
 #include "../../ai/SystemAiEngine.h"
+#include "../../app/Settings.h"
 #include "../DesignTokens.h"
 #include "../common/MarkdownView.h"
 #include <DSpinner>
@@ -69,13 +70,16 @@ AgentDialog::~AgentDialog()
 void AgentDialog::probeConfiguredAsync()
 {
     // key 读取（secret_password_lookup_sync 阻塞）不进 GUI 线程（PLAN §2.5）；
-    // 结论经 invokeMethod 回 GUI，回填 m_configured 与空态指引
+    // 结论经 invokeMethod 回 GUI，回填 m_configured 与空态指引。
+    // Settings 身份/明文回退只在 GUI 线程读好按值带进 worker（M0-4 不跨线程碰 Settings）
     QPointer<AgentDialog> guard(this);
-    QThreadPool::globalInstance()->start([this, guard] {
-        AIConfig cfg = AIConfig::load();
+    AIConfig identity = AIConfig::load();
+    const QString fallbackKey = Settings::instance().aiApiKeyPlaintext();
+    QThreadPool::globalInstance()->start([this, guard, identity, fallbackKey] {
+        AIConfig cfg = identity;
         {
             SecretStore store;
-            cfg.apiKey = AIConfig::loadKey(&store);
+            cfg.apiKey = AIConfig::loadKey(&store, fallbackKey);
         }
         QString why;
         const std::unique_ptr<AIEngine> engine = AIEngineFactory::create(cfg);
@@ -445,13 +449,16 @@ void AgentDialog::send()
     QSharedPointer<QAtomicInt> cancelFlag = m_cancelFlag;
     const QString engineBin = m_engineBin;
     const AgentCore::Target target = m_target;
+    // Settings 身份/明文回退只在 GUI 线程读好按值带进 worker（M0-4）；key 的同步
+    // libsecret 读在 worker（阻塞不占 GUI 线程）
+    AIConfig identity = AIConfig::load();
+    const QString fallbackKey = Settings::instance().aiApiKeyPlaintext();
     QThreadPool::globalInstance()->start([this, guard, question, before, cancelFlag, engineBin,
-                                             target] {
-        // key 在 worker 里取（libsecret 同步 API 阻塞——不占 GUI 线程）
-        AIConfig cfg = AIConfig::load();
+                                         target, identity, fallbackKey] {
+        AIConfig cfg = identity;
         {
             SecretStore store;
-            cfg.apiKey = AIConfig::loadKey(&store);
+            cfg.apiKey = AIConfig::loadKey(&store, fallbackKey);
         }
         AgentCore core(engineBin);
         QString err;

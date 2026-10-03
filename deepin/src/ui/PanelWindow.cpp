@@ -18,6 +18,7 @@
 #include "dialogs/AgentDialog.h"
 #include "dialogs/AiResultDialog.h"
 #include "dialogs/AiSettingsDialog.h"
+#include "../app/Settings.h"
 #include "dialogs/ScanDialog.h"
 #include "dialogs/panes/AutomationPane.h"
 #include "pages/BoardPage.h"
@@ -690,16 +691,20 @@ void PanelWindow::showBrief(const QString &project, const QString &titleOverride
     QPointer<PanelWindow> guard(this);
     QPointer<AiResultDialog> dlgGuard(dlg);
     const QString engineBin = m_model->cli()->engineBin();
+    // Settings 身份/明文回退只在 GUI 线程读好按值带进 worker（M0-4 不跨线程碰 Settings）
+    AIConfig identity = AIConfig::load();
+    const QString fallbackKey = Settings::instance().aiApiKeyPlaintext();
     auto runDigest = [engineBin, project, isGroup](const AIConfig &cfg) -> AiDigests::Outcome {
         if (isGroup)
             return AiDigests::groupBrief(engineBin, cfg);
         return AiDigests::projectBrief(engineBin, cfg, project);
     };
-    QThreadPool::globalInstance()->start([this, guard, dlgGuard, runDigest, project] {
-        AIConfig cfg = AIConfig::load();
+    QThreadPool::globalInstance()->start([this, guard, dlgGuard, runDigest, project, identity,
+                                         fallbackKey] {
+        AIConfig cfg = identity;
         {
             SecretStore store; // 同步 libsecret 只在 worker（PLAN §2.5）
-            cfg.apiKey = AIConfig::loadKey(&store);
+            cfg.apiKey = AIConfig::loadKey(&store, fallbackKey);
         }
         AiDigests::Outcome out;
         QString why;

@@ -284,7 +284,7 @@ done; done
 - [x] M0-1 重新检测引擎回灌 `setEngineBin`｜验证：桩引擎下重探测真出数据（§10 2026-10-03）
 - [x] M0-2 `EngineLocator` 异步化 + 忙态｜验证：无引擎启动 <1s 可见面板，点击不冻结（§10 2026-10-03）
 - [x] M0-3 `AiSettingsDialog` libsecret 读异步化｜验证：密钥环卡住不冻结（§10 2026-10-03；真机密钥环卡住场景待真机复验）
-- [~] M0-4 `Settings` 不跨线程读写｜部分：libsecret 读已移出 GUI 线程（M0-3）；worker 侧配置快照未做
+- [x] M0-4 `Settings` 不跨线程读写（worker 只收 GUI 线程快照 + libsecret 读；README 决策 71）
 - [x] M0-5 agent 引擎子进程可 kill + 文案诚实（runSync 切片等待 + 取消旗标 → terminate→kill；README 决策 70）
 - [x] M0-6 批量闸门专用信号（refreshAllFinished；轻刷新不再误触发 updateAll 闸门）
 - [x] M0-7 CLI 健壮性（mock 强制 / 快照等数据 / 版本单源）｜验证：`--version` 与 CMake 一致（§10 2026-10-03）
@@ -351,6 +351,7 @@ done; done
 - `2026-10-03 | orchestrator | M0-8/M-61 | scripts/build-system.sh + scripts/ci.sh + docs/snapshots 基线 7 张（light/dark × 3 页 + dark-setupguide）`
 - `2026-10-04 | orchestrator | M0-6 | AppModel 新增 refreshAllFinished(bool)：仅全量链（status→dashboard→milestones，含失败短路）收尾发；refreshCycleFinished 保留给托盘/侧栏（轻刷新照发）；updateAll 的 m_bulkGate 闸门改接 refreshAllFinished——此前接 refreshCycleFinished，300s 轻刷新收尾会在全量刷新落地前放行闸门 → 冻结名单漏掉刚注册的仓库 | build 通过、selfcheck 58/58（纯信号改接，无视觉变化，无截图矩阵） | 定时批量更新的真机 300s 窗口复验待真机`
 - `2026-10-04 | orchestrator | M0-5 | EngineCli::runSync 改 200ms 切片等待，取消旗标置位 → terminate（2s→kill）+ makeCancelled；AgentCore 把 cancelled 穿透 runEngineRaw/loadToolManifest/executeTool（10 工具全覆盖）；AgentDialog 停止文案改「正在停止…（运行中的引擎调用将被终止）」+ tooltip；原先旗标只在轮间检查，agent 跑 deep（600s 预算）时点停止要等子进程跑完 | build 通过、selfcheck 58/58、--agent-selftest exit 0（README 决策 70） | 真机「deep 途中停止 ≤200ms 收 SIGTERM」待真机复验`
+- `2026-10-04 | orchestrator | M0-4 | AIConfig::loadKey 去掉内部 Settings 读（明文回退键改调用方显式传入）；新增 loadAiConfigWithFallbackKey（GUI 线程读 Settings 身份+明文回退）+ loadAiKeyInWorker（worker 只做同步 libsecret 读）；8 处 worker（AppModel 定时简报/摘要/批量×2、AgentDialog probe/send、PanelWindow brief、AiSettingsPane 测试连接、AiSettingsDialog key 回填）全部改为「GUI 线程快照按值带进 worker」——worker 0 处直接碰 Settings 单例 | build 通过、selfcheck 58/58、--agent-selftest exit 0、offscreen 快照正常（README 决策 71） | 运行期 QSettings 跨线程告警消失的最终确认待真机`
 - （示例，可删）`2026-xx-xx | <agent> | M3-1 | 表面三级接 applicationPalette；--selfcheck 55/55 通过；截图基线 docs/snapshots/dark-dashboard.png 已更新 | AgentDialog 固定尺寸待 M3c 处理`
 
 ---

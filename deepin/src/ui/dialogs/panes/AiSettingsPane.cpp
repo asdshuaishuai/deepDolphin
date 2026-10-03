@@ -4,6 +4,7 @@
 #include "../../../ai/AIEngineFactory.h"
 #include "../../../ai/ModelsDevCatalog.h"
 #include "../../../ai/SecretStore.h"
+#include "../../../app/Settings.h"
 #include "../../DesignTokens.h"
 #include <QFormLayout>
 #include <QFrame>
@@ -149,12 +150,14 @@ AiSettingsPane::AiSettingsPane(QWidget *parent)
         setTestBusy(true);
         // 同步 HTTP（20s）不能在 GUI 线程跑——放 QThreadPool，结果经 invokeMethod 回主线程。
         // key：用户没重输时从安全存储补（否则「没重输 key」被误判成未配置）。
+        // Settings 明文回退键在 GUI 线程读好按值带进 worker（M0-4 不跨线程碰 Settings）。
         QPointer<AiSettingsPane> guard(this);
-        QThreadPool::globalInstance()->start([this, guard, d] {
+        const QString fallbackKey = Settings::instance().aiApiKeyPlaintext();
+        QThreadPool::globalInstance()->start([this, guard, d, fallbackKey] {
             AIConfig cfg = d;
             if (cfg.apiKey.trimmed().isEmpty()) {
                 SecretStore store;
-                cfg.apiKey = AIConfig::loadKey(&store);
+                cfg.apiKey = AIConfig::loadKey(&store, fallbackKey);
             }
             const QString message = AIEngineFactory::testConnection(cfg);
             QMetaObject::invokeMethod(this, [this, guard, message] {
