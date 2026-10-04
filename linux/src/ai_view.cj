@@ -727,9 +727,11 @@ private func aiAutostartRow(model: AppModel, app: DesktopApp, dark: Bool): Widge
             // 仓内构建，装好的机器走 locateEngine 的 PATH 兜底，与手动启动
             // 是同一条链。算不出入口就**如实报错**，不写 Exec= 残缺的条目：
             // 那种条目会话把参数当程序名执行，界面却显示「已开启」（R3-02）。
+            // 提示语走 autostartEntryUnavailableHint（判据钉住）：
+            // 从 scripts/run.sh 启动即可算出入口 —— 文档主入口不再满足不了守卫。
             let entry = autostartClientEntry()
             let p = (if (entry.isEmpty()) {
-                "算不出自启入口（scripts/run.sh）：请从仓库内 linux/target/release/bin/main 启动客户端后再开自启"
+                autostartEntryUnavailableHint()
             } else {
                 setAutostart(entry, "", !on)
             })

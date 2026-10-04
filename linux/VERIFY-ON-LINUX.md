@@ -147,17 +147,18 @@ cat "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/deepdolphin.desktop"
 - 重点看路径里的空格：现在是**整参数包双引号**（`Exec="/path with
   space/scripts/run.sh"`），不是旧版的 `\s` 反斜杠转义 —— 旧写法在
   Desktop Entry 规范里不存在，会话会留成字面 `\ `。
-- ⚠️ **已知缺陷（2026-10-04 文档同步时发现，未修）**：从 run.sh 启动的
-  会话里点「开启」，开关会**永远报「算不出自启入口」**—— run.sh 末行
-  `exec ./target/release/bin/main` 是相对路径，客户端拿到的 `argv[0]`
-  不以 `/` 开头，算不出 run.sh 位置（`sysint.cj` 的
-  `autostartClientEntry`）。拒绝本身是对的（不写残缺条目），但文档给的
-  主入口（README 快速开始的 run.sh）满足不了它。如果你从**绝对路径**启动
-  （或 `cjpm run`）后开关能写出条目，请记下你的启动方式 —— 那就是修
-  run.sh 之前的临时通路。
-- 写盘动作本身没有单测（不碰真实 `~/.config`），由纯函数守卫 +
-  **写后回读校验**兜住；所以「注销重登，确认它真的自启了」仍然只能靠
-  你在有桌面的机器上验 —— 这步至今零证据。
+- ✅ **已知缺陷已修（2026-10-04 T2 批次）**：run.sh / dev-launch.sh 末行
+  曾是 `exec ./target/release/bin/main`（相对路径），客户端拿到的
+  `argv[0]` 不以 `/` 开头，算不出 run.sh 位置（`sysint.cj` 的
+  `autostartClientEntry`）—— 从主入口启动点「开启」必然报「算不出自启
+  入口」。现在两脚本末行都是 `exec "$HERE/target/release/bin/main"`，
+  从 run.sh 启动即可算出入口（上溯逻辑在纯函数 `autostartEntryFromArgv`，
+  判据直接断言；源码扫描判据钉住脚本关键行）。**仍待真机验**：
+  从 run.sh 启动 → 开自启 → 注销重登，确认会话真的拉起了客户端 ——
+  本机无桌面，这步至今零证据。
+- 写盘动作有 `/tmp` 沙盒判据了（T2 批次，`setAutostartIn`：写→回读→删→
+  幂等→空入口拒写→mkdir -p），但**不碰真实 `~/.config`**；所以
+  「注销重登，确认它真的自启了」仍然只能靠你在有桌面的机器上验。
 
 ### 3.3 启动深链
 

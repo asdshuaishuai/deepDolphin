@@ -210,25 +210,38 @@ private func providerLess(a: CatalogProvider, b: CatalogProvider): Bool {
 
 /// 快照候选路径。**按顺序**找，第一个存在的就用。
 ///
-/// 顺序不是随意的：显式环境变量 → XDG 数据目录（刷新过的缓存）→ 安装目录。
-/// **缓存排在安装目录前面**：用户点过「刷新目录」之后，刷新结果必须真的被用上 ——
-/// 否则「刷新」这个动作在界面上成功了，下次启动又读回随包的那份。
+/// 顺序不是随意的：显式环境变量 → XDG 数据目录（刷新过的缓存）→ 默认安装位
+/// （`~/.local/share/deepdolphin`）。**缓存排在安装位前面**：用户点过
+/// 「刷新目录」之后，刷新结果必须真的被用上 —— 否则「刷新」这个动作在
+/// 界面上成功了，下次启动又读回旧的那份。候选构造抽成收三个环境串的
+/// **纯函数**（catalogSearchPathCandidates），判据直接断言三条齐全、
+/// 缓存先于安装位。
 ///
 /// ⚠ 这里**没有**「当前工作目录」这一项，而且是有意的：
 /// 仓颉 1.0.5 没有任何可执行文件自身路径 / 工作目录的 API
 /// （实测 getExecutablePath / currentDir / getCwd / getWorkingDir 等
 /// 全部 undeclared identifier），而工作目录取决于用户从哪个终端起进程，
-/// 换个标签页就变了。开发/自测改由启动脚本注入 `DEEPDOLPHIN_MODELS` ——
-/// 与它注入 `DEEPGIT_BIN` 是同一套做法。
-public func catalogSearchPaths(): ArrayList<String> {
+/// 换个标签页就变了。仓内快照（`assets/models/models-dev.json`）因此
+/// **只有启动脚本够得着**：run.sh / dev-launch.sh 注入 `DEEPDOLPHIN_MODELS`
+/// —— 与它注入 `DEEPGIT_BIN` 是同一套做法。⚠ 这句注释曾经只是**声称**：
+/// 七个脚本零命中、从文档主入口 run.sh 启动则整个 C7 目录死亡（红色
+/// 「模型目录不可用」卡），T2 批次起脚本真的注入，源码扫描判据钉住注入行。
+public func catalogSearchPathCandidates(env: String, xdgData: String, home: String): ArrayList<String> {
     let out = ArrayList<String>()
-    let env = (getVariable("DEEPDOLPHIN_MODELS") ?? "").trimAscii()
-    if (!env.isEmpty()) {
-        out.add(env)
+    let e = env.trimAscii()
+    if (!e.isEmpty()) {
+        out.add(e)
     }
-    out.add("${aiDataDir()}/models-dev.json")
-    out.add("${homeShare()}/deepdolphin/models-dev.json")
+    out.add("${xdgData}/deepdolphin/models-dev.json")
+    out.add("${home}/.local/share/deepdolphin/models-dev.json")
     return out
+}
+
+public func catalogSearchPaths(): ArrayList<String> {
+    return catalogSearchPathCandidates(
+        getVariable("DEEPDOLPHIN_MODELS") ?? "",
+        homeShare(),
+        getVariable("HOME") ?? "")
 }
 
 public func findCatalogFile(): String {
@@ -250,17 +263,14 @@ private func joinPaths(ps: ArrayList<String>): String {
     return sb.toString()
 }
 
+/// XDG 数据基目录：刷新缓存放 `$XDG_DATA_HOME/deepdolphin`，
+/// 不放用户配置（候选构造见 catalogSearchPathCandidates）。
 public func homeShare(): String {
     let xdg = (getVariable("XDG_DATA_HOME") ?? "").trimAscii()
     if (!xdg.isEmpty() && xdg.startsWith("/")) {
         return xdg
     }
     return "${(getVariable("HOME") ?? "")}/.local/share"
-}
-
-/// XDG 数据目录：放刷新下来的目录缓存，不放用户配置。
-public func aiDataDir(): String {
-    return "${homeShare()}/deepdolphin"
 }
 
 /// 读目录。**读不到返回空表**，并由 `catalogProblem()` 说出原因。

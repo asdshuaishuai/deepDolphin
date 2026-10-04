@@ -453,6 +453,24 @@ func providerPickerRefusesToSayItListedTheFirstZeroProviders(): Unit {
     @Expect(!s.note.contains("前 0 家"))
 }
 
+@Test
+func catalogCandidatesListEnvThenCacheThenInstallInThatOrder(): Unit {
+    // T2：候选构造抽成收三个环境串的纯函数后，顺序可以直接断言 ——
+    // 显式注入（脚本给的仓内快照）→ 刷新缓存（$XDG_DATA_HOME/deepdolphin）
+    // → 默认安装位（~/.local/share/deepdolphin）。**缓存必须先于安装位**：
+    // 用户刷新过之后，下次启动要用上新的那份，而不是读回旧快照。
+    let ps = catalogSearchPathCandidates("/repo/assets/models/models-dev.json", "/xdg/data", "/home/u")
+    @Expect(ps.size, 3)
+    @Expect(ps[0], "/repo/assets/models/models-dev.json")
+    @Expect(ps[1], "/xdg/data/deepdolphin/models-dev.json")
+    @Expect(ps[2], "/home/u/.local/share/deepdolphin/models-dev.json")
+    // 空 / 纯空白 env 不产生空候选（空串候选永不存在，只会污染「找过」披露）
+    @Expect(catalogSearchPathCandidates("", "/xdg", "/home/u").size, 2)
+    @Expect(catalogSearchPathCandidates("   ", "/xdg", "/home/u").size, 2)
+    // env 带首尾空白时进链的是干净值
+    @Expect(catalogSearchPathCandidates(" /x.json ", "/xdg", "/home/u")[0], "/x.json")
+}
+
 // ---------------------------------------------------------------------------
 // 端到端（真 curl + 真引擎 + 假 provider）
 //
@@ -602,6 +620,71 @@ func autostartRefusesAnEmptyExecBecauseTheSessionWouldExecuteTheArgument(): Unit
     @Expect(p.contains("Exec"))
     @Expect(!autostartEntryProblem("   ").isEmpty()) // 纯空白等同空
     @Expect(autostartEntryProblem("/opt/dd/scripts/run.sh"), "")
+}
+
+@Test
+func autostartEntryFromArgvNeedsAnAbsolutePathFourLevelsAboveTheBinary(): Unit {
+    // T2：argv[0] → run.sh 的四层上溯抽成纯函数。以 `/` 开头时
+    // main → bin → release → target → <root>/linux，拼出 scripts/run.sh；
+    // 相对 argv[0]（`exec ./…` 的产物、PATH 启动）算不出 → 空串 ——
+    // R3-02 的拒写守卫**不松动**，空入口照样不许写条目。
+    @Expect(autostartEntryFromArgv("/r/linux/target/release/bin/main"), "/r/linux/scripts/run.sh")
+    @Expect(autostartEntryFromArgv("./target/release/bin/main"), "")
+    @Expect(autostartEntryFromArgv("main"), "")
+    @Expect(autostartEntryFromArgv(""), "")
+    // 层数不够到不了仓库根（/usr/bin/main 只有两层）
+    @Expect(autostartEntryFromArgv("/usr/bin/main"), "")
+}
+
+@Test
+func autostartUnavailableHintNamesRunShNotTheBareBinary(): Unit {
+    // T2：旧文案让用户「从 linux/target/release/bin/main 启动」—— 裸二进制
+    // 是相对路径 argv[0]，永远满足不了守卫，等于教用户去做一件做不到的事。
+    // 修好后的现实：从 scripts/run.sh 启动即可（脚本 exec 绝对路径）。
+    let hint = autostartEntryUnavailableHint()
+    @Expect(hint.contains("scripts/run.sh"))
+    @Expect(!hint.contains("target/release/bin/main"))
+    // 守卫文案同步：下一步也指向 run.sh，不再指向裸二进制
+    @Expect(autostartEntryProblem("").contains("scripts/run.sh"))
+}
+
+@Test
+func autostartWriteReadBackRemoveAndRefusalWorkInASandboxDir(): Unit {
+    // T2：写盘动作此前零单测（README「已知代价」第 5 条如实记过）—— 碰真实
+    // ~/.config/autostart 不宜在判据里写真文件。核心抽成收**目录**的
+    // setAutostartIn 之后，/tmp 沙盒即可验「写 → 回读 → 删 → 幂等 →
+    // 拒写 → 建目录」全链（先例：密钥落盘的沙盒判据）。
+    let t = nowMillis()
+    let dir = "/tmp/dd-autostart-${t}"
+    let refused = "/tmp/dd-autostart-refused-${t}"
+    let deep = "/tmp/dd-autostart-deep-${t}"
+    let exec = "/home/u/deepDolphin/linux/scripts/run.sh"
+
+    // ① 开：写 → 回读正文（[Desktop Entry] 与整引号 Exec=；bin 空则无 --engine）
+    @Expect(setAutostartIn(dir, exec, "", true), "")
+    let back = String.fromUtf8(File.readFrom(Path("${dir}/deepdolphin.desktop")))
+    @Expect(back.contains("[Desktop Entry]"))
+    @Expect(back.contains("Exec=${escapeDesktopExec(exec)}"))
+    @Expect(!back.contains("--engine"))
+
+    // ② 关：文件删掉；再关一次幂等（没有文件 = 成功，不报错）
+    @Expect(setAutostartIn(dir, exec, "", false), "")
+    @Expect(!exists(Path("${dir}/deepdolphin.desktop")))
+    @Expect(setAutostartIn(dir, exec, "", false), "")
+
+    // ③ 空 execPath 拒写：且拒写发生在建目录之前 —— 连目录都不该被建出来
+    @Expect(!setAutostartIn(refused, "", "", true).isEmpty())
+    @Expect(!setAutostartIn(refused, "   ", "", true).isEmpty())
+    @Expect(!exists(Path(refused)))
+    // 关闭方向不需要入口（拆条目用不到 Exec=）
+    @Expect(setAutostartIn(refused, "", "", false), "")
+
+    // ④ 自启目录整条不存在：mkdir -p 分支接住，写成功且回读得到
+    @Expect(setAutostartIn(deep, exec, "", true), "")
+    @Expect(String.fromUtf8(File.readFrom(Path("${deep}/deepdolphin.desktop"))).contains("[Desktop Entry]"))
+
+    // 清场（目录经位置参数传给 sh，不拼进脚本串）
+    execCapture("/bin/sh", ["-c", "rm -rf -- \"$1\" \"$2\" \"$3\"", "dd-test", dir, refused, deep], 5000)
 }
 
 @Test

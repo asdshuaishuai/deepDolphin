@@ -94,8 +94,11 @@ private func xdgConfigHome(): String {
     return xdgConfigBase(getVariable("XDG_CONFIG_HOME") ?? "", getVariable("HOME") ?? "")
 }
 
+/// .desktop 文件名（写与删必须同一份，改名漏一边就是「关不掉的自启」）。
+private const AUTOSTART_ENTRY_NAME: String = "deepdolphin.desktop"
+
 private func autostartPath(): String {
-    return "${xdgConfigHome()}/autostart/deepdolphin.desktop"
+    return "${xdgConfigHome()}/autostart/${AUTOSTART_ENTRY_NAME}"
 }
 
 /// .desktop 正文。**纯函数** —— 判据直接看它长什么样。
@@ -140,19 +143,38 @@ public func escapeDesktopExec(path: String): String {
 ///
 /// Exec= 必须指向**能自己摆好仓颉运行时库路径**的入口 —— 二进制直接跑
 /// 缺 `libcangjie-runtime.so`（见 scripts/run.sh 顶部注释），会话拉起必挂。
-/// 从本进程 argv[0]（`<root>/linux/target/release/bin/main`）上溯四层到
-/// `<root>/linux`，再拼 `scripts/run.sh`。argv[0] 不是绝对路径（从 PATH
-/// 或相对路径启动）或 run.sh 不在算出的位置时返回空串 —— 调用方必须把
-/// 「算不出入口」如实报错，**不许写一个 Exec= 残缺的条目出去**（R3-02：
-/// 第一版传了空 execPath，写出的条目是 `Exec= --engine <bin>`，会话把
-/// `--engine` 当程序名执行，客户端永远不会被启动）。
+/// 从本进程 argv[0] 上溯四层找 `<root>/linux` 再拼 `scripts/run.sh`
+/// （纯函数核心在 autostartEntryFromArgv）。argv[0] 不是绝对路径或
+/// run.sh 不在算出的位置时返回空串 —— 调用方必须把「算不出入口」如实
+/// 报错，**不许写一个 Exec= 残缺的条目出去**（R3-02：第一版传了空
+/// execPath，写出的条目是 `Exec= --engine <bin>`，会话把 `--engine`
+/// 当程序名执行，客户端永远不会被启动）。
+///
+/// 文档主入口 run.sh / dev-launch.sh 末行是 `exec "$HERE/target/release/bin/main"`
+/// —— argv[0] 以 `/` 开头，从 run.sh 启动即可算出入口（早先两脚本 exec
+/// 相对路径，主入口永远满足不了这个守卫，T2 批次修掉并由源码扫描判据钉住）。
 public func autostartClientEntry(): String {
     let args = getCommandLine()
-    if (args.size == 0 || !args[0].startsWith("/")) {
+    if (args.size == 0) {
         return ""
     }
-    // main → bin → release → target → <root>/linux，四层
-    var p = args[0]
+    let entry = autostartEntryFromArgv(args[0])
+    return (if (!entry.isEmpty() && exists(entry)) { entry } else { "" })
+}
+
+/// argv[0] → scripts/run.sh 绝对路径。**纯函数**（无 IO、无环境读取），
+/// 判据直接喂字符串。
+///
+/// main → bin → release → target → `<root>/linux`，上溯四层再拼
+/// `scripts/run.sh`。argv[0] 不以 `/` 开头（`exec ./…`、PATH 启动、
+/// `cjpm run` 的相对形态都算）或层数不够到不了仓库根时返回空串。
+/// 这里**故意不做** exists 检查 —— 那是环境层 autostartClientEntry 的事：
+/// 纯函数只管算，判据不必为「/r 存不存在」造假目录。
+public func autostartEntryFromArgv(argv0: String): String {
+    if (!argv0.startsWith("/")) {
+        return ""
+    }
+    var p = argv0
     for (_ in 0..4) {
         let idx = lastIndexOfSlash(p)
         if (idx < 0) {
@@ -160,15 +182,22 @@ public func autostartClientEntry(): String {
         }
         p = p[..idx]
     }
-    let entry = p + "/scripts/run.sh"
-    return (if (exists(entry)) { entry } else { "" })
+    return "${p}/scripts/run.sh"
+}
+
+/// 「算不出自启入口」的界面提示。**纯函数**，判据钉住文案与修好后的现实
+/// 一致：从 scripts/run.sh 启动即可（它 exec 绝对路径），不再像旧文案那样
+/// 让用户「从 linux/target/release/bin/main 启动」—— 那条路相对路径
+/// argv[0]，永远满足不了守卫，是教用户去做一件做不到的事。
+public func autostartEntryUnavailableHint(): String {
+    return "算不出自启入口（scripts/run.sh）：请通过 scripts/run.sh 启动客户端后再开自启"
 }
 
 /// 开机自启参数自检（**纯函数**，判据直接断言）。空 Exec= 的条目写出去，
 /// 会话会把 `--engine` 之类的参数当程序名执行，界面却照样显示「已开启」。
 public func autostartEntryProblem(execPath: String): String {
     if (execPath.trimAscii().isEmpty()) {
-        return "开机自启的 Exec= 是空的：会话不知道该启动什么。请从仓库内入口（linux/target/release/bin/main）启动客户端后再开自启"
+        return "开机自启的 Exec= 是空的：会话不知道该启动什么。请通过 scripts/run.sh 启动客户端后再开自启"
     }
     return ""
 }
@@ -178,20 +207,29 @@ public func autostartEnabled(): Bool {
     return exists(autostartPath())
 }
 
-/// 设置开机自启。**返回失败原因**，空串 = 成功。
+/// 设置开机自启。**返回失败原因**，空串 = 成功。薄委托：目录从环境解析
+/// （XDG 规则见 xdgAutostartDir），真实读写删都在 setAutostartIn。
+public func setAutostart(execPath: String, bin: String, want: Bool): String {
+    return setAutostartIn("${xdgConfigHome()}/autostart", execPath, bin, want)
+}
+
+/// 自启写盘核心：收**目标目录**而不是自己读环境变量，判据才能拿 /tmp
+/// 沙盒验「写 → 回读 → 删 → 幂等 → 拒写 → 建目录」全链（写盘动作此前
+/// 零单测，README「已知代价」第 5 条如实记过；先例是密钥落盘的沙盒判据）。
 ///
 /// ⚠ execPath 为空时**拒写**（见 autostartEntryProblem）—— 残缺条目比
-/// 没有条目更糟：开关显示「已开启」，会话却什么都启动不了。
+/// 没有条目更糟：开关显示「已开启」，会话却什么都启动不了。拒写发生在
+/// **建目录之前**：空入口连目录都不该被建出来。
 ///
-/// 写完**立刻回读一次**：`.config/autostart` 下的东西可能被发行版的
-/// 桌面清理脚本删掉，也可能目录压根没建。写完就说「已开启」而实际没开，
-/// 是这一族缺陷里最常见的一种。
-public func setAutostart(execPath: String, bin: String, want: Bool): String {
+/// 写完**立刻回读一次**：autostart 目录下的东西可能被发行版的桌面清理
+/// 脚本删掉，也可能目录压根没建（走 mkdir -p 分支）。写完就说「已开启」
+/// 而实际没开，是这一族缺陷里最常见的一种。
+public func setAutostartIn(dir: String, execPath: String, bin: String, want: Bool): String {
     let bad = autostartEntryProblem(execPath)
     if (want && !bad.isEmpty()) {
         return bad
     }
-    let p = autostartPath()
+    let p = "${dir}/${AUTOSTART_ENTRY_NAME}"
     if (!want) {
         if (!exists(p)) {
             return ""
@@ -203,14 +241,10 @@ public func setAutostart(execPath: String, bin: String, want: Bool): String {
         }
         return if (exists(p)) { "关掉开机自启失败：${p} 还在" } else { "" }
     }
-    let parent = (match (parentOf(p)) {
-        case Some(d) => d
-        case None => return "算不出配置目录：${p}"
-    })
-    if (!exists(parent)) {
-        let r = execCapture("/bin/mkdir", ["-p", parent], 5000)
+    if (!exists(dir)) {
+        let r = execCapture("/bin/mkdir", ["-p", dir], 5000)
         if (r.exitCode != 0) {
-            return "建开机自启目录失败：${parent}"
+            return "建开机自启目录失败：${dir}"
         }
     }
     File.writeTo(p, autostartEntry(execPath, bin).toArray())
@@ -223,15 +257,6 @@ public func setAutostart(execPath: String, bin: String, want: Bool): String {
         return "开机自启条目内容不对：${p}"
     }
     return ""
-}
-
-/// 取父目录。仓颉 1.0.5 的 `std.fs` 没有 `dirname`（实测 undeclared）。
-private func parentOf(p: String): Option<String> {
-    let idx = (lastIndexOfSlash(p))
-    if (idx <= 0) {
-        return None
-    }
-    return Some(p[..idx])
 }
 
 private func lastIndexOfSlash(p: String): Int64 {

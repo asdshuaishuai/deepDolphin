@@ -36,5 +36,13 @@ if [[ -z "${DEEPGIT_BIN:-}" ]]; then
   fi
 fi
 
+# models.dev 目录快照注入：与 run.sh 同一套（ai_catalog.cj 的候选链第一位）；
+# 用户已显式指定时不覆盖，仓内快照不在时不指死路。
+if [[ -z "${DEEPDOLPHIN_MODELS:-}" && -e "$HERE/../assets/models/models-dev.json" ]]; then
+  export DEEPDOLPHIN_MODELS="$HERE/../assets/models/models-dev.json"
+fi
+
 cd "$HERE"
-exec ./target/release/bin/main "$@"
+# 绝对路径 exec：argv[0] 必须以 `/` 开头，自启入口才上溯得出 scripts/run.sh
+# （见 run.sh 末行注释；源码扫描判据两头钉住这一行）。
+exec "$HERE/target/release/bin/main" "$@"

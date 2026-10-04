@@ -31,7 +31,9 @@ sh scripts/fetch-deps.sh
 sh scripts/run.sh
 ```
 
-`run.sh` 会自动把 `DEEPGIT_BIN` 指向仓内 `moonGit/target/release/bin/main`；
+`run.sh` 会自动把 `DEEPGIT_BIN` 指向仓内 `moonGit/target/release/bin/main`，
+并把 `DEEPDOLPHIN_MODELS` 指向仓内快照 `assets/models/models-dev.json`
+（AI 设置页的 provider 目录数据源；用户已显式指定时这两个变量都不覆盖）；
 装过 `install.sh` 的话走 PATH 上的 `moongit` / `deepgit` 也行。
 
 ## 依赖
@@ -341,7 +343,10 @@ glibc 2.38，无 root、无图形会话）上做了第一次系统性审查与�
 四个 commit：`5ce9bb4` → `e257732` → `a54dd42` → `5eab21e`。
 门禁 `bash scripts/ci-local.sh` 收口：**cjpm test 147 通过 / 0 失败 /
 3 端到端跳过**（判据从批前基线 116 只增不减：119 → 125 → 137 → 147），
-`scripts/ai-e2e.sh` 端到端实跑通过。本文早前小节里出现的 35 / 88 / 119
+`scripts/ai-e2e.sh` 端到端实跑通过。其后 T1 批次（破坏性操作确认，
+`586993e`）判据再 +13、T2 批次（启动脚本契约，本批）再 +5 ——
+当前门禁 **165 通过 / 0 失败 / 3 端到端跳过**（只增不减链：
+… → 147 → 160 → 165）。本文早前小节里出现的 35 / 88 / 119
 是各自写就当时的判据数，以本节为准。
 
 ### 修了什么 / 为什么
@@ -440,24 +445,44 @@ glibc 2.38，无 root、无图形会话）上做了第一次系统性审查与�
    一个 U+FFFD**，与 Python 式「整段一个」口径不同 —— 接其他语言实现时
    注意对齐。`AIConfig.loadProblem` 是读取诊断字段，不属于与 macOS 端
    对齐的四个落盘字段（类注释已划界）。
-5. 自启的**写盘动作没有单测**（碰真实 `~/.config/autostart`，不宜在
-   判据里写真文件），由纯函数守卫（目录解析 / 条目正文 / Exec 转义 /
-   空 Exec 拒写）+ 写后回读校验兜住。
+5. 自启的**写盘动作**曾长期没有单测（碰真实 `~/.config/autostart`，不宜在
+   判据里写真文件）。T2 批次起写盘核心抽成收目录的 `setAutostartIn`，
+   `/tmp` 沙盒判据覆盖写→回读→删→幂等→拒写→建目录全链；真实
+   `~/.config` 仍然只在用户机器上写。
 6. `hasNotifySend` / `hasSecretTool` 在没装这些工具的机器上**如实报缺**
    —— 是环境事实，不是缺陷。
 
-### 文档同步时新发现的一处未修缺陷（本批之后，代码未动）
+### 文档同步时新发现的缺陷：已修（T2 批次，启动脚本契约）
 
-**从 run.sh 启动时，自启开关必然拒绝**：run.sh 末行是
-`exec ./target/release/bin/main`（**相对路径**），而 `getCommandLine()[0]`
-返回的就是这个相对串（本轮以最小仓颉程序实测定谳：`exec ./argvprobe` 下
-`getCommandLine()[0]` = `"./argvprobe"`）；`sysint.cj` 的
-`autostartClientEntry()` 要求 `argv[0]` 以 `/` 开头，否则返回空串，
-设置页于是永远给出「算不出自启入口」的提示（`ai_view.cj`）。拒绝本身是
-R3-02 的守卫在**正确地**工作 —— 不写残缺条目 —— 但文档给的主入口
-（run.sh）永远满足不了它。修法大概率是 run.sh 改
-`exec "$HERE/target/release/bin/main"`，留待下一批；
-`VERIFY-ON-LINUX.md` §3.2 已按真实行为改写。
+上一批文档同步时发现两处「注释/文档声称的启动脚本行为，脚本根本没做」，
+T2 批次修掉：
+
+- **从 run.sh 启动时，自启开关必然拒绝（已修）**：run.sh 末行曾是
+  `exec ./target/release/bin/main`（**相对路径**），而 `getCommandLine()[0]`
+  返回的就是这个相对串（上轮以最小仓颉程序实测定谳：`exec ./argvprobe` 下
+  `getCommandLine()[0]` = `"./argvprobe"`）；`sysint.cj` 的
+  `autostartClientEntry()` 要求 `argv[0]` 以 `/` 开头，否则返回空串，
+  设置页于是永远给出「算不出自启入口」的提示。拒绝本身是 R3-02 的守卫在
+  **正确地**工作，但文档给的主入口（run.sh）满足不了它。本批两脚本末行改
+  `exec "$HERE/target/release/bin/main"`，上溯逻辑抽成纯函数
+  `autostartEntryFromArgv`（`/r/linux/target/release/bin/main` →
+  `/r/linux/scripts/run.sh`；相对串 → 空串，拒写守卫不松动），空入口的
+  界面提示也改写为「请通过 scripts/run.sh 启动」—— 旧文案让用户走
+  裸二进制，那条路永远满足不了守卫。
+- **`DEEPDOLPHIN_MODELS` 声称注入、七个脚本零命中（已修）**：
+  `ai_catalog.cj` 的注释一直说「启动脚本注入 DEEPDOLPHIN_MODELS」，
+  实际没有一个脚本做 —— 从文档主入口 run.sh 启动时，候选链只剩 XDG
+  数据目录两条，仓内快照 `assets/models/models-dev.json` 够不着，
+  C7 目录驱动的 provider 选择整体死亡（红色「模型目录不可用」卡；
+  mac 基准是 bundle 内快照启动即用）。本批 run.sh / dev-launch.sh 都
+  注入 `DEEPDOLPHIN_MODELS="$HERE/../assets/models/models-dev.json"`
+  （与注入 `DEEPGIT_BIN` 同一套做法：用户显式指定时不覆盖，快照不在时
+  不指死路）；候选构造抽成纯函数 `catalogSearchPathCandidates`，判据
+  断言三条候选齐全、缓存先于安装位。
+- **判据**：argv 纯函数、目录候选纯函数、自启写盘 `/tmp` 沙盒全链
+  （写→回读→删→幂等→空入口拒写连目录都不建→mkdir -p 分支），外加
+  源码扫描对两脚本各钉四条断言（绝对路径 exec、禁相对 exec、注入键、
+  快照路径；负控验红：删任一关键行判据红）。
 
 ### 仍未验（详见 [VERIFY-ON-LINUX.md](VERIFY-ON-LINUX.md)）
 

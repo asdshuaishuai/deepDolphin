@@ -2468,3 +2468,39 @@ func confirmModalLensEscapeDismissesWithoutRunning(): Unit {
     @Expect(after.metrics.overlayCount, 0)
     host.reset()
 }
+
+// ---------------------------------------------------------------------------
+// T2：启动脚本契约（exec 绝对路径 + DEEPDOLPHIN_MODELS 注入）
+//
+// 两处病都住在 shell 里，仓颉判据开不了进程 —— 沿用本文件「源码扫描」
+// 惯例：cjpm test 从包根跑，scripts/... 与 src/... 同样可读。扫描钉
+// 「关键行还在不在」，语义由 sysint.cj 的 autostartEntryFromArgv 与
+// ai_catalog.cj 的 catalogSearchPathCandidates 纯函数判据兜住。
+// ---------------------------------------------------------------------------
+
+/// 读一份 scripts 脚本文本。读不到 = 判据环境不对，按 @Expect(false) 红。
+private func readScriptText(rel: String): Option<String> {
+    return readTextFileOf(rel)
+}
+
+@Test
+func launchScriptsExecByAbsolutePathAndInjectTheCatalogSnapshot(): Unit {
+    // 病一：run.sh / dev-launch.sh 末行曾是 `exec ./target/release/bin/main`
+    // —— argv[0] 非绝对路径，自启永远「算不出入口」（文档主入口满足不了
+    // R3-02 守卫，README 已记录未修，本批修复）。
+    // 病二：ai_catalog 注释声称「启动脚本注入 DEEPDOLPHIN_MODELS」而七个
+    // 脚本零命中 —— 从 run.sh 启动则仓内快照够不着，C7 目录驱动的
+    // provider 选择整体死亡（红色「模型目录不可用」卡）。
+    for (name in ["scripts/run.sh", "scripts/dev-launch.sh"]) {
+        match (readScriptText(name)) {
+            case Some(text) =>
+                // exec 绝对路径：argv[0] 以 `/` 开头，四层上溯才够得着 run.sh
+                @Expect(text.contains("exec \"$HERE/target/release/bin/main\""), true)
+                @Expect(!text.contains("exec ./target"), true)
+                // 快照注入：env 键与仓内快照路径都要在（缺一个注入就是死的）
+                @Expect(text.contains("DEEPDOLPHIN_MODELS="), true)
+                @Expect(text.contains("assets/models/models-dev.json"), true)
+            case None => @Expect(false)
+        }
+    }
+}

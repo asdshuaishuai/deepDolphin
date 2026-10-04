@@ -74,6 +74,21 @@ else
   echo "› 引擎：${DEEPGIT_BIN}"
 fi
 
+# models.dev 目录快照（C7）：仓颉没有「可执行文件自身路径」的 API，仓内
+# 快照 assets/models/models-dev.json 只有启动脚本够得着 —— 注入
+# DEEPDOLPHIN_MODELS（src/ai_catalog.cj 候选链的第一位），与上面注入
+# DEEPGIT_BIN 是同一套做法。用户已显式指定时不覆盖；仓内快照不在时
+# 不指一条死路（让候选链落到 XDG 数据目录）。
+if [[ -z "${DEEPDOLPHIN_MODELS:-}" && -e "$HERE/../assets/models/models-dev.json" ]]; then
+  export DEEPDOLPHIN_MODELS="$HERE/../assets/models/models-dev.json"
+  echo "› 目录快照：${DEEPDOLPHIN_MODELS}"
+fi
+
+# 末行必须 **绝对路径** exec：客户端的开机自启靠 argv[0] 以 `/` 开头
+# （sysint.cj 的 autostartEntryFromArgv 上溯四层找 scripts/run.sh）。
+# 写成相对路径的话 argv[0] 就是相对串，从本文档的主入口启动
+# 自启永远「算不出入口」。dev-launch.sh 同一行，源码扫描判据两头钉住
+# （本注释因此不写出那个旧形态的字面量，免得喂饱扫描判据）。
 # --profile 透传：CUI 的帧耗时统计，排查「窗口空着」这类问题用得上
 # （本机 screencapture 抓不到 CUI 的 Metal 窗口，profile 是可靠的读数路径）。
-exec ./target/release/bin/main "$@"
+exec "$HERE/target/release/bin/main" "$@"
