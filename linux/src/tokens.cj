@@ -43,6 +43,35 @@ public let C_RED: Int64 = 0xEF4444
 public let C_GRAY: Int64 = 0x94A3B8
 public let C_SLATE: Int64 = 0x64748B
 
+/// 状态色**作为文字**时的亮底变体。
+///
+/// 黄/橙这类高明度状态色直接当文字放在亮底上读不清：
+/// #EAB308 对白卡只有 1.92:1、#F97316 只有 2.8:1（WCAG 正文要求 4.5:1）。
+/// 亮色主题换同色系的深档；**暗色主题保持原值** —— 亮色在暗底上反而是对的
+/// （#EAB308 对暗卡 7.6:1）。色点与胶囊底色不走这层：
+/// 色块靠面积辨读，不靠文字对比度。
+public let C_YELLOW_TEXT_LIGHT: Int64 = 0xA16207   // amber-700 · 对白卡 4.92:1
+public let C_ORANGE_TEXT_LIGHT: Int64 = 0xC2410C   // orange-700 · 对白卡 5.18:1
+
+/// 文字该用哪一档状态色。**视图里凡把状态色喂给 `foregroundColor` 都经过这里**，
+/// 直接 `dsColor(C_YELLOW)` 写在亮底上就是 1.9:1 的不可读文字。
+///
+/// ⚠ 刻意用 `==` 而不是 `match case C_YELLOW`：仓颉的 match 里一个大写
+/// `let` 常量是**绑定模式**（新变量、匹配一切），不是常量比较 ——
+/// 写成 match 会让每个色都落到第一档（本函数首版就栽在这，判据当场红）。
+public func dsTextColor(accent: Int64, dark: Bool): Int64 {
+    if (dark) {
+        return accent
+    }
+    if (accent == C_YELLOW) {
+        return C_YELLOW_TEXT_LIGHT
+    }
+    if (accent == C_ORANGE) {
+        return C_ORANGE_TEXT_LIGHT
+    }
+    return accent
+}
+
 // ===========================================================================
 // 间距 —— 刻度 4/8/12/16/20/24，淘汰散值
 // ===========================================================================
@@ -63,20 +92,13 @@ public let R_CONTROL: Float64 = 6.0  // 控件 / 小卡
 public let R_CARD: Float64 = 10.0    // 卡片
 
 // ===========================================================================
-// 字号刻度
-// ===========================================================================
-
-public let FS_DISPLAY: Float64 = 22.0   // KPI 数值
-public let FS_TITLE: Float64 = 20.0     // 窗口标题
-public let FS_SECTION: Float64 = 16.0   // 区块标题
-public let FS_CARD: Float64 = 13.0      // 卡片标题
-public let FS_BODY: Float64 = 12.0      // 正文
-public let FS_LABEL: Float64 = 11.0     // 次要标注
-public let FS_MICRO: Float64 = 10.0     // 徽标
-
-// ===========================================================================
 // 状态
 // ===========================================================================
+
+// ⚠ 字号刻度**不在这里**。曾经另有一套 `FS_*` 常量，与 `components.cj`
+// 的 `fs*()` 函数并存 —— 同一个「正文」两处各说各的字号，必然漂移。
+// FS_* 全仓零引用，已删；字号只有 `components.cj` 的 `fsMicro…fsDisplay`
+// 一套。要加字号档，去那里加，别在这里再立一张表。
 
 /// 语义化状态档。返回语义名而不是颜色，判据才能断言「哪个状态落到哪档」。
 public enum DsStatus {

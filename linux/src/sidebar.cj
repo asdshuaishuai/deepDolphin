@@ -169,13 +169,13 @@ func sidebar(model: AppModel, app: DesktopApp, dark: Bool): Unit {
             if (shownNames.isEmpty()) {
                 Spacer()
                 Label(emptyText(emptyReason(all.size, shown.size, model.query.value), "项目"))
-                    .fontSize(11.0).muted().wrap()
+                    .fontSize(fsLabel()).muted().wrap()
                 Spacer()
             } else {
                 ListView(shownNames, projSel, key: "dd-proj-list").flex()
             }
             Divider()
-            sidebarActions(model, app, dark)
+            sidebarActions()
             Divider()
             SidebarStatusStrip(model, dark)
         }.spacing(0.vp)
@@ -363,24 +363,35 @@ func goProject(model: AppModel, i: Int64): Unit {
 /// 背景一起铺满整行，标题就变成一条色带。
 private func groupHeader(text: String, dark: Bool): Unit {
     Panel {
-        Label(text).fontSize(11.0).fontWeight(FontWeight.semiBold)
+        Label(text).fontSize(fsLabel()).fontWeight(FontWeight.semiBold)
     }.hug().contentPadding(insets(4.0, 8.0, 2.0, 8.0))
 }
 
 private func sidebarSearch(model: AppModel, dark: Bool): Unit {
     HStack {
-        Label("搜索").fontSize(11.0).muted()
+        Label("搜索").fontSize(fsLabel()).muted()
         TextField(model.query, key: "dd-sidebar-search").placeholder("项目或分支").flex()
         if (!model.query.value.isEmpty()) {
-            Button("清除", {=> model.query.value = ""}).fontSize(11.0)
+            Button("清除", {=> model.query.value = ""}).fontSize(fsLabel())
         }
     }.hug().spacing(4.0.vp).padding(8.0.vp, 6.0.vp)
 }
 
+/// 侧栏底部动作区的说明。**注册项目群的入口在终端**：
+/// CUI 没有目录选择器，客户端自己起不了「挑一个目录来扫描」。
+///
+/// ⚠ 这里曾是一个强调色的「＋ 添加 / 扫描项目」`Label` —— 长得能点、
+/// 点不动。本文件头明说不做「看着能点」的东西（命中区对不上比少一个入口
+/// 更糟），所以降级成一句 muted 说明，把真实可执行的命令写给用户。
+/// 有朝一日框架有了目录选择器，这里再升回真按钮。
+public func sidebarAddHint(): String {
+    return "添加项目：终端运行 moongit scan <目录>"
+}
+
 /// 侧栏底部动作区。**故意不放进导航列表**（见文件头）。
-private func sidebarActions(model: AppModel, app: DesktopApp, dark: Bool): Unit {
+private func sidebarActions(): Unit {
     HStack {
-        Label("＋ 添加 / 扫描项目").fontSize(13.0).foregroundColor(dsColor(C_ACCENT))
+        Label(sidebarAddHint()).fontSize(fsLabel()).muted().wrap()
         Spacer()
     }.hug().spacing(6.0.vp).padding(10.0.vp, 8.0.vp)
 }
@@ -395,10 +406,10 @@ private func SidebarStatusStrip(model: AppModel, dark: Bool): Unit {
     VStack {
         HStack {
             dsDot(dsColor(if (busy) { C_ACCENT } else { C_SHALLOW }))
-            Label(if (busy) { "正在采集…" } else { "空闲" }).fontSize(11.0)
+            Label(if (busy) { "正在采集…" } else { "空闲" }).fontSize(fsLabel())
             Spacer()
             if (model.lastRefreshedMs.value > 0) {
-                Label(clockText(model.lastRefreshedMs.value)).fontSize(11.0).muted()
+                Label(clockText(model.lastRefreshedMs.value)).fontSize(fsLabel()).muted()
             }
         }.spacing(5.0.vp).hug()
         // 「读不出来」与「还没刷新过」是两件事，措辞必须不同。
@@ -408,9 +419,9 @@ private func SidebarStatusStrip(model: AppModel, dark: Bool): Unit {
         // 不经过刷新流程）下状态条一直写「尚未刷新」—— 而同一屏上
         // 项目列表、仪表盘全是实打实的数据。那句话不是描述，是自相矛盾。
         if (!model.problem.value.isEmpty() && model.snapshot.value.isNone()) {
-            Label("引擎连接失败").fontSize(11.0).foregroundColor(dsColor(C_ORANGE)).maxLines(1)
+            Label("引擎连接失败").fontSize(fsLabel()).foregroundColor(dsColor(dsTextColor(C_ORANGE, dark))).maxLines(1)
         } else if (model.lastRefreshedMs.value == 0 && model.snapshot.value.isNone()) {
-            Label("尚未刷新").fontSize(11.0).muted()
+            Label("尚未刷新").fontSize(fsLabel()).muted()
         }
     }.hug().spacing(2.0.vp).padding(10.0.vp, 8.0.vp)
 }

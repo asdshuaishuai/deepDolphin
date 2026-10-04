@@ -19,9 +19,9 @@ package deepdolphin_linux
 
 import std.collection.ArrayList
 
-import cui.{Axis, Badge, BadgeKind, Button, ButtonRole, Color, CrossAxisAlignment, DesktopApp, Divider, Dropdown,
-    Flexible, FontWeight, HStack, Label, LengthUnits, Panel, ScrollView, Spacer, State, SurfaceStyle, TextArea,
-    TextField, VStack, Widget}
+import cui.{Axis, Badge, BadgeKind, Binding, Button, ButtonRole, Chip, Color, CrossAxisAlignment, DesktopApp,
+    Divider, Dropdown, Flexible, FontWeight, HStack, Label, LengthUnits, Panel, ScrollView, Spacer, State,
+    SurfaceStyle, TextArea, TextField, VStack, Widget}
 import cui.LengthUnits
 import cui.{mountEffect, rememberState}
 
@@ -67,15 +67,15 @@ func toolbar(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     let busy = model.busy.value || model.actionBusy.value
     Panel {
         HStack {
-            Label("deepDolphin").fontSize(15.0).fontWeight(FontWeight.semiBold)
-            Label(model.engineLabel.value).fontSize(11.0).muted().maxLines(1).width(240.0.vp)
+            Label("deepDolphin").fontSize(fsSection()).fontWeight(FontWeight.semiBold)
+            Label(model.engineLabel.value).fontSize(fsLabel()).muted().maxLines(1).width(240.0.vp)
             Spacer()
             DualTrackButtons(model, app, dark)
             Divider(axis: Axis.Vertical).height(18.vp)
             Button("刷新", {=> requestRefresh(app, model)}, role: ButtonRole.Primary)
-                .fontSize(12.0).enabled(busy)
-            Button("AI 助手", {=> openAIPane(model, 1)}).fontSize(12.0)
-            Button("AI 设置", {=> openAIPane(model, 2)}).fontSize(12.0)
+                .fontSize(fsBody()).enabled(!busy)
+            Button("AI 助手", {=> openAIPane(model, 1)}).fontSize(fsBody())
+            Button("AI 设置", {=> openAIPane(model, 2)}).fontSize(fsBody())
         }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
     }.style(toolbarSurface(dark)).contentPadding(12.0.vp, 8.0.vp)
 }
@@ -97,18 +97,22 @@ func DualTrackButtons(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     let pending = pendingShallow(model, now)
     let scope = model.scope.value
     HStack {
+        // ⚠ `enabled` 的语义是「true = 可点」。这里曾把方向写反（把忙碌当成了
+        // 可用的条件）：空闲时主按钮全被禁用（灰罩吞事件），忙碌时反而可点 ——
+        // 而忙碌时点了又被「已有动作在跑」的闸门拒绝。稳态永远点不动。
+        // 与下面「AI 说明」按钮同向；model_test 的源码扫描会拒绝反写形态。
         Button(shallowLabelFor(scope), {=> actUpdate(app, model, updateTargetOf(model), false)})
-            .fontSize(12.0).enabled(busy)
+            .fontSize(fsBody()).enabled(!busy)
         if (pending > 0) {
             dsPill("${pending}", C_SHALLOW, dark)
         }
         Button(deepLabelFor(scope), {=> actUpdate(app, model, updateTargetOf(model), true)}, role: ButtonRole.Primary)
-            .fontSize(12.0).enabled(busy)
+            .fontSize(fsBody()).enabled(!busy)
         // C5：在**当前范围**上要一段说明。单项目范围给项目说明，全局给项目群说明。
         // 不给「重新生成」—— 事实陈述重编一遍对用户没有价值，
         // 只会让人分不清哪句是推出来的、哪句是引擎给的。
         Button(aiBriefLabel(model), {=> runBriefForScope(app, model)}, role: ButtonRole.Normal)
-            .fontSize(12.0).enabled(!busy)
+            .fontSize(fsBody()).enabled(!busy)
     }.spacing(6.0.vp).hug()
 }
 
@@ -176,7 +180,7 @@ func detail(model: AppModel, app: DesktopApp, dark: Bool): Unit {
                 // 否则每次启动都要先闪一下「没装引擎」的假象。
                 Panel {
                     VStack {
-                        Label("正在定位引擎…").fontSize(15.0).muted()
+                        Label("正在定位引擎…").fontSize(fsSection()).muted()
                     }.spacing(0.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
                 }.style(dsSurface(DsLevel.Card, dark)).contentPadding(24.0.vp).flex()
             }
@@ -193,7 +197,7 @@ func detail(model: AppModel, app: DesktopApp, dark: Bool): Unit {
         } else if (model.snapshot.value.isNone()) {
             Panel {
                 VStack {
-                    Label("读取项目群…").fontSize(15.0).muted()
+                    Label("读取项目群…").fontSize(fsSection()).muted()
                 }.spacing(0.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
             }.style(dsSurface(DsLevel.Card, dark)).contentPadding(24.0.vp).flex()
         } else {
@@ -215,8 +219,8 @@ private func banner(title: String, text: String, tint: Int64, dark: Bool, onClos
     Panel {
         HStack {
             dsAlertPill(title, DsAlert.Warn, dark)
-            Flexible { Label(text).fontSize(12.0).wrap() }
-            Button("关闭", onClose).fontSize(11.0)
+            Flexible { Label(text).fontSize(fsBody()).wrap() }
+            Button("关闭", onClose).fontSize(fsLabel())
         }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
     }.style(dsTinted(tint, dark)).padding(10.0.vp, 6.0.vp)
 }
@@ -251,7 +255,7 @@ private func workBar(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     let total = allProjectsOf(model).size
     Panel {
         HStack {
-            Label("范围").fontSize(12.0).muted()
+            Label("范围").fontSize(fsBody()).muted()
             scopeButtons(model, app, total, dark)
             Spacer()
             DualTrackButtons(model, app, dark)
@@ -364,16 +368,16 @@ private func scopeStyle(selected: Bool, dark: Bool): SurfaceStyle {
 func setupGuide(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     Panel {
         VStack {
-            Label("需要 moonGit 引擎").fontSize(17.0).fontWeight(FontWeight.semiBold)
-            Label("引擎是独立安装的本地工具，客户端只负责展示。").fontSize(13.0).muted()
+            Label("需要 moonGit 引擎").fontSize(fsTitle()).fontWeight(FontWeight.semiBold)
+            Label("引擎是独立安装的本地工具，客户端只负责展示。").fontSize(fsCard()).muted()
             Panel {
                 VStack {
-                    Label("1. 仓库内执行：sh scripts/install.sh").fontSize(12.0)
-                    Label("2. 注册项目群：moongit scan ~/dev --depth 4").fontSize(12.0)
-                    Label("3. 回到这里点「刷新」").fontSize(12.0)
+                    Label("1. 仓库内执行：sh scripts/install.sh").fontSize(fsBody())
+                    Label("2. 注册项目群：moongit scan ~/dev --depth 4").fontSize(fsBody())
+                    Label("3. 回到这里点「刷新」").fontSize(fsBody())
                 }.spacing(6.0.vp).crossAxisAlignment(CrossAxisAlignment.Start).hug()
             }.style(dsSurface(DsLevel.Nested, dark)).contentPadding(14.0.vp)
-            Button("重新检测引擎", {=> requestRefresh(app, model)}, role: ButtonRole.Primary).fontSize(13.0)
+            Button("重新检测引擎", {=> requestRefresh(app, model)}, role: ButtonRole.Primary).fontSize(fsCard())
         }.spacing(14.0.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
     }.style(dsSurface(DsLevel.Card, dark)).contentPadding(28.0.vp).flex()
 }
@@ -381,10 +385,10 @@ func setupGuide(model: AppModel, app: DesktopApp, dark: Bool): Unit {
 func emptyState(title: String, why: String, model: AppModel, app: DesktopApp, dark: Bool): Unit {
     Panel {
         VStack {
-            Label(title).fontSize(17.0).fontWeight(FontWeight.semiBold)
-            Label(why).fontSize(13.0).muted().wrap()
+            Label(title).fontSize(fsTitle()).fontWeight(FontWeight.semiBold)
+            Label(why).fontSize(fsCard()).muted().wrap()
             if (model.canRefresh.value) {
-                Button("重新读取", {=> requestRefresh(app, model)}, role: ButtonRole.Primary).fontSize(13.0)
+                Button("重新读取", {=> requestRefresh(app, model)}, role: ButtonRole.Primary).fontSize(fsCard())
             }
         }.spacing(10.0.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
     }.style(dsSurface(DsLevel.Card, dark)).contentPadding(24.0.vp).flex()
@@ -428,10 +432,10 @@ private func dashboardBody(model: AppModel, app: DesktopApp, dark: Bool): Unit {
             VStack {
                 HStack {
                     dsAlertPill("未读取", DsAlert.Warn, dark)
-                    Flexible { Label(model.dashboardProblem.value).fontSize(13.0).wrap() }
+                    Flexible { Label(model.dashboardProblem.value).fontSize(fsCard()).wrap() }
                 }.spacing(8.0.vp).hug()
                 Label("这一块不会用 0 填。修好上面说的原因后点工具栏「刷新」。")
-                    .fontSize(11.0).muted().wrap()
+                    .fontSize(fsLabel()).muted().wrap()
             }.spacing(6.0.vp)
         }.style(dsTinted(C_ORANGE, dark)).contentPadding(14.0.vp).hug()
     } else if (model.dashboard.value.isNone()) {
@@ -444,8 +448,8 @@ private func dashboardBody(model: AppModel, app: DesktopApp, dark: Bool): Unit {
         // ── 段 1：页头 ──
         HStack {
             VStack {
-                Label("项目群脉搏").fontSize(22.0).fontWeight(FontWeight.bold)
-                Label(dashSummaryLine(kpis)).fontSize(13.0).muted()
+                Label("项目群脉搏").fontSize(fsDisplay()).fontWeight(FontWeight.bold)
+                Label(dashSummaryLine(kpis)).fontSize(fsCard()).muted()
             }.crossAxisAlignment(CrossAxisAlignment.Start).hug()
             Spacer()
         }.hug()
@@ -498,7 +502,7 @@ private func kpiWideCard(k: DashKpi, dark: Bool): Unit {
     Panel {
         VStack {
             HStack {
-                Label(k.title).fontSize(12.0).muted()
+                Label(k.title).fontSize(fsBody()).muted()
                 Spacer()
                 // 「待处理 0」不该染红：没有待办不是坏事，
                 // 染红等于把常态说成异常（与「读取失败」用红一个道理）。
@@ -508,16 +512,16 @@ private func kpiWideCard(k: DashKpi, dark: Bool): Unit {
             }.hug()
             match (tint) {
                 case Some(c) =>
-                    Label("${k.value}").fontSize(30.0).fontWeight(FontWeight.bold)
-                        .foregroundColor(dsColor(c))
+                    Label("${k.value}").fontSize(fsDisplay()).fontWeight(FontWeight.bold)
+                        .foregroundColor(dsColor(dsTextColor(c, dark)))
                 case None =>
-                    Label("${k.value}").fontSize(30.0).fontWeight(FontWeight.bold)
+                    Label("${k.value}").fontSize(fsDisplay()).fontWeight(FontWeight.bold)
             }
             match (k.progress) {
                 case Some(r) => dsMiniBarRatio(r, barColor, dark)
                 case None => ()
             }
-            Label(k.caption).fontSize(11.0).muted().wrap()
+            Label(k.caption).fontSize(fsLabel()).muted().wrap()
         }.crossAxisAlignment(CrossAxisAlignment.Start).spacing(6.0.vp)
     }.style(dsSurface(DsLevel.Card, dark)).contentPadding(14.0.vp).hug()
 }
@@ -544,17 +548,17 @@ private func failurePanel(snap: StatusSnapshot, dark: Bool): Unit {
             HStack {
                 dsAlertPill("读取失败", DsAlert.Error, dark)
                 Label("以下项目读取失败 —— 原因来自引擎，不是客户端推断")
-                    .fontSize(13.0).fontWeight(FontWeight.semiBold)
+                    .fontSize(fsCard()).fontWeight(FontWeight.semiBold)
             }.spacing(8.0.vp).hug()
             Divider()
             if (!snap.failedKnown) {
-                Label("引擎没有披露失败项目数，下面这些是逐个读出来的。").fontSize(12.0).wrap()
+                Label("引擎没有披露失败项目数，下面这些是逐个读出来的。").fontSize(fsBody()).wrap()
             }
             for (p in snap.projects) {
                 if (p.failed()) {
                     HStack {
                         Badge(p.name, kind: BadgeKind.Danger)
-                        Flexible { Label(p.error).fontSize(12.0).wrap() }
+                        Flexible { Label(p.error).fontSize(fsBody()).wrap() }
                     }.spacing(8.0.vp).hug()
                 }
             }
@@ -583,7 +587,7 @@ private func languageCard(dash: Dashboard, dark: Bool): Unit {
                 }
             }.hug()
             if (parts.isEmpty()) {
-                Label(cov.emptyTitle).fontSize(12.0).muted()
+                Label(cov.emptyTitle).fontSize(fsBody()).muted()
             } else {
                 Flexible { dsSegBar(parts) }
                 for (p in parts) {
@@ -591,7 +595,7 @@ private func languageCard(dash: Dashboard, dark: Bool): Unit {
                 }
             }
             for (n in cov.notes) {
-                Label(n).fontSize(11.0).muted().wrap()
+                Label(n).fontSize(fsLabel()).muted().wrap()
             }
         }.spacing(8.0.vp)
     }.style(dsSurface(DsLevel.Card, dark)).contentPadding(14.0.vp).flex()
@@ -638,7 +642,7 @@ private func workCard(dash: Dashboard, dark: Bool): Unit {
             if (dash.failed > 0) {
                 Divider()
                 HStack {
-                    Label("读取失败").fontSize(12.0)
+                    Label("读取失败").fontSize(fsBody())
                     Spacer()
                     dsStatPill(dash.failed, dark)
                 }.hug()
@@ -650,10 +654,10 @@ private func workCard(dash: Dashboard, dark: Bool): Unit {
 private func workRow(title: String, n: Int64, full: Int64, color: Int64, dark: Bool): Unit {
     VStack {
         HStack {
-            Label(title).fontSize(12.0)
+            Label(title).fontSize(fsBody())
             Spacer()
-            Label("${n}").fontSize(12.0).fontWeight(FontWeight.semiBold)
-                .foregroundColor(dsColor(dsStatColor(dsStatFrom(n))))
+            Label("${n}").fontSize(fsBody()).fontWeight(FontWeight.semiBold)
+                .foregroundColor(dsColor(dsTextColor(dsStatColor(dsStatFrom(n)), dark)))
         }.hug()
         dsMiniBar(n, full, color, dark)
     }.spacing(3.0.vp).hug()
@@ -686,8 +690,8 @@ private func dashFilterBar(
             // 时间跨度：点一下切下一档。**标签写「最近更新」而不是「提交」** ——
             // 引擎没有逐项目的提交时间序列，我们只能按最后更新天数分档。
             Button("最近更新：${spanLabel(f.span)}", {=> model.dashSpan.value = spanNext(f.span)})
-                .fontSize(12.0)
-            dsCommitsPicker(model, projects, dark)
+                .fontSize(fsBody())
+            dsCommitsPicker(model, projects)
             Spacer()
             // 用 `busy` 而不是另设一个 `reindexing` 标志：
             // `busy` 才是「有没有东西真在跑」的真值；另设标志只会带来
@@ -697,38 +701,42 @@ private func dashFilterBar(
                 (if (model.busy.value) { "重新索引中…" } else { "重新索引" }),
                 {=> actUpdate(app, model, "", false)},
                 role: ButtonRole.Primary
-            ).fontSize(12.0).enabled(!model.busy.value && !model.actionBusy.value)
+            ).fontSize(fsBody()).enabled(!model.busy.value && !model.actionBusy.value)
         }.spacing(8.0.vp).hug()
     }.style(dsSurface(DsLevel.Nested, dark)).contentPadding(10.0.vp, 8.0.vp).hug()
 }
 
 /// 提交类型选择器。**选项来自引擎真给的数据**（逐项目 commitTypes 求并集），
 /// 不是写死一份列表 —— 写死的话引擎新增一个类型时这个控件就落下一项。
-private func dsCommitsPicker(model: AppModel, projects: ArrayList<Project>, dark: Bool): Unit {
+///
+/// 控件用框架的 `Chip`（自带 hover 高亮 / 焦点环 / 空格回车切换），
+/// 选中态经 `commitFilterLens` 双向绑到筛选值上 —— 不再自绘样式。
+/// 曾用 `Button + .style(...)` 手搓：`style` 会**整体覆盖**按钮的交互表面，
+/// hover/按下反馈全没了，选中与否只能靠颜色硬分。
+private func dsCommitsPicker(model: AppModel, projects: ArrayList<Project>): Unit {
     let kinds = allCommitTypes(projects)
     HStack {
-        dsFilterChip("所有提交类型", commitFilterIsAll(model.dashCommits.value), {
-            => model.dashCommits.value = DashCommitFilter.AllCommits
-        }, dark)
+        Chip("所有提交类型", commitFilterLens(model, DashCommitFilter.AllCommits), key: "dd-chip-all")
         for (k in kinds) {
             // 6 个之后再排就挤了；引擎给了 12 档色板，但这里选 6 个是**排版**取舍，
             // 不是数据取舍 —— 剩下的通过「所有提交类型」能看到。
             if (k.index < 6) {
-                dsFilterChip(k.name, commitFilterEquals(model.dashCommits.value,
-                    DashCommitFilter.Only(k.name)), {
-                    => model.dashCommits.value = DashCommitFilter.Only(k.name)
-                }, dark)
+                Chip(k.name, commitFilterLens(model, DashCommitFilter.Only(k.name)),
+                    key: "dd-chip-${k.name}")
             }
         }
     }.spacing(6.0.vp).hug()
 }
 
-private func dsFilterChip(label: String, on: Bool, tap: () -> Unit, dark: Bool): Unit {
-    Button(label, tap).fontSize(12.0)
-        .style(if (on) {
-            dsTinted(C_ACCENT, dark, strong: true)
-        } else {
-            dsSurface(DsLevel.Card, dark)
+/// 筛选 chip 的双向绑定（框架 `Chip` 收 `Bindable<Bool>`，框架示例 tracker
+/// 同款 `State.project` 镜头）。**选中态从筛选值推导**（get），
+/// 点击写回筛选（set）：点亮 = 落成 `Only(类型)`，再点一下（熄灭）= 回「所有」。
+/// 「所有提交类型」是重置位 —— 它没有「熄灭」态，set 恒写 `AllCommits`。
+public func commitFilterLens(model: AppModel, option: DashCommitFilter): Binding<Bool> {
+    return model.dashCommits.project(
+        get: {f => commitFilterEquals(f, option)},
+        set: {_, on =>
+            if (on) { option } else { DashCommitFilter.AllCommits }
         })
 }
 
@@ -751,11 +759,11 @@ private func projectGrid(
     VStack {
         HStack {
             Label("各项目演进进度与里程碑明细")
-                .fontSize(15.0).fontWeight(FontWeight.semiBold)
+                .fontSize(fsSection()).fontWeight(FontWeight.semiBold)
             Spacer()
             // 标题必须**跟着筛选走**并说清被筛掉了多少 ——
             // 标题写「（12）」而下面画 3 张卡，正是本项目踩过多次的那族缺陷。
-            Label(gridCountLine(shown.size, projects.size, f)).fontSize(11.0).muted()
+            Label(gridCountLine(shown.size, projects.size, f)).fontSize(fsLabel()).muted()
         }.hug()
         if (shown.isEmpty()) {
             dsEmptyState("没有可展示的项目", "引擎没给出项目列表。", dark)
@@ -795,7 +803,7 @@ private func projectCard(model: AppModel, d: Dashboard, p: Project, dark: Bool):
         VStack {
             // 行 1：项目名 + 状态词
             HStack {
-                Label(p.name).fontSize(14.0).fontWeight(FontWeight.semiBold)
+                Label(p.name).fontSize(fsCard()).fontWeight(FontWeight.semiBold)
                 Flexible {}
                 dsPill(livenessLabel(projectLiveness(p, now)),
                     boardColumnColor(boardColumnOf(projectLiveness(p, now))), dark)
@@ -803,20 +811,20 @@ private func projectCard(model: AppModel, d: Dashboard, p: Project, dark: Bool):
 
             // 行 2：一句描述。**读不出来时不能编一句**。
             if (!p.error.isEmpty()) {
-                Label(p.error).fontSize(11.0).wrap()
+                Label(p.error).fontSize(fsLabel()).wrap()
                     .foregroundColor(dsColor(C_RED))
             } else if (p.headline.isEmpty()) {
-                Label("没有提交摘要").fontSize(11.0).muted()
+                Label("没有提交摘要").fontSize(fsLabel()).muted()
             } else {
-                Label(p.headline).fontSize(11.0).muted().wrap()
+                Label(p.headline).fontSize(fsLabel()).muted().wrap()
             }
 
             // 行 3：里程碑完成度 + 分支
             HStack {
                 projectMilestoneLine(d, p)
                 Spacer()
-                Label("分支").fontSize(11.0).muted()
-                Label(primaryBranchLabel(p)).fontSize(11.0)
+                Label("分支").fontSize(fsLabel()).muted()
+                Label(primaryBranchLabel(p)).fontSize(fsLabel())
             }.hug()
 
             // 行 4：提交结构（堆叠条 + 图例）
@@ -828,7 +836,7 @@ private func projectCard(model: AppModel, d: Dashboard, p: Project, dark: Bool):
                     "提交类型读不出来"
                 } else {
                     "此筛选下没有可画的提交类型"
-                })).fontSize(11.0).muted()
+                })).fontSize(fsLabel()).muted()
             } else {
                 Flexible { dsSegBar(parts) }
                 HStack {
@@ -871,31 +879,31 @@ private func projectMilestoneLine(d: Dashboard, p: Project): Widget {
         }
     }
     if (done + open + unknown == 0) {
-        return Label("无里程碑").fontSize(11.0).muted()
+        return Label("无里程碑").fontSize(fsLabel()).muted()
     }
     let decided = done + open
     var text = (if (decided > 0) { "里程碑 ${done * 100 / decided}%" } else { "里程碑无法核验" })
     if (unknown > 0) {
         text += " · ${unknown} 条读不出来"
     }
-    return Label(text).fontSize(11.0)
+    return Label(text).fontSize(fsLabel())
 }
 
 /// 最近提交那一行。明细读不到时**必须说读不到**，不能画成空行。
 private func recentCommitLine(p: Project): Widget {
     if (!p.error.isEmpty()) {
-        return Label("读不出来").fontSize(11.0).muted()
+        return Label("读不出来").fontSize(fsLabel()).muted()
     }
     if (p.branches.size == 0) {
         // 空着的一行会被读成「这个项目什么都没干」
-        return Label("分支明细未纳入追踪（提交类型分布仍可用）").fontSize(11.0).muted()
+        return Label("分支明细未纳入追踪（提交类型分布仍可用）").fontSize(fsLabel()).muted()
     }
     let b = p.branches[0]
     let head = (if (b.headShort.isEmpty()) { b.name } else { b.headShort })
     let subject = (if (b.headSubject.isEmpty()) { b.summary } else { b.headSubject })
     return HStack {
-        Label(head).fontSize(11.0)
-        Flexible { Label(subject).fontSize(11.0).muted() }
+        Label(head).fontSize(fsLabel())
+        Flexible { Label(subject).fontSize(fsLabel()).muted() }
     }.hug()
 }
 
@@ -921,7 +929,7 @@ private func commitTypeLegendOf(parts: Array<DsPart>): Widget {
             }
         }
         if (parts.size > 4) {
-            Label("还有 ${parts.size - 4} 种").fontSize(10.0).muted()
+            Label("还有 ${parts.size - 4} 种").fontSize(fsMicro()).muted()
         }
     }.crossAxisAlignment(CrossAxisAlignment.Start).spacing(3.0.vp)
 }
@@ -956,17 +964,17 @@ private func milestoneCard(d: Dashboard, dark: Bool): Unit {
     Panel {
         VStack {
             Label(milestoneCardTitle(c))
-                .fontSize(15.0).fontWeight(FontWeight.semiBold).wrap()
+                .fontSize(fsSection()).fontWeight(FontWeight.semiBold).wrap()
             Divider()
             if (d.milestoneItems.isEmpty()) {
                 if (c.degraded || c.storeHealth != "ok") {
                     // 「读不出来」与「没有」必须两种样子
-                    Label("里程碑读不出来（不是「没有」）").fontSize(12.0).muted()
+                    Label("里程碑读不出来（不是「没有」）").fontSize(fsBody()).muted()
                     Label("milestones.json ${c.storeHealth}，读到 ${c.readCount} 条")
-                        .fontSize(11.0).muted().wrap()
+                        .fontSize(fsLabel()).muted().wrap()
                 } else {
-                    Label("暂无里程碑").fontSize(12.0).muted()
-                    Label("在「里程碑」页添加").fontSize(11.0).muted()
+                    Label("暂无里程碑").fontSize(fsBody()).muted()
+                    Label("在「里程碑」页添加").fontSize(fsLabel()).muted()
                 }
             } else {
                 var i: Int64 = 0
@@ -993,27 +1001,31 @@ private func milestoneRow(m: MilestoneItem, dark: Bool): Unit {
     })
     VStack {
         HStack {
-            Label("${mark} ${m.projectName} · ${m.name}").fontSize(11.0).wrap()
+            Label("${mark} ${m.projectName} · ${m.name}").fontSize(fsLabel()).wrap()
             Spacer()
-            Label(milestoneDueText(m)).fontSize(10.0).muted()
+            Label(milestoneDueText(m)).fontSize(fsMicro()).muted()
         }.hug()
         // 核验不了时把**引擎给的原因**说出来。引擎的 `unverifiedReason` 是恒发键
         // （可读时是空串），不读它就等于自己编一句「读不出来」——
         // 而引擎已经把具体原因写好了。
         if (m.status == "unknown" && !m.unverifiedReason.isEmpty()) {
-            Label(m.unverifiedReason).fontSize(10.0).wrap()
-                .foregroundColor(dsColor(C_ORANGE))
+            Label(m.unverifiedReason).fontSize(fsMicro()).wrap()
+                .foregroundColor(dsColor(dsTextColor(C_ORANGE, dark)))
         }
     }.crossAxisAlignment(CrossAxisAlignment.Start).spacing(2.0.vp)
 }
 
-/// 到期文本。`daysToTarget == -1` 是「未设置**或日期无效**」——
-/// 绝不能掉进「逾期 1 天」那一档：假数字没了，假断言还在。
+/// 到期文本。`daysToTarget == -1` 是引擎的**契约哨兵**（未设置或日期无效）；
+/// 其余负数是真实的「已逾期 N 天」，不能一并吞进「日期无效」。
+///
+/// ⚠ 这里曾写成 `daysToTarget < 0` 就报「日期无效」—— 后面的「逾期」分支
+/// 成了静态不可达的死代码，逾期的里程碑被读成「日期算不出」。
+/// 假数字没了，真数字也被吞了。
 public func milestoneDueText(m: MilestoneItem): String {
     if (m.targetDate.isEmpty()) {
         return ""
     }
-    if (m.daysToTarget < 0) {
+    if (m.daysToTarget == -1) {
         return "${m.targetDate}（日期无效，算不出还剩天数）"
     }
     if (m.daysToTarget >= 0) {
@@ -1032,9 +1044,9 @@ func boardPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     ScrollView(key: "dd-board-scroll") {
         VStack {
             HStack {
-                Label("看板").fontSize(17.0).fontWeight(FontWeight.semiBold)
+                Label("看板").fontSize(fsTitle()).fontWeight(FontWeight.semiBold)
                 Spacer()
-                Label("按「要不要你动手」分列，不按项目总数排").fontSize(11.0).muted()
+                Label("按「要不要你动手」分列，不按项目总数排").fontSize(fsLabel()).muted()
             }.hug()
             for (c in boardColumns()) {
                 boardColumnCard(model, app, c, all, now, dark)
@@ -1063,14 +1075,14 @@ private func boardColumnCard(
         VStack {
             HStack {
                 dsDot(dsColor(boardColumnColor(c)))
-                Label(boardColumnLabel(c)).fontSize(14.0).fontWeight(FontWeight.semiBold)
+                Label(boardColumnLabel(c)).fontSize(fsCard()).fontWeight(FontWeight.semiBold)
                 Spacer()
-                Label("${members.size}").fontSize(12.0).muted()
+                Label("${members.size}").fontSize(fsBody()).muted()
             }.spacing(6.0.vp).hug()
-            Label(boardColumnBasis(c)).fontSize(11.0).muted().wrap()
+            Label(boardColumnBasis(c)).fontSize(fsLabel()).muted().wrap()
             Divider()
             if (members.isEmpty()) {
-                Label("这一列现在是空的").fontSize(12.0).muted()
+                Label("这一列现在是空的").fontSize(fsBody()).muted()
             } else {
                 for (p in members) {
                     boardCard(model, app, p, now, dark)
@@ -1106,11 +1118,11 @@ private func boardCard(model: AppModel, app: DesktopApp, p: Project, now: Int64,
         HStack {
             VStack {
                 HStack {
-                    Label(p.name).fontSize(13.0).fontWeight(FontWeight.semiBold)
-                    Label(livenessLabel(projectLiveness(p, now))).fontSize(11.0)
-                        .foregroundColor(dsColor(boardColumnColor(boardColumnOf(projectLiveness(p, now)))))
+                    Label(p.name).fontSize(fsCard()).fontWeight(FontWeight.semiBold)
+                    Label(livenessLabel(projectLiveness(p, now))).fontSize(fsLabel())
+                        .foregroundColor(dsColor(dsTextColor(boardColumnColor(boardColumnOf(projectLiveness(p, now))), dark)))
                 }.spacing(6.0.vp).hug()
-                Label(boardCardLine(p, now)).fontSize(11.0).muted().wrap()
+                Label(boardCardLine(p, now)).fontSize(fsLabel()).muted().wrap()
             }.spacing(2.0.vp).hug()
             Spacer()
             Button("打开", {
@@ -1119,7 +1131,7 @@ private func boardCard(model: AppModel, app: DesktopApp, p: Project, now: Int64,
                     // 绕过入口的后果不是「代码风格问题」：侧栏仓库组的高亮
                     // 停在别的项目上，而主区已经换成这一个了。
                     openProject(model, p.name)
-            }).fontSize(11.0)
+            }).fontSize(fsLabel())
         }.spacing(8.0.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
     }.style(dsSurface(DsLevel.Nested, dark)).contentPadding(10.0.vp).hug()
 }

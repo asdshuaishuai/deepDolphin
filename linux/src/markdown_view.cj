@@ -82,7 +82,7 @@ private func mdBlockView(b: MdBlock, dark: Bool): Widget {
         // macOS 端把多行用空格接成一段。这里同理 ——
         // 一段话拆成好几个 Label 会让段间距比行距还大。
         return Label(joinWithSpace(b.lines))
-            .fontSize(12.0).wrap()
+            .fontSize(fsBody()).wrap()
     }
     if (mdBlockIs(b, MdBlockKind.Bullet)) {
         return mdListView(b, true)
@@ -116,7 +116,7 @@ private func mdListView(b: MdBlock, dotted: Bool): Widget {
                 if (dotted) {
                     dsDot(dsColor(C_ACCENT))
                 }
-                Label(item).fontSize(12.0).wrap()
+                Label(item).fontSize(fsBody()).wrap()
             }.spacing(7.vp).crossAxisAlignment(CrossAxisAlignment.Start).hug()
         }
     }.spacing(4.vp).crossAxisAlignment(CrossAxisAlignment.Start).hug()
@@ -136,7 +136,7 @@ private func mdQuoteView(b: MdBlock, dark: Bool): Widget {
         Divider(axis: Axis.Vertical, color: dsColor(C_ACCENT).withAlpha(130))
         VStack {
             for (line in b.lines) {
-                Label(line).fontSize(12.0).muted().wrap()
+                Label(line).fontSize(fsBody()).muted().wrap()
             }
         }.spacing(3.vp).crossAxisAlignment(CrossAxisAlignment.Start).hug()
     // 间距 10 = macOS 端那条 `.padding(.leading, 10)` 的净效果。
@@ -165,7 +165,7 @@ private func mdMonoBlock(lines: ArrayList<String>, dark: Bool): Widget {
     return Panel {
         VStack {
             for (line in lines) {
-                Label(line).fontFamily("monospace").fontSize(11.0).wrap()
+                Label(line).fontFamily("monospace").fontSize(fsLabel()).wrap()
             }
         }.spacing(2.vp).crossAxisAlignment(CrossAxisAlignment.Start).hug()
     }.style(dsSurface(DsLevel.Nested, dark)).contentPadding(10.vp).hug()

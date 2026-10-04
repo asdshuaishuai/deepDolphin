@@ -12,6 +12,7 @@ import std.collection.*
 import cui.{Button, ButtonRole, Color, CrossAxisAlignment, DesktopApp, Divider, Dropdown,
     Flexible, FontWeight, HStack, Key, Label, LengthUnits, Panel, ScrollView, Spacer, State, TextArea,
     TextField, VStack, Widget}
+import cui.mountEffect
 
 // ---------------------------------------------------------------------------
 // 对话（C6）
@@ -48,25 +49,25 @@ public func closeAIPane(model: AppModel): Unit {
 public func aiChatPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     VStack {
         HStack {
-            Label("AI 助手").fontSize(15.0).fontWeight(FontWeight.semiBold)
-            Label(aiScopeLabel(model)).fontSize(11.0).muted()
+            Label("AI 助手").fontSize(fsSection()).fontWeight(FontWeight.semiBold)
+            Label(aiScopeLabel(model)).fontSize(fsLabel()).muted()
             Spacer()
             if (!model.aiExecuted.value.isEmpty()) {
-                Label("刚才：${joinList(model.aiExecuted.value.toArray())}").fontSize(10.0).muted().maxLines(1)
+                Label("刚才：${joinList(model.aiExecuted.value.toArray())}").fontSize(fsMicro()).muted().maxLines(1)
             }
             // 停止只在**真的在跑**时出现。一直挂着一个能按的「停止」，
             // 用户会按了发现没反应 —— 那是「按钮不反映状态」这一族缺陷。
             if (model.aiRunning.value) {
-                Button("停止", {=> stopAI(model)}, role: ButtonRole.Danger).fontSize(12.0)
+                Button("停止", {=> stopAI(model)}, role: ButtonRole.Danger).fontSize(fsBody())
             }
             if (!model.aiExecuted.value.isEmpty()) {
                 Button("清空", {=>
                     model.aiTranscript.value = None
                     model.aiExecuted.value = ArrayList<String>()
                     model.aiNote.value = ""
-                }).fontSize(12.0)
+                }).fontSize(fsBody())
             }
-            Button("关闭", {=> closeAIWithCheck(model)}).fontSize(12.0)
+            Button("关闭", {=> closeAIWithCheck(model)}).fontSize(fsBody())
         }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
         Divider()
         // ⚠ 不要用 `Flexible { … }` 包住内容区。
@@ -107,9 +108,10 @@ private func aiMessageRow(m: ChatMessage, dark: Bool): Unit {
     Panel {
         VStack {
             HStack {
-                Label(name).fontSize(10.0).foregroundColor(dsColor(tint))
+                // ⚠ 文字走 `dsTextColor`：工具行的橙原色压在浅底上只有 2.8:1。
+                Label(name).fontSize(fsMicro()).foregroundColor(dsColor(dsTextColor(tint, dark)))
                 if (m.isError) {
-                    Label("失败").fontSize(10.0).foregroundColor(dsColor(C_RED))
+                    Label("失败").fontSize(fsMicro()).foregroundColor(dsColor(C_RED))
                 }
                 Spacer()
             }.spacing(4.vp).hug()
@@ -122,7 +124,7 @@ private func aiMessageRow(m: ChatMessage, dark: Bool): Unit {
                 // `unused expression`，正文一个字都不画。
                 mdView(aiMessageText(m), dark)
             } else {
-                Label(aiMessageText(m)).fontSize(12.0).wrap()
+                Label(aiMessageText(m)).fontSize(fsBody()).wrap()
             }
         }.spacing(3.0.vp).hug()
     }.style(dsSurface(DsLevel.Nested, dark)).contentPadding(8.0.vp).hug()
@@ -160,10 +162,10 @@ private func aiTranscriptView(model: AppModel, dark: Bool): Unit {
                 HStack {
                     Spacer()
                     VStack {
-                        Label("还没聊过").fontSize(15.0).muted()
+                        Label("还没聊过").fontSize(fsSection()).muted()
                         Label("问项目群现状、问某个项目的分支、让它跑一次浅更新。\n" +
                             "它只根据引擎返回的事实回答 —— 工具没给的数据，它会说「不知道」。")
-                            .fontSize(12.0).muted().wrap().width(520.0.vp)
+                            .fontSize(fsBody()).muted().wrap().width(520.0.vp)
                     }.spacing(6.vp)
                     Spacer()
                 }.spacing(0.vp)
@@ -177,10 +179,10 @@ private func aiTranscriptView(model: AppModel, dark: Bool): Unit {
                         aiMessageRow(m, dark)
                     }
                     if (!model.aiNote.value.isEmpty()) {
-                        Label(model.aiNote.value).fontSize(11.0).muted().wrap()
+                        Label(model.aiNote.value).fontSize(fsLabel()).muted().wrap()
                     }
                     if (!model.aiStatus.value.isEmpty()) {
-                        Label(model.aiStatus.value).fontSize(12.0).muted()
+                        Label(model.aiStatus.value).fontSize(fsBody()).muted()
                     }
                 }.spacing(6.0.vp)
             }.scrollState(model.aiScroll).flex()
@@ -211,7 +213,7 @@ private func aiComposer(model: AppModel, app: DesktopApp, dark: Bool): Unit {
         TextArea(model.aiDraft, key: "dd-ai-draft").placeholder("问点什么…").wrap()
             .height(72.0.vp).flex()
         Button("发送", {=> sendAI(app, model)}, role: ButtonRole.Primary)
-            .fontSize(12.0).enabled(canSendAI(model))
+            .fontSize(fsBody()).enabled(canSendAI(model))
     }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.End).hug()
 }
 
@@ -321,9 +323,9 @@ public func agentOutcomeWasStopped(o: AgentOutcome): Bool {
 public func aiSettingsPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     VStack {
         HStack {
-            Label("AI 设置").fontSize(15.0).fontWeight(FontWeight.semiBold)
+            Label("AI 设置").fontSize(fsSection()).fontWeight(FontWeight.semiBold)
             Spacer()
-            Button("关闭", {=> closeAIPane(model)}).fontSize(12.0)
+            Button("关闭", {=> closeAIPane(model)}).fontSize(fsBody())
         }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
         Divider()
         Flexible { aiSettingsBody(model, app, dark) }
@@ -331,6 +333,8 @@ public func aiSettingsPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
 }
 
 private func aiSettingsBody(model: AppModel, app: DesktopApp, dark: Bool): Unit {
+    // 外观下拉的写入接到「保存 + 披露」上（与范围下拉同款 mountEffect 模式）。
+    observeAppearanceChoice(model)
     let cat = catalogProblem()
     let cov = providerPickerCoverage()
     ScrollView(key: "dd-ai-set-scroll") {
@@ -352,9 +356,46 @@ private func aiSettingsBody(model: AppModel, app: DesktopApp, dark: Bool): Unit 
             aiKeyStoreCard(dark)
             aiField("开机自启", {=> aiAutostartRow(model, app, dark)}, dark,
                 "写 XDG 的 ~/.config/autostart/deepdolphin.desktop。开关读的是**系统真值**，不是上次点了什么。")
+            aiField("外观", {=> aiAppearanceRow(model)}, dark,
+                "跟随系统 / 亮 / 暗，写入 XDG 的 settings.conf。主题在启动时定型，切换要重启客户端生效。")
             aiTestCard(model, app, dark)
         }.spacing(10.0.vp)
     }.flex()
+}
+
+// ---------------------------------------------------------------------------
+// 外观（R2-03）—— 三档实现曾整层零 UI 消费：能存、能读，却没有一处能换
+// ---------------------------------------------------------------------------
+
+/// 把外观下拉的写入接到 `applyAppearanceChoice`（记档 + 落盘 + 结果披露）。
+/// `mountEffect` 按 key 去重，重建时不会重复注册观察；
+/// 接线本体拆在 `installAppearanceChoiceObserver`（appstate.cj），
+/// 判据不开窗就能装上它。
+private func observeAppearanceChoice(model: AppModel): Unit {
+    mountEffect("dd-observe-appearance", {=> installAppearanceChoiceObserver(model)})
+}
+
+/// 外观那一行的控件。三档下拉 + 两条披露：
+/// `appearanceUnknown`（启动时没探到系统外观，说了「为什么这次是亮色」）
+/// 与保存结果（成功也写明「重启后生效」，写不进去则给原因）。
+private func aiAppearanceRow(model: AppModel): Widget {
+    return VStack {
+        HStack {
+            Dropdown(appearanceChoices(), model.appearanceIndex, key: "dd-appearance").width(200.0.vp)
+            if (model.appearanceUnknown.value) {
+                Label("本次启动没探到系统外观，先用了亮色 —— 在这里显式选一档，以后就不再猜。")
+                    .fontSize(fsLabel()).muted().wrap()
+            }
+            Spacer()
+        }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
+        if (!model.appearanceNote.value.isEmpty()) {
+            if (model.appearanceNoteOk.value) {
+                Label(model.appearanceNote.value).fontSize(fsLabel()).muted().wrap()
+            } else {
+                Label(model.appearanceNote.value).fontSize(fsLabel()).foregroundColor(dsColor(C_RED)).wrap()
+            }
+        }
+    }.spacing(4.vp).hug()
 }
 
 /// 一个带标题 + 控件 + 说明的字段块。
@@ -368,9 +409,9 @@ private func aiSettingsBody(model: AppModel, app: DesktopApp, dark: Bool): Unit 
 private func aiField(label: String, body: () -> Unit, dark: Bool, note: String): Unit {
     Panel {
         VStack {
-            Label(label).fontSize(12.0).fontWeight(FontWeight.semiBold)
+            Label(label).fontSize(fsBody()).fontWeight(FontWeight.semiBold)
             body()
-            Label(note).fontSize(10.0).muted().wrap()
+            Label(note).fontSize(fsMicro()).muted().wrap()
         }.spacing(4.0.vp).hug()
     }.style(dsSurface(DsLevel.Card, dark)).contentPadding(10.0.vp).hug()
 }
@@ -378,8 +419,8 @@ private func aiField(label: String, body: () -> Unit, dark: Bool, note: String):
 private func aiProblemCard(title: String, text: String, dark: Bool): Unit {
     Panel {
         VStack {
-            Label(title).fontSize(12.0).fontWeight(FontWeight.semiBold).foregroundColor(dsColor(C_RED))
-            Label(text).fontSize(11.0).wrap()
+            Label(title).fontSize(fsBody()).fontWeight(FontWeight.semiBold).foregroundColor(dsColor(C_RED))
+            Label(text).fontSize(fsLabel()).wrap()
         }.spacing(4.0.vp).hug()
     }.style(dsSurface(DsLevel.Nested, dark)).contentPadding(10.0.vp).hug()
 }
@@ -397,7 +438,7 @@ public func selectedProviderID(model: AppModel): String {
 private func aiProviderRow(model: AppModel, dark: Bool): Widget {
     let list = popularProviders()
     if (list.isEmpty()) {
-        return Label("目录读不到，provider 选不了").fontSize(12.0).muted()
+        return Label("目录读不到，provider 选不了").fontSize(fsBody()).muted()
     }
     let labels = ArrayList<String>()
     for (p in list) {
@@ -417,7 +458,7 @@ private func aiModelRow(model: AppModel, dark: Bool): Widget {
         labels.add("${m.name}（${m.id}）")
     }
     let picker: Widget = (if (models.isEmpty()) {
-        Label("先选一个 provider").fontSize(12.0).muted()
+        Label("先选一个 provider").fontSize(fsBody()).muted()
     } else {
         Dropdown(labels.toArray(), model.aiModelIndex, key: "dd-ai-model").flex()
     })
@@ -447,7 +488,7 @@ private func aiKeyRow(model: AppModel, dark: Bool): Widget {
     let saved = model.aiKeySavedPresent.value
     return HStack {
         TextField(model.aiKeyDraft, key: "dd-ai-key").placeholder("sk-…").width(300.0.vp)
-        Label(if (saved) { "已配置（不显示原文）" } else { "未配置" }).fontSize(11.0).muted()
+        Label(if (saved) { "已配置（不显示原文）" } else { "未配置" }).fontSize(fsLabel()).muted()
         Spacer()
     }.spacing(8.vp).hug()
 }
@@ -456,7 +497,7 @@ private func aiBaseURLRow(model: AppModel, dark: Bool): Widget {
     return HStack {
         TextField(model.aiBaseURLDraft, key: "dd-ai-baseurl")
             .placeholder("https://… 或 http://localhost:11434/v1").width(360.0.vp)
-        Button("清空", {=> model.aiBaseURLDraft.value = ""}).fontSize(11.0)
+        Button("清空", {=> model.aiBaseURLDraft.value = ""}).fontSize(fsLabel())
         Spacer()
     }.spacing(8.vp).hug()
 }
@@ -464,15 +505,15 @@ private func aiBaseURLRow(model: AppModel, dark: Bool): Widget {
 private func aiKeyStoreCard(dark: Bool): Unit {
     Panel {
         VStack {
-            Label("密钥现在存在哪").fontSize(12.0).fontWeight(FontWeight.semiBold)
-            Label(aiKeyStoreDescription()).fontSize(11.0).wrap()
+            Label("密钥现在存在哪").fontSize(fsBody()).fontWeight(FontWeight.semiBold)
+            Label(aiKeyStoreDescription()).fontSize(fsLabel()).wrap()
             let degraded = (match (lastKeyStoreDegraded) {
                 case Some(true) => true
                 case _ => false
             })
             if (degraded) {
                 Label("上次保存没能用上系统钥匙串 —— 「已配置」不代表下次启动它还在。")
-                    .fontSize(11.0).foregroundColor(dsColor(C_ORANGE)).wrap()
+                    .fontSize(fsLabel()).foregroundColor(dsColor(dsTextColor(C_ORANGE, dark))).wrap()
             }
         }.spacing(4.0.vp).hug()
     }.style(dsSurface(DsLevel.Nested, dark)).contentPadding(10.0.vp).hug()
@@ -482,12 +523,12 @@ private func aiTestCard(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     Panel {
         HStack {
             VStack {
-                Label("保存并测试连接").fontSize(12.0).fontWeight(FontWeight.semiBold)
-                Label(model.aiTestResult.value).fontSize(11.0).wrap()
+                Label("保存并测试连接").fontSize(fsBody()).fontWeight(FontWeight.semiBold)
+                Label(model.aiTestResult.value).fontSize(fsLabel()).wrap()
             }.spacing(3.0.vp).hug()
             Spacer()
             Button("保存并测试", {=> saveAndTestAI(app, model)}, role: ButtonRole.Primary)
-                .fontSize(12.0).enabled(!model.actionBusy.value)
+                .fontSize(fsBody()).enabled(!model.actionBusy.value)
         }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
     }.style(dsSurface(DsLevel.Card, dark)).contentPadding(10.0.vp).hug()
 }
@@ -566,21 +607,21 @@ public func saveAndTestAI(app: DesktopApp, model: AppModel): Unit {
 public func aiResultPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     VStack {
         HStack {
-            Label(model.aiSheetTitle.value).fontSize(15.0).fontWeight(FontWeight.semiBold)
+            Label(model.aiSheetTitle.value).fontSize(fsSection()).fontWeight(FontWeight.semiBold)
             Spacer()
             if (model.aiSheetBusy.value) {
-                Label("生成中…").fontSize(11.0).muted()
+                Label("生成中…").fontSize(fsLabel()).muted()
             }
             Button("关闭", {=>
                 model.aiPane.value = 0
                 model.aiSheetTitle.value = ""
                 model.aiSheetBody.value = ""
                 model.aiSheetError.value = ""
-            }).fontSize(12.0)
+            }).fontSize(fsBody())
         }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
         Divider()
         if (!model.aiSheetError.value.isEmpty()) {
-            Label(model.aiSheetError.value).fontSize(12.0)
+            Label(model.aiSheetError.value).fontSize(fsBody())
                 .foregroundColor(dsColor(C_RED)).wrap().padding(10.0.vp)
         }
         Flexible {
@@ -589,7 +630,7 @@ public func aiResultPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
                 // 整块 Label 的话 `## 标题`、`- 列表`、反引号全部原样露在屏幕上 ——
                 // 快照实测过，那是「模型回了东西但看起来像日志」的样子。
                 if (model.aiSheetBody.value.isEmpty()) {
-                    Label("（还没有内容）").fontSize(12.0).muted()
+                    Label("（还没有内容）").fontSize(fsBody()).muted()
                 } else {
                     mdView(model.aiSheetBody.value, dark)
                 }
@@ -597,7 +638,7 @@ public func aiResultPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
         }
         Divider()
         Label("内容由模型根据引擎事实生成，事实本身以面板与项目详情页为准。")
-            .fontSize(10.0).muted().padding(6.0.vp)
+            .fontSize(fsMicro()).muted().padding(6.0.vp)
     }.spacing(0.vp)
 }
 
@@ -679,7 +720,7 @@ public func runGroupBrief(app: DesktopApp, model: AppModel): Unit {
 private func aiAutostartRow(model: AppModel, app: DesktopApp, dark: Bool): Widget {
     let on = autostartEnabled()
     return HStack {
-        Label(if (on) { "已开启" } else { "已关闭" }).fontSize(12.0)
+        Label(if (on) { "已开启" } else { "已关闭" }).fontSize(fsBody())
         Button(if (on) { "关闭" } else { "开启" }, {=>
             // Exec= 写**客户端真实入口**（scripts/run.sh 绝对路径，它自己摆好
             // 仓颉运行时库路径）。引擎不带 --engine 钉死 —— run.sh 会优先指向
@@ -695,10 +736,10 @@ private func aiAutostartRow(model: AppModel, app: DesktopApp, dark: Bool): Widge
             if (!p.isEmpty()) {
                 model.report(p, false)
             }
-        }).fontSize(11.0)
+        }).fontSize(fsLabel())
         if (!on && !hasNotifySend()) {
             // 两件事都不通时**一起说**，不要让用户以为开了自启就有通知
-            Label("（本机没有 notify-send，自启后也没有系统通知）").fontSize(10.0).muted().wrap()
+            Label("（本机没有 notify-send，自启后也没有系统通知）").fontSize(fsMicro()).muted().wrap()
         }
         Spacer()
     }.spacing(8.vp).hug()

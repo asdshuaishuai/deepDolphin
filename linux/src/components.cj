@@ -16,16 +16,20 @@ import cui.{CanvasWidget, Color, CrossAxisAlignment, FontWeight, HStack, Label, 
     Panel, Rect, Renderer, RichSpan, RichText, Spacer, SurfaceStyle, VStack, Widget}
 
 // ===========================================================================
-// 字体刻度 —— 字号只有这六档，淘汰散值
+// 字体刻度 —— 字号只有这七档，淘汰散值
+//
+// ⚠ 全仓唯一一套字号表（tokens.cj 里那套 FS_* 死令牌已删）。
+// 视图写 `.fontSize(fsBody())` 这样的裸字面量就是另立刻度 —— 散值一律收进来。
+// Markdown 渲染器的 `mdHeadingSize` 是照抄 macOS 端的独立映射，不算散值。
 // ===========================================================================
 
-public func fsDisplay(): Float32 { return 22.0 }
-public func fsTitle(): Float32 { return 17.0 }
-public func fsSection(): Float32 { return 15.0 }
-public func fsCard(): Float32 { return 13.0 }
-public func fsBody(): Float32 { return 12.0 }
-public func fsLabel(): Float32 { return 11.0 }
-public func fsMicro(): Float32 { return 10.0 }
+public func fsDisplay(): Float32 { return 22.0 }   // 大号数值（KPI / 统计卡 / 内联统计）与仪表盘页头
+public func fsTitle(): Float32 { return 17.0 }     // 页标题 / 详情页头项目名
+public func fsSection(): Float32 { return 15.0 }   // 区块标题
+public func fsCard(): Float32 { return 13.0 }      // 卡片标题 / 卡内行标题
+public func fsBody(): Float32 { return 12.0 }      // 正文
+public func fsLabel(): Float32 { return 11.0 }     // 次要标注
+public func fsMicro(): Float32 { return 10.0 }     // 徽标 / 披露
 
 // ===========================================================================
 // 语义胶囊 —— 状态与标签的唯一构造点
@@ -43,9 +47,13 @@ public func dsPillBg(accent: Int64, dark: Bool): Color {
 }
 
 /// 状态胶囊。**颜色只从 `dsStatusColor` 来**，不在调用点写字面量。
+///
+/// ⚠ 文字走 `dsTextColor` 而不是原色：胶囊底是原色@alpha 铺出来的浅底，
+/// 高明度的黄/橙原字压在上面同样不够对比（黄原色对它自己的胶囊底只有
+/// ≈1.8:1）。底色仍是原色 —— 状态由底色承担，文字只保证读得清。
 public func dsPill(text: String, accent: Int64, dark: Bool): Widget {
     return RichText([
-        RichSpan.text(text, color: dsColor(accent)).highlight(dsPillBg(accent, dark))
+        RichSpan.text(text, color: dsColor(dsTextColor(accent, dark))).highlight(dsPillBg(accent, dark))
             .fontSize(fsMicro()).bold()
     ])
 }
@@ -120,7 +128,7 @@ public func dsStatCard(label: String, value: String, tint: Int64, dark: Bool): W
 /// 用于「概览」页那种一排七八个的小格子。
 public func dsInlineStat(label: String, value: String, tint: Int64): Widget {
     return VStack {
-        RichText([RichSpan.text(value, color: dsColor(tint)).fontSize(18.0).bold()])
+        RichText([RichSpan.text(value, color: dsColor(tint)).fontSize(fsDisplay()).bold()])
         Label(label).fontSize(fsMicro()).muted()
     }.spacing(1.vp).crossAxisAlignment(CrossAxisAlignment.Start).hug()
 }

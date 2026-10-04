@@ -95,6 +95,8 @@ main(args: Array<String>): Int64 {
     model.dark.value = dark
     model.appearance.value = readSavedAppearance()
     model.appearanceUnknown.value = probeFailed
+    // 设置页的外观下拉按下标工作，初值与已保存的档位对齐（R2-03）。
+    model.appearanceIndex.value = appearanceIndex(model.appearance.value)
     model.problem.value = fontProblem
     if (!fixtureDir.isEmpty()) {
         loadFromFixtureDir(model, fixtureDir)

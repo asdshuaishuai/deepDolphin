@@ -6,6 +6,7 @@
 package deepdolphin_linux
 
 import std.collection.*
+import std.math.*
 import std.unittest.*
 import std.unittest.testmacro.*
 
@@ -1252,6 +1253,12 @@ func milestoneItemStatusLabelsKeepUnknownApartFromDropped(): Unit {
         "{\"projectName\":\"a\",\"name\":\"v2\",\"status\":\"open\",\"targetDate\":\"2026-02-31\",\"daysToTarget\":-1}").getOrThrow())
     @Expect(milestoneDueText(bad).contains("日期无效"))
     @Expect(!milestoneDueText(bad).contains("逾期 1 天"))
+    // R2-08 回归：判定条件曾是 `< 0` 就报「日期无效」—— 契约里**其余负数**
+    // 是真实的「已逾期 N 天」，一并吞掉后「逾期」分支成了静态不可达的死代码。
+    let overdue = MilestoneItem.from(Json.parse(
+        "{\"projectName\":\"a\",\"name\":\"v2\",\"status\":\"open\",\"targetDate\":\"2026-01-10\",\"daysToTarget\":-5}").getOrThrow())
+    @Expect(milestoneDueText(overdue).contains("逾期 5 天"))
+    @Expect(!milestoneDueText(overdue).contains("日期无效"))
 }
 
 // ---------------------------------------------------------------------------
@@ -1842,4 +1849,266 @@ func clickingTheSidebarActuallyRoutesBecauseSomebodyIsListening(): Unit {
     let before = model.selectedProject.value
     model.selected.value = 2
     @Expect(model.selectedProject.value, before)
+}
+
+// ---------------------------------------------------------------------------
+// CUI 美学批次（R2-01 / R2-02 / R2-03 / R2-04 / R2-05 / R2-07）
+//
+// 这一族的共同点：**病在视图，判据却验不了视图** —— .enabled 的方向写反
+// 不点真按钮看不出来，「整层零消费」纯函数全绿。所以除了能抽成纯函数的，
+// 还配了**源码扫描**：cjpm test 从包根跑，`src/...` 可读（与夹具判据同约定）。
+// 源码扫描验的是「这行代码还在不在」，语义由各自的纯函数判据兜住。
+// ---------------------------------------------------------------------------
+
+/// 读一份 src 源码文本。读不到 = 判据环境不对（文件被挪走），
+/// 按 `@Expect(false)` 红，不静默放过。
+private func readSrcText(name: String): Option<String> {
+    return readTextFileOf("src/${name}")
+}
+
+@Test
+func primaryActionButtonsEnableWhenIdleNotWhenBusy(): Unit {
+    // R2-01 回归：`.enabled(busy)` 方向写反 —— enabled(false)=禁用（框架
+    // widget.cj 的语义，且禁用会打灰罩、吞事件），于是空闲时灰死、忙碌时
+    // 可点却被 beginAction 的闸门拒绝，稳态永远点不动。
+    // 同库里 `.enabled(!busy)`（AI 说明 / 重新索引 / 保存并测试）都是对的方向，
+    // 可见是笔误不是约定 —— 扫源码钉死这两个文件不许再出现反写的形态。
+    for (name in ["views.cj", "detail.cj"]) {
+        match (readSrcText(name)) {
+            case Some(text) => @Expect(!text.contains(".enabled(busy)"))
+            case None => @Expect(false)
+        }
+    }
+}
+
+@Test
+func sidebarAddHintNamesTheRealCommandInsteadOfLookingClickable(): Unit {
+    // R2-02 回归：「＋ 添加 / 扫描项目」曾是一个强调色 Label —— 长得能点、
+    // 点不动（CUI 没有目录选择器，客户端起不了「挑目录扫描」）。
+    // 降级成说明文字后，它必须把**真实可执行**的命令写给用户：
+    // 命令名与参数占位符少一个，这句话就退化成了一句空提示。
+    let hint = sidebarAddHint()
+    @Expect(hint.contains("moongit scan"))
+    @Expect(hint.contains("<目录>"))
+}
+
+@Test
+func appearanceChoicesRoundTripThroughDropdownIndices(): Unit {
+    // R2-03：三档外观曾整层零 UI 消费。下拉按下标工作，映射必须可逆 ——
+    // 三档往返后还是同一档；越界下标回落「跟随系统」，
+    // 与 dsAppearanceFrom 对未知字符串的口径一致（不猜）。
+    for (a in [DsAppearance.System, DsAppearance.Light, DsAppearance.Dark]) {
+        @Expect(appearanceIs(a, appearanceAt(appearanceIndex(a))))
+        @Expect(appearanceChoices()[appearanceIndex(a)], dsAppearanceLabel(a))
+    }
+    @Expect(appearanceIs(appearanceAt(-1), DsAppearance.System))
+    @Expect(appearanceIs(appearanceAt(99), DsAppearance.System))
+}
+
+@Test
+func appearanceApplyNoteSaysRestartOnSuccessAndPassesTheWriteProblemThrough(): Unit {
+    // R2-03：CUI 的 Theme 不可变、没有 setTheme —— 切换只落盘、重启生效。
+    // 成功文案**必须**写明「重启后生效」，否则用户点了暗色看着界面没变，
+    // 会以为按钮是坏的；失败时原样透传落盘原因（写不进去要说为什么）。
+    let (okNote, ok) = appearanceApplyNote(DsAppearance.Dark, "")
+    @Expect(ok)
+    @Expect(okNote.contains("暗色"))
+    @Expect(okNote.contains("重启"))
+    let (badNote, bad) = appearanceApplyNote(DsAppearance.Dark, "外观设置没能写入 /x/settings.conf")
+    @Expect(!bad)
+    @Expect(badNote, "外观设置没能写入 /x/settings.conf")
+}
+
+@Test
+func appearanceChoiceObserverSavesAndDisclosesWithoutTouchingDisk(): Unit {
+    // R2-03 的接线本体：下拉下标 → 记档 + 落盘 + 披露。落盘动作由参数注入
+    //（假写，不碰真实 ~/.config），close 之后观察者必须真的不再被叫。
+    let model = AppModel(EngineLocation("", "", ""))
+    let wrote = ArrayList<String>()
+    let obs = model.appearanceIndex.observe({_, v =>
+        applyAppearanceChoiceBy(model, v, write: {a =>
+            wrote.add(dsAppearanceKey(a))
+            ""
+        })
+    })
+    model.appearanceIndex.value = 2
+    @Expect(appearanceIs(model.appearance.value, DsAppearance.Dark))
+    @Expect(wrote.size, 1)
+    @Expect(wrote[0], "dark")
+    @Expect(model.appearanceNoteOk.value)
+    @Expect(model.appearanceNote.value.contains("重启"))
+    obs.close()
+    model.appearanceIndex.value = 1
+    // close 之后：档位不动、落盘不再发生
+    @Expect(appearanceIs(model.appearance.value, DsAppearance.Dark))
+    @Expect(wrote.size, 1)
+}
+
+@Test
+func appearanceSettingsPaneActuallyConsumesTheAppearanceLayer(): Unit {
+    // R2-03 的病根是「能存、能读、没人消费」：saveAppearance / appearance /
+    // appearanceUnknown 在 appearance.cj 之外零引用，判据个个全绿，
+    // 用户却换不了主题。纯函数测不出「没人消费」，扫设置页源码：
+    // 下拉接线、未知披露两样都必须真的被视图引用。
+    match (readSrcText("ai_view.cj")) {
+        case Some(text) =>
+            @Expect(text.contains("installAppearanceChoiceObserver"))
+            @Expect(text.contains("appearanceChoices("))
+            @Expect(text.contains("model.appearanceUnknown.value"))
+        case None => @Expect(false)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// R2-04：状态色文字的对比度
+// ---------------------------------------------------------------------------
+
+/// sRGB 单通道 → 线性值（WCAG 2.x 公式）。
+private func linearChannel(v: Int64): Float64 {
+    let c = Float64(v) / 255.0
+    return (if (c <= 0.04045) { c / 12.92 } else { pow((c + 0.055) / 1.055, 2.4) })
+}
+
+private func relLum(hex: Int64): Float64 {
+    return 0.2126 * linearChannel((hex >> 16) & 0xFF) + 0.7152 * linearChannel((hex >> 8) & 0xFF)
+        + 0.0722 * linearChannel(hex & 0xFF)
+}
+
+/// WCAG 相对对比度。
+private func contrastRatio(a: Int64, b: Int64): Float64 {
+    let la = relLum(a)
+    let lb = relLum(b)
+    let hi = (if (la > lb) { la } else { lb })
+    let lo = (if (la > lb) { lb } else { la })
+    return (hi + 0.05) / (lo + 0.05)
+}
+
+/// 胶囊底色的合成结果：原色按 alpha 铺在底色上（与 dsPillBg 同一算式）。
+/// 判据要用它算「文字压在自己颜色的胶囊底上」的真实对比度。
+private func alphaOver(fg: Int64, alpha: Int64, bg: Int64): Int64 {
+    let a = Float64(alpha) / 255.0
+    func ch(f: Int64, g: Int64): Int64 {
+        return Int64(Float64(f) * a + Float64(g) * (1.0 - a))
+    }
+    return (ch((fg >> 16) & 0xFF, (bg >> 16) & 0xFF) << 16)
+        | (ch((fg >> 8) & 0xFF, (bg >> 8) & 0xFF) << 8)
+        | ch(fg & 0xFF, bg & 0xFF)
+}
+
+@Test
+func statusTextVariantsMeetContrastOnLightSurfacesWhileDarkKeepsTheBrightOnes(): Unit {
+    // R2-04：#EAB308 直接当文字压在白卡上只有 1.92:1、#F97316 只有 2.8:1
+    //（WCAG 正文 4.5:1）。亮色主题必须走深变体，且在它的两个真实落点
+    //（白卡 / 自己颜色的胶囊底）都达标；暗色主题亮色本来就是对的，保持原值。
+    @Expect(dsTextColor(C_YELLOW, true), C_YELLOW)
+    @Expect(dsTextColor(C_ORANGE, true), C_ORANGE)
+    // 没配变体的色原样透传 —— 变体表只收真正读不清的那几档
+    @Expect(dsTextColor(C_RED, false), C_RED)
+    @Expect(dsTextColor(C_ACCENT, false), C_ACCENT)
+    for (c in [C_YELLOW, C_ORANGE]) {
+        let t = dsTextColor(c, false)
+        @Expect(contrastRatio(t, CARD_LIGHT) >= 4.5)
+        @Expect(contrastRatio(t, alphaOver(c, 30, CARD_LIGHT)) >= 4.5)
+        // 变体必须真的比原色可读，否则「换档」就是换了个说法
+        @Expect(contrastRatio(t, CARD_LIGHT) > contrastRatio(c, CARD_LIGHT))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// R2-05：字号只许有一套刻度
+// ---------------------------------------------------------------------------
+
+@Test
+func fontScaleIsTheSevenStepsAndTokensFileCarriesNoSecondScale(): Unit {
+    // R2-05：字号曾有两套表并存（tokens.cj 的 FS_* 与 components.cj 的 fs*），
+    // FS_* 全仓零引用已删。这里钉住唯一一套的七个取值；
+    // tokens.cj 里不许再长出第二张字号表。
+    @Expect(fsMicro(), 10.0)
+    @Expect(fsLabel(), 11.0)
+    @Expect(fsBody(), 12.0)
+    @Expect(fsCard(), 13.0)
+    @Expect(fsSection(), 15.0)
+    @Expect(fsTitle(), 17.0)
+    @Expect(fsDisplay(), 22.0)
+    match (readSrcText("tokens.cj")) {
+        case Some(text) => @Expect(!text.contains("public let FS_"))
+        case None => @Expect(false)
+    }
+}
+
+/// `text` 里有没有「fontSize( 后面不是 fs*/mdHeadingSize」的调用。
+/// 逐字节扫：fontSize( 之后只允许 `f`（fs* 刻度）或 `m`
+///（markdown 渲染器照抄 macOS 端的 mdHeadingSize 独立映射）。
+private func hasBareFontSizeCall(text: String): Bool {
+    let bytes = text.toArray()
+    let needle: Array<UInt8> = "fontSize(".toArray()
+    let n = Int64(needle.size)
+    var i: Int64 = 0
+    while (i + n < Int64(bytes.size)) {
+        var hit = true
+        for (j in 0..Int64(needle.size)) {
+            if (bytes[i + j] != needle[j]) {
+                hit = false
+                break
+            }
+        }
+        if (hit) {
+            let next = bytes[i + n]
+            if (next != 0x66u8 && next != 0x6Du8) { // 'f' / 'm'
+                return true
+            }
+        }
+        i += 1
+    }
+    return false
+}
+
+@Test
+func viewSourcesCarryNoBareFontSizeLiterals(): Unit {
+    // R2-05：185+ 处裸 `.fontSize(12.0)` 一类散值已收进刻度。
+    // 扫源码防回添：`fontSize(` 后面只许是 fs*() 或 mdHeadingSize()。
+    // 逐文件红，坏的哪个看得见。
+    for (name in ["views.cj", "detail.cj", "sidebar.cj", "components.cj", "ai_view.cj", "markdown_view.cj"]) {
+        match (readSrcText(name)) {
+            case Some(text) => @Expect(!hasBareFontSizeCall(text))
+            case None => @Expect(false)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// R2-07：筛选 chip 换框架 Chip 后的双向绑定
+// ---------------------------------------------------------------------------
+
+@Test
+func commitFilterChipLensTogglesOnlyAndFallsBackToAll(): Unit {
+    // R2-07：dsFilterChip 曾用 Button + 自绘 style（整体覆盖交互表面，
+    // 无 hover/按下反馈），换框架 Chip 后选中态经 State.project 镜头
+    // 双向绑到筛选值上 —— 判据直接驱动镜头，验三条语义：
+    // ①选中态从筛选值推导（chip 自己不另存一份）；
+    // ②点亮 = Only(类型)，再点一下（熄灭）= 回「所有」；
+    // ③「所有提交类型」是重置位，没有「熄灭」态。
+    let model = AppModel(EngineLocation("", "", ""))
+    let feat = commitFilterLens(model, DashCommitFilter.Only("feat"))
+    @Expect(!feat.value)
+    feat.value = true
+    @Expect(commitFilterEquals(model.dashCommits.value, DashCommitFilter.Only("feat")))
+    @Expect(feat.value)
+    feat.value = false
+    @Expect(commitFilterIsAll(model.dashCommits.value))
+    // 换一颗 chip：点亮新的，旧的自动回到未选（单一筛选源，不是多选）
+    feat.value = true
+    let fix = commitFilterLens(model, DashCommitFilter.Only("fix"))
+    @Expect(!fix.value)
+    fix.value = true
+    @Expect(!feat.value)
+    @Expect(commitFilterEquals(model.dashCommits.value, DashCommitFilter.Only("fix")))
+    let all = commitFilterLens(model, DashCommitFilter.AllCommits)
+    @Expect(!all.value) // 此刻筛选在 Only("fix")，「所有」那颗是熄灭的
+    all.value = true
+    @Expect(commitFilterIsAll(model.dashCommits.value))
+    @Expect(!fix.value)
+    // 重置位没有「熄灭」态：再点一下它，筛选仍是「所有」
+    all.value = false
+    @Expect(commitFilterIsAll(model.dashCommits.value))
 }

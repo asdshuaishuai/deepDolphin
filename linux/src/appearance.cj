@@ -59,12 +59,69 @@ public func appearanceIsDark(a: DsAppearance): Bool {
     }
 }
 
+/// 两个外观档是否相同。理由同 `tokens.cj` 的 `dsStatusIs`：
+/// 枚举不自动实现 `==`，判据要比较档位（例如「下标往返后还是同一档」）
+/// 就用这个谓词，不在调用点各写一遍 `match`。
+public func appearanceIs(a: DsAppearance, b: DsAppearance): Bool {
+    match (a) {
+        case DsAppearance.System => return match (b) { case DsAppearance.System => true; case _ => false }
+        case DsAppearance.Light => return match (b) { case DsAppearance.Light => true; case _ => false }
+        case DsAppearance.Dark => return match (b) { case DsAppearance.Dark => true; case _ => false }
+    }
+}
+
 public func dsAppearanceKey(a: DsAppearance): String {
     match (a) {
         case DsAppearance.Light => return "light"
         case DsAppearance.Dark => return "dark"
         case DsAppearance.System => return "system"
     }
+}
+
+// ---------------------------------------------------------------------------
+// 设置页的外观下拉 —— 档位 ↔ 下标 ↔ 结果文案
+// ---------------------------------------------------------------------------
+
+/// 档位 → 下拉下标。CUI 的 `Dropdown` 只收 `State<Int64>` 下标，
+/// 映射必须可逆且可测 —— 顺序即「从自动到手动」：跟随系统 / 亮 / 暗。
+public func appearanceIndex(a: DsAppearance): Int64 {
+    match (a) {
+        case DsAppearance.System => return 0
+        case DsAppearance.Light => return 1
+        case DsAppearance.Dark => return 2
+    }
+}
+
+/// 下拉下标 → 档位。**越界一律回落「跟随系统」** —— 与 `dsAppearanceFrom`
+/// 对不认识的字符串的处理一致：不知道就回到自动档，不猜。
+public func appearanceAt(i: Int64): DsAppearance {
+    match (i) {
+        case 1 => return DsAppearance.Light
+        case 2 => return DsAppearance.Dark
+        case _ => return DsAppearance.System
+    }
+}
+
+/// 外观下拉的选项。顺序与 `appearanceIndex` / `appearanceAt` 对齐。
+public func appearanceChoices(): Array<String> {
+    return [
+        dsAppearanceLabel(DsAppearance.System),
+        dsAppearanceLabel(DsAppearance.Light),
+        dsAppearanceLabel(DsAppearance.Dark)
+    ]
+}
+
+/// 应用一次外观选择的结果文案 + 成败。**纯函数** —— 判据喂「写入是否成功」。
+///
+/// 成功也要说「重启后生效」：CUI 的 `Theme` 是 `DesktopApp` 的构造参数
+/// （vendor `src/core/theme.cj` 标注 Immutable，`DesktopApp` 没有 setTheme），
+/// 换档只落盘，本进程的界面不会跟着变。不写这句，用户点了「暗色」
+/// 看着界面没变，会以为按钮是坏的。
+public func appearanceApplyNote(a: DsAppearance, writeProblem: String): (String, Bool) {
+    if (writeProblem.isEmpty()) {
+        return ("已保存为「${dsAppearanceLabel(a)}」—— 主题在启动时定型，重启客户端后生效。", true)
+    }
+    return (writeProblem, false)
 }
 
 /// 设置文件路径。XDG 优先，缺失时退回 `~/.config`。

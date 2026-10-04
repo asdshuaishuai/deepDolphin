@@ -89,6 +89,14 @@ public class AppModel {
     public let appearance = State<DsAppearance>(DsAppearance.System)
     /// 选了「跟随系统」但系统没给出答案。**要说出来**，见 `appearance.cj`。
     public let appearanceUnknown = State<Bool>(false)
+    /// 外观下拉的当前下标。**唯一写入口是设置页的下拉**，
+    /// 写入由观察者接到 `applyAppearanceChoice`（保存 + 披露）上。
+    public let appearanceIndex = State<Int64>(0)
+    /// 上一次外观保存的结果一句话。**空串 = 还没动过**。
+    /// ⚠ 不走 `report`：`lastResult` 只画在项目详情页头，设置页上看不见它 ——
+    /// 保存结果必须出现在按下那个下拉的地方。
+    public let appearanceNote = State<String>("")
+    public let appearanceNoteOk = State<Bool>(true)
 
     public var booted: Bool = false
 
@@ -611,6 +619,44 @@ public func endAction(model: AppModel, line: String, ok: Bool): Unit {
     model.actionBusy.value = false
     model.actionLabel.value = ""
     model.report(line, ok)
+}
+
+// ===========================================================================
+// 写：外观（R2-03 —— 这层实现曾经零 UI 消费，用户根本没法换主题）
+// ===========================================================================
+
+/// 应用一次外观选择：记档 + 落盘 + 把结果说在**按下控件的地方**。
+///
+/// ⚠ **不热切换**。CUI 的 `Theme` 是 `DesktopApp` 的构造参数
+/// （vendor `src/core/theme.cj` 标注 Immutable，`DesktopApp` 没有 setTheme），
+/// 本进程的框架色改不了 —— 这里只写 XDG 配置，重启后由 `resolveAppearance`
+/// 读回来生效。结果文案由 `appearanceApplyNote` 出（成功也写明「重启后生效」）。
+///
+/// 落盘动作收成参数（`write!`）：真接线传 `saveAppearance`，判据传一个
+/// 不碰盘的假写 —— 与 `readAppearanceFrom` 收读函数是同一条纪律。
+public func applyAppearanceChoiceBy(
+    model: AppModel,
+    idx: Int64,
+    write!: (DsAppearance) -> String
+): Unit {
+    let a = appearanceAt(idx)
+    model.appearance.value = a
+    let (note, ok) = appearanceApplyNote(a, write(a))
+    model.appearanceNote.value = note
+    model.appearanceNoteOk.value = ok
+}
+
+public func applyAppearanceChoice(model: AppModel, idx: Int64): Unit {
+    applyAppearanceChoiceBy(model, idx, write: {a => saveAppearance(a)})
+}
+
+/// 设置页外观下拉的接线。**返回值必须被持有**：observe 返回的
+/// `StateObservation` 是 `Resource`，析构即 close() —— 丢在当场等于
+/// 装上又立刻取消（教训见 sidebar.cj 的注释）。
+/// 拆出来而不是塞进 mountEffect 闭包，理由同 `installSidebarSelectionObservers`：
+/// 能不开窗口就验的规则，绝不因为「它住在闭包里」就变成只能读代码相信。
+public func installAppearanceChoiceObserver(model: AppModel): Resource {
+    return model.appearanceIndex.observe({_, v => applyAppearanceChoice(model, v)})
 }
 
 public func actUpdate(app: DesktopApp, model: AppModel, project: String, deep: Bool): Unit {
