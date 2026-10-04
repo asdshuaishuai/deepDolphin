@@ -29,21 +29,31 @@ sudo apt install fonts-noto-cjk fonts-noto-cjk-extra fonts-dejavu-core
 # 4. 第三方依赖
 cd linux && sh scripts/fetch-deps.sh
 
-# 5. 构建 + 判据
-cjpm test
+# 5. 构建 + 判据（推荐直接跑门禁：自带 SDK 定位、用户空间 SDL3 与链接垫片）
+bash scripts/ci-local.sh          # 或手动：cjpm test
 ```
 
-`cjpm test` 期望 **119 条，116 通过 + 3 跳过（端到端），0 失败**。
+`cjpm test` 期望 **150 条，147 通过 + 3 跳过（端到端），0 失败**
+（2026-10-04 审查批次后；门禁口径是 failed=0 且 passed 只增不减）。
 3 条跳过的是 AI 端到端，要 `bash scripts/ai-e2e.sh` 才跑（它起一个假 provider，
-不需要 API key）。
+不需要 API key；2026-10-04 审查批次已实跑通过）。
 
-> ⚠️ **如果你在第 5 步之前就跑 `scripts/run.sh`，本轮已修过一个 Linux 专属 bug**：
-> 原来它按 `uname -m` 选仓颉运行时目录，Linux 上是 `x86_64`，
+> ⚠️ **历史坑，已修，且已在 Linux 实测**：早先 `run.sh` 按 `uname -m` 选
+> 仓颉运行时目录，Linux 上是 `x86_64`，
 > 落进只认 `darwin_` 前缀的兜底分支 → 目录名变空串 →
 > `error while loading shared libraries: libcangjie-runtime.so`。
 > 症状像「仓颉没装好」，重装 SDK 修不好。已改为按操作系统选，
-> 并把逻辑抽到 `scripts/cj-env.sh` 供 `run.sh` / `dev-launch.sh` 共用。
-> 现在找不到对应目录会**直接报错并告诉你 `ls` 哪里**，不会再静默跑歪。
+> 逻辑抽到 `scripts/cj-env.sh`，供 `run.sh` / `dev-launch.sh` /
+> `ai-e2e.sh` 三脚本共用（2026-10-04 审查批次起同一份）——审查批次的
+> 门禁在 deepin 25 上走的就是这条链。现在找不到对应目录会**直接报错并
+> 告诉你 `ls` 哪里**，不会再静默跑歪。
+
+> ⚠️ **SDL3 版本与链接缺口（2026-10-04 审查批次实测）**：CangjieSDL 的
+> 绑定按 **SDL 3.4** 生成。系统 SDL3 过旧（如 3.2，或像审查批次的机器
+> glibc 2.38 装不了 3.4.x）时，`cjpm test` 的**测试**二进制由
+> `ci-local.sh` 装的 ld 包装器垫片兜住（8 个 SDL 3.4 专属符号的 no-op
+> 占位，测试路径从不调用），但**应用主程序链不出来** —— 没有产物就开不了
+> 真窗口。要过第 1 条，装 3.4 系的 SDL3。
 
 ---
 
@@ -64,6 +74,10 @@ cd linux && sh scripts/run.sh
 ```
 
 - **期望**：出现一个 1180×760 的窗口，标题 `deepDolphin`。
+  启动时序（2026-10-04 审查批次起）：建窗前只做一次深浅色探测（最多
+  **1.5 秒**，探不到按亮色起，设置页外观一栏会显示这条披露）；窗口出现后
+  先显示**「正在定位引擎…」**—— 引擎定位在首帧之后做（要起子进程探活，
+  不能挡首帧），定位完才换到数据页，定位可能要几秒，**不是卡死**。
 - **如果失败**，请把**完整错误串**贴回来。特别留意：
   - SDL 选的是 **wayland** 还是 **x11**？两者行为不同，Wayland 下没有
     `XDG_RUNTIME_DIR` 会退到 X11，而 X11 下没有 `DISPLAY` 就彻底起不来。
@@ -89,6 +103,7 @@ cd linux && sh scripts/run.sh
 | **滚动** | 在项目详情页（很长）滚到底；代码块与表格尤其要试 | 滚不动，或滚过头 |
 | **悬停** | 鼠标停在按钮/列表行上 | 无提示，或提示错位 |
 | **侧栏点击** | 点「视图」组三项 + 「仓库」组各行 | 高亮了但主区不换页 |
+| **看板筛选 chip** | 鼠标悬停看「提交类型」chip；Tab 聚焦后用键盘切换 | 无焦点环 / 键盘切不动 / 选中态与实际筛选值分家（2026-10-04 审查批次改成框架 Chip，真机交互仍未验） |
 | **键盘输入** | 在「提交信息」框、AI 输入框里打字 | 收不到字符 / 焦点乱跳 |
 | **窗口缩放** | 拖到最小（940×640）与很大 | 布局塌陷或留白 |
 | **关闭** | 点关闭按钮、Alt+F4 | 见第 7 条的拆卸异常 |
@@ -106,6 +121,10 @@ which notify-send || sudo apt install libnotify-bin
 
 跑起来后在设置页或触发一次更新动作，看有没有弹出通知。
 
+- 通知从**后台线程**发（2026-10-04 审查批次起），发送本身卡住不再拖 UI；
+  工具先走 PATH 再回退 `/usr/bin`，没装时失败原因会写明「PATH 与
+  /usr/bin 都试过」。
+
 - **注意一个已知取舍**：本端**没有托盘**。README 写着「CUI 不暴露托盘 API」，
   这个结论是在 **macOS** 上得出的，**请在 Linux 上复核** ——
   Linux 上托盘（StatusNotifier）是主流用法，如果 CUI 在 Linux 上其实能用，
@@ -116,12 +135,29 @@ which notify-send || sudo apt install libnotify-bin
 在设置页打开自启开关，然后：
 
 ```sh
-cat ~/.config/autostart/deepdolphin.desktop
+cat "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/deepdolphin.desktop"
 ```
 
-- **期望**：文件存在，`Exec=` 指向一个**真实存在**的路径。
-- 重点看路径里的空格有没有被转义（`escapeDesktopExec` 专门处理这个）。
-- 注销重登，确认它真的自启了。
+- **期望**：文件存在（自启目录走 `$XDG_CONFIG_HOME/autostart`，2026-10-04
+  审查批次起不再写进应用私有目录——那个目录会话根本不扫）；
+  `Exec=` 指向**仓内 `scripts/run.sh` 的绝对路径**（会话拉起的入口必须
+  自己摆好仓颉运行时库路径，直接指二进制缺 `libcangjie-runtime.so`），
+  且**没有** `--engine` 参数 —— 引擎由 run.sh 的 `DEEPGIT_BIN` → 仓内
+  release → PATH 链自己找。
+- 重点看路径里的空格：现在是**整参数包双引号**（`Exec="/path with
+  space/scripts/run.sh"`），不是旧版的 `\s` 反斜杠转义 —— 旧写法在
+  Desktop Entry 规范里不存在，会话会留成字面 `\ `。
+- ⚠️ **已知缺陷（2026-10-04 文档同步时发现，未修）**：从 run.sh 启动的
+  会话里点「开启」，开关会**永远报「算不出自启入口」**—— run.sh 末行
+  `exec ./target/release/bin/main` 是相对路径，客户端拿到的 `argv[0]`
+  不以 `/` 开头，算不出 run.sh 位置（`sysint.cj` 的
+  `autostartClientEntry`）。拒绝本身是对的（不写残缺条目），但文档给的
+  主入口（README 快速开始的 run.sh）满足不了它。如果你从**绝对路径**启动
+  （或 `cjpm run`）后开关能写出条目，请记下你的启动方式 —— 那就是修
+  run.sh 之前的临时通路。
+- 写盘动作本身没有单测（不碰真实 `~/.config`），由纯函数守卫 +
+  **写后回读校验**兜住；所以「注销重登，确认它真的自启了」仍然只能靠
+  你在有桌面的机器上验 —— 这步至今零证据。
 
 ### 3.3 启动深链
 
@@ -130,8 +166,15 @@ cat ~/.config/autostart/deepdolphin.desktop
 ./target/release/bin/main --project <某个真实项目名>
 ```
 
-- **期望**：窗口直接开在指定页 / 指定项目。
-- 顺带试**不存在的项目名**：应当落到仪表盘，而不是停在空页或报错。
+- **期望**：窗口先显示「正在定位引擎…」（2026-10-04 审查批次起引擎定位
+  在首帧之后），定位完成后**直接开在指定页 / 指定项目**。
+- 顺带试**不存在的项目名**：应当落到仪表盘并给一条说明，而不是停在空页
+  或报错（列表没加载完之前不判「不存在」，防止把存在的项目误报成已删除）。
+- ⚠️ 审查批次的开发机上这两条命令**没有产物可跑**：release 主程序因
+  CangjieSDL 的 SDL 3.4 专属绑定符号链不出来（见第 0 条的链接缺口）——
+  在装好 SDL 3.4 的桌面机上不受影响。深链解析本身有纯函数判据
+  （`--section dashboard|board|milestones`、`--project`、未知值不改道
+  静默），界面落地那一截仍待真机。
 
 ## 4. 字体（Linux 上最可能翻车的地方）
 
@@ -167,8 +210,14 @@ bash scripts/install-icon.sh          # 装进 ~/.local/share
 `Cannot inspect commands through a released scene node`（`IllegalStateException`）——
 **拆卸阶段**抛出，快照写盘后发生，普通仪表盘快照也会报。
 
-- 请确认：正常关闭窗口时，**用户会不会看到崩溃 / 控制台有没有红字**。
-- 如果只发生在 `--snapshot` 模式、不影响正常关闭，也请说一声。
+2026-10-04 审查批次后，`app.run` 顶层有 catch（`main.cj`）：异常打印成
+一行 `deepdolphin: 退出时出错：<原因>` 到 stderr，然后**以 0 退出**——
+窗口生命周期已结束，再按崩溃对待只会误导会话与调试器。
+
+- 请确认：正常关闭窗口时**没有崩溃弹窗**、控制台最多一行原因串、
+  退出码是 0。
+- 如果看到的形状不是这样（非零退出码、多行栈、无原因串），把**完整
+  输出**贴回来。
 
 ## 8. 真实 provider（如果你有 API key）
 
@@ -180,6 +229,17 @@ bash scripts/install-icon.sh          # 装进 ~/.local/share
 - 工具调用（tool_calls）多轮循环在真 provider 上的形状
 
 配置走设置页。有 key 的话，**发一条真实提问**是本轮最有价值的补充。
+
+顺带看一眼密钥落盘（没装 `secret-tool` 走文件兜底时）：
+
+```sh
+ls -ld ~/.config/deepdolphin ~/.config/deepdolphin/api-key
+```
+
+- **期望**（2026-10-04 审查批次起）：目录 **700**、密钥文件 **0600** ——
+  写入是原子替换（同目录临时文件先 0600 再 rename），不该出现按 umask
+  的 0644 中间态；AI 请求的临时文件用完即清，启动时还会清扫上次进程
+  的残留。
 
 ## 9. 引擎真的被调起来的样子
 

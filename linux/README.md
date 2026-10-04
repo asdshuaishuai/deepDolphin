@@ -313,3 +313,135 @@ cjpm test                  # 88 条判据（其中 3 条端到端标 @Skip，日
   `std.crypto` 没有可用的 TLS。
 - **`secret-tool`**（可选，系统钥匙串）。没有就退到 0600 文件。
 - **`notify-send`**（可选，系统通知）。没有时设置页会写明。
+
+## 2026-10-04 审查批次 —— Linux 第一次系统检验
+
+上面各节的「在 macOS 上验证」到这一节为止：本批在 Linux（deepin 25，
+glibc 2.38，无 root、无图形会话）上做了第一次系统性审查与修复，
+四个 commit：`5ce9bb4` → `e257732` → `a54dd42` → `5eab21e`。
+门禁 `bash scripts/ci-local.sh` 收口：**cjpm test 147 通过 / 0 失败 /
+3 端到端跳过**（判据从批前基线 116 只增不减：119 → 125 → 137 → 147），
+`scripts/ai-e2e.sh` 端到端实跑通过。本文早前小节里出现的 35 / 88 / 119
+是各自写就当时的判据数，以本节为准。
+
+### 修了什么 / 为什么
+
+**1. 通用性：脚本通路与 freedesktop 集成（`5ce9bb4`）**
+全是「macOS 上能跑、所以看不出」的路径假设，Linux 第一跑就暴露：
+
+- **自启落对目录**：第一版把 .desktop 写进应用私有目录
+  （`~/.config/deepdolphin/autostart/`），而会话登录只扫
+  `$XDG_CONFIG_HOME/autostart` —— 整个自启功能等于不存在（`sysint.cj` 的
+  `xdgAutostartDir`）。
+- **自启 Exec 走 run.sh**：会话拉起的入口必须自己摆好仓颉运行时库路径，
+  直接指二进制缺 `libcangjie-runtime.so` 必挂。`Exec=` 现在指向仓内
+  `scripts/run.sh` 绝对路径，`--engine` 参数去掉（引擎由 run.sh 的
+  `DEEPGIT_BIN` → 仓内 release → PATH 链自己找，与手动启动同一条链）；
+  `Exec=` 改为**整参数双引号**转义（旧版 `\s` 在 Desktop Entry 规范里
+  不存在，会话会留成字面 `\ `）。
+- **三脚本共用 `scripts/cj-env.sh`**：按操作系统（不再按 `uname -m`）选
+  仓颉运行时目录、SDK 两级探测（`envsetup.sh` 在根或在 `cangjie/` 一层，
+  deepin 25 实测是后者）；ai-e2e.sh 里 source 改绝对 `$DIR`（脚本先
+  `cd`，`BASH_SOURCE` 相对路径已失效 —— 首次实跑当场暴露）。
+- **工具不再钉死 `/usr/bin`**：`notify-send` 等先走 PATH，找不到才回退
+  （`sysint.cj` 的 `firstToolOnPath`）。
+- **ai-e2e.sh 的 ANSI 清洗对齐 ci-local.sh**：必须清**全部 CSI 序列**
+  而非只清 `m` 结尾的 SGR —— `\x1b[K` 残留曾让 122 条全绿却假报
+  「端到端判据没被跑到」。
+- run.sh 补 Linux 运行期 SDL3 库路径与 ld 包装器 PATH（见 ci-local.sh
+  头注释的链接垫片一节）。
+
+**2. AI 子系统：密钥生命周期与 UI 线程纪律（`e257732`）**
+
+- **密钥原子私有写**：同目录临时文件 → 立即 `chmod 600` → `rename` 原子
+  替换；配置目录收紧 **700**。临时文件从创建到 chmod 之间按 umask 可见
+  （常见 0644），「写完再 chmod 文件」挡不住那个瞬间（`ai_config.cj`）。
+- **AI 响应有损解码**（`fromUtf8Lossy`，GBK 错误页不再整个请求报废）+
+  `try/finally` 清临时文件 + **启动清扫**兜 SIGKILL/崩溃残留（临时文件
+  头里有 API Key，`ai_http.cj` 的 `sweepAITempLeftovers`）。
+- **`stopAI` 同时推进轮次代号**：被放弃轮次的迟到回写被拦，主循环在每轮
+  与每个工具调用前检查停止标志 —— 「停止」不会把界面留在忙碌态。
+- secret-tool 移出 UI 线程；对话新消息贴底；Markdown 渲染缓存
+  （64 条 + 全字节指纹）。
+
+**3. 引擎链路：契约诚实与管道稳健（`a54dd42`）**
+
+- **批量更新改读聚合信封的 `results` 键**（兼容单项目逐仓形状）—— 旧读法
+  在真信封下把更新结果整个读丢；里程碑写操作载荷缺结果键**按失败渲染**，
+  不再假 ✓。
+- `describeEngineFailure` 增读 `{error, code, message}` 形状，更多引擎
+  失败原因能被带到界面；`writeOp` 无 JSON 分支带上 stderr。
+- **`app.run` 顶层 catch**：异常打印原因后**以 0 退出**（`main.cj`）——
+  窗口生命周期已结束，再按崩溃对待只会误导会话与调试器。
+- 管道读改**分块缓冲**（逐字节 `add` 在大输出下是平方级）；
+  `requestRefresh` 与引擎定位的 `spawn` 整体兜异常 —— spawn 里没人接的
+  异常会让线程死掉、`post` 永不来，`busy` 永不复位。
+- **notify-send 挪后台线程**，发送卡住不再拖 UI。
+- **引擎定位挪到首帧之后**：定位要起子进程探活、挂住的候选要等满超时，
+  在建窗前做能把首屏拖几十秒。现在窗口先出、显示「正在定位引擎…」
+  （`views.cj`），定位完挂载再读数。
+
+**4. CUI 美学：可点性、对比度与令牌统一（`5eab21e`）**
+
+- **五处 `.enabled` 方向反转**：空闲主按钮灰死、忙碌时被闸门拒掉的按钮
+  误亮 —— 可点性与真实状态相反，比不可点更误导。
+- 侧栏「＋添加/扫描项目」**伪可点 Label 降级**为 muted 说明，并写明
+  `moongit scan` 真实命令（画成可点但点了没反应，是最坏的一种）。
+- **外观三档接入设置页**：跟随系统/亮/暗，写
+  `$XDG_CONFIG_HOME/deepdolphin/settings.conf`；启动没探到系统外观时
+  （`appearanceUnknown`）渲染成 muted 披露，不假装跟随了系统。
+- **状态色文字新增亮底深变体 `dsTextColor`**（amber-700/orange-700）：
+  白卡上黄/橙文字从 1.92:1 / 2.8:1 提到 ≥4.5:1，判据里**实算 WCAG
+  对比度**。
+- 删 tokens 的 `FS_*` 死令牌；视图层裸 `fontSize` 全量收进 `fs*` 七档
+  （仪表盘 KPI 大数字从 30 收到 22，视觉变小是**有意的统一**）。
+- 筛选 chip 改框架 `Chip` + `State.project` 镜头：恢复 hover / 焦点环 /
+  键盘切换，选中态从筛选值推导（旧手写选中态会和真实筛选值分家）。
+- `milestoneDueText` 逾期分支收窄为契约哨兵 `daysToTarget == -1`：
+  此前 `< 0` 一律报「日期无效」，真实的「已逾期 N 天」被吞
+  （`views.cj`）。
+
+### 已知代价与边界（如实记，不假装没付出）
+
+1. **外观探测不能跟着挪到首帧后**。审查项原设想「外观探测也挪」，
+   与 CUI 不变量冲突：`Theme` 是 `DesktopApp` 构造参数且不可变
+   （vendor `src/core/theme.cj` 标注 "Immutable"，无 setTheme），
+   首帧后翻暗色会得到半套错色板。按红线如实说明而非绕过：探测留在
+   建窗前但超时 3000→1500ms，**外观切换是「落盘 + 重启生效」**，
+   设置页文案写明 —— 这是有意的不做，不是遗留。
+2. **界面实拍（快照截图）本机没跑**。release 主程序因 CangjieSDL 的
+   SDL 3.4 专属绑定符号在本机链不出来（ci-local.sh 的 ld 包装只把
+   垫片追加给测试二进制，见 `sdl-shim.c` 注释）；外观改动由 147 条
+   判据与源码扫描背书，真实渲染留给有 SDL 3.4 的环境。
+3. **暗色主题下橙字压橙胶囊实测 4.27:1**，仍略低于 4.5 —— 本批变体只收
+   亮底方向（暗底亮色对暗卡 5.2~7.6:1 达标），暗色未另立变体；
+   `C_RED` 文字对白卡 3.76:1 未动（现有红字都在告警卡/胶囊语境）。
+4. `fromUtf8Lossy` 对尾部残缺序列按 WHATWG 口径**每个滞留字节各出
+   一个 U+FFFD**，与 Python 式「整段一个」口径不同 —— 接其他语言实现时
+   注意对齐。`AIConfig.loadProblem` 是读取诊断字段，不属于与 macOS 端
+   对齐的四个落盘字段（类注释已划界）。
+5. 自启的**写盘动作没有单测**（碰真实 `~/.config/autostart`，不宜在
+   判据里写真文件），由纯函数守卫（目录解析 / 条目正文 / Exec 转义 /
+   空 Exec 拒写）+ 写后回读校验兜住。
+6. `hasNotifySend` / `hasSecretTool` 在没装这些工具的机器上**如实报缺**
+   —— 是环境事实，不是缺陷。
+
+### 文档同步时新发现的一处未修缺陷（本批之后，代码未动）
+
+**从 run.sh 启动时，自启开关必然拒绝**：run.sh 末行是
+`exec ./target/release/bin/main`（**相对路径**），而 `getCommandLine()[0]`
+返回的就是这个相对串（本轮以最小仓颉程序实测定谳：`exec ./argvprobe` 下
+`getCommandLine()[0]` = `"./argvprobe"`）；`sysint.cj` 的
+`autostartClientEntry()` 要求 `argv[0]` 以 `/` 开头，否则返回空串，
+设置页于是永远给出「算不出自启入口」的提示（`ai_view.cj`）。拒绝本身是
+R3-02 的守卫在**正确地**工作 —— 不写残缺条目 —— 但文档给的主入口
+（run.sh）永远满足不了它。修法大概率是 run.sh 改
+`exec "$HERE/target/release/bin/main"`，留待下一批；
+`VERIFY-ON-LINUX.md` §3.2 已按真实行为改写。
+
+### 仍未验（详见 [VERIFY-ON-LINUX.md](VERIFY-ON-LINUX.md)）
+
+- 真窗口与一切交互（滚动 / 悬停 / 键盘 / 缩放）—— 本机无图形会话；
+- 界面快照实拍 —— 主程序链接缺口（上文第 2 条）；
+- 自启「注销重登真实拉起」；
+- 真实 provider（真 key / 流式 / 401 429 5xx）从未跑过。
