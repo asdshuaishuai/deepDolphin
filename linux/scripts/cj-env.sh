@@ -20,6 +20,28 @@ dd_die() {
   exit 1
 }
 
+# 定位仓颉 SDK 并把 CANGJIE_HOME 摆好（run.sh / dev-launch.sh / ai-e2e.sh 共用）。
+#
+# 两级探测：`$CANGJIE_HOME/envsetup.sh` → `$CANGJIE_HOME/cangjie/envsetup.sh`。
+# 为什么：SDK 的解包布局有两种 —— envsetup.sh 直接在根目录，或多套一层
+# `cangjie/`。本机（deepin 25）是后者（`current/cangjie/envsetup.sh`），
+# 老脚本默认 `current` 的写法 source 一个不存在的文件，`set -e` 下直接退出
+# —— README 快速开始第一条命令必挂。与 ci-local.sh 的探测口径一致。
+dd_cj_locate_sdk() {
+  local base="${CANGJIE_HOME:-$HOME/.local/share/cangjie/current}"
+  if [ -f "$base/envsetup.sh" ]; then
+    CANGJIE_HOME="$base"
+  elif [ -f "$base/cangjie/envsetup.sh" ]; then
+    CANGJIE_HOME="$base/cangjie"
+  else
+    dd_die "找不到仓颉 SDK，两级都试过了：
+  $base/envsetup.sh
+  $base/cangjie/envsetup.sh
+装 1.0.5 LTS 后重试，或先 export CANGJIE_HOME=<SDK 根目录>。"
+  fi
+  export CANGJIE_HOME
+}
+
 # 必须在 source envsetup.sh **之前**调用：
 # 仓颉的 envsetup.sh 会直接读 DYLD_LIBRARY_PATH / LD_LIBRARY_PATH，
 # 调用方若开了 `set -u`，未定义即触发 unbound variable 并静默退出整个脚本。

@@ -13,21 +13,23 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [[ -z "${CANGJIE_HOME:-}" ]]; then
-  CANGJIE_HOME="$HOME/.local/share/cangjie/current"
-fi
-if [[ ! -f "$CANGJIE_HOME/envsetup.sh" ]]; then
-  echo "找不到仓颉 SDK：$CANGJIE_HOME" >&2
-  echo "装 1.0.5 LTS 后重试，或先 export CANGJIE_HOME=..." >&2
-  exit 1
-fi
-# 仓颉运行时环境。**逻辑在 cj-env.sh 里**，`dev-launch.sh` 也用同一份 ——
-# 原来两处各抄一遍，而两遍都写错了 Linux 分支（见 cj-env.sh 顶部注释）。
+# 仓颉运行时环境与 SDK 定位。**逻辑都在 cj-env.sh 里**，dev-launch.sh /
+# ai-e2e.sh 用同一份。SDK 走两级探测（$CANGJIE_HOME/envsetup.sh →
+# $CANGJIE_HOME/cangjie/envsetup.sh）：本机解包的 SDK 根多套一层 cangjie/，
+# 老的单一默认值在这台机器上 source 不到 envsetup.sh，第一行就退出。
 # shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/cj-env.sh"
 dd_cj_pre_source
+dd_cj_locate_sdk
 # shellcheck disable=SC1091
 source "$CANGJIE_HOME/envsetup.sh"
+
+# ci-local.sh 装的 ld 链接包装器（crt 缺口修补，见 ci-local.sh 头注释）存在就挂上
+# PATH：本机系统 ld 解析不了裸 crtbeginS.o，没有它 cjpm build 链接必挂。
+# 没有这个文件的机器（系统工具链健全）不受影响。
+if [[ -x "$HOME/.local/bin/ld" ]]; then
+  export PATH="$HOME/.local/bin:$PATH"
+fi
 
 # macOS 的极简 SDK。
 #
@@ -41,6 +43,15 @@ if [[ -d "$HOME/.local/share/sdks/MacOSX.minimal/latest" ]]; then
 fi
 
 dd_cj_setup_runtime
+
+# SDL3 用户空间库（ci-local.sh 解包到 vendor/CangjieSDL/.sdl3）。本机没有系统
+# SDL3 包，产物的 DT_NEEDED 靠这个路径解析；系统装了 SDL3 的机器上这个前缀
+# 多余但无害（与 ci-local.sh 的 LD_LIBRARY_PATH 同一顺序：.sdl3 的 3.2.10
+# 必须先于任何混入 3.4.x 的目录被找到，3.4 要 glibc 2.43）。
+SDL3DIR="$HERE/vendor/CangjieSDL/.sdl3"
+if [[ -e "$SDL3DIR/libSDL3.so.0" ]]; then
+  export LD_LIBRARY_PATH="$SDL3DIR:$LD_LIBRARY_PATH"
+fi
 
 # ⚠️ 上面所有 `$VAR` 紧跟中文时都必须写成 `${VAR}`：
 # bash 在 UTF-8 locale 下会把多字节字符的**首字节**当成变量名的合法延续，

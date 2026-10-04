@@ -117,10 +117,17 @@ public func aiKeyFilePath(): String {
 }
 
 /// libsecret 的命令行前端。**没有它就没有系统钥匙环**。
-private const SECRET_TOOL: String = "/usr/bin/secret-tool"
+/// 位置先走 PATH，找不到再回退 /usr/bin（钉死一个绝对路径会错过
+/// 装在 PATH 别处的同名工具，与 curl / notify-send 同一条规则）。
+private const SECRET_TOOL_FALLBACK: String = "/usr/bin/secret-tool"
+
+private func secretToolBin(): String {
+    let p = firstToolOnPath(["secret-tool"])
+    return (if (p.isEmpty()) { SECRET_TOOL_FALLBACK } else { p })
+}
 
 public func hasSecretTool(): Bool {
-    return exists(SECRET_TOOL)
+    return exists(secretToolBin())
 }
 
 // ---------------------------------------------------------------------------
@@ -186,7 +193,7 @@ public func loadAIConfig(): AIConfig {
 /// 并在设置页说明（用户可能换了机器，兜底文件是旧的）。
 public func loadAIKey(): String {
     if (hasSecretTool()) {
-        let r = execCapture(SECRET_TOOL, ["lookup", "service", AI_KEYRING_SERVICE, "account", "api-key"], 10000)
+        let r = execCapture(secretToolBin(), ["lookup", "service", AI_KEYRING_SERVICE, "account", "api-key"], 10000)
         if (!r.timedOut && r.exitCode == 0) {
             let v = r.stdout.trimAscii()
             if (!v.isEmpty()) {
@@ -234,7 +241,7 @@ public func saveAIConfig(c: AIConfig): String {
     if (c.apiKey.isEmpty()) {
         // 清空：两个来源都得清，否则「清空后 isConfigured 仍为 true」。
         if (hasSecretTool()) {
-            let r = execCapture(SECRET_TOOL, ["clear", "service", AI_KEYRING_SERVICE, "account", "api-key"], 10000)
+            let r = execCapture(secretToolBin(), ["clear", "service", AI_KEYRING_SERVICE, "account", "api-key"], 10000)
             if (!r.timedOut && r.exitCode != 0) {
                 problem = "清除系统钥匙串里的密钥失败（退出码 ${r.exitCode}）"
             }
@@ -248,7 +255,7 @@ public func saveAIConfig(c: AIConfig): String {
 
     if (hasSecretTool()) {
         let r = execCapture(
-            SECRET_TOOL,
+            secretToolBin(),
             ["store", "--label=deepDolphin AI", "service", AI_KEYRING_SERVICE, "account", "api-key"],
             10000
         )

@@ -446,20 +446,65 @@ func unknownSectionIsNamedInsteadOfSilentlyIgnored(): Unit {
 }
 
 @Test
-func autostartEntryEscapesSpacesBecauseTheXdgParserSplitsOnThem(): Unit {
-    // XDG 的 Exec= 按空白切分，引号会被当成命令名的一部分 ——
-    // 路径里有空格（`/home/kelthas/My Apps/…`）时必须转义。
-    @Expect(escapeDesktopExec("/home/kelthas/My Apps/main"), "/home/kelthas/My\\ Apps/main")
-    @Expect(escapeDesktopExec("/usr/bin/deepdolphin"), "/usr/bin/deepdolphin")
-    // 反斜杠本身也要转义，否则双重转义
-    @Expect(escapeDesktopExec("C:\\a b"), "C:\\\\a\\ b")
+func autostartEntryQuotesWholeArgsBecauseTheXdgParserSplitsOnUnquotedWhitespace(): Unit {
+    // freedesktop Desktop Entry 规范：Exec= 按**未加引号的空白**切参数、
+    // 引号定界参数。所以每个参数整段包进双引号 —— 包进之后，空格与
+    // `&`、`|`、`;` 这类分隔符全是字面字符；引号内的 `"` 与 `\` 用 `\` 转义。
+    // 旧写法的 `\s`（转义空格）现行规范里没有，会话解析时留成字面 `\ `，
+    // 路径里有空格照样断开。
+    @Expect(escapeDesktopExec("/home/kelthas/My Apps/main"), "\"/home/kelthas/My Apps/main\"")
+    @Expect(escapeDesktopExec("/usr/bin/deepdolphin"), "\"/usr/bin/deepdolphin\"")
+    // 引号内的反斜杠与双引号必须转义：否则引号提前闭合
+    @Expect(escapeDesktopExec("a\\b\"c"), "\"a\\\\b\\\"c\"")
+    // 分隔符与裸空白一并防住
+    @Expect(escapeDesktopExec("/opt/a&b|c;d e"), "\"/opt/a&b|c;d e\"")
     let e = autostartEntry("/usr/bin/deepdolphin", "/usr/bin/moongit")
     @Expect(e.contains("[Desktop Entry]"))
     @Expect(e.contains("Type=Application"))
-    @Expect(e.contains("Exec=/usr/bin/deepdolphin --engine /usr/bin/moongit"))
+    @Expect(e.contains("Exec=\"/usr/bin/deepdolphin\" --engine \"/usr/bin/moongit\""))
     @Expect(e.contains("X-GNOME-Autostart-enabled=true"))
     // 引擎为空时不能留下一截「--engine 」
     @Expect(!autostartEntry("/usr/bin/deepdolphin", "").contains("--engine"))
+}
+
+@Test
+func autostartFileLandsInTheXdgAutostartDirNotTheAppPrivateDir(): Unit {
+    // R3-01：freedesktop Autostart 规范的用户级目录是 $XDG_CONFIG_HOME/autostart
+    // （默认 ~/.config/autostart），会话登录**只扫那里**。第一版写到应用
+    // 私有目录 ~/.config/deepdolphin/autostart/ —— 根本不会被扫到，
+    // 开关显示「已开启」而实际永远不会自启。
+    @Expect(xdgConfigBase("", "/home/u"), "/home/u/.config")
+    @Expect(xdgConfigBase("relative/x", "/home/u"), "/home/u/.config") // 非绝对路径不认
+    @Expect(xdgConfigBase("/custom/cfg", "/home/u"), "/custom/cfg")
+    @Expect(xdgAutostartDir("", "/home/u"), "/home/u/.config/autostart")
+    @Expect(xdgAutostartDir("/custom/cfg", "/home/u"), "/custom/cfg/autostart")
+}
+
+@Test
+func autostartRefusesAnEmptyExecBecauseTheSessionWouldExecuteTheArgument(): Unit {
+    // R3-02：调用方传空 execPath 时，写出的条目是「Exec= --engine <bin>」
+    // —— 会话把 --engine 当程序名去执行，客户端永远不会被启动，
+    // 而界面照样显示「已开启」。现在空 Exec 在写入前就被拒掉，并给下一步。
+    let p = autostartEntryProblem("")
+    @Expect(!p.isEmpty())
+    @Expect(p.contains("Exec"))
+    @Expect(!autostartEntryProblem("   ").isEmpty()) // 纯空白等同空
+    @Expect(autostartEntryProblem("/opt/dd/scripts/run.sh"), "")
+}
+
+@Test
+func toolLookupWalksPathInOrderThenCallersFallBackToTheBuiltinPath(): Unit {
+    // R3-06：curl / notify-send / secret-tool 原来钉死 /usr/bin ——
+    // 工具装在 PATH 别处的机器上明明有也报「找不到」。解析规则：
+    // 目录顺序 × 名字顺序，取第一个「存在」的命中（firstToolOnPath
+    // 的纯函数核心）。用 /usr/bin/sh（每台机器都有）验，不依赖具体工具。
+    @Expect(firstOnPathString("/usr/bin:/bin", ["sh"], { c => isRegularFile(c) }), "/usr/bin/sh")
+    // 前面的目录没有 → 落到后面的
+    @Expect(firstOnPathString("/nonexistent-dd:/bin", ["sh"], { c => isRegularFile(c) }), "/bin/sh")
+    // 名字有先后：第一个名字在任何目录命中，都优先于第二个名字
+    @Expect(firstOnPathString("/bin:/usr/bin", ["no-such-tool-dd", "sh"], { c => isRegularFile(c) }), "/bin/sh")
+    // 都找不到 → 空串，调用方回退各自的绝对路径兜底
+    @Expect(firstOnPathString("/nonexistent-dd", ["no-such-tool-dd"], { c => isRegularFile(c) }), "")
 }
 
 @Test

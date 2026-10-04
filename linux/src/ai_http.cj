@@ -156,7 +156,16 @@ public class AIHttpResult {
     }
 }
 
-private const CURL: String = "/usr/bin/curl"
+/// curl 的兜底位置：PATH 上找不到时最后试这一处。
+private const CURL_FALLBACK: String = "/usr/bin/curl"
+
+/// curl 的位置：先走 PATH，找不到再回退 /usr/bin。
+/// ⚠ 第一版钉死 /usr/bin —— 工具装在 PATH 别处（/bin、用户自装 prefix）
+/// 的机器上明明有 curl 也报「找不到」。
+private func curlBin(): String {
+    let p = firstToolOnPath(["curl"])
+    return (if (p.isEmpty()) { CURL_FALLBACK } else { p })
+}
 
 /// 临时文件目录。**用完立刻删** —— 里面有用户的 API Key 和完整提示词。
 private func aiTempDir(): String {
@@ -179,8 +188,9 @@ private func tempPath(tag: String): String {
 ///   · 200 但 body 解析不出来
 /// 三类混成一句「AI 调用失败」，用户在「测试连接」那一步什么也判断不出来。
 public func aiPostJSON(url: String, bodyText: String, headerLines: ArrayList<String>, timeoutMs: Int64): AIHttpResult {
-    if (!exists(CURL)) {
-        return AIHttpResult(-1, "", "找不到 /usr/bin/curl —— AI 通道依赖它发请求（装 curl 即可）", url)
+    let curl = curlBin()
+    if (!exists(curl)) {
+        return AIHttpResult(-1, "", "找不到 curl（PATH 与 /usr/bin 都试过）—— AI 通道依赖它发请求（装 curl 即可）", url)
     }
     let bodyFile = tempPath("body")
     let headFile = tempPath("head")
@@ -201,7 +211,7 @@ public func aiPostJSON(url: String, bodyText: String, headerLines: ArrayList<Str
     }
 
     let secs = (if (timeoutMs < 1000) { Int64(1) } else { timeoutMs / 1000 })
-    let r = execCapture(CURL, [
+    let r = execCapture(curl, [
         "-sS",
         "--max-time", secs.toString(),
         "-X", "POST",

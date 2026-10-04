@@ -7,12 +7,13 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-export CANGJIE_HOME="${CANGJIE_HOME:-$HOME/.local/share/cangjie/current}"
-# 仓颉运行时环境。**逻辑在 cj-env.sh 里**，与 run.sh 共用同一份 ——
-# 原来两处各抄一遍，而两遍都写错了 Linux 分支（见 cj-env.sh 顶部注释）。
+# 仓颉运行时环境与 SDK 定位，与 run.sh / ai-e2e.sh 共用 cj-env.sh。
+# SDK 走两级探测（$CANGJIE_HOME/envsetup.sh → $CANGJIE_HOME/cangjie/envsetup.sh），
+# 本机解包的 SDK 根多套一层 cangjie/，老的单一默认值 source 直接挂。
 # shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/cj-env.sh"
 dd_cj_pre_source
+dd_cj_locate_sdk
 # shellcheck disable=SC1091
 source "$CANGJIE_HOME/envsetup.sh"
 
@@ -22,8 +23,11 @@ fi
 
 dd_cj_setup_runtime
 
-# SDL3 动态库：仓内 vendor 里那份，与构建时链的是同一个。
+# SDL3 动态库：仓内 vendor 里那份（ci-local.sh 解包的用户空间 SDL3），
+# 与构建时链的是同一个。macOS 走 DYLD_LIBRARY_PATH；Linux 走 LD_LIBRARY_PATH
+# —— 没有系统 SDL3 包的机器上，没有这行产物起不来。
 export DYLD_LIBRARY_PATH="$HERE/vendor/CangjieSDL/.sdl3:$DYLD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$HERE/vendor/CangjieSDL/.sdl3:$LD_LIBRARY_PATH"
 
 if [[ -z "${DEEPGIT_BIN:-}" ]]; then
   REPO_BIN="$HERE/../../moonGit/target/release/bin/main"

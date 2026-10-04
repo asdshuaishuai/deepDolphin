@@ -26,11 +26,23 @@ set -o pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$DIR"
 
-export CANGJIE_HOME="${CANGJIE_HOME:-$HOME/.local/share/cangjie/current}"
+# 仓颉运行时环境与 SDK 定位，与 run.sh / dev-launch.sh 共用 cj-env.sh。
+# SDK 走两级探测（$CANGJIE_HOME/envsetup.sh → $CANGJIE_HOME/cangjie/envsetup.sh）
+# —— 本机解包的 SDK 根多套一层 cangjie/，老的单一默认值 source 直接挂。
+# ⚠ 上面已经 `cd "$DIR"`，BASH_SOURCE 的相对路径在这里已失效，必须用 $DIR。
+# shellcheck disable=SC1091
+source "$DIR/scripts/cj-env.sh"
+dd_cj_pre_source
+dd_cj_locate_sdk
 # shellcheck disable=SC1091
 source "$CANGJIE_HOME/envsetup.sh"
 if [[ -d "$HOME/.local/share/sdks/MacOSX.minimal/latest" ]]; then
   export SDKROOT="$HOME/.local/share/sdks/MacOSX.minimal/latest"
+fi
+# ci-local.sh 装的 ld 链接包装器（crt 缺口修补）存在就挂上 PATH：
+# 本机系统 ld 解析不了裸 crtbeginS.o，没有它 cjpm test 的链接必挂。
+if [[ -x "$HOME/.local/bin/ld" ]]; then
+  export PATH="$HOME/.local/bin:$PATH"
 fi
 
 PLAIN_PORT=18741
@@ -59,12 +71,28 @@ trap cleanup EXIT
 
 # agent 那条要真引擎，所以引擎必须存在。找不到就**明说并失败**，
 # 不静默跳过 —— 静默跳过等于「检查通过」，而实际上一条都没验。
-ENGINE="$DIR/../../moonGit/target/release/bin/main"
+# 三级定位：DEEPGIT_BIN → PATH 上的 moongit / deepgit → 兄弟仓构建
+# （与客户端 runtime 的 locateEngine 同族，只是兄弟仓放最后兜底 ——
+# 端到端在哪台机器上跑，就应该用那台机器实际装好的引擎）。
+ENGINE="${DEEPGIT_BIN:-}"
+if [[ -z "$ENGINE" ]]; then
+  ENGINE="$(command -v moongit 2>/dev/null || true)"
+  if [[ -z "$ENGINE" ]]; then
+    ENGINE="$(command -v deepgit 2>/dev/null || true)"
+  fi
+fi
+if [[ -z "$ENGINE" ]]; then
+  ENGINE="$DIR/../../moonGit/target/release/bin/main"
+fi
 if [[ ! -x "$ENGINE" ]]; then
-  echo "✗ 找不到引擎：$ENGINE" >&2
-  echo "  先 cd moonGit && cjpm build" >&2
+  echo "✗ 找不到可执行的引擎，三级都试过了：" >&2
+  echo "  1. \$DEEPGIT_BIN → ${DEEPGIT_BIN:-（未设置）}${DEEPGIT_BIN:+（设了但不可执行）}" >&2
+  echo "  2. PATH（command -v moongit / deepgit）→ 没有命中" >&2
+  echo "  3. 兄弟仓构建 → $DIR/../../moonGit/target/release/bin/main 不存在" >&2
+  echo "  处置：cd moonGit && cjpm build；或跑 moonGit/scripts/install.sh；或 export DEEPGIT_BIN=<引擎绝对路径>" >&2
   exit 2
 fi
+echo "› 引擎：$ENGINE"
 
 echo "› 起假 provider（plain :$PLAIN_PORT / agent :$AGENT_PORT）…"
 MOCK_MODE=plain MOCK_PORT=$PLAIN_PORT MOCK_LOG=$PLAIN_LOG python3 tests/mock_agent.py >"$PLAIN_ERR" 2>&1 &
@@ -108,13 +136,19 @@ done
 # 而实际有两条什么都没验。摘标记 + 验证 TCS 行存在，
 # 才是「它真的跑了」的证据。
 TEST_FILE="$DIR/src/ai_test.cj"
-TEST_BACKUP="$(mktemp -t deepdolphin-ai-test)"
+# ⚠ 模板必须带 XXXX：GNU mktemp 对不带 X 的模板直接报
+# 「too few X's in template」（本机实测），TEST_BACKUP 会是空串，
+# 后面的 cp/恢复全部空转。
+TEST_BACKUP="$(mktemp "${TMPDIR:-/tmp}/deepdolphin-ai-test.XXXXXX")"
 cp "$TEST_FILE" "$TEST_BACKUP"
 restore_test_file() {
   cp "$TEST_BACKUP" "$TEST_FILE"
   rm -f "$TEST_BACKUP"
 }
-sed -i '' '/^@Skip \/\/ 端到端：/d' "$TEST_FILE"
+# GNU/BSD 通吃的写法。`sed -i ''` 是 BSD 专属：GNU sed 把 '' 当空脚本、
+# 把删除命令当文件名（exit 2，文件原样）—— @Skip 摘不掉，
+# :118 的 grep 会以「判据文件结构变了」假失败退出。
+sed -i '/^@Skip \/\/ 端到端：/d' "$TEST_FILE"
 if grep -q '^@Skip // 端到端：' "$TEST_FILE"; then
   echo "✗ 没能摘掉端到端判据的 @Skip —— 判据文件结构变了，脚本要跟着改" >&2
   exit 1
@@ -125,9 +159,22 @@ export DD_E2E_AGENT_PORT=$AGENT_PORT
 export DD_E2E_MULTI_PORT=$MULTI_PORT
 export DD_E2E_BIN="$ENGINE"
 
+# 与 ci-local.sh 同款的链接/运行期库路径。本机（glibc 2.38，无系统 SDL3 包）
+# 链接期 ld 要解析 libSDL3.so 的 DT_NEEDED（libsndio/libXss 等）——
+# .sdl3 放 SDL 三件套本体，用户解包目录放可选依赖。顺序敏感：
+# .sdl3 的 3.2.10 必须先于任何混入 3.4.x 的目录被找到（3.4 要 glibc 2.43）。
+SDL3DIR="$DIR/vendor/CangjieSDL/.sdl3"
+SDL_USER="$HOME/.local/sdl3"
+export LD_LIBRARY_PATH="$SDL3DIR:$SDL_USER/ex32/usr/lib/x86_64-linux-gnu:$SDL_USER/ex/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
 echo "› 跑判据…"
 OUT="$(cjpm test 2>&1)"
-CLEAN="$(printf '%s' "$OUT" | sed 's/\x1b\[[0-9;]*m//g')"
+# 与 ci-local.sh 同款 ANSI 清洗：必须清**所有 CSI 序列**（参数 + 任意终止字母），
+# 不能只清 m 结尾的 SGR —— unittest 的输出里混着 \x1b[K / \x1b[?25h 这类
+# 光标控制序列，只清 m 的话它们残留在行中间，后面按「TCS: TestCase_x,」
+# 定位的 grep 就会假阴性（实测：122 条全绿却报「端到端判据没被跑到」）。
+# $'…' 把真实 ESC 字节嵌进正则，GNU/BSD sed 都认。
+CLEAN="$(printf '%s' "$OUT" | sed -e $'s/\x1b\\[[0-9;?]*[A-Za-z]//g')"
 
 # ⚠ 判据结果只在**冒号那一行**上认。
 # 原来直接 `grep TEMP_`，而编译器的宏展开源码里满是 `TEMP_` 字样 ——

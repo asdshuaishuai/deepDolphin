@@ -170,9 +170,11 @@ public class EngineLocation {
     }
 }
 
-/// PATH 里逐个名字找可执行文件。
-private func whichFirst(names: Array<String>): String {
-    let pathEnv = getVariable("PATH") ?? ""
+/// PATH 解析的共用骨架：给定 PATH 原文，按**目录顺序 × 名字顺序**找第一个
+/// 满足 `ok` 的候选。**纯函数**（PATH 原文由调用方传入），判据直接喂。
+/// 引擎定位（whichFirst，要「跑一下验证」）与通用工具定位（只验存在）
+/// 共用这一个实现 —— 顺序规则只写一遍。
+func firstOnPathString(pathEnv: String, names: Array<String>, ok: (String) -> Bool): String {
     let sep: UInt8 = 0x3au8 // ':'
     for (name in names) {
         for (dir in splitOnByte(pathEnv, sep)) {
@@ -180,12 +182,26 @@ private func whichFirst(names: Array<String>): String {
                 continue
             }
             let cand = dir + "/" + name
-            if (isRegularFile(cand) && engineRuns(cand)) {
+            if (ok(cand)) {
                 return cand
             }
         }
     }
     return ""
+}
+
+/// PATH 里逐个名字找可执行文件。
+private func whichFirst(names: Array<String>): String {
+    return firstOnPathString(getVariable("PATH") ?? "", names, { c => isRegularFile(c) && engineRuns(c) })
+}
+
+/// PATH 上找通用命令行工具（curl / notify-send / secret-tool）。
+/// 与 whichFirst 同一骨架但**只验存在**：工具坏不坏，由调用方在真用时
+/// 把 stderr 如实带回来 —— 拿引擎的 `version` 探测去跑 curl 没有意义。
+/// 找不到返回空串，调用方回退各自的绝对路径兜底（R3-06：
+/// 钉死 /usr/bin 会错过装在 PATH 别处的同名工具）。
+func firstToolOnPath(names: Array<String>): String {
+    return firstOnPathString(getVariable("PATH") ?? "", names, { c => isRegularFile(c) })
 }
 
 /// 按字节切分，避免引入正则（PATH 里可能有含空格或特殊字符的目录）。

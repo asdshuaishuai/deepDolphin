@@ -624,8 +624,17 @@ private func aiAutostartRow(model: AppModel, app: DesktopApp, dark: Bool): Widge
     return HStack {
         Label(if (on) { "已开启" } else { "已关闭" }).fontSize(12.0)
         Button(if (on) { "关闭" } else { "开启" }, {=>
-            // Exec= 写的是**引擎**参数，客户端自己的启动路径由启动脚本负责
-            let p = setAutostart("", model.enginePath, !on)
+            // Exec= 写**客户端真实入口**（scripts/run.sh 绝对路径，它自己摆好
+            // 仓颉运行时库路径）。引擎不带 --engine 钉死 —— run.sh 会优先指向
+            // 仓内构建，装好的机器走 locateEngine 的 PATH 兜底，与手动启动
+            // 是同一条链。算不出入口就**如实报错**，不写 Exec= 残缺的条目：
+            // 那种条目会话把参数当程序名执行，界面却显示「已开启」（R3-02）。
+            let entry = autostartClientEntry()
+            let p = (if (entry.isEmpty()) {
+                "算不出自启入口（scripts/run.sh）：请从仓库内 linux/target/release/bin/main 启动客户端后再开自启"
+            } else {
+                setAutostart(entry, "", !on)
+            })
             if (!p.isEmpty()) {
                 model.report(p, false)
             }

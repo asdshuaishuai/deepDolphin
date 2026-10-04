@@ -5,7 +5,7 @@
 // 框架**不提供**跟随系统。所以这一步只能客户端自己做。
 //
 // 【为什么不猜】探测顺序从「确定」到「不确定」：
-//   1. 用户在本应用里显式选过（`$XDG_CONFIG_HOME/deepDolphin/settings.conf`）—— 唯一权威
+//   1. 用户在本应用里显式选过（`$XDG_CONFIG_HOME/deepdolphin/settings.conf`）—— 唯一权威
 //   2. `GTK_THEME` 环境变量 —— 明确写了 dark/light
 //   3. 桌面自己的设置查询（GNOME / KDE / macOS）—— 要起子进程，慢一点但准
 //   4. 全都没探到 → **亮色**，并且把「没探出来」这件事记下来要说出去
@@ -71,7 +71,7 @@ public func dsAppearanceKey(a: DsAppearance): String {
 public func settingsPath(): String {
     let xdg = getVariable("XDG_CONFIG_HOME") ?? ""
     let base = (if (xdg.isEmpty()) { homeConfigFallback() } else { xdg })
-    return "${base}/deepDolphin/settings.conf"
+    return "${base}/deepdolphin/settings.conf"
 }
 
 private func homeConfigFallback(): String {

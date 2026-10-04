@@ -12,9 +12,13 @@
 ## 0. 先决条件
 
 ```sh
-# 1. 仓颉 SDK 必须是 1.0.5，禁止升级
+# 1. 仓颉 SDK 必须是 1.0.5，禁止升级。
+#    两种解包布局都合法：envsetup.sh 直接在 $CANGJIE_HOME 下，
+#    或多套一层 cangjie/（deepin 25 实测是后者）。仓内脚本
+#    （scripts/cj-env.sh 的 dd_cj_locate_sdk）两级都会探测。
 export CANGJIE_HOME="$HOME/.local/share/cangjie/current"
-"$CANGJIE_HOME/cjc" --version          # 期望 1.0.5
+ls "$CANGJIE_HOME/envsetup.sh" "$CANGJIE_HOME/cangjie/envsetup.sh"   # 至少一个存在
+"$CANGJIE_HOME/cangjie/bin/cjc" --version 2>/dev/null || "$CANGJIE_HOME/bin/cjc" --version   # 期望 1.0.5
 
 # 2. SDL3 三件套（fetch-deps.sh 会从系统库拷进 vendor/）
 sudo apt install libsdl3-dev libsdl3-ttf-dev libsdl3-image-dev

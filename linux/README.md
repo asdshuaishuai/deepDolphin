@@ -125,7 +125,9 @@ linux/
 
 ```sh
 export CANGJIE_HOME="$HOME/.local/share/cangjie/current"
-source "$CANGJIE_HOME/envsetup.sh"
+# SDK 有两种解包布局：envsetup.sh 直接在根，或多套一层 cangjie/（deepin 25 实测是后者）。
+# scripts/cj-env.sh 的 dd_cj_locate_sdk 两级都会探测；手动 source 也照两级试。
+source "$CANGJIE_HOME/envsetup.sh" 2>/dev/null || source "$CANGJIE_HOME/cangjie/envsetup.sh"
 export SDKROOT="$HOME/.local/share/sdks/MacOSX.minimal/latest"
 cjpm build && cjpm test     # 35 项，全绿
 

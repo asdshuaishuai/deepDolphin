@@ -70,8 +70,21 @@ echo "  · $count 个尺寸"
 
 echo "› 装桌面条目 → $DESKTOP_DST"
 mkdir -p "$APPS_DST"
-sed "s|^Exec=__EXEC__|Exec=$RUN_SH|" "$ICON_SRC/$APP_ID.desktop" > "$DESKTOP_DST"
+# Exec= 的值按 freedesktop Desktop Entry 规范整参数加双引号：run.sh 路径
+# 含空格或 & | ; 这类分隔符时，不加引号会被会话按分隔符切开 —— 与
+# linux/src/sysint.cj 的 escapeDesktopExec 是同一条规则（那边管自启条目，
+# 这边管启动器条目），两处写法不能分叉。
+EXEC_VALUE="\"$RUN_SH\""
+sed "s|^Exec=__EXEC__|Exec=$EXEC_VALUE|" "$ICON_SRC/$APP_ID.desktop" > "$DESKTOP_DST"
 chmod +x "$DESKTOP_DST"
+# 落盘校验：Exec 行必须逐字节等于我们想写的内容。模板改了占位符、
+# 或 sed 没命中时，这里当场报 —— 不能让安装器装作成功，
+# 留一个指向上一次路径（或占位符）的条目给启动器。
+if ! grep -Fqx "Exec=\"$RUN_SH\"" "$DESKTOP_DST"; then
+  echo "✗ .desktop 的 Exec= 行没写对（期望：Exec=\"$RUN_SH\"）：" >&2
+  grep -n '^Exec=' "$DESKTOP_DST" >&2 || echo "  （写出的文件里连 Exec= 行都没有）" >&2
+  exit 1
+fi
 
 # 图标名、.desktop 文件名、SDL app_id 必须同名，否则任务栏没有图标。
 # 这里查一次，别等到"图标不显示"再去猜是哪一环对不上。
