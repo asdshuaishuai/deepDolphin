@@ -1885,15 +1885,302 @@ func primaryActionButtonsEnableWhenIdleNotWhenBusy(): Unit {
     }
 }
 
+// ---------------------------------------------------------------------------
+// T3：添加 / 扫描项目面板（功能流 C-05 —— 写层 actScan/actAddProject 的 UI 入口）
+//
+// 病与 T1/R2 同族：写层俱全、视图零调用，侧栏拿一句「终端运行 moongit scan」
+// 顶替入口。能抽成纯函数的（路径校验 / 覆盖度披露 / 提交分派）走 @Test；
+// 面板呈现与控件接线走框架 `WidgetTestHost` 的无头镜头（快照机链不出来时，
+// 这里就是面板在场的证据）；「入口接到面板而非终端提示」走源码扫描。
+// ---------------------------------------------------------------------------
+
+/// 不碰磁盘的 classify：把「哪个路径算目录」钉死在判据里。
+/// 真实实现 classifyPathKind 由下一条的空串负向判据兜住。
+private func fakeClassify(dirs: Array<String>): (String) -> PathKind {
+    return { p =>
+        for (d in dirs) {
+            if (d == p) {
+                return PathKind.PathDirectory
+            }
+        }
+        return PathKind.PathMissing
+    }
+}
+
 @Test
-func sidebarAddHintNamesTheRealCommandInsteadOfLookingClickable(): Unit {
-    // R2-02 回归：「＋ 添加 / 扫描项目」曾是一个强调色 Label —— 长得能点、
-    // 点不动（CUI 没有目录选择器，客户端起不了「挑目录扫描」）。
-    // 降级成说明文字后，它必须把**真实可执行**的命令写给用户：
-    // 命令名与参数占位符少一个，这句话就退化成了一句空提示。
-    let hint = sidebarAddHint()
-    @Expect(hint.contains("moongit scan"))
-    @Expect(hint.contains("<目录>"))
+func pathInputRejectsEmptyRelativeMissingAndFileInputs(): Unit {
+    // ①空串：不是可用输入，也不许静默通过
+    @Expect(!preparePathInput("").isUsable())
+    @Expect(!preparePathInput("   ").isUsable())
+    @Expect(preparePathInput("").problem.contains("空"))
+    // ②相对路径：引擎会拿子进程 CWD 当基准（那个目录用户看不见），必须拦
+    @Expect(!preparePathInput("work/myproj").isUsable())
+    @Expect(preparePathInput("work/myproj").problem.contains("相对路径"))
+    // 首尾空格先收掉再判 —— 引擎对带空格的路径直接失败
+    let padded = preparePathInput("  /tmp/atlas  ")
+    @Expect(padded.isUsable())
+    @Expect(padded.path, "/tmp/atlas")
+    // 尾斜杠消解；~/sub 交给引擎（它自己会展开）
+    @Expect(preparePathInput("/tmp/atlas/").path, "/tmp/atlas")
+    @Expect(preparePathInput("~/dev/proj").isUsable())
+    // 纯 ~ 是家目录本身，展开不了，得让用户知道
+    @Expect(!preparePathInput("~").isUsable())
+    @Expect(!preparePathInput("~/").isUsable())
+
+    // validateScanRoot：磁盘三态各说各的话，不许压成一句「不是文件夹」
+    let ok = validateScanRoot("/tmp/atlas", fakeClassify(["/tmp/atlas"]))
+    @Expect(ok.isUsable())
+    @Expect(ok.path, "/tmp/atlas")
+    @Expect(ok.problem.isEmpty())
+    // ③不存在
+    let missing = validateScanRoot("/tmp/gone", fakeClassify([]))
+    @Expect(!missing.isUsable())
+    @Expect(missing.problem.contains("不存在"))
+    // ④是文件非目录
+    let file = validateScanRoot("/tmp/afile", {p => PathKind.PathFile })
+    @Expect(!file.isUsable())
+    @Expect(file.problem.contains("文件"))
+    // 「不存在」与「是个文件」是两种排查方向，两句话必须不同
+    @Expect(file.problem != missing.problem)
+    // 相对路径在 scan 校验里同样被拒
+    @Expect(!validateScanRoot("rel/path", fakeClassify(["rel/path"])).isUsable())
+}
+
+/// 真实磁盘三态里的两条负向通路（classifyPathKind 自己）。
+/// 目录/文件的正向分支依赖本机盘面，判据只钉「读不到要按缺失处理，
+/// 且绝不抛」—— stat 失败抛穿构建闭包会把窗口干掉。
+@Test
+func classifyPathKindTreatsEmptyAndAbsentPathsAsMissingWithoutThrowing(): Unit {
+    @Expect(pathKindIs(classifyPathKind(""), PathKind.PathMissing))
+    @Expect(pathKindIs(classifyPathKind("/definitely/not/here/deepdolphin"), PathKind.PathMissing))
+    // 本判据运行的包根一定存在，但它是文件（cjpm.toml）不是目录
+    @Expect(pathKindIs(classifyPathKind("cjpm.toml"), PathKind.PathFile))
+}
+
+/// 仓颉枚举没有 `==`（与 rootSectionIs 同一条理由）。
+private func pathKindIs(a: PathKind, b: PathKind): Bool {
+    match (a) {
+        case PathKind.PathMissing => return match (b) { case PathKind.PathMissing => true; case _ => false }
+        case PathKind.PathFile => return match (b) { case PathKind.PathFile => true; case _ => false }
+        case PathKind.PathDirectory => return match (b) { case PathKind.PathDirectory => true; case _ => false }
+    }
+}
+
+@Test
+func scanDisclosureSaysAddedSkippedAndNotFoundWithoutOverclaiming(): Unit {
+    // ②基本计数句 + 跳过披露（对位 mac 端 ScanSheet 的结果行）
+    @Expect(scanResultLine(ScanCoverageInput(3, 2, 1)), "新增 2 个 / 共发现 3 个（已存在 1 个跳过）")
+    @Expect(scanResultLine(ScanCoverageInput(4, 4, 0)), "新增 4 个 / 共发现 4 个")
+    // found=0 且**真扫完了**才许下「没有仓库」的结论
+    @Expect(scanResultLine(ScanCoverageInput(0, 0, 0)).contains("没有 git 仓库"))
+
+    // 引擎侧 #197 的本端防线：深度不够时那句结论必须缺席 ——
+    // 「没扫完」被读成「这里没有」正是当初引擎栽的那个谎。
+    let capped = ScanCoverageInput(0, 0, 0, depthCapped: Some(true))
+    @Expect(!scanResultLine(capped).contains("没有 git 仓库"))
+    let note = scanCoverageNote(capped)
+    @Expect(note.isSome())
+    @Expect(note.getOrThrow().contains("未扫完"))
+    @Expect(note.getOrThrow().contains("深度上限"))
+    @Expect(note.getOrThrow().contains("只代表已访问的那部分里没有"))
+    // found>0 时同一种截断换一句收尾：「上面列出的不是全部」
+    let partial = scanCoverageNote(ScanCoverageInput(5, 2, 0, truncated: Some(true)))
+    @Expect(partial.getOrThrow().contains("不是全部"))
+    @Expect(partial.getOrThrow().contains("目录数量上限"))
+    // 三种成因可以同时发生，各说各的（处置方式不同：加深度 / 分根 / 查权限）
+    let all = scanCoverageNote(ScanCoverageInput(0, 0, 0,
+        truncated: Some(true), depthCapped: Some(true), unreadable: Some(2)))
+    @Expect(all.getOrThrow().contains("深度上限"))
+    @Expect(all.getOrThrow().contains("目录数量上限"))
+    @Expect(all.getOrThrow().contains("2 个目录读不出来"))
+    // 键没有 ≠ false：旧引擎不发这些键时一句都不编
+    @Expect(scanCoverageNote(ScanCoverageInput(5, 5, 0)).isNone())
+    // unreadable = Some(0)（空数组也是恒发）不是披露理由
+    @Expect(scanCoverageNote(ScanCoverageInput(5, 5, 0, unreadable: Some(0))).isNone())
+}
+
+/// 引擎 `scan --json` 的真实形状（键名对照 moonGit cli.cj `scanResultJson`：
+/// found/added/existing 恒发，truncated/depthCapped 恒发，unreadable 恒发数组）。
+private let SCAN_ENVELOPE = """
+{"candidates":[{"name":"atlas","path":"/tmp/atlas","kind":"git","remote":""}],
+ "found":1,"added":1,"existing":0,"dirsVisited":12,"truncated":false,"depthCapped":true,
+ "unreadable":["/tmp/locked"]}
+"""
+
+/// 写失败的错误桩（与 MILESTONE_ERROR_STUB 同族：{error:true,code,message}）。
+private let SCAN_ERROR_STUB = """
+{"error":true,"code":"SCAN_FAILED","message":"扫描根目录不存在：/tmp/gone"}
+"""
+
+@Test
+func scanResultOfReadsTheRealEnvelopeAndRejectsErrorStubs(): Unit {
+    let (line, ok) = scanResultOf("扫描 /tmp/dev", Json.parse(SCAN_ENVELOPE).getOrThrow(), "")
+    @Expect(ok)
+    @Expect(line.startsWith("✓"))
+    @Expect(line.contains("新增 1 个 / 共发现 1 个"))
+    // depthCapped=true 且 unreadable 有 1 条 → 披露必须跟在结果行后面
+    @Expect(line.contains("深度上限"))
+    @Expect(line.contains("1 个目录读不出来"))
+    // 负控（R1-02 同族）：错误桩没有结果键 → ✗ 与原因，缺省当成功就是替引擎说谎
+    let (bad, badOk) = scanResultOf("扫描 /tmp/gone",
+        Json.parse(SCAN_ERROR_STUB).getOrThrow(), "扫描根目录不存在：/tmp/gone")
+    @Expect(!badOk)
+    @Expect(bad.startsWith("✗"))
+    @Expect(bad.contains("扫描根目录不存在"))
+}
+
+@Test
+func addProjectResultOfKeepsTheEntryAndRejectsErrorStubs(): Unit {
+    // 引擎 add --json 的成功载荷是注册表条目（registry.cj ProjectEntry.toJson）
+    let v = Json.parse("""
+    {"id":"a1","name":"atlas","path":"/tmp/atlas","kind":"git","remote":"",
+     "addedAt":"2026-10-04T00:00:00+08:00","tags":[],"disabled":false}
+    """).getOrThrow()
+    let (line, ok) = addProjectResultOf("注册项目 /tmp/atlas", v, "")
+    @Expect(ok)
+    @Expect(line.startsWith("✓"))
+    // 条目里引擎解析出的名字与规范路径都要给用户（「注册成了什么」要说清）
+    @Expect(line.contains("atlas"))
+    @Expect(line.contains("/tmp/atlas"))
+    let (bad, badOk) = addProjectResultOf("注册项目 /tmp/gone",
+        Json.parse(SCAN_ERROR_STUB).getOrThrow(), "路径不存在")
+    @Expect(!badOk)
+    @Expect(bad.startsWith("✗"))
+    @Expect(bad.contains("扫描根目录不存在"))
+}
+
+@Test
+func addPaneIntentRoutesOnlyValidatedDraftsToTheWriteLayer(): Unit {
+    // 提交分派是纯函数（classify 注入）：什么草稿派出什么动作，判据不开窗。
+    let model = AppModel(EngineLocation("", "", ""))
+
+    // 单项目档：路径合法才放行；项目名 trim 后随行（可空）
+    model.addSinglePath.value = "/tmp/atlas"
+    model.addSingleName.value = "  "
+    match (addPaneIntentOf(model, fakeClassify(["/tmp/atlas"]))) {
+        case AddSingle(path, name) =>
+            @Expect(path, "/tmp/atlas")
+            @Expect(name.isEmpty())
+        case _ => @Expect(false)
+    }
+
+    // 批量档：深度被钳进 1…6 —— 绕过 Stepper 的调用也不许递 --depth 0
+    model.addMode.value = 1
+    model.scanRoot.value = "/tmp/dev"
+    model.scanDepth.value = 99
+    match (addPaneIntentOf(model, fakeClassify(["/tmp/dev"]))) {
+        case ScanRoot(root, depth) =>
+            @Expect(root, "/tmp/dev")
+            @Expect(depth, 6)
+        case _ => @Expect(false)
+    }
+    model.scanDepth.value = 0
+    match (addPaneIntentOf(model, fakeClassify(["/tmp/dev"]))) {
+        case ScanRoot(_, depth) => @Expect(depth, 1)
+        case _ => @Expect(false)
+    }
+
+    // 校验失败 → Blocked 带原因，**不碰写层**（这是提交按钮敢一直可用的底气）
+    model.scanRoot.value = "rel/path"
+    match (addPaneIntentOf(model, fakeClassify(["/tmp/dev"]))) {
+        case Blocked(why) => @Expect(why.contains("相对路径"))
+        case _ => @Expect(false)
+    }
+    model.scanRoot.value = ""
+    match (addPaneIntentOf(model, fakeClassify(["/tmp/dev"]))) {
+        case Blocked(why) => @Expect(why.contains("空"))
+        case _ => @Expect(false)
+    }
+}
+
+@Test
+func openAddPaneIsTheSingleEntryThatSwapsTheMainArea(): Unit {
+    let model = AppModel(EngineLocation("", "", ""))
+    // AI 面板开着时点侧栏按钮：主区同一时刻只有一个场景，开面板要关掉 AI
+    model.aiPane.value = 1
+    openAddPane(model)
+    @Expect(model.addPaneOpen.value)
+    @Expect(model.aiPane.value, 0)
+    closeAddPane(model)
+    @Expect(!model.addPaneOpen.value)
+}
+
+@Test
+func addScanPaneLensSwitchesModesAndStepsDepthThroughRealControls(): Unit {
+    // 面板呈现与控件接线的无头证据（快照机在本机链不出来）：
+    // 构建不炸（Picker/Stepper/TextField 同屏）、模式切换与深度步进走的是
+    // **真控件事件**（聚焦 + 方向键），取消按钮接得上。
+    let host = WidgetTestHost()
+    let model = AppModel(EngineLocation("", "", ""))
+    let fired = ArrayList<String>()
+    let view: () -> Unit = {=>
+        addScanPaneBody(model,
+            {=> fired.add("submit") },
+            {=> fired.add("cancel") },
+            false)
+        ()
+    }
+    let vp = Rect(0.0, 0.0, 640.0, 480.0)
+    // 首帧：单项目档在场
+    let _ = host.frame(vp, body: view)
+    @Expect(model.addMode.value, 0)
+
+    // 聚焦模式选择器按右键 → 切到批量扫描档
+    host.context.focus("dd-add-mode", viaKeyboard: true)
+    let _ = host.frame(vp, events: [UiEvent.KeyDown(Key.Right, false)], body: view)
+    @Expect(model.addMode.value, 1)
+
+    // 深度 Stepper：右键 +1（2 → 3），写的是模型上的持久 State
+    host.context.focus("dd-add-depth", viaKeyboard: true)
+    let _ = host.frame(vp, events: [UiEvent.KeyDown(Key.Right, false)], body: view)
+    @Expect(model.scanDepth.value, 3)
+
+    // 取消按钮接得上（真挂载里是 closeAddPane；执行一半在镜头里以记录代替，
+    // 它的接线由 addPaneEntryPointsWireToThePanelNotTheTerminalHint 钉住）
+    host.context.focus("dd-add-cancel", viaKeyboard: true)
+    let _ = host.frame(vp, events: [UiEvent.KeyDown(Key.Enter, false)], body: view)
+    @Expect(fired.size, 1)
+    @Expect(fired[0], "cancel")
+    host.reset()
+}
+
+@Test
+func addPaneEntryPointsWireToThePanelNotTheTerminalHint(): Unit {
+    // 负控形态：sidebar.cj 曾以「添加项目：终端运行 moongit scan <目录>」的
+    // muted 说明顶替入口（R2-02），更早是一个长得能点的强调色 Label。
+    // 恢复 sidebarAddHint（含那句命令）并让底部动作区回读它，下面的
+    // !contains 与 openAddPane 接线断言会立刻红。
+    match (readSrcText("sidebar.cj")) {
+        case Some(text) =>
+            @Expect(!text.contains("终端运行"))
+            @Expect(!text.contains("moongit scan"))
+            @Expect(!text.contains("sidebarAddHint"))
+            @Expect(text.contains("openAddPane(model)"))
+        case None => @Expect(false)
+    }
+    // 空态两侧：sidebar 空列表文案（appstate.emptyText）与主区空态
+    //（views.emptyState）都必须指到面板 —— 新装用户第一跑不许再撞终端墙。
+    match (readSrcText("appstate.cj")) {
+        case Some(text) =>
+            @Expect(text.contains("点下方「添加 / 扫描项目」注册"))
+            @Expect(!text.contains("moongit scan"))
+        case None => @Expect(false)
+    }
+    match (readSrcText("views.cj")) {
+        case Some(text) =>
+            // 面板在场：detail 路由 + 空态按钮 + 提交经分派
+            @Expect(text.contains("addScanPane(model, app, dark)"))
+            @Expect(text.contains("openAddPane(model)"))
+            @Expect(text.contains("submitAddPane(app, model)"))
+            // 写层调用**只许**出现在 appstate 的分派（submitAddPane）后面：
+            // 视图拿着草稿直连 actScan/actAddProject 的形态不许回来 ——
+            // 那会绕过路径校验（与 T1 的确认闸门同一条纪律）。
+            @Expect(!text.contains("actScan("))
+            @Expect(!text.contains("actAddProject("))
+            // 空态与引擎引导都不再让用户去终端敲 scan
+            @Expect(!text.contains("moongit scan"))
+        case None => @Expect(false)
+    }
 }
 
 @Test

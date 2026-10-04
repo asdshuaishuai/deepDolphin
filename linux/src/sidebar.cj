@@ -27,7 +27,7 @@ package deepdolphin_linux
 
 import std.collection.ArrayList
 
-import cui.{Button, Color, CrossAxisAlignment, DesktopApp, Divider, EventHandler, FontWeight, HStack, Key, Label,
+import cui.{Button, ButtonRole, Color, CrossAxisAlignment, DesktopApp, Divider, EventHandler, FontWeight, HStack, Key, Label,
     ListView, LengthUnits, Panel, Spacer, State, TextField, UiEvent, VStack}
 import cui.mountEffect
 import cui.{EffectCleanup}
@@ -175,7 +175,7 @@ func sidebar(model: AppModel, app: DesktopApp, dark: Bool): Unit {
                 ListView(shownNames, projSel, key: "dd-proj-list").flex()
             }
             Divider()
-            sidebarActions()
+            sidebarActions(model)
             Divider()
             SidebarStatusStrip(model, dark)
         }.spacing(0.vp)
@@ -377,21 +377,18 @@ private func sidebarSearch(model: AppModel, dark: Bool): Unit {
     }.hug().spacing(4.0.vp).padding(8.0.vp, 6.0.vp)
 }
 
-/// 侧栏底部动作区的说明。**注册项目群的入口在终端**：
-/// CUI 没有目录选择器，客户端自己起不了「挑一个目录来扫描」。
-///
-/// ⚠ 这里曾是一个强调色的「＋ 添加 / 扫描项目」`Label` —— 长得能点、
-/// 点不动。本文件头明说不做「看着能点」的东西（命中区对不上比少一个入口
-/// 更糟），所以降级成一句 muted 说明，把真实可执行的命令写给用户。
-/// 有朝一日框架有了目录选择器，这里再升回真按钮。
-public func sidebarAddHint(): String {
-    return "添加项目：终端运行 moongit scan <目录>"
-}
-
 /// 侧栏底部动作区。**故意不放进导航列表**（见文件头）。
-private func sidebarActions(): Unit {
+///
+/// 「添加 / 扫描项目」现在是**真按钮**（功能流 C-05）：写层 actScan/actAddProject
+/// 俱全、面板（views.cj `addScanPane`）以 TextField + 校验表单承接 ——
+/// 表单不需要目录选择器。这里曾是一句把用户推去终端的 muted 说明，
+/// 更早之前还是一个强调色「＋ 添加 / 扫描项目」Label —— 长得能点、点不动。
+/// 那两种形态都被源码扫描判据钉死不许回来（见 model_test.cj 的
+/// addPaneEntryPointsWireToThePanelNotTheTerminalHint；本注释因此不写出那句话）。
+private func sidebarActions(model: AppModel): Unit {
     HStack {
-        Label(sidebarAddHint()).fontSize(fsLabel()).muted().wrap()
+        Button("＋ 添加 / 扫描项目", {=> openAddPane(model)}, role: ButtonRole.Primary)
+            .fontSize(fsLabel())
         Spacer()
     }.hug().spacing(6.0.vp).padding(10.0.vp, 8.0.vp)
 }

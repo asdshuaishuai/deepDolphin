@@ -129,6 +129,21 @@ main(args: Array<String>): Int64 {
         if (aiPane == "chat" || aiPane == "settings") {
             openAIPane(model, if (aiPane == "chat") { 1 } else { 2 })
         }
+        // T3 自查开关：打开「添加 / 扫描项目」面板再拍。
+        // 与 DD_SNAP_AI 同族 —— CUI 快照只在启动即拍，用户点不出这个面板；
+        // 走 `openAddPane` 而不是直接写字段，与其他入口同一条路。
+        // 形状：single（单项目档，预填一个**不存在**的路径 ——
+        // 让实时校验披露在场，任何机器上结果一致）| scan（批量档 + 深度行）。
+        let addPane = (getVariable("DD_SNAP_ADD") ?? "").trimAscii()
+        if (addPane == "single" || addPane == "scan") {
+            openAddPane(model)
+            if (addPane == "scan") {
+                model.addMode.value = 1
+                model.scanRoot.value = "/tmp/deepdolphin-snapshot-root"
+            } else {
+                model.addSinglePath.value = "/tmp/deepdolphin-snapshot-project"
+            }
+        }
         // 对话页快照要给**预置对话**，否则拍到的是空态 ——
         // 空态里没有消息卡，看不到 Markdown 在 `Panel` + `ScrollView`
         // 这层嵌套里排得对不对（与 C5 面板的嵌套不同，得单独拍）。

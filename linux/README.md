@@ -212,6 +212,22 @@ DD_FIXTURE_DIR="$PWD/tests/fixtures" DD_SNAP_ROOT=milestones \
 预置走的是 `pendConfirm`（与真实按钮同一条入口）：免确认档（达成/重开）
 会被拒、框不开 —— 快照上拍不到框，一眼就是接线错了。
 
+### 拍「添加 / 扫描项目」面板（T3）
+
+```sh
+DD_FIXTURE_DIR="$PWD/tests/fixtures" DD_SNAP_ADD=single \
+  SDL_VIDEODRIVER=dummy bash scripts/dev-launch.sh --snapshot /tmp/add.bmp
+DD_FIXTURE_DIR="$PWD/tests/fixtures" DD_SNAP_ADD=scan \
+  SDL_VIDEODRIVER=dummy bash scripts/dev-launch.sh --snapshot /tmp/scan.bmp
+```
+
+`DD_SNAP_ADD=single|scan` 打开「添加 / 扫描项目」面板再拍 —— CUI 快照只在
+启动即拍，用户点不出这个面板。`single` 预填一个**不存在**的路径，让实时
+校验披露（「…不存在。请确认目录名后再填绝对路径。」）在场；`scan` 拍批量档
+的扫描根 + 深度 Stepper。走 `openAddPane`（与真实按钮同一条入口）。
+面板在场与控件接线的可执行判据在 model_test.cj 的
+`addScanPaneLensSwitchesModesAndStepsDepthThroughRealControls`（无头镜头）。
+
 **未验，且已查明是框架级阻塞**：真窗口的**交互**（滚动、悬停、真实输入）
 没验过 —— `DD_SNAP_CLICK` 能证明**点击的路由**通了，但它仍然走的是
 `post` 而不是真的鼠标事件，也证明不了滚动与悬停。

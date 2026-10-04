@@ -22,8 +22,8 @@ package deepdolphin_linux
 import std.collection.ArrayList
 
 import cui.{Axis, Badge, BadgeKind, Binding, Button, ButtonRole, Chip, Color, CrossAxisAlignment, DesktopApp,
-    Divider, Dropdown, Flexible, FontWeight, HStack, Label, LengthUnits, Modal, Panel, ScrollView, Spacer,
-    State, SurfaceStyle, TextArea, TextField, VStack, Widget, ZStack}
+    Divider, Dropdown, Flexible, FontWeight, HStack, Label, LengthUnits, Modal, Panel, Picker, ScrollView, Spacer,
+    State, SurfaceStyle, Stepper, TextArea, TextField, VStack, Widget, ZStack}
 import cui.LengthUnits
 import cui.{mountEffect, rememberState}
 
@@ -194,6 +194,13 @@ public func updateTargetOf(model: AppModel): String {
 // ===========================================================================
 
 func detail(model: AppModel, app: DesktopApp, dark: Bool): Unit {
+    // 「添加 / 扫描项目」面板**接管整个主区**（与 AI 面板同一形态：
+    // CUI 只有一扇窗，换主区而不是弹窗）。放最前判 —— openAddPane
+    // 虽然会顺手关掉 AI 面板，路由本身不该依赖那个副作用。
+    if (model.addPaneOpen.value) {
+        addScanPane(model, app, dark)
+        return
+    }
     // AI 面板**接管整个主区**，包括横幅 —— 它是另一个「场景」，
     // 不是仪表盘上的一个叠加层。
     // ⚠ 引擎缺失时 AI 也用不了（工具全靠引擎），但**设置页仍然要能进** ——
@@ -240,7 +247,7 @@ func detail(model: AppModel, app: DesktopApp, dark: Bool): Unit {
                 (if (!model.problem.value.isEmpty()) {
                     model.problem.value
                 } else {
-                    "运行 moongit scan <目录> 注册项目群"
+                    "把你的项目目录注册进来，引擎才能替你看管它们。"
                 }),
                 model, app, dark
             )
@@ -422,9 +429,11 @@ func setupGuide(model: AppModel, app: DesktopApp, dark: Bool): Unit {
             Label("引擎是独立安装的本地工具，客户端只负责展示。").fontSize(fsCard()).muted()
             Panel {
                 VStack {
+                    // 装引擎确实要开终端；但**注册项目群不用** —— 那一步
+                    // 在应用内就有入口（功能流 C-05 之前这里连 scan 也让用户
+                    // 去终端敲，整条入门路径都是终端）。
                     Label("1. 仓库内执行：sh scripts/install.sh").fontSize(fsBody())
-                    Label("2. 注册项目群：moongit scan ~/dev --depth 4").fontSize(fsBody())
-                    Label("3. 回到这里点「刷新」").fontSize(fsBody())
+                    Label("2. 回到这里，点侧栏「添加 / 扫描项目」注册项目群").fontSize(fsBody())
                 }.spacing(6.0.vp).crossAxisAlignment(CrossAxisAlignment.Start).hug()
             }.style(dsSurface(DsLevel.Nested, dark)).contentPadding(14.0.vp)
             Button("重新检测引擎", {=> requestRefresh(app, model)}, role: ButtonRole.Primary).fontSize(fsCard())
@@ -438,10 +447,159 @@ func emptyState(title: String, why: String, model: AppModel, app: DesktopApp, da
             Label(title).fontSize(fsTitle()).fontWeight(FontWeight.semiBold)
             Label(why).fontSize(fsCard()).muted().wrap()
             if (model.canRefresh.value) {
-                Button("重新读取", {=> requestRefresh(app, model)}, role: ButtonRole.Primary).fontSize(fsCard())
+                // 引擎就绪时的**第一动作是注册项目**，不是再读一遍空列表：
+                // 主按钮给「添加 / 扫描项目」，刷新降为普通档。
+                HStack {
+                    Button("添加 / 扫描项目", {=> openAddPane(model)}, role: ButtonRole.Primary)
+                        .fontSize(fsCard()).key("dd-empty-add")
+                    Button("重新读取", {=> requestRefresh(app, model)}).fontSize(fsCard())
+                }.spacing(8.0.vp).hug()
             }
         }.spacing(10.0.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
     }.style(dsSurface(DsLevel.Card, dark)).contentPadding(24.0.vp).flex()
+}
+
+// ===========================================================================
+// 面板：添加 / 扫描项目（功能流 C-05 —— 写层 actScan/actAddProject 的 UI 入口）
+//
+// 形态对齐 mac 端 `ScanSheet`：模式切换 + 路径表单（实时校验披露）+
+// 结果区。目录选择器 CUI 没有，但**表单不需要它** —— 那句「没有目录
+// 选择器做不了」曾经把整条注册入口让给了终端。
+// ===========================================================================
+
+/// 面板外壳：页头 + 关闭。主区由 `detail` 在 `addPaneOpen` 时路由到这里。
+public func addScanPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
+    VStack {
+        HStack {
+            Label("添加 / 扫描项目").fontSize(fsSection()).fontWeight(FontWeight.semiBold)
+            Spacer()
+            Button("关闭", {=> closeAddPane(model)}).fontSize(fsBody())
+        }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
+        Divider()
+        Flexible {
+            // 提交 / 取消在这里闭合到 app 上；body 自己保持可无头驱动
+            //（与确认 Modal 的 destructiveConfirmModalBody 同一条拆法）。
+            addScanPaneBody(model, {=> submitAddPane(app, model) }, {=> closeAddPane(model) }, dark)
+        }
+    }.spacing(0.vp)
+}
+
+/// 面板内容。**public + 回调注入**：判据开不了真窗，框架的 `WidgetTestHost`
+/// 直接驱动这一份 —— 测的与用户看到的是同一个面板，不是一支复制品。
+/// 两颗按钮带稳定 key（`dd-add-submit` / `dd-add-cancel`），判据聚焦后按键驱动。
+public func addScanPaneBody(model: AppModel, onSubmit: () -> Unit, onCancel: () -> Unit, dark: Bool): Unit {
+    ScrollView(key: "dd-add-scroll") {
+        VStack {
+            // ── 模式 ──
+            Panel {
+                VStack {
+                    Label("要做什么").fontSize(fsBody()).fontWeight(FontWeight.semiBold)
+                    HStack {
+                        Picker(addModeChoices(), model.addMode, key: "dd-add-mode")
+                        Spacer()
+                    }.spacing(8.0.vp).hug()
+                    Label(addModeNoteOf(model)).fontSize(fsMicro()).muted().wrap()
+                }.spacing(6.0.vp).crossAxisAlignment(CrossAxisAlignment.Start).hug()
+            }.style(dsSurface(DsLevel.Card, dark)).contentPadding(12.0.vp).hug()
+
+            // ── 表单：两档各一张卡 ──
+            if (model.addMode.value == 1) {
+                scanRootCard(model, dark)
+            } else {
+                singleProjectCard(model, dark)
+            }
+
+            // ── 结果区：忙碌中或已有结果才在场 —— 空着的一块只会让人找字 ──
+            if (model.actionBusy.value || !model.lastResult.value.isEmpty()) {
+                addResultCard(model, dark)
+            }
+
+            // ── 提交行 ──
+            HStack {
+                Spacer()
+                Button("取消", onCancel).fontSize(fsBody()).key("dd-add-cancel")
+                // 可用性只挂在写闸门上：路径校验由 livePathProblem 实时披露，
+                // 提交时 addPaneIntentOf 再拦一道（Blocked → 原因进结果区）。
+                Button(addSubmitLabelOf(model), onSubmit, role: ButtonRole.Primary)
+                    .fontSize(fsBody()).key("dd-add-submit").enabled(!model.actionBusy.value)
+            }.spacing(8.0.vp).hug()
+            Spacer()
+        }.spacing(12.0.vp)
+    }.flex()
+}
+
+/// 模式档的说明。放在切换器下面：用户切档立刻知道这一档会做什么。
+public func addModeNoteOf(model: AppModel): String {
+    if (model.addMode.value == 1) {
+        return "扫描一个目录，把里面发现的 git 仓库批量注册进来。只读目录结构，不改仓库里的任何文件。"
+    }
+    return "注册一个现成的 git 仓库。项目名可空 —— 留空时引擎取目录名。"
+}
+
+/// 提交按钮的标题跟着模式走（mac 端 `mode == 0 ? "添加" : "扫描"` 同款）。
+public func addSubmitLabelOf(model: AppModel): String {
+    return if (model.addMode.value == 1) { "扫描" } else { "添加" }
+}
+
+/// 添加单个项目卡。**路径是唯一必填的输入**（项目名可空）。
+private func singleProjectCard(model: AppModel, dark: Bool): Unit {
+    Panel {
+        VStack {
+            Label("项目路径").fontSize(fsBody()).fontWeight(FontWeight.semiBold)
+            TextField(model.addSinglePath, key: "dd-add-path")
+                .placeholder("/绝对路径/到/git 仓库").flex()
+            addProblemLine(livePathProblem(model.addSinglePath.value), dark)
+            TextField(model.addSingleName, key: "dd-add-name")
+                .placeholder("项目名（可空，默认取目录名）").flex()
+        }.spacing(6.0.vp).crossAxisAlignment(CrossAxisAlignment.Start).hug()
+    }.style(dsSurface(DsLevel.Card, dark)).contentPadding(12.0.vp).hug()
+}
+
+/// 批量扫描卡。深度用框架 `Stepper`（1…6，与 mac 端 `in 1...6` 同档）。
+private func scanRootCard(model: AppModel, dark: Bool): Unit {
+    Panel {
+        VStack {
+            Label("扫描根目录").fontSize(fsBody()).fontWeight(FontWeight.semiBold)
+            TextField(model.scanRoot, key: "dd-add-root")
+                .placeholder("/绝对路径/到/项目群的父目录").flex()
+            addProblemLine(livePathProblem(model.scanRoot.value), dark)
+            HStack {
+                Label("扫描深度").fontSize(fsBody())
+                Stepper(model.scanDepth, key: "dd-add-depth", lower: 1, upper: 6)
+                Label("${clampScanDepth(model.scanDepth.value)} 层").fontSize(fsBody())
+                Spacer()
+            }.spacing(8.0.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
+            Label("越深扫得越全、也越慢。扫描只读目录结构，注册后才由更新动作写托管文档。")
+                .fontSize(fsMicro()).muted().wrap()
+        }.spacing(6.0.vp).crossAxisAlignment(CrossAxisAlignment.Start).hug()
+    }.style(dsSurface(DsLevel.Card, dark)).contentPadding(12.0.vp).hug()
+}
+
+/// 路径框下方的实时判定行。**空串不占位** —— 没有要说的话就不要占一行；
+/// 有话时必须说全（preparePathInput 的 problem 已经带着改法）。
+private func addProblemLine(problem: String, dark: Bool): Unit {
+    if (problem.isEmpty()) {
+        return
+    }
+    Label(problem).fontSize(fsLabel())
+        .foregroundColor(dsColor(dsTextColor(C_ORANGE, dark))).wrap()
+}
+
+/// 结果区。与详情页头**共用** `lastResult` —— 写操作的结果只有一块披露面，
+/// 这是它在面板里的落点（「按了没反应」和「跑了但没变化」在这里分开）。
+private func addResultCard(model: AppModel, dark: Bool): Unit {
+    Panel {
+        HStack {
+            if (model.actionBusy.value) {
+                dsPill("进行中", C_ACCENT, dark)
+                Label("正在执行：${model.actionLabel.value}").fontSize(fsBody()).wrap()
+            } else {
+                dsPill(if (model.lastResultOk.value) { "完成" } else { "未完成" },
+                    (if (model.lastResultOk.value) { C_SHALLOW } else { C_RED }), dark)
+                Label(model.lastResult.value).fontSize(fsBody()).wrap()
+            }
+        }.spacing(8.0.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
+    }.style(dsSurface(DsLevel.Nested, dark)).contentPadding(10.0.vp).hug()
 }
 
 // ===========================================================================

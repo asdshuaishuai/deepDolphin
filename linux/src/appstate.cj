@@ -196,6 +196,28 @@ public class AppModel {
     /// 等价于贴底；之后的滚动由用户说了算（钳制只在偏移越界时发生）。
     public let aiScroll = State<Float32>(0.0)
 
+    // ---- 添加 / 扫描项目面板（功能流 C-05）----
+    // actScan / actAddProject 这层写操作曾经**全仓零调用**：侧栏只留一句
+    // 指向终端的降级说明（原话不写出 —— 源码扫描判据钉着它）。这里把
+    // 面板状态收进模型 ——
+    // 草稿不落盘、每次打开就是上次的草稿，与 AI 设置页的 draft 族同款。
+    //
+    // ⚠ 「换主区」而不是「弹窗」：CUI 的 `DesktopApp` 只有一扇窗（与 `aiPane`
+    // 同一条理由，见 `aiPane` 的注释）。打开时顺手关掉 AI 面板 ——
+    // 主区同一时刻只有一个场景。
+    /// 面板在场。由 `openAddPane` / `closeAddPane` 唯一读写。
+    public let addPaneOpen = State<Bool>(false)
+    /// 0 = 添加单个项目 / 1 = 批量扫描目录（mac 端 ScanSheet 的 mode 档）。
+    public let addMode = State<Int64>(0)
+    /// 单项目路径草稿。**路径是这个面板唯一必填的输入**（项目名可空）。
+    public let addSinglePath = State<String>("")
+    /// 项目名草稿。空 = 引擎从目录名推导。
+    public let addSingleName = State<String>("")
+    /// 扫描根目录草稿。
+    public let scanRoot = State<String>("")
+    /// 扫描深度（1…6 层，与 mac 端 Stepper `in 1...6` 同档）。
+    public let scanDepth = State<Int64>(2)
+
     // ---- 启动参数深链（C10）----
     // ⚠ 用**普通字段**而不是 `State<T>`：这两个值只在启动时读一次、
     // 应用一次，不该引起界面重建；而 `State` 的写会通知所有观察者。
@@ -1347,8 +1369,349 @@ public func milestoneActionLabel(action: String): String {
 }
 
 // ===========================================================================
-// 写：项目注册
+// 写：项目注册（功能流 C-05）
+//
+// actScan / actAddProject 这层写操作曾经**全仓零调用**：引擎侧 `scan` / `add`
+// 俱全，本端侧栏却只留一句指向终端的降级说明，理由是「CUI 没有目录选择器」。
+// mac 基准的 ScanSheet 本就是 TextField + 校验表单（单项目 add / 目录批量
+// scan + 深度 1-6 + ScanCoverage 披露），表单不需要目录选择器 ——
+// 新装用户第一跑就要开终端，是入门路径上最硬的一道墙。
+//
+// 判定全部抽成**纯函数**（classify 由调用方注入，判据不碰磁盘）：
+// 视图只摆控件，分派只问 `addPaneIntentOf`。
 // ===========================================================================
+
+/// 路径在磁盘上是什么。**三态而不是 Bool**（mac 端 `PathInput.PathKind`
+/// 同一条理由）：有了 Bool 就分不出「不存在」和「存在但是个文件」，
+/// 两种完全不同的错误被压成同一句「不是文件夹」，用户拿它去排查方向就错了。
+public enum PathKind {
+    // ⚠ case 名带前缀：裸的 `File` 会与 std.fs 的 `File` 类在包作用域撞名
+    //（与 EmptyReason 不能占 `None` 同一条纪律）。
+    | PathMissing
+    | PathFile
+    | PathDirectory
+}
+
+/// 真实磁盘三态。**这是 classify 的唯一真实现**，判据注入假 classify 时不经过它。
+///
+/// ⚠ `FileInfo` 的构造器遇到 stat 失败是**抛异常**不是返回错误码
+/// （engine.cj `isRegularFile` 同一条纪律）—— 不兜住的话，一个权限不足的
+/// 路径就能把构建闭包炸穿。
+public func classifyPathKind(path: String): PathKind {
+    if (path.isEmpty()) {
+        return PathKind.PathMissing
+    }
+    let p = Path(path)
+    if (!exists(p)) {
+        return PathKind.PathMissing
+    }
+    try {
+        return (if (FileInfo(p).isDirectory()) { PathKind.PathDirectory } else { PathKind.PathFile })
+    } catch (e: Exception) {
+        return PathKind.PathMissing
+    }
+}
+
+/// 用户给的路径整理之后能不能直接发给引擎，以及不能的话为什么。
+/// `problem` 空串 = 可用。**必须说清楚**：用户改哪个字段、改成什么样，全靠这句话。
+public struct PreparedPath {
+    public let path: String
+    public let problem: String
+
+    public init(path: String, problem: String) {
+        this.path = path
+        this.problem = problem
+    }
+
+    public func isUsable(): Bool {
+        return this.path.isEmpty() == false
+    }
+}
+
+/// 把用户输入（文本框草稿）整理成能发给引擎的路径。**纯函数**。
+///
+/// 引擎做什么、不做什么（mac 端 `PathInput.prepare` 的实测表，2026-10-01）：
+/// `~/sub` 引擎自己会展开；`"  /abs  "`（首尾空格）直接失败；
+/// `rel/path` 对**引擎子进程的 CWD** 解析 —— 那个目录用户看不见也改不了。
+/// 所以客户端真正要负责的只有两件：**去掉首尾空白**、**拒绝相对路径**。
+/// `~` 和尾斜杠语义交给引擎，不重复实现第二套规则。
+public func preparePathInput(raw: String): PreparedPath {
+    let s = raw.trimAscii()
+    if (s.isEmpty()) {
+        return PreparedPath("", "路径为空")
+    }
+    if (!s.startsWith("/") && !s.startsWith("~")) {
+        return PreparedPath("", "「${s}」是相对路径 —— 引擎会拿它对着一个你看不见的内部目录去解析。请填以 / 开头的绝对路径。")
+    }
+    if (s == "~" || s == "~/") {
+        return PreparedPath("", "「~」是家目录本身。请填一个具体的项目目录。")
+    }
+    // 尾斜杠引擎会消解，这里顺手收掉，免得日志里出现 `//`。
+    var out = s
+    while (out.size > 1 && out.endsWith("/")) {
+        out = out[..out.size - 1]
+    }
+    return PreparedPath(out, "")
+}
+
+/// 校验一个「扫描根 / 添加目标」：必须是**已存在的文件夹**。
+///
+/// 引擎的 scan 收的是根目录；给它一个文件会得到 `found: 0` 的「正常」结果 ——
+/// 看起来像「这个目录里没有 git 仓库」，而真相是「你给的根本不是目录」。
+/// 先在这里拦下来（mac 端 `validateScanRoot` 同一条规则）。
+public func validateScanRoot(raw: String, classify: (String) -> PathKind): PreparedPath {
+    let p = preparePathInput(raw)
+    if (!p.isUsable()) {
+        return p
+    }
+    match (classify(p.path)) {
+        case PathKind.PathDirectory => return p
+        case PathKind.PathFile =>
+            return PreparedPath("", "「${p.path}」是个文件。请填一个文件夹。")
+        case PathKind.PathMissing =>
+            return PreparedPath("", "「${p.path}」不存在。请确认目录名后再填绝对路径。")
+    }
+}
+
+/// 路径框下方的**实时**判定行。空框时一声不吭（mac 端 `currentProblem`
+/// 同一口径：空不算错，提交时再拦），填了东西才开口。
+/// classify 是一次 stat，敲一个字一次 —— 与「填错了还能点提交、
+/// 点了才看到一句看不懂的错」相比，是便宜的那边。
+public func livePathProblem(raw: String): String {
+    let s = raw.trimAscii()
+    if (s.isEmpty()) {
+        return ""
+    }
+    return validateScanRoot(s, classifyPathKind).problem
+}
+
+/// 扫描深度档。Stepper 已经钳了，这里兜底：参数化调用（快照/深链）绕过控件时
+/// 也不许把 `--depth 0` 递给引擎。
+public func clampScanDepth(v: Int64): Int64 {
+    if (v < 1) {
+        return 1
+    }
+    if (v > 6) {
+        return 6
+    }
+    return v
+}
+
+// ---------------------------------------------------------------------------
+// 扫描覆盖度披露（mac 端 ScanCoverage.swift 的移植）
+//
+// 「没看完」有三种成因，引擎全都发了出来（引擎侧 #179 / #197）：
+//   · truncated   —— 撞到目录上限
+//   · depthCapped —— 撞到 --depth 上限且下面还有目录没看
+//   · unreadable  —— 有目录读不出来
+// 三种处置方式不同：加深度 / 分根扫描 / 查权限。合并成一句「没扫完」
+// 等于让用户自己猜。`None` 表示「这个键没有」—— 与「明确说是 false」
+// 是两件事，不得合并。
+// ---------------------------------------------------------------------------
+
+public struct ScanCoverageInput {
+    public let found: Int64
+    public let added: Int64
+    public let existing: Int64
+    public let truncated: Option<Bool>
+    public let depthCapped: Option<Bool>
+    /// 读不出来的目录数（引擎发的是数组，这里收**个数**）。
+    public let unreadable: Option<Int64>
+
+    public init(
+        found: Int64,
+        added: Int64,
+        existing: Int64,
+        truncated!: Option<Bool> = None,
+        depthCapped!: Option<Bool> = None,
+        unreadable!: Option<Int64> = None
+    ) {
+        this.found = found
+        this.added = added
+        this.existing = existing
+        this.truncated = truncated
+        this.depthCapped = depthCapped
+        this.unreadable = unreadable
+    }
+}
+
+/// 从引擎 `scan --json` 的载荷里读覆盖情况（引擎 `scanResultJson`：
+/// found/added/existing 恒发，truncated/depthCapped 恒发，unreadable 恒发数组）。
+/// 读不到的键一律 None —— 旧引擎不发这些键时**不编造**。
+public func scanCoverageFrom(v: JsonValue): ScanCoverageInput {
+    let truncated: Option<Bool> = (if (Json.has(v, "truncated")) {
+        Some(Json.boolAt(v, "truncated", false))
+    } else {
+        None
+    })
+    let depthCapped: Option<Bool> = (if (Json.has(v, "depthCapped")) {
+        Some(Json.boolAt(v, "depthCapped", false))
+    } else {
+        None
+    })
+    let unreadable: Option<Int64> = (if (Json.has(v, "unreadable")) {
+        Some(Json.arrAt(v, "unreadable").size)
+    } else {
+        None
+    })
+    return ScanCoverageInput(
+        Json.intAt(v, "found", 0),
+        Json.intAt(v, "added", 0),
+        Json.intAt(v, "existing", 0),
+        truncated: truncated,
+        depthCapped: depthCapped,
+        unreadable: unreadable
+    )
+}
+
+/// 该在界面上附加的那句披露。没有要说的事返回 `None`（**不返回空串** ——
+/// 空串会被拼成「…… 」这种看起来像残缺的话）。
+public func scanCoverageNote(c: ScanCoverageInput): Option<String> {
+    let why = ArrayList<String>()
+    match (c.depthCapped) {
+        case Some(v) => if (v) { why.add("撞到扫描深度上限，下面还有目录没看") }
+        case None => ()
+    }
+    match (c.truncated) {
+        case Some(v) => if (v) { why.add("撞到目录数量上限") }
+        case None => ()
+    }
+    match (c.unreadable) {
+        case Some(n) =>
+            if (n > 0) {
+                why.add("${n} 个目录读不出来（无权限或 I/O 错误）")
+            }
+        case None => ()
+    }
+    if (why.isEmpty()) {
+        return None
+    }
+    // 「没看完」和「没有」是两个结论，必须在**同一句**里说清 ——
+    // 只说「该目录树里没有 git 仓库」，等于替用户断言了一个引擎没有验证过的结论。
+    if (c.found == 0) {
+        return Some("本次未扫完（${joinAll(why.toArray(), "，")}）—— 上面「共发现 0 个」只代表已访问的那部分里没有，不是这棵树里没有")
+    }
+    return Some("本次未扫完（${joinAll(why.toArray(), "，")}）—— 上面列出的不是全部")
+}
+
+/// 新增 / 跳过计数的人话句。**披露分母**：只说「新增 0 个」会被读成
+/// 「扫过了但没有仓库」，而「扫了 120 个目录一个都没有」是完全不同的两件事。
+public func scanResultLine(c: ScanCoverageInput): String {
+    var line = "新增 ${c.added} 个 / 共发现 ${c.found} 个"
+    if (c.existing > 0) {
+        line += "（已存在 ${c.existing} 个跳过）"
+    }
+    // 「该目录树里没有 git 仓库」**只在真的扫完时才许说**；
+    // 「没扫完」和「没有」也不许并排出现 —— 那两句会互相拆台，
+    // note 自己会把「只代表已访问的那部分里没有」说清楚。
+    if (c.found == 0 && scanCoverageNote(c).isNone()) {
+        line += " —— 该目录树里没有 git 仓库"
+    }
+    return line
+}
+
+/// scan 载荷 → 一行结果与成败。**纯函数**，判据直接喂载荷。
+///
+/// 成功载荷恒发 `found`（引擎 cli.cj `scanResultJson`）；错误桩
+/// `{error:true,code,message}` 这些键一个都没有 → 按**失败**渲染 ——
+/// 缺省当成功就是在替引擎说谎（与 milestoneResultOf 同一条纪律，R1-02）。
+public func scanResultOf(label: String, v: JsonValue, problem: String): (String, Bool) {
+    if (!Json.has(v, "found") && !Json.has(v, "added") && !Json.has(v, "candidates")) {
+        return ("✗ ${label}：${engineStubWhy(v, "载荷没有 found/added 结果键")}", false)
+    }
+    let cov = scanCoverageFrom(v)
+    var line = "✓ ${label}：${scanResultLine(cov)}"
+    match (scanCoverageNote(cov)) {
+        case Some(n) => line = "${line}。${n}"
+        case None => ()
+    }
+    if (!problem.isEmpty()) {
+        line = "${line}（${problem}）"
+    }
+    return (line, problem.isEmpty())
+}
+
+/// add 载荷 → 一行结果与成败。成功载荷是注册表条目（引擎 registry.cj
+/// `ProjectEntry.toJson`：name/path 恒发）；错误桩没有这些键 → 失败。
+/// 「已存在」的重复注册引擎也是 rc=0 原样返回条目，条目在场就按成功说话。
+public func addProjectResultOf(label: String, v: JsonValue, problem: String): (String, Bool) {
+    let name = Json.strAt(v, "name", "")
+    let path = Json.strAt(v, "path", "")
+    if (name.isEmpty() && path.isEmpty()) {
+        return ("✗ ${label}：${engineStubWhy(v, "载荷没有 name/path 结果键")}", false)
+    }
+    var line = "✓ ${label} → ${name}（${path}）"
+    if (!problem.isEmpty()) {
+        line = "${line} ${problem}"
+    }
+    return (line, problem.isEmpty())
+}
+
+/// 错误桩的人话原因。message 优先，code 次之，都没有用调用方的兜底句。
+private func engineStubWhy(v: JsonValue, fallback: String): String {
+    let why = Json.strAt(v, "message", "")
+    if (!why.isEmpty()) {
+        return why
+    }
+    let code = Json.strAt(v, "code", "")
+    if (!code.isEmpty()) {
+        return code
+    }
+    return fallback
+}
+
+// ---------------------------------------------------------------------------
+// 面板的开 / 关 / 提交
+// ---------------------------------------------------------------------------
+
+/// 「添加 / 扫描项目」面板的**唯一开入口**（侧栏按钮 / 空态按钮 / 快照开关
+/// 都走它）。打开时关掉 AI 面板 —— 主区同一时刻只有一个场景。
+public func openAddPane(model: AppModel): Unit {
+    model.aiPane.value = 0
+    model.addPaneOpen.value = true
+}
+
+public func closeAddPane(model: AppModel): Unit {
+    model.addPaneOpen.value = false
+}
+
+/// 面板的模式档名。视图与判据共用一份词表。
+public func addModeChoices(): Array<String> {
+    return ["添加单个项目", "批量扫描目录"]
+}
+
+/// 面板的提交分派判定。**纯函数**（classify 注入）：判据不开窗、不碰磁盘，
+/// 就能验「什么草稿会派出什么动作」。
+public enum AddPaneIntent {
+    | AddSingle(String, String) // 路径, 项目名（可空）
+    | ScanRoot(String, Int64)   // 根目录, 深度
+    | Blocked(String)           // 校验失败的原因
+}
+
+public func addPaneIntentOf(model: AppModel, classify: (String) -> PathKind): AddPaneIntent {
+    if (model.addMode.value == 1) {
+        let p = validateScanRoot(model.scanRoot.value, classify)
+        if (!p.isUsable()) {
+            return AddPaneIntent.Blocked(p.problem)
+        }
+        return AddPaneIntent.ScanRoot(p.path, clampScanDepth(model.scanDepth.value))
+    }
+    let p = validateScanRoot(model.addSinglePath.value, classify)
+    if (!p.isUsable()) {
+        return AddPaneIntent.Blocked(p.problem)
+    }
+    return AddPaneIntent.AddSingle(p.path, model.addSingleName.value.trimAscii())
+}
+
+/// 面板提交按钮的入口。校验失败**不关面板**，原因经 `report` 写进
+/// 结果区 —— 与其它写操作同一块披露面。
+public func submitAddPane(app: DesktopApp, model: AppModel): Unit {
+    match (addPaneIntentOf(model, classifyPathKind)) {
+        case AddPaneIntent.Blocked(why) => model.report("✗ ${why}", false)
+        case AddPaneIntent.AddSingle(path, name) => actAddProject(app, model, path, name)
+        case AddPaneIntent.ScanRoot(root, depth) => actScan(app, model, root, depth)
+    }
+}
 
 public func actScan(app: DesktopApp, model: AppModel, root: String, depth: Int64): Unit {
     let label = "扫描 ${root}"
@@ -1359,8 +1722,20 @@ public func actScan(app: DesktopApp, model: AppModel, root: String, depth: Int64
     spawn {
         let p = opScan(bin, root, depth)
         app.post {
-            let line = if (p.ok()) { "✓ " + label } else { "✗ " + label + "：" + p.problem }
-            endAction(model, line, p.ok())
+            // 渲染收在 scanResultOf（纯函数，判据直接喂载荷）：新增/跳过计数、
+            // 覆盖度披露、错误桩按失败渲染 —— 结果行必须能独立成立，
+            // 「✓ 扫描 /x」这种没有数字的话说了等于没说。
+            var line: String
+            var ok: Bool
+            if (let Some(v) <- p.json) {
+                let (l, o) = scanResultOf(label, v, p.problem)
+                line = l
+                ok = o
+            } else {
+                line = "✗ " + label + "：" + p.problem
+                ok = false
+            }
+            endAction(model, line, ok)
             requestRefresh(app, model)
         }
     }
@@ -1375,8 +1750,18 @@ public func actAddProject(app: DesktopApp, model: AppModel, path: String, name: 
     spawn {
         let p = opAddProject(bin, path, name)
         app.post {
-            let line = if (p.ok()) { "✓ " + label } else { "✗ " + label + "：" + p.problem }
-            endAction(model, line, p.ok())
+            // 与 actScan 同一条判定：条目在场才算成功（addProjectResultOf）。
+            var line: String
+            var ok: Bool
+            if (let Some(v) <- p.json) {
+                let (l, o) = addProjectResultOf(label, v, p.problem)
+                line = l
+                ok = o
+            } else {
+                line = "✗ " + label + "：" + p.problem
+                ok = false
+            }
+            endAction(model, line, ok)
             requestRefresh(app, model)
         }
     }
@@ -1576,7 +1961,9 @@ public func emptyReason(allCount: Int64, shownCount: Int64, query: String): Empt
 
 public func emptyText(r: EmptyReason, noun: String): String {
     match (r) {
-        case EmptyReason.NoProjects => return "没有已注册项目。跑一次 moongit scan <目录> 注册。"
+        // ⚠ 指到**应用内的入口**，不再让新用户去开终端（功能流 C-05：
+        // 那句话曾经是入门路径上最硬的一道墙）。侧栏底部就有那只按钮。
+        case EmptyReason.NoProjects => return "没有已注册项目。点下方「添加 / 扫描项目」注册。"
         case EmptyReason.NoMatch => return "没有匹配「该搜索词」的${noun}。"
         case EmptyReason.NoReason => return ""
     }
