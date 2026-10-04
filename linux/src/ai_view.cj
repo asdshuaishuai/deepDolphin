@@ -335,6 +335,8 @@ public func aiSettingsPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
 private func aiSettingsBody(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     // 外观下拉的写入接到「保存 + 披露」上（与范围下拉同款 mountEffect 模式）。
     observeAppearanceChoice(model)
+    // 定时更新下拉同款：写入接「保存 + 披露」（C5 定时更新 / C10 定时简报）。
+    observeScheduleChoice(model)
     let cat = catalogProblem()
     let cov = providerPickerCoverage()
     ScrollView(key: "dd-ai-set-scroll") {
@@ -358,6 +360,10 @@ private func aiSettingsBody(model: AppModel, app: DesktopApp, dark: Bool): Unit 
                 "写 XDG 的 ~/.config/autostart/deepdolphin.desktop。开关读的是**系统真值**，不是上次点了什么。")
             aiField("外观", {=> aiAppearanceRow(model)}, dark,
                 "跟随系统 / 亮 / 暗，写入 XDG 的 settings.conf。主题在启动时定型，切换要重启客户端生效。")
+            aiField("定时更新", {=> aiScheduleRow(model)}, dark,
+                "按所选周期对全部项目做一次浅更新并发系统通知：配置了 AI 会附项目群简报，未配置只报完成数。" +
+                "开启（或改档）后 10 分钟先跑一轮；正在读取或有动作在跑时跳过本轮、顺延到下个周期。" +
+                "档位与外观同存 settings.conf（schedule= 小时数）。")
             aiTestCard(model, app, dark)
         }.spacing(10.0.vp)
     }.flex()
@@ -373,6 +379,30 @@ private func aiSettingsBody(model: AppModel, app: DesktopApp, dark: Bool): Unit 
 /// 判据不开窗就能装上它。
 private func observeAppearanceChoice(model: AppModel): Unit {
     mountEffect("dd-observe-appearance", {=> installAppearanceChoiceObserver(model)})
+}
+
+/// 定时更新下拉的接线（与外观同款 mountEffect 模式；本体在
+/// `installScheduleChoiceObserver`，appstate.cj）。
+private func observeScheduleChoice(model: AppModel): Unit {
+    mountEffect("dd-observe-schedule", {=> installScheduleChoiceObserver(model)})
+}
+
+/// 定时更新那一行的控件。六档下拉（关/1/3/6/12/24h）+ 保存结果披露
+/// —— 成功写明改档后的行为，写不进去给原因（与外观行同一条结构）。
+private func aiScheduleRow(model: AppModel): Widget {
+    return VStack {
+        HStack {
+            Dropdown(scheduleChoices(), model.scheduleIndex, key: "dd-schedule").width(200.0.vp)
+            Spacer()
+        }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
+        if (!model.scheduleNote.value.isEmpty()) {
+            if (model.scheduleNoteOk.value) {
+                Label(model.scheduleNote.value).fontSize(fsLabel()).muted().wrap()
+            } else {
+                Label(model.scheduleNote.value).fontSize(fsLabel()).foregroundColor(dsColor(C_RED)).wrap()
+            }
+        }
+    }.spacing(4.vp).hug()
 }
 
 /// 外观那一行的控件。三档下拉 + 两条披露：

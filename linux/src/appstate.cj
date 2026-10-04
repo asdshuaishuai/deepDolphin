@@ -107,6 +107,30 @@ public class AppModel {
     public let appearanceNote = State<String>("")
     public let appearanceNoteOk = State<Bool>(true)
 
+    // ---- C5 定时更新（C10 定时简报）----
+    /// 定时更新档（小时；0 = 关，档位表见 appearance.cj 的 scheduleTiers）。
+    /// **唯一写入口是设置页的下拉**，写入由观察者接到 `applyScheduleChoice`
+    /// （保存 + 披露）上 —— 与外观下拉同一条约定。
+    public let scheduleHours = State<Int64>(0)
+    /// 设置页定时下拉的当前下标（与 appearanceIndex 同一条约定）。
+    public let scheduleIndex = State<Int64>(0)
+    /// 上一次保存定时档的结果一句话。**空串 = 还没动过**。
+    /// ⚠ 不走 `report`：`lastResult` 只画在项目详情页头，设置页上看不见它 ——
+    /// 与 appearanceNote 同一条理由，保存结果必须出现在按下那个下拉的地方。
+    public let scheduleNote = State<String>("")
+    public let scheduleNoteOk = State<Bool>(true)
+    /// 定时档的**改动代号**。每保存一次 +1（UI 线程写）；定时线程发现代号
+    /// 变了就把基线挪到「现在」—— 改档即重新计时，mac 端
+    /// `setAutoUpdate → restartAutoTimer` 同一条语义，否则「关了半天再开
+    /// 1 小时」会沿用水基线，第一跑遥遥无期。
+    /// ⚠ 普通字段而不是 State：没有界面读它，写它不该触发整树重建
+    /// （与 `pendingConfirm` 同一条理由）。
+    public var scheduleEpoch: Int64 = 0
+    /// C10 停滞提醒**已经发过**的键。普通字段（同上），只在 UI 线程读写
+    /// —— 唯一写点是 `dispatchStaleReminders`（app.post 内）。会话级去重：
+    /// 重启后重新记（mac 端 notifiedKeys 同款）。
+    public var notifiedKeys: HashSet<String> = HashSet<String>()
+
     public var booted: Bool = false
 
     /// `DD_SNAP_CLICK` 的一次性闸门：模拟点击**只发一次**。
@@ -248,6 +272,12 @@ public class AppModel {
 
     /// 正常路径：模型先建、首帧后再定位（`AppModel()` + `attachEngine`）。
     public init() {
+        // 定时档从 conf 读初值（一个小本地文件，与 main 里 resolveAppearance
+        // 的读同量级）。⚠ 判据/夹具路径 `init(loc:)` **不**读盘 —— 判据必须
+        // 与开发机的 ~/.config/deepdolphin/settings.conf 无关。
+        let savedHours = readSavedScheduleHours()
+        this.scheduleHours.value = savedHours
+        this.scheduleIndex.value = scheduleIndexOf(savedHours)
         this.syncLabels()
     }
 
@@ -372,6 +402,9 @@ public func boot(app: DesktopApp, model: AppModel): Unit {
     // 「已保存的 key 在不在」只在启动与保存回包各读一次真值（后台线程），
     // 设置页每帧只读掩码 —— 见 `aiKeySavedPresent` 与 `refreshKeyPresence`。
     refreshKeyPresence(app, model)
+    // C5/C10：定时更新线程（启动 600 秒后首轮，之后按设置档周期；
+    // 完成后按三分支发通知）。startPolling 旁边起，同一条后台线程纪律。
+    startScheduledUpdates(app, model)
 }
 
 public func requestRefresh(app: DesktopApp, model: AppModel): Unit {
@@ -416,6 +449,11 @@ private func applyReads(
     msCall: Payload
 ): Unit {
     applyStatusCall(model, statusCall)
+    // C10 停滞提醒：接线在刷新完成（applyStatusCall）之后 —— 这个顺序
+    // 由源码扫描判据钉住（提醒扫的就是 applyStatusCall 刚写进去的项目列表）。
+    // 夹具自查路径（loadFromFixtureDir）直接调 applyStatusCall、不走这里，
+    // 所以快照与判据不会往外发通知。
+    dispatchStaleReminders(model)
     // 每一路读**各自**记自己的失败原因。共用一个 `problem` 的话，
     // 四路里坏了一路就会把另外三路正常的数据也一起标成不可信。
     model.dashboardProblem.value = readProblem(dashCall, PayloadShape.Dashboard)
@@ -621,6 +659,253 @@ public func sleepMs(total: Int64): Unit {
         let chunk = (if (left > 200) { 200 } else { left })
         sleep(Duration.millisecond * chunk)
         left -= chunk
+    }
+}
+
+// ===========================================================================
+// C5 定时更新 ＋ C10 定时简报/停滞提醒
+//
+// 章程 C5 明列「定时更新 ＋ AI 简报通知」、C10 明列「更新完成 / 停滞提醒 /
+// 定时简报」三类通知。实现本节之前本端只有第一类（actUpdate/actUpdateAll
+// 的完成通知），本节补齐后两类。对位 mac 端：
+//   · AIIntegration.restartAutoTimer / runScheduledUpdate —— 周期档
+//     （关/1/3/6/12/24h）＋ 启动后 600 秒首轮 ＋ 三分支通知；
+//   · Model.postNotificationsIfNeeded —— 刷新后扫非默认分支 stale 与
+//     userDirtyCount ≥ 10，notifiedKeys 去重（纯函数在 model.cj 的
+//     staleReminders，接线在 applyReads）。
+// 判定全部抽成**纯函数**（到点判定 / 触发闸门 / 完成数口径 / 通知文案），
+// 线程本体只剩调度；判据不开窗就能验全部规则。
+// ===========================================================================
+
+/// 定时首轮延迟：启动（或改档）后 600 秒。mac 端 restartAutoTimer 的
+/// 首轮 one-shot timer 同款 —— 避免启动即全量更新。
+public const SCHEDULE_FIRST_RUN_MS: Int64 = 600000
+
+/// 定时线程的醒来间隔：60 秒。档位改动最迟一个 tick 后生效 ——
+/// 相比 mac 端「改档重建 timer 立即生效」差至多一分钟，换来的是不用
+/// 跨线程打断一条睡着的线程（sleepMs 的小段睡眠本来就是这个目的）。
+public const SCHEDULE_TICK_MS: Int64 = 60000
+
+/// 档位（小时）→ 周期毫秒。
+public func scheduleIntervalMs(hours: Int64): Int64 {
+    return hours * 3600000
+}
+
+/// 到点了吗。**纯函数**：关（≤0）永不到点；其余 now ≥ 基线 + 周期。
+public func scheduleDueNow(nowMs: Int64, baselineMs: Int64, hours: Int64): Bool {
+    if (hours <= 0) {
+        return false
+    }
+    return nowMs >= baselineMs + scheduleIntervalMs(hours)
+}
+
+/// 触发闸门。**纯函数**：读侧（busy）或写侧（actionBusy）任意在跑就跳过本轮
+/// —— 深更新要跑几分钟，读侧也可能正占着引擎，定时轮硬挤进去就是两个
+/// 引擎进程抢锁（本文件读写双闸门的既有约定）。到点即已记账（见线程主体），
+/// 跳过 = 顺延一个完整周期，不排队。
+public func scheduleGateBlocks(busy: Bool, actionBusy: Bool): Bool {
+    return busy || actionBusy
+}
+
+/// 定时轮「完成了几个」的口径。聚合信封有 `count`（引擎 multiProjectJson）；
+/// 单项目形状没有 count → 1；错误桩两个键都没有 → 0，不编。
+public func scheduleAttemptedCount(v: JsonValue): Int64 {
+    if (Json.has(v, "count")) {
+        return Json.intAt(v, "count", 0)
+    }
+    if (Json.has(v, "ok") || Json.has(v, "results")) {
+        return 1
+    }
+    return 0
+}
+
+/// 保存定时档的结果文案 + 成败。**纯函数**。成功要写明改档后的行为
+/// （重新计时：10 分钟后先跑一轮），否则用户改了档位看着没动静，
+/// 会以为按钮是坏的 —— 与 appearanceApplyNote「成功也要说重启生效」同一条理由。
+public func scheduleApplyNote(hours: Int64, writeProblem: String): (String, Bool) {
+    if (!writeProblem.isEmpty()) {
+        return (writeProblem, false)
+    }
+    if (hours <= 0) {
+        return ("已保存为「关闭」—— 不再定时执行。", true)
+    }
+    return ("已保存为「每 ${hours} 小时」。10 分钟后先跑一轮，之后按这个周期执行；有动作在跑时顺延到下个周期。", true)
+}
+
+/// 应用一次定时档选择：记档 + 推进改动代号 + 落盘 + 结果说在**按下控件的地方**。
+/// 落盘动作收成参数（`write!`）：真接线传 saveScheduleHours，判据传一个
+/// 不碰盘的假写 —— 与 applyAppearanceChoiceBy 同一条纪律。
+public func applyScheduleChoiceBy(model: AppModel, idx: Int64, write!: (Int64) -> String): Unit {
+    let hours = scheduleHoursAt(idx)
+    model.scheduleHours.value = hours
+    model.scheduleEpoch += 1
+    let (note, ok) = scheduleApplyNote(hours, write(hours))
+    model.scheduleNote.value = note
+    model.scheduleNoteOk.value = ok
+}
+
+public func applyScheduleChoice(model: AppModel, idx: Int64): Unit {
+    applyScheduleChoiceBy(model, idx, write: {h => saveScheduleHours(h)})
+}
+
+/// 设置页定时下拉的接线。**返回值必须被持有**（Resource，析构即 close()）——
+/// 与 installAppearanceChoiceObserver 同一条纪律。
+public func installScheduleChoiceObserver(model: AppModel): Resource {
+    return model.scheduleIndex.observe({_, v => applyScheduleChoice(model, v)})
+}
+
+/// C5 定时更新线程：启动 600 秒后首轮（档位开着才跑），之后按档位周期跑；
+/// 每次改档重新计时（600 秒首轮 + 新周期）。每轮对**全部项目**浅更新
+/// （mac 端 runScheduledUpdate 同轨），完成后按 scheduleNotice 的三分支发通知。
+///
+/// ⚠ 闸门在 UI 线程读（与 startPolling 同一条纪律，post 回来再判）：
+/// busy/actionBusy 之一在跑就跳过本轮 —— 到点即已记账，跳过即顺延，
+/// 不排队（排队只会让两个引擎进程抢锁，一起超时）。
+public func startScheduledUpdates(app: DesktopApp, model: AppModel): Unit {
+    spawn {
+        var epoch = model.scheduleEpoch
+        var baselineMs = nowMillis()
+        // 首轮：启动后 600 秒。sleepMs 小段睡，Ctrl-C 打得断（见 sleepMs 注释）。
+        sleepMs(SCHEDULE_FIRST_RUN_MS)
+        baselineMs = nowMillis()
+        runScheduledRound(app, model)
+        while (true) {
+            sleepMs(SCHEDULE_TICK_MS)
+            if (model.scheduleEpoch != epoch) {
+                // 改档 = 重新计时（mac 端 restartAutoTimer 同语义）：
+                // 600 秒后先跑一轮，之后按新档周期 —— 不然「关了半天再开
+                // 1 小时」会沿用水基线，第一跑遥遥无期。
+                epoch = model.scheduleEpoch
+                sleepMs(SCHEDULE_FIRST_RUN_MS)
+                baselineMs = nowMillis()
+                runScheduledRound(app, model)
+                continue
+            }
+            let now = nowMillis()
+            if (scheduleDueNow(now, baselineMs, model.scheduleHours.value)) {
+                // 到点先记账再跑：动作在跑被闸门拒掉时，这一轮等于已消费，
+                // 下一次自然顺延到整周期之后。
+                baselineMs = now
+                runScheduledRound(app, model)
+            }
+        }
+    }
+}
+
+/// 定时轮的（结果行, 完成数）。**纯函数**，判据直接喂载荷 ——
+/// 与 actUpdateAll 同一条读法：聚合信封给逐项目成败清单（describeBulkResult），
+/// 错误桩/没有 JSON 按失败渲染，不编数。
+public func scheduledRoundOutcome(p: Payload): (String, Int64) {
+    if (let Some(v) <- p.json) {
+        return (describeBulkResult(v), scheduleAttemptedCount(v))
+    }
+    return ("✗ 定时更新 · 全部项目：" + p.problem, 0)
+}
+
+/// 到点的一轮：闸门 → 后台浅更新全部 → 刷新 → 三分支通知。
+/// 档位关着 / 引擎没就绪 / 闸门在忙 → 本轮跳过（顺延由调用方记账保证）。
+public func runScheduledRound(app: DesktopApp, model: AppModel): Unit {
+    if (model.scheduleHours.value <= 0) {
+        return
+    }
+    // 引擎没就绪（定位失败）时不去起一个必死的子进程 —— 那只会每个周期
+    // 给用户发一条「定时更新失败」，把真失败淹没在假失败里。
+    if (model.enginePath.isEmpty()) {
+        return
+    }
+    // 闸门与 beginAction 都在 UI 线程上判（与 startPolling 同一条纪律）。
+    // ⚠ 仓颉的 lambda **不能捕获可变局部变量**（main.cj 的注释记过这条限制），
+    // 所以闸门结论用引用类型当信箱带出来 —— beginAction 的返回值在 post 里
+    // 一并判掉：闸门放行与真正占住写侧之间不再有缝。
+    let verdict = ArrayList<Bool>()
+    if (!app.post({=>
+        if (scheduleGateBlocks(model.busy.value, model.actionBusy.value)) {
+            verdict.add(false) // 读侧或写侧在跑，跳过本轮（已顺延）
+        } else {
+            verdict.add(beginAction(model, "定时更新 · 全部项目"))
+        }
+    })) {
+        return // 应用已停止
+    }
+    if (verdict.isEmpty() || !verdict[0]) {
+        return
+    }
+    let bin = model.enginePath
+    spawn {
+        // ⚠ fire-and-forget 闭包兜异常（R4-01，同 requestRefresh）：
+        // 这里一线程死了，actionBusy 永不复位，整个写侧从此闸死。
+        // ⚠ lambda 不能捕获可变局部变量（仓颉限制），中间量全用 let：
+        // 载荷 → 结果行与完成数收在纯函数 scheduledRoundOutcome。
+        try {
+            let p = opUpdateAll(bin, false)
+            let ok = p.problem.isEmpty()
+            let (line, attempted) = scheduledRoundOutcome(p)
+            app.post {
+                endAction(model, line, ok)
+                // 与手动更新同一条收尾：写操作改变了事实，必须重读。
+                requestRefresh(app, model)
+            }
+            // ── 通知（scheduleNotice 三分支出文案）──
+            // ⚠ 通知与 AI 简报都在**后台线程**（R4-08）：notify-send 是一次
+            // 子进程调用（预算 10 秒），loadAIConfig 要碰 secret-tool
+            // （预算 10 秒），哪个放进 app.post 都是冻 UI 线程那么久。
+            // 简报复用 runAgent（同一轮次上限 3、同一项目群 target）；
+            // 用户恰好在聊天里按了停止也会放弃这一轮简报 —— 通知按
+            // 「AI 简报失败」如实说，不装作没发生。
+            var brief = ScheduleBrief.NoAI
+            if (ok) {
+                let cfg = loadAIConfig()
+                if (cfg.isConfigured()) {
+                    let r = runAgent(cfg, bin, AgentTarget.Group, SCHEDULE_DIGEST_PROMPT,
+                        ArrayList<ChatMessage>(), maxRounds: 3)
+                    if (r.outcome.text.isEmpty()) {
+                        brief = ScheduleBrief.DigestFailed(r.outcome.problem)
+                    } else {
+                        brief = ScheduleBrief.Digest(r.outcome.text)
+                    }
+                }
+            }
+            let (title, body) = scheduleNotice(ok, p.problem, brief, attempted)
+            let why = notifyUser(title, body)
+            if (!why.isEmpty()) {
+                // 通知失败不弹到界面上（与 actUpdate 同一条静默纪律）：
+                // 任务本身已经完成，失败只进日志。
+                println("deepdolphin: " + why)
+            }
+        } catch (e: Exception) {
+            let why = e.message
+            // ⚠ try/catch 各分支的收尾类型必须一致（都是 Unit）——
+            // app.post 返回 Bool，裸放在 catch 尾上会把分支类型带歪。
+            if (app.post({=>
+                endAction(model, "✗ 定时更新 · 全部项目：${why}", false)
+            })) {
+                ()
+            }
+        }
+    }
+}
+
+/// C10 停滞提醒的接线：刷新完成（applyStatusCall）之后扫一轮并发通知。
+///
+/// 去重键集在**这里**记账（先记后发，与 mac 端一致 —— 发送失败不重试，
+/// 与更新完成通知同一条纪律）；**发送必须在后台线程**（R4-08）：
+/// notify-send 是一次子进程调用（预算 10 秒），本函数跑在 app.post 里
+/// （UI 线程），只做纯计算与记账，一个字的 IO 都不碰。
+public func dispatchStaleReminders(model: AppModel): Unit {
+    let (freshKeys, notices) = staleReminders(allProjectsOf(model), model.notifiedKeys)
+    if (notices.isEmpty()) {
+        return
+    }
+    for (k in freshKeys) {
+        model.notifiedKeys.add(k)
+    }
+    spawn {
+        for (n in notices) {
+            let why = notifyUser(n.title, n.body)
+            if (!why.isEmpty()) {
+                println("deepdolphin: " + why)
+            }
+        }
     }
 }
 

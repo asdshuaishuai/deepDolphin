@@ -1870,6 +1870,24 @@ private func readSrcText(name: String): Option<String> {
     return readTextFileOf("src/${name}")
 }
 
+/// 摘掉「整行都是 `//` 注释」的行之后的源码文本。
+/// 扫描判据盯的是**代码**不是注释 —— 「接线被摘」最常见的形态恰恰是
+/// 调用被注释掉、注释里留着那行字；不过滤的话，负控（摘线）也照样全绿，
+/// 判据等于没验（本批负控实测踩过：注释掉的两处接线原样被 indexOf 找到）。
+/// 行内尾随注释保留：调用的存在性不受它影响。
+private func srcCodeText(text: String): String {
+    let out = StringBuilder()
+    for (raw in text.split("\n")) {
+        let line = raw.toString()
+        if (line.trimAscii().startsWith("//")) {
+            continue
+        }
+        out.append(line)
+        out.append("\n")
+    }
+    return out.toString()
+}
+
 @Test
 func primaryActionButtonsEnableWhenIdleNotWhenBusy(): Unit {
     // R2-01 回归：`.enabled(busy)` 方向写反 —— enabled(false)=禁用（框架
@@ -2789,5 +2807,332 @@ func launchScriptsExecByAbsolutePathAndInjectTheCatalogSnapshot(): Unit {
                 @Expect(text.contains("assets/models/models-dev.json"), true)
             case None => @Expect(false)
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// T4：C5 定时更新 ＋ C10 停滞提醒（章程三类通知补齐后两类）
+//
+// 能抽成纯函数的四件（档位解析 / 通知三分支 / 触发闸门 / 停滞去重）走 @Test；
+// 「设置页有定时更新卡片 + 后台线程读档位 + 提醒接线在刷新完成之后」病在
+// 接线，判据不开窗执行不到 —— 照本文件「CUI 美学批次」一节的惯例走源码
+// 扫描钉住。对位 mac：AIIntegration.runScheduledUpdate / Model
+// .postNotificationsIfNeeded。
+// ---------------------------------------------------------------------------
+
+@Test
+func scheduleTierParsingAcceptsOnlyCharterTiersAndFallsBackToOff(): Unit {
+    // ① 档位表内的值原样通过（0=关 / 1 / 3 / 6 / 12 / 24，与 mac 端同组）
+    @Expect(scheduleHoursFromConf("0"), 0)
+    @Expect(scheduleHoursFromConf("1"), 1)
+    @Expect(scheduleHoursFromConf("3"), 3)
+    @Expect(scheduleHoursFromConf("6"), 6)
+    @Expect(scheduleHoursFromConf("12"), 12)
+    @Expect(scheduleHoursFromConf("24"), 24)
+    // 首尾空白先收掉再认
+    @Expect(scheduleHoursFromConf(" 6 "), 6)
+    // ② 表外的「看起来合法」值一律回落关：定时更新会在后台改写用户仓库的
+    //    托管文档，替用户猜一个他没选过的周期，比不开更危险
+    @Expect(scheduleHoursFromConf("2"), 0)
+    @Expect(scheduleHoursFromConf("5"), 0)
+    @Expect(scheduleHoursFromConf("-1"), 0)
+    @Expect(scheduleHoursFromConf("6.5"), 0)
+    @Expect(scheduleHoursFromConf("6h"), 0)
+    @Expect(scheduleHoursFromConf("abc"), 0)
+    @Expect(scheduleHoursFromConf(""), 0)
+    @Expect(scheduleHoursFromConf("999999999999999999999999"), 0)
+    // ③ 下标往返：越界/不认识的档位回 0=关（与 appearanceAt 同一条纪律）
+    @Expect(scheduleHoursAt(0), 0)
+    @Expect(scheduleHoursAt(3), 6)
+    @Expect(scheduleHoursAt(5), 24)
+    @Expect(scheduleHoursAt(6), 0)
+    @Expect(scheduleHoursAt(-1), 0)
+    @Expect(scheduleIndexOf(24), 5)
+    @Expect(scheduleIndexOf(2), 0)
+    // ④ 整份 conf：有行读行，没行 = 从没设置过 = 关
+    @Expect(readScheduleHoursFrom("appearance=dark\nschedule=6\n"), 6)
+    @Expect(readScheduleHoursFrom("appearance=dark\n"), 0)
+    @Expect(readScheduleHoursFrom("schedule=abc\n"), 0)
+    @Expect(readScheduleHoursFrom(""), 0)
+    // ⑤ 合并写：两个键共用同一个 settings.conf，谁整文件覆写谁就会在用户
+    //    保存一个完全无关的设置时把对方那行抹掉（静默丢用户设置，比写失败更坏）
+    let both = confWithKey("appearance=dark\n", "schedule", "6")
+    @Expect(both, "appearance=dark\nschedule=6\n")
+    // 存定时档不动外观行；存外观不动定时档
+    @Expect(confWithKey(both, "schedule", "12"), "appearance=dark\nschedule=12\n")
+    @Expect(confWithKey(both, "appearance", "light"), "appearance=light\nschedule=6\n")
+    // 追加到空文件 / 无收尾换行的文件，新键不许插在空行后面
+    @Expect(confWithKey("", "schedule", "1"), "schedule=1\n")
+    @Expect(confWithKey("appearance=dark", "schedule", "1"), "appearance=dark\nschedule=1\n")
+    // 反复保存收敛：不攒空行、不越存越长
+    @Expect(confWithKey(both, "schedule", "6"), both)
+}
+
+@Test
+func scheduleNoticeCoversFailureDigestAndPlainBranches(): Unit {
+    // ① 失败：标题点名「定时更新失败」，正文必须带引擎给的原因
+    let (ft, fb) = scheduleNotice(false, "引擎退出码 2", ScheduleBrief.NoAI, 0)
+    @Expect(ft, "定时更新失败")
+    @Expect(fb.contains("引擎退出码 2"), true)
+    // 引擎连原因都没给也要有话说 —— 把「引擎没有给出原因」这个事实说出来，
+    // 不许空正文，也不许编一句别的当原因
+    let (et, eb) = scheduleNotice(false, "", ScheduleBrief.NoAI, 0)
+    @Expect(et, "定时更新失败")
+    @Expect(eb.contains("没有给出原因"), true)
+    // ② AI 简报成功：正文截 180 字（mac 端 digest.prefix(180) 同款）
+    let sb = StringBuilder()
+    for (_ in 0..100) {
+        sb.append("甲乙丙丁")   // 400 字
+    }
+    let (dt, db) = scheduleNotice(true, "", ScheduleBrief.Digest(sb.toString()), 15)
+    @Expect(dt, "定时更新简报")
+    var n: Int64 = 0
+    for (_ in db.runes()) {
+        n += 1
+    }
+    @Expect(n, 180)
+    @Expect(db, noticeClip(sb.toString(), 180))
+    @Expect(sb.toString().startsWith(db), true)
+    // 恰好 180 字不截
+    let sb2 = StringBuilder()
+    for (_ in 0..45) {
+        sb2.append("甲乙丙丁")   // 180 字
+    }
+    let (_, db2) = scheduleNotice(true, "", ScheduleBrief.Digest(sb2.toString()), 1)
+    @Expect(db2, sb2.toString())
+    // ③ 配置了 AI 但简报失败：完成数照报（更新本身成功了），括号里给原因
+    let (gt, gb) = scheduleNotice(true, "", ScheduleBrief.DigestFailed("读引擎上下文失败"), 7)
+    @Expect(gt, "定时更新完成")
+    @Expect(gb.contains("7 个项目进度已记录"), true)
+    @Expect(gb.contains("AI 简报失败"), true)
+    @Expect(gb.contains("读引擎上下文失败"), true)
+    // ④ 未配置 AI：只报完成数 —— 无 key 的降级路径通知也要成立
+    let (pt, pb) = scheduleNotice(true, "", ScheduleBrief.NoAI, 7)
+    @Expect(pt, "定时更新完成")
+    @Expect(pb, "7 个项目进度已记录")
+    // ⑤ 保存结果文案：成功要说清改档后的行为（否则用户改了档看着没动静，
+    //    会以为按钮是坏的），失败原样带原因
+    let (okNote, ok) = scheduleApplyNote(6, "")
+    @Expect(ok, true)
+    @Expect(okNote.contains("每 6 小时"), true)
+    @Expect(okNote.contains("10 分钟"), true)
+    let (offNote, offOk) = scheduleApplyNote(0, "")
+    @Expect(offOk, true)
+    @Expect(offNote.contains("关闭"), true)
+    let (badNote, badOk) = scheduleApplyNote(6, "定时更新设置没能写入 /x")
+    @Expect(!badOk)
+    @Expect(badNote.contains("没能写入"), true)
+}
+
+@Test
+func scheduleGateSkipsWhileAnySideIsBusyAndDueNeedsPositiveTier(): Unit {
+    // ③ 触发闸门：读侧（busy）或写侧（actionBusy）任意在跑就跳过本轮 ——
+    //    深更新要跑几分钟，定时轮硬挤进去就是两个引擎进程抢锁
+    @Expect(!scheduleGateBlocks(false, false))
+    @Expect(scheduleGateBlocks(true, false))
+    @Expect(scheduleGateBlocks(false, true))
+    @Expect(scheduleGateBlocks(true, true))
+    // 关（0）永不到点
+    @Expect(!scheduleDueNow(100000000, 0, 0))
+    // 1 小时档：整点到，差一毫秒不到
+    @Expect(scheduleDueNow(3600000, 0, 1))
+    @Expect(!scheduleDueNow(3599999, 0, 1))
+    // 24 小时档同理
+    @Expect(scheduleDueNow(24 * 3600000, 0, 24))
+    @Expect(!scheduleDueNow(24 * 3600000 - 1, 0, 24))
+    // 周期换算
+    @Expect(scheduleIntervalMs(24), 86400000)
+    @Expect(scheduleIntervalMs(1), 3600000)
+    // 「完成了几个」口径：聚合信封读 count；单项目形状没有 count 记 1；
+    // 错误桩两个键都没有记 0 —— 不编数
+    // 一轮的（结果行, 完成数）纯函数：信封给逐项目成败清单（describeBulkResult
+    // 从 results 数组里数成败），错误桩按失败渲染
+    let env = Json.parse("{\"results\":["
+        + "{\"project\":\"a\",\"ok\":true},{\"project\":\"b\",\"ok\":true},"
+        + "{\"project\":\"c\",\"ok\":true},{\"project\":\"d\",\"ok\":true},"
+        + "{\"project\":\"e\",\"ok\":true},{\"project\":\"f\",\"ok\":true},"
+        + "{\"project\":\"g\",\"ok\":false,\"message\":\"boom\"}],"
+        + "\"count\":7,\"succeeded\":6,\"failed\":1}").getOrThrow()
+    @Expect(scheduleAttemptedCount(env), 7)
+    let single = Json.parse("{\"ok\":true}").getOrThrow()
+    @Expect(scheduleAttemptedCount(single), 1)
+    let stub = Json.parse("{\"code\":\"E\",\"message\":\"x\"}").getOrThrow()
+    @Expect(scheduleAttemptedCount(stub), 0)
+    let envPayload = Payload(Some(env), "", false, 0, "", staleContract: false)
+    let (envLine, envCount) = scheduledRoundOutcome(envPayload)
+    @Expect(envCount, 7)
+    @Expect(envLine.contains("成功 6 个"), true)
+    @Expect(envLine.contains("失败 1 个"), true)
+    let stubPayload = Payload(None, "引擎退出码 2", false, 0, "", staleContract: false)
+    let (stubLine, stubCount) = scheduledRoundOutcome(stubPayload)
+    @Expect(stubCount, 0)
+    @Expect(stubLine.contains("引擎退出码 2"), true)
+    @Expect(stubLine.startsWith("✗"), true)
+}
+
+// ---------------------------------------------------------------------------
+// ④ 停滞提醒（staleReminders）
+// ---------------------------------------------------------------------------
+
+/// 提醒夹具：atlas 有停滞的非默认分支 + 15 处未提交；bench 未提交只有 3 处；
+/// gone **采集失败**却带着停滞分支和 12 处未提交 —— 整只必须跳过，
+/// 拿没读到的东西发「停滞了」的提醒是替引擎下结论。
+private let REMINDER_PROJECTS = """
+{"projects":[
+ {"name":"atlas","path":"/tmp/a","userDirtyCount":15,"branches":[
+   {"name":"main","status":"stale","isDefault":true,"headAgo":"30 天前"},
+   {"name":"feat/ai","status":"stale","isDefault":false,"headAgo":"12 天前"}]},
+ {"name":"bench","path":"/tmp/b","userDirtyCount":3,"branches":[]},
+ {"name":"gone","path":"/tmp/g","error":"路径不存在或卷未挂载：/tmp/g","userDirtyCount":12,"branches":[
+   {"name":"feat/x","status":"stale","isDefault":false,"headAgo":"9 天前"}]}
+],"summary":{"projectCount":3}}
+"""
+
+private func reminderProjects(): ArrayList<Project> {
+    return StatusSnapshot.from(Json.parse(REMINDER_PROJECTS).getOrThrow()).projects
+}
+
+private func reminderProjectsWithDirty(n: Int64): ArrayList<Project> {
+    let doc = "{\"projects\":[{\"name\":\"atlas\",\"path\":\"/tmp/a\",\"userDirtyCount\":${n},\"branches\":[]}],\"summary\":{\"projectCount\":1}}"
+    return StatusSnapshot.from(Json.parse(doc).getOrThrow()).projects
+}
+
+private func keySet(keys: ArrayList<String>): HashSet<String> {
+    let s = HashSet<String>()
+    for (k in keys) {
+        s.add(k)
+    }
+    return s
+}
+
+@Test
+func staleRemindersDedupeByKeyAndBucketDirtyByTen(): Unit {
+    let projects = reminderProjects()
+    // 首扫恰好两条：atlas 的 feat/ai 停滞（默认分支 main 停滞不报）+
+    // atlas 的 15 处未提交（脏桶 1）。bench 未提交 <10 不报；
+    // 采集失败的 gone 连人带分支一起跳过 —— 它带着 12 处未提交和一条
+    // 停滞分支，敢报就是拿「没读到」当「读到了」
+    let (keys1, notices1) = staleReminders(projects, HashSet<String>())
+    @Expect(keys1.size, 2)
+    @Expect(notices1.size, 2)
+    @Expect(keys1[0], "stale:atlas:feat/ai")
+    @Expect(notices1[0].title, "分支停滞：atlas")
+    // headAgo 进正文：只说「停滞」不说多久，用户无从判断急不急
+    @Expect(notices1[0].body.contains("feat/ai"), true)
+    @Expect(notices1[0].body.contains("12 天前"), true)
+    @Expect(keys1[1], "dirty:atlas:1")
+    @Expect(notices1[1].title, "未提交改动较多：atlas")
+    // 同键二次刷新不重报 —— 提醒的语义是「新变差才说」，不是每 5 分钟念一遍
+    let (keys2, notices2) = staleReminders(projects, keySet(keys1))
+    @Expect(keys2.size, 0)
+    @Expect(notices2.size, 0)
+}
+
+@Test
+func dirtyRemindersChangeTierOnlyWhenCrossingADecadeBucket(): Unit {
+    // 15 处 → 桶 1（dirty:<项目>:<count/10>，mac 端同款键），首报
+    let (k15, n15) = staleReminders(reminderProjectsWithDirty(15), HashSet<String>())
+    @Expect(k15.size, 1)
+    @Expect(k15[0], "dirty:atlas:1")
+    @Expect(n15[0].title, "未提交改动较多：atlas")
+    @Expect(n15[0].body.contains("15 处"), true)
+    // 19 处仍在桶 1，不重报 —— 逐个数变化每次都报的话，一天能来十条
+    // 「11 处、12 处、13 处」，那是骚扰不是提醒
+    let (k19, _) = staleReminders(reminderProjectsWithDirty(19), keySet(k15))
+    @Expect(k19.size, 0)
+    // 20 处 → 桶 2，换档再报一次
+    let (k20, n20) = staleReminders(reminderProjectsWithDirty(20), keySet(k15))
+    @Expect(k20.size, 1)
+    @Expect(k20[0], "dirty:atlas:2")
+    @Expect(n20[0].body.contains("20 处"), true)
+    // 25 处仍在桶 2，不报；9 处不到阈值，从不报
+    let seenAll = keySet(k15)
+    for (k in k20) {
+        seenAll.add(k)
+    }
+    let (k25, _) = staleReminders(reminderProjectsWithDirty(25), seenAll)
+    @Expect(k25.size, 0)
+    let (k9, _) = staleReminders(reminderProjectsWithDirty(9), HashSet<String>())
+    @Expect(k9.size, 0)
+}
+
+@Test
+func scheduleChoiceApplyWritesStateBumpsEpochAndDisclosesResult(): Unit {
+    // 设置页下拉 → 写入口（applyScheduleChoice）这条链，判据用**不碰盘的
+    // 假写**走全：档位写进 State、改动代号推进（定时线程靠它「改档即重新
+    // 计时」）、结果披露落在 note —— 与外观下拉 applyAppearanceChoiceBy 同构。
+    // ⚠ 次序照真实事件走：**下拉自己写 scheduleIndex**（控件持有下标 State），
+    // 观察者才收到新下标 —— 写入口不代写下标（与外观同一条分工）。
+    let model = AppModel(EngineLocation("", "", ""))
+    @Expect(model.scheduleEpoch, 0)
+    model.scheduleIndex.value = 3
+    applyScheduleChoiceBy(model, 3, write: {h => if (h == 6) { "" } else { "boom" }})
+    @Expect(model.scheduleIndex.value, 3)
+    @Expect(model.scheduleHours.value, 6)
+    @Expect(model.scheduleEpoch, 1)
+    @Expect(model.scheduleNoteOk.value, true)
+    @Expect(model.scheduleNote.value.contains("每 6 小时"), true)
+    // 写失败：档位**照记**（内存态与磁盘态不一致必须让 note 说话），
+    // 代号照推进，成败标记翻红
+    model.scheduleIndex.value = 1
+    applyScheduleChoiceBy(model, 1, write: {h => "定时更新设置没能写入（${h}）"})
+    @Expect(model.scheduleHours.value, 1)
+    @Expect(model.scheduleEpoch, 2)
+    @Expect(!model.scheduleNoteOk.value)
+    @Expect(model.scheduleNote.value.contains("没能写入"), true)
+    // 关闭档（下标 0）也是合法选择，走同一条披露
+    model.scheduleIndex.value = 0
+    applyScheduleChoiceBy(model, 0, write: {_ => ""})
+    @Expect(model.scheduleHours.value, 0)
+    @Expect(model.scheduleEpoch, 3)
+    @Expect(model.scheduleNoteOk.value, true)
+    @Expect(model.scheduleNote.value.contains("关闭"), true)
+}
+
+@Test
+func scheduledUpdateWiringIsPresentBySourceScan(): Unit {
+    // 病在接线，纯函数判据够不到 —— 照本文件「CUI 美学批次」的惯例扫源码：
+    // 语义由上面五条纯函数判据兜住，这里只钉「线还接着、顺序没倒」。
+    // ⚠ 扫的是 srcCodeText（摘掉整行注释）—— 负控实测：不过滤注释的话，
+    // 「调用被注释掉」这种最典型的接线脱落判据照样绿。
+    match (readSrcText("appstate.cj")) {
+        case Some(raw) =>
+            let text = srcCodeText(raw)
+            // ① 设置页卡片背后的写入口存在（落盘 + 披露 + 改档重新计时）
+            @Expect(text.contains("public func applyScheduleChoiceBy"), true)
+            // ② 后台线程真的在**读档位**：到点判定吃的是 scheduleHours 现值，
+            //    不是启动时抄走的副本
+            @Expect(text.contains("model.scheduleHours.value"), true)
+            // ③ 提醒接线在刷新完成（applyStatusCall）**之后** —— 顺序不许倒
+            match ((text.indexOf("applyStatusCall(model, statusCall)"),
+                text.indexOf("dispatchStaleReminders(model)"))) {
+                case (Some(a), Some(w)) => @Expect(w > a, true)
+                case _ => @Expect(false, true)
+            }
+            // ④ 通知发送沿用后台线程纪律（R4-08）：dispatchStaleReminders 的
+            //    函数体里 notifyUser 之前必须有 spawn —— notify-send 是子进程，
+            //    放进 app.post 就是冻 UI 线程那么久
+            match (text.indexOf("public func dispatchStaleReminders")) {
+                case Some(fn) =>
+                    let body = text[fn..]
+                    match ((body.indexOf("spawn"), body.indexOf("notifyUser("))) {
+                        case (Some(s), Some(n)) => @Expect(s < n, true)
+                        case _ => @Expect(false, true)
+                    }
+                case None => @Expect(false, true)
+            }
+            // ⑤ 定时线程在 boot 里被启动（摘掉这一行 = 功能整体不存在）
+            @Expect(text.contains("startScheduledUpdates(app, model)"), true)
+        case None => @Expect(false)
+    }
+    match (readSrcText("ai_view.cj")) {
+        case Some(raw) =>
+            let text = srcCodeText(raw)
+            // 设置页有定时更新卡片：下拉在场、标题在场、接线在 body 里被调用
+            // —— 不只是「有档位、没界面」
+            @Expect(text.contains("\"dd-schedule\""), true)
+            @Expect(text.contains("定时更新"), true)
+            @Expect(text.contains("observeScheduleChoice(model)"), true)
+        case None => @Expect(false)
     }
 }

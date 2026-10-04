@@ -1145,3 +1145,67 @@ private func milestoneItemsOf(ms: JsonValue): ArrayList<MilestoneItem> {
     }
     return out
 }
+
+// ===========================================================================
+// C10 停滞提醒（mac 端 Model.postNotificationsIfNeeded 的移植）
+//
+// 章程 C10 明列「更新完成 / 停滞提醒 / 定时简报」三类通知。更新完成那类
+// 早就有（actUpdate/actUpdateAll）；定时简报与这一节的停滞提醒同批补齐。
+// ===========================================================================
+
+/// 一条要发的提醒：去重键 + 标题 + 正文。
+public struct StaleNotice {
+    public let key: String
+    public let title: String
+    public let body: String
+
+    public init(key: String, title: String, body: String) {
+        this.key = key
+        this.title = title
+        this.body = body
+    }
+}
+
+/// 扫一轮项目，给出这一轮**新**出现的提醒：(新键, 文案)，两边按下标一一对应。
+/// **纯函数**：喂项目列表与已提醒键集，判据不开窗就能验去重语义。
+///
+/// 键的形状与 mac 端一致（mac 用 `p.id`，本端的身份是项目名 —— 注册表
+/// 以名字定位项目，actUpdate 等动作都递名字）：
+///   · 非默认分支停滞  `stale:<项目>:<分支名>` —— 分支合掉/删掉后自然不再报；
+///   · 未提交 ≥ 10    `dirty:<项目>:<count/10>` —— **桶按 10 取整**：
+///     10→19 只报一次，攒到 20 才再报一档。逐个数变化每次都报的话，
+///     一天能来十条「11 处、12 处、13 处」—— 那是骚扰不是提醒。
+///
+/// `headAgo` 进正文：只说「停滞」不说多久，用户无从判断急不急。
+/// 采集失败的项目整只跳过：它的分支表和脏数是「没读出来」的空/0，
+/// 拿没读到的东西发「停滞了」的提醒，是替引擎下结论。
+public func staleReminders(projects: ArrayList<Project>, notified: HashSet<String>): (ArrayList<String>, ArrayList<StaleNotice>) {
+    let freshKeys = ArrayList<String>()
+    let notices = ArrayList<StaleNotice>()
+    for (p in projects) {
+        if (p.failed()) {
+            continue
+        }
+        for (b in p.branches) {
+            if (b.status != "stale" || b.isDefault) {
+                continue
+            }
+            let key = "stale:${p.name}:${b.name}"
+            if (notified.contains(key)) {
+                continue
+            }
+            freshKeys.add(key)
+            notices.add(StaleNotice(key, "分支停滞：${p.name}",
+                "`${b.name}` 已 ${b.headAgo} 无提交，考虑合并或关闭"))
+        }
+        if (p.userDirtyCount >= 10) {
+            let key = "dirty:${p.name}:${p.userDirtyCount / 10}"
+            if (!notified.contains(key)) {
+                freshKeys.add(key)
+                notices.add(StaleNotice(key, "未提交改动较多：${p.name}",
+                    "${p.userDirtyCount} 处改动未提交"))
+            }
+        }
+    }
+    return (freshKeys, notices)
+}

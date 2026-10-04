@@ -69,6 +69,71 @@ public func updateFinishedNotice(actionLabel: String, target: String, ok: Bool, 
 }
 
 // ---------------------------------------------------------------------------
+// 定时更新 ＋ 定时简报（C5/C10 的通知文案）
+//
+// 章程 C10 明列三类通知：更新完成 / 停滞提醒 / 定时简报。更新完成那类
+// 就是上面的 updateFinishedNotice；这一节补定时那一轮的文案。
+// 对位 mac 端 AIIntegration.runScheduledUpdate：失败带原因 / AI 简报
+// 截 180 字 / 未配置 AI 只报完成数。
+// ---------------------------------------------------------------------------
+
+/// 按字数截断（1 个 Rune = 1 字）。180 字上限是 mac 端
+/// `String(digest.prefix(180))` 的同款 —— 桌面通知塞下几千字简报只会
+/// 折行到没法看。**纯函数**，判据直接喂中英混排文本。
+public func noticeClip(text: String, cap: Int64): String {
+    if (cap < 0) {
+        return ""
+    }
+    let out = StringBuilder()
+    var n: Int64 = 0
+    for (r in text.runes()) {
+        if (n >= cap) {
+            break
+        }
+        out.append(r.toString())
+        n += 1
+    }
+    return out.toString()
+}
+
+/// 定时简报的 AI 提问词（mac 端 `AgentCore.scheduledDigest` 同一句、
+/// 同一个 target（项目群）与轮次上限 3）。
+public const SCHEDULE_DIGEST_PROMPT: String = "定时更新已完成。请生成 ≤150 字的项目群简报：哪些项目有新变化、哪些需要人处理（未提交/停滞/待合入）。只输出简报正文。"
+
+/// 定时那一轮里「AI 简报」处于什么状态。
+/// 三个档对应通知的三个分支，**「没配置」与「配置了但失败」必须分开**：
+/// 前者是正常降级（章程 §3：无 key 时更新动作仍可用），后者是故障，要给原因。
+public enum ScheduleBrief {
+    | NoAI                 // AI 未配置 —— 只报完成数
+    | Digest(String)       // 简报生成成功，正文原文（截断在 scheduleNotice 里做）
+    | DigestFailed(String) // 配置了但生成失败，带原因
+}
+
+/// 定时更新一轮结束后的通知文案（标题, 正文）。**纯函数**，判据直接喂分支：
+///   · 更新失败 → 「定时更新失败」，正文带引擎给的原因；连引擎都没给原因
+///     时也要有一句话（说「引擎没有给出原因」这个事实），不许空正文；
+///   · AI 简报成功 → 「定时更新简报」，正文截 180 字；
+///   · 配置了 AI 但简报失败 → 「定时更新完成」—— 更新本身成功了，
+///     完成数照报，括号里给简报失败的原因（截 60 字，别让一句报错
+///     占满整个通知）；
+///   · 未配置 AI → 「定时更新完成」，正文报完成数。
+public func scheduleNotice(updateOk: Bool, failWhy: String, brief: ScheduleBrief,
+    projectCount: Int64): (String, String) {
+    if (!updateOk) {
+        let why = (if (failWhy.isEmpty()) { "引擎没有给出原因" } else { failWhy })
+        return ("定时更新失败", why)
+    }
+    match (brief) {
+        case ScheduleBrief.Digest(text) => return ("定时更新简报", noticeClip(text, 180))
+        case ScheduleBrief.DigestFailed(why) =>
+            let w = (if (why.isEmpty()) { "引擎没有给出原因" } else { why })
+            return ("定时更新完成", "${projectCount} 个项目进度已记录（AI 简报失败：${noticeClip(w, 60)}）")
+        case ScheduleBrief.NoAI =>
+            return ("定时更新完成", "${projectCount} 个项目进度已记录")
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 开机自启
 // ---------------------------------------------------------------------------
 
