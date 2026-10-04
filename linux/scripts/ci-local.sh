@@ -12,9 +12,11 @@
 #      拷进 vendor/CangjieSDL/.sdl3 供链接；
 #   3) 若系统 ld 找不到 crtbeginS.o/crtendS.o（cjc 以裸位置参数传给 ld，
 #      GNU ld 对位置参数不做 -L 搜索），装 ~/.local/bin/ld 包装器：
-#      把两个 crt 换成 dd-sysroot GCC13 的绝对路径，并只在链接 app 测试
-#      二进制时追加 sdl-shim.o（CangjieSDL 的 6 个 SDL3.4 专属绑定的 no-op
-#      占位——测试路径从不调用；testrunner 自带定义，追加反而撞重定义）；
+#      把两个 crt 换成 dd-sysroot GCC13 的绝对路径，并给链接追加 sdl-shim.o
+#      （CangjieSDL 的 6 个 SDL3.4 专属绑定的 no-op
+#      占位——测试路径从不调用；testrunner 自带定义，追加反而撞重定义）。
+#      T5 批次起同样追加给主程序链接（bin/main）：--snapshot 布局自查
+#      要链主程序，符号缺口与测试同源，不追加则快照实拍在这台机器上瘫痪。
 #   4) moonGit 引擎仓目录大小写兼容链接（~/code/moonGit → moongit）；
 #   5) 跑 cjpm test 并输出机器可读汇总行。
 #
@@ -75,13 +77,15 @@ fi
 CRT_GCC="$(ls -d "$HOME"/.local/dd-sysroot/usr/lib/gcc/x86_64-linux-gnu/*/ 2>/dev/null | sort -V | tail -1 || true)"
 if [ -n "$CRT_GCC" ] && [ -f "${CRT_GCC}crtbeginS.o" ] && ! ld crtbeginS.o -r -o /dev/null 2>/dev/null; then
     # 本机 ld 现在就解析不了裸 crtbeginS.o → 需要 ~/.local/bin/ld 包装器
-    if [ ! -x "$HOME/.local/bin/ld" ] || ! grep -q "sdl-shim" "$HOME/.local/bin/ld" 2>/dev/null; then
-        say "安装 ~/.local/bin/ld 链接包装器（crt 绝对路径 + app 测试链接追加 shim）…"
+    # （dd-app-shim 标记用于版本升级：条件变了就重装包装器）
+    if [ ! -x "$HOME/.local/bin/ld" ] || ! grep -q "dd-app-shim" "$HOME/.local/bin/ld" 2>/dev/null; then
+        say "安装 ~/.local/bin/ld 链接包装器（crt 绝对路径 + 测试/主程序链接追加 shim）…"
         SDLUSR="$SDL_USER/ex/usr/lib/x86_64-linux-gnu"
         gcc -fPIC -x c -c -o "$SDL_USER/sdl-shim.o" - <<'EOF'
-/* sdl-shim.c —— 仅本类开发容器（glibc 2.38 + SDL 3.2）的 cjpm test 门禁用。
- * CangjieSDL 绑定按 SDL 3.4 生成；下列符号在测试路径上从不被调用，
- * no-op 占位让测试二进制完成链接。真实 Linux 环境（SDL 3.4）不需要。 */
+/* sdl-shim.c —— 仅本类开发容器（glibc 2.38 + SDL 3.2）的 cjpm 链接垫片。
+ * CangjieSDL 绑定按 SDL 3.4 生成；下列符号在测试与快照路径上从不被调用，
+ * no-op 占位让测试二进制与主程序（--snapshot 布局自查用）完成链接。
+ * 真实 Linux 环境（SDL 3.4）不需要本垫片 —— 包装器只活在这台开发机上。 */
 int SDL_SetWindowProgressState(void *w, int s) { (void)w; (void)s; return 0; }
 int SDL_SetWindowProgressValue(void *w, float v) { (void)w; (void)v; return 0; }
 int SDL_GetWindowProgressState(void *w) { (void)w; return 0; }
@@ -95,6 +99,9 @@ EOF
         cat > "$HOME/.local/bin/ld" <<WRAPPER
 #!/usr/bin/env bash
 # 由 deepDolphin linux/scripts/ci-local.sh 安装：cjc 的链接缺口修补（透明包装）。
+# 追加 shim 的条件（dd-app-shim）：unittest 二进制 **与** 主程序 bin/main ——
+# 后者是 --snapshot 布局自查的入口（README「验证」），符号缺口与测试同源，
+# 不追加的话主程序在这台机器上永远链不出来，界面快照实拍整体瘫痪。
 SHIM="$SDL_USER/sdl-shim.o"
 CRTDIR="${CRT_GCC%/}"
 args=()
@@ -105,7 +112,9 @@ for a in "\$@"; do
         *) args+=("\$a") ;;
     esac
 done
-[ -f "\$SHIM" ] && [[ "\$*" == *"unittest_bin/deepdolphin_linux"* ]] && args+=("\$SHIM")
+if [ -f "\$SHIM" ] && [[ "\$*" == *"unittest_bin/deepdolphin_linux"* || "\$*" == *"bin/main"* ]]; then
+    args+=("\$SHIM")
+fi
 exec /usr/bin/ld "\${args[@]}"
 WRAPPER
         chmod +x "$HOME/.local/bin/ld"

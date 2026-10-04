@@ -228,6 +228,30 @@ DD_FIXTURE_DIR="$PWD/tests/fixtures" DD_SNAP_ADD=scan \
 面板在场与控件接线的可执行判据在 model_test.cj 的
 `addScanPaneLensSwitchesModesAndStepsDepthThroughRealControls`（无头镜头）。
 
+### 拍「写动作进行中 / 结果一行」（T5，交互流 D-01）
+
+```sh
+DD_FIXTURE_DIR="$PWD/tests/fixtures" DD_SNAP_ACTION=busy \
+  SDL_VIDEODRIVER=dummy bash scripts/dev-launch.sh --snapshot /tmp/action-busy.bmp
+DD_FIXTURE_DIR="$PWD/tests/fixtures" DD_SNAP_ACTION=fail \
+  SDL_VIDEODRIVER=dummy bash scripts/dev-launch.sh --snapshot /tmp/action-fail.bmp
+```
+
+`DD_SNAP_ACTION=busy|fail` 预置「写动作进行中 / 上一条失败的批量结果」再拍 ——
+深更新一跑几分钟，「按了按钮之后的界面」与「跑完之后的那一行」都点不出来。
+`busy` 走 `beginAction`（与真实按钮同一条闸门入口：它只置状态、不起子进程），
+拍主区顶部的「进行中」条（**没有关闭按钮** —— 动作在跑时横幅不可关，
+见 `bannerDismissible`）＋ 侧栏状态条的「正在执行：…」；`fail` 走 `report`
+（与 `endAction` 同一条出口），拍「未完成」红 pill + 逐项目成败名单 +
+「关闭」按钮。落点规则（详情页走页头、其他页走横幅）由纯函数
+`actionStripOf` 裁决，判据在 model_test.cj 的
+`actionStripLandsOnTheDetailHeaderThereAndOnTheMainBannerEverywhereElse`。
+
+⚠ 本节命令在 **Linux 开发机**上真实出图（T5 批次起 ci-local.sh 的 ld 包装
+也给主程序 `bin/main` 追加链接垫片，此前主程序在这台机器上链不出来，
+见下方「已知代价与边界」第 2 条）；BMP 转 PNG 本机没有 sips/ImageMagick，
+用纯 Python 按 BMP 头解 24 位像素再封 PNG 即可。
+
 **未验，且已查明是框架级阻塞**：真窗口的**交互**（滚动、悬停、真实输入）
 没验过 —— `DD_SNAP_CLICK` 能证明**点击的路由**通了，但它仍然走的是
 `post` 而不是真的鼠标事件，也证明不了滚动与悬停。
@@ -453,10 +477,15 @@ T4 批次（C5 定时更新 ＋ C10 停滞提醒，本批）再 +7 ——
    首帧后翻暗色会得到半套错色板。按红线如实说明而非绕过：探测留在
    建窗前但超时 3000→1500ms，**外观切换是「落盘 + 重启生效」**，
    设置页文案写明 —— 这是有意的不做，不是遗留。
-2. **界面实拍（快照截图）本机没跑**。release 主程序因 CangjieSDL 的
-   SDL 3.4 专属绑定符号在本机链不出来（ci-local.sh 的 ld 包装只把
-   垫片追加给测试二进制，见 `sdl-shim.c` 注释）；外观改动由 147 条
-   判据与源码扫描背书，真实渲染留给有 SDL 3.4 的环境。
+2. **主程序在本机的链接曾经断着（T5 批次起打通了无头这条路）**。release
+   主程序因 CangjieSDL 的 SDL 3.4 专属绑定符号在本机链不出来（ci-local.sh
+   的 ld 包装原本只把垫片追加给测试二进制，见 `sdl-shim.c` 注释）——
+   后果是「界面快照实拍」整条自查路径瘫痪。T5 批次把垫片同样追加给
+   主程序 `bin/main` 的链接（同一份 no-op 垫片，快照路径同样不调那几个
+   符号；只活在这台开发机的 `~/.local/bin/ld`，真机 SDL 3.4 环境没有
+   包装器、不受影响），`DD_SNAP_ACTION=busy|fail` 两张实拍即本批出图。
+   **真窗口与交互（滚动 / 悬停 / 键盘）仍然未验** —— 无图形会话，
+   快照证明的是静态布局，不是交互。
 3. **暗色主题下橙字压橙胶囊实测 4.27:1**，仍略低于 4.5 —— 本批变体只收
    亮底方向（暗底亮色对暗卡 5.2~7.6:1 达标），暗色未另立变体；
    `C_RED` 文字对白卡 3.76:1 未动（现有红字都在告警卡/胶囊语境）。
@@ -506,6 +535,8 @@ T2 批次修掉：
 ### 仍未验（详见 [VERIFY-ON-LINUX.md](VERIFY-ON-LINUX.md)）
 
 - 真窗口与一切交互（滚动 / 悬停 / 键盘 / 缩放）—— 本机无图形会话；
-- 界面快照实拍 —— 主程序链接缺口（上文第 2 条）；
 - 自启「注销重登真实拉起」；
 - 真实 provider（真 key / 流式 / 401 429 5xx）从未跑过。
+
+（「界面快照实拍」已不在未验之列：T5 批次起主程序链接通了，
+`DD_SNAP_ACTION` 两张实拍即证据，见「验证」一节与「已知代价与边界」第 2 条。）

@@ -3136,3 +3136,126 @@ func scheduledUpdateWiringIsPresentBySourceScan(): Unit {
         case None => @Expect(false)
     }
 }
+
+// ---------------------------------------------------------------------------
+// T5：写动作「正在执行 / 结果一行」出详情页可见（交互流 D-01）
+//
+// 病与 T3/R2 同族：本仓纪律「写操作必须留结果」此前只兑现一半 ——
+// lastResult 只渲染在详情页头，syncLabels 写的 statusText 八处写入口
+// 全视图零消费；仪表盘上点深更新跑几分钟，主区没有任何进行中说明。
+// 落点与可关性抽成**纯函数**（actionStripOf / bannerDismissible）；
+// 呈现与接线走 --snapshot 快照镜头（DD_SNAP_ACTION=busy|fail，
+// README「验证」一节）＋ 源码扫描；statusText 的唯一消费点（侧栏
+// 状态条）与「死写清零」都由扫描钉住。
+// ---------------------------------------------------------------------------
+
+@Test
+func actionStripLandsOnTheDetailHeaderThereAndOnTheMainBannerEverywhereElse(): Unit {
+    // 落点纯函数：详情页头一直在场（detailHeader 读 lastResult）→ 横幅闭嘴
+    // —— 同一份结果不挂两处披露面；其余页（仪表盘/看板/里程碑）走主区横幅。
+    // 忙碌优先于结果：beginAction 会把「正在…」写进 lastResult，
+    // 忙碌档必须压过它，横幅只说「正在执行」。
+    match (actionStripOf(RootSection.Dashboard, true, "正在深更新 · 全部项目…")) {
+        case ActionStrip.BannerBusy => ()
+        case _ => @Expect(false)
+    }
+    match (actionStripOf(RootSection.Board, true, "")) {
+        case ActionStrip.BannerBusy => ()
+        case _ => @Expect(false)
+    }
+    // 空闲 + 有结果（成败都算「有话要说」）→ 横幅结果行
+    match (actionStripOf(RootSection.Milestones, false, "✗ 深更新 · 全部项目：失败 2 个")) {
+        case ActionStrip.BannerResult => ()
+        case _ => @Expect(false)
+    }
+    match (actionStripOf(RootSection.Dashboard, false, "✓ 浅更新 atlas：已完成")) {
+        case ActionStrip.BannerResult => ()
+        case _ => @Expect(false)
+    }
+    // 详情页：无论忙碌与否都归页头
+    match (actionStripOf(RootSection.Project, true, "正在深更新 atlas…")) {
+        case ActionStrip.PageHeader => ()
+        case _ => @Expect(false)
+    }
+    match (actionStripOf(RootSection.Project, false, "✗ 深更新 atlas：失败")) {
+        case ActionStrip.PageHeader => ()
+        case _ => @Expect(false)
+    }
+    // 空闲且从未有过结果：没有要说的事
+    match (actionStripOf(RootSection.Board, false, "")) {
+        case ActionStrip.Silent => ()
+        case _ => @Expect(false)
+    }
+}
+
+@Test
+func busyBannerIsNotDismissibleWhileAnIdleResultBannerIs(): Unit {
+    // 深更新要跑几分钟，把「正在执行」条关掉 = 用户亲手关掉唯一的
+    // 进行中说明，界面回到「点了没反应」。结果行才归用户处置。
+    @Expect(!bannerDismissible(true))
+    @Expect(bannerDismissible(false))
+}
+
+@Test
+func writeActionsLeaveAResultLineAndStatusTextSaysWhatIsRunning(): Unit {
+    // 「写操作必须留结果」的**状态一半**：beginAction 置忙 + 写「正在…」 +
+    // statusText 报「正在执行：X」；endAction 复位 + 留成败行。
+    // 主区横幅与侧栏状态条消费的正是这几个字段。
+    let model = AppModel(EngineLocation("", "", ""))
+    @Expect(beginAction(model, "深更新 atlas"))
+    @Expect(model.actionBusy.value)
+    @Expect(model.actionLabel.value, "深更新 atlas")
+    @Expect(model.lastResult.value.contains("正在"))
+    @Expect(model.statusText.value, "正在执行：深更新 atlas")
+    endAction(model, "✗ 深更新 atlas：引擎超时", false)
+    @Expect(!model.actionBusy.value)
+    @Expect(model.actionLabel.value.isEmpty())
+    @Expect(model.lastResult.value, "✗ 深更新 atlas：引擎超时")
+    @Expect(!model.lastResultOk.value)
+    @Expect(!model.statusText.value.contains("正在执行"))
+    // 闸门：已有动作在跑时拒绝重复发起，且**留话**（不是静默返回）
+    model.actionBusy.value = true
+    model.actionLabel.value = "深更新 beacon"
+    @Expect(!beginAction(model, "浅更新 atlas"))
+    @Expect(model.lastResult.value.contains("已有动作在跑"))
+    @Expect(!model.lastResultOk.value)
+}
+
+@Test
+func actionBannerAndSidebarStripConsumeTheStateBySourceScan(): Unit {
+    // 呈现与接线的源码证据（快照镜头守 DD_SNAP_ACTION 那一截，见 README）：
+    // ① 主区横幅真的挂在 detail 的 VStack 里，落点与可关性经纯函数裁决；
+    // ② 侧栏状态条消费 statusText（八处写入口的唯一消费点）；
+    // ③ 死写清零：pollCountdown / emptyHint / detailTab / docTab 的名字
+    //    不许再以**代码**形态出现在 appstate —— 再挂一个无消费的
+    //    状态写入口回来，本条红。
+    // ⚠ 扫的是 srcCodeText（摘掉整行注释）：tombstone 注释里的旧名不算回来，
+    //   「接线被注释掉」这种最典型的脱落也逃不掉（本文件既有负控结论）。
+    match (readSrcText("views.cj")) {
+        case Some(raw) =>
+            let text = srcCodeText(raw)
+            @Expect(text.contains("actionStripBanner(model, dark)"), true)
+            @Expect(text.contains("actionStripOf(model.root.value"), true)
+            @Expect(text.contains("bannerDismissible(model.actionBusy.value)"), true)
+            // 「正在执行」的话头由横幅出（busy 快照拍的就是它）：
+            // 「进行中」pill + 「正在执行：」短语 + 忙碌时不可关的判定
+            @Expect(text.contains("dsPill(\"进行中\", C_ACCENT, dark)"), true)
+            @Expect(text.contains("正在执行："), true)
+        case None => @Expect(false)
+    }
+    match (readSrcText("sidebar.cj")) {
+        case Some(raw) =>
+            let text = srcCodeText(raw)
+            @Expect(text.contains("model.statusText.value"), true)
+        case None => @Expect(false)
+    }
+    match (readSrcText("appstate.cj")) {
+        case Some(raw) =>
+            let text = srcCodeText(raw)
+            @Expect(!text.contains("pollCountdown"), true)
+            @Expect(!text.contains("emptyHint"), true)
+            @Expect(!text.contains("detailTab"), true)
+            @Expect(!text.contains("docTab"), true)
+        case None => @Expect(false)
+    }
+}

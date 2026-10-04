@@ -29,6 +29,21 @@ dd_cj_setup_runtime
 export DYLD_LIBRARY_PATH="$HERE/vendor/CangjieSDL/.sdl3:$DYLD_LIBRARY_PATH"
 export LD_LIBRARY_PATH="$HERE/vendor/CangjieSDL/.sdl3:$LD_LIBRARY_PATH"
 
+# SDL3 的可选后端依赖（libsndio / libXss 是 libSDL3 的 DT_NEEDED，缺了
+# 直接「loading shared libraries」起不来）：ci-local.sh 把它们解到
+# ~/.local/sdl3 的用户空间目录 —— 没有系统 SDL3 包的机器上靠这两个目录。
+# ⚠ **追加**而不是前插：ex/ 里可能混着要 glibc 2.43 的 SDL 3.4 旧物，
+# 盖过 .sdl3 的 3.2.10 就起不来（ci-local.sh 注释里「顺序敏感」同一条）。
+# 目录不存在就跳过（有系统包的机器用不着）。
+for dd_sdl_extra in "$HOME/.local/sdl3/ex32/usr/lib/x86_64-linux-gnu" \
+                    "$HOME/.local/sdl3/ex/usr/lib/x86_64-linux-gnu"; do
+  if [[ -d "$dd_sdl_extra" ]]; then
+    export DYLD_LIBRARY_PATH="${DYLD_LIBRARY_PATH:+$DYLD_LIBRARY_PATH:}$dd_sdl_extra"
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$dd_sdl_extra"
+  fi
+done
+unset dd_sdl_extra
+
 if [[ -z "${DEEPGIT_BIN:-}" ]]; then
   REPO_BIN="$HERE/../../moonGit/target/release/bin/main"
   if [[ -x "$REPO_BIN" ]]; then

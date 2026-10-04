@@ -144,6 +144,22 @@ main(args: Array<String>): Int64 {
                 model.addSinglePath.value = "/tmp/deepdolphin-snapshot-project"
             }
         }
+        // T5 自查开关：预置「写动作进行中 / 上一条失败结果」再拍（交互流 D-01）。
+        // 与 DD_SNAP_ROOT 同族 —— CUI 快照只在启动即拍，「按了按钮之后的
+        // 那几分钟」与「跑完之后的那一行」都点不出来；没有这个开关，
+        // 主区的「正在执行」条与结果条只能靠「代码读着像对的」来相信。
+        // 形状：busy（动作进行中）| fail（失败的批量结果，红 pill 那条）。
+        // busy 走 `beginAction`（与真实按钮同一条闸门入口 —— 它只置状态、
+        // 不起子进程：引擎调用在 actUpdate 里 beginAction 返回**之后**才
+        // spawn）；fail 走 `report`（与 `endAction` 同一条出口），文案取
+        // describeBulkResult 批量失败的真实形状。
+        let action = (getVariable("DD_SNAP_ACTION") ?? "").trimAscii()
+        if (action == "busy") {
+            beginAction(model, "深更新 · 全部项目")
+        } else if (action == "fail") {
+            model.report("✗ 深更新 · 全部项目：已注册 3 个，成功 1 个，失败 2 个：atlas（路径不存在或卷未挂载）、beacon（分支读取失败）", false)
+        }
+
         // 对话页快照要给**预置对话**，否则拍到的是空态 ——
         // 空态里没有消息卡，看不到 Markdown 在 `Panel` + `ScrollView`
         // 这层嵌套里排得对不对（与 C5 面板的嵌套不同，得单独拍）。

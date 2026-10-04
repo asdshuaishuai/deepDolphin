@@ -218,6 +218,10 @@ func detail(model: AppModel, app: DesktopApp, dark: Bool): Unit {
         return
     }
     VStack {
+        // 写动作「正在执行 / 结果一行」（交互流 D-01）。挂主区顶部、
+        // 四个路由页共用 —— 仪表盘上点深更新跑几分钟，不能没有任何
+        // 进行中说明。详情页不重复（落点判定见 actionStripOf）。
+        actionStripBanner(model, dark)
         if (!model.routeNotice.value.isEmpty()) {
             banner("提示", model.routeNotice.value, C_ORANGE, dark, {=> model.routeNotice.value = ""})
         }
@@ -280,6 +284,36 @@ private func banner(title: String, text: String, tint: Int64, dark: Bool, onClos
             Button("关闭", onClose).fontSize(fsLabel())
         }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
     }.style(dsTinted(tint, dark)).padding(10.0.vp, 6.0.vp)
+}
+
+/// 写动作横幅（交互流 D-01）。**落点由 `actionStripOf` 唯一裁决**：
+/// 动作在跑 → 「进行中」pill + 「正在执行：…」，不可关（`bannerDismissible`）；
+/// 空闲且有结果 → 「完成 / 未完成」pill + 结果一行，可关 —— 关闭与
+/// routeNotice/problem 两个横幅同一条语义（写 State 清空，下一帧消失）。
+/// pill 的词与配色跟详情页头、添加/扫描面板的结果区共用同一档
+///（未完成 = 红），同一件事在全应用不说两套话。
+private func actionStripBanner(model: AppModel, dark: Bool): Unit {
+    match (actionStripOf(model.root.value, model.actionBusy.value, model.lastResult.value)) {
+        case ActionStrip.BannerBusy =>
+            Panel {
+                HStack {
+                    dsPill("进行中", C_ACCENT, dark)
+                    Flexible { Label("正在执行：${model.actionLabel.value}").fontSize(fsBody()).wrap() }
+                }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
+            }.style(dsTinted(C_ACCENT, dark)).padding(10.0.vp, 6.0.vp)
+        case ActionStrip.BannerResult =>
+            let tint = (if (model.lastResultOk.value) { C_SHALLOW } else { C_RED })
+            Panel {
+                HStack {
+                    dsPill(if (model.lastResultOk.value) { "完成" } else { "未完成" }, tint, dark)
+                    Flexible { Label(model.lastResult.value).fontSize(fsBody()).wrap() }
+                    if (bannerDismissible(model.actionBusy.value)) {
+                        Button("关闭", {=> model.lastResult.value = ""}).fontSize(fsLabel())
+                    }
+                }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
+            }.style(dsTinted(tint, dark)).padding(10.0.vp, 6.0.vp)
+        case _ => ()
+    }
 }
 
 /// 按选中分派。**只有一个 `switch`**，和 macOS 端 `detail` 一致 ——

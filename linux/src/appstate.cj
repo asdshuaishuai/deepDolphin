@@ -36,10 +36,10 @@ public class AppModel {
     /// 侧栏「视图」组的选中下标（0 仪表盘 / 1 看板 / 2 里程碑，-1 = 不高亮）。
     /// 同样必须持久，原因见 `selected`。
     public let viewIndex = State<Int64>(0)
-    /// 详情页内的子页：概览 / 提交构成 / 分支 / 日志 / git
-    public let detailTab = State<Int64>(0)
-    /// 文档页内的文件页签（README / AGENTS / CLAUDE）
-    public let docTab = State<Int64>(0)
+    // ~~detailTab / docTab~~ —— 已删（交互流 D-01 清死写）。
+    // 它们是「详情页拆 5 个子页签」时代的字段，而详情页早改成一列长卡片、
+    // 文档改成每份一张卡（detail.cj 文件头注），全仓对这两个名字**零读零写**
+    // —— 挂着只会让人以为还有子页签这回事。
 
     // -------------------------------------------------------------- 忙碌与结果
     /// 读操作中。闸门只挡**重复发起**，不排队 ——
@@ -79,15 +79,23 @@ public class AppModel {
     public let journalProblem = State<String>("")
     /// 文档载荷被拒 / 读出错时的原因。空串 = 正常。
     public let docsProblem = State<String>("")
+    /// 当前状态一行。由 `syncLabels` 派生（定位中 / 引擎问题 / 契约过旧 /
+    /// 正在执行：X / 尚未读取 / 失败统计 / 全部成功），**唯一消费点是侧栏
+    /// 状态条**（sidebar.cj 的 SidebarStatusStrip）—— 交互流 D-01 之前
+    /// 八处写入全视图零消费，是「写了没人看」的死写族。
     public let statusText = State<String>("")
-    public let emptyHint = State<String>("")
+    // ~~emptyHint~~ —— 已删（交互流 D-01 清死写）：syncLabels 曾往里写三句
+    //（定位中 / 引擎问题 / 「点右上角刷新」），全视图零消费。三句话各自由
+    // 真正在场的地方说：定位中 → detail 的定位卡；引擎问题 → `problem`（横幅
+    // 与引导页都读它）；「读取项目群」按钮就摆在工具栏，不需要一句暗语。
     public let engineLabel = State<String>("")
     public let canRefresh = State<Bool>(false)
 
     // -------------------------------------------------------------- 轮询
     public let pollEnabled = State<Bool>(true)
-    /// 距离下次轮询还有多少毫秒。由 FrameHandler 推进。
-    public let pollCountdown = State<Int64>(POLL_INTERVAL_MS)
+    // ~~pollCountdown~~ —— 已删（交互流 D-01 清死写）：注释说「由 FrameHandler
+    // 推进」，而轮询早改成了后台线程（见 startPolling 的长注），这个字段
+    // 全仓零读零写 —— C2 的周期是常量 `POLL_INTERVAL_MS`，不需要第二个出处。
 
     // -------------------------------------------------------------- 外观
     /// 走暗色色板。**必须是 State** —— 用户在设置里切亮/暗时
@@ -344,19 +352,16 @@ public class AppModel {
             // 引擎还在定位（定位挪到了首帧后，R4-10）。「还没找」与「找了但没有」
             // 是两句话：这一态只说前者，安装引导留给定位完成之后。
             this.problem.value = ""
-            this.emptyHint.value = "正在定位引擎…"
             this.statusText.value = "正在定位引擎…"
             this.canRefresh.value = false
             return
         }
         if (!this.engineProblem.isEmpty()) {
             this.problem.value = this.engineProblem
-            this.emptyHint.value = this.engineProblem
             this.statusText.value = this.engineProblem
             this.canRefresh.value = false
             return
         }
-        this.emptyHint.value = "点右上角「刷新」读取项目群。"
         this.canRefresh.value = true
         this.engineLabel.value = engineLabelFor(this.engineVia, this.enginePath)
 
@@ -391,6 +396,49 @@ public class AppModel {
         this.lastResultOk.value = ok
         this.refreshLabels()
     }
+}
+
+// ===========================================================================
+// 写动作「正在执行 / 结果一行」的落点（交互流 D-01）
+//
+// 本仓纪律「写操作必须留结果」此前只兑现了一半：`lastResult` 只渲染在
+// 项目详情页头，仪表盘/看板/里程碑上发起的写动作（批量深更新要跑几分钟）
+// 主区没有任何进行中说明，逐项目成败名单（describeBulkResult）只在恰好
+// 停在详情页时可见。落点判定抽成**纯函数**：详情页头一直在场
+// （detailHeader 读 `lastResult`），横幅在详情页上就闭嘴 —— 同一块披露面
+// 不挂两处；其余页走主区顶部横幅。
+// ===========================================================================
+
+/// 写动作信息此刻该落在哪块披露面。
+public enum ActionStrip {
+    | BannerBusy    // 主区横幅：「正在执行：…」—— 动作在跑，不可关
+    | BannerResult  // 主区横幅：结果一行（完成/未完成 pill）—— 可关
+    | PageHeader    // 详情页页头已在场，横幅不重复
+    | Silent        // 没有要说的事（⚠ 不能叫 Nothing —— 它是仓颉关键字）
+}
+
+/// 落点判定。**纯函数**，判据直接喂（路由, 忙碌, 结果行）。
+public func actionStripOf(root: RootSection, actionBusy: Bool, lastResult: String): ActionStrip {
+    if (rootSectionIs(root, RootSection.Project)) {
+        // 详情页头**一直**读 lastResult（detail.cj 的 detailHeader）——
+        // 忙碌中的「正在…」与结束后的成败都由它出，横幅不再挂第二份。
+        return ActionStrip.PageHeader
+    }
+    if (actionBusy) {
+        return ActionStrip.BannerBusy
+    }
+    if (!lastResult.isEmpty()) {
+        return ActionStrip.BannerResult
+    }
+    return ActionStrip.Silent
+}
+
+/// 主区横幅此刻可不可关。**动作在跑时不可关**：把「正在执行」条关掉，
+/// 等于用户亲手关掉唯一的进行中说明 —— 深更新那几分钟里界面重新变成
+/// 「点了没反应」。空闲时的结果行才归用户处置（关掉 = 明确不要看了）。
+/// **纯函数**，判据钉住这条边界。
+public func bannerDismissible(actionBusy: Bool): Bool {
+    return !actionBusy
 }
 
 // ===========================================================================

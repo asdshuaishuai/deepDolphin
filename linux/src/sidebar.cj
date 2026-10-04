@@ -395,11 +395,18 @@ private func sidebarActions(model: AppModel): Unit {
 
 /// 侧栏常驻状态条（macOS 端 `SidebarStatusStrip`）。
 ///
-/// ⚠ 只报**我们确实知道**的两件事：现在有没有东西在跑、上次刷新什么时候。
-/// 不编一个「Git Hook Active」—— 那会让用户以为有个钩子在替他跑，
-/// 而我们根本没装。
+/// ⚠ 只报**我们确实知道**的事：现在有没有东西在跑、`statusText` 的派生
+/// 一行（syncLabels：定位中 / 引擎问题 / 正在执行：X / 尚未读取 /
+/// 失败统计 / 全部成功）、上次刷新什么时候。不编一个「Git Hook Active」——
+/// 那会让用户以为有个钩子在替他跑，而我们根本没装。
+///
+/// 【statusText 的唯一消费点】（交互流 D-01）：syncLabels 的八处写入曾经
+/// 全视图零消费 —— 源码扫描判据钉着「这行消费必须在」。
 private func SidebarStatusStrip(model: AppModel, dark: Bool): Unit {
     let busy = model.busy.value || model.actionBusy.value
+    // 引擎连接失败时这一行染警示色（原「引擎连接失败」行的语义并进来），
+    // 正常叙述用灰 —— 侧栏底部一行小字，不该抢主区的注意力。
+    let engineDown = !model.problem.value.isEmpty() && model.snapshot.value.isNone()
     VStack {
         HStack {
             dsDot(dsColor(if (busy) { C_ACCENT } else { C_SHALLOW }))
@@ -409,16 +416,11 @@ private func SidebarStatusStrip(model: AppModel, dark: Bool): Unit {
                 Label(clockText(model.lastRefreshedMs.value)).fontSize(fsLabel()).muted()
             }
         }.spacing(5.0.vp).hug()
-        // 「读不出来」与「还没刷新过」是两件事，措辞必须不同。
-        //
-        // ⚠ 判据必须是**界面上有没有数据**，不是「内部有没有走过刷新流程」。
-        // 原来只看 `lastRefreshedMs == 0`，于是夹具模式（数据直接读盘、
-        // 不经过刷新流程）下状态条一直写「尚未刷新」—— 而同一屏上
-        // 项目列表、仪表盘全是实打实的数据。那句话不是描述，是自相矛盾。
-        if (!model.problem.value.isEmpty() && model.snapshot.value.isNone()) {
-            Label("引擎连接失败").fontSize(fsLabel()).foregroundColor(dsColor(dsTextColor(C_ORANGE, dark))).maxLines(1)
-        } else if (model.lastRefreshedMs.value == 0 && model.snapshot.value.isNone()) {
-            Label("尚未刷新").fontSize(fsLabel()).muted()
+        // 状态一行。「读不出来」与「还没刷新过」措辞不同 —— syncLabels 已按
+        // 状态分好句，这里原样转述，不在这里再编第二套说法。
+        if (!model.statusText.value.isEmpty()) {
+            Label(model.statusText.value).fontSize(fsMicro()).wrap()
+                .foregroundColor(dsColor(dsTextColor(if (engineDown) { C_ORANGE } else { C_SLATE }, dark)))
         }
     }.hug().spacing(2.0.vp).padding(10.0.vp, 8.0.vp)
 }
