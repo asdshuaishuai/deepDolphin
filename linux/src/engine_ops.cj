@@ -91,9 +91,19 @@ public func callRaw(
         case None =>
             // 写操作走到这里：动作结果不明。
             if (writeOp) {
+                // 引擎在 stderr 上给了原因与下一步时必须带上（R1-03）：
+                // 读路径早就这么拼了，写路径漏了，同一个失败两边说法不一样。
+                // 「结果不明」四个字保留 —— 没有可解析载荷就**不能**当成功，
+                // 也不能替引擎宣布失败细节之外的结果。
+                let stderr = res.stderr.trimAscii()
+                let why = if (stderr.isEmpty()) {
+                    "引擎退出码 ${res.exitCode}，且没有输出可解析的 JSON —— 这次动作的结果不明，请到项目里确认后再重试。"
+                } else {
+                    "引擎退出码 ${res.exitCode}，且没有输出可解析的 JSON —— ${stderr} 结果不明，请到项目里确认后再重试。"
+                }
                 return Payload(
                     None,
-                    "引擎退出码 ${res.exitCode}，且没有输出可解析的 JSON —— 这次动作的结果不明，请到项目里确认后再重试。",
+                    why,
                     false,
                     res.exitCode,
                     res.stdout,

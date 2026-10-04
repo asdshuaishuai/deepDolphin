@@ -168,7 +168,18 @@ func detail(model: AppModel, app: DesktopApp, dark: Bool): Unit {
             banner("注意", model.problem.value, C_ORANGE, dark, {=> model.problem.value = ""})
         }
         if (model.enginePath.isEmpty()) {
-            setupGuide(model, app, dark)
+            if (model.engineLocatedDone()) {
+                setupGuide(model, app, dark)
+            } else {
+                // 引擎还在定位（定位挪到了首帧后，R4-10）。「还没找」与
+                // 「找了但没有」是两句话 —— 引导页只留给定位完成之后，
+                // 否则每次启动都要先闪一下「没装引擎」的假象。
+                Panel {
+                    VStack {
+                        Label("正在定位引擎…").fontSize(15.0).muted()
+                    }.spacing(0.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
+                }.style(dsSurface(DsLevel.Card, dark)).contentPadding(24.0.vp).flex()
+            }
         } else if (model.snapshot.value.isSome() && allProjectsOf(model).isEmpty()) {
             emptyState(
                 (if (model.problem.value.isEmpty()) { "暂无已注册项目" } else { "引擎连接失败" }),

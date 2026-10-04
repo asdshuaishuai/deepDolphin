@@ -1430,6 +1430,163 @@ func applyScopeIsTheOnlyWriterAndItSetsAllThreeFieldsTogether(): Unit {
 }
 
 // ---------------------------------------------------------------------------
+// 写操作契约：批量更新信封 / 里程碑动作判定（R1-01 / R1-02）
+// ---------------------------------------------------------------------------
+
+/// 引擎 `update --json` 在 **2 个项目**上的真实返回（/tmp 沙箱、DEEPGIT_HOME
+/// 隔离实测，2026-10-04）：顶层键是 results / count / failed / succeeded，
+/// **没有** `projects` 键；成功项带 project + ok；失败项是 DgError 桩
+/// `{code,message}` —— 没有 ok、没有 error，项目名在 message 里。
+private let BULK_UPDATE_ENVELOPE = """
+{"results":[
+ {"ok":true,"mode":"shallow","project":"atlas","commitCount":3,"docs":[
+   {"file":"README.md","changed":true,"created":false,"backup":"/tmp/bak"}]},
+ {"code":"UPDATE_FAILED","message":"gone 更新失败：路径不存在或卷未挂载"}
+],"count":2,"failed":1,"succeeded":1}
+"""
+
+/// 里程碑动作失败时的真实载荷（实机探针：
+/// `moongit milestone done <项目> nosuch --json` → exit 1）。
+private let MILESTONE_ERROR_STUB = """
+{"error":true,"code":"MILESTONE_NOT_FOUND","message":"未找到里程碑：nosuch"}
+"""
+
+@Test
+func bulkUpdateReadsTheRealAggregateEnvelopeNotProjects(): Unit {
+    // 负控（R1-01）：旧实现读 `projects`，这份**真实形状**的载荷会被报成
+    // 「引擎没有返回逐项目结果」—— 引擎明明把成败名单给了，界面却说没给，
+    // 哪个项目失败永远显示不出来。
+    let v = Json.parse(BULK_UPDATE_ENVELOPE).getOrThrow()
+    let line = describeBulkResult(v)
+    @Expect(line.contains("成功 1"))
+    @Expect(line.contains("失败 1"))
+    @Expect(line.contains("gone"))
+    @Expect(line.contains("路径不存在或卷未挂载"))
+    @Expect(!line.contains("没有返回逐项目结果"))
+}
+
+@Test
+func bulkUpdateAcceptsTheSingleProjectBareResultToo(): Unit {
+    // 单项目时引擎不包信封、直返逐仓结果
+    // （contract-check.sh:74：两种形状都合法，两种都要认）。
+    let v = Json.parse(
+        "{\"ok\":true,\"project\":\"atlas\",\"commitCount\":1,\"docs\":[]}").getOrThrow()
+    let line = describeBulkResult(v)
+    @Expect(line.contains("atlas"))
+    @Expect(!line.contains("没有返回逐项目结果"))
+}
+
+@Test
+func bulkUpdateSingleProjectErrorStubIsAFailureNotAMystery(): Unit {
+    // 单项目失败时引擎直返**裸**错误桩 {code,message}
+    // （multiProjectJson 对单元素原样打印）—— 没有 ok 键。
+    // 它必须渲染成 ✗ 与原因，不能落进「没给结果」那句兜底话里。
+    let v = Json.parse(
+        "{\"code\":\"UPDATE_FAILED\",\"message\":\"atlas 更新失败：权限不足\"}").getOrThrow()
+    let line = describeBulkResult(v)
+    @Expect(line.startsWith("✗"))
+    @Expect(line.contains("atlas 更新失败：权限不足"))
+}
+
+@Test
+func milestoneFailurePayloadWithoutResultKeyRendersAsFailure(): Unit {
+    // 负控（R1-02）：旧代码 `boolAt(v,"applied",true)` 把这个桩渲染成
+    // 「✓ …标记达成」，与详情页的「未完成」红 pill 并排自相矛盾。
+    let v = Json.parse(MILESTONE_ERROR_STUB).getOrThrow()
+    let (line, ok) = milestoneResultOf("里程碑「nosuch」标记达成", v,
+        "未找到里程碑：nosuch（MILESTONE_NOT_FOUND）")
+    @Expect(line.startsWith("✗"))
+    @Expect(line.contains("未找到里程碑：nosuch"))
+    @Expect(!ok)
+}
+
+@Test
+func milestoneAppliedFalseWithCleanExitIsStillAFailure(): Unit {
+    // 引擎明说：同名 tag 规则会把写入压回（requested done、生效 open）。
+    // 退出码 0 不代表生效 —— 结果行与红 pill 必须说同一句话。
+    let v = Json.parse(
+        "{\"project\":\"atlas\",\"milestone\":\"v1\",\"requested\":\"done\",\"status\":\"open\",\"applied\":false}").getOrThrow()
+    let (line, ok) = milestoneResultOf("里程碑「v1」标记达成", v, "")
+    @Expect(line.startsWith("✗"))
+    @Expect(line.contains("open"))
+    @Expect(!ok)
+}
+
+@Test
+func milestoneSuccessPayloadKeepsTheCheckmarkAndStatus(): Unit {
+    let v = Json.parse(
+        "{\"project\":\"atlas\",\"milestone\":\"v1\",\"requested\":\"done\",\"status\":\"done\",\"applied\":true}").getOrThrow()
+    let (line, ok) = milestoneResultOf("里程碑「v1」标记达成", v, "")
+    @Expect(line.startsWith("✓"))
+    @Expect(line.contains("done"))
+    @Expect(ok)
+}
+
+@Test
+func milestoneRemoveSuccessIsNotMistakenForAFailure(): Unit {
+    // remove 的成功载荷恒发 removed、**没有 applied/ok**（引擎 cli.cj 出口）。
+    // 「结果键一个都没有才算失败」的口径必须容得下它，否则删除恒报 ✗。
+    let v = Json.parse(
+        "{\"project\":\"atlas\",\"milestone\":\"v1\",\"removed\":true}").getOrThrow()
+    let (line, ok) = milestoneResultOf("里程碑「v1」删除", v, "")
+    @Expect(line.startsWith("✓"))
+    @Expect(ok)
+}
+
+@Test
+func milestoneNonStringStatusDoesNotThrow(): Unit {
+    // R4-05：status 不是字符串时，旧代码 `asStr(s).getOrThrow()` 在
+    // app.post 里抛穿到 main，未捕获会杀死应用。现在按「没有 status」处理。
+    let v = Json.parse(
+        "{\"applied\":true,\"status\":42}").getOrThrow()
+    let (line, ok) = milestoneResultOf("里程碑「v1」标记达成", v, "")
+    @Expect(line.startsWith("✓"))
+    @Expect(!line.contains("42"))
+    @Expect(ok)
+}
+
+@Test
+func engineFailureDescriptionReadsTheBoolErrorShape(): Unit {
+    // R1-02：写失败桩的 error 是**布尔**不是字符串。只当字符串读的话，
+    // 引擎给的原因会被丢成「引擎退出码 1（未给出原因）」。
+    let res = ExecResult(1, MILESTONE_ERROR_STUB, "", false)
+    let why = describeEngineFailure(res)
+    @Expect(why.contains("未找到里程碑：nosuch"))
+    @Expect(why.contains("MILESTONE_NOT_FOUND"))
+    @Expect(!why.contains("未给出原因"))
+}
+
+// ---------------------------------------------------------------------------
+// ISO 8601 解析：紧凑偏移与小数秒（R1-07）
+// ---------------------------------------------------------------------------
+
+@Test
+func isoCompactOffsetsParseToTheSameInstantAsColonForm(): Unit {
+    // 紧凑形 `±HHMM`：符号在 b[19]、oh 在 20、om 在 22。旧代码把 om 取在
+    // 23（那是 `:MM` 的位置），紧凑形读出界，`+0800` 永远解析失败。
+    let colon = parseIso8601Ms("2026-01-01T08:00:00+08:00").getOrThrow()
+    @Expect(parseIso8601Ms("2026-01-01T08:00:00+0800").getOrThrow(), colon)
+    let minusColon = parseIso8601Ms("2026-01-01T00:00:00-08:00").getOrThrow()
+    @Expect(parseIso8601Ms("2026-01-01T00:00:00-0800").getOrThrow(), minusColon)
+    // 西经负偏移把 UTC 时刻推后 8 小时（00:00-08:00 = 08:00Z）
+    @Expect(minusColon - colon, 8 * 3600 * 1000)
+}
+
+@Test
+func isoFractionalSecondsAreAcceptedWithMillisecondPrecision(): Unit {
+    // 引擎 journal 的 `at` 实测带 9 位小数（…T09:36:32.800460121+08:00），
+    // 旧实现整条拒绝 → 这类项目「多久没动」读不出来。
+    let base = parseIso8601Ms("2026-01-01T00:00:00Z").getOrThrow()
+    @Expect(parseIso8601Ms("2026-01-01T00:00:00.5Z").getOrThrow(), base + 500)
+    @Expect(parseIso8601Ms("2026-01-01T00:00:00.25+08:00").getOrThrow(), base + 250 - 8 * 3600 * 1000)
+    // 超过毫秒的位截断、不进位（0.9999 秒不能进成下一秒）
+    @Expect(parseIso8601Ms("2026-01-01T00:00:00.9999Z").getOrThrow(), base + 999)
+    @Expect(parseIso8601Ms("2026-01-01T00:00:00.800460121+08:00").getOrThrow(), base + 800 - 8 * 3600 * 1000)
+    // `.` 后没有数字仍是形状不认识
+    @Expect(parseIso8601Ms("2026-01-01T00:00:00.Z").isNone())
+}
+
+// ---------------------------------------------------------------------------
 // 侧栏选中态：必须跨帧存活
 // ---------------------------------------------------------------------------
 

@@ -421,10 +421,16 @@ func utf8SequenceLen(bytes: Array<UInt8>, i: Int64): Int64 {
 ///
 /// 第二个返回值不能省：读取中途管道被关掉时，已经读到的数据是**残缺**的，
 /// 而「残缺输出 + exit 0」和「正常输出 + exit 0」在调用方看来一模一样。
+///
+/// 分块缓冲（R4-09）：旧实现把每个读到的字节逐个 `add` 进
+/// `ArrayList<UInt8>` —— 每字节一次装箱调用，dashboard 那种全量历史输出
+/// 就是百万次量级。改成「整块存下、结尾一次性拼成一个数组」，拷贝
+/// 只发生两次（块切片 + 末尾合并），量级从 O(字节×扩容) 降到 O(字节)。
 private func readAllFromPipe(pipe: ?InputStream): (String, Bool) {
     match (pipe) {
         case Some(input) =>
-            let total = ArrayList<UInt8>()
+            let chunks = ArrayList<Array<UInt8>>()
+            var total: Int64 = 0
             let buf = Array<UInt8>(65536, repeat: 0u8)
             var clean = true
             while (true) {
@@ -438,48 +444,20 @@ private func readAllFromPipe(pipe: ?InputStream): (String, Bool) {
                 if (n <= 0) {
                     break
                 }
-                for (i in 0..n) {
-                    total.add(buf[i])
-                }
+                // 区间下标产出的是拷贝，块之间互不影响，buf 可以复用。
+                chunks.add(buf[0..n])
+                total += n
             }
-            return (fromUtf8Lossy(total.toArray()), clean)
+            let all = Array<UInt8>(total, repeat: 0u8)
+            var at: Int64 = 0
+            for (c in chunks) {
+                for (i in 0..c.size) {
+                    all[at + i] = c[i]
+                }
+                at += c.size
+            }
+            return (fromUtf8Lossy(all), clean)
         case None => return ("", true)
-    }
-}
-
-/// 一次引擎调用的结果：解析好的载荷 + 失败信息。
-///
-/// 非 0 退出**不等于**没有载荷。引擎把「整体不可用」编码在退出码里，
-/// 而失败的具体原因在 payload 里。丢掉 payload 就只剩一句无信息量的
-/// 「引擎退出码 1」。
-public class EngineCall {
-    public let payload: Option<JsonValue>
-    /// 给人看的失败原因；成功时为空串。
-    public let problem: String
-    /// 引擎以非 0 退出但给出了可解析载荷 —— 界面必须照常渲染并披露。
-    public let partial: Bool
-    /// 载荷来自一个**契约过旧**的引擎：模型依赖的披露字段根本不存在。
-    /// 见 `checkContract`。
-    public let staleContract: Bool
-    /// 引擎自报版本，仅用于把「请升级」这句话说具体。
-    public let engineVersion: String
-
-    public init(
-        payload: Option<JsonValue>,
-        problem: String,
-        partial: Bool,
-        staleContract: Bool,
-        engineVersion: String
-    ) {
-        this.payload = payload
-        this.problem = problem
-        this.partial = partial
-        this.staleContract = staleContract
-        this.engineVersion = engineVersion
-    }
-
-    public func ok(): Bool {
-        return this.problem.isEmpty()
     }
 }
 
@@ -611,54 +589,6 @@ public func shapeLabel(shape: PayloadShape): String {
     }
 }
 
-/// 调一次引擎并解析它的 `--json` 输出。
-///
-/// 契约：即使 `res.exitCode != 0`，只要 stdout 是可解析的 JSON 就返回它，
-/// 由调用方决定怎么披露。返回 `problem` 时 `payload` 可能是 None
-/// （引擎根本没吐出可解析的东西）。
-public func callEngine(bin: String, args: Array<String>, timeoutMs: Int64): EngineCall {
-    let res = execCapture(bin, args, timeoutMs)
-    if (res.timedOut) {
-        return EngineCall(None, res.stderr, false, false, "")
-    }
-    let ver = engineVersionOf(bin)
-
-    match (Json.parse(res.stdout)) {
-        case Some(v) =>
-            let stale = !checkContract(v)
-            if (stale) {
-                return EngineCall(
-                    Some(v),
-                    staleContractMessage(ver),
-                    true,
-                    true,
-                    ver
-                )
-            }
-            if (res.exitCode == 0) {
-                return EngineCall(Some(v), "", false, false, ver)
-            }
-            // 有载荷但退出码非 0：整体不可用，载荷仍要交给界面。
-            return EngineCall(Some(v), describeEngineFailure(res), true, false, ver)
-        case None =>
-            let why = if (!res.stderr.isEmpty()) {
-                res.stderr.trimAscii()
-            } else {
-                "引擎没有输出可解析的 JSON（退出码 ${res.exitCode}）"
-            }
-            return EngineCall(None, why, false, false, ver)
-    }
-}
-
-/// 读一次引擎自报版本（缓存意义不大，但只要在报错路径上跑一次）。
-private func engineVersionOf(bin: String): String {
-    let r = execCapture(bin, ["version"], 8000)
-    if (r.timedOut || r.exitCode != 0) {
-        return ""
-    }
-    return r.stdout.trimAscii()
-}
-
 func staleContractMessage(ver: String): String {
     let who = if (ver.isEmpty()) { "找到的引擎" } else { "引擎 ${ver}" }
     return "${who} 的输出缺少本客户端依赖的披露字段（failedProjects / listedProjects / 逐项目 error）。" +
@@ -669,11 +599,31 @@ func staleContractMessage(ver: String): String {
 /// 从引擎的输出里挖出**具体**的失败原因。
 ///
 /// 引擎的全部项目采集失败时会打印完整 JSON 再 exit 1，stderr 是空的。
-/// 只报「引擎退出码 1」等于把载荷白留；所以这里优先读 `error` /
-/// `failedProjects` 里的原文。
+/// 只报「引擎退出码 1」等于把载荷白留；所以这里优先读载荷里的原文。
+///
+/// ⚠ 错误载荷有两种形状（R1-02，都实测过）：
+///   · 读失败：`{error:"原因字符串"}` —— error 是**字符串**；
+///   · 写失败：`{error:true, code, message}` —— error 是**布尔**
+///     （实机探针：`moongit milestone done atlas nosuch --json` → exit 1，
+///     stdout `{"error":true,"code":"MILESTONE_NOT_FOUND","message":"未找到里程碑：nosuch"}`，
+///     见引擎 src/util/errors.cj 的 errJson）。
+/// 只把 error 当字符串读的话，第二种形状读出来是空串，
+/// 引擎给的原因就被丢成「引擎退出码 1（未给出原因）」。
 func describeEngineFailure(res: ExecResult): String {
     match (Json.parse(res.stdout)) {
         case Some(v) =>
+            // 形状一：{error:true, code, message}（写失败桩）
+            if (Json.boolAt(v, "error", false)) {
+                let message = Json.strAt(v, "message", "").trimAscii()
+                let code = Json.strAt(v, "code", "").trimAscii()
+                if (!message.isEmpty()) {
+                    return (if (code.isEmpty()) { message } else { "${message}（${code}）" })
+                }
+                if (!code.isEmpty()) {
+                    return code
+                }
+            }
+            // 形状二：{error:"原因字符串"}
             let top = Json.strAt(v, "error", "")
             if (!top.isEmpty()) {
                 return top

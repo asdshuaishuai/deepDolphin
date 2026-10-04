@@ -173,7 +173,10 @@ public func detectSystemDark(): Option<Bool> {
 
     // 3. macOS。`AppleInterfaceStyle` **不存在就是亮色** ——
     // 这是唯一一个「查不到」有确定含义的地方，所以单独处理。
-    let r = execCapture("defaults", ["read", "-g", "AppleInterfaceStyle"], 3000)
+    // ⚠ 探测超时 1500ms（R4-10）：这条链在建窗之前跑（Theme 是构造参数），
+    // 每个挂住的探测都直接挡住首屏；正常应答在几十毫秒内，
+    // 1.5 秒足够区分「答了」与「挂了」。
+    let r = execCapture("defaults", ["read", "-g", "AppleInterfaceStyle"], 1500)
     if (r.exitCode == 0) {
         return Some(asciiLower(r.stdout).contains("dark"))
     }
@@ -184,11 +187,12 @@ public func detectSystemDark(): Option<Bool> {
 }
 
 /// 跑一条查询命令，stdout 含 `hit` 判暗、含 `miss` 判亮；都不是就当没探到。
+/// 超时 1500ms（R4-10）：这条链在建窗之前跑，探测挂住就是在挡首屏。
 private func probe(argv: Array<String>, hit: String, miss: String): Bool {
     if (argv.isEmpty()) {
         return false
     }
-    let r = execCapture(argv[0], argv[1..], 3000)
+    let r = execCapture(argv[0], argv[1..], 1500)
     if (r.exitCode != 0 || r.timedOut) {
         return false
     }

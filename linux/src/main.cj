@@ -60,6 +60,13 @@ private func wantsSnapshot(): Bool {
 main(args: Array<String>): Int64 {
     // 字体必须在建窗之前装好。顺序反了窗口会先用系统字体排完版，
     // 中文全成豆腐块，而 CUI 不会自动重排。
+    // ⚠ R4-10：建窗前**只做这一件阻塞的事**。引擎定位要起子进程探活
+    // （每个候选一次 `version`，挂住的候选要等满超时），外观探测最多
+    // 要起 5 个子进程 —— 它们都不该挡住首帧。引擎定位挪到了首帧之后
+    // （见 `app.run` 闭包里的挂载段）；外观必须留在建窗前 —— CUI 的
+    // `Theme` 是构造参数、建成之后换不了（vendor `src/core/theme.cj`：
+    // "Immutable"，且 `DesktopApp` 没有 setTheme）—— 但它的探测超时
+    // 已降到 1.5 秒，最坏也不会再把窗口挡十几秒。
     let fontProblem = installAppFonts()
 
     // 上次进程的 AI 请求临时文件可能有残留：头文件里有 API Key，
@@ -77,16 +84,18 @@ main(args: Array<String>): Int64 {
     // 建成之后换不了（`Theme` 不可变，且 `DesktopApp` 没有 setTheme）。
     // 要跟随系统切换就得重启应用 —— 这条限制在界面上要说出去，
     // 否则用户点「暗色」发现要重启，会以为功能坏了。
+    // （R4-10：locateEngine 已挪到首帧后；这里留下的探测子进程超时降到 1.5 秒。）
     let (dark, probeFailed) = resolveAppearance()
-    let model = AppModel(locateEngine())
+    // 引擎位置**不在建窗前找**（R4-10）：定位要起子进程探活，找不着的候选
+    // 一个个试过去能把首屏拖住几十秒。模型先建、首帧后挂（见 app.run 闭包）。
+    // 夹具模式例外：快照门禁拍的是布局，挂载语义必须与正常路径一致，
+    // 而 app.run 之前没有别的阻塞工作，同步挂上代价最小。
+    let fixtureDir = getVariable("DD_FIXTURE_DIR") ?? ""
+    let model = (if (fixtureDir.isEmpty()) { AppModel() } else { AppModel(locateEngine()) })
     model.dark.value = dark
     model.appearance.value = readSavedAppearance()
     model.appearanceUnknown.value = probeFailed
     model.problem.value = fontProblem
-
-    // 夹具模式：直接从磁盘读引擎真实输出，不起子进程。
-    // 布局自查走这条路 —— 理由见 `loadFromFixtureDir` 的注释。
-    let fixtureDir = getVariable("DD_FIXTURE_DIR") ?? ""
     if (!fixtureDir.isEmpty()) {
         loadFromFixtureDir(model, fixtureDir)
         model.booted = true
@@ -237,6 +246,12 @@ main(args: Array<String>): Int64 {
     // 启动就读一次。窗口开着却空空如也、要用户点一下「刷新」才动，
     // 那是缺陷不是设计 —— 引擎调用本身就走后台线程，不占 UI。
     // 引擎找不到时 `requestRefresh` 会直接返回，此时空态已经把原因说清楚了。
+    //
+    // ⚠ R1-02：`app.run` 里（构建闭包、post 回来的闭包、拆卸清理）抛出的
+    // 异常会穿透到这里 —— 不接的话进程以未捕获异常裸崩、退出码非 0，
+    // 引擎给的原因一个字都看不见。打印到 stderr 后**以 0 退出**：
+    // 此时窗口生命周期已经结束，再按崩溃对待只会误导会话与调试器。
+    try {
     app.run {
         // 一次性闸门。写在 build 里就得自己保证只跑一次 ——
         // `app.run` 的闭包是**每次状态变化都重新执行**的构建函数，
@@ -244,8 +259,27 @@ main(args: Array<String>): Int64 {
         // 快照模式下 `booted` 已被预载置真，这里不会再发引擎调用。
         if (!model.booted) {
             model.booted = true
-            boot(app, model)
-            startPolling(app, model)
+            // R4-10：引擎定位在**首帧之后**做 —— 建窗前不再起探活子进程。
+            // 定位可能要几秒，也不能在构建闭包里同步跑（那会冻住首帧）：
+            // 放后台，定位完 post 回来挂载，再启动首轮读取与轮询。
+            // 夹具模式在 main 里已同步挂载，走不进这个 spawn。
+            // ⚠ 定位本身也要兜异常（同 requestRefresh 的教训）：spawn 里的
+            // 异常没人接，线程死了 post 永不来，界面永远停在「正在定位引擎…」。
+            spawn {
+                try {
+                    let loc = locateEngine()
+                    app.post {
+                        model.attachEngine(loc)
+                        boot(app, model)
+                        startPolling(app, model)
+                    }
+                } catch (e: Exception) {
+                    let why = e.message
+                    app.post {
+                        model.attachEngine(EngineLocation("", "定位引擎时出错：${why}", ""))
+                    }
+                }
+            }
         }
         // `DD_SNAP_CLICK=<行号>`：模拟「点侧栏仓库组第 N 行」。
         //
@@ -289,6 +323,9 @@ main(args: Array<String>): Int64 {
             applyLaunchRoute(model, model.launchRoute)
         }
         rootView(model, app)
+    }
+    } catch (e: Exception) {
+        eprintln("deepdolphin: 退出时出错：${e.message}")
     }
     return 0
 }

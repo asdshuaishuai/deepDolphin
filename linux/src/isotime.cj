@@ -58,11 +58,12 @@ private func digitAt(b: Array<UInt8>, i: Int64): Int64 {
     return Int64(b[i] - 0x30u8)
 }
 
-/// 解析固定偏移量的 ISO 8601（`2026-10-02T10:00:00+08:00` / `...Z`）。
+/// 解析固定偏移量的 ISO 8601（`2026-10-02T10:00:00+08:00` / `...+0800` /
+/// `...Z` / 带小数秒的 `...00.123+08:00`）。
 ///
 /// 返回 `None` 的情形都要区分，因为它们对界面说的话不同：
 ///   · 字符串空        → 引擎没给这个键
-///   · 形状不认识      → 引擎变了（比如改成了带小数的秒）
+///   · 形状不认识      → 引擎变了
 ///   · 月/日不合法     → 引擎给了坏数据
 /// 统一返回 `None` 是刻意的：三者都归「读不出来」，
 /// 而**不**归「0 天前」—— 后者会说这个项目刚提交过。
@@ -91,6 +92,7 @@ public func parseIso8601Ms(s: String): Option<Int64> {
     var mi: Int64 = 0
     var ss: Int64 = 0
     var offsetMin: Int64 = 0
+    var fracMs: Int64 = 0
     if (b.size >= 19 && (b[10] == 0x54u8 || b[10] == 0x20u8) && b[13] == 0x3Au8 && b[16] == 0x3Au8) {
         hh = twoDigits(b, 11)
         mi = twoDigits(b, 14)
@@ -98,29 +100,57 @@ public func parseIso8601Ms(s: String): Option<Int64> {
         if (hh < 0 || hh > 23 || mi < 0 || mi > 59 || ss < 0 || ss > 60) {
             return None
         }
-        // 偏移量：`Z` 或 `+HH:MM` / `-HH:MM`
-        if (b.size >= 20) {
-            if (b[19] == 0x5Au8 || b[19] == 0x7Au8) {
+        // 小数秒（R1-07）：`.` 后至少一位数字。引擎的 `at` / `journalEntry.at`
+        // 实测带 9 位小数（`...T09:36:32.800460121+08:00`），旧实现整条拒绝。
+        // 返回口径是毫秒：取前 3 位、按位权补齐，更长的位忽略
+        // （截断不进位 —— 0.9999 不能进成下一秒）。
+        var pos: Int64 = 19
+        if (pos < b.size && b[pos] == 0x2Eu8) {
+            pos += 1
+            var digits: Int64 = 0
+            var ms: Int64 = 0
+            while (pos < b.size && isDigit(b[pos])) {
+                if (digits < 3) {
+                    ms = ms * 10 + Int64(b[pos] - 0x30u8)
+                }
+                digits += 1
+                pos += 1
+            }
+            if (digits == 0) {
+                return None
+            }
+            if (digits == 1) {
+                ms *= 100
+            } else if (digits == 2) {
+                ms *= 10
+            }
+            fracMs = ms
+        }
+        // 偏移量：`Z` / `±HH:MM` / 紧凑 `±HHMM`。
+        if (pos < b.size) {
+            if (b[pos] == 0x5Au8 || b[pos] == 0x7Au8) {
                 offsetMin = 0
-            } else if (b[19] == 0x2Bu8 || b[19] == 0x2Du8) {
-                let oh = twoDigits(b, 20)
-                let om = twoDigits(b, 23)
-                if (oh < 0 || om < 0 || oh > 23 || om > 59) {
+            } else if (b[pos] == 0x2Bu8 || b[pos] == 0x2Du8) {
+                let neg = b[pos] == 0x2Du8
+                let oh = twoDigits(b, pos + 1)
+                if (oh < 0 || oh > 23) {
+                    return None
+                }
+                var om: Int64
+                if (pos + 3 < b.size && b[pos + 3] == 0x3Au8) {
+                    // `±HH:MM`
+                    om = twoDigits(b, pos + 4)
+                } else {
+                    // 紧凑形 `±HHMM`：符号在 b[pos]、oh 在 pos+1、om 在 pos+3。
+                    // 旧代码把 om 取在 pos+4（那是 `:MM` 的位置），紧凑形
+                    // 读出界，`+0800` 永远解析失败（R1-07）。
+                    om = twoDigits(b, pos + 3)
+                }
+                if (om < 0 || om > 59) {
                     return None
                 }
                 offsetMin = oh * 60 + om
-                if (b[19] == 0x2Du8) {
-                    offsetMin = -offsetMin
-                }
-            } else if (isDigit(b[19])) {
-                // 紧凑形 `+0800`
-                let oh = twoDigits(b, 19)
-                let om = twoDigits(b, 21)
-                if (oh < 0 || om < 0 || oh > 23 || om > 59) {
-                    return None
-                }
-                offsetMin = oh * 60 + om
-                if (b.size >= 24 && b[23] == 0x2Du8) {
+                if (neg) {
                     offsetMin = -offsetMin
                 }
             } else {
@@ -133,7 +163,7 @@ public func parseIso8601Ms(s: String): Option<Int64> {
     }
     let days = daysFromCivil(y, mo, da)
     let secs = days * 86400 + hh * 3600 + mi * 60 + ss - offsetMin * 60
-    return Some(secs * 1000)
+    return Some(secs * 1000 + fracMs)
 }
 
 private func digits4(b: Array<UInt8>, i: Int64): Int64 {

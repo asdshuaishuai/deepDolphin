@@ -197,15 +197,48 @@ public class AppModel {
     /// 深链打错字之类的说明。独立于 `problem`，不依赖 `busy`。
     public let routeNotice = State<String>("")
 
-    public let enginePath: String
-    public let engineVia: String
-    private let engineProblem: String
+    // ⚠ 引擎位置**可以**晚于建窗再挂（R4-10）：定位要起子进程探活
+    // （每个候选一次 `version`，挂住的候选要等超时），放在建窗前就是把
+    // 首屏押在子进程身上。字段因此是 var 而不是 let，配套 `attachEngine`。
+    public var enginePath: String = ""
+    public var engineVia: String = ""
+    private var engineProblem: String = ""
+    /// 引擎位置挂上了吗。`false` = 还没定位（不是「定位了但没找到」）——
+    /// 这两种状态在界面上必须分开（见 syncLabels 与 detail 的预定位卡片）。
+    private var engineLocated: Bool = false
 
+    /// 正常路径：模型先建、首帧后再定位（`AppModel()` + `attachEngine`）。
+    public init() {
+        this.syncLabels()
+    }
+
+    /// 夹具 / 判据路径：位置现成就直接挂，语义与挂载后完全一致。
     public init(loc: EngineLocation) {
+        this.engineLocated = true
         this.enginePath = loc.path
         this.engineVia = loc.via
         this.engineProblem = loc.problem
         this.syncLabels()
+    }
+
+    /// 把定位结果挂上模型。**只挂一次**：重挂会让晚到的失败探测结果
+    /// 覆盖一个已经工作着的引擎。挂载本身写的是普通字段，
+    /// 但 `syncLabels` 会写 State，界面照常重建。
+    public func attachEngine(loc: EngineLocation): Unit {
+        if (this.engineLocated) {
+            return
+        }
+        this.engineLocated = true
+        this.enginePath = loc.path
+        this.engineVia = loc.via
+        this.engineProblem = loc.problem
+        this.syncLabels()
+    }
+
+    /// 引擎定位完了吗（不管找没找到）。没定位完时界面显示「正在定位」，
+    /// **不能**显示引擎安装引导 —— 那会把「还没找」说成「没有引擎」。
+    public func engineLocatedDone(): Bool {
+        return this.engineLocated
     }
 
     public func engineReady(): Bool {
@@ -238,6 +271,15 @@ public class AppModel {
     }
 
     private func syncLabels(): Unit {
+        if (!this.engineLocated) {
+            // 引擎还在定位（定位挪到了首帧后，R4-10）。「还没找」与「找了但没有」
+            // 是两句话：这一态只说前者，安装引导留给定位完成之后。
+            this.problem.value = ""
+            this.emptyHint.value = "正在定位引擎…"
+            this.statusText.value = "正在定位引擎…"
+            this.canRefresh.value = false
+            return
+        }
         if (!this.engineProblem.isEmpty()) {
             this.problem.value = this.engineProblem
             this.emptyHint.value = this.engineProblem
@@ -305,12 +347,25 @@ public func requestRefresh(app: DesktopApp, model: AppModel): Unit {
 
     let bin = model.enginePath
     spawn {
-        let statusCall = opStatus(bin)
-        let dashCall = opDashboard(bin)
-        let msCall = opMilestoneList(bin)
-        app.post {
-            model.busy.value = false
-            applyReads(model, statusCall, dashCall, msCall)
+        // ⚠ fire-and-forget 闭包里的异常**没人接**（R4-01）：一线程直接死亡，
+        // 下面的 app.post 永远不执行 —— 上面刚置真的 busy 永不复位，
+        // 界面永远停在「读取项目群…」，轮询也被 busy 挡住。所以整段兜住，
+        // 把原因 post 回界面，保证 busy 必然复位。
+        try {
+            let statusCall = opStatus(bin)
+            let dashCall = opDashboard(bin)
+            let msCall = opMilestoneList(bin)
+            app.post {
+                model.busy.value = false
+                applyReads(model, statusCall, dashCall, msCall)
+            }
+        } catch (e: Exception) {
+            let why = e.message
+            app.post {
+                model.busy.value = false
+                model.problem.value = "读取项目群失败：${why}"
+                model.refreshLabels()
+            }
         }
     }
 }
@@ -566,30 +621,33 @@ public func actUpdate(app: DesktopApp, model: AppModel, project: String, deep: B
     let bin = model.enginePath
     spawn {
         let p = opUpdate(bin, project, deep)
+        let ok = p.problem.isEmpty()
+        let line = if (let Some(v) <- p.json) {
+            let u = UpdateOutcome.from(v)
+            (if (u.ok) { "✓ " } else { "✗ " }) + label + "：" + u.summaryLine()
+        } else {
+            "✗ " + label + "：" + p.problem
+        }
         app.post {
-            let line = if (let Some(v) <- p.json) {
-                let u = UpdateOutcome.from(v)
-                (if (u.ok) { "✓ " } else { "✗ " }) + label + "：" + u.summaryLine()
-            } else {
-                "✗ " + label + "：" + p.problem
-            }
-            endAction(model, line, p.problem.isEmpty())
-            // 长任务结束发系统通知：深更新要跑 5 分钟，
-            // 那期间用户早就不在窗口前了 —— 不发通知等于
-            // 「点了就没下文」。
-            // ⚠ 通知失败**不弹到界面上**：任务本身已经成功，
-            // 在结果行旁边再报一句「发通知失败」会把它盖掉。
-            // 失败只在这一处 `model.report` 之外静默，
-            // 设置页里另有「本机没有 notify-send」的显式说明。
-            let notice = notifyUser("deepDolphin",
-                updateFinishedNotice(if (deep) { "深更新" } else { "浅更新" }, project, p.problem.isEmpty(),
-                    if (p.json.isSome()) { "" } else { "（" + p.problem + "）" }))
-            if (!notice.isEmpty()) {
-                println("deepdolphin: " + notice)
-            }
+            endAction(model, line, ok)
             // 写操作改变了事实，必须重读。放在写之后而不是之前，
             // 否则读到的还是旧状态。
             requestRefresh(app, model)
+        }
+        // 长任务结束发系统通知：深更新要跑 5 分钟，
+        // 那期间用户早就不在窗口前了 —— 不发通知等于
+        // 「点了就没下文」。
+        // ⚠ 通知**在后台线程发**（R4-08）：notify-send 是一次子进程调用
+        // （预算 10 秒），放在 app.post 里就是把 UI 线程冻住那么久。
+        // ⚠ 通知失败**不弹到界面上**：任务本身已经成功，
+        // 在结果行旁边再报一句「发通知失败」会把它盖掉。
+        // 失败只在这一处 println 之外静默，
+        // 设置页里另有「本机没有 notify-send」的显式说明。
+        let notice = notifyUser("deepDolphin",
+            updateFinishedNotice(if (deep) { "深更新" } else { "浅更新" }, project, ok,
+                if (p.json.isSome()) { "" } else { "（" + p.problem + "）" }))
+        if (!notice.isEmpty()) {
+            println("deepdolphin: " + notice)
         }
     }
 }
@@ -602,19 +660,21 @@ public func actUpdateAll(app: DesktopApp, model: AppModel, deep: Bool): Unit {
     let bin = model.enginePath
     spawn {
         let p = opUpdateAll(bin, deep)
+        let ok = p.problem.isEmpty()
+        let line = if (let Some(v) <- p.json) {
+            describeBulkResult(v)
+        } else {
+            "✗ " + label + "：" + p.problem
+        }
         app.post {
-            let line = if (let Some(v) <- p.json) {
-                describeBulkResult(v)
-            } else {
-                "✗ " + label + "：" + p.problem
-            }
-            endAction(model, line, p.problem.isEmpty())
-            let notice = notifyUser("deepDolphin",
-                updateFinishedNotice(if (deep) { "深更新" } else { "浅更新" }, "", p.problem.isEmpty(), line))
-            if (!notice.isEmpty()) {
-                println("deepdolphin: " + notice)
-            }
+            endAction(model, line, ok)
             requestRefresh(app, model)
+        }
+        // 通知在后台线程发（R4-08，理由同 actUpdate）。
+        let notice = notifyUser("deepDolphin",
+            updateFinishedNotice(if (deep) { "深更新" } else { "浅更新" }, "", ok, line))
+        if (!notice.isEmpty()) {
+            println("deepdolphin: " + notice)
         }
     }
 }
@@ -623,27 +683,108 @@ public func actUpdateAll(app: DesktopApp, model: AppModel, deep: Bool): Unit {
 ///
 /// 逐项目成败必须**分得开**：只报「成功 3 个失败 3 个」而不说是哪三个，
 /// 用户只能自己一个个点开找 —— 而失败的往往正是他在乎的那几个。
+///
+/// 引擎 `update --json` 有**两种合法形状**（contract-check.sh:74 注明两种都要认，
+/// 引擎侧唯一出口是 `multiProjectJson`）：
+///   · 多项目 / 零项目：聚合信封 `{results, count, succeeded, failed}`；
+///   · 单项目：直返逐仓结果 `{ok, docs…}`（不再包信封）。
+/// 旧实现读 `projects` —— 两种形状都不认，≥2 项目时结果行恒为
+/// 「引擎没有返回逐项目结果」，把引擎确实返回的成败名单整个扔掉（R1-01）。
 public func describeBulkResult(v: JsonValue): String {
-    let list = Json.arrAt(v, "projects")
-    if (list.isEmpty()) {
-        return "引擎没有返回逐项目结果（形状：${joinAll(Json.objKeys(v), "、")}）"
-    }
-    var okCount: Int64 = 0
-    let failed = ArrayList<String>()
-    for (p in list) {
-        if (Json.boolAt(p, "ok", false)) {
-            okCount += 1
-        } else {
-            let n = Json.strAt(p, "project", "?")
-            let e = Json.strAt(p, "error", "")
-            failed.add(if (e.isEmpty()) { n } else { "${n}（${e}）" })
+    let list = Json.arrAt(v, "results")
+    if (!list.isEmpty() || Json.has(v, "results")) {
+        var okCount: Int64 = 0
+        let failed = ArrayList<String>()
+        for (item in list) {
+            // 成功项是 updateResultToJson 的形状（有 project + ok）；
+            // 失败项是 DgError 桩 `{code, message}` —— 没有 ok、没有 error、
+            // 也没有 project 键（实测：项目名在 message 里）。
+            // 判定口径与引擎 `hasErrorOrCode` 一致：没有结果键 = 失败。
+            let name = Json.strAt(item, "project", Json.strAt(item, "name", ""))
+            if (Json.has(item, "ok") && Json.boolAt(item, "ok", false)) {
+                okCount += 1
+                continue
+            }
+            var why = Json.strAt(item, "message", "")
+            if (why.isEmpty()) {
+                why = Json.strAt(item, "error", "")
+            }
+            if (why.isEmpty()) {
+                why = Json.strAt(item, "code", "")
+            }
+            // 失败桩没有 project 键，名字在 message 里（chainError 的上下文），
+            // 空名字就不要再包一层空括号。
+            if (why.isEmpty()) {
+                failed.add(name)
+            } else if (name.isEmpty()) {
+                failed.add(why)
+            } else {
+                failed.add("${name}（${why}）")
+            }
         }
+        if (failed.isEmpty()) {
+            return "全部 ${okCount} 个项目执行成功"
+        }
+        return "已注册 ${list.size} 个，成功 ${okCount} 个，失败 ${failed.size} 个：" +
+            "${joinAll(failed.toArray(), "、")}"
     }
-    if (failed.isEmpty()) {
-        return "全部 ${okCount} 个项目执行成功"
+    if (Json.has(v, "ok")) {
+        // 单项目逐仓形状：与 actUpdate 同一条读法，项目名取载荷里的。
+        let u = UpdateOutcome.from(v)
+        let who = if (u.project.isEmpty()) { "1 个项目" } else { u.project }
+        return (if (u.ok) { "✓ " } else { "✗ " }) + "${who}：" + u.summaryLine()
     }
-    return "已注册 ${list.size} 个，本次实际执行 ${okCount + failed.size} 个，" +
-        "成功 ${okCount} 个，失败 ${failed.size} 个：${joinAll(failed.toArray(), "、")}"
+    // 单项目的失败桩也是裸的 `{code, message}`（引擎 multiProjectJson 对
+    // 单元素原样打印）—— 它没有 ok 键，上面接不住，在这里如实报失败。
+    let code = Json.strAt(v, "code", "")
+    let message = Json.strAt(v, "message", "")
+    if (!code.isEmpty() || !message.isEmpty()) {
+        let why = if (message.isEmpty()) { code } else { message }
+        return "✗ 更新失败：${why}"
+    }
+    return "引擎没有返回逐项目结果（形状：${joinAll(Json.objKeys(v), "、")}）"
+}
+
+/// 写操作载荷的**结果键**判定。动作系（done/open/drop）恒发 `applied`、
+/// remove 恒发 `removed`、add 恒发 `created`（引擎 cli.cj 各自的 --json 出口）；
+/// 错误桩 `{error:true,code,message}` 这些键一个都没有。
+/// 一个结果键都没有 → `None`，调用方必须按**失败**处理 ——
+/// 缺省当成功就是在替引擎说谎（R1-02 实测：错误桩曾被渲染成「✓ 标记达成」）。
+public func writeVerdictOf(v: JsonValue): Option<Bool> {
+    if (Json.has(v, "applied")) {
+        return Some(Json.boolAt(v, "applied", false))
+    }
+    if (Json.has(v, "ok")) {
+        return Some(Json.boolAt(v, "ok", false))
+    }
+    if (Json.has(v, "removed")) {
+        return Some(Json.boolAt(v, "removed", false))
+    }
+    if (Json.has(v, "created")) {
+        return Some(Json.boolAt(v, "created", false))
+    }
+    return None
+}
+
+/// 里程碑动作结果的一行与成败。**纯函数**，判据直接喂载荷。
+///
+/// ⚠ `status` 用安全读取（R4-05）：载荷里的 `status` 若不是字符串，
+/// `asStr(s).getOrThrow()` 会抛穿 app.post —— 拆卸期没人接，应用直接死。
+public func milestoneResultOf(label: String, v: JsonValue, problem: String): (String, Bool) {
+    let applied = (match (writeVerdictOf(v)) {
+        case Some(b) => b
+        case None => false
+    })
+    var line = (if (applied) { "✓ " } else { "✗ " }) + label
+    if (let Some(s) <- Json.strAtOpt(v, "status")) {
+        line = "${line} → ${s}"
+    }
+    if (!problem.isEmpty()) {
+        line = "${line}：${problem}"
+    }
+    // applied:false 且退出码 0 也算失败（引擎明说：同名 tag 规则把写入压回了，
+    // 「实际生效状态」不是请求的状态）。结果行与红 pill 必须说同一句话。
+    return (line, applied && problem.isEmpty())
 }
 
 // ===========================================================================
@@ -694,19 +835,21 @@ public func actMilestone(
     spawn {
         let p = opMilestoneAction(bin, project, name, action)
         app.post {
+            // 渲染规则收在 milestoneResultOf（纯函数，判据直接喂载荷）：
+            // ⚠ 错误桩 {error:true,code,message} 没有 applied 键 —— 旧代码
+            // 缺省当 true，把「未找到里程碑」渲染成「✓ 标记达成」，
+            // 与详情页的「未完成」红 pill 并排自相矛盾（R1-02 实测）。
             var line: String
+            var ok: Bool
             if (let Some(v) <- p.json) {
-                // 引擎会明确回 applied：false（tag 自动达成失败等）。
-                // 不看它就报成功，是在说谎。
-                let applied = Json.boolAt(v, "applied", true)
-                line = (if (applied) { "✓ " } else { "✗ " }) + label
-                if (let Some(s) <- Json.get(v, "status")) {
-                    line = line + " → ${Json.asStr(s).getOrThrow()}"
-                }
+                let (l, o) = milestoneResultOf(label, v, p.problem)
+                line = l
+                ok = o
             } else {
                 line = "✗ " + label + "：" + p.problem
+                ok = false
             }
-            endAction(model, line, p.ok())
+            endAction(model, line, ok)
             requestRefresh(app, model)
         }
     }
@@ -729,12 +872,19 @@ public func actMilestoneAdd(
     spawn {
         let p = opMilestoneAdd(bin, project, name, tag, targetDate, description)
         app.post {
-            let line = if (let Some(v) <- p.json) {
-                (if (Json.boolAt(v, "created", false)) { "✓ " } else { "✗ " }) + label
+            // 与 actMilestone 同一条判定（writeVerdictOf：created 键在才算成功，
+            // 错误桩没有结果键，按失败渲染）。
+            var line: String
+            var ok: Bool
+            if (let Some(v) <- p.json) {
+                let (l, o) = milestoneResultOf(label, v, p.problem)
+                line = l
+                ok = o
             } else {
-                "✗ " + label + "：" + p.problem
+                line = "✗ " + label + "：" + p.problem
+                ok = false
             }
-            endAction(model, line, p.ok())
+            endAction(model, line, ok)
             requestRefresh(app, model)
         }
     }

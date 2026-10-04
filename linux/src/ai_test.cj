@@ -194,6 +194,23 @@ func aiBodyDecodeReplacesGarbageInsteadOfThrowingMidStream(): Unit {
     @Expect(fromUtf8Lossy(Array<UInt8>()), "")
 }
 
+@Test
+func utf8LossyNeverThrowsWhenTheStreamEndsOnALoneLeadByte(): Unit {
+    // R4-01 的原始探针：流末尾**恰好**是一个多字节字符的首字节（0xE4）。
+    // 引擎被超时 force-terminate、或 stdio 缓冲边界切断多字节字符时，
+    // 已读尾字节正是这个形状；旧实现（e257732 之前的「末尾回退」版）在这里
+    // 直接抛 IllegalArgumentException，并沿管道读线程穿透到发起调用的
+    // 后台线程 —— busy 永不复位，界面永远停在「读取项目群…」。
+    // 现实现的口径：末尾每个滞留字节各出一个 U+FFFD，绝不抛。
+    @Expect(fromUtf8Lossy([0x41, 0xe4]), "A\u{FFFD}")
+    @Expect(fromUtf8Lossy([0xe4]), "\u{FFFD}")
+    // 首字节 + 部分续字节（截断在序列中间）同样是滞留字节逐个替换
+    @Expect(fromUtf8Lossy([0x41, 0xe4, 0xb8]), "A\u{FFFD}\u{FFFD}")
+    // 4 字节序列截断在每个位置
+    @Expect(fromUtf8Lossy([0xf0, 0x9f]), "\u{FFFD}\u{FFFD}")
+    @Expect(fromUtf8Lossy([0xf0, 0x9f, 0x8e]), "\u{FFFD}\u{FFFD}\u{FFFD}")
+}
+
 // ---------------------------------------------------------------------------
 // 私有文件落盘（R1-05 / R1-04）
 // ---------------------------------------------------------------------------
