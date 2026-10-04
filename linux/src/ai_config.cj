@@ -21,7 +21,10 @@ private const AI_KEYRING_SERVICE: String = "cn.deepdolphin.app.ai"
 
 /// AI 通道配置。
 ///
-/// 字段与 macOS 端一一对应，不增不减：多一个字段就多一处两端可能长歪的地方。
+/// **落盘的四个字段**（providerID / model / baseURL / apiKey）与 macOS 端
+/// 一一对应，不增不减：多一个字段就多一处两端可能长歪的地方。
+/// `loadProblem` 不在其列 —— 它是**读取诊断**，不落盘、不进请求、
+/// 两端各自生成，见它的注释。
 public class AIConfig {
     /// models.dev 的 provider id（如 deepseek / openai / anthropic / openrouter …）
     public let providerID: String
@@ -29,17 +32,26 @@ public class AIConfig {
     /// 用户手填的端点覆盖。空 = 用目录里的端点。
     public let baseURL: String
     public let apiKey: String
+    /// 读取 `settings.json` 时遇到的问题。**空串 = 读得干净**。
+    ///
+    /// ⚠ 没有它，「文件坏了」与「文件不存在」长得一模一样：
+    /// 两者都静默回落 deepseek，用户看到的配置和真正生效的配置是两份
+    /// （R1-04）。文件不存在是正常的首次启动，不算问题；
+    /// 存在但读不出/解析不了才计进来。
+    public let loadProblem: String
 
     public init(
         providerID!: String = "deepseek",
         model!: String = "",
         baseURL!: String = "",
-        apiKey!: String = ""
+        apiKey!: String = "",
+        loadProblem!: String = ""
     ) {
         this.providerID = providerID
         this.model = model
         this.baseURL = baseURL
         this.apiKey = apiKey
+        this.loadProblem = loadProblem
     }
 
     public func isAnthropic(): Bool {
@@ -134,57 +146,138 @@ public func hasSecretTool(): Bool {
 // 落盘
 // ---------------------------------------------------------------------------
 
-/// 建目录。仓颉 1.0.5 的 `std.fs` **没有** `mkdir`（实测：chdir/mkdir/
+/// 建目录，并把目录权限收紧到 **700**。返回空串 = 就绪；非空 = 给用户看的原因。
+/// （包内多处要用 —— ai_http 的请求临时文件也落在这里，所以不再是 private。）
+///
+/// 仓颉 1.0.5 的 `std.fs` **没有** `mkdir`（实测：chdir/mkdir/
 /// stat 全是 undeclared identifier，只有 `exists`/`remove`/`copy`/`rename`），
 /// 所以走子进程。目录建不出来必须报错，不许静默 —— 后面每一次写都会失败。
-private func ensureConfigDir(): String {
+///
+/// ⚠ chmod 700 是**安全闭环的必要一半**（R1-05）：这个目录里存 API Key 的
+/// 兜底明文和 AI 请求的临时文件。临时文件从创建到 chmod 之间按 umask 生成
+/// （常见 0644），单靠「写完再 chmod 文件」挡不住那个瞬间 —— 目录 700 之后
+/// 其他用户根本进不来，窗口才真正闭合。老版本建出的目录可能还是 755，
+/// 所以**每次都收紧一遍**（幂等，成本是一次子进程，写路径全在后台线程）。
+func ensureConfigDir(): String {
     let dir = aiConfigDir()
-    if (exists(dir)) {
-        return ""
-    }
-    let r = execCapture("/bin/mkdir", ["-p", dir], 5000)
-    if (r.timedOut) {
-        return "建配置目录超时：${dir}"
-    }
-    if (r.exitCode != 0) {
-        let why = if (!r.stderr.trimAscii().isEmpty()) { r.stderr.trimAscii() } else {
-            "退出码 ${r.exitCode}"
+    if (!exists(dir)) {
+        let r = execCapture("/bin/mkdir", ["-p", dir], 5000)
+        if (r.timedOut) {
+            return "建配置目录超时：${dir}"
         }
-        return "建配置目录失败（${why}）：${dir}"
+        if (r.exitCode != 0) {
+            let why = if (!r.stderr.trimAscii().isEmpty()) { r.stderr.trimAscii() } else {
+                "退出码 ${r.exitCode}"
+            }
+            return "建配置目录失败（${why}）：${dir}"
+        }
+    }
+    let r = execCapture("/bin/chmod", ["700", dir], 5000)
+    if (r.timedOut || r.exitCode != 0) {
+        let why = if (r.timedOut) { "chmod 超时" } else {
+            if (!r.stderr.trimAscii().isEmpty()) { r.stderr.trimAscii() } else { "退出码 ${r.exitCode}" }
+        }
+        return "配置目录权限没能收紧到 700（${why}）：${dir} —— 里面存密钥，宁可不用也不敞着"
     }
     return ""
 }
 
-private func writePrivateFile(path: String, content: String): String {
-    if (exists(path)) {
-        // 先删再写：`File.writeTo` 不保证会截断已有文件，
-        // 「旧内容比新内容长」时会留下尾巴（一个典型的半截凭据）。
+/// 进程内递增计数，给临时文件名防撞（同一毫秒内可能写两个文件）。
+private var privateWriteSeq: Int64 = 0
+
+/// 原子替换写一个 **0600** 的私有文件。返回空串 = 成功；非空 = 给用户看的失败原因。
+///
+/// 步骤与顺序是承重的（R1-05）：
+///   1. **同目录**先写临时文件（名字带毫秒 + 进程内计数，不会撞上别的调用）；
+///   2. 立即 chmod 600 **临时文件** —— 这是这份内容第一次碰到磁盘，
+///      600 必须赶在它出现在**最终路径**之前生效；
+///   3. `rename(overwrite: true)` 原子替换（实测语义：目标存在则整个换掉，
+///      同文件系统内是原子的）。中途失败/被杀，旧文件要么完整、要么没动 ——
+///      不会出现「旧密钥已删、新密钥没写上」的空档。
+///
+/// ⚠ 旧实现是 remove → writeTo → chmod：文件先按 umask（常见 0644）出现在
+/// 最终路径上、之后才收紧，密钥存在一个全局可读的窗口；而且 remove 之后
+/// 任何一步失败 = 旧内容已经丢了。两个毛病都从这里改掉。
+/// `File.writeTo` 不保证截断已有文件（「旧比新长会留尾巴」），
+/// 临时文件每次都是新名字，这个坑也顺带不存在了。
+///
+/// 【前置】目录已就绪（调用方先过 `ensureConfigDir`），且与最终文件**同一
+/// 文件系统**（rename 跨文件系统会失败 —— 临时文件就放在目标旁边）。
+func writePrivateFile(path: String, content: String, what: String): String {
+    privateWriteSeq += 1
+    let tmp = "${path}.tmp-${nowMillis()}-${privateWriteSeq}"
+    try {
+        File.writeTo(tmp, content.toArray())
+    } catch (e: Exception) {
+        return "${what}没能写进临时文件（${e.message}）：${path}"
+    }
+    let cm = execCapture("/bin/chmod", ["600", tmp], 5000)
+    if (cm.timedOut || cm.exitCode != 0) {
+        removeQuiet(tmp)
+        let why = if (cm.timedOut) { "chmod 超时" } else { "chmod 退出码 ${cm.exitCode}" }
+        return "${what}的权限没能收紧到 600（${why}），已放弃替换：${path}"
+    }
+    try {
+        rename(Path(tmp), to: Path(path), overwrite: true)
+    } catch (e: Exception) {
+        removeQuiet(tmp)
+        return "${what}没能原子替换（${e.message}）：${path}"
+    }
+    return ""
+}
+
+/// 尽力删，删不掉也不抛 —— finally 清理与失败回滚用这个。
+/// 真删不掉的残留由启动清扫（sweepAITempLeftovers）兜底。
+func removeQuiet(path: String): Unit {
+    try {
         remove(path)
+    } catch (e: Exception) {
+        ()
     }
-    File.writeTo(path, content.toArray())
-    // ⚠ chmod 必须在写**之后**：先 chmod 再写的话，
-    // 新文件按 umask 生成（常见 0644），密钥在 chmod 之前的那一瞬是全局可读的。
-    let r = execCapture("/bin/chmod", ["600", path], 5000)
-    if (r.exitCode != 0) {
-        return "密钥文件权限没能收紧到 600（${path}）—— 别的用户可能读到 API Key"
-    }
-    return ""
 }
 
-/// 读配置 + 读密钥。**任何一步读不出来都给默认值，不抛** —— 客户端不该因为
-/// 配置文件损坏就起不来。
+/// 读配置 + 读密钥。**读不出来给默认值，不抛** —— 客户端不该因为
+/// 配置文件损坏就起不来；但「回落了」这件事沿 `AIConfig.loadProblem`
+/// 说出来，不再静默（R1-04）。
 public func loadAIConfig(): AIConfig {
     var pid = "deepseek"
     var mdl = ""
     var base = ""
-    if (exists(aiConfigPath())) {
-        if (let Some(v) <- Json.parse(String.fromUtf8(File.readFrom(aiConfigPath())))) {
-            pid = Json.strAt(v, "providerID", "deepseek")
-            mdl = Json.strAt(v, "model", "")
-            base = Json.strAt(v, "baseURL", "")
+    var problem = ""
+    let p = aiConfigPath()
+    if (exists(p)) {
+        var text = ""
+        try {
+            text = fromUtf8Lossy(File.readFrom(p))
+        } catch (e: Exception) {
+            problem = "设置文件读不出来（${e.message}），provider/模型回落为默认值：${p}"
+        }
+        if (problem.isEmpty()) {
+            let parsed = parseAIConfigDoc(text, p)
+            pid = parsed.providerID
+            mdl = parsed.model
+            base = parsed.baseURL
+            problem = parsed.loadProblem
         }
     }
-    return AIConfig(providerID: pid, model: mdl, baseURL: base, apiKey: loadAIKey())
+    return AIConfig(providerID: pid, model: mdl, baseURL: base, apiKey: loadAIKey(), loadProblem: problem)
+}
+
+/// `settings.json` 文本 → 配置。**纯函数**，判据直接喂坏文本。
+/// 解析不了不抛也不静默：字段回落默认值，`loadProblem` 里给原因与文件路径。
+public func parseAIConfigDoc(text: String, path: String): AIConfig {
+    match (Json.parse(text)) {
+        case Some(v) =>
+            return AIConfig(
+                providerID: Json.strAt(v, "providerID", "deepseek"),
+                model: Json.strAt(v, "model", ""),
+                baseURL: Json.strAt(v, "baseURL", ""),
+                apiKey: "",
+                loadProblem: ""
+            )
+        case None =>
+            return AIConfig(loadProblem: "设置文件不是合法 JSON，provider/模型回落为默认值：${path}")
+    }
 }
 
 /// 读密钥。**系统钥匙串优先**，读不到再退兜底文件。
@@ -203,7 +296,13 @@ public func loadAIKey(): String {
     }
     let p = aiKeyFilePath()
     if (exists(p)) {
-        return String.fromUtf8(File.readFrom(p)).trimAscii()
+        // 有损解码 + 兜 try：这个函数会被设置页的掩码状态读到（后台线程），
+        // 但也曾被构建闭包调用 —— 在那里抛异常就是整棵界面树崩掉。
+        try {
+            return fromUtf8Lossy(File.readFrom(p)).trimAscii()
+        } catch (e: Exception) {
+            return ""
+        }
     }
     return ""
 }
@@ -232,10 +331,12 @@ public func saveAIConfig(c: AIConfig): String {
     jobjAdd(pairs, "model", jstr(c.model))
     jobjAdd(pairs, "baseURL", jstr(c.baseURL))
     let doc = jsonWrite(jobj(pairs))
-    if (exists(aiConfigPath())) {
-        remove(aiConfigPath())
+    // settings.json 与密钥文件走同一条原子替换（R1-04）：remove→writeTo
+    // 的旧写法中途失败/被杀 = 配置整个消失，provider/模型悄悄退回默认值。
+    let ws = writePrivateFile(aiConfigPath(), doc, "设置文件")
+    if (!ws.isEmpty()) {
+        return ws
     }
-    File.writeTo(aiConfigPath(), doc.toArray())
 
     var problem = ""
     if (c.apiKey.isEmpty()) {
@@ -246,9 +347,7 @@ public func saveAIConfig(c: AIConfig): String {
                 problem = "清除系统钥匙串里的密钥失败（退出码 ${r.exitCode}）"
             }
         }
-        if (exists(aiKeyFilePath())) {
-            remove(aiKeyFilePath())
-        }
+        removeQuiet(aiKeyFilePath())
         lastKeyStoreDegraded = Some(!problem.isEmpty())
         return problem
     }
@@ -265,9 +364,7 @@ public func saveAIConfig(c: AIConfig): String {
         if (problem.isEmpty()) {
             // 存进钥匙串了，兜底文件里的旧明文必须删掉 ——
             // 否则清空 key 之后那个文件还在，下次 `loadAIKey` 会把它读回来。
-            if (exists(aiKeyFilePath())) {
-                remove(aiKeyFilePath())
-            }
+            removeQuiet(aiKeyFilePath())
             lastKeyStoreDegraded = Some(false)
             return ""
         }
@@ -275,7 +372,7 @@ public func saveAIConfig(c: AIConfig): String {
 
     // 兜底：0600 文件。**这不是静默降级** —— 返回值非空，
     // 设置页会把「没有系统钥匙串，密钥以 600 权限存放在 …」显示出来。
-    let wp = writePrivateFile(aiKeyFilePath(), c.apiKey)
+    let wp = writePrivateFile(aiKeyFilePath(), c.apiKey, "密钥文件")
     if (!wp.isEmpty()) {
         return wp
     }

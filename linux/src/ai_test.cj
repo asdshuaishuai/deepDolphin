@@ -8,6 +8,7 @@ package deepdolphin_linux
 
 import std.collection.*
 import std.env.*
+import std.fs.*
 import std.unittest.*
 import std.unittest.testmacro.*
 
@@ -164,6 +165,100 @@ func aiErrorTextNeverEchoesCredentialsBack(): Unit {
     @Expect(redactAI("sk-ant-api03-xxxx"), "（响应含敏感字段，已隐藏）")
     // 普通内容原样保留 —— 一刀切隐藏等于把排查路径也砍了
     @Expect(redactAI("HTTP 429 rate limit"), "HTTP 429 rate limit")
+}
+
+@Test
+func aiBodyDecodeReplacesGarbageInsteadOfThrowingMidStream(): Unit {
+    // R4-02：严格 `String.fromUtf8` 对**任何一个**非 UTF-8 字节都抛
+    // （实测本机：`Invalid utf8 byte sequence.`）。AI 响应体可能是
+    // GBK 错误页、网关吐出的压缩体/二进制垃圾；抛点在「读响应」与
+    // 「清临时文件」之间时，装 API Key 的临时文件永久残留，后台线程死亡。
+    // 解码必须有损替换，绝不抛。
+    // 合法内容原样（1/2/3/4 字节序列各验一种）
+    @Expect(fromUtf8Lossy([0x41, 0xe4, 0xb8, 0xad, 0x42]), "A中B")
+    @Expect(fromUtf8Lossy([0xf0, 0x9f, 0x8e, 0xaf]), "🎯")
+    // 中部垃圾字节 → U+FFFD，不抛
+    @Expect(fromUtf8Lossy([0x41, 0xff, 0x42]), "A\u{FFFD}B")
+    // 尾部残缺（引擎输出被截断的那一族）。按 WHATWG 口径，残缺序列的
+    // 每个滞留字节各出一个 U+FFFD（实测口径与此一致，判据钉住它）。
+    @Expect(fromUtf8Lossy([0x41, 0xe4, 0xb8]), "A\u{FFFD}\u{FFFD}")
+    // GBK「中文」的四个字节，按 WHATWG 口径逐字节换 U+FFFD
+    @Expect(fromUtf8Lossy([0xd6, 0xd0, 0xce, 0xc4]), "\u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD}")
+    // 代理区（CESU-8）不合法
+    @Expect(fromUtf8Lossy([0xed, 0xa0, 0x80]), "\u{FFFD}\u{FFFD}\u{FFFD}")
+    // 超长编码不合法
+    @Expect(fromUtf8Lossy([0xc0, 0xaf]), "\u{FFFD}\u{FFFD}")
+    // U+10FFFF 之外不合法
+    @Expect(fromUtf8Lossy([0xf4, 0x90, 0x80, 0x80]), "\u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD}")
+    // 空输入 → 空串
+    @Expect(fromUtf8Lossy(Array<UInt8>()), "")
+}
+
+// ---------------------------------------------------------------------------
+// 私有文件落盘（R1-05 / R1-04）
+// ---------------------------------------------------------------------------
+
+/// `stat -c %a` 的权限串。判据用；GNU stat 在标准环境里都有。
+private func fileModeOf(path: String): String {
+    let r = execCapture("/bin/stat", ["-c", "%a", path], 5000)
+    return r.stdout.trimAscii()
+}
+
+@Test
+func privateFilesAreWrittenAtomicallyAt600AndReplacedWhole(): Unit {
+    // R1-05：旧实现 remove → writeTo → chmod，密钥先按 umask（常见 0644）
+    // 落盘、之后才收紧 —— 存在全局可读窗口；且 remove 之后任何一步失败
+    // = 旧密钥已丢。现在的写法：临时文件 → 建好立即 600 → rename 原子替换。
+    // 用判据自己的沙盒目录，不碰真实 ~/.config/deepdolphin。
+    let dir = "/tmp/dd-privwrite-${nowMillis()}"
+    execCapture("/bin/mkdir", ["-p", dir], 5000)
+    execCapture("/bin/chmod", ["700", dir], 5000)
+    let path = "${dir}/api-key"
+
+    // 第一次写：内容完整、权限 600
+    @Expect(writePrivateFile(path, "sk-first", "密钥文件"), "")
+    @Expect(String.fromUtf8(File.readFrom(Path(path))), "sk-first")
+    @Expect(fileModeOf(path), "600")
+
+    // 覆盖写：更长的内容不留尾巴（writeTo 不截断那一族），
+    // 更短的内容也不缺尾巴；权限仍是 600
+    @Expect(writePrivateFile(path, "sk-second-much-longer-key", "密钥文件"), "")
+    @Expect(String.fromUtf8(File.readFrom(Path(path))), "sk-second-much-longer-key")
+    @Expect(writePrivateFile(path, "sk-3", "密钥文件"), "")
+    @Expect(String.fromUtf8(File.readFrom(Path(path))), "sk-3")
+    @Expect(fileModeOf(path), "600")
+
+    // 目录里不剩临时文件 —— .tmp-* 残留也是半截凭据
+    let listing = execCapture("/bin/sh", ["-c", "ls -1 -- \"$1\"", "dd-test", dir], 5000)
+    @Expect(listing.stdout.trimAscii(), "api-key")
+
+    // 写不进去要沿返回值报原因，且旧内容原封不动（不再「先删后写」）
+    execCapture("/bin/chmod", ["500", dir], 5000)
+    let problem = writePrivateFile(path, "sk-never", "密钥文件")
+    execCapture("/bin/chmod", ["700", dir], 5000)
+    @Expect(!problem.isEmpty())
+    @Expect(String.fromUtf8(File.readFrom(Path(path))), "sk-3")
+
+    // 清场
+    execCapture("/bin/sh", ["-c", "rm -rf -- \"$1\"", "dd-test", dir], 5000)
+}
+
+@Test
+func configDocParseDisclosesABrokenFileInsteadOfSilentlyFallingBack(): Unit {
+    // R1-04：设置文件坏了静默回落 deepseek，用户看到的配置和
+    // 真正生效的配置是两份。解析不出来要沿返回值（loadProblem）说出来。
+    let good = parseAIConfigDoc("{\"providerID\":\"openrouter\",\"model\":\"m\",\"baseURL\":\"https://x\"}", "/p/settings.json")
+    @Expect(good.providerID, "openrouter")
+    @Expect(good.model, "m")
+    @Expect(good.loadProblem, "")
+    // 坏文件：字段回落默认值，但必须给原因与文件路径
+    let broken = parseAIConfigDoc("{not json", "/p/settings.json")
+    @Expect(broken.providerID, "deepseek")
+    @Expect(broken.loadProblem.contains("JSON"), true)
+    @Expect(broken.loadProblem.contains("/p/settings.json"), true)
+    // 空文件同样是「坏」，不是「没配置」
+    let empty = parseAIConfigDoc("", "/p/settings.json")
+    @Expect(!empty.loadProblem.isEmpty())
 }
 
 // ---------------------------------------------------------------------------
@@ -518,6 +613,25 @@ func longUpdateNoticeSaysWhatHappenedNotJustDone(): Unit {
         "深更新失败：moonGit（引擎退出码 1）")
 }
 
+@Test
+func startupSweepRemovesLeftoverAITempFiles(): Unit {
+    // R4-02 的兜底：进程被 SIGKILL 时 ai_http 的 finally 清理跑不到，
+    // 装着 API Key 的临时文件残留 —— 下一次启动必须补删。
+    // 目录经**位置参数**传给 sh（不拼进脚本串），所以这里同时验了
+    // 「目录名带空格也不会变成另一条命令」。
+    let tmpRoot = (getVariable("TMPDIR") ?? "").trimAscii()
+    let dir = if (tmpRoot.isEmpty() || !tmpRoot.startsWith("/")) { "/tmp" } else { tmpRoot }
+    let leftover = "${dir}/deepdolphin-ai-head-${nowMillis()}"
+    File.writeTo(leftover, "Authorization: Bearer sk-x\n".toArray())
+    let problem = sweepAITempLeftovers()
+    let gone = !exists(leftover)
+    if (!gone) {
+        removeQuiet(leftover) // 清理自己的测试残留，不让断言失败留垃圾
+    }
+    @Expect(problem, "")
+    @Expect(gone, true)
+}
+
 // ---------------------------------------------------------------------------
 // 界面层的纯判定
 // ---------------------------------------------------------------------------
@@ -627,6 +741,31 @@ func aLateWriteFromACancelledRoundIsRejectedInsteadOfOverwritingANewerOne(): Uni
     aiRoundSeq = 6
     @Expect(!aiRoundIsCurrent(5)) // 旧代号被拒
     @Expect(aiRoundIsCurrent(6))
+}
+
+@Test
+func stopVoidsTheRoundTokenSoALateWritebackCannotReopenTheActionGate(): Unit {
+    // R4-04：停止后用户可以立刻发起深更新 / git 写。旧轮收尾的那次
+    // app.post 若还能通过 `aiRoundIsCurrent`，就会再执行一次 endAction，
+    // 把**正在跑的那个写动作**的 actionBusy 闸门提前放开 ——
+    // 两个引擎写进程抢锁，恰是闸门注释里说要防的局面。
+    // 所以 stopAI 必须同时推进代号，让被放弃轮次的一切迟到回写失效。
+    let model = AppModel(EngineLocation("", "", ""))
+    let savedSeq = aiRoundSeq
+    let savedStop = aiStopRequested
+    aiRoundSeq = 7
+    let abandoned = aiRoundSeq
+    model.aiRunning.value = true
+    stopAI(model)
+    // 旧轮（包括「以 Stopped 收尾」的那次回写）必须过不了守卫
+    let guardRejectsAbandoned = !aiRoundIsCurrent(abandoned)
+    let uiUnlocked = !model.aiRunning.value
+    // 代号与停止标志是包级可变全局，先恢复干净值再断言
+    aiRoundSeq = savedSeq
+    aiStopRequested = savedStop
+    @Expect(guardRejectsAbandoned, true)
+    @Expect(uiUnlocked, true)
+    @Expect(model.aiStatus.value.contains("已停止"), true)
 }
 
 @Test

@@ -62,6 +62,17 @@ main(args: Array<String>): Int64 {
     // 中文全成豆腐块，而 CUI 不会自动重排。
     let fontProblem = installAppFonts()
 
+    // 上次进程的 AI 请求临时文件可能有残留：头文件里有 API Key，
+    // SIGKILL / 崩溃时 ai_http 的 finally 清理跑不到（R4-02）。
+    // 启动清扫兜底。放后台线程 —— 它是一次子进程的事，不该挡开窗；
+    // 失败只能打日志（界面上没有比「更早之前的残留」更要紧的话要说）。
+    spawn {
+        let sweepProblem = sweepAITempLeftovers()
+        if (!sweepProblem.isEmpty()) {
+            println("deepdolphin: " + sweepProblem)
+        }
+    }
+
     // 外观在**建窗之前**定下来：CUI 的 `Theme` 是 `DesktopApp` 的构造参数，
     // 建成之后换不了（`Theme` 不可变，且 `DesktopApp` 没有 setTheme）。
     // 要跟随系统切换就得重启应用 —— 这条限制在界面上要说出去，

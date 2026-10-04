@@ -12,7 +12,8 @@
 // 【为什么密钥绝不进命令行】
 // 命令行参数在 `ps` 输出里对**同机所有用户**可见。
 // `-H "Authorization: Bearer sk-..."` 等于把 API Key 广播出去。
-// 所以头和体都写进 0600 的临时文件，用 `@file` 引用，发完立刻删。
+// 所以头和体都写进 0700 配置目录里的 0600 临时文件，用 `@file` 引用，
+// 发完（无论成败）立刻删；进程被杀没删干净的，下次启动清扫补删。
 package deepdolphin_linux
 
 import std.fs.*
@@ -167,7 +168,9 @@ private func curlBin(): String {
     return (if (p.isEmpty()) { CURL_FALLBACK } else { p })
 }
 
-/// 临时文件目录。**用完立刻删** —— 里面有用户的 API Key 和完整提示词。
+/// 旧版临时文件的目录（/tmp）。现在的临时文件写在 0700 的配置目录里，
+/// 这个函数只剩一个用途：**启动清扫**要连上一版残留的
+/// `/tmp/deepdolphin-ai-*` 一起删。
 private func aiTempDir(): String {
     let t = (getVariable("TMPDIR") ?? "").trimAscii()
     if (!t.isEmpty() && t.startsWith("/")) {
@@ -176,8 +179,52 @@ private func aiTempDir(): String {
     return "/tmp"
 }
 
+/// 进程内递增计数：同一毫秒里的两次请求（理论上不会，但闸门只管 UI 侧）
+/// 也不至于拿到同一个临时文件名。
+private var aiTempSeq: Int64 = 0
+
+/// 请求临时文件路径。**写在 0700 的配置目录**，不写 /tmp（R4-03）：
+///   · /tmp 全世界可进，头文件里又是 API Key —— 「写完再 chmod 600」
+///     挡不住 umask 生成的那个瞬间；
+///   · 旧版只拿毫秒时间戳当名字，可预测，重放/并发会互相踩。
+/// 目录 700（见 ensureConfigDir）+ 毫秒 + 进程内计数，两条都关死。
 private func tempPath(tag: String): String {
-    return "${aiTempDir()}/deepdolphin-ai-${tag}-${nowMillis()}"
+    aiTempSeq += 1
+    return "${aiConfigDir()}/deepdolphin-ai-${tag}-${nowMillis()}-${aiTempSeq}"
+}
+
+/// 清扫上次进程残留下来的 AI 请求临时文件。
+///
+/// 进程被 SIGKILL / 断电 / 崩溃时，finally 清理不会跑 —— 头文件里是
+/// API Key，残留就得在**下一次启动**补删。旧版临时文件写在 /tmp，
+/// 也要一并扫掉。启动时在后台线程调一次。
+/// 返回空串 = 成功（含「没有残留」）；非空 = 失败原因。
+///
+/// ⚠ glob 只认本应用**真的会创建**的三个名字（body / head / out），
+/// 不认宽前缀 `deepdolphin-ai-*`：前缀是他人的命名空间也会撞上的形状
+/// （本仓 ai-e2e.sh 的备份文件就叫 `deepdolphin-ai-test.XXXXXX`），
+/// 按前缀删会把别人的在用文件一起删掉 —— 实测真的发生过。
+public func sweepAITempLeftovers(): String {
+    for (dir in [aiConfigDir(), aiTempDir()]) {
+        if (!exists(dir)) {
+            continue
+        }
+        // 目录走**位置参数**传给 sh，不拼进脚本串 —— 目录里有空格、
+        // 引号也不会变成另一条命令。`rm -f` 对不存在的字面参数安静退出 0
+        // （glob 没匹配上就是这个形状），所以「没有残留」与「删干净」同路。
+        let r = execCapture(
+            "/bin/sh",
+            ["-c", "rm -f -- \"$1\"/deepdolphin-ai-body-* \"$1\"/deepdolphin-ai-head-* \"$1\"/deepdolphin-ai-out-*", "dd-sweep", dir],
+            10000
+        )
+        if (r.timedOut || r.exitCode != 0) {
+            let why = if (!r.stderr.trimAscii().isEmpty()) { r.stderr.trimAscii() } else {
+                "退出码 ${r.exitCode}"
+            }
+            return "清扫 AI 临时文件失败（${why}）：${dir}"
+        }
+    }
+    return ""
 }
 
 /// POST 一份 JSON。**唯一**的网络出口。
@@ -192,22 +239,31 @@ public func aiPostJSON(url: String, bodyText: String, headerLines: ArrayList<Str
     if (!exists(curl)) {
         return AIHttpResult(-1, "", "找不到 curl（PATH 与 /usr/bin 都试过）—— AI 通道依赖它发请求（装 curl 即可）", url)
     }
+    // 临时文件的家。目录就绪失败时**如实失败**，不退回 /tmp ——
+    // 那不是降级，是把密钥头文件重新敞给全机用户。
+    let mk = ensureConfigDir()
+    if (!mk.isEmpty()) {
+        return AIHttpResult(-1, "", "AI 请求的私有临时目录没能就绪：${mk}", url)
+    }
     let bodyFile = tempPath("body")
     let headFile = tempPath("head")
     let outFile = tempPath("out")
-    // 头文件里就是 API Key，必须 600。
+    // 头文件里就是 API Key、体文件里是完整对话 —— 都按 0600 私有文件
+    // 原子写入（writePrivateFile：临时文件→chmod 600→rename）。
     let sb = StringBuilder()
     for (h in headerLines) {
         sb.append(h)
         sb.append("\n")
     }
-    File.writeTo(headFile, sb.toString().toArray())
-    File.writeTo(bodyFile, bodyText.toArray())
-    try {
-        execCapture("/bin/chmod", ["600", headFile], 5000)
-        execCapture("/bin/chmod", ["600", bodyFile], 5000)
-    } catch (e: Exception) {
-        ()
+    let headProblem = writePrivateFile(headFile, sb.toString(), "密钥请求头")
+    if (!headProblem.isEmpty()) {
+        return AIHttpResult(-1, "", headProblem, url)
+    }
+    let bodyProblem = writePrivateFile(bodyFile, bodyText, "请求体")
+    if (!bodyProblem.isEmpty()) {
+        // 头文件已落盘，不能留着 —— 那里面有 API Key。
+        removeQuiet(headFile)
+        return AIHttpResult(-1, "", bodyProblem, url)
     }
 
     let secs = (if (timeoutMs < 1000) { Int64(1) } else { timeoutMs / 1000 })
@@ -228,21 +284,35 @@ public func aiPostJSON(url: String, bodyText: String, headerLines: ArrayList<Str
     // 「请求发出去了、服务端也收到了、但客户端说『AI 响应不是 JSON』」
     // —— 因为响应体已经被自己删了。纯函数判据测不到它：
     // 它只在真发一次请求时发作（端到端实测才暴露）。
-    let body = if (exists(outFile)) { String.fromUtf8(File.readFrom(outFile)) } else { "" }
-
-    // 三个临时文件**无条件**清掉，含所有失败分支。
-    for (p in [bodyFile, headFile, outFile]) {
-        if (exists(p)) {
-            try {
-                remove(p)
-            } catch (e: Exception) {
-                ()
+    //
+    // ⚠ 整段包 try/finally：读取这一步**无论抛不抛**，三个临时文件都必须
+    // 清掉 —— 头文件里有 API Key，残留一份在磁盘上比一次失败的请求严重
+    // 得多（R4-02：旧版异常恰好从「读」与「清」之间穿过，头文件永久残留，
+    // 后台线程随之死亡）。解码走 fromUtf8Lossy：GBK 错误页、网关吐出的
+    // 压缩体/二进制垃圾一律换成 U+FFFD，不再把「服务端返回了乱码」
+    // 变成「客户端抛异常」。万一 finally 被 SIGKILL 打断，
+    // 启动清扫（sweepAITempLeftovers）兜底。
+    var body = ""
+    var readProblem = ""
+    try {
+        if (exists(outFile)) {
+            body = fromUtf8Lossy(File.readFrom(outFile))
+        }
+    } catch (e: Exception) {
+        readProblem = "读取 AI 响应失败（${e.message}）"
+    } finally {
+        for (p in [bodyFile, headFile, outFile]) {
+            if (exists(p)) {
+                removeQuiet(p)
             }
         }
     }
 
     if (r.timedOut) {
         return AIHttpResult(-1, "", "AI 请求超时（${secs} 秒）：${url}", url)
+    }
+    if (!readProblem.isEmpty()) {
+        return AIHttpResult(-1, "", "${readProblem}：${url}", url)
     }
     // curl 用非 0 退出表达**传输层**失败（连不上、证书、参数错）；
     // HTTP 4xx/5xx 时它照样退出 0，状态码在 stdout 里。

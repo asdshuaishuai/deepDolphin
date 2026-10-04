@@ -169,6 +169,8 @@ private func aiTranscriptView(model: AppModel, dark: Bool): Unit {
                 }.spacing(0.vp)
             }.style(dsSurface(DsLevel.Card, dark)).contentPadding(24.0.vp).flex()
         case Some(list) =>
+            // scrollState 接模型上的 `aiScroll`（R2-06）：新消息写入时把它
+            // 顶到底，不再依赖用户记得往下滚。
             ScrollView(key: "dd-ai-scroll") {
                 VStack {
                     for (m in list) {
@@ -181,8 +183,15 @@ private func aiTranscriptView(model: AppModel, dark: Bool): Unit {
                         Label(model.aiStatus.value).fontSize(12.0).muted()
                     }
                 }.spacing(6.0.vp)
-            }.flex()
+            }.scrollState(model.aiScroll).flex()
     }
+}
+
+/// 把对话流顶到底（R2-06）。取一个远超任何内容高度的值即可：
+/// ScrollView 布局期会把偏移钳到「内容高 - 视口高」，正是贴底；
+/// 内容不满一屏时钳到 0，也没有副作用。用户随后上滚不受影响。
+public func scrollAITranscriptToBottom(model: AppModel): Unit {
+    model.aiScroll.value = Float32(1.0e9)
 }
 
 /// 能不能发。**空问题不发、跑着不发** —— 与引擎动作共用一个闸门。
@@ -209,14 +218,14 @@ private func aiComposer(model: AppModel, app: DesktopApp, dark: Bool): Unit {
 /// 发一轮。**UI 线程只做状态切换**，网络与引擎调用全在后台线程。
 ///
 /// ⚠ 这条纪律来自 `appstate.cj` 文件头：UI 线程上跑一次 AI 请求
-/// （可能几十秒）会同时冻结输入与绘制。
+/// （可能几十秒）会同时冻结输入与绘制。`loadAIConfig` 也算 ——
+/// 它要读钥匙串（`secret-tool`，预算 10 秒），同样不能在 UI 线程等。
 public func sendAI(app: DesktopApp, model: AppModel): Unit {
     if (!beginAction(model, "AI 助手")) {
         return
     }
     let question = model.aiDraft.value.trimAscii()
     model.aiDraft.value = ""
-    let cfg = loadAIConfig()
     let bin = model.enginePath
     let target = aiTargetOf(model)
     let history = (match (model.aiTranscript.value) {
@@ -229,6 +238,7 @@ public func sendAI(app: DesktopApp, model: AppModel): Unit {
     for (m in history) { shown.add(m) }
     shown.add(ChatMessage.user(question))
     model.aiTranscript.value = Some(shown)
+    scrollAITranscriptToBottom(model)
     model.aiStatus.value = "正在思考…"
     model.aiNote.value = ""
     model.aiRunning.value = true
@@ -237,6 +247,10 @@ public func sendAI(app: DesktopApp, model: AppModel): Unit {
     let seq = aiRoundSeq
 
     spawn {
+        // 配置读取在后台做（R4-06）：`loadAIConfig` → `loadAIKey`
+        // 里有 10 秒预算的 secret-tool 子进程，放 UI 线程就是
+        // 「按下发送界面冻住，钥匙串慢的时候冻 10 秒」。
+        let cfg = loadAIConfig()
         let r = runAgent(cfg, bin, target, question, history)
         // ⚠ 回写前先对代号。没有这道守卫：用户「停止 → 立刻发新问题」之后，
         // 上一轮迟到的回写会**覆盖掉新对话** —— 用户的下一条提问凭空消失。
@@ -249,9 +263,16 @@ public func sendAI(app: DesktopApp, model: AppModel): Unit {
             model.aiRunning.value = false
             model.aiStatus.value = ""
             model.aiExecuted.value = ArrayList<String>(r.outcome.executed.toArray())
-            model.aiNote.value = agentNoteOf(r.outcome)
+            var note = agentNoteOf(r.outcome)
+            if (!cfg.loadProblem.isEmpty()) {
+                // 配置文件坏了必须说出口：否则界面看着一切正常，
+                // 实际 provider/模型已经悄悄回落成默认值（R1-04）。
+                note = if (note.isEmpty()) { cfg.loadProblem } else { "${cfg.loadProblem}；${note}" }
+            }
+            model.aiNote.value = note
             if (r.outcome.problem.isEmpty() || agentOutcomeWasStopped(r.outcome)) {
                 model.aiTranscript.value = Some(r.transcript)
+                scrollAITranscriptToBottom(model)
             }
         }
     }
@@ -260,11 +281,20 @@ public func sendAI(app: DesktopApp, model: AppModel): Unit {
 /// 用户按停止。**UI 线程立刻给反馈**，不等后台那条线程。
 public func stopAI(model: AppModel): Unit {
     aiStopRequested = true
+    // ⚠ 同时**废止这一轮的代号**（R4-04）。被放弃轮次的任何迟到回写
+    // —— 包括「以 Stopped 收尾」的那次 app.post —— 都会被
+    // `aiRoundIsCurrent` 拒掉。没有这句的话：用户停止后立刻发起深更新 /
+    // git 写，旧一轮的 app.post 仍能通过守卫，再执行一次 endAction，
+    // 把**正在跑的那个写动作**的 actionBusy 闸门提前放开 ——
+    // 两个引擎写进程抢锁，恰是闸门注释里说要防的局面。
+    // 代价如实记：停止那一轮已写出的内容不再补显（状态行里那句话
+    // 「会跑完就被丢弃」说的就是它）。
+    aiRoundSeq += 1
     model.aiStatus.value = "已停止 — 正在进行的那次请求会跑完就被丢弃"
     model.aiRunning.value = false
-    // 闸门在这里**先放开**：用户可能立刻想发新问题，
-    // 而闸门要等后台线程回写才关 —— 那会让「停止」之后的下一个动作被静默拒绝。
-    // 代价是可能有一轮旧请求还在收尾，`aiRoundIsCurrent` 负责不让它覆盖界面。
+    // 闸门在这里**先放开**：用户可能立刻想发新问题或别的写动作，
+    // 而闸门要等后台线程回写才关 —— 那会让「停止」之后的下一个动作
+    // 被静默拒绝。旧轮的收尾不会捣乱：它连代号守卫都过不去。
     endAction(model, "AI 助手", false)
 }
 
@@ -397,11 +427,27 @@ private func aiModelRow(model: AppModel, dark: Bool): Widget {
     }.spacing(6.vp).hug()
 }
 
+/// 「已保存的 key 在不在」掩码的后台刷新。启动（boot）与保存回包各调一次，
+/// 真值读取在后台线程 —— `loadAIKey` 里有 10 秒预算的 secret-tool 子进程，
+/// 在 UI 线程等它就是冻结界面（R4-06）。
+public func refreshKeyPresence(app: DesktopApp, model: AppModel): Unit {
+    spawn {
+        let present = !loadAIKey().isEmpty()
+        app.post {
+            model.aiKeySavedPresent.value = present
+        }
+    }
+}
+
 private func aiKeyRow(model: AppModel, dark: Bool): Widget {
-    let saved = loadAIKey()
+    // ⚠ 只读掩码状态，**不在这里读真值**（R4-06）：本函数在设置页的
+    // 构建闭包里，每帧都跑；`loadAIKey` 要碰 secret-tool（预算 10 秒），
+    // 放这儿就是「钥匙串一卡，每敲一个字符冻一次界面」。
+    // 掩码由 `refreshKeyPresence` 在启动与保存回包时各刷新一次。
+    let saved = model.aiKeySavedPresent.value
     return HStack {
         TextField(model.aiKeyDraft, key: "dd-ai-key").placeholder("sk-…").width(300.0.vp)
-        Label(if (saved.isEmpty()) { "未配置" } else { "已配置（不显示原文）" }).fontSize(11.0).muted()
+        Label(if (saved) { "已配置（不显示原文）" } else { "未配置" }).fontSize(11.0).muted()
         Spacer()
     }.spacing(8.vp).hug()
 }
@@ -480,6 +526,9 @@ public func saveAndTestAI(app: DesktopApp, model: AppModel): Unit {
         // 更重要的是：结论必须由**执行结果**算出来，
         // 不能在 UI 线程上靠猜「保存大概成功了」。
         let saveProblem = saveAIConfig(cfg)
+        // 保存回包前在**后台**把「key 在不在」的掩码刷新一遍
+        // （读真值要碰 secret-tool，预算 10 秒，不能进 app.post 再读 —— R4-06）。
+        let keyPresent = !loadAIKey().isEmpty()
         let verdict: String = (if (!saveProblem.isEmpty()) {
             saveProblem
         } else {
@@ -497,6 +546,7 @@ public func saveAndTestAI(app: DesktopApp, model: AppModel): Unit {
         })
         let ok = saveProblem.isEmpty() && !verdict.startsWith("✗")
         app.post {
+            model.aiKeySavedPresent.value = keyPresent
             endAction(model, "测试 AI 连接", ok)
             model.aiTestResult.value = verdict
         }
@@ -561,7 +611,6 @@ public func runAIBrief(app: DesktopApp, model: AppModel, title: String, question
     if (!beginAction(model, title)) {
         return
     }
-    let cfg = loadAIConfig()
     let bin = model.enginePath
     model.aiSheetTitle.value = title
     model.aiSheetBody.value = ""
@@ -569,6 +618,9 @@ public func runAIBrief(app: DesktopApp, model: AppModel, title: String, question
     model.aiSheetBusy.value = true
     model.aiPane.value = 3
     spawn {
+        // 配置读取在后台做（R4-06）：loadAIConfig → loadAIKey 里有
+        // 10 秒预算的 secret-tool 子进程，不能在 UI 线程等它。
+        let cfg = loadAIConfig()
         let ctxPayload = opContext(bin, target.projectName(), 4000)
         var system = "你是 deepDolphin 的项目进度助手。下面是引擎给出的确定性事实，请用中文写一段简明说明。"
         var body = ctxPayload.problem
@@ -579,6 +631,11 @@ public func runAIBrief(app: DesktopApp, model: AppModel, title: String, question
             // 读不到上下文时**说清楚**再让模型写 —— 不能让它凭项目名编一段
             system = system + "\n\n⚠ 这次没能读到引擎上下文（" + ctxPayload.problem +
                 "）。你**必须**在回答开头说明这一点，不要凭空描述项目现状。"
+        }
+        if (!cfg.loadProblem.isEmpty()) {
+            // 同一条纪律用在配置上：provider/模型回落了要说出来，不静默（R1-04）。
+            system = system + "\n\n⚠ 客户端没能完整读取 AI 配置（" + cfg.loadProblem +
+                "）。你**必须**在回答开头说明本次使用的 provider/模型可能不是用户配置的那一份。"
         }
         let msgs = ArrayList<ChatMessage>()
         msgs.add(ChatMessage.user(question))

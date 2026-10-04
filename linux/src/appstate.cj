@@ -162,6 +162,22 @@ public class AppModel {
     public let aiKeyDraft = State<String>("")
     public let aiBaseURLDraft = State<String>("")
     public let aiTestResult = State<String>("")
+    /// 系统里**已保存**的 API Key 存在吗（只存「在/不在」这个掩码，
+    /// 永远不存 key 原文）。
+    ///
+    /// ⚠ 掩码必须是**模型状态**而不是每次构建去读真值（R4-06）：
+    /// 读真值要走 `secret-tool lookup` 子进程（预算 10 秒），钥匙串被锁 /
+    /// D-Bus 卡住时一次就冻结界面 10 秒 —— 而设置页的构建闭包每帧都跑。
+    /// 真值只在两处读：启动时与保存回包时，都在后台线程
+    /// （`refreshKeyPresence`）。
+    public let aiKeySavedPresent = State<Bool>(false)
+    /// AI 对话流的滚动偏移，接给对话页 `ScrollView` 的 `scrollState`。
+    ///
+    /// ⚠ 必须是持久 State（与侧栏 `selected` 同一条理由）：控件写进来，
+    /// 下一帧还要读同一个实例才知道滚到哪。sendAI 在写入新消息时把它
+    /// 顶到一个大值 —— ScrollView 布局期会把偏移钳到「内容高 - 视口高」，
+    /// 等价于贴底；之后的滚动由用户说了算（钳制只在偏移越界时发生）。
+    public let aiScroll = State<Float32>(0.0)
 
     // ---- 启动参数深链（C10）----
     // ⚠ 用**普通字段**而不是 `State<T>`：这两个值只在启动时读一次、
@@ -272,6 +288,9 @@ public class AppModel {
 
 public func boot(app: DesktopApp, model: AppModel): Unit {
     requestRefresh(app, model)
+    // 「已保存的 key 在不在」只在启动与保存回包各读一次真值（后台线程），
+    // 设置页每帧只读掩码 —— 见 `aiKeySavedPresent` 与 `refreshKeyPresence`。
+    refreshKeyPresence(app, model)
 }
 
 public func requestRefresh(app: DesktopApp, model: AppModel): Unit {

@@ -87,7 +87,12 @@ public func mdBlockIs(a: MdBlock, b: MdBlockKind): Bool {
 // 记忆化
 // ---------------------------------------------------------------------------
 
-private let MEMO_MAX: Int64 = 4
+/// 缓存条数上限。**与对话条数同量级**（R4-07）：对话流对每条助手消息各渲染
+/// 一份 Markdown（`aiMessageRow` → `mdView` → `mdBlocks`），5 条消息就能把
+/// 上限 4 的缓存打穿 —— 命中率趋近 0，滚动一次就全量重解析一遍，
+/// 恰是本文件头注释里要避免的那个「每帧的代价」。64 条覆盖真实长对话；
+/// 单条是块数组，内存上界仍然有限。
+private let MEMO_MAX: Int64 = 64
 private var memoKeys = ArrayList<Int64>()
 private var memoVals = ArrayList<ArrayList<MdBlock>>()
 private var parseCount: Int64 = 0
@@ -101,23 +106,26 @@ public func mdParseCount(): Int64 {
     return parseCount
 }
 
-/// 文本指纹。**刻意用长度 + 头尾字符**而不是完整哈希：
-/// 判据要看「改了中间一段会不会误命中缓存」，而一个真哈希做不到这一点
-/// （不同文本撞哈希时表现不可预期）。
+/// 文本指纹：**全字节**双多项式哈希（两个 31 位素数模，合成约 62 位）。
+///
+/// ⚠ 必须扫**每一个**字节（R4-07）。旧版只采「长度 + 头尾各 64 字节」，
+/// 于是「同长度、头尾一致、中间不同」的两段正文**必然**同键 ——
+/// 对话流里就是 A 消息的解析结果被画在 B 消息上，而且注释还要求
+/// 「改完文档显式调 mdMemoReset」，全仓却没有一个生产调用点。
+/// 改成全字节哈希后，同键不同文只剩哈希碰撞一种可能（~2^-62）。
+///
+/// 为什么不是 FNV-1a 一类的 64 位回绕哈希：仓颉的 `*` 溢出是**报错**
+/// （编译期常量直接拒，运行期抛），本工具链没有可用的回绕乘法；
+/// 模素数的两项乘积都稳在 Int64 之内，不借助任何未定义行为。
 private func mdFingerprint(text: String): Int64 {
     let bytes = text.toArray()
-    if (bytes.isEmpty()) {
-        return 0
+    var h1: Int64 = 7
+    var h2: Int64 = 11
+    for (b in bytes) {
+        h1 = (h1 * 131 + Int64(b)) % 2147483647    // 2^31 - 1
+        h2 = (h2 * 137 + Int64(b)) % 2147483629    // 另一个 31 位素数
     }
-    var h: Int64 = bytes.size
-    for (i in 0..bytes.size) {
-        // 只采头 64 + 尾 64 个字节：足够区分「同一段正文」与「另一段」，
-        // 又不会在长文档上变成 O(n)。
-        if (i < 64 || i >= bytes.size - 64) {
-            h = (h * 31 + Int64(bytes[i])) % 2147483647
-        }
-    }
-    return h
+    return h1 * 2147483629 + h2
 }
 
 /// 解析（带记忆化）。
@@ -150,7 +158,9 @@ public func mdBlocks(text: String): ArrayList<MdBlock> {
     return parsed
 }
 
-/// 缓存清空。**改完文档要显式调** —— 指纹相同的两段不同正文会命中同一条缓存。
+/// 缓存清空。**给判据用**：每条判据都要从干净缓存数起，不然上一条判据
+/// 解析过的文本会污染本条的 `mdParseCount`。指纹已是全字节哈希，
+/// 生产路径不再需要「改完文档手动失效」这种纪律。
 public func mdMemoReset(): Unit {
     memoKeys = ArrayList<Int64>()
     memoVals = ArrayList<ArrayList<MdBlock>>()

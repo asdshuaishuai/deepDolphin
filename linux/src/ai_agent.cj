@@ -389,10 +389,13 @@ public func toolShortLabel(name: String): String {
 /// CUI/SDL 都没承诺它安全 —— 赌它不崩，不如换一条**确定不崩**的路。
 ///
 /// 所以停止的语义是「**立刻放弃这一轮**」：
-///   · UI 马上解锁、立刻显示已写出来的内容（按钮不再是死的）
+///   · UI 马上解锁（按钮不再是死的）
 ///   · 主循环在**每个工具调用之前**与**每轮之间**检查本标志，不再执行任何动作
-///   · 迟到的 `app.post` 被 `aiRoundIsCurrent` 拦住，不会覆盖新界面
-///   · 已经发出��那次 HTTP 请求仍然会跑完（最多到它自己的超时），
+///   · stopAI **同时推进 `aiRoundSeq`**：被放弃轮次的任何迟到 `app.post`
+///     都过不了 `aiRoundIsCurrent` 这道守卫 —— 包括「以 Stopped 收尾」的
+///     那一次。没有它，停止后立刻发起的深更新/git 写会被旧轮的迟到回写
+///     二次 `endAction` 提前解锁，两个引擎写进程抢锁（R4-04）
+///   · 已经发出的那次 HTTP 请求仍然会跑完（最多到它自己的超时），
 ///     但结果被丢弃 —— 这一点在界面上如实写出来，不假装「立刻断网」
 public var aiStopRequested: Bool = false
 
@@ -421,7 +424,9 @@ public func shouldStopBeforeToolCall(executedCount: Int64, stopRequested: Bool, 
 }
 
 /// 每一轮的**代号**。UI 线程只在代号不变时才接受迟到的回写。
-/// 没有它的话：用户停止 → 立刻发新���问 → 上一轮迟到 → **覆盖新对话**。
+/// 两个写入口：`sendAI` 发起新一轮时推进一次；`stopAI` 放弃当前轮时
+/// **也推进一次**（R4-04）—— 停止即失效，被放弃轮次的迟到回写
+/// 一律被 `aiRoundIsCurrent` 拒掉。
 public var aiRoundSeq: Int64 = 0
 
 /// 某次回写是不是当前这一轮。

@@ -324,46 +324,97 @@ func nowMillis(): Int64 {
     return DateTime.now().toUnixTimeStamp().toMilliseconds()
 }
 
-/// 从 UTF-8 字节序列解出字符串；尾部残缺字节替换为 U+FFFD 而不是抛错。
+/// 从 UTF-8 字节序列解出字符串；**任何**非法字节都替换为 U+FFFD，绝不抛错。
 ///
-/// 引擎的输出被截断（管道满了 / 超时杀掉）时，尾上的多字节字符必然残缺。
-/// 那时抛异常等于把「输出不完整」说成「进程崩了」—— 调用方无从区分，
-/// 而这两种情况的处置完全不同（前者重试即可，后者要查引擎）。
+/// 两类脏输入都要接得住：
+///   · 尾部残缺 —— 引擎输出被截断（管道满了 / 超时杀掉）时，尾上的多字节
+///     字符必然残缺。抛异常等于把「输出不完整」说成「进程崩了」——
+///     调用方无从区分，而这两种情况的处置完全不同。
+///   · 中部垃圾 —— HTTP 响应可能是 GBK 错误页、网关吐出的压缩体或二进制。
+///     只修尾部的版本对它们照样抛：抛点若落在「读响应体」与「清临时文件」
+///     之间，装着 API Key 的临时文件就永久残留（R4-02），后台线程也随之死亡。
+///
+/// 判定按 WHATWG UTF-8 解码口径：续字节 80..BF、拒绝超长序列（C0/C1）、
+/// 代理区（ED A0..BF）与 U+10FFFF 之外（F4 90..，F5..FF）；尾部残缺序列的
+/// 每个滞留字节各出一个 U+FFFD（判据钉住了这个口径）。
 func fromUtf8Lossy(bytes: Array<UInt8>): String {
-    let total = bytes.size
-    var end = total
-    // 最多回退 3 字节：一个 UTF-8 字符最长 4 字节
-    var back = 0
-    while (back < 4 && end > 0) {
-        let b = bytes[end - 1]
-        if ((b & 0xc0u8) != 0x80u8) {
-            break
-        }
-        end -= 1
-        back += 1
+    let n = bytes.size
+    if (n == 0) {
+        return ""
     }
-    if (end == total) {
-        return String.fromUtf8(bytes)
-    }
-    if (end > 0) {
-        // 末字节的续字节个数必须与已见首字节声明的长度吻合，否则整段替换
-        let lead = bytes[end - 1]
-        var need: Int64 = 0
-        if ((lead & 0xf8u8) == 0xf0u8) {
-            need = 4
-        } else if ((lead & 0xf0u8) == 0xe0u8) {
-            need = 3
-        } else if ((lead & 0xe0u8) == 0xc0u8) {
-            need = 2
-        } else {
-            need = 1
+    let sb = StringBuilder()
+    var i: Int64 = 0
+    // 合法段整段解（大响应不至于逐字节拼字符串），非法字节逐个换 U+FFFD。
+    var runStart: Int64 = 0
+    while (i < n) {
+        let len = utf8SequenceLen(bytes, i)
+        if (len == 0) {
+            if (i > runStart) {
+                sb.append(String.fromUtf8(bytes[runStart..i]))
+            }
+            sb.append("\u{FFFD}")
+            i += 1
+            runStart = i
+            continue
         }
-        if (need > 1 && (end - 1 + need) <= total) {
-            return String.fromUtf8(bytes[..end - 1 + need])
-        }
-        return String.fromUtf8(bytes[..(end - 1)])
+        i += len
     }
-    return String.fromUtf8(bytes)
+    if (n > runStart) {
+        sb.append(String.fromUtf8(bytes[runStart..n]))
+    }
+    return sb.toString()
+}
+
+/// `bytes[i]` 起的一个**合法** UTF-8 序列的长度；这个位置不合法则返回 0。
+/// 纯函数，判据直接喂字节（见 fromUtf8Lossy 的判据）。
+func utf8SequenceLen(bytes: Array<UInt8>, i: Int64): Int64 {
+    let n = bytes.size
+    let b = bytes[i]
+    if (b < 0x80u8) {
+        return 1
+    }
+    func cont(j: Int64): Bool {
+        return j < n && bytes[j] >= 0x80u8 && bytes[j] < 0xc0u8
+    }
+    if (b >= 0xc2u8 && b <= 0xdfu8) {
+        return if (cont(i + 1)) { 2 } else { 0 }
+    }
+    if (b == 0xe0u8) {
+        // E0 的第二个续字节必须 ≥ A0：挡掉 E0 80..9F 的超长编码
+        if (i + 1 < n && bytes[i + 1] >= 0xa0u8 && bytes[i + 1] < 0xc0u8 && cont(i + 2)) {
+            return 3
+        }
+        return 0
+    }
+    if ((b >= 0xe1u8 && b <= 0xecu8) || b == 0xeeu8 || b == 0xefu8) {
+        return if (cont(i + 1) && cont(i + 2)) { 3 } else { 0 }
+    }
+    if (b == 0xedu8) {
+        // ED 的第二个续字节必须 < A0：挡掉 UTF-16 代理区（CESU-8）
+        if (i + 1 < n && bytes[i + 1] >= 0x80u8 && bytes[i + 1] < 0xa0u8 && cont(i + 2)) {
+            return 3
+        }
+        return 0
+    }
+    if (b == 0xf0u8) {
+        // F0 的第二个续字节必须 ≥ 90：挡掉 5 字节超长编码
+        if (i + 1 < n && bytes[i + 1] >= 0x90u8 && bytes[i + 1] < 0xc0u8 && cont(i + 2) && cont(i + 3)) {
+            return 4
+        }
+        return 0
+    }
+    if (b >= 0xf1u8 && b <= 0xf3u8) {
+        return if (cont(i + 1) && cont(i + 2) && cont(i + 3)) { 4 } else { 0 }
+    }
+    if (b == 0xf4u8) {
+        // F4 的第二个续字节必须 < 90：U+10FFFF 之外不合法
+        if (i + 1 < n && bytes[i + 1] >= 0x80u8 && bytes[i + 1] < 0x90u8 && cont(i + 2) && cont(i + 3)) {
+            return 4
+        }
+        return 0
+    }
+    // 80..C1（续字节开头 / 超长）与 F5..FF（超出 Unicode）都不合法
+    return 0
 }
 
 /// 读干管道直到 EOF。返回 (内容, 是否一路没出错)。

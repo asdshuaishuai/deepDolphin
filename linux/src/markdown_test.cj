@@ -439,24 +439,62 @@ func parsingIsCachedBecauseTheBuildClosureRunsEveryFrame(): Unit {
 @Test
 func theMemoIsCappedSoReadingManyDocsDoesNotPileUpInMemory(): Unit {
     // 缓存无上限会把用户读过的每一篇文档都留在内存里，而收益只体现在
-    // 「同一个视图被反复构造」这一种情况上。上界 4 条。
+    // 「同一个视图被反复构造」这一种情况上。上界 64 条（R4-07）：
+    // 对话流对每条助手消息各渲染一份，上限 4 的旧值在 5 条消息时就被打穿
+    // —— 缓存整体失效，滚动一次 = 全部消息重解析一遍。
     mdMemoReset()
-    for (i in 0..6) {
+    for (i in 0..64) {
         mdBlocks("# 文档 ${i}")
     }
-    let atSix = mdParseCount()
+    let at64 = mdParseCount()
 
-    // 前 2 篇（0、1）应已被挤出，第 0 篇要重新解析
+    // 64 条全在缓存里：第 0 篇不重解析（旧上界 4 时这条必红）
     mdBlocks("# 文档 0")
-    @Expect(mdParseCount() - atSix, 1)
+    @Expect(mdParseCount() - at64, 0)
+
+    // 第 65 条把最老的挤出去：第 0 篇要重新解析
+    mdBlocks("# 一条新的")
+    let at65 = mdParseCount()
+    mdBlocks("# 文档 0")
+    @Expect(mdParseCount() - at65, 1)
 
     // 而最近的那几篇还在缓存里
-    let atSeven = mdParseCount()
-    mdBlocks("# 文档 5")
-    @Expect(mdParseCount() - atSeven, 0)
+    mdBlocks("# 文档 63")
+    @Expect(mdParseCount() - at65, 1)
 
     // 命中不了缓存也只是重新解析一遍，不算错
-    let back = mdBlocks("# 文档 3")
+    let back = mdBlocks("# 文档 0")
     @Expect(back.size, 1)
-    @Expect(back[0].lines[0], "文档 3")
+    @Expect(back[0].lines[0], "文档 0")
+}
+
+@Test
+func changingTheMiddleBustsTheMemoEvenWhenLengthHeadAndTailAllMatch(): Unit {
+    // R4-07 的另一半：旧指纹只采「长度 + 头尾各 64 字节」，两段正文
+    // 长度一致、头尾一致时，中间改出花来也命中同一条缓存 ——
+    // A 消息的解析结果被画在 B 消息上。指纹改为**全字节**哈希后，
+    // 这种必然的同键不同文不再存在（只剩 ~2^-62 的碰撞）。
+    mdMemoReset()
+    // 头尾都短于旧版 64 字节的采样窗，差异全部藏在它不看的正中间
+    let head = "## 开头\n\n"
+    let tail = "\n\n结尾一致。"
+    var midA = ""
+    var midB = ""
+    for (i in 0..80) {
+        midA += "甲"
+        midB += "乙"
+    }
+    let a = mdBlocks(head + midA + tail)
+    let afterA = mdParseCount()
+    let b = mdBlocks(head + midB + tail)
+    // B 不得命中 A 的缓存：必须真的再解析一次
+    @Expect(mdParseCount() - afterA, 1)
+    // 两份解析结果内容不同，证明缓存没把 A 的块数组递给 B
+    @Expect(a.size, b.size)
+    @Expect(a[1].lines[0].contains("甲"), true)
+    @Expect(b[1].lines[0].contains("乙"), true)
+    @Expect(!a[1].lines[0].contains("乙"), true)
+    // 同一段再取一遍 → 命中缓存，不重解析
+    mdBlocks(head + midB + tail)
+    @Expect(mdParseCount() - afterA, 1)
 }

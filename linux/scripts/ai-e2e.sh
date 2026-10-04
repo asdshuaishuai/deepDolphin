@@ -186,26 +186,32 @@ SUMMARY="$(printf '%s' "$CLEAN" | grep -A3 -E '^Summary: TOTAL:' | tail -4 | tr 
 printf '%s\n' "$CLEAN" | grep -E '^\s*TCS: TestCase_TEMP_|^E2E-|Expect Failed:|^Summary: TOTAL:|^\s+(PASSED|FAILED|ERROR):' || true
 
 E2E_FAIL=0
+# ⚠ 下面的「在不在」一律用 bash 的子串判断，**不用 `printf | grep -q`**：
+# `grep -q` 在命中后立刻退出，上游 printf 还没写完就吃到 EPIPE，
+# 而本脚本开了 `set -o pipefail` —— 管道退出码被 printf 的
+# 「Broken pipe」翻转，命中被误判成没命中。实测（本批端到端）：
+# 三条 TCS 都在输出里，检查却报「判据没被跑到」，且哪条中招随缓冲时序漂。
+# 子串判断没有管道，就没有这个竞态；语义与原来完全一致。
 # 1) 编译/运行整体必须成功
-if ! printf '%s' "$CLEAN" | grep -q 'cjpm test success'; then
+if [[ "$CLEAN" != *"cjpm test success"* ]]; then
   echo "" >&2
   echo "✗ cjpm test 本身没成功（编译错误或用例失败）—— 上面第一条就是原因" >&2
   E2E_FAIL=1
 fi
 # 2) Summary 里 0 FAILED / 0 ERROR
-if ! printf '%s' "$SUMMARY" | grep -qE 'FAILED: 0'; then
+if [[ "$SUMMARY" != *"FAILED: 0"* ]]; then
   echo "" >&2
   echo "✗ 判据没有全绿：${SUMMARY:-（根本没跑到 Summary）}" >&2
   E2E_FAIL=1
 fi
-if ! printf '%s' "$SUMMARY" | grep -qE 'ERROR: 0'; then
+if [[ "$SUMMARY" != *"ERROR: 0"* ]]; then
   echo "" >&2
   echo "✗ 判据有 ERROR：${SUMMARY:-（根本没跑到 Summary）}" >&2
   E2E_FAIL=1
 fi
 # 3) 两条端到端判据必须**真的跑过**（TCS 行存在），而不是被悄悄跳过
 for t in TEMP_e2eRequestBodySurvivesTheRealCurlRoundTrip TEMP_agentLoopCallsTheRealEngineAndConverges TEMP_stoppingBeforeToolCallsExecutesNoneOfThem; do
-  if ! printf '%s' "$CLEAN" | grep -q "TCS: TestCase_${t},"; then
+  if [[ "$CLEAN" != *"TCS: TestCase_${t},"* ]]; then
     echo "" >&2
     echo "✗ 端到端判据 $t 没被跑到" >&2
     E2E_FAIL=1
