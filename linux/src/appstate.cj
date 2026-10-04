@@ -55,6 +55,15 @@ public class AppModel {
     public let lastResult = State<String>("")
     public let lastResultOk = State<Bool>(true)
 
+    // -------------------------------------------------------------- 破坏性操作确认
+    /// 确认框在不在场（根视图上那只 Modal 的 `presented` 绑定）。
+    public let confirmOpen = State<Bool>(false)
+    /// 挂起待确认的动作。**普通字段而不是 State**：它的每次写入都伴随
+    /// `confirmOpen` 的 State 写（开框/关框都会触发整树重建），单独立 State
+    /// 只会多出一条「挂起了动作却忘了开关」的分叉路径。
+    /// Modal 只在 `presented` 为真时构建内容，读到的必然是挂起的那个动作。
+    public var pendingConfirm: Option<PendingConfirm> = None
+
     public let problem = State<String>("")
     public let staleContract = State<Bool>(false)
     /// 仪表盘载荷被契约闸门拒掉时的原因。**空串 = 正常**。
@@ -622,6 +631,397 @@ public func endAction(model: AppModel, line: String, ok: Bool): Unit {
 }
 
 // ===========================================================================
+// 破坏性操作确认（macOS 端 `DestructiveGuard.swift` 的移植）
+//
+// 【为什么要有这个】两路调查独立命中同一缺口：里程碑「放弃/删除」直接
+// actMilestone(…"drop"/"remove")、「提交」直接 actGit(…"commit")、全局浅/深
+// 更新直接 actUpdate —— 全仓确认逻辑零命中。而引擎侧坐实了后果：
+//   · `removeMilestone` 直接从列表里剔除并保存 —— **没有备份、没有回收站**，
+//     不可逆；
+//   · `commit` 走 `git add -A`，提交的是**整个工作区**，不是用户眼前挑的几个
+//     文件，「全部」两个字只藏在输入框 placeholder 里；
+//   · 批量更新要逐项目改写用户仓库里的 README / AGENTS.md。
+//
+// 【为什么判定抽成纯函数】直接在每个按钮回调里各写一个 if，就会出现
+// 第 N 遍漂移，而「漏了哪一处」没人知道。这里是唯一来源：
+// 视图回调只问 `pendConfirm` / `needsConfirmation`。
+// ===========================================================================
+
+/// 会改用户数据、且出错代价不对称的动作。
+public enum DestructiveAction {
+    | RemoveMilestone    // 删除里程碑 —— 引擎直接剔除，无备份，不可逆
+    | DropMilestone      // 放弃里程碑 —— 标成 dropped，语义上是「不做了」
+    | SetMilestoneStatus // 达成 / 重开 —— 状态可再改，**不**需要确认
+    | BulkUpdate         // 批量更新：会把托管区域写进多个仓库的 README/AGENTS.md
+    | CommitAll          // 提交全部改动：把工作区里所有未提交内容一次提交掉
+}
+
+/// 两个动作档是否相同。仓颉枚举没有 `==`（编译期报 invalid binary operator，
+/// 与 `boardColumnIs` / `scopeIs` 同一条理由）。
+public func destructiveActionIs(a: DestructiveAction, b: DestructiveAction): Bool {
+    match (a) {
+        case DestructiveAction.RemoveMilestone => return match (b) {
+            case DestructiveAction.RemoveMilestone => true
+            case _ => false
+        }
+        case DestructiveAction.DropMilestone => return match (b) {
+            case DestructiveAction.DropMilestone => true
+            case _ => false
+        }
+        case DestructiveAction.SetMilestoneStatus => return match (b) {
+            case DestructiveAction.SetMilestoneStatus => true
+            case _ => false
+        }
+        case DestructiveAction.BulkUpdate => return match (b) {
+            case DestructiveAction.BulkUpdate => true
+            case _ => false
+        }
+        case DestructiveAction.CommitAll => return match (b) {
+            case DestructiveAction.CommitAll => true
+            case _ => false
+        }
+    }
+}
+
+/// 需要确认的动作集合。
+///
+/// ⚠️ `SetMilestoneStatus` **故意不在内**：达成/重开都是可逆的状态切换，
+/// 弹确认只会把「确认疲劳」教会用户（点了太多次之后就不看了）——
+/// 那比不确认更糟，因为真正的破坏性操作也会被一起忽略。
+/// 这条边界不要为了「看起来一致」而扩大（判据里有负控钉着它）。
+public func needsConfirmation(a: DestructiveAction): Bool {
+    match (a) {
+        case DestructiveAction.RemoveMilestone => return true
+        case DestructiveAction.DropMilestone => return true
+        case DestructiveAction.BulkUpdate => return true
+        case DestructiveAction.CommitAll => return true
+        case DestructiveAction.SetMilestoneStatus => return false
+    }
+}
+
+/// 里程碑动作的引擎动词 → 守卫档。认不出的动词落进**免确认**档：
+/// 档位判错的方向必须是「少弹框」，不能是「把未知动词当成删除」。
+public func milestoneActionKind(op: String): DestructiveAction {
+    return (match (op) {
+        case "remove" => DestructiveAction.RemoveMilestone
+        case "drop" => DestructiveAction.DropMilestone
+        case _ => DestructiveAction.SetMilestoneStatus
+    })
+}
+
+/// 主体（里程碑名 / 项目名）在确认文案里的安全写法。
+/// 空名字会让确认框变成「删除里程碑「」？」——用户不知道自己在删什么。
+public func safeSubject(raw: String): String {
+    let t = raw.trimAscii()
+    return (if (t.isEmpty()) { "未命名" } else { t })
+}
+
+/// 确认框标题。必须点名**具体对象**，不能只说「确认吗」——
+/// 用户要知道自己确认的是哪一个。
+public func guardTitle(a: DestructiveAction, subject: String): String {
+    return (match (a) {
+        case DestructiveAction.RemoveMilestone => "删除里程碑「${subject}」？"
+        case DestructiveAction.DropMilestone => "放弃里程碑「${subject}」？"
+        case DestructiveAction.BulkUpdate => "更新全部项目？"
+        case DestructiveAction.CommitAll => "提交全部改动？"
+        case DestructiveAction.SetMilestoneStatus => "确认操作？"
+    })
+}
+
+/// 确认框正文：**必须说清代价**。
+/// 「删除」而不说「不可恢复」，等于让用户以为还能撤销。
+public func guardMessage(a: DestructiveAction, subject: String): String {
+    return (match (a) {
+        // 引擎的 removeMilestone 没有备份、没有回收站 —— 这句是事实陈述，
+        // 不是吓唬人的修辞。
+        case DestructiveAction.RemoveMilestone =>
+            "「${subject}」会被直接删除。引擎不留备份、也没有回收站，删除后无法恢复。"
+        case DestructiveAction.DropMilestone =>
+            "「${subject}」会被标记为已放弃，日后不再计入进行中的里程碑。之后可以重开，但这次操作本身不会被记录成历史。"
+        case DestructiveAction.BulkUpdate =>
+            "所有已注册项目的 README / AGENTS.md 等托管区域都会被改写。每个文件在改写前会留备份，但这一步会覆盖多个仓库。"
+        case DestructiveAction.CommitAll =>
+            "工作区里所有未提交的内容会被合成一次提交，未跟踪文件也会包含在内。提交信息可在之后 amend，但此刻它们会被写进历史。"
+        case DestructiveAction.SetMilestoneStatus => "这个操作可以再改回来。"
+    })
+}
+
+/// 确认按钮的标题。破坏性动作的按钮要说**会发生什么**，不是「确定」——
+/// 「确定 / 取消」挨着放的时候，用户得靠位置猜「确定」是确定什么。
+public func guardConfirmLabel(a: DestructiveAction): String {
+    return (match (a) {
+        case DestructiveAction.RemoveMilestone => "删除"
+        case DestructiveAction.DropMilestone => "放弃"
+        case DestructiveAction.BulkUpdate => "全部更新"
+        case DestructiveAction.CommitAll => "全部提交"
+        case DestructiveAction.SetMilestoneStatus => "确定"
+    })
+}
+
+/// 该不该染危险色。可逆的动作不染红：满屏红按钮会稀释「红=危险」这个信号。
+/// 批量更新每个文件改写前会留备份（引擎 applyRegions 不变量），可回滚，
+/// 所以它**不**进危险档 —— 弹一个红字的「你确定要删东西吗」式对话框，
+/// 会把真正的不可逆操作也稀释掉。
+public func guardIsDestructiveRole(a: DestructiveAction): Bool {
+    return (match (a) {
+        case DestructiveAction.RemoveMilestone => true
+        case DestructiveAction.DropMilestone => true
+        case DestructiveAction.CommitAll => true
+        case DestructiveAction.BulkUpdate => false
+        case DestructiveAction.SetMilestoneStatus => false
+    })
+}
+
+/// 更新轨道的人话（按钮标题、确认框标题共用一份词表）。
+public func updateTrackLabel(deep: Bool): String {
+    return (if (deep) { "深更新" } else { "浅更新" })
+}
+
+/// 批量更新的范围描述（mac 端 `DestructiveGuard.bulkUpdateMessage` 同款）。
+///
+/// ⚠ 批量更新**不该**和「删除里程碑」用同一种确认：它虽然会改写多个仓库，
+/// 但每个文件在改写前都会留备份，是可逆的 —— 所以这里只**报范围**
+/// （几个项目、哪一轨），让人知道这次会动多少东西。
+public func bulkUpdateMessage(projectCount: Int64, deep: Bool): String {
+    let n = (if (projectCount > 0) { projectCount } else { 0 })
+    if (n == 0) {
+        return "当前没有已注册的项目，不会做任何事。"
+    }
+    let one = (if (n == 1) { "1 个项目" } else { "${n} 个项目" })
+    let what = (if (deep) {
+        "除浅更新外还会调用 AI 重新生成内容"
+    } else {
+        "读取 git 历史并改写托管区域（README / AGENTS.md 等）"
+    })
+    return "将对 ${one} 执行${updateTrackLabel(deep)}：${what}。每个被改写的文件都会先留备份，所以可以回滚。"
+}
+
+/// 提交前的工作区规模，驱动确认框里的**具体数字**。
+///
+/// ⚠ 为什么非要这个：引擎的 `commit` 走 `git add -A` —— 它提交的是
+/// **整个工作区**。确认框若只说「要提交了」，用户仍然不知道会连多少东西进历史。
+public struct CommitAllScope {
+    public let trackedModified: Int64
+    public let untracked: Int64
+    public let staged: Int64
+
+    public init(trackedModified: Int64, untracked: Int64, staged: Int64) {
+        this.trackedModified = trackedModified
+        this.untracked = untracked
+        this.staged = staged
+    }
+
+    /// 会被 `git add -A` 带进这次提交的文件数上界。
+    /// 保守取「已改动 + 未跟踪」（暂存里的多半已计入已改动）。
+    public func willCommit(): Int64 {
+        let sum = this.trackedModified + this.untracked
+        return (if (sum > this.staged) { sum } else { this.staged })
+    }
+}
+
+/// 提交范围的人类可读描述。三态必须**可区分**，不能塌成一句「若干改动」：
+/// - 0 个 ⇒ 不该走到确认（没有可提交的东西）
+/// - 只有未跟踪 ⇒ 单独说，因为这是最容易出事的一种（误提交 .env/密钥）
+/// - 有已跟踪改动 ⇒ 说清数量
+public func commitScopeText(s: CommitAllScope): String {
+    if (s.willCommit() == 0) {
+        return "当前没有待提交的内容"
+    }
+    let parts = ArrayList<String>()
+    if (s.trackedModified > 0) {
+        parts.add("${s.trackedModified} 个已改动")
+    }
+    if (s.untracked > 0) {
+        parts.add("${s.untracked} 个未跟踪")
+    }
+    if (s.staged > 0) {
+        parts.add("${s.staged} 个已暂存")
+    }
+    let list = joinWith(parts, "、")
+    if (s.untracked > 0) {
+        return "将提交 ${s.willCommit()} 个文件（${list}）。未跟踪文件会首次进入版本历史，其中可能包含本不该提交的内容（如密钥、构建产物）。"
+    }
+    return "将提交 ${s.willCommit()} 个文件（${list}）。"
+}
+
+/// 提交确认框的标题：带上项目名，用户要知道自己确认的是哪个仓库。
+public func commitTitle(project: String): String {
+    return "在「${safeSubject(project)}」里提交全部改动？"
+}
+
+/// 提交确认框正文（带真实数量）。
+public func commitMessage(scope: CommitAllScope): String {
+    return "${commitScopeText(scope)}提交之后可以用 amend 修改信息，但文件内容已进入历史。"
+}
+
+/// 提交范围。引擎只有 `userDirtyCount` / `untrackedCount` 两个口径，
+/// 没有「已暂存」——所以那个字段恒 0，**不编造**
+/// （mac 端 `DetailViews.commitScope` 同款）；读不出来的 -1 也不许参与计数。
+public func commitAllScopeOf(model: AppModel, project: String): CommitAllScope {
+    for (p in allProjectsOf(model)) {
+        if (p.name == project) {
+            let dirty = (if (p.userDirtyCount > 0) { p.userDirtyCount } else { 0 })
+            let untracked = (if (p.untrackedCount > 0) { p.untrackedCount } else { 0 })
+            return CommitAllScope(dirty, untracked, 0)
+        }
+    }
+    return CommitAllScope(0, 0, 0)
+}
+
+/// 一个正在等确认的破坏性动作（挂在模型上，Modal 拿它拼文案）。
+public struct PendingConfirm {
+    public let action: DestructiveAction
+    /// 目标项目：更新（空串 = 全部）/ commit / 里程碑动作的项目名。
+    public let project: String
+    /// 里程碑名（非里程碑动作为空串）。
+    public let name: String
+    /// 里程碑动作的引擎动词（done/open/drop/remove；其余为空串）。
+    public let op: String
+    /// 更新轨道（非更新动作为 false）。
+    public let deep: Bool
+    /// 提交信息（非 commit 为空串）。
+    public let message: String
+
+    public init(action: DestructiveAction, project!: String = "", name!: String = "",
+        op!: String = "", deep!: Bool = false, message!: String = "") {
+        this.action = action
+        this.project = project
+        this.name = name
+        this.op = op
+        this.deep = deep
+        this.message = message
+    }
+}
+
+/// 挂起一次破坏性确认（纯状态，不碰 app —— 判据可以直接驱动）。
+///
+/// 返回**是否挂起**：破坏性动作 → 写入挂起态并开框，返回 true；
+/// 免确认档（达成/重开）→ 什么都不改，返回 false，由调用方当场执行。
+public func pendConfirm(model: AppModel, pending: PendingConfirm): Bool {
+    if (!needsConfirmation(pending.action)) {
+        return false
+    }
+    model.pendingConfirm = Some(pending)
+    model.confirmOpen.value = true
+    return true
+}
+
+/// 取消：框与挂起动作**一起**清。只关框不清挂起态的话，下次别的按钮开框前
+/// 若有残留，确认按钮就会替用户执行上一个动作。
+public func cancelConfirm(model: AppModel): Unit {
+    model.confirmOpen.value = false
+    model.pendingConfirm = None
+}
+
+/// 确认框里的「删除 / 放弃 / 全部更新 / 全部提交」按钮。
+/// **先取走再执行** —— 深更新要跑几分钟，框留在场上会盖住结果行。
+public func runPendingConfirm(app: DesktopApp, model: AppModel): Unit {
+    match (takePendingConfirm(model)) {
+        case Some(p) => runDestructive(app, model, p)
+        case None => ()
+    }
+}
+
+/// 取走挂起动作并收框（不执行）。拆出来是因为这一半不碰 app ——
+/// 无头镜头判据（WidgetTestHost）驱动得了确认路径的状态一半；
+/// 执行一半（runDestructive）要真引擎与 DesktopApp，由接线扫描钉住。
+public func takePendingConfirm(model: AppModel): Option<PendingConfirm> {
+    let p = model.pendingConfirm
+    cancelConfirm(model)
+    return p
+}
+
+/// 真正执行一次动作（确认按钮与免确认直通共用这一份分派）。
+public func runDestructive(app: DesktopApp, model: AppModel, p: PendingConfirm): Unit {
+    match (p.action) {
+        case DestructiveAction.RemoveMilestone => actMilestone(app, model, p.project, p.name, "remove")
+        case DestructiveAction.DropMilestone => actMilestone(app, model, p.project, p.name, "drop")
+        case DestructiveAction.SetMilestoneStatus => actMilestone(app, model, p.project, p.name, p.op)
+        case DestructiveAction.BulkUpdate => actUpdate(app, model, p.project, p.deep)
+        case DestructiveAction.CommitAll => actGit(app, model, p.project, "commit", p.message)
+    }
+}
+
+/// 破坏性按钮回调的**唯一入口**。需要确认 → 挂起并开框；
+/// 不需要 → 当场执行。「免确认」由 `needsConfirmation` 唯一裁决，
+/// 回调自己不再各写一个 if —— 抄多处的教训见本节头注。
+public func requestDestructive(app: DesktopApp, model: AppModel, pending: PendingConfirm): Unit {
+    if (pendConfirm(model, pending)) {
+        return
+    }
+    runDestructive(app, model, pending)
+}
+
+/// 里程碑行四个按钮（达成/重开/放弃/删除）的统一入口。
+/// 达成/重开在这里被 `needsConfirmation` 直通，行为与直连 actMilestone 一致。
+public func requestMilestoneAction(app: DesktopApp, model: AppModel, project: String, name: String, op: String): Unit {
+    requestDestructive(app, model, PendingConfirm(milestoneActionKind(op), project: project, name: name, op: op))
+}
+
+/// 双轨更新按钮（工具栏 / 工作条 / 重新索引）的统一入口。
+///
+/// **目标是「全部」时必须先过确认**（BulkUpdate）：引擎的批量更新会逐项目
+/// 改写托管文档。单项目范围直接执行 —— 与 mac 端 `Model.runUpdate` 的
+/// .project 分支同口径：只改一个仓库，且每个文件改写前有备份。
+public func requestUpdate(app: DesktopApp, model: AppModel, project: String, deep: Bool): Unit {
+    if (project.isEmpty()) {
+        requestDestructive(app, model, PendingConfirm(DestructiveAction.BulkUpdate, deep: deep))
+        return
+    }
+    actUpdate(app, model, project, deep)
+}
+
+/// 提交按钮的入口（mac 端 `DetailViews` 的 pendingCommit 同款）。
+/// 点提交 ≠ 提交：先挂起确认，「全部提交」才真跑。
+public func requestCommit(app: DesktopApp, model: AppModel, project: String, message: String): Unit {
+    requestDestructive(app, model,
+        PendingConfirm(DestructiveAction.CommitAll, project: project, op: "commit", message: message))
+}
+
+// ---------------------------------------------------------------------------
+// 确认框文案（读挂起动作；没有挂起时给空串 —— 框关着时不参与构建）
+// ---------------------------------------------------------------------------
+
+/// 确认框标题。批量更新跟 mac 端一样把轨道写进标题（「全部深更新？」），
+/// 提交带仓库名，里程碑点名具体对象。
+public func confirmHeading(p: PendingConfirm): String {
+    return (match (p.action) {
+        case DestructiveAction.BulkUpdate => "全部${updateTrackLabel(p.deep)}？"
+        case DestructiveAction.CommitAll => commitTitle(p.project)
+        case _ => guardTitle(p.action, safeSubject(p.name))
+    })
+}
+
+public func confirmHeadingOf(model: AppModel): String {
+    return (match (model.pendingConfirm) {
+        case Some(p) => confirmHeading(p)
+        case None => ""
+    })
+}
+
+/// 确认框正文。批量更新报范围（有备份，可回滚）、提交报规模（数量 +
+/// 未跟踪文件的密钥风险，由模型现场算），里程碑两种直接用守卫层文案。
+public func confirmBodyOf(model: AppModel): String {
+    return (match (model.pendingConfirm) {
+        case Some(p) =>
+            (match (p.action) {
+                case DestructiveAction.BulkUpdate => bulkUpdateMessage(allProjectsOf(model).size, p.deep)
+                case DestructiveAction.CommitAll => commitMessage(commitAllScopeOf(model, p.project))
+                case _ => guardMessage(p.action, safeSubject(p.name))
+            })
+        case None => ""
+    })
+}
+
+/// 确认按钮的标题。**要说会发生什么**，不是「确定」。
+public func confirmButtonLabelOf(model: AppModel): String {
+    return (match (model.pendingConfirm) {
+        case Some(p) => guardConfirmLabel(p.action)
+        case None => "确定"
+    })
+}
+
+// ===========================================================================
 // 写：外观（R2-03 —— 这层实现曾经零 UI 消费，用户根本没法换主题）
 // ===========================================================================
 
@@ -660,7 +1060,7 @@ public func installAppearanceChoiceObserver(model: AppModel): Resource {
 }
 
 public func actUpdate(app: DesktopApp, model: AppModel, project: String, deep: Bool): Unit {
-    let label = (if (deep) { "深更新" } else { "浅更新" }) + " ${project}"
+    let label = "${updateTrackLabel(deep)} ${project}"
     if (!beginAction(model, label)) {
         return
     }
@@ -690,7 +1090,7 @@ public func actUpdate(app: DesktopApp, model: AppModel, project: String, deep: B
         // 失败只在这一处 println 之外静默，
         // 设置页里另有「本机没有 notify-send」的显式说明。
         let notice = notifyUser("deepDolphin",
-            updateFinishedNotice(if (deep) { "深更新" } else { "浅更新" }, project, ok,
+            updateFinishedNotice(updateTrackLabel(deep), project, ok,
                 if (p.json.isSome()) { "" } else { "（" + p.problem + "）" }))
         if (!notice.isEmpty()) {
             println("deepdolphin: " + notice)
@@ -699,7 +1099,7 @@ public func actUpdate(app: DesktopApp, model: AppModel, project: String, deep: B
 }
 
 public func actUpdateAll(app: DesktopApp, model: AppModel, deep: Bool): Unit {
-    let label = (if (deep) { "深更新" } else { "浅更新" }) + " 全部项目"
+    let label = "${updateTrackLabel(deep)} 全部项目"
     if (!beginAction(model, label)) {
         return
     }

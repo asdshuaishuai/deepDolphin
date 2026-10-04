@@ -191,6 +191,46 @@ main(args: Array<String>): Int64 {
                 applyScope(model, idx)
             }
         }
+        // T1 自查开关：预置一次**挂起的破坏性确认**，拍「确认 Modal 在场」。
+        // 与 DD_SNAP_ROOT 同族 —— CUI 快照只在启动即拍，用户点不出一个确认框；
+        // 没有这个开关，确认框的布局（点名对象、代价句、按钮排布）只能靠
+        // 「代码读着像对的」来相信。走 `pendConfirm` 而不是直接写字段：
+        // 免确认档（done/open）在这里会被拒，快照上框不开，一眼就是接错了。
+        // 形状：remove:<里程碑名> | drop:<里程碑名> | commit[:<项目名>] |
+        //       update:deep | update:shallow
+        let confirm = (getVariable("DD_SNAP_CONFIRM") ?? "").trimAscii()
+        if (!confirm.isEmpty()) {
+            // 主体可能本身带冒号（里程碑名是自由文本）：第 0 段是动作，
+            // 其余原样拼回去。
+            let parts = confirm.split(":")
+            let kind = parts[0].trimAscii()
+            var subject = ""
+            for (i in 1..parts.size) {
+                subject += (if (subject.isEmpty()) { parts[i] } else { ":${parts[i]}" })
+            }
+            // 项目名默认取项目群第一个（夹具里是 atlas）；commit 可用
+            // commit:<项目名> 指定 —— 挑一个工作区非空的，规模句才有数字可拍。
+            var projName = ""
+            let ps = allProjectsOf(model)
+            if (!subject.isEmpty() && kind == "commit") {
+                projName = subject.trimAscii()
+            } else if (ps.size > 0) {
+                projName = ps[0].name
+            }
+            if (kind == "remove") {
+                pendConfirm(model, PendingConfirm(DestructiveAction.RemoveMilestone,
+                    project: projName, name: subject, op: "remove"))
+            } else if (kind == "drop") {
+                pendConfirm(model, PendingConfirm(DestructiveAction.DropMilestone,
+                    project: projName, name: subject, op: "drop"))
+            } else if (kind == "commit") {
+                pendConfirm(model, PendingConfirm(DestructiveAction.CommitAll,
+                    project: projName, op: "commit", message: "快照自查"))
+            } else if (kind == "update") {
+                pendConfirm(model, PendingConfirm(DestructiveAction.BulkUpdate,
+                    deep: subject.trimAscii() == "deep"))
+            }
+        }
     }
 
     // 启动参数深链（C10）。与 macOS 端 `handleLaunchArgs` 同一组键。

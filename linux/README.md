@@ -190,6 +190,26 @@ sips -s format png /tmp/click.bmp --out /tmp/click.png
 还没执行，那时的点击必然无人接 —— 症状与「接线被摘」一模一样）；
 以及用「构建遍数计数」等第 2 遍（同样等不到，闭包根本不重跑）。
 
+### 拍破坏性操作确认框（T1）
+
+```sh
+DD_FIXTURE_DIR="$PWD/tests/fixtures" DD_SNAP_ROOT=milestones \
+  DD_SNAP_CONFIRM="remove:接入统一登录" \
+  SDL_VIDEODRIVER=dummy bash scripts/dev-launch.sh --snapshot /tmp/confirm.bmp
+```
+
+`DD_SNAP_CONFIRM` 预置一次**挂起的破坏性确认**再拍照 —— CUI 快照只在
+启动即拍，用户点不出一个确认框；没有这个开关，确认框的布局（点名对象、
+代价句、按钮排布）只能靠「代码读着像对的」来相信。形状：
+
+- `remove:<里程碑名>` / `drop:<里程碑名>` —— 里程碑删除/放弃确认
+- `commit[:<项目名>]` —— 提交全部改动确认（缺省取项目群第一个；
+  指定一个工作区非空的项目，规模句才有数字可拍）
+- `update:deep` / `update:shallow` —— 批量更新确认
+
+预置走的是 `pendConfirm`（与真实按钮同一条入口）：免确认档（达成/重开）
+会被拒、框不开 —— 快照上拍不到框，一眼就是接线错了。
+
 **未验，且已查明是框架级阻塞**：真窗口的**交互**（滚动、悬停、真实输入）
 没验过 —— `DD_SNAP_CLICK` 能证明**点击的路由**通了，但它仍然走的是
 `post` 而不是真的鼠标事件，也证明不了滚动与悬停。

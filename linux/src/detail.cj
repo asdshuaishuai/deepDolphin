@@ -108,17 +108,20 @@ private func milestoneRow(model: AppModel, app: DesktopApp, m: Milestone, dark: 
                 }.spacing(2.0.vp).hug()
             }
             if (!done) {
-                Button("达成", {=> actMilestone(app, model, m.projectName, m.name, "done")})
+                Button("达成", {=> requestMilestoneAction(app, model, m.projectName, m.name, "done")})
                     .fontSize(fsBody()).width(62.0.vp)
             } else {
-                Button("重开", {=> actMilestone(app, model, m.projectName, m.name, "open")})
+                Button("重开", {=> requestMilestoneAction(app, model, m.projectName, m.name, "open")})
                     .fontSize(fsBody()).width(62.0.vp)
             }
-            Button("放弃", {=> actMilestone(app, model, m.projectName, m.name, "drop")})
+            // 四个按钮统一走 requestMilestoneAction（T1）：放弃/删除会被
+            // pendConfirm 挂起并弹确认框；达成/重开是可逆的状态切换，
+            // 在状态机里直通 —— **不进确认集合**（防确认疲劳，判据有负控钉着）。
+            Button("放弃", {=> requestMilestoneAction(app, model, m.projectName, m.name, "drop")})
                 .fontSize(fsBody()).width(62.0.vp)
             // 破坏性动作放最后并染红，宽度固定 ——
             // 一排等宽按钮里最后一个是「删除」，位置本身就是提示。
-            Button("删除", {=> actMilestone(app, model, m.projectName, m.name, "remove")}, role: ButtonRole.Danger)
+            Button("删除", {=> requestMilestoneAction(app, model, m.projectName, m.name, "remove")}, role: ButtonRole.Danger)
                 .fontSize(fsBody()).width(62.0.vp)
         }.spacing(8.0.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
     }.style(dsSurface(DsLevel.Card, dark)).contentPadding(12.0.vp).hug()
@@ -217,8 +220,11 @@ private func detailHeader(model: AppModel, app: DesktopApp, p: Project, now: Int
             // 单个项目层面引擎不说，详情页就不谎报。
             Spacer()
             // ⚠ `enabled(true)` = 可点。这里曾把方向写反（拿忙碌当可用条件）：
-            // 空闲时灰死、忙碌时可点却被闸门拒绝 —— 与工具栏/WorkBar 那两对
+            // 空闲时灰死、忙碌时可点却被闸门拒 —— 与工具栏/WorkBar 那两对
             // 双轨按钮是同一处笔误（R2-01），一并反转。
+            // ⚠ 直连 actUpdate 是**有意**的：这两颗只更新当前这一个仓库
+            // （mac 端 Model.runUpdate 的 .project 分支同口径，不进确认集合）；
+            // 要过确认框的是「全部」目标 —— 那在 requestUpdate 里判，别挪过来。
             Button("浅更新", {=> actUpdate(app, model, p.name, false)}).fontSize(fsBody()).enabled(!busy)
             Button("深更新", {=> actUpdate(app, model, p.name, true)}, role: ButtonRole.Primary)
                 .fontSize(fsBody()).enabled(!busy)
@@ -505,6 +511,21 @@ public func projectFactsLine(title: String, values: ArrayList<String>): String {
     return sb.toString()
 }
 
+/// git 操作按钮行（gitCard 第一排）。**commit 不在行里**：
+/// 它有下面的专属按钮 + 确认框（mac 端 `gitOpButtons` 那一排本来就只放
+/// pull/push/fetch/stash/unstash）—— 引擎白名单里的 commit 若照单渲染，
+/// 就是一个绕过确认、用空提交信息直连的第二个「提交」。
+/// 判据：纯函数测试钉行内成分，源码扫描钉按钮行用的是这份切片。
+public func gitRowOps(): Array<String> {
+    let out = ArrayList<String>()
+    for (op in gitWhitelist()) {
+        if (op != "commit") {
+            out.add(op)
+        }
+    }
+    return out.toArray()
+}
+
 /// 卡 3：提交改动（git 动作）。**紧跟页头那一排按钮**，
 /// 不隔四张卡 —— 同一组动作被拆成两半，用户会找不到另一半。
 private func gitCard(model: AppModel, app: DesktopApp, p: Project, dark: Bool): Unit {
@@ -519,7 +540,7 @@ private func gitCard(model: AppModel, app: DesktopApp, p: Project, dark: Bool): 
                 dsAlertPill("白名单：无 reset / clean / force-push", DsAlert.Info, dark)
             }.hug()
             HStack {
-                for (op in gitWhitelist()) {
+                for (op in gitRowOps()) {
                     Button(gitOpLabel(op), {=> actGit(app, model, p.name, op, "")}).fontSize(fsBody())
                 }
             }.spacing(8.0.vp).hug()
@@ -527,7 +548,11 @@ private func gitCard(model: AppModel, app: DesktopApp, p: Project, dark: Bool): 
             HStack {
                 TextField(msg, key: "dd-commit-msg-${p.name}")
                     .placeholder("提交信息（仅 commit 用）").flex()
-                Button("提交", {=> actGit(app, model, p.name, "commit", msg.value)}, role: ButtonRole.Primary)
+                // 点提交 ≠ 提交（T1）：引擎的 commit 走 git add -A，提交的是
+                // **整个工作区**，不是用户眼前挑的那几个文件。先挂起确认，
+                // 确认框点名仓库、报工作区规模与未跟踪文件的密钥风险，
+                // 「全部提交」才真跑（mac 端 DetailViews 的 pendingCommit 同款）。
+                Button("提交", {=> requestCommit(app, model, p.name, msg.value)}, role: ButtonRole.Primary)
                     .fontSize(fsBody()).width(80.0.vp)
             }.spacing(8.0.vp).hug()
         }.spacing(8.0.vp)

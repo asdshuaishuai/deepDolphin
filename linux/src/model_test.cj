@@ -3,12 +3,16 @@
 // 这些是**纯函数**测试：不开窗口、不连引擎、不碰磁盘。
 // 能不开窗口就验的规则，绝不挪到视图测试里去 ——
 // 视图测试要构造 SDL 宿主，慢一个量级，而且失败时不好定位是哪条规则破了。
+// （例外：T1 确认 Modal 的两条「镜头」判据用框架的 `WidgetTestHost` ——
+// 它是无头事务宿主，不开真窗，成本与普通判据同量级。）
 package deepdolphin_linux
 
 import std.collection.*
 import std.math.*
 import std.unittest.*
 import std.unittest.testmacro.*
+import cui.testing.WidgetTestHost
+import sdl.{Key, Rect, UiEvent}
 
 /// 一份**过旧引擎**的真实输出。
 ///
@@ -2111,4 +2115,356 @@ func commitFilterChipLensTogglesOnlyAndFallsBackToAll(): Unit {
     // 重置位没有「熄灭」态：再点一下它，筛选仍是「所有」
     all.value = false
     @Expect(commitFilterIsAll(model.dashCommits.value))
+}
+
+// ---------------------------------------------------------------------------
+// T1：破坏性操作确认（mac 端 `DestructiveGuard.swift` 的移植）
+//
+// 病在视图、判据却开不了窗 —— 与 .enabled 反写那一族同款：
+// 除了能抽成纯函数的判定与文案，还配了源码扫描钉
+// 「四个按钮回调必须经确认状态机」，并跑过负控验红。
+// ---------------------------------------------------------------------------
+
+@Test
+func needsConfirmationCoversExactlyTheFourDestructiveKinds(): Unit {
+    @Expect(needsConfirmation(DestructiveAction.RemoveMilestone))
+    @Expect(needsConfirmation(DestructiveAction.DropMilestone))
+    // 「深/浅更新全部」= BulkUpdate —— 引擎会逐项目改写托管文档
+    @Expect(needsConfirmation(DestructiveAction.BulkUpdate))
+    // 引擎的 commit 走 git add -A，提交的是**整个工作区**
+    @Expect(needsConfirmation(DestructiveAction.CommitAll))
+    // 负控（防确认范围扩散）：达成/重开是可逆的状态切换，**故意**不在集合里。
+    // 把它挪进来本条立刻红 —— 那是在教用户「确认疲劳」，
+    // 比不确认更糟：真正的破坏性操作也会一起被忽略。
+    @Expect(!needsConfirmation(DestructiveAction.SetMilestoneStatus))
+}
+
+@Test
+func milestoneVerbMapsToExactlyTheGuardKinds(): Unit {
+    // 引擎动词 → 守卫档。认不出的动词必须落「免确认」档：
+    // 档位判错的方向只能是「少弹框」，不能是「把未知动词当成删除」。
+    @Expect(destructiveActionIs(milestoneActionKind("remove"), DestructiveAction.RemoveMilestone))
+    @Expect(destructiveActionIs(milestoneActionKind("drop"), DestructiveAction.DropMilestone))
+    @Expect(destructiveActionIs(milestoneActionKind("done"), DestructiveAction.SetMilestoneStatus))
+    @Expect(destructiveActionIs(milestoneActionKind("open"), DestructiveAction.SetMilestoneStatus))
+    @Expect(destructiveActionIs(milestoneActionKind(""), DestructiveAction.SetMilestoneStatus))
+}
+
+@Test
+func guardTextNamesTheSubjectAndStatesTheCost(): Unit {
+    // 标题必须点名**具体对象**，不能只说「确认吗」——
+    // 用户要知道自己确认的是哪一个。
+    @Expect(guardTitle(DestructiveAction.RemoveMilestone, "接入统一登录"), "删除里程碑「接入统一登录」？")
+    @Expect(guardTitle(DestructiveAction.DropMilestone, "接入统一登录"), "放弃里程碑「接入统一登录」？")
+    // 正文必须说清代价：引擎不留备份、没有回收站、无法恢复。
+    // 「删除」而不说「不可恢复」，等于让用户以为还能撤销。
+    let m = guardMessage(DestructiveAction.RemoveMilestone, "接入统一登录")
+    @Expect(m.contains("接入统一登录"))
+    @Expect(m.contains("不留备份"))
+    @Expect(m.contains("无法恢复"))
+    // drop 与 remove 代价不同（可重开 vs 不可逆），不许共用一句话
+    let d = guardMessage(DestructiveAction.DropMilestone, "接入统一登录")
+    @Expect(d.contains("已放弃"))
+    @Expect(d != m)
+    // 确认按钮要说**会发生什么**，不是「确定」——
+    // 「确定/取消」挨着放时，用户得靠位置猜「确定」是确定什么。
+    @Expect(guardConfirmLabel(DestructiveAction.RemoveMilestone), "删除")
+    @Expect(guardConfirmLabel(DestructiveAction.DropMilestone), "放弃")
+    @Expect(guardConfirmLabel(DestructiveAction.BulkUpdate), "全部更新")
+    @Expect(guardConfirmLabel(DestructiveAction.CommitAll), "全部提交")
+    // 染色：不可逆三类染危险色；批量更新有备份、可回滚，不染 ——
+    // 满屏红会稀释「红=危险」这个信号。
+    @Expect(guardIsDestructiveRole(DestructiveAction.RemoveMilestone))
+    @Expect(guardIsDestructiveRole(DestructiveAction.DropMilestone))
+    @Expect(guardIsDestructiveRole(DestructiveAction.CommitAll))
+    @Expect(!guardIsDestructiveRole(DestructiveAction.BulkUpdate))
+    @Expect(!guardIsDestructiveRole(DestructiveAction.SetMilestoneStatus))
+}
+
+@Test
+func safeSubjectFallsBackToUnnamedForBlankInput(): Unit {
+    @Expect(safeSubject("接入统一登录"), "接入统一登录")
+    @Expect(safeSubject("   "), "未命名")
+    @Expect(safeSubject(""), "未命名")
+    // 空名不许渲染成「删除里程碑「」？」—— 用户不知道自己在删什么
+    @Expect(guardTitle(DestructiveAction.RemoveMilestone, safeSubject("")), "删除里程碑「未命名」？")
+    @Expect(commitTitle("atlas"), "在「atlas」里提交全部改动？")
+    @Expect(commitTitle("  "), "在「未命名」里提交全部改动？")
+}
+
+@Test
+func commitScopeTextStaysDistinguishableAcrossTheThreeStates(): Unit {
+    // 三态必须**可区分**，不能塌成一句「若干改动」：
+    // 0 个 ⇒ 不该走到确认（没有可提交的东西）
+    let zero = CommitAllScope(0, 0, 0)
+    @Expect(zero.willCommit(), 0)
+    @Expect(commitScopeText(zero), "当前没有待提交的内容")
+    // 含未跟踪 ⇒ 单独点名密钥风险 —— 这是最容易出事的一种（误提交 .env/密钥）
+    let mixed = CommitAllScope(2, 3, 0)
+    @Expect(mixed.willCommit(), 5)
+    let mixedLine = commitScopeText(mixed)
+    @Expect(mixedLine.contains("5 个文件"))
+    @Expect(mixedLine.contains("2 个已改动"))
+    @Expect(mixedLine.contains("3 个未跟踪"))
+    @Expect(mixedLine.contains("密钥"))
+    // 只有已改动 ⇒ 报数量，且不出现密钥那句（没有未跟踪就没有这个风险）
+    let trackedOnly = CommitAllScope(4, 0, 0)
+    @Expect(trackedOnly.willCommit(), 4)
+    let trackedLine = commitScopeText(trackedOnly)
+    @Expect(trackedLine.contains("4 个文件"))
+    @Expect(trackedLine.contains("4 个已改动"))
+    @Expect(!trackedLine.contains("密钥"))
+    // 暂存数大于「已改动+未跟踪」时取大者（保守上界，mac 端同一条算式）
+    @Expect(CommitAllScope(1, 2, 9).willCommit(), 9)
+}
+
+@Test
+func commitScopeReadsOnlyTheCountersTheEngineSends(): Unit {
+    // mac 端 DetailViews.commitScope 同款：引擎只有 userDirtyCount /
+    // untrackedCount 两个口径，「已暂存」恒 0 —— **不编造**。
+    let model = AppModel(EngineLocation("", "", ""))
+    model.snapshot.value = Some(StatusSnapshot.from(Json.parse(NEW_ENGINE_STATUS).getOrThrow()))
+    // atlas 实测 userDirtyCount=2、载荷里没有 untrackedCount → 上界 2
+    let s = commitAllScopeOf(model, "atlas")
+    @Expect(s.trackedModified, 2)
+    @Expect(s.untracked, 0)
+    @Expect(s.staged, 0)
+    @Expect(s.willCommit(), 2)
+    // 读不出来的 -1 不许参与计数 —— 负数上界比 0 更谎
+    @Expect(commitAllScopeOf(model, "gone").willCommit(), 0)
+    // 不在列表里的项目 → 空范围，正文落「当前没有待提交的内容」
+    @Expect(commitScopeText(commitAllScopeOf(model, "nosuch")), "当前没有待提交的内容")
+}
+
+@Test
+func bulkUpdateMessageReportsScopeAndBackupNotFalseAlarm(): Unit {
+    // 0 个 ⇒ 明说不会做任何事，不是「将对 0 个项目执行」
+    @Expect(bulkUpdateMessage(0, false), "当前没有已注册的项目，不会做任何事。")
+    let shallow = bulkUpdateMessage(15, false)
+    @Expect(shallow.contains("15 个项目"))
+    @Expect(shallow.contains("浅更新"))
+    // 只**报范围**不报「不可逆」：每个被改写的文件都先留备份、可回滚，
+    // 弹「你确定要删东西吗」式红字会把真正的不可逆操作稀释掉。
+    @Expect(shallow.contains("留备份"))
+    @Expect(!shallow.contains("无法恢复"))
+    // 深更新那一轨要说清多了什么（AI 重新生成），且数字跟着项目数走
+    let deep = bulkUpdateMessage(1, true)
+    @Expect(deep.contains("1 个项目"))
+    @Expect(deep.contains("AI"))
+    @Expect(!deep.contains("15"))
+}
+
+@Test
+func pendConfirmSuspendsDestructiveActionsAndRefusesTheReversibleOnes(): Unit {
+    let model = AppModel(EngineLocation("", "", ""))
+    @Expect(!model.confirmOpen.value)
+    @Expect(model.pendingConfirm.isNone())
+
+    // 破坏性动作：挂起 + 开框，而不是当场执行
+    @Expect(pendConfirm(model, PendingConfirm(DestructiveAction.RemoveMilestone,
+        project: "atlas", name: "v1", op: "remove")))
+    @Expect(model.confirmOpen.value)
+    match (model.pendingConfirm) {
+        case Some(p) =>
+            @Expect(destructiveActionIs(p.action, DestructiveAction.RemoveMilestone))
+            @Expect(p.project, "atlas")
+            @Expect(p.name, "v1")
+            @Expect(p.op, "remove")
+        case None => @Expect(false)
+    }
+
+    // 取消：框与挂起动作**一起**清 —— 只关框不清挂起态的话，
+    // 下次确认按钮会替用户执行上一个动作。
+    cancelConfirm(model)
+    @Expect(!model.confirmOpen.value)
+    @Expect(model.pendingConfirm.isNone())
+
+    // 负控（防确认范围扩散）：免确认档必须被拒 —— 框不开、状态不挂。
+    @Expect(!pendConfirm(model, PendingConfirm(DestructiveAction.SetMilestoneStatus,
+        project: "atlas", name: "v1", op: "done")))
+    @Expect(!model.confirmOpen.value)
+    @Expect(model.pendingConfirm.isNone())
+}
+
+@Test
+func confirmDialogTextPerKindNamesItsObjectAndStatesTheCost(): Unit {
+    let model = AppModel(EngineLocation("", "", ""))
+    model.snapshot.value = Some(StatusSnapshot.from(Json.parse(NEW_ENGINE_STATUS).getOrThrow()))
+
+    // 里程碑删除：点名对象 + 代价句
+    @Expect(pendConfirm(model, PendingConfirm(DestructiveAction.RemoveMilestone,
+        project: "atlas", name: "接入统一登录", op: "remove")))
+    @Expect(confirmHeadingOf(model), "删除里程碑「接入统一登录」？")
+    @Expect(confirmBodyOf(model).contains("不留备份"))
+    @Expect(confirmBodyOf(model).contains("无法恢复"))
+    @Expect(confirmButtonLabelOf(model), "删除")
+
+    // 提交：标题带仓库名、正文报**真实数量**（atlas 实测 2 处未提交）
+    @Expect(pendConfirm(model, PendingConfirm(DestructiveAction.CommitAll,
+        project: "atlas", op: "commit", message: "feat: x")))
+    @Expect(confirmHeadingOf(model), "在「atlas」里提交全部改动？")
+    @Expect(confirmBodyOf(model).contains("2 个文件"))
+    @Expect(confirmButtonLabelOf(model), "全部提交")
+
+    // 批量更新：标题带轨道、正文报项目数（夹具 2 个项目）与 AI 轨差分
+    @Expect(pendConfirm(model, PendingConfirm(DestructiveAction.BulkUpdate, deep: true)))
+    @Expect(confirmHeadingOf(model), "全部深更新？")
+    @Expect(confirmBodyOf(model).contains("2 个项目"))
+    @Expect(confirmBodyOf(model).contains("AI"))
+    @Expect(confirmButtonLabelOf(model), "全部更新")
+
+    // 放弃：与删除的代价句不同（可重开 vs 不可逆）
+    @Expect(pendConfirm(model, PendingConfirm(DestructiveAction.DropMilestone,
+        project: "atlas", name: "v1", op: "drop")))
+    @Expect(confirmHeadingOf(model), "放弃里程碑「v1」？")
+    @Expect(confirmBodyOf(model).contains("已放弃"))
+    @Expect(confirmBodyOf(model) != guardMessage(DestructiveAction.RemoveMilestone, "v1"))
+    cancelConfirm(model)
+    @Expect(confirmHeadingOf(model), "")
+}
+
+@Test
+func destructiveButtonCallbacksGoThroughTheConfirmationGate(): Unit {
+    // T1 回归（两路调查独立命中同一缺口）：里程碑「放弃/删除」直连
+    // actMilestone(…"drop"/"remove")、「提交」直连 actGit(…"commit")、
+    // 全局双轨/重新索引直连 actUpdate —— 全仓确认逻辑零命中。
+    // 四个回调必须经确认状态机（requestMilestoneAction / requestCommit /
+    // requestUpdate），直连形态一律不许再出现在视图源码里。
+    //
+    // ⚠ 负控已验：把「删除」改回直连 actMilestone(…"remove")，本条立刻红。
+    match (readSrcText("detail.cj")) {
+        case Some(text) =>
+            // 里程碑四个动作全部经状态机（达成/重开走它的免确认直通档）
+            @Expect(!text.contains("actMilestone("))
+            @Expect(text.contains("requestMilestoneAction(app, model, m.projectName, m.name, \"drop\")"))
+            @Expect(text.contains("requestMilestoneAction(app, model, m.projectName, m.name, \"remove\")"))
+            // commit 不许以直连形态出现（含白名单排里的第二个「提交」）
+            @Expect(!text.contains("actGit(app, model, p.name, \"commit\""))
+            @Expect(text.contains("requestCommit(app, model, p.name, msg.value)"))
+            // 按钮行必须用「去了 commit 的切片」——
+            //（gitRowOps 自己的实现体也迭代白名单，所以这里只钉正形态：
+            // 行循环一旦退回 gitWhitelist()，上面这条 contains 立刻红；
+            // 行内成分由 gitRowOpsKeepsCommitOutOfTheQuickRow 纯函数钉住。）
+            @Expect(text.contains("for (op in gitRowOps())"))
+            // 详情页头的单项目更新**有意**保持直连（mac 端 .project 分支同口径）
+            @Expect(text.contains("actUpdate(app, model, p.name, false)"))
+        case None => @Expect(false)
+    }
+    match (readSrcText("views.cj")) {
+        case Some(text) =>
+            @Expect(!text.contains("actUpdate("))
+            @Expect(text.contains("requestUpdate(app, model, updateTargetOf(model)"))
+            @Expect(text.contains("requestUpdate(app, model, \"\", false)"))
+            // Modal 必须真的挂在根视图上（此前全应用零使用）——
+            // 守卫层写得再对，框没人挂就等于没做（教训与 R2-03 同族）
+            @Expect(text.contains("Modal(model.confirmOpen"))
+            @Expect(text.contains("runPendingConfirm(app, model)"))
+        case None => @Expect(false)
+    }
+}
+
+@Test
+func gitRowOpsKeepsCommitOutOfTheQuickRow(): Unit {
+    // 引擎白名单里有 commit（AI 工具校验要用它），但**按钮行**不许渲染它：
+    // 它有专属按钮 + 确认框 —— 留在行里就是一个绕过确认、
+    // 用空提交信息直连的第二个「提交」。
+    let row = gitRowOps()
+    @Expect(!row.contains("commit"))
+    @Expect(row.contains("pull"))
+    @Expect(row.contains("push"))
+    @Expect(row.contains("stash"))
+    // 白名单本身不动 —— 它镜像引擎契约，AI 工具校验还要用
+    @Expect(gitWhitelist().contains("commit"))
+}
+
+// ---------------------------------------------------------------------------
+// T1：确认 Modal 的无头镜头（框架 `WidgetTestHost`，不开真窗）
+//
+// 守卫层的纯函数判据验「判定与文案」，这两条验**呈现与接线**：
+// 框只在挂起后在场上、内容点名挂起的动作、两颗按钮各自接对、Esc 走取消。
+// 与 DD_SNAP_CONFIRM 快照互为补充 —— 快照机链不出来时（SDL 3.4 缺口），
+// 这里就是确认框在场的证据。
+// ---------------------------------------------------------------------------
+
+@Test
+func confirmModalLensPresentsThePendingActionAndWiresBothButtons(): Unit {
+    let host = WidgetTestHost()
+    let model = AppModel(EngineLocation("", "", ""))
+    // 闭包不能捕获可变变量：用引用类型记录确认按钮是否被按下（appearance 判据同款）。
+    let fired = ArrayList<String>()
+    let view: () -> Unit = {=>
+        destructiveConfirmModalBody(model, {=>
+            // runPendingConfirm 的**状态一半**：取走挂起动作并收框
+            // （拆出 takePendingConfirm 就是为了让镜头驱动得了这一半）。
+            // 执行一半（runDestructive → actMilestone/actUpdate/actGit）要真引擎
+            // 与 DesktopApp，镜头里以记录代替；它在真挂载里的接线由
+            // destructiveButtonCallbacksGoThroughTheConfirmationGate 的扫描钉住。
+            match (takePendingConfirm(model)) {
+                case Some(p) => fired.add(confirmHeading(p))
+                case None => ()
+            }
+        })
+        ()
+    }
+    let vp = Rect(0.0, 0.0, 500.0, 400.0)
+
+    // 框关着：不注册浮层 —— 隐藏的对话框零成本（框架契约）。
+    let closed = host.frame(vp, body: view)
+    @Expect(closed.metrics.overlayCount, 0)
+
+    // 挂起「删除里程碑」：下一帧框在场，标题点名具体对象。
+    @Expect(pendConfirm(model, PendingConfirm(DestructiveAction.RemoveMilestone,
+        project: "atlas", name: "接入统一登录", op: "remove")))
+    let open = host.frame(vp, body: view)
+    @Expect(open.metrics.overlayCount, 1)
+    @Expect(confirmHeadingOf(model), "删除里程碑「接入统一登录」？")
+    @Expect(confirmBodyOf(model).contains("无法恢复"))
+    @Expect(confirmButtonLabelOf(model), "删除")
+
+    // 确认路径：聚焦「删除」按回车 → onConfirm 恰好一次、框收起、挂起态清空。
+    host.context.focus("dd-confirm-ok", viaKeyboard: true)
+    let _ = host.frame(vp, events: [UiEvent.KeyDown(Key.Enter, false)], body: view)
+    @Expect(fired.size, 1)
+    @Expect(fired[0], "删除里程碑「接入统一登录」？")
+    @Expect(!model.confirmOpen.value)
+    @Expect(model.pendingConfirm.isNone())
+    let after = host.frame(vp, body: view)
+    @Expect(after.metrics.overlayCount, 0)
+
+    // 取消路径：再挂起一次，聚焦「取消」按回车 → 什么都不执行，框与挂起态一起清。
+    @Expect(pendConfirm(model, PendingConfirm(DestructiveAction.DropMilestone,
+        project: "atlas", name: "v1", op: "drop")))
+    let open2 = host.frame(vp, body: view)
+    @Expect(open2.metrics.overlayCount, 1)
+    host.context.focus("dd-confirm-cancel", viaKeyboard: true)
+    let _ = host.frame(vp, events: [UiEvent.KeyDown(Key.Enter, false)], body: view)
+    @Expect(fired.size, 1) // 取消不触发确认
+    @Expect(!model.confirmOpen.value)
+    @Expect(model.pendingConfirm.isNone())
+    host.reset()
+}
+
+@Test
+func confirmModalLensEscapeDismissesWithoutRunning(): Unit {
+    let host = WidgetTestHost()
+    let model = AppModel(EngineLocation("", "", ""))
+    let fired = ArrayList<String>()
+    let view: () -> Unit = {=>
+        destructiveConfirmModalBody(model, {=> fired.add("ran") })
+        ()
+    }
+    let vp = Rect(0.0, 0.0, 500.0, 400.0)
+    // Esc = 取消（框架 Modal 的 dismissOnEscape）→ onDismiss → cancelConfirm：
+    // 框收起、挂起动作清空。这条钉的是「Esc 不会把挂起动作留在场上」——
+    // 留下的旧挂起态会让下一次确认框执行上一个动作。
+    @Expect(pendConfirm(model, PendingConfirm(DestructiveAction.CommitAll,
+        project: "atlas", op: "commit", message: "x")))
+    let _ = host.frame(vp, body: view)
+    let _ = host.frame(vp, events: [UiEvent.KeyDown(Key.Escape, false)], body: view)
+    @Expect(!model.confirmOpen.value)
+    @Expect(model.pendingConfirm.isNone())
+    @Expect(fired.size, 0)
+    let after = host.frame(vp, body: view)
+    @Expect(after.metrics.overlayCount, 0)
+    host.reset()
 }

@@ -10,6 +10,8 @@
 //   │  ＋添加/扫描     │                              │
 //   │  状态条          │                              │
 //   └──────────────────┴──────────────────────────────┘
+//   整棵树包在根 ZStack 里，上面叠一只确认 Modal —— 破坏性操作
+//   （删/放弃里程碑、批量更新、提交全部改动）挂起确认后由它呈现（T1）。
 //
 // 本文件**不写任何颜色字面量**。取色一律经过
 // `dsSurface` / `dsPill` / `dsAlertPill` / `dsStatColor` / `dsSequenceColor`，
@@ -20,8 +22,8 @@ package deepdolphin_linux
 import std.collection.ArrayList
 
 import cui.{Axis, Badge, BadgeKind, Binding, Button, ButtonRole, Chip, Color, CrossAxisAlignment, DesktopApp,
-    Divider, Dropdown, Flexible, FontWeight, HStack, Label, LengthUnits, Panel, ScrollView, Spacer, State,
-    SurfaceStyle, TextArea, TextField, VStack, Widget}
+    Divider, Dropdown, Flexible, FontWeight, HStack, Label, LengthUnits, Modal, Panel, ScrollView, Spacer,
+    State, SurfaceStyle, TextArea, TextField, VStack, Widget, ZStack}
 import cui.LengthUnits
 import cui.{mountEffect, rememberState}
 
@@ -31,11 +33,57 @@ import cui.{mountEffect, rememberState}
 
 func rootView(model: AppModel, app: DesktopApp): Unit {
     let dark = model.dark.value
-    VStack {
-        toolbar(model, app, dark)
-        Divider()
-        Flexible { mainArea(model, app, dark) }
-    }.spacing(0.vp)
+    // ZStack 只为把确认 Modal 叠在整个应用之上（vendor examples/contacts 同款）：
+    // Modal 不占布局空间，平时不可见，由确认状态机（appstate.cj 的 pendConfirm）
+    // 把它叫出来。挂在根上而不是某个页里 —— 破坏性动作在哪个页都能发起，
+    // 确认框就得在哪个页都能盖上来。
+    ZStack {
+        VStack {
+            toolbar(model, app, dark)
+            Divider()
+            Flexible { mainArea(model, app, dark) }
+        }.spacing(0.vp)
+        destructiveConfirmModal(model, app)
+    }
+}
+
+/// 破坏性操作确认框（T1）。**全应用唯一的 Modal**：里程碑删除/放弃、批量更新、
+/// 提交全部改动在确认状态机里挂起后由它呈现。判定与文案全部来自
+/// appstate.cj 的守卫层（mac 端 `DestructiveGuard` 的移植），这里只摆控件 ——
+/// 文案若在这里重拼，就会回到「同一份约定抄多处」的老路。
+/// Esc / 点背景 = 取消（onDismiss → cancelConfirm，框与挂起动作一起清）。
+private func destructiveConfirmModal(model: AppModel, app: DesktopApp): Unit {
+    destructiveConfirmModalBody(model, {=> runPendingConfirm(app, model)})
+}
+
+/// 确认框内容。**拆出来**是因为判据开不了真窗口：model_test 用框架的
+/// `WidgetTestHost`（无头、与 DesktopApp 同一套构建/布局/事件事务）直接驱动
+/// 这一份函数 —— 判据测的与用户看到的是**同一个** Modal，不是一支复制品。
+/// 两颗按钮带稳定 key（`dd-confirm-ok` / `dd-confirm-cancel`），
+/// 判据靠它们聚焦后按回车驱动确认路径。
+public func destructiveConfirmModalBody(model: AppModel, onConfirm: () -> Unit): Unit {
+    Modal(model.confirmOpen, onDismiss: {=> cancelConfirm(model)}) {
+        VStack {
+            Label(confirmHeadingOf(model)).fontSize(fsTitle()).fontWeight(FontWeight.semiBold).wrap()
+            Label(confirmBodyOf(model)).fontSize(fsBody()).wrap()
+            HStack {
+                Spacer()
+                Button("取消", {=> cancelConfirm(model)}).fontSize(fsBody()).key("dd-confirm-cancel")
+                Button(confirmButtonLabelOf(model), onConfirm, role: confirmButtonRoleOf(model))
+                    .fontSize(fsBody()).key("dd-confirm-ok")
+            }.spacing(8.0.vp).hug()
+        }.spacing(12.0.vp).minWidth(360.vp)
+    }
+}
+
+/// 确认按钮染不染危险色。可逆的动作不染红：满屏红按钮会稀释「红=危险」这个信号
+/// （守卫层 guardIsDestructiveRole 裁决，这里不自己判）。
+private func confirmButtonRoleOf(model: AppModel): ButtonRole {
+    let danger = (match (model.pendingConfirm) {
+        case Some(p) => guardIsDestructiveRole(p.action)
+        case None => false
+    })
+    return (if (danger) { ButtonRole.Danger } else { ButtonRole.Normal })
 }
 
 /// 引擎找不到时的空态。**先判引擎、再判项目、再判加载中** ——
@@ -101,12 +149,14 @@ func DualTrackButtons(model: AppModel, app: DesktopApp, dark: Bool): Unit {
         // 可用的条件）：空闲时主按钮全被禁用（灰罩吞事件），忙碌时反而可点 ——
         // 而忙碌时点了又被「已有动作在跑」的闸门拒绝。稳态永远点不动。
         // 与下面「AI 说明」按钮同向；model_test 的源码扫描会拒绝反写形态。
-        Button(shallowLabelFor(scope), {=> actUpdate(app, model, updateTargetOf(model), false)})
+        // ⚠ 回调走 requestUpdate 而不是直连 actUpdate（T1）：目标是「全部」时
+        // 先过确认框 —— 直连形态已被源码扫描判据钉死不许回来。
+        Button(shallowLabelFor(scope), {=> requestUpdate(app, model, updateTargetOf(model), false)})
             .fontSize(fsBody()).enabled(!busy)
         if (pending > 0) {
             dsPill("${pending}", C_SHALLOW, dark)
         }
-        Button(deepLabelFor(scope), {=> actUpdate(app, model, updateTargetOf(model), true)}, role: ButtonRole.Primary)
+        Button(deepLabelFor(scope), {=> requestUpdate(app, model, updateTargetOf(model), true)}, role: ButtonRole.Primary)
             .fontSize(fsBody()).enabled(!busy)
         // C5：在**当前范围**上要一段说明。单项目范围给项目说明，全局给项目群说明。
         // 不给「重新生成」—— 事实陈述重编一遍对用户没有价值，
@@ -697,9 +747,11 @@ private func dashFilterBar(
             // `busy` 才是「有没有东西真在跑」的真值；另设标志只会带来
             // 「什么时候把它复位回来」这个假问题（写操作跑完才复位，
             // 而 CUI 没有回调可以挂这个点）。
+            // ⚠ 重新索引 = 全局浅更新（目标「全部」），与双轨按钮同走确认框
+            // （T1；mac 端 reindex → runUpdate 的 .all 分支同一条路）。
             Button(
                 (if (model.busy.value) { "重新索引中…" } else { "重新索引" }),
-                {=> actUpdate(app, model, "", false)},
+                {=> requestUpdate(app, model, "", false)},
                 role: ButtonRole.Primary
             ).fontSize(fsBody()).enabled(!model.busy.value && !model.actionBusy.value)
         }.spacing(8.0.vp).hug()

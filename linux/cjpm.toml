@@ -8,3 +8,7 @@
 
 [dependencies]
   cui = { path = "vendor/CangjieGUI" }
+  # 直接 import `sdl`（UiEvent/Key/Rect）只为 T1 确认 Modal 的无头镜头判据
+  # （model_test 的 WidgetTestHost 用它聚焦按钮、发回车/Esc）。
+  # 本包源码的业务代码不碰 SDL —— 指向的就是 cui 依赖的同一个 vendor 目录。
+  sdl = { path = "vendor/CangjieSDL" }
