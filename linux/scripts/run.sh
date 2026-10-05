@@ -53,6 +53,19 @@ if [[ -e "$SDL3DIR/libSDL3.so.0" ]]; then
   export LD_LIBRARY_PATH="$SDL3DIR:$LD_LIBRARY_PATH"
 fi
 
+# SDL3 的可选后端依赖（libsndio / libXss 是 libSDL3 的 DT_NEEDED）：链接期
+# ld 解析它们、运行期动态加载也要它们。ci-local.sh 解到 ~/.local/sdl3 的
+# 用户空间目录——没有系统 SDL3 包的机器上没有这两处链接必挂。
+# ⚠ **追加**而不是前插（与 dev-launch.sh 同一口径）：ex/ 里可能混着要
+# glibc 2.43 的 SDL 3.4 旧物，盖过 .sdl3 的 3.2.10 就起不来。
+for dd_sdl_extra in "$HOME/.local/sdl3/ex32/usr/lib/x86_64-linux-gnu" \
+                    "$HOME/.local/sdl3/ex/usr/lib/x86_64-linux-gnu"; do
+  if [[ -d "$dd_sdl_extra" ]]; then
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$dd_sdl_extra"
+  fi
+done
+unset dd_sdl_extra
+
 # ⚠️ 上面所有 `$VAR` 紧跟中文时都必须写成 `${VAR}`：
 # bash 在 UTF-8 locale 下会把多字节字符的**首字节**当成变量名的合法延续，
 # 于是 `$DEEPGIT_BIN（仓库内）` 变成对 `DEEPGIT_BIN<首字节>` 的展开，
