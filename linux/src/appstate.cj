@@ -148,6 +148,11 @@ public class AppModel {
     /// 于是变成一个永不停歇的导航回环。
     public var snapClickFired: Bool = false
 
+    /// 里程碑页「新建里程碑」表单的初始展开态。常态恒 false（收起）；
+    /// `DD_SNAP_MS_FORM=1` 在拍快照前置真 —— 视图里 `rememberState` 的
+    /// 初值读它（U3），开关经模型字段走，不绕过视图状态通道。
+    public var snapMsFormOpen: Bool = false
+
     // ------------------------------------------------- 仪表盘筛选（段 2）
     /// 时间跨度。**状态必须在模型上，不能挂视图**：看板是第二个消费方
     /// （同屏里两个视图必须对「在看什么」说同一句话），各存一份就必然出现

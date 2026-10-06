@@ -19,8 +19,8 @@ package deepdolphin_linux
 
 import std.collection.ArrayList
 
-import cui.{Badge, BadgeKind, Button, ButtonRole, Color, CrossAxisAlignment, DesktopApp, Divider, Flexible,
-    FontWeight, HStack, Label, LengthUnits, Panel, ScrollView, Spacer, State, TextArea, TextField, VStack}
+import cui.{Axis, Badge, BadgeKind, Button, ButtonRole, Color, CrossAxisAlignment, DesktopApp, Divider, Dropdown,
+    Flexible, FontWeight, HStack, Label, LengthUnits, Panel, ScrollView, Spacer, State, TextArea, TextField, VStack}
 import cui.{rememberState}
 
 // ===========================================================================
@@ -57,7 +57,9 @@ func milestonesPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
                     }
                 case Some(ms) =>
                     if (ms.milestones.isEmpty()) {
-                        dsEmptyState("没有里程碑", "用下面的表单新建一条。", dark)
+                        // U3：新建表单收成了折叠区头，空态不再说「下面的表单」
+                        //（表单不展开就不在下面）—— 指向那个开关。
+                        dsEmptyState("没有里程碑", "展开下面的「新建里程碑」新建一条。", dark)
                     } else {
                         for (m in ms.milestones) {
                             milestoneRow(model, app, m, dark)
@@ -70,21 +72,36 @@ func milestonesPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
             }
 
             Divider()
-            milestoneForm(model, app)
+            milestoneForm(model, app, dark)
             Spacer()
         }.spacing(10.0.vp).padding(16.0.vp)
     }
 }
 
+/// 里程碑一行。U3 重排（基线 milestones.png 的病：4 行 4 颗红实心按钮墙 +
+/// 状态胶囊独立占行首把名字推右 + 三行信息撑到 90px 行高）：
+/// · 状态胶囊挪进信息列跟在名字后 —— 它说的是这条里程碑的状态，
+///   不是这一行的门牌；单独占行首等于让一颗胶囊管排版。
+/// · 动作按钮分两组：「达成/重开」是前进作（可逆状态切换），紧邻信息列；
+///   「放弃/删除」是破坏对，靠右成组，中间一道竖隔断 —— 读的动作和毁的
+///   动作扫一眼就有界限。
+/// · 行内「删除」降 Normal（views.cj confirmButtonRoleOf 的纪律原样：
+///   满屏红按钮会稀释「红=危险」，确认框才是唯一的红门）。
+///   位置保持在最后 —— 一排等宽按钮里最后一个是「删除」，位置本身就是提示。
+///   判据钉的是确认框那颗红（model_test），行内这颗不许再染回去。
+/// · tag/目标日/提交数与描述收进第二行：行高约 90px 收到约 72px，
+///   四行列表省出近一条行的纵深。
 private func milestoneRow(model: AppModel, app: DesktopApp, m: Milestone, dark: Bool): Unit {
     let done = m.isDone()
+    let stateLabel = (if (done) { "已达成" } else { "进行中" })
+    let stateColor = (if (done) { C_SHALLOW } else { C_ACCENT })
     Panel {
         HStack {
-            dsPill(if (done) { "已达成" } else { "进行中" }, (if (done) { C_SHALLOW } else { C_ACCENT }), dark)
             Flexible {
                 VStack {
                     HStack {
                         Label(m.name).fontSize(fsCard()).fontWeight(FontWeight.semiBold)
+                        dsPill(stateLabel, stateColor, dark)
                         Label(m.projectName).fontSize(fsLabel()).muted()
                     }.spacing(6.0.vp).hug()
                     HStack {
@@ -101,12 +118,13 @@ private func milestoneRow(model: AppModel, app: DesktopApp, m: Milestone, dark: 
                             // 这个里程碑建好之后什么都没发生过。
                             dsAlertPill("提交数读不出", DsAlert.Warn, dark)
                         }
+                        if (!m.description.isEmpty()) {
+                            Flexible { Label(m.description).fontSize(fsLabel()).muted().wrap() }
+                        }
                     }.spacing(10.0.vp).hug()
-                    if (!m.description.isEmpty()) {
-                        Label(m.description).fontSize(fsLabel()).muted().wrap()
-                    }
                 }.spacing(2.0.vp).hug()
             }
+            // 前动作（可逆，状态机里直通不进确认集合）紧邻信息列。
             if (!done) {
                 Button("达成", {=> requestMilestoneAction(app, model, m.projectName, m.name, "done")})
                     .fontSize(fsBody()).width(62.0.vp)
@@ -117,42 +135,110 @@ private func milestoneRow(model: AppModel, app: DesktopApp, m: Milestone, dark: 
             // 四个按钮统一走 requestMilestoneAction（T1）：放弃/删除会被
             // pendConfirm 挂起并弹确认框；达成/重开是可逆的状态切换，
             // 在状态机里直通 —— **不进确认集合**（防确认疲劳，判据有负控钉着）。
+            // 竖隔断：左「前进」右「破坏」两组的界限。
+            Divider(axis: Axis.Vertical).height(24.0.vp)
             Button("放弃", {=> requestMilestoneAction(app, model, m.projectName, m.name, "drop")})
                 .fontSize(fsBody()).width(62.0.vp)
-            // 破坏性动作放最后并染红，宽度固定 ——
-            // 一排等宽按钮里最后一个是「删除」，位置本身就是提示。
-            Button("删除", {=> requestMilestoneAction(app, model, m.projectName, m.name, "remove")}, role: ButtonRole.Danger)
+            Button("删除", {=> requestMilestoneAction(app, model, m.projectName, m.name, "remove")})
                 .fontSize(fsBody()).width(62.0.vp)
         }.spacing(8.0.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
-    }.style(dsSurface(DsLevel.Card, dark)).contentPadding(12.0.vp).hug()
+    }.style(dsSurface(DsLevel.Card, dark)).contentPadding(12.0.vp, 10.0.vp).hug()
 }
 
-private func milestoneForm(model: AppModel, app: DesktopApp): Unit {
-    let project = rememberState<String>("dd-ms-project") {selectedProjectNameOf(model)}
+/// 「新建里程碑」区。U3 三处改：
+/// · 收成一行区头 + 「展开/收起」开关：新建是低频动作，五颗字段 + 按钮常年
+///   铺在列表脚下（基线 milestones.png），表单只在展开时在场；
+///   判据钉的是 `dd-ms-form-open` 这个 dd-ms- 前缀 key（不许挂错族）。
+/// · 表单包进卡片表面（与添加/扫描面板的卡内表单同形态）。
+///   右缘收敛的根因在框架测量：TextField.measure 返回 `available.w`
+///   （vendor text_field.cj:158），固定宽（.width）之外的裸 TextField 在
+///   固定测量趟里会吃满整行可用宽，把日期框顶穿窗缘（基线里目标日期框
+///   被切）。行内 TextField 一律 .flex()（走弹性分摊趟），右缘于是
+///   对齐到卡片内边距。
+/// · 「项目」从手打 TextField 换 Dropdown：已注册项目就在模型里
+///   （milestoneProjectChoices 与 scopeLabels 同源 allProjectsOf），
+///   默认选中当前 selectedProject —— 让用户照记忆拼名字必然拼错。
+///   必填校验（项目、名称都要填）与 actMilestoneAdd 入口原样。
+private func milestoneForm(model: AppModel, app: DesktopApp, dark: Bool): Unit {
+    let choices = milestoneProjectChoices(model)
+    let projectIndex = rememberState<Int64>("dd-ms-project-index") {milestoneProjectDefaultIndex(model)}
     let name = rememberState<String>("dd-ms-name") {""}
     let tag = rememberState<String>("dd-ms-tag") {""}
     let date = rememberState<String>("dd-ms-date") {""}
     let desc = rememberState<String>("dd-ms-desc") {""}
+    // 展开态默认收起；DD_SNAP_MS_FORM 快照经 model.snapMsFormOpen 预置
+    //（开关走模型字段，与 DD_SNAP_CLICK 同一条通路，不绕过视图状态）。
+    let formOpen = rememberState<Bool>("dd-ms-form-open") {model.snapMsFormOpen}
+    let toggleLabel = (if (formOpen.value) { "收起" } else { "展开" })
+    let arrow = (if (formOpen.value) { "▾" } else { "▸" })
     VStack {
-        dsCardTitle("新建里程碑")
         HStack {
-            TextField(project, key: "dd-ms-project").placeholder("项目").width(150.0.vp)
-            TextField(name, key: "dd-ms-name").placeholder("名称").flex()
-            TextField(tag, key: "dd-ms-tag").placeholder("tag（可空）").width(140.0.vp)
-            TextField(date, key: "dd-ms-date").placeholder("目标日期 YYYY-MM-DD").width(170.0.vp)
-        }.spacing(8.0.vp).hug()
-        HStack {
-            TextField(desc, key: "dd-ms-desc").placeholder("描述（可空）").flex()
-            Button("新建", {
-                =>
-                    if (project.value.isEmpty() || name.value.isEmpty()) {
-                        model.report("项目和名称都要填", false)
-                    } else {
-                        actMilestoneAdd(app, model, project.value, name.value, tag.value, date.value, desc.value)
-                    }
-            }, role: ButtonRole.Primary).fontSize(fsCard()).width(88.0.vp)
-        }.spacing(8.0.vp).hug()
+            Label(arrow).fontSize(fsLabel()).muted()
+            dsCardTitle("新建里程碑")
+            Spacer()
+            Button(toggleLabel, {=> formOpen.value = !formOpen.value}).fontSize(fsLabel())
+                .key("dd-ms-form-toggle")
+        }.spacing(6.0.vp).hug()
+        if (formOpen.value) {
+            Panel {
+                VStack {
+                    HStack {
+                        Dropdown(choices, projectIndex, key: "dd-ms-project-choice").width(190.0.vp)
+                        TextField(name, key: "dd-ms-name").placeholder("名称").flex()
+                        TextField(tag, key: "dd-ms-tag").placeholder("tag（可空）").width(140.0.vp)
+                        TextField(date, key: "dd-ms-date").placeholder("目标日期 YYYY-MM-DD").width(170.0.vp)
+                    }.spacing(8.0.vp).hug()
+                    HStack {
+                        TextField(desc, key: "dd-ms-desc").placeholder("描述（可空）").flex()
+                        Button("新建", {
+                            =>
+                            let project = milestoneProjectChoiceAt(choices, projectIndex.value)
+                            if (project.isEmpty() || name.value.isEmpty()) {
+                                model.report("项目和名称都要填", false)
+                            } else {
+                                actMilestoneAdd(app, model, project, name.value, tag.value, date.value, desc.value)
+                            }
+                        }, role: ButtonRole.Primary).fontSize(fsCard()).width(88.0.vp)
+                    }.spacing(8.0.vp).hug()
+                }.spacing(8.0.vp)
+            }.style(dsSurface(DsLevel.Card, dark)).contentPadding(12.0.vp).hug()
+        }
     }.spacing(8.0.vp).hug()
+}
+
+/// 新建里程碑「项目」下拉的选项：**只列已注册项目**。
+/// 与 `views.cj` 的 `scopeLabels` 同一条源（`allProjectsOf`）——
+/// 项目清单在模型里，不该让用户手打。
+public func milestoneProjectChoices(model: AppModel): Array<String> {
+    let out = ArrayList<String>()
+    for (p in allProjectsOf(model)) {
+        out.add(p.name)
+    }
+    return out.toArray()
+}
+
+/// 下拉的默认选中：当前 `selectedProject` 在选项里的下标；读不出/不在列表
+/// （含项目群未读）回落 0。**不许回落 -1**：Dropdown 对越界下标夹边界，
+/// -1 会显示成第 0 项而状态却是 -1，两处各说各话。
+public func milestoneProjectDefaultIndex(model: AppModel): Int64 {
+    let selected = selectedProjectNameOf(model)
+    var i: Int64 = 0
+    for (p in allProjectsOf(model)) {
+        if (p.name == selected) {
+            return i
+        }
+        i += 1
+    }
+    return 0
+}
+
+/// 下拉下标 → 项目名。越界（含选项为空）给空串 —— 必填校验
+/// 「项目和名称都要填」接得住空串，而不是替用户猜一个项目。
+public func milestoneProjectChoiceAt(choices: Array<String>, index: Int64): String {
+    if (choices.isEmpty() || index < 0 || index >= choices.size) {
+        return ""
+    }
+    return choices[index]
 }
 
 public func selectedProjectNameOf(model: AppModel): String {
@@ -269,7 +355,8 @@ private func pulseCard(model: AppModel, p: Project, now: Int64, dark: Bool): Uni
                                 Flexible { Label(h.description).fontSize(fsBody()).wrap() }
                             }.spacing(8.0.vp).hug()
                         }.style(dsTinted(tint, dark)).contentPadding(10.vp).hug()
-                        Divider()
+                        // 尾随 Divider 摘掉（U3）：下面那条无条件 Divider 是
+                        // 唯一的分隔 —— 原来可合并提示在场时这里出现双线。
                     }
                 case None => ()
             }
@@ -280,18 +367,19 @@ private func pulseCard(model: AppModel, p: Project, now: Int64, dark: Bool): Uni
             // 被撑到两端 —— 两个数字各站一个角、中间一大片空白，
             // 「一组要互相对照的数字」被拉成了「两个互不相干的数字」。
             // 聚在左边才读得出它们是一组。
-            HStack {
-                dsInlineStat("当前分支", p.currentBranch, C_ACCENT)
-                dsInlineStat("默认分支", p.defaultBranch, C_SLATE)
-                Spacer()
-            }.spacing(28.vp).hug()
-            Divider()
-            HStack {
-                dsInlineStat("未提交", "${p.userDirtyCount}", dsStatColor(dsStatFrom(p.userDirtyCount)))
-                dsInlineStat("未跟踪", "${p.untrackedCount}", dsStatColor(dsStatFrom(p.untrackedCount)))
-                dsInlineStat("stash", "${p.stashCount}", dsStatColor(dsStatFrom(p.stashCount)))
-                Spacer()
-            }.spacing(28.vp).hug()
+            //
+            // 分支身份降为一行正文（U3，branchHeaderLine）：「main」当 22px
+            // 大字摆既不含量级信息还占一行；并进「现状」组，行首与下面的
+            // 计数行同轴。判据钉的是 pulseCard 不再调 dsInlineStat 画分支。
+            VStack {
+                Label(branchHeaderLine(p)).fontSize(fsBody())
+                HStack {
+                    dsInlineStat("未提交", "${p.userDirtyCount}", dsStatColor(dsStatFrom(p.userDirtyCount)))
+                    dsInlineStat("未跟踪", "${p.untrackedCount}", dsStatColor(dsStatFrom(p.untrackedCount)))
+                    dsInlineStat("stash", "${p.stashCount}", dsStatColor(dsStatFrom(p.stashCount)))
+                    Spacer()
+                }.spacing(28.vp).hug()
+            }.spacing(4.0.vp).crossAxisAlignment(CrossAxisAlignment.Start).hug()
             Divider()
             HStack {
                 dsInlineStat("提交", "${p.commitCount}", C_SLATE)
@@ -711,24 +799,47 @@ private func docsCards(model: AppModel, p: Project, dark: Bool): Unit {
                     }.style(dsSurface(DsLevel.Card, dark)).contentPadding(14.0.vp).hug()
                 } else {
                     for (f in d.docs) {
-                        Panel {
-                            VStack {
-                                HStack {
-                                    dsCardTitle(f.file)
-                                    Spacer()
-                                    Label("${f.content.size} 字节").fontSize(fsLabel()).muted()
-                                }.hug()
-                                if (!f.unreadableReason.isEmpty()) {
-                                    dsAlertPill("读不出来", DsAlert.Error, dark)
-                                    Label(f.unreadableReason).fontSize(fsBody()).wrap()
-                                } else {
-                                    TextArea(State<String>(f.content), key: "dd-doc-${name}-${f.file}",
-                                        editable: false).height(220.0.vp)
-                                }
-                            }.spacing(6.0.vp).hug()
-                        }.style(dsSurface(DsLevel.Card, dark)).contentPadding(14.0.vp).hug()
+                        docCard(name, f, dark)
                     }
                 }
         }
     }.spacing(10.0.vp).hug()
+}
+
+/// 一份托管文档一张卡。U3：默认收成一行标题（文件名 + 字节数 + 「展开原文」
+/// 开关）—— 原来标题下常挂一块 220vp 定高只读 TextArea，而载荷常常只有
+/// 几十个字节（atlas 实测 README 25 / AGENTS 23 字节），两卡合计约 500px，
+/// 是整页信息密度最低的一段（基线 detail-atlas.png 页尾）。原文按文件名
+/// 记展开态（dd-doc-open- 前缀 key），展开才渲染 TextArea。
+/// 读不出的分支**保持常显不折叠**：失败原因本身就是一句话，
+/// 折叠它等于把「文档在」假装出来。
+private func docCard(owner: String, f: DocFile, dark: Bool): Unit {
+    let docOpen = rememberState<Bool>("dd-doc-open-${owner}-${f.file}") {false}
+    let toggleLabel = (if (docOpen.value) { "收起原文" } else { "展开原文" })
+    Panel {
+        VStack {
+            HStack {
+                dsCardTitle(f.file)
+                Spacer()
+                Label("${f.content.size} 字节").fontSize(fsLabel()).muted()
+                Button(toggleLabel, {=> docOpen.value = !docOpen.value}).fontSize(fsLabel())
+            }.spacing(8.0.vp).hug()
+            if (!f.unreadableReason.isEmpty()) {
+                dsAlertPill("读不出来", DsAlert.Error, dark)
+                Label(f.unreadableReason).fontSize(fsBody()).wrap()
+            } else if (docOpen.value) {
+                TextArea(State<String>(f.content), key: "dd-doc-${owner}-${f.file}",
+                    editable: false).height(220.0.vp)
+            }
+        }.spacing(6.0.vp).hug()
+    }.style(dsSurface(DsLevel.Card, dark)).contentPadding(14.0.vp).hug()
+}
+
+/// 工程脉搏卡的分支身份句。同分支一句话（即默认分支），异分支两个名字
+/// 都要点出来 —— 合成一句「当前分支 main」会谎称默认分支不存在。
+public func branchHeaderLine(p: Project): String {
+    if (p.currentBranch == p.defaultBranch) {
+        return "当前分支 ${p.currentBranch}（即默认分支）"
+    }
+    return "当前分支 ${p.currentBranch} · 默认分支 ${p.defaultBranch}"
 }

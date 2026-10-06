@@ -160,6 +160,16 @@ main(args: Array<String>): Int64 {
             model.report("✗ 深更新 · 全部项目：已注册 3 个，成功 1 个，失败 2 个：atlas（路径不存在或卷未挂载）、beacon（分支读取失败）", false)
         }
 
+        // U3 自查开关：展开里程碑页的「新建里程碑」表单再拍。
+        // 与 DD_SNAP_ADD 同族 —— CUI 快照只在启动即拍，用户点不出这个开关；
+        // 表单的卡面（描边/右缘对齐/项目下拉）只能靠这一档拍到。
+        // 视图里 `rememberState` 的初值读 `model.snapMsFormOpen` ——
+        // 开关经模型字段进视图状态，与 DD_SNAP_CLICK 同一条通路，
+        // 不直接写视图内部的 State。
+        if ((getVariable("DD_SNAP_MS_FORM") ?? "").trimAscii() == "1") {
+            model.snapMsFormOpen = true
+        }
+
         // 对话页快照要给**预置对话**，否则拍到的是空态 ——
         // 空态里没有消息卡，看不到 Markdown 在 `Panel` + `ScrollView`
         // 这层嵌套里排得对不对（与 C5 面板的嵌套不同，得单独拍）。

@@ -3492,3 +3492,143 @@ func sidebarProjectRowsReadMarkNameThenShortNote(): Unit {
         case None => @Expect(false)
     }
 }
+
+// ---------------------------------------------------------------------------
+// U3：里程碑行去红墙重排 + 新建表单卡片化/折叠/项目下拉 + 详情长图折叠
+//
+// 病都在视图（基线 milestones.png / detail-atlas.png）：4 行 4 颗红实心按钮
+// 墙、表单两行右缘各说各话（日期框顶穿窗缘）、两位数节节的文档挂 220vp
+// 定高块、「main」当 22px 大字摆。能抽成纯函数的（项目下拉选项 / 分支身份
+// 句）走 @Test；「行内不染红 / TextArea 只在展开分支 / 分支行不画大字」
+// 病在呈现，照本文件惯例走源码扫描 —— chunk 切到函数体，不扫全文件。
+// ---------------------------------------------------------------------------
+
+@Test
+func milestoneProjectChoicesMirrorRegisteredProjectsAndHoldTheSelection(): Unit {
+    // 选项 = 已注册项目名（与 scopeLabels 同源 allProjectsOf），一个不多不少；
+    // 默认选中落在当前 selectedProject 上。项目群没读（空模型）时选项为空，
+    // 必填校验接得住 —— 不替用户猜一个项目名。
+    let model = AppModel(EngineLocation("", "", ""))
+    model.snapshot.value = Some(StatusSnapshot.from(Json.parse(NEW_ENGINE_STATUS).getOrThrow()))
+    let choices = milestoneProjectChoices(model)
+    @Expect(choices.size, 2)
+    @Expect(choices[0], "atlas")
+    @Expect(choices[1], "gone")
+    // 含当前选中项：selectedProject 指到谁，默认下标就是谁的位置
+    model.selectedProject.value = "gone"
+    @Expect(milestoneProjectDefaultIndex(model), 1)
+    model.selectedProject.value = "atlas"
+    @Expect(milestoneProjectDefaultIndex(model), 0)
+    // 不在列表：回落 0。**不许 -1** —— Dropdown 对越界下标夹边界，
+    // -1 会让「显示的第 0 项」与「状态里的 -1」各说各话。
+    model.selectedProject.value = "nosuch"
+    @Expect(milestoneProjectDefaultIndex(model), 0)
+    let empty = AppModel(EngineLocation("", "", ""))
+    @Expect(milestoneProjectChoices(empty).isEmpty())
+    @Expect(milestoneProjectDefaultIndex(empty), 0)
+    // 下标 → 名字：越界（含空选项）给空串
+    @Expect(milestoneProjectChoiceAt(choices, 0), "atlas")
+    @Expect(milestoneProjectChoiceAt(choices, 1), "gone")
+    @Expect(milestoneProjectChoiceAt(choices, 5), "")
+    @Expect(milestoneProjectChoiceAt(choices, -1), "")
+    @Expect(milestoneProjectChoiceAt(milestoneProjectChoices(empty), 0), "")
+}
+
+@Test
+func branchHeaderLineMergesSameBranchAndNamesBothWhenTheyDiffer(): Unit {
+    // 同分支：一句话点明「它就是默认分支」；异分支：两个名字都写出来 ——
+    // 压成「当前分支 X」一句会谎称默认分支不存在。两种形态不许塌成同一句。
+    let same = Project.from(Json.parse(
+        "{\"name\":\"a\",\"path\":\"/tmp/a\",\"kind\":\"git\",\"currentBranch\":\"main\",\"defaultBranch\":\"main\",\"branches\":[],\"overall\":{}}"
+    ).getOrThrow())
+    @Expect(branchHeaderLine(same), "当前分支 main（即默认分支）")
+    let diff = Project.from(Json.parse(
+        "{\"name\":\"a\",\"path\":\"/tmp/a\",\"kind\":\"git\",\"currentBranch\":\"feature/b3\",\"defaultBranch\":\"main\",\"branches\":[],\"overall\":{}}"
+    ).getOrThrow())
+    @Expect(branchHeaderLine(diff), "当前分支 feature/b3 · 默认分支 main")
+    @Expect(branchHeaderLine(same) != branchHeaderLine(diff))
+}
+
+@Test
+func milestoneRowKeepsTheRedGateInTheConfirmModalNotInTheRow(): Unit {
+    // 行内「删除」降 Normal（U3）：基线 milestones.png 4 行 4 颗红实心是
+    // 按钮墙 —— views.cj confirmButtonRoleOf 的纪律：满屏红稀释「红=危险」，
+    // 确认框才是唯一的红门。扫描范围限定 milestoneRow 函数体；
+    // 确认框那颗 Danger 在 views.cj 原样保留（负向对照钉住）。
+    match (readSrcText("detail.cj")) {
+        case Some(raw) =>
+            let code = srcCodeText(raw)
+            let row = srcChunk(code, "func milestoneRow(", "private func milestoneForm(")
+            @Expect(!row.contains("ButtonRole.Danger"))
+            @Expect(!row.contains("role:"))
+            // 三颗动作按钮入口一颗不减：前进作（达成|重开二选一都在源里）
+            // + 破坏对（放弃|删除），全部仍经 requestMilestoneAction（T1 口径）
+            @Expect(row.contains("\"done\""))
+            @Expect(row.contains("\"open\""))
+            @Expect(row.contains("\"drop\""))
+            @Expect(row.contains("\"remove\""))
+            @Expect(countIn(row, "requestMilestoneAction(app, model, m.projectName, m.name,"), 4)
+            // 状态胶囊跟在名字后（不再是行首独立列）：名字的 Label 在胶囊之前
+            @Expect(srcBefore(row, "dsPill(stateLabel").contains("Label(m.name)"))
+            // 前进组与破坏对之间有竖隔断
+            @Expect(row.contains("Divider(axis: Axis.Vertical)"))
+        case None => @Expect(false)
+    }
+    match (readSrcText("views.cj")) {
+        case Some(raw) =>
+            let code = srcCodeText(raw)
+            @Expect(code.contains("confirmButtonRoleOf(model: AppModel): ButtonRole"))
+            @Expect(code.contains("ButtonRole.Danger"))
+        case None => @Expect(false)
+    }
+}
+
+@Test
+func milestoneFormCollapsesIntoAHeaderAndPicksProjectsFromADropdown(): Unit {
+    // ① 展开开关：dd-ms- 前缀 key 的 rememberState<Bool>（判据钉 key 前缀，
+    //    挂错族等于快照开关对不上）。
+    // ② 项目是 Dropdown：`TextField(project, key: "dd-ms-project")` 手打形态
+    //    不许回来。
+    // ③ 必填校验与提交入口原样：report 文案与 actMilestoneAdd 一个字不动
+    //   （dd-ms-* 控件键、五颗控件、卡片表面都要在）。
+    match (readSrcText("detail.cj")) {
+        case Some(raw) =>
+            let code = srcCodeText(raw)
+            let form = srcChunk(code, "func milestoneForm(", "public func milestoneProjectChoices(")
+            @Expect(form.contains("rememberState<Bool>(\"dd-ms-form-open\")"))
+            @Expect(form.contains("Dropdown(choices, projectIndex, key: \"dd-ms-project-choice\")"))
+            @Expect(!code.contains("TextField(project, key: \"dd-ms-project\")"))
+            @Expect(form.contains("key: \"dd-ms-name\""))
+            @Expect(form.contains("key: \"dd-ms-tag\""))
+            @Expect(form.contains("key: \"dd-ms-date\""))
+            @Expect(form.contains("key: \"dd-ms-desc\""))
+            @Expect(form.contains("Button(\"新建\""))
+            @Expect(form.contains("model.report(\"项目和名称都要填\", false)"))
+            @Expect(form.contains("actMilestoneAdd(app, model, project, name.value, tag.value, date.value, desc.value)"))
+            // 表单有卡片表面（描边 + 圆角来自 dsSurface(Card)）
+            @Expect(form.contains("dsSurface(DsLevel.Card, dark)"))
+        case None => @Expect(false)
+    }
+}
+
+@Test
+func detailCardsFoldTheDocsAndDemoteTheBranchLine(): Unit {
+    // ① 文档卡：TextArea 只出现在展开分支内（`} else if (docOpen.value) {`
+    //    之后），展开态按文件名记（dd-doc-open- key）。
+    // ② pulseCard：分支身份不再画成两枚大字（dsInlineStat），换一行正文
+    //    branchHeaderLine(p)。
+    match (readSrcText("detail.cj")) {
+        case Some(raw) =>
+            let code = srcCodeText(raw)
+            let docs = srcChunk(code, "func docsCards(", "public func branchHeaderLine(")
+            @Expect(docs.contains("rememberState<Bool>(\"dd-doc-open-"))
+            @Expect(docs.contains("} else if (docOpen.value) {"))
+            @Expect(srcAfter(docs, "} else if (docOpen.value) {").contains("TextArea("))
+            @Expect(!srcBefore(docs, "} else if (docOpen.value) {").contains("TextArea("))
+            let pulse = srcChunk(code, "func pulseCard(", "private func commitTypeCard(")
+            @Expect(!pulse.contains("dsInlineStat(\"当前分支\""))
+            @Expect(!pulse.contains("dsInlineStat(\"默认分支\""))
+            @Expect(pulse.contains("branchHeaderLine(p)"))
+        case None => @Expect(false)
+    }
+}
