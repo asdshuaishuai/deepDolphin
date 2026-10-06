@@ -53,6 +53,14 @@ public let C_SLATE: Int64 = 0x64748B
 public let C_YELLOW_TEXT_LIGHT: Int64 = 0xA16207   // amber-700 · 对白卡 4.92:1
 public let C_ORANGE_TEXT_LIGHT: Int64 = 0xC2410C   // orange-700 · 对白卡 5.18:1
 
+/// 绿/灰（2026-10-07 扩档，与黄/橙同一批病）：
+/// #10B981 当文字压在自己的胶囊底（原色@30 铺白）上只有 2.27:1，
+/// #94A3B8 对白卡只有 2.56:1。深档取同色系低一阶：
+/// 绿取 emerald-700，灰直接复用本表的 C_SLATE（「灰字变 slate」）——
+/// 不另编新值，跨端同一个「灰」还是一个灰。
+public let C_SHALLOW_TEXT_LIGHT: Int64 = 0x047857  // emerald-700 · 对白卡 5.48:1、对绿胶囊底 4.88:1
+public let C_GRAY_TEXT_LIGHT: Int64 = C_SLATE      // slate-500 · 对白卡 4.76:1
+
 /// 文字该用哪一档状态色。**视图里凡把状态色喂给 `foregroundColor` 都经过这里**，
 /// 直接 `dsColor(C_YELLOW)` 写在亮底上就是 1.9:1 的不可读文字。
 ///
@@ -68,6 +76,12 @@ public func dsTextColor(accent: Int64, dark: Bool): Int64 {
     }
     if (accent == C_ORANGE) {
         return C_ORANGE_TEXT_LIGHT
+    }
+    if (accent == C_SHALLOW) {
+        return C_SHALLOW_TEXT_LIGHT
+    }
+    if (accent == C_GRAY) {
+        return C_GRAY_TEXT_LIGHT
     }
     return accent
 }

@@ -2323,6 +2323,73 @@ func statusTextVariantsMeetContrastOnLightSurfacesWhileDarkKeepsTheBrightOnes():
     }
 }
 
+@Test
+func greenAndGrayTextVariantsMeetContrastOnLightSurfacesWhileDarkKeepsTheBrightOnes(): Unit {
+    // U1（2026-10-07）：闸门扩档绿/灰。#10B981 直接当文字压在自己的胶囊底
+    //（原色@30 铺白）上只有 2.27:1 —— 仪表盘「浅更新 3」、里程碑「已达成」、
+    // 详情页「活跃」全中招；#94A3B8 对白卡只有 2.56:1（详情页两行灰字）。
+    // 深档：绿取 emerald-700，灰取 C_SLATE（「灰字变 slate」）。
+    @Expect(C_SHALLOW_TEXT_LIGHT, 0x047857)
+    @Expect(C_GRAY_TEXT_LIGHT, C_SLATE)
+    @Expect(dsTextColor(C_SHALLOW, false), C_SHALLOW_TEXT_LIGHT)
+    @Expect(dsTextColor(C_GRAY, false), C_GRAY_TEXT_LIGHT)
+    // 暗色分支原样返回（负控：扩档不许波及暗色主题，绿在暗底上本来就是对的）
+    @Expect(dsTextColor(C_SHALLOW, true), C_SHALLOW)
+    @Expect(dsTextColor(C_GRAY, true), C_GRAY)
+    // 亮底实算。绿：白卡与其真实落点（绿胶囊底）双达标；
+    // 灰：白卡达标（4.76:1），两处调用点（detail.cj「最近提交时间读不出来」
+    // 「待记录数已失效」）都在白卡上。
+    @Expect(contrastRatio(C_SHALLOW_TEXT_LIGHT, CARD_LIGHT) >= 4.5)
+    @Expect(contrastRatio(C_SHALLOW_TEXT_LIGHT, alphaOver(C_SHALLOW, 30, CARD_LIGHT)) >= 4.5)
+    @Expect(contrastRatio(C_GRAY_TEXT_LIGHT, CARD_LIGHT) >= 4.5)
+    @Expect(contrastRatio(C_GRAY_TEXT_LIGHT, CARD_LIGHT) > contrastRatio(C_GRAY, CARD_LIGHT))
+    // 理论组合「灰字压灰胶囊底」从 2.33:1 提到 4.32:1 —— 不到 4.5，如实钉住
+    // 现值并披露：当前全仓没有任何 C_GRAY 当胶囊底的调用点（dsPill 的底色
+    // 恒用原色铺），dsStatusPill 落 Unknown 时才可能出现，真出现也比原字可读。
+    @Expect(contrastRatio(C_GRAY_TEXT_LIGHT, alphaOver(C_GRAY, 30, CARD_LIGHT)) > 4.3)
+    @Expect(contrastRatio(C_GRAY_TEXT_LIGHT, alphaOver(C_GRAY, 30, CARD_LIGHT))
+        > contrastRatio(C_GRAY, alphaOver(C_GRAY, 30, CARD_LIGHT)))
+}
+
+@Test
+func grayTextNeverBypassesTheGateAsRawCGray(): Unit {
+    // U1：详情页两行灰字曾直接 `dsColor(C_GRAY)` 当文字（白底 2.56:1），
+    // 绕过了闸门。扫源码禁裸用 —— 行内着色一律 `dsTextColor(C_GRAY, dark)`，
+    // 亮色主题才换得上 C_SLATE 深档。色点/分段条不在此列（它们不走 dsColor）。
+    for (name in ["views.cj", "detail.cj", "sidebar.cj", "ai_view.cj", "components.cj"]) {
+        match (readSrcText(name)) {
+            case Some(text) => @Expect(!text.contains("dsColor(C_GRAY)"), true)
+            case None => @Expect(false)
+        }
+    }
+}
+
+@Test
+func pageHeadersShareOneTitleScaleAcrossAllViews(): Unit {
+    // U1：页头同一角色四个档（仪表盘 22 / 看板·里程碑 17 / AI 面板 15），
+    // 归一到 fsTitle 一档。fsTitle==20 对齐框架锚（font_style.cj:137 TITLE）。
+    // 逐页头扫写字形态，哪个页头掉档哪个看得见。
+    @Expect(fsTitle(), 20.0)
+    match (readSrcText("views.cj")) {
+        case Some(text) =>
+            @Expect(text.contains("Label(\"项目群脉搏\").fontSize(fsTitle())"), true)
+            @Expect(text.contains("Label(\"看板\").fontSize(fsTitle())"), true)
+            // 仪表盘页头从 fsDisplay 退位：那一档只留给 KPI 大数字。
+            @Expect(!text.contains("Label(\"项目群脉搏\").fontSize(fsDisplay()"))
+        case None => @Expect(false)
+    }
+    match (readSrcText("detail.cj")) {
+        case Some(text) => @Expect(text.contains("Label(\"里程碑\").fontSize(fsTitle())"), true)
+        case None => @Expect(false)
+    }
+    match (readSrcText("ai_view.cj")) {
+        case Some(text) =>
+            @Expect(text.contains("Label(\"AI 助手\").fontSize(fsTitle())"), true)
+            @Expect(text.contains("Label(\"AI 设置\").fontSize(fsTitle())"), true)
+        case None => @Expect(false)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // R2-05：字号只许有一套刻度
 // ---------------------------------------------------------------------------
@@ -2332,12 +2399,16 @@ func fontScaleIsTheSevenStepsAndTokensFileCarriesNoSecondScale(): Unit {
     // R2-05：字号曾有两套表并存（tokens.cj 的 FS_* 与 components.cj 的 fs*），
     // FS_* 全仓零引用已删。这里钉住唯一一套的七个取值；
     // tokens.cj 里不许再长出第二张字号表。
-    @Expect(fsMicro(), 10.0)
-    @Expect(fsLabel(), 11.0)
-    @Expect(fsBody(), 12.0)
-    @Expect(fsCard(), 13.0)
+    // U1（2026-10-07）：七档整体上移 11/12/13/14/15/20/22 —— 旧刻度比框架
+    // 标准刻度（font_style.cj FontSizes：CAPTION 13 / BODY 15 / TITLE 20）
+    // 整体小 2-3 档，基线快照里正文糊成灰小字。fsBody 对齐 CAPTION、
+    // fsTitle 对齐框架 TITLE；fsDisplay 22 只留给 KPI 大数字。
+    @Expect(fsMicro(), 11.0)
+    @Expect(fsLabel(), 12.0)
+    @Expect(fsBody(), 13.0)
+    @Expect(fsCard(), 14.0)
     @Expect(fsSection(), 15.0)
-    @Expect(fsTitle(), 17.0)
+    @Expect(fsTitle(), 20.0)
     @Expect(fsDisplay(), 22.0)
     match (readSrcText("tokens.cj")) {
         case Some(text) => @Expect(!text.contains("public let FS_"))

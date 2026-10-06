@@ -21,15 +21,21 @@ import cui.{CanvasWidget, Color, CrossAxisAlignment, FontWeight, HStack, Label, 
 // ⚠ 全仓唯一一套字号表（tokens.cj 里那套 FS_* 死令牌已删）。
 // 视图写 `.fontSize(fsBody())` 这样的裸字面量就是另立刻度 —— 散值一律收进来。
 // Markdown 渲染器的 `mdHeadingSize` 是照抄 macOS 端的独立映射，不算散值。
+//
+// 【2026-10-07 整体上移一档】旧刻度 10/11/12/13/15/17/22 比框架标准刻度
+//（`font_style.cj` FontSizes：CAPTION 13 / BODY 15 / TITLE 20）整体小 2-3 档，
+// 六张基线快照里正文、图例、胶囊字糊成同一片灰小字。新刻度 11/12/13/14/15/20/22：
+// 正文对齐框架 CAPTION、页头对齐框架 TITLE，页头四页（仪表盘/看板/里程碑/AI 面板）
+// 归一到 fsTitle 一档。
 // ===========================================================================
 
-public func fsDisplay(): Float32 { return 22.0 }   // 大号数值（KPI / 统计卡 / 内联统计）与仪表盘页头
-public func fsTitle(): Float32 { return 17.0 }     // 页标题 / 详情页头项目名
+public func fsDisplay(): Float32 { return 22.0 }   // 大号数值（KPI / 统计卡 / 内联统计）
+public func fsTitle(): Float32 { return 20.0 }     // 页标题（四页页头同一档）/ 详情页头项目名
 public func fsSection(): Float32 { return 15.0 }   // 区块标题
-public func fsCard(): Float32 { return 13.0 }      // 卡片标题 / 卡内行标题
-public func fsBody(): Float32 { return 12.0 }      // 正文
-public func fsLabel(): Float32 { return 11.0 }     // 次要标注
-public func fsMicro(): Float32 { return 10.0 }     // 徽标 / 披露
+public func fsCard(): Float32 { return 14.0 }      // 卡片标题 / 卡内行标题
+public func fsBody(): Float32 { return 13.0 }      // 正文
+public func fsLabel(): Float32 { return 12.0 }     // 次要标注
+public func fsMicro(): Float32 { return 11.0 }     // 徽标 / 披露（胶囊文字随此档）
 
 // ===========================================================================
 // 语义胶囊 —— 状态与标签的唯一构造点

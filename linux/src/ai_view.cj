@@ -49,7 +49,7 @@ public func closeAIPane(model: AppModel): Unit {
 public func aiChatPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     VStack {
         HStack {
-            Label("AI 助手").fontSize(fsSection()).fontWeight(FontWeight.semiBold)
+            Label("AI 助手").fontSize(fsTitle()).fontWeight(FontWeight.semiBold)
             Label(aiScopeLabel(model)).fontSize(fsLabel()).muted()
             Spacer()
             if (!model.aiExecuted.value.isEmpty()) {
@@ -323,7 +323,7 @@ public func agentOutcomeWasStopped(o: AgentOutcome): Bool {
 public func aiSettingsPane(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     VStack {
         HStack {
-            Label("AI 设置").fontSize(fsSection()).fontWeight(FontWeight.semiBold)
+            Label("AI 设置").fontSize(fsTitle()).fontWeight(FontWeight.semiBold)
             Spacer()
             Button("关闭", {=> closeAIPane(model)}).fontSize(fsBody())
         }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()

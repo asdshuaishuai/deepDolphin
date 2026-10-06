@@ -690,7 +690,7 @@ private func dashboardBody(model: AppModel, app: DesktopApp, dark: Bool): Unit {
         // ── 段 1：页头 ──
         HStack {
             VStack {
-                Label("项目群脉搏").fontSize(fsDisplay()).fontWeight(FontWeight.bold)
+                Label("项目群脉搏").fontSize(fsTitle()).fontWeight(FontWeight.bold)
                 Label(dashSummaryLine(kpis)).fontSize(fsCard()).muted()
             }.crossAxisAlignment(CrossAxisAlignment.Start).hug()
             Spacer()

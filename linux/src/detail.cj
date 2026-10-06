@@ -348,7 +348,8 @@ private func pulseCard(model: AppModel, p: Project, now: Int64, dark: Bool): Uni
                 case None =>
                     if (p.lastCommitAgo.isEmpty()) {
                         Label("最近提交时间读不出来").fontSize(fsBody())
-                            .foregroundColor(dsColor(C_GRAY))
+                            // 灰字过闸门：C_GRAY 原色对白卡只有 2.56:1，亮色主题换 C_SLATE 深档。
+                            .foregroundColor(dsColor(dsTextColor(C_GRAY, dark)))
                     } else {
                         Label("最近提交：${p.lastCommitAgo}").fontSize(fsBody())
                     }
@@ -581,7 +582,8 @@ private func branchCard(p: Project, dark: Bool): Unit {
                         } else {
                             dsStatusPill(b.status, dark)
                         }
-                        Label(b.name).fontSize(fsBody()).maxLines(1).width(170.0.vp)
+                        // 列宽随 fsBody 12→13 校准（170×13/12），防字大后新截断。
+                        Label(b.name).fontSize(fsBody()).maxLines(1).width(190.0.vp)
                         Flexible { Label(b.headSubject).fontSize(fsBody()).muted().maxLines(1) }
                         Label(b.headShort).fontSize(fsLabel()).muted()
                         Label(b.headAgo).fontSize(fsLabel()).muted().width(70.0.vp)
@@ -592,7 +594,8 @@ private func branchCard(p: Project, dark: Bool): Unit {
                     }
                     if (b.baselineReset) {
                         Label("待记录数已失效（基线重建）").fontSize(fsLabel())
-                            .foregroundColor(dsColor(C_GRAY))
+                            // 同上：灰字过闸门，亮色主题换 C_SLATE 深档。
+                            .foregroundColor(dsColor(dsTextColor(C_GRAY, dark)))
                     }
                     Divider()
                 }
@@ -643,10 +646,12 @@ private func journalCard(model: AppModel, p: Project, dark: Bool): Unit {
                             for (e in j.entries) {
                                 VStack {
                                     HStack {
-                                        Label(e.at).fontSize(fsLabel()).muted().width(110.0.vp)
-                                        Label(e.branch).fontSize(fsLabel()).maxLines(1).width(120.0.vp)
+                                        // 列宽随 fsLabel 11→12 校准（时间列放宽到能放下整串
+                                        // 「2026-10-01T00:05:52」，基线里它本来就被截成「…05:…」）。
+                                        Label(e.at).fontSize(fsLabel()).muted().width(150.0.vp)
+                                        Label(e.branch).fontSize(fsLabel()).maxLines(1).width(130.0.vp)
                                         dsTrackPill(if (e.mode == "deep") { DsTrack.Deep } else { DsTrack.Shallow }, dark)
-                                        Label(e.commitText()).fontSize(fsLabel()).muted().width(140.0.vp)
+                                        Label(e.commitText()).fontSize(fsLabel()).muted().width(150.0.vp)
                                         Flexible { Label(e.summary).fontSize(fsLabel()).muted().maxLines(2) }
                                     }.spacing(8.0.vp).hug()
                                     // 口径说明挂在**这一条下面**，不塞进那 140vp 的窄列 ——
