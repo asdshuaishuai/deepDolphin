@@ -3330,3 +3330,165 @@ func actionBannerAndSidebarStripConsumeTheStateBySourceScan(): Unit {
         case None => @Expect(false)
     }
 }
+
+// ---------------------------------------------------------------------------
+// U2（2026-10-07）：全局 chrome 收敛 —— 双轨更新只挂一处、每屏唯一 primary、
+// pill 归位、侧栏行与底部状态区重排。
+//
+// 病在基线快照里肉眼可见（docs/ui/before/dashboard.png、detail-atlas.png）：
+// 顶栏 + WorkBar（详情页再加页头）同屏两~三对浅/深更新、四颗蓝实心、
+// 全局浅更新三遍；绿 pill 挤在浅/深两颗按钮之间读作分隔符；侧栏失败行把
+// 28 字截断的引擎错误原文塞进行里（半字切口）、「plainly ●1」形状数字黏连；
+// 底部一颗 Primary 蓝按钮压着全应用最小字号（fsMicro）的状态行。
+// 病根全在视图层，判据沿用本文件 R2 族的两条腿：能抽成纯函数的
+//（sidebarProjectLabel / workBarShowsDualTrack）直接喂；接线与形态走
+// srcCodeText 源码扫描。
+// ---------------------------------------------------------------------------
+
+/// needle 在 text 里出现的次数（split 求差；分隔符不占位）。
+private func countIn(text: String, needle: String): Int64 {
+    return Int64(text.split(needle).size - 1)
+}
+
+/// text 里第一次出现 mark 之后的全部文本；没找到 = 空串。
+private func srcAfter(text: String, mark: String): String {
+    let parts = text.split(mark)
+    if (parts.size < 2) {
+        return ""
+    }
+    let out = StringBuilder()
+    var i: Int64 = 1
+    while (i < parts.size) {
+        out.append(parts[i])
+        i += 1
+    }
+    return out.toString()
+}
+
+/// text 里第一次出现 mark 之前的全部文本；没找到 = 原文。
+private func srcBefore(text: String, mark: String): String {
+    let parts = text.split(mark)
+    if (parts.size < 1) {
+        return text
+    }
+    return parts[0]
+}
+
+/// 函数体切片：第一个 startMark 之后、其后第一个 endMark 之前的文本。
+/// 两端标记都写成**带 `func`/`private func` 前缀的定义行形态**，
+/// 与调用点、正文引用不会相撞。
+private func srcChunk(text: String, startMark: String, endMark: String): String {
+    return srcBefore(srcAfter(text, startMark), endMark)
+}
+
+@Test
+func dualTrackRendersOnlyInTheWorkBarAndToolbarKeepsNoUpdateButtons(): Unit {
+    // ① `DualTrackButtons(model, app, dark)` 调用点全仓恰好 1 处（WorkBar）——
+    //    顶栏（基线 views.cj 旧 121 行）再挂一对的形态不许回来。
+    //    定义行带 `func ` 前缀与类型标注，与调用形态不相撞。
+    var callSites: Int64 = 0
+    for (name in ["views.cj", "sidebar.cj", "detail.cj"]) {
+        match (readSrcText(name)) {
+            case Some(raw) => callSites += countIn(srcCodeText(raw), "DualTrackButtons(model, app, dark)")
+            case None => @Expect(false)
+        }
+    }
+    @Expect(callSites, 1)
+    // ② toolbar 函数体（到 toolbarSurface 为止）：不含双轨、不带 Primary，
+    //    收敛为 引擎标签 + 刷新 + AI 助手 + AI 设置 —— 每路由唯一 primary
+    //    属于主区（仪表盘 = WorkBar 的「深更新 · 全部」）。
+    match (readSrcText("views.cj")) {
+        case Some(raw) =>
+            let code = srcCodeText(raw)
+            let toolbarBody = srcChunk(code, "func toolbar(", "private func toolbarSurface")
+            @Expect(!toolbarBody.contains("DualTrackButtons"))
+            @Expect(!toolbarBody.contains("ButtonRole.Primary"))
+            @Expect(toolbarBody.contains("Button(\"刷新\""))
+            @Expect(toolbarBody.contains("Button(\"AI 助手\""))
+            @Expect(toolbarBody.contains("Button(\"AI 设置\""))
+            // ③ 「重新索引」降 Normal：筛选行函数体不带 Primary。
+            //    它与 WorkBar 深更新同走 requestUpdate("", false)（确认框路径
+            //    的既有扫描判据原样另钉），蓝实心只留给后者一颗。
+            let filterBody = srcChunk(code, "func dashFilterBar(", "private func dsCommitsPicker")
+            @Expect(!filterBody.contains("ButtonRole.Primary"))
+            @Expect(filterBody.contains("requestUpdate(app, model, \"\", false)"))
+            // ④ 双轨内部 pill 归位：待处理 pill 渲染在浅更新按钮**之前**、
+            //    浅更新在深更新之前 —— pill 不再夹在浅/深两颗之间
+            //（基线里它挤在缝隙中，读作分隔符、归属不明）。
+            let dualBody = srcChunk(code, "func DualTrackButtons(", "public func aiBriefLabel")
+            @Expect(dualBody.contains("C_SHALLOW, dark)"))
+            @Expect(!srcBefore(dualBody, "C_SHALLOW, dark)").contains("shallowLabelFor(scope)"))
+            @Expect(srcBefore(dualBody, "deepLabelFor(scope)").contains("shallowLabelFor(scope)"))
+        case None => @Expect(false)
+    }
+    // ⑤ 侧栏底部动作区不带 Primary ——「添加 / 扫描项目」面板里那颗
+    //    「扫描/添加」（views.cj addScanPane）才是它自己的 primary。
+    match (readSrcText("sidebar.cj")) {
+        case Some(raw) =>
+            let code = srcCodeText(raw)
+            @Expect(!code.contains("ButtonRole.Primary"))
+            // 入口接线仍在（沿用 addPaneEntryPoints 判据的口径，双保险）
+            @Expect(code.contains("openAddPane(model)"))
+        case None => @Expect(false)
+    }
+}
+
+@Test
+func workBarHidesTheDualTrackPairOnTheProjectRoute(): Unit {
+    // 详情页页头那对（detail.cj detailHeader）是单仓库场景唯一一对，
+    // 与 actionStripOf 的 PageHeader 落点同口径；WorkBar 在 Project 路由
+    // 只出范围下拉 + AI 说明。其余路由照画（仪表盘/看板/里程碑共用）。
+    @Expect(!workBarShowsDualTrack(RootSection.Project))
+    @Expect(workBarShowsDualTrack(RootSection.Dashboard))
+    @Expect(workBarShowsDualTrack(RootSection.Board))
+    @Expect(workBarShowsDualTrack(RootSection.Milestones))
+    // 纯函数必须真的被 WorkBar 消费 ——「判据全绿但没人调用」的病 R2-03 踩过
+    match (readSrcText("views.cj")) {
+        case Some(raw) =>
+            @Expect(srcCodeText(raw).contains("workBarShowsDualTrack(model.root.value)"))
+        case None => @Expect(false)
+    }
+}
+
+@Test
+func sidebarProjectRowsReadMarkNameThenShortNote(): Unit {
+    // 侧栏行重排的语义一半（呈现一半由快照守）。
+    // 失败行 = 「✕ 名字（读不出）」：以形状开头（tokens.cj 的纪律 —— 状态点
+    // 很窄，没有文字替代时读者无从判断；✕ 是唯一带出错语义的形状）、
+    // 固定短标记点名失败；引擎错误原文与路径**不进侧栏** —— 完整原因只在
+    // 详情页头与仪表盘「读取失败」面板两处已披露落点，不吞失败。
+    let now: Int64 = 1_800_000_000_000
+    let gone = Project.from(Json.parse(EMPTY_OVERALL_PROJECT).getOrThrow())
+    let goneLabel = sidebarProjectLabel(gone, now)
+    @Expect(goneLabel, "✕ gone（读不出）")
+    @Expect(goneLabel.contains("读不出"))
+    // 原文与路径一个字都不带（基线的「gone（读不出：路径不存在或…」半字切口）
+    @Expect(!goneLabel.contains("路径不存在"))
+    @Expect(!goneLabel.contains("/tmp/gone"))
+    @Expect(!goneLabel.contains("…"))
+    // 脏项目行 = 「形状 名字 · 未提交 N」三段分开，形状/名字/数量之间有分隔符
+    //（基线「plainly ●1」黏成一坨）。
+    let dirty = Project.from(Json.parse(REAL_OVERALL_PROJECT).getOrThrow())
+    @Expect(dirty.userDirtyCount, 1)
+    let dirtyLabel = sidebarProjectLabel(dirty, now)
+    @Expect(dirtyLabel, "${projectMark(dirty, now)} d2note · 未提交 1")
+    @Expect(dirtyLabel.contains("未提交"))
+    @Expect(dirtyLabel.contains(" · "))
+    // 干净行 = 「形状 名字」两段，名字仍是第一个词之外的唯一信息
+    let clean = Project.from(Json.parse(
+        """
+        {"name":"tidy","path":"/tmp/tidy","kind":"git","userDirtyCount":0,
+         "stashCount":0,"commitCount":3,"branches":[],
+         "lastCommitAt":"2026-10-01T00:00:00+08:00","overall":{}}
+        """).getOrThrow())
+    @Expect(sidebarProjectLabel(clean, now), "${projectMark(clean, now)} tidy")
+    // 截断器已随「原文不进侧栏」一起退场：侧栏源码不再引用 p.error，
+    // 「（读不出：」这个带冒号的截断定式不许回来。
+    match (readSrcText("sidebar.cj")) {
+        case Some(raw) =>
+            let code = srcCodeText(raw)
+            @Expect(!code.contains("读不出："))
+            @Expect(!code.contains("p.error"))
+        case None => @Expect(false)
+    }
+}

@@ -27,7 +27,7 @@ package deepdolphin_linux
 
 import std.collection.ArrayList
 
-import cui.{Button, ButtonRole, Color, CrossAxisAlignment, DesktopApp, Divider, EventHandler, FontWeight, HStack, Key, Label,
+import cui.{Button, Color, CrossAxisAlignment, DesktopApp, Divider, EventHandler, FontWeight, HStack, Key, Label,
     ListView, LengthUnits, Panel, Spacer, State, TextField, UiEvent, VStack}
 import cui.mountEffect
 import cui.{EffectCleanup}
@@ -69,62 +69,29 @@ public func projectMark(p: Project, nowMs: Int64): String {
     }
 }
 
-/// 侧栏项目行的文字。**项目名必须是第一个词** ——
-/// macOS 端把状态放在名字前面的一个小图标上，而 CUI 只能给纯文本，
-/// 名字后面挂任何东西都会让它右移。所以：名字在前，状态在括号里。
+/// 侧栏项目行的文字。**行语法三段式：状态标记 → 项目名 → 状态注**（U2 重排）：
+///   失败：`✕ 名字（读不出）` —— 形状（`projectMark` 的 ✕，与颜色无关地可辨）
+///     加固定短标记连读，**不再**把引擎错误原文截 28 字塞进行里（基线
+///     dashboard.png 的「gone（读不出：路径不存在或…」半字切口）。
+///     完整原因只在两处已披露落点：详情页头（detail.cj 的读取失败面板）
+///     与仪表盘「读取失败」面板 —— 这里不吞失败，「读不出」三个字仍在，
+///     点进详情就能看到整条原因与路径。
+///   脏项目：`● 名字 · 未提交 N` —— 形状 / 名字 / 数量**三段分开**，
+///     不再「名字●N」黏成一坨（基线 plainly ●1）。
+///   其余：`● 名字`。
+/// 标记在前与 macOS 端一致（状态图标在名字前面）；名字仍是这一行
+/// 唯一不可替代的信息，紧跟标记、后面不再挂长文本。
 public func sidebarProjectLabel(p: Project, nowMs: Int64): String {
+    let mark = projectMark(p, nowMs)
     if (p.failed()) {
-        // 失败项目显示**引擎给的原因**，不显示「0 提交 / 0 分支」——
+        // 失败项目显示固定短标记，不显示「0 提交 / 0 分支」——
         // 采集失败时那些计数本来就是 0，画出来等于谎称读过这个仓库。
-        return "${p.name}（读不出：${shortError(p.error)}）"
+        return "${mark} ${p.name}（读不出）"
     }
     if (p.userDirtyCount > 0) {
-        return "${p.name}  ●${p.userDirtyCount}"
+        return "${mark} ${p.name} · 未提交 ${p.userDirtyCount}"
     }
-    return "${p.name}  ${projectMark(p, nowMs)}"
-}
-
-/// 错误串在侧栏里要**短**。整条路径往行里一塞，名字就被挤出可视区，
-/// 而名字是这一行唯一不可替代的信息 —— 原因要能点进去看到，名字不能丢。
-public func shortError(e: String): String {
-    return clipText(e, 28)
-}
-
-/// 按**字符数**截断（不是字节）。
-///
-/// ⚠ 按字节截会把一个汉字劈成半个 —— 界面上出现「路��不存在」这种
-/// 半个字，用户以为是编码坏了。引擎的错误串里全是中文路径。
-public func clipText(s: String, max: Int64): String {
-    var n: Int64 = 0
-    for (_ in s.runes()) {
-        n += 1
-        if (n > max) {
-            return s[..byteIndexOfRune(s, max)] + "…"
-        }
-    }
-    return s
-}
-
-/// 第 `n` 个字符的起始字节下标。越界时给串长。
-public func byteIndexOfRune(s: String, n: Int64): Int64 {
-    var i: Int64 = 0
-    var seen: Int64 = 0
-    for (r in s.runes()) {
-        if (seen == n) {
-            return i
-        }
-        i += utf8LenOf(r.toString())
-        seen += 1
-    }
-    return Int64(s.toArray().size)
-}
-
-private func utf8LenOf(ch: String): Int64 {
-    let n = ch.toArray().size
-    if (n <= 1) { return 1 }
-    if (n <= 2) { return 2 }
-    if (n <= 3) { return 3 }
-    return 4
+    return "${mark} ${p.name}"
 }
 
 /// 侧栏视图行的文字 + 行尾计数。**读不出来时计数为空串**，不是「0」。
@@ -385,9 +352,13 @@ private func sidebarSearch(model: AppModel, dark: Bool): Unit {
 /// 更早之前还是一个强调色「＋ 添加 / 扫描项目」Label —— 长得能点、点不动。
 /// 那两种形态都被源码扫描判据钉死不许回来（见 model_test.cj 的
 /// addPaneEntryPointsWireToThePanelNotTheTerminalHint；本注释因此不写出那句话）。
+///
+/// U2：降 Normal。每屏唯一 primary 属于主区（仪表盘 = WorkBar 的
+/// 「深更新 · 全部」），底部动作区不再抢蓝实心信号；「添加 / 扫描项目」
+/// 面板打开后，面板里那颗「扫描/添加」（addScanPane）才是它的 primary。
 private func sidebarActions(model: AppModel): Unit {
     HStack {
-        Button("＋ 添加 / 扫描项目", {=> openAddPane(model)}, role: ButtonRole.Primary)
+        Button("＋ 添加 / 扫描项目", {=> openAddPane(model)})
             .fontSize(fsLabel())
         Spacer()
     }.hug().spacing(6.0.vp).padding(10.0.vp, 8.0.vp)
@@ -418,8 +389,11 @@ private func SidebarStatusStrip(model: AppModel, dark: Bool): Unit {
         }.spacing(5.0.vp).hug()
         // 状态一行。「读不出来」与「还没刷新过」措辞不同 —— syncLabels 已按
         // 状态分好句，这里原样转述，不在这里再编第二套说法。
+        // U2：fsMicro 升 fsLabel —— 这是要读的句子（「3 个项目读取失败」这类），
+        // 不是徽标；全应用最小字号压着它，层级在底部蓝按钮之下，倒挂
+        //（基线 sidebar.cj 曾以 11 号字配一颗 Primary 蓝，层级反了）。
         if (!model.statusText.value.isEmpty()) {
-            Label(model.statusText.value).fontSize(fsMicro()).wrap()
+            Label(model.statusText.value).fontSize(fsLabel()).wrap()
                 .foregroundColor(dsColor(dsTextColor(if (engineDown) { C_ORANGE } else { C_SLATE }, dark)))
         }
     }.hug().spacing(2.0.vp).padding(10.0.vp, 8.0.vp)

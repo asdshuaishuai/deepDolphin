@@ -1,7 +1,7 @@
 // deepDolphin Linux 客户端 —— 主视图。
 //
 // 【结构与 macOS 端 `PanelView` 一比一】
-//   ┌ 工具栏：双轨按钮 | 刷新 | AI 助手 | AI 设置 | 搜索 ┐   ← 只有工具类动作
+//   ┌ 工具栏：刷新 | AI 助手 | AI 设置 ┐   ← 只有工具类动作
 //   ├──────────────────┬──────────────────────────────┤
 //   │ 侧栏             │ 深链提示条                    │
 //   │  搜索            │ 错误条                        │
@@ -100,11 +100,14 @@ func mainArea(model: AppModel, app: DesktopApp, dark: Bool): Unit {
 // 工具栏
 // ===========================================================================
 
-/// 工具栏。**只放工具类动作** —— 刷新 / AI / 设置 / 搜索。
+/// 工具栏。**只放工具类动作** —— 刷新 / AI 助手 / AI 设置。
 ///
-/// ⚠ 双轨更新按钮放在这里**且** WorkBar 里也有一对，是 macOS 端的有意选择
-/// （工具栏那对是常用快捷入口，WorkBar 那对带范围语义）。
-/// 但同一个动作不许在**同一处**出现两次措辞不同的按钮。
+/// U2（2026-10-07）收敛：双轨更新按钮从顶栏**摘除**。它曾与 WorkBar 里那对
+/// 同屏出现（基线 dashboard.png 顶栏 + WorkBar 两对、全屏蓝实心四颗、
+/// 全局浅更新两遍），而 WorkBar 那对才是唯一带范围语义的落点 ——
+/// 范围下拉就在同一行，按钮标题的「· 全部」后缀跟着它变。
+/// 「刷新」同时降 Normal：仪表盘上唯一 primary 是 WorkBar 的「深更新 · 全部」，
+/// 顶栏不再另插一颗蓝实心抢这个信号。
 ///
 /// ⚠ 顶栏**不显示引擎全路径**。曾经写成
 /// `引擎 仓内构建 · /Volumes/…/moonGit/target/release/bin/main`，
@@ -118,10 +121,7 @@ func toolbar(model: AppModel, app: DesktopApp, dark: Bool): Unit {
             Label("deepDolphin").fontSize(fsSection()).fontWeight(FontWeight.semiBold)
             Label(model.engineLabel.value).fontSize(fsLabel()).muted().maxLines(1).width(240.0.vp)
             Spacer()
-            DualTrackButtons(model, app, dark)
-            Divider(axis: Axis.Vertical).height(18.vp)
-            Button("刷新", {=> requestRefresh(app, model)}, role: ButtonRole.Primary)
-                .fontSize(fsBody()).enabled(!busy)
+            Button("刷新", {=> requestRefresh(app, model)}).fontSize(fsBody()).enabled(!busy)
             Button("AI 助手", {=> openAIPane(model, 1)}).fontSize(fsBody())
             Button("AI 设置", {=> openAIPane(model, 2)}).fontSize(fsBody())
         }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
@@ -136,7 +136,13 @@ private func toolbarSurface(dark: Bool): SurfaceStyle {
 
 /// 双轨按钮（macOS 端 `DualTrackButtons`）。
 ///
+/// U2 收敛后**全应用只有 WorkBar 一个调用点** —— 顶栏那对已摘（见 toolbar）。
 /// 标题随范围变化：全局下是「浅更新 · 全部」，单仓库下是「浅更新」。
+///
+/// ⚠ 待处理 pill 摆在浅更新按钮**左侧**，不再夹在浅/深两颗之间：
+/// 它数的是这一对按钮的待处理量（pendingShallow），贴着开头读作徽标；
+/// 原先挤在两颗按钮的缝隙里，绿底小 pill 读作分隔符、归属不明
+///（基线 dashboard.png）。绿（C_SHALLOW）仍是浅更新那轨的归属色。
 /// 待处理数**只在真有东西时出现** —— 恒显的 0 徽章会被无视，
 /// 而「0」还容易被读成「引擎说不用更新」。
 func DualTrackButtons(model: AppModel, app: DesktopApp, dark: Bool): Unit {
@@ -148,26 +154,23 @@ func DualTrackButtons(model: AppModel, app: DesktopApp, dark: Bool): Unit {
         // ⚠ `enabled` 的语义是「true = 可点」。这里曾把方向写反（把忙碌当成了
         // 可用的条件）：空闲时主按钮全被禁用（灰罩吞事件），忙碌时反而可点 ——
         // 而忙碌时点了又被「已有动作在跑」的闸门拒绝。稳态永远点不动。
-        // 与下面「AI 说明」按钮同向；model_test 的源码扫描会拒绝反写形态。
+        // 与 WorkBar 行尾的「AI 说明」按钮同向；model_test 的源码扫描会拒绝反写形态。
         // ⚠ 回调走 requestUpdate 而不是直连 actUpdate（T1）：目标是「全部」时
         // 先过确认框 —— 直连形态已被源码扫描判据钉死不许回来。
-        Button(shallowLabelFor(scope), {=> requestUpdate(app, model, updateTargetOf(model), false)})
-            .fontSize(fsBody()).enabled(!busy)
         if (pending > 0) {
             dsPill("${pending}", C_SHALLOW, dark)
         }
-        Button(deepLabelFor(scope), {=> requestUpdate(app, model, updateTargetOf(model), true)}, role: ButtonRole.Primary)
+        Button(shallowLabelFor(scope), {=> requestUpdate(app, model, updateTargetOf(model), false)})
             .fontSize(fsBody()).enabled(!busy)
-        // C5：在**当前范围**上要一段说明。单项目范围给项目说明，全局给项目群说明。
-        // 不给「重新生成」—— 事实陈述重编一遍对用户没有价值，
-        // 只会让人分不清哪句是推出来的、哪句是引擎给的。
-        Button(aiBriefLabel(model), {=> runBriefForScope(app, model)}, role: ButtonRole.Normal)
+        Button(deepLabelFor(scope), {=> requestUpdate(app, model, updateTargetOf(model), true)}, role: ButtonRole.Primary)
             .fontSize(fsBody()).enabled(!busy)
     }.spacing(6.0.vp).hug()
 }
 
 /// AI 说明按钮的标题。**跟着范围走** —— 按钮写「说明本项目」而它给的是
 /// 项目群简报，症状是用户点之前无法判断点完会看到什么。
+/// 按钮本体在 WorkBar 行尾（U2 收敛后不在顶栏 —— 说明跟着范围走，
+/// 范围选择器在 WorkBar，两者同处一行才不会分家）。
 public func aiBriefLabel(model: AppModel): String {
     return if (scopeIs(model.scope.value, ScopeChoice.One)) { "AI 说明" } else { "AI 项目群说明" }
 }
@@ -336,11 +339,17 @@ func route(model: AppModel, app: DesktopApp, dark: Bool): Unit {
 // WorkBar（macOS 端 `WorkBar`）
 // ===========================================================================
 
-/// 主工作条：左段范围选择器 + 右段双轨链路。
+/// 主工作条：左段范围选择器 + 右段双轨链路 + AI 说明。
 ///
 /// 改版规范定了「原生标题栏 + 分组侧栏工作台」，所以**不自绘标题栏** ——
 /// 那会丢掉标准窗口行为（拖动 / 全屏 / 菜单栏）。
 /// 合理化的做法就是把它放在**内容区顶部**，原生工具栏只留工具类动作。
+///
+/// U2 收敛后这里是双轨更新的**唯一**落点：范围下拉就在本行，
+/// 按钮标题的「· 全部」后缀跟着它走，语义不会分家。
+/// Project 路由例外 —— 详情页页头那对（detail.cj `detailHeader`）是
+/// 单仓库场景的唯一一对，与本行范围选择同口径（`actionStripOf` 的
+/// PageHeader 落点）；这时 WorkBar 只出范围下拉 + AI 说明，不画第二对。
 private func workBar(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     observeScope(model)
     let total = allProjectsOf(model).size
@@ -349,10 +358,25 @@ private func workBar(model: AppModel, app: DesktopApp, dark: Bool): Unit {
             Label("范围").fontSize(fsBody()).muted()
             scopeButtons(model, app, total, dark)
             Spacer()
-            DualTrackButtons(model, app, dark)
+            if (workBarShowsDualTrack(model.root.value)) {
+                DualTrackButtons(model, app, dark)
+            }
+            // C5：在**当前范围**上要一段说明。单项目范围给项目说明，全局给项目群说明。
+            // 不给「重新生成」—— 事实陈述重编一遍对用户没有价值，
+            // 只会让人分不清哪句是推出来的、哪句是引擎给的。
+            Button(aiBriefLabel(model), {=> runBriefForScope(app, model)}, role: ButtonRole.Normal)
+                .fontSize(fsBody()).enabled(!model.actionBusy.value)
         }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
     }.style(SurfaceStyle(dsColor(if (dark) { SIDEBAR_DARK } else { SIDEBAR_LIGHT }), radius: 0.0))
         .contentPadding(12.0.vp, 8.0.vp)
+}
+
+/// WorkBar 此刻画不画双轨。**Project 路由不画**（纯函数，判据直接喂）：
+/// 详情页页头那对浅/深更新是单仓库场景唯一一对，WorkBar 再画一对就是
+/// 「同屏两对、全局浅更新两遍」的旧病重演（基线 detail-atlas.png 顶栏 +
+/// WorkBar + 页头三对）。
+public func workBarShowsDualTrack(root: RootSection): Bool {
+    return !rootSectionIs(root, RootSection.Project)
 }
 
 /// 范围选择器（WorkBar 左段）。
@@ -941,10 +965,11 @@ private func dashFilterBar(
             // 而 CUI 没有回调可以挂这个点）。
             // ⚠ 重新索引 = 全局浅更新（目标「全部」），与双轨按钮同走确认框
             // （T1；mac 端 reindex → runUpdate 的 .all 分支同一条路）。
+            // U2：降 Normal —— 仪表盘上唯一 primary 是 WorkBar 的「深更新 · 全部」，
+            // 重新索引与它同走一条 requestUpdate，不再另插一颗蓝实心。
             Button(
                 (if (model.busy.value) { "重新索引中…" } else { "重新索引" }),
-                {=> requestUpdate(app, model, "", false)},
-                role: ButtonRole.Primary
+                {=> requestUpdate(app, model, "", false)}
             ).fontSize(fsBody()).enabled(!model.busy.value && !model.actionBusy.value)
         }.spacing(8.0.vp).hug()
     }.style(dsSurface(DsLevel.Nested, dark)).contentPadding(10.0.vp, 8.0.vp).hug()
