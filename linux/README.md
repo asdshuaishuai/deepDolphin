@@ -59,6 +59,8 @@ linux/
     fetch-deps.sh   拉第三方依赖 + 放 SDL3 动态库
     run.sh          构建并启动（自动配运行时路径与引擎定位）
     dev-launch.sh   跳过构建直接启动（布局自查用）
+    ui-snap.sh      一页 UI 快照 → PNG 一条命令（DD_SNAP_* 全族透传）
+    bmp2png.py      BMP → PNG（快照产物转换，不依赖 sips/ImageMagick）
     install-icon.sh 把公共图标装进 ~/.local/share（.desktop + hicolor）
   src/
     json.cj         只读 JSON 解析（移植自引擎，零第三方依赖）
@@ -142,19 +144,45 @@ bash ../assets/icon/check-icon.sh   # 图标一致性
 - `SDL_VIDEODRIVER=dummy` 下渲染循环跑得起来（帧计数、空态绘制、
   引擎结果经 `post` 回来触发状态更新）
 
-**布局自查**（走文件夹具，不起引擎子进程）：
+**布局自查**（走文件夹具，不起引擎子进程；UI 精修批起一条命令出 PNG、基线入库）：
 
 ```sh
-DD_FIXTURE_DIR="$PWD/tests/fixtures" DD_SNAP_PROJECT=atlas \
-  SDL_VIDEODRIVER=dummy bash scripts/dev-launch.sh --snapshot /tmp/x.bmp
-sips -s format png /tmp/x.bmp --out /tmp/x.png
+bash scripts/ui-snap.sh dashboard /tmp/dashboard.png             # 仪表盘（缺省机位）
+DD_SNAP_ROOT=board bash scripts/ui-snap.sh board /tmp/board.png  # 看板
+DD_SNAP_PROJECT=atlas DD_SNAP_W=1400 DD_SNAP_H=2400 \
+  bash scripts/ui-snap.sh detail-atlas /tmp/detail.png           # 项目详情长图
 ```
 
+`ui-snap.sh` ＝ `dev-launch.sh --snapshot` ＋ BMP→PNG（`bmp2png.py`，
+不依赖 sips/ImageMagick）一条命令，`DD_SNAP_*` 全族透传。开关族挂在
+`src/main.cj` 的快照族，**全部读 `tests/fixtures/` 的引擎真实输出，与
+本机 `~/.config` 配置无关**：
+
+| 开关 | 拍什么 |
+|---|---|
+| （缺省） | 仪表盘 |
+| `DD_SNAP_ROOT=board\|milestones` | 看板 / 里程碑页（里程碑页默认收着「新建里程碑」表单） |
+| `DD_SNAP_PROJECT=<名>`（长图配 `DD_SNAP_W=1400 DD_SNAP_H=2400`） | 项目详情一列长卡片 |
+| `DD_SNAP_AI=chat\|settings` | AI 对话页 / AI 设置页 |
+| `DD_SNAP_AI_CHAT=1` | 对话页预置一段完整对话（拍消息卡排版；缺省是空态） |
+| `DD_SNAP_MS_FORM=1` | 里程碑页展开「新建里程碑」表单（卡面 / 右缘对齐 / 项目下拉） |
+| `DD_SNAP_ACTION=busy\|fail` | 写动作进行中条 / 失败结果行（见下文 T5 小节） |
+| `DD_SNAP_ADD=single\|scan`、`DD_SNAP_CONFIRM=<形状>`、`DD_SNAP_CLICK=<行号>` | 添加面板 / 确认框 / 侧栏点击路由（各有专节，见下） |
+
+**before/after 基线**（U1–U4 精修批起）：六张精修前基线入库
+`docs/ui/before/`，每批同机位重拍的 after 在 `docs/ui/after/` ——
+改观感必须用**同一条命令重拍同一机位**，与基线并排 Read 对比后才算验收；
+凭感觉说「应该好看了」不算。
+
 CUI 的 `--snapshot` 是「连续强制重绘 48 帧就拍照」，而引擎调用走后台线程要
-两秒 —— 拍到的永远是「读取项目群…」。所以改用 `DD_FIXTURE_DIR` 从磁盘读
+两秒 —— 拍到的永远是「读取项目群…」。所以走 `DD_FIXTURE_DIR` 从磁盘读
 **引擎真实输出**（由 `moongit --json` 直接导出到 `tests/fixtures/`），
-`DD_SNAP_ROOT` / `DD_SNAP_PROJECT` 指定拍哪一页。仪表盘、看板、项目详情
-三页都用这个路径看过。
+`DD_SNAP_ROOT` / `DD_SNAP_PROJECT` 指定拍哪一页。（下层机制仍是
+`dev-launch.sh --snapshot /tmp/x.bmp` 手动版；`sips` 转 PNG 是 macOS
+的做法，Linux 上由 `bmp2png.py` 代劳。）仪表盘、看板、项目详情三页都用
+这个路径看过；`docs/ui/after/` 现存九张：与 `before/` 同名同机位的六张
+重拍，另加三张新机位 —— AI 对话有话态（`ai-chat-transcript`）、
+AI 设置（`ai-settings`）、里程碑表单展开（`milestones-form`）。
 
 ### 模拟一次点击（验侧栏接线）
 
@@ -250,7 +278,9 @@ DD_FIXTURE_DIR="$PWD/tests/fixtures" DD_SNAP_ACTION=fail \
 ⚠ 本节命令在 **Linux 开发机**上真实出图（T5 批次起 ci-local.sh 的 ld 包装
 也给主程序 `bin/main` 追加链接垫片，此前主程序在这台机器上链不出来，
 见下方「已知代价与边界」第 2 条）；BMP 转 PNG 本机没有 sips/ImageMagick，
-用纯 Python 按 BMP 头解 24 位像素再封 PNG 即可。
+用 `scripts/bmp2png.py`（纯 Python 按 BMP 头解 24 位像素再封 PNG）——
+UI 快照工具链批次起这两步已由 `scripts/ui-snap.sh` 包成一条命令，
+本节保留手动形态作机制说明。
 
 **未验，且已查明是框架级阻塞**：真窗口的**交互**（滚动、悬停、真实输入）
 没验过 —— `DD_SNAP_CLICK` 能证明**点击的路由**通了，但它仍然走的是
@@ -354,9 +384,11 @@ AppKit 线程问题（或换一台非 macOS 的 Linux 机器直接验）。
    同理，表格**不拆列**：引擎 `context` 里的分支表一行能到 100+ 字符，
    拆列就得自己算列宽，而中文与等宽混排的列宽在 CUI 里没有可靠的测量接口 ——
    算错了比不拆更难看。
-   标题字号 22/18/15/14 则**照抄** macOS 端 `MarkdownView`，
-   没有套用 `tokens.cj` 的 22/20/16/13：那边也是这套刻度，
-   两端都存在「面板刻度 + markdown 刻度」并存。
+   标题字号 22/18/15/14 则**照抄** macOS 端 `MarkdownView`
+   （`markdown_view.cj` 的 `mdHeadingSize`），没有套用面板的 fs* 刻度
+   （`components.cj`；U1 精修后为 22/20/15/14）：两端都存在
+   「面板刻度 + markdown 刻度」并存，U1 后两套刻度除 h2（18 vs 20）
+   外已重合。
 
 ### 怎么验
 
@@ -387,9 +419,13 @@ glibc 2.38，无 root、无图形会话）上做了第一次系统性审查与�
 `scripts/ai-e2e.sh` 端到端实跑通过。其后是功能与交互批 T1–T5
 （`586993e` 破坏性操作确认 → `4991424` 启动脚本契约 → `46cea31`
 添加 / 扫描项目面板 → `eba9c7e` C5 定时更新 ＋ C10 停滞提醒 →
-`4c0aeeb` 写动作可见性），各批收口门禁依次 160 / 165 / 173 / 180 / 184 ——
-当前门禁 **184 通过 / 0 失败 / 3 端到端跳过**（共 187 条；只增不减链：
-… → 147 → 160 → 165 → 173 → 180 → 184）。本文早前小节里出现的 35 / 88 / 119
+`4c0aeeb` 写动作可见性），各批收口门禁依次 160 / 165 / 173 / 180 / 184；
+再其后是 UI 精修批 U1–U4（`8ce9866` 令牌层校准 → `298da72` 全局
+chrome 收敛 → `81c3898` 里程碑/详情重排 → `7b11bdd` AI 对话页留边），
+各批收口门禁依次 187 / 190 / 195 / 197 —— 当前门禁
+**197 通过 / 0 失败 / 3 端到端跳过**（共 200 条；只增不减链：
+… → 147 → 160 → 165 → 173 → 180 → 184 → 187 → 190 → 195 → 197）。
+本文早前小节里出现的 35 / 88 / 119
 是各自写就当时的判据数，以本节为准。
 
 ### 修了什么 / 为什么
@@ -502,6 +538,97 @@ glibc 2.38，无 root、无图形会话）上做了第一次系统性审查与�
   落点由纯函数 `actionStripOf` 裁决），侧栏状态条同步消费同一句状态
   （引擎断连染警示色）。顺带清零 pollCountdown / emptyHint / detailTab /
   docTab 四个只写不读的死状态。
+
+### UI 精修批（U1–U4）落了什么
+
+T5 之后同一张门禁上又收四批**视觉/布局**精修（`8ce9866` → `298da72` →
+`81c3898` → `7b11bdd`），红线不变：只动视觉/布局/交互层，动作入口、
+状态判定、通知规则、引擎 JSON 契约一律不碰。这批的验收方式与前几批
+不同：六张精修前基线入库 `docs/ui/before/`（dashboard / board /
+milestones / detail-atlas / ai-chat / action-busy），每批用
+`scripts/ui-snap.sh` 同机位重拍 after 入 `docs/ui/after/`，逐张并排
+Read 对比 ＋ 像素取样 —— 拍法见「验证」一节。
+
+- **U1 令牌层整体校准**（`8ce9866`）：基线六张的通病是「字小且低对比」。
+  fs* 七档整体上移 10/11/12/13/15/17/22 → **11/12/13/14/15/20/22**
+  （`components.cj`：正文 12→13、次要 11→12、胶囊文字随 fsMicro
+  10→11），向框架标准刻度（CangjieSDL `font_style.cj` 的 FontSizes：
+  CAPTION 13 / BODY 15 / TITLE 20）靠拢；页头归一到 fsTitle 20 一档
+  （此前同一角色仪表盘 22 / 看板与里程碑 17 / AI 面板 15）。
+  `dsTextColor` 亮底闸门从黄/橙扩到**绿/灰**：绿字取 emerald-700
+  `#047857`（对白卡 5.48:1、对绿胶囊底 4.88:1）、灰字取 slate
+  `#64748B`（对白卡 4.76:1）—— 胶囊与行内着色本就经它，调用点零改动；
+  detail 两行裸 `dsColor(C_GRAY)`（「最近提交时间读不出来」「待记录数
+  已失效」）补过闸门，暗色分支原样返回。detail 固定列宽随字校准
+  （分支名 170→190vp、进度日志三列 110/120/140→150/130/150vp ——
+  时间戳整串「2026-09-28T09:12:00+08:00」放得下，基线里本被截断）。
+- **U2 全局 chrome 收敛**（`298da72`）：基线 dashboard 同屏 2~3 对
+  浅/深更新、4 颗蓝实心、全局浅更新三遍。改后**双轨更新按钮全应用只挂
+  WorkBar 一处**（顶栏那对摘除、「刷新」降 Normal；Project 路由由纯函数
+  `workBarShowsDualTrack` 闭嘴 —— 详情页页头那对是单仓库场景唯一一对，
+  与 `actionStripOf` 的 PageHeader 落点同口径）；待处理绿 pill 移到
+  浅更新按钮**左侧**，不再夹在浅/深两颗之间读作分隔符；「重新索引」
+  「＋ 添加 / 扫描项目」降 Normal —— 动作回调与数量零改动。侧栏行
+  三段式：失败行「✕ 名字（读不出）」—— 引擎错误原文与路径**不再内联
+  进侧栏**（28 字截断器 `shortError`/`clipText` 退场；完整原因只留
+  详情页头与仪表盘失败面板两处已披露落点，不吞失败）；脏项目行
+  「形状 名字 · 未提交 N」三段分开（基线「plainly ●1」形状数字黏连）。
+  底部状态行 fsMicro 升 fsLabel —— 要读的句子不再用全应用最小字号。
+- **U3 里程碑页去红墙 ＋ 详情长图折叠**（`81c3898`）：里程碑行内
+  「删除」从 Danger 降 Normal（基线 4 行 4 颗红实心是按钮墙，稀释
+  「红=危险」；确认框才是唯一红门，`confirmButtonRoleOf` 原样），状态
+  胶囊挪进信息列跟在名字后，「达成/重开」紧邻信息列、「放弃/删除」
+  靠右成组，tag/目标日/提交数与描述收进第二行（行高约 90px 收到约
+  70px），四动作仍全走 `requestMilestoneAction`、入口一颗不减。新建
+  表单包进卡面并收成「新建里程碑 ▸」一行区头 + 展开/收起开关
+  （`rememberState("dd-ms-form-open")`，快照经 `DD_SNAP_MS_FORM`
+  预置）；「项目」从手打 TextField 换 Dropdown（选项来自纯函数
+  `milestoneProjectChoices`，与 scopeLabels 同源，默认选中当前项目）。
+  字段右缘顶穿窗缘的根因查明：`TextField.measure` 返回 available.w
+  （vendor `text_field.cj`），固定宽之外的裸 TextField 在固定测量趟
+  吃满整行 —— TextField 一律 `.flex()` 走弹性分摊后两行右缘对齐同一
+  内容边距。详情页托管文档卡默认折叠成一行标题（文件名＋字节数＋
+  「展开原文」，`dd-doc-open-*` 按文件名记，读不出分支保持常显），
+  工程脉搏卡「当前分支 main」两枚 22px 大字降为一行正文（纯函数
+  `branchHeaderLine`：同分支「当前分支 main（即默认分支）」、异分支
+  「当前分支 X · 默认分支 Y」）；页头→失败→脉搏→提交构成→提交改动→
+  分支→日志→文档的段落顺序不动。
+- **U4 AI 对话页留边呼吸**（`7b11bdd`）：基线 ai-chat.png 空态两行字
+  贴内容区顶部、下方约 800px 全空，输入条从左窗缘铺到右窗缘、「发送」
+  贴死右下角。改后：composer 整行留边（16/10/16/12，「发送」离窗角
+  ≥12vp，输入框 72vp 定高不变）；消息列表水平留边 16、单条消息卡
+  maxWidth 760（阅读行宽 —— 一句话的问题不再横贯整窗顶死右缘，长正文
+  照常换行撑高；maxWidth 在本轴拒绝 stretch，卡片按实测宽靠左排，
+  这是框架 `widget_modifiers.cj` 的行为）；空态垂直居中 ＋ 三颗起手式
+  （问项目群现状 / 看某个项目的分支 / 跑一次浅更新）—— **只预填
+  `model.aiDraft`，不直发**：发送仍只有「发送」按钮一处、走 `canSendAI`
+  闸门，不新增任何引擎动作入口。
+
+判据 184→197 的增量构成：字号七档取值断言更新；绿/灰变体 WCAG 对比度
+实算（含「暗色主题取值不变」负控）；`DualTrackButtons(` 调用点全仓恰
+1 处、四路由 `workBarShowsDualTrack` 真值、侧栏行标签三段式断言；
+`milestoneRow` 函数体无 Danger 与表单控件形态扫描、
+`milestoneProjectChoices` / `branchHeaderLine` 纯函数断言；AI 页留边
+与「预填不直发」扫描。负控两处已验红（U1 摘掉灰分支、U4 composer
+padding 归零，各当场红 1 例，复原后全绿）。
+
+这批的边界如实记：
+
+1. **灰字压灰胶囊底 4.32:1 < 4.5**（原色 @30 铺白）—— 当前全仓没有
+   C_GRAY 当胶囊底的调用点（`dsStatusPill` 落 Unknown 才可能出现），
+   判据钉住现值并在注释披露，不谎报达标；要严格 ≥4.5 得换 slate-600。
+2. **蓝 pill（C_ACCENT）没立亮底文字变体**：蓝字对自身胶囊底约 3.2:1，
+   不在 U1「绿/灰」扩档范围内；需要时另立 `C_ACCENT_TEXT_LIGHT` 一档。
+3. **「每路由唯一 primary」在里程碑路由没走完**：WorkBar「深更新·全部」
+   之外，新建表单的「新建」仍是蓝实心 —— 它不在 U2 的降档清单、
+   detail.cj 也不在那批的 files 里；同屏蓝实心从基线 4 颗收敛到 2 颗。
+   引擎缺失引导页与空项目态的 Primary 同理未动（不是六个常规路由，
+   属前置整屏状态）。
+4. U3 附带一条**本机开发环境事实**：手动构建主程序二进制时需补
+   `LD_LIBRARY_PATH`/`LIBRARY_PATH` 指向 `~/.local/sdl3/ex`（libsndio）；
+   `run.sh` 已内置同一路径，不影响 `ci-local.sh` 门禁与 `ui-snap.sh`。
+5. U3 未改「重开」这个动词（历史快照里里程碑已完成行的按钮就叫这个，
+   本批文案与之一致）。
 
 ### 已知代价与边界（如实记，不假装没付出）
 
