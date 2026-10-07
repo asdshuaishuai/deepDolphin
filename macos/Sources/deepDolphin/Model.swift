@@ -160,7 +160,6 @@ final class AppModel: ObservableObject {
     @Published var lastRefreshed: Date?
     @Published var busyProject: String?
     @Published var busyAll = false
-    @Published var showAISettings = false
     /// 项目列表**成功加载过**至少一次。
     ///
     /// ⚠️ 不能用 `projects.isEmpty` 代替：真的一个项目都没注册的用户，

@@ -308,6 +308,7 @@ struct AppCommands: Commands {
 struct DeepGitPanel: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openWindow) private var openPanel
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         PanelView()
@@ -367,7 +368,8 @@ struct DeepGitPanel: View {
             model.go(route)
         }
         if intent.openSettings {
-            model.showAISettings = true
+            // 与工具栏齿轮同一条路：系统原生设置窗口（Settings scene）。
+            openSettings()
         }
         // 无头 agent 自测（README 文档化；mock provider 配 defaults 即可全链路验证）
         if let question = intent.agentSelfTest {

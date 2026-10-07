@@ -9,6 +9,7 @@ import SwiftUI
 
 struct PanelView: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.openSettings) private var openSettings
     @State private var showScan = false
     @State private var showHelp = false
     @State private var showAbout = false
@@ -57,10 +58,6 @@ struct PanelView: View {
             if case .project(let name) = section {
                 Task { await model.loadProject(name) }
             }
-        }
-        .sheet(isPresented: $model.showAISettings) {
-            AppSettingsView()
-                .environmentObject(model)
         }
         .sheet(isPresented: $showAgent) {
             // 范围跟着当前选中：选了项目就聊那个项目，没选就是项目群。
@@ -546,13 +543,17 @@ struct PanelView: View {
             .help("与 AI 多轮对话（P0-5）")
             .accessibilityLabel(A11y.label("与 AI 多轮对话（P0-5）"))
 
+            // ⚠️ 打开的是**系统原生设置窗口**（Settings scene，⌘, 同一个）。
+            // 原来这里把 AppSettingsView 再弹一层 sheet —— 于是同一份设置有
+            // 两个入口、两种窗口形态：sheet 没有关闭按钮（用户点不掉），
+            // 与原生窗口并存还是「两套设置」。现在工具栏齿轮与 ⌘, 走同一路径。
             Button {
-                model.showAISettings = true
+                openSettings()
             } label: {
-                Label("AI 设置", systemImage: "gearshape")
+                Label("设置", systemImage: "gearshape")
             }
-            .help("AI 供应商与凭据设置（\(ShortcutMap.settings.display)）")
-            .accessibilityLabel(A11y.label("AI 供应商与凭据设置"))
+            .help("打开设置（\(ShortcutMap.settings.display)）")
+            .accessibilityLabel(A11y.label("打开设置"))
 
             // 设计稿顶栏右段：搜索。
             // ⚠️ 之所以做成一个**看得见的按钮**而不只留快捷键：

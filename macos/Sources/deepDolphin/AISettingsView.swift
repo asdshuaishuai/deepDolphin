@@ -249,36 +249,37 @@ struct LoginItemCard: View {
     }
 }
 
-/// 定时更新卡片
+/// 定时更新页。**与通用页同一形态**（grouped Form）——
+/// 原来是自绘卡片（surface + 大标题 + 分段选择器），
+/// 与旁边的 Form 分组页放在一起就是两种语言。
+/// 自动更新是「立即生效」的设置，不走 AI 页的草稿/保存流，
+/// 所以这里也不放保存按钮 —— 控件旁的说明把这一点说清楚。
 struct ScheduleCard: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.md) {
-            Label("定时更新", systemImage: "clock.badge.checkmark")
-                .font(.subheadline.weight(.semibold))
-            Picker("定时更新", selection: Binding(
-                get: { model.autoUpdateHours },
-                set: { model.setAutoUpdate(hours: $0) }
-            )) {
-                Text("关闭").tag(0)
-                Text("每 1 小时").tag(1)
-                Text("每 3 小时").tag(3)
-                Text("每 6 小时").tag(6)
-                Text("每 12 小时").tag(12)
-                Text("每 24 小时").tag(24)
+        Form {
+            Section("定时更新") {
+                Picker("间隔", selection: Binding(
+                    get: { model.autoUpdateHours },
+                    set: { model.setAutoUpdate(hours: $0) }
+                )) {
+                    Text("关闭").tag(0)
+                    Text("每 1 小时").tag(1)
+                    Text("每 3 小时").tag(3)
+                    Text("每 6 小时").tag(6)
+                    Text("每 12 小时").tag(12)
+                    Text("每 24 小时").tag(24)
+                }
+                Text("开启后按间隔对全部项目执行浅更新；AI 已配置时会生成简报并推送通知。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("改完立即生效（此页没有保存按钮）。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .pickerStyle(.segmented)
-            Text("开启后按间隔对全部项目执行浅更新；AI 已配置时会生成简报并推送通知。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text("改完立即生效，不经过下面的保存按钮。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
-        .padding(DSSpacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .surface()
+        .formStyle(.grouped)
     }
 }
 

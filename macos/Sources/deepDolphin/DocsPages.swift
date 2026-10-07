@@ -207,7 +207,8 @@ enum DocPages {
     static let openSourceZhCN = """
     ## 开源感谢
 
-    deepDolphin 的实现离不开以下开源项目：
+    这里只感谢**非基础设施层级**的第三方项目——系统框架（SwiftUI / AppKit 等）
+    是平台自带的能力，不在致谢之列。
 
     ### 引擎
 
@@ -216,14 +217,6 @@ enum DocPages {
     ### 模型目录
 
     - **[models.dev](https://models.dev)** — AI 模型元数据目录（provider/model/成本/能力），AI 设置页的数据来源
-
-    ### 苹果生态
-
-    - **SwiftUI** — 声明式 UI 框架
-    - **AppKit** — macOS 原生窗口与工具栏
-    - **UserNotifications** — 系统通知
-    - **ServiceManagement** — 开机自启（SMAppService）
-    - **Security** — 钥匙串密钥存储
 
     ### 外部工具
 
@@ -234,25 +227,36 @@ enum DocPages {
     static let openSourceEn = """
     ## Open Source Acknowledgments
 
+    Only non-infrastructure third-party projects are listed here — system
+    frameworks (SwiftUI / AppKit, etc.) are platform built-ins and get no credit.
+
     - **[moongit](https://github.com/asdshuaishuai/moongit)** — Cangjie project group progress engine
     - **[models.dev](https://models.dev)** — AI model metadata catalog
-    - **SwiftUI / AppKit** — Apple frameworks
-    - **git** — Version control (core engine dependency)
-    - **curl** — HTTP requests (engine AI calls)
+    - **[git](https://git-scm.com)** — Version control (core engine dependency)
+    - **[curl](https://curl.se)** — HTTP requests (engine AI calls)
     """
 
     static let openSourceZhTW = """
     ## 開源感謝
 
-    - **[moongit](https://github.com/asdshuaishuai/moongit)** — 倉頡專案群進度引擎
-    - **[models.dev](https://models.dev)** — AI 模型元資料目錄
+    這裡只感謝**非基礎設施層級**的第三方專案——系統框架屬平台內建能力，不在致謝之列。
+
+    - **[moongit](https://github.com/asdshuaishuai/moongit)** — 倉頡專案群進度引擎（本產品的核心）
+    - **[models.dev](https://models.dev)** — AI 模型元資料目錄（provider/model/成本/能力）
+    - **[git](https://git-scm.com)** — 版本控制（引擎的核心依賴）
+    - **[curl](https://curl.se)** — HTTP 請求（引擎的 AI 呼叫依賴）
     """
 
     static let openSourceJa = """
     ## オープンソース謝辞
 
-    - **[moongit](https://github.com/asdshuaishuai/moongit)** — 倉頡プロジェクト群進捗エンジン
-    - **[models.dev](https://models.dev)** — AIモデルメタデータカタログ
+    ここでは**インフラ層以外**のサードパーティプロジェクトのみを紹介します——
+    システムフレームワーク（SwiftUI / AppKit など）はプラットフォーム標準搭載のため含めません。
+
+    - **[moongit](https://github.com/asdshuaishuai/moongit)** — 倉頡製プロジェクト群進捗エンジン（本製品の中核）
+    - **[models.dev](https://models.dev)** — AIモデルメタデータカタログ（provider/モデル/コスト/能力）
+    - **[git](https://git-scm.com)** — バージョン管理（エンジンの中核依存）
+    - **[curl](https://curl.se)** — HTTP リクエスト（エンジンの AI 呼び出し依存）
     """
 
     // MARK: 更新日志
