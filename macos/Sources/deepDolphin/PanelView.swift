@@ -59,7 +59,7 @@ struct PanelView: View {
             }
         }
         .sheet(isPresented: $model.showAISettings) {
-            GeneralSettingsView(onClose: { model.showAISettings = false })
+            AppSettingsView()
                 .environmentObject(model)
         }
         .sheet(isPresented: $showAgent) {

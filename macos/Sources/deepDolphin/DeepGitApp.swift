@@ -236,7 +236,7 @@ struct DeepGitApp: App {
 
         // 标准 ⌘, 设置
         Settings {
-            GeneralSettingsView()
+            AppSettingsView()
                 .environmentObject(model)
         }
     }
