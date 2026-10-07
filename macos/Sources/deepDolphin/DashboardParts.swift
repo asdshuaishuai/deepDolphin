@@ -305,6 +305,8 @@ struct ProjectProgressCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(DSSpacing.md)
         .surface()
+        .contentShape(Rectangle())
+        .onTapGesture { model.go(.project(project.name)) }
     }
 
     // MARK: 里程碑那一行
