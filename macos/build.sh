@@ -85,6 +85,41 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# ── 引擎获取：本地 → GitHub Releases（自动下载）──────────────
+ENGINE_PICKED=""
+for CANDIDATE in \
+  "$(command -v moongit 2>/dev/null || true)" \
+  "$(command -v deepgit 2>/dev/null || true)" \
+  "$HOME/.local/bin/moongit" \
+  "$HOME/.local/bin/deepgit"; do
+  if [ -n "$CANDIDATE" ] && [ -x "$CANDIDATE" ]; then
+    ENGINE_PICKED="$CANDIDATE"
+    break
+  fi
+done
+
+# 本地没有 → 从 GitHub Releases 下载最新版
+if [ -z "$ENGINE_PICKED" ]; then
+  GH_URL="https://github.com/asdshuaishuai/moongit/releases/latest/download/moongit-darwin-arm64.tar.gz"
+  echo "› 本地无引擎，从 GitHub Releases 下载…"
+  if curl -fsSL "$GH_URL" -o /tmp/moongit-dl.tar.gz 2>/dev/null; then
+    mkdir -p "$HOME/.local/bin"
+    tar xzf /tmp/moongit-dl.tar.gz -C /tmp/moongit-dl 2>/dev/null || {
+      mkdir -p /tmp/moongit-dl
+      tar xzf /tmp/moongit-dl.tar.gz -C /tmp/moongit-dl
+    }
+    if [ -f /tmp/moongit-dl/moongit-cli ]; then
+      cp /tmp/moongit-dl/moongit-cli "$HOME/.local/bin/moongit"
+      chmod +x "$HOME/.local/bin/moongit"
+      ENGINE_PICKED="$HOME/.local/bin/moongit"
+      echo "  ✓ 引擎已下载安装到 ~/.local/bin/moongit"
+    fi
+    rm -rf /tmp/moongit-dl /tmp/moongit-dl.tar.gz
+  else
+    echo "  ⚠ GitHub Releases 下载失败，将使用系统已安装的引擎"
+  fi
+fi
+
 # 可选地把引擎二进制打包进 app（独立分发；找不到时 app 会按
 # DEEPGIT_BIN → 内嵌副本 → ~/.local/bin → PATH 的顺序自行发现引擎）
 #
