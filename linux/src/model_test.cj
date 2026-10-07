@@ -3632,3 +3632,60 @@ func detailCardsFoldTheDocsAndDemoteTheBranchLine(): Unit {
         case None => @Expect(false)
     }
 }
+
+// ---------------------------------------------------------------------------
+// U4：AI 对话页留边呼吸（基线 before/ai-chat.png）
+//
+// 三处病全在视图：空态「还没聊过」两行字贴在内容区顶部、下方约 800px 全空；
+// 输入条从左窗缘铺到右窗缘、「发送」贴死右下角 0 边距；有话态消息卡顶满
+// 全宽、一句话也横贯整窗。呈现层病照本文件惯例走源码扫描 —— chunk 切到
+// 函数体，不扫全文件；「预填不直发」是行为红线，单独一条钉死。
+// ---------------------------------------------------------------------------
+
+@Test
+func aiChatGetsMarginsAndReadingWidthCapsBySourceScan(): Unit {
+    // ① transcript：容器水平留边 16（上下 12）+ 单条消息卡 maxWidth 760
+    //    （阅读行宽，长正文仍可换行撑高）。maxWidth 在 aiMessageRow 上，
+    //    与 aiTranscriptView 同一切片（行构造 → 起手式之前）。
+    // ② 空态垂直居中：mainAxisAlignment(Center) 落在 None 分支的容器上。
+    match (readSrcText("ai_view.cj")) {
+        case Some(raw) =>
+            let code = srcCodeText(raw)
+            let flow = srcChunk(code, "func aiMessageRow(", "private func aiStarterButtons(")
+            @Expect(flow.contains(".maxWidth(760.0.vp)"))
+            @Expect(flow.contains(".padding(16.0, 12.0, 16.0, 12.0)"))
+            @Expect(flow.contains("aiMessageRow(m, dark)"))
+            @Expect(flow.contains("mainAxisAlignment(MainAxisAlignment.Center)"))
+            // ③ composer：四边留边（水平 16 + 底部 12 —— 发送键脱窗缘）；
+            //    输入框 72vp 定高不变、dd-ai-draft 控件键与 canSendAI 闸门
+            //    原样（既有判据不降，这里连同扫描一起钉住）。
+            let composer = srcChunk(code, "func aiComposer(", "public func sendAI(")
+            @Expect(composer.contains(".padding(16.0, 10.0, 16.0, 12.0)"))
+            @Expect(composer.contains("height(72.0.vp)"))
+            @Expect(composer.contains("key: \"dd-ai-draft\""))
+            @Expect(composer.contains("enabled(canSendAI(model))"))
+            // 发送入口只有原「发送」按钮一处
+            @Expect(countIn(composer, "sendAI(app, model)"), 1)
+        case None => @Expect(false)
+    }
+}
+
+@Test
+func aiStarterButtonsOnlyPrefillTheDraftAndNeverSend(): Unit {
+    // 起手式是**预填**不是直发：三颗按钮回调体各写一次 model.aiDraft，
+    // 函数体里不许出现 sendAI / beginAction —— 发送仍走输入行的「发送」
+    // 按钮与 canSendAI 闸门，这里不新增任何引擎动作入口。
+    match (readSrcText("ai_view.cj")) {
+        case Some(raw) =>
+            let code = srcCodeText(raw)
+            let starters = srcChunk(code, "func aiStarterButtons(", "public func scrollAITranscriptToBottom(")
+            @Expect(starters.contains("问项目群现状"))
+            @Expect(starters.contains("看某个项目的分支"))
+            @Expect(starters.contains("跑一次浅更新"))
+            @Expect(countIn(starters, "model.aiDraft.value ="), 3)
+            @Expect(!starters.contains("sendAI"))
+            @Expect(!starters.contains("beginAction"))
+            @Expect(!starters.contains("role:"))
+        case None => @Expect(false)
+    }
+}

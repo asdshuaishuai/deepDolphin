@@ -10,8 +10,8 @@ package deepdolphin_linux
 
 import std.collection.*
 import cui.{Button, ButtonRole, Color, CrossAxisAlignment, DesktopApp, Divider, Dropdown,
-    Flexible, FontWeight, HStack, Key, Label, LengthUnits, Panel, ScrollView, Spacer, State, TextArea,
-    TextField, VStack, Widget}
+    Flexible, FontWeight, HStack, Key, Label, LengthUnits, MainAxisAlignment, Panel, ScrollView,
+    Spacer, State, TextArea, TextField, VStack, Widget}
 import cui.mountEffect
 
 // ---------------------------------------------------------------------------
@@ -128,6 +128,11 @@ private func aiMessageRow(m: ChatMessage, dark: Bool): Unit {
             }
         }.spacing(3.0.vp).hug()
     }.style(dsSurface(DsLevel.Nested, dark)).contentPadding(8.0.vp).hug()
+        // U4：单条消息卡限宽 760（阅读行宽）。基线里一句话的问题也铺满整幅、
+        // 卡缘顶死窗框；限宽后长正文照常换行撑高，短消息不再横贯全窗。
+        // maxWidth 让控件在本轴拒绝 stretch（widget_modifiers.cj acceptsStretch），
+        // 卡片在 transcript 的 Stretch 容器里保持实测宽、靠左排。
+        .maxWidth(760.0.vp)
 }
 
 /// 消息正文。
@@ -155,20 +160,31 @@ public func aiMessageText(m: ChatMessage): String {
 private func aiTranscriptView(model: AppModel, dark: Bool): Unit {
     match (model.aiTranscript.value) {
         case None =>
-            // 空态用 HStack + Spacer 做水平居中：VStack 的
-            // `crossAxisAlignment(Center)` 不会把「按内容宽度」的 Label 撑开居中，
-            // 实际渲染出来那段文字是**贴左边**的（快照实测）。
+            // 空态：文案组**垂直居中** + 下方三颗起手式（U4）。
+            // 基线 ai-chat.png 的病：两行字贴在内容区顶部，下方约 800px 全空 ——
+            // 「留了一大块白却把字顶在头上」，视觉重心整个是歪的。
+            // 垂直居中走 VStack 的 `mainAxisAlignment(Center)`：主轴对齐是
+            // Stack 排程（layout_widgets.cj arrangementPlan Center 档）的
+            // 正经能力，与下面那个**跨轴**的坑无关。
+            // 水平居中仍用 HStack + Spacer：`crossAxisAlignment(Center)` 不会把
+            // 「按内容宽度」的 Label 撑开居中，实际渲染出来那段文字是**贴左边**
+            // 的（快照实测，警示保留）。
+            // 两行都 `.hug()`：它们是主轴上的固定高孩子，剩余高度全交给
+            // Center 偏移；不 hug 的话会被 flex pass 拉伸、按钮跟着变高。
             Panel {
-                HStack {
-                    Spacer()
-                    VStack {
-                        Label("还没聊过").fontSize(fsSection()).muted()
-                        Label("问项目群现状、问某个项目的分支、让它跑一次浅更新。\n" +
-                            "它只根据引擎返回的事实回答 —— 工具没给的数据，它会说「不知道」。")
-                            .fontSize(fsBody()).muted().wrap().width(520.0.vp)
-                    }.spacing(6.vp)
-                    Spacer()
-                }.spacing(0.vp)
+                VStack {
+                    HStack {
+                        Spacer()
+                        VStack {
+                            Label("还没聊过").fontSize(fsSection()).muted()
+                            Label("问项目群现状、问某个项目的分支、让它跑一次浅更新。\n" +
+                                "它只根据引擎返回的事实回答 —— 工具没给的数据，它会说「不知道」。")
+                                .fontSize(fsBody()).muted().wrap().width(520.0.vp)
+                        }.spacing(6.vp)
+                        Spacer()
+                    }.spacing(0.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
+                    aiStarterButtons(model)
+                }.spacing(20.vp).mainAxisAlignment(MainAxisAlignment.Center)
             }.style(dsSurface(DsLevel.Card, dark)).contentPadding(24.0.vp).flex()
         case Some(list) =>
             // scrollState 接模型上的 `aiScroll`（R2-06）：新消息写入时把它
@@ -185,8 +201,30 @@ private func aiTranscriptView(model: AppModel, dark: Bool): Unit {
                         Label(model.aiStatus.value).fontSize(fsBody()).muted()
                     }
                 }.spacing(6.0.vp)
+                    // U4：transcript 容器水平留边 16 —— 消息卡不再顶着左右窗缘；
+                    // 上下各 12，首尾卡片与分隔线之间也有呼吸。（参数序：左/上/右/下）
+                    .padding(16.0, 12.0, 16.0, 12.0)
             }.scrollState(model.aiScroll).flex()
     }
+}
+
+/// 空态的三颗起手式（U4）。**只预填，不直发**：回调体只写 `model.aiDraft`，
+/// 发送仍走输入行的「发送」按钮与 `canSendAI` 闸门 —— 这里不新增任何
+/// 引擎动作入口（判据钉住：本函数体里不许出现 sendAI）。
+private func aiStarterButtons(model: AppModel): Unit {
+    HStack {
+        Spacer()
+        Button("问项目群现状", {=>
+            model.aiDraft.value = "项目群现在整体怎么样？哪些项目需要关注？"
+        }).fontSize(fsLabel())
+        Button("看某个项目的分支", {=>
+            model.aiDraft.value = "列出当前项目的分支，标注哪些活跃、哪些待合入。"
+        }).fontSize(fsLabel())
+        Button("跑一次浅更新", {=>
+            model.aiDraft.value = "帮我跑一次浅更新，完成后告诉我结果。"
+        }).fontSize(fsLabel())
+        Spacer()
+    }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.Center).hug()
 }
 
 /// 把对话流顶到底（R2-06）。取一个远超任何内容高度的值即可：
@@ -208,6 +246,11 @@ public func canSendAI(model: AppModel): Bool {
 /// 消息流被顶到窗口外面 —— 画面上只剩一个巨大的空输入框。
 /// 「看起来顺序不对」的现象，根因是这块控件在抢高度，不是布局顺序。
 /// 三行高足够写一个具体问题；再高就该拖窗口了。
+///
+/// U4：整行四边留边（参数序：左/上/右/下）。基线 ai-chat.png 的输入条从左
+/// 窗缘铺到右窗缘、「发送」贴死右下角 0 边距 —— 框架示例外层统一
+/// `.padding(16.vp)`（file_explorer views.cj:21），对话页至少要给到
+/// 水平 16 + 底部 12：发送键离开窗角，输入框与按钮同基线呼吸。
 private func aiComposer(model: AppModel, app: DesktopApp, dark: Bool): Unit {
     HStack {
         TextArea(model.aiDraft, key: "dd-ai-draft").placeholder("问点什么…").wrap()
@@ -215,6 +258,7 @@ private func aiComposer(model: AppModel, app: DesktopApp, dark: Bool): Unit {
         Button("发送", {=> sendAI(app, model)}, role: ButtonRole.Primary)
             .fontSize(fsBody()).enabled(canSendAI(model))
     }.spacing(8.vp).crossAxisAlignment(CrossAxisAlignment.End).hug()
+        .padding(16.0, 10.0, 16.0, 12.0)
 }
 
 /// 发一轮。**UI 线程只做状态切换**，网络与引擎调用全在后台线程。
