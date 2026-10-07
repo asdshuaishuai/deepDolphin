@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>deepDolphin — AI 驱动的本地项目群管理</title>
+<style>
+:root{--bg:#0d1117;--bg2:#161b22;--bg3:#1c2128;--border:#30363d;--fg:#e6edf3;--dim:#8b949e;--accent:#58a6ff;--green:#3fb950;--purple:#bc8cff;--orange:#d29922;--pink:#f778ba;--mono:'SF Mono',Consolas,monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:16px/1.7 -apple-system,'PingFang SC','Noto Sans SC',sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.container{max-width:1000px;margin:0 auto;padding:0 24px}
+nav{display:flex;align-items:center;justify-content:space-between;padding:16px 0;border-bottom:1px solid var(--border)}
+nav .logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:18px}
+nav .logo .dolphin{color:var(--accent);font-size:20px}
+nav .links{display:flex;gap:24px;font-size:14px}
+/* hero */
+.hero{text-align:center;padding:90px 0 60px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:-200px;left:50%;transform:translateX(-50%);width:600px;height:400px;background:radial-gradient(ellipse,rgba(88,166,255,.12),transparent 70%);pointer-events:none}
+.hero .badge{display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:99px;border:1px solid var(--border);font-size:13px;color:var(--dim);margin-bottom:20px}
+.hero .badge .dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
+.hero h1{font-size:52px;font-weight:800;letter-spacing:-1.5px;line-height:1.15}
+.hero h1 em{font-style:normal;background:linear-gradient(135deg,var(--accent),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero p{font-size:19px;color:var(--dim);max-width:580px;margin:20px auto 0}
+.hero .platforms{display:flex;gap:10px;justify-content:center;margin-top:28px;flex-wrap:wrap}
+.plat{display:flex;align-items:center;gap:6px;padding:6px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:99px;font-size:13px}
+.plat .ok{color:var(--green)}.plat .soon{color:var(--dim)}.plat .icon{font-size:14px}
+.hero .cta{display:flex;gap:12px;justify-content:center;margin-top:32px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;transition:all .2s}
+.btn:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,0,0,.3)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-ghost{background:var(--bg2);color:var(--fg);border:1px solid var(--border)}
+/* mockup */
+.mockup{max-width:880px;margin:48px auto 0;background:var(--bg2);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);text-align:left}
+.mockup-bar{display:flex;align-items:center;gap:6px;padding:10px 14px;background:var(--bg3);border-bottom:1px solid var(--border)}
+.mockup-bar .dot{width:12px;height:12px;border-radius:50%}
+.mockup-bar .d1{background:#ff5f57}.mockup-bar .d2{background:#febc2e}.mockup-bar .d3{background:#28c840}
+.mockup-bar span{margin-left:8px;font-size:12px;color:var(--dim)}
+.mockup-body{display:flex;min-height:380px}
+.mockup-side{width:180px;background:var(--bg2);border-right:1px solid var(--border);padding:14px 10px}
+.mockup-side .hd{font-size:10px;color:var(--dim);padding:4px 8px;margin-bottom:4px}
+.mockup-side .item{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:6px;font-size:12px;margin-bottom:2px}
+.mockup-side .item.sel{background:var(--accent);color:#fff}
+.mockup-side .item .ic{font-size:10px;width:14px}
+.mockup-side .dot-g{width:6px;height:6px;border-radius:50%;background:var(--green);margin-left:auto}
+.mockup-side .dot-o{width:6px;height:6px;border-radius:50%;background:var(--orange);margin-left:auto}
+.mockup-main{flex:1;padding:16px;background:var(--bg)}
+.mockup-hero{background:linear-gradient(135deg,rgba(188,140,255,.15),rgba(88,166,255,.1));border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.mockup-hero .t{font-size:14px;font-weight:700;color:var(--purple)}
+.mockup-hero .s{font-size:11px;color:var(--dim);margin-top:2px}
+.mockup-stats{display:flex;gap:8px;margin-bottom:12px}
+.mstat{flex:1;background:var(--bg3);border-radius:8px;padding:8px 10px}
+.mstat .v{font-size:18px;font-weight:700}
+.mstat .l{font-size:9px;color:var(--dim)}
+.mockup-kanban{display:flex;gap:8px}
+.mcol{flex:1;background:var(--bg3);border-radius:8px;padding:8px}
+.mcol .ch{font-size:10px;color:var(--dim);margin-bottom:6px;display:flex;align-items:center;gap:4px}
+.mcol .ch .cd{width:6px;height:6px;border-radius:50%}
+.mcard{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;margin-bottom:4px;font-size:10px}
+.mcard .n{font-weight:600;font-size:11px}
+.mcard .d{color:var(--dim);font-size:9px;margin-top:2px}
+/* sections */
+section{padding:60px 0}
+section h2{font-size:30px;font-weight:700;margin-bottom:8px}
+section .sub{color:var(--dim);margin-bottom:32px;font-size:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:26px}
+.card .icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:14px}
+.card h3{font-size:16px;font-weight:600;margin-bottom:8px}
+.card p{font-size:14px;color:var(--dim);line-height:1.7}
+/* colors for card icons */
+.ic-blue{background:rgba(88,166,255,.12);color:var(--accent)}
+.ic-green{background:rgba(63,185,80,.12);color:var(--green)}
+.ic-purple{background:rgba(188,140,255,.12);color:var(--purple)}
+.ic-orange{background:rgba(210,153,34,.12);color:var(--orange)}
+.ic-pink{background:rgba(247,120,186,.12);color:var(--pink)}
+/* platform grid */
+.plat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:24px}
+.plat-card{text-align:center;padding:24px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:14px}
+.plat-card .icon{font-size:32px;margin-bottom:10px}
+.plat-card h4{font-size:14px;font-weight:600;margin-bottom:4px}
+.plat-card p{font-size:12px;color:var(--dim)}
+.plat-card .st{margin-top:8px;font-size:11px}
+.plat-card .st.ok{color:var(--green)}.plat-card .st.soon{color:var(--dim)}
+/* boundary */
+.boundary{display:flex;gap:14px;margin-top:20px}
+.b-col{flex:1;padding:18px;border-radius:12px;border:1px solid var(--border)}
+.b-col h4{font-size:14px;font-weight:600;margin-bottom:8px}
+.b-col p{font-size:13px;color:var(--dim);line-height:1.6}
+.b-col.ai{border-color:rgba(188,140,255,.3);background:rgba(188,140,255,.05)}
+.b-col.core{border-color:rgba(88,166,255,.3);background:rgba(88,166,255,.05)}
+/* footer */
+footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;color:var(--dim);font-size:13px}
+footer a{color:var(--dim)}
+@media(max-width:640px){
+.hero h1{font-size:36px}.hero p{font-size:16px}
+.mockup-body{flex-direction:column}.mockup-side{width:100%}
+.boundary{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<nav>
+  <div class="logo"><span class="dolphin">🐬</span> deepDolphin</div>
+  <div class="links">
+    <a href="#features">功能</a>
+    <a href="#platforms">平台</a>
+    <a href="https://github.com/asdshuaishuai/deepDolphin">GitHub ↗</a>
+  </div>
+</nav>
+</div>
+
+<div class="container">
+<div class="hero">
+  <div class="badge"><span class="dot"></span> macOS 已发布 · Linux / Windows / 鸿蒙开发中</div>
+  <h1>AI 驱动的<br><em>本地项目群管理</em></h1>
+  <p>基于 git 历史的进度引擎 deepGit 的原生客户端。<br>看板、里程碑、AI 助手——让你的项目群一目了然。</p>
+  <div class="platforms">
+    <div class="plat"><span class="icon">🖥️</span> macOS <span class="ok">✓</span></div>
+    <div class="plat"><span class="icon">🪟</span> Windows <span class="soon">开发中</span></div>
+    <div class="plat"><span class="icon">🐧</span> Linux <span class="soon">规划中</span></div>
+    <div class="plat"><span class="icon">🌐</span> 鸿蒙 PC <span class="soon">规划中</span></div>
+  </div>
+  <div class="cta">
+    <a class="btn btn-primary" href="https://github.com/asdshuaishuai/deepDolphin/releases">下载 for macOS</a>
+    <a class="btn btn-ghost" href="https://github.com/asdshuaishuai/moongit">引擎 GitHub</a>
+  </div>
+</div>
+</div>
+
+<div class="container">
+<!-- UI mockup -->
+<div class="mockup">
+  <div class="mockup-bar"><div class="dot d1"></div><div class="dot d2"></div><div class="dot d3"></div><span>deepDolphin — deepGit 面板</span></div>
+  <div class="mockup-body">
+    <div class="mockup-side">
+      <div class="hd">总览</div>
+      <div class="item sel"><span class="ic">▦</span> 仪表盘</div>
+      <div class="item"><span class="ic">▤</span> 看板</div>
+      <div class="item"><span class="ic">✦</span> AI 助手</div>
+      <div class="item"><span class="ic">🚩</span> 里程碑</div>
+      <div class="hd" style="margin-top:12px">项目</div>
+      <div class="item">d2note <span class="dot-g"></span></div>
+      <div class="item">deepDesign <span class="dot-o"></span></div>
+      <div class="item">deepGit <span class="dot-g"></span></div>
+      <div class="item">deepOffice <span class="dot-o"></span></div>
+    </div>
+    <div class="mockup-main">
+      <div class="mockup-hero">
+        <div class="t">项目群脉搏</div>
+        <div class="s">15 个项目 · 4 个近 7 天活跃 · 2 项待处理</div>
+      </div>
+      <div class="mockup-stats">
+        <div class="mstat"><div class="v" style="color:var(--accent)">15</div><div class="l">项目总数</div></div>
+        <div class="mstat"><div class="v" style="color:var(--green)">4</div><div class="l">近 7 天活跃</div></div>
+        <div class="mstat"><div class="v" style="color:var(--orange)">2</div><div class="l">待处理</div></div>
+        <div class="mstat"><div class="v">23</div><div class="l">分支</div></div>
+      </div>
+      <div class="mockup-kanban">
+        <div class="mcol">
+          <div class="ch"><span class="cd" style="background:var(--green)"></span> 活跃中 · 8</div>
+          <div class="mcard"><div class="n">deepDesign</div><div class="d">main: 活跃 · 2 处未提交</div></div>
+          <div class="mcard"><div class="n">deepGit</div><div class="d">main: 活跃 · 43 处</div></div>
+        </div>
+        <div class="mcol">
+          <div class="ch"><span class="cd" style="background:var(--orange)"></span> 待处理 · 1</div>
+          <div class="mcard"><div class="n">deepOffice</div><div class="d">main: 闲置 · 15 处</div></div>
+        </div>
+        <div class="mcol">
+          <div class="ch"><span class="cd" style="background:var(--red)"></span> 停滞 · 1</div>
+          <div class="mcard"><div class="n">deepOrca</div><div class="d">feat/ui-redesign: 活跃</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="container">
+<section id="features">
+  <h2>核心功能</h2>
+  <p class="sub">AI 不是独立功能——它整合在每一次操作里</p>
+  <div class="grid">
+    <div class="card">
+      <div class="icon ic-blue">▦</div>
+      <h3>项目看板</h3>
+      <p>按健康状态分列（活跃 / 待处理 / 停滞 / 其他），卡片带脉搏徽标和快捷动作。状态由引擎从 git 事实推导，不可手改。</p>
+    </div>
+    <div class="card">
+      <div class="icon ic-green">🚩</div>
+      <h3>里程碑管理</h3>
+      <p>绑定 git tag 自动判定达成。行内直达按钮：达成 / 重开 / 放弃 / 删除。点击行跳到项目详情。</p>
+    </div>
+    <div class="card">
+      <div class="icon ic-purple">✦</div>
+      <h3>AI 整合更新流</h3>
+      <p>浅更新 + AI 摘要 / 深度更新 + AI 报告 / 定时更新 + AI 简报通知。AI 不在独立页面——它在每次操作里。</p>
+    </div>
+    <div class="card">
+      <div class="icon ic-orange">⚡</div>
+      <h3>一键项目说明</h3>
+      <p>项目页一键生成说明：结合 README、代码构成、进度事实，面向第一次接触的人。500 字以内。</p>
+    </div>
+    <div class="card">
+      <div class="icon ic-pink">🌿</div>
+      <h3>Git 白名单操作</h3>
+      <p>pull / push / commit / stash / unstash / fetch。结果输出区实时反馈。没有 reset / clean / force-push。</p>
+    </div>
+    <div class="card">
+      <div class="icon ic-blue">📄</div>
+      <h3>文档平铺</h3>
+      <p>README / AGENTS / CLAUDE 原文在项目详情页平铺渲染。引擎保证只改托管区域，其余逐字节保留。</p>
+    </div>
+  </div>
+</section>
+
+<section id="platforms">
+  <h2>四大平台，一套引擎</h2>
+  <p class="sub">交互 UI 自由，能力必须一致（C1–C11 矩阵）</p>
+  <div class="plat-grid">
+    <div class="plat-card"><div class="icon">🖥️</div><h4>macOS</h4><p>SwiftUI · MenuBarExtra + 主面板</p><div class="st ok">✓ 已发布</div></div>
+    <div class="plat-card"><div class="icon">🪟</div><h4>Windows</h4><p>WinUI 3 / WPF</p><div class="st soon">规划中</div></div>
+    <div class="plat-card"><div class="icon">🐧</div><h4>Linux</h4><p>GTK4 / Tauri</p><div class="st soon">规划中</div></div>
+    <div class="plat-card"><div class="icon">🌐</div><h4>鸿蒙 PC</h4><p>ArkUI</p><div class="st soon">规划中</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>引擎 / 客户端分工</h2>
+  <p class="sub">AI 无关内核 + 上层 AI 实现（deepDesign 模式）</p>
+  <div class="boundary">
+    <div class="b-col ai">
+      <h4>🐬 deepDolphin（客户端 = AI 层）</h4>
+      <p>models.dev 目录选型 · ai-sdk 风格通道（原生 tool_calls）· 提示词组装 · 工具调用循环 · 密钥存钥匙串 · 原生 UI 渲染</p>
+    </div>
+    <div class="b-col core">
+      <h4>⚙️ moongit（引擎 = 确定性内核）</h4>
+      <p>git 采集 · 进度库 · 文档托管写入 · 规则引擎 · CLI --json · MCP 服务器 · HTTP API。AI 无关，零 LLM 调用，零密钥存储。</p>
+    </div>
+  </div>
+</section>
+</div>
+
+<footer>
+<div class="container">
+  <p>deepDolphin · deepGit 引擎的客户端层 · <a href="https://github.com/asdshuaishuai/deepDolphin">GitHub</a> · <a href="https://github.com/asdshuaishuai/moongit">moongit 引擎</a></p>
+</div>
+</footer>
+</body>
+</html>
