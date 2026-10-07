@@ -15,14 +15,8 @@ struct AppSettingsView: View {
                 .tabItem { Label(l10n.tabAI, systemImage: "sparkles") }
             ScheduleCard().environmentObject(AppModel.shared)
                 .tabItem { Label(l10n.tabAutomation, systemImage: "clock") }
-            AboutTab()
+            AboutCombinedTab()
                 .tabItem { Label(l10n.tabAbout, systemImage: "info.circle") }
-            HelpTab()
-                .tabItem { Label(l10n.tabHelp, systemImage: "questionmark.circle") }
-            OpenSourceTab()
-                .tabItem { Label(l10n.tabOpenSource, systemImage: "heart") }
-            ChangelogTab()
-                .tabItem { Label(l10n.tabChangelog, systemImage: "list.bullet") }
         }
         .frame(width: 580, height: 520)
         .onDisappear { aiDraft.save() }
@@ -57,35 +51,26 @@ struct GeneralTab: View {
     }
 }
 
-struct AboutTab: View {
-    @EnvironmentObject var model: AppModel
+/// 关于页（合并 About + Help + OpenSource + Changelog）
+struct AboutCombinedTab: View {
     @ObservedObject private var l10n = L10n.shared
 
     var body: some View {
-        ScrollView { MarkdownView(text: l10n.doc(.about)).padding(16) }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                docSection(l10n.doc(.about))
+                Divider()
+                docSection(l10n.doc(.help))
+                Divider()
+                docSection(l10n.doc(.openSource))
+                Divider()
+                docSection(l10n.doc(.changelog))
+            }
+            .padding(16)
+        }
     }
-}
 
-struct HelpTab: View {
-    @ObservedObject private var l10n = L10n.shared
-
-    var body: some View {
-        ScrollView { MarkdownView(text: l10n.doc(.help)).padding(16) }
-    }
-}
-
-struct OpenSourceTab: View {
-    @ObservedObject private var l10n = L10n.shared
-
-    var body: some View {
-        ScrollView { MarkdownView(text: l10n.doc(.openSource)).padding(16) }
-    }
-}
-
-struct ChangelogTab: View {
-    @ObservedObject private var l10n = L10n.shared
-
-    var body: some View {
-        ScrollView { MarkdownView(text: l10n.doc(.changelog)).padding(16) }
+    private func docSection(_ text: String) -> some View {
+        MarkdownView(text: text)
     }
 }

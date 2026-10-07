@@ -10,6 +10,8 @@ import SwiftUI
 struct PanelView: View {
     @EnvironmentObject var model: AppModel
     @State private var showScan = false
+    @State private var showHelp = false
+    @State private var showAbout = false
     @State private var showTCCGuide = false
     @State private var showAgent = false
     /// 侧栏项目搜索词。空 = 不过滤。
