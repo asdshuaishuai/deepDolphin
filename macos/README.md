@@ -94,6 +94,7 @@ open deepDolphin.app
 
 ```
 Sources/deepDolphin/
+  AboutHelpWindows.swift        关于/帮助独立窗口（原生菜单栏「关于/帮助」的落点）
   A11yLabel.swift               纯函数：无障碍标签与 `SearchFilter`（空态两态可区分）
   AIClient.swift                引擎/上下文/工具清单的客户端门面
   AIErrorMessage.swift          纯函数：URLError → 可执行中文 + 地址脱敏到 host:port
@@ -106,6 +107,7 @@ Sources/deepDolphin/
   AgentCore.swift               AI 工具循环：引擎 context/tools --json → ai-sdk 工具定义 + executeTool
   AgentOutcome.swift            纯函数：撞轮次上限时怎么收尾（工具已执行 ≠ 失败）
   AgentView.swift               AI 助手：会话 UI + 工具调用循环（多轮上下文）
+  AppSettingsView.swift         设置面板（通用/AI/自动化/关于四 Tab，关于页含四段固定文档）
   BarView.swift                 菜单栏弹窗 UI
   BoardView.swift               看板页（按可执行性分列的原生分组列表）
   ChatMessage.swift             聊天消息模型（零依赖，供 agent-check 编译）
@@ -116,13 +118,15 @@ Sources/deepDolphin/
   ContextEnvelope.swift         纯函数：agent 上下文包裁剪
   DashboardParts.swift          仪表盘四段式零件：筛选行 / KPI 宽卡 / 逐项目进度卡（设计稿布局）
   DashboardScope.swift          纯函数：时间窗 + 提交类型筛选、4 张 KPI 的归并口径
-  DeepDolphinApp.swift              入口：MenuBarExtra(.window) + AppDelegate（深链/退出清理）+ CommandMenu（双轨动作 ⇧⌘U / ⌥⇧⌘D）
+  DeepGitApp.swift              入口：Window 面板 + MenuBarExtra + Settings + 原生菜单（关于/帮助）+ 深链
   DesignSystem.swift            设计系统视图层：DSColor / DSSpacing / DSRadius / DSTypography / Surface
   DesignTokens.swift            纯函数：色板（逐值等于设计稿 tailwind.config）/ 状态与量级分档
   DestructiveGuard.swift        纯函数：破坏性动作的确认文案与「可逆动作不弹确认」
   DetailViews.swift             项目详情页 + 仪表盘页（渲染 warnings / dirty / highlights / nextSteps）
+  DocsPages.swift               纯函数：关于/帮助/开源感谢/更新日志的四语言固定文档
   EngineCLI.swift               引擎发现 + 按需拉起 CLI 子进程 + ProcessRegistry（批量更新可真停）
   EngineFailure.swift           纯函数：引擎失败分类与文案
+  L10n.swift                    多语言系统（zh-CN/en/zh-TW/ja 四语言表 + t() + 固定文档入口）
   LanguageCoverage.swift        纯函数：语言分布占比
   LoadState.swift               纯函数：一个数据源的加载四态 → 该画加载/空/错误哪一种
   MarkdownParser.swift          Markdown 解析（独立于视图，便于单测）

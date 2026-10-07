@@ -589,33 +589,38 @@ struct ProjectStatus: Decodable, Identifiable, Hashable {
     /// 改成读引擎的 `b.status` 之后**又错了**：那也是追踪数组，
     /// 无远端仓库拿不到，于是全部落进 `default: 正常`。
     /// 现在统一走 `liveness`，两条证据按可得性择一。
-    var stateWord: (text: String, tone: Liveness) {
+    func stateWord(en: Bool = false) -> (text: String, tone: Liveness) {
         switch liveness {
-        case .unreadable:  return ("读不出来", .unreadable)
-        case .notGit:      return ("非 git 目录", .notGit)
-        case .needsAction: return ("有未提交改动", .needsAction)
-        case .engineStale: return ("停滞", .engineStale)
+        case .unreadable:  return (en ? "Unreadable" : "读不出来", .unreadable)
+        case .notGit:      return (en ? "Non-git folder" : "非 git 目录", .notGit)
+        case .needsAction: return (en ? "Has uncommitted changes" : "有未提交改动", .needsAction)
+        case .engineStale: return (en ? "Stale" : "停滞", .engineStale)
         case .quiet:
             // ⚠️ 措辞跟着依据走：这里用的是 30 天那条线，
             // 写「停滞」会让人以为是引擎的 14 天档位。
-            return ("\(daysSinceLastCommit ?? 0) 天没更新", .quiet)
-        case .recent:      return ("正常", .recent)
-        case .unknown:     return ("状态读不出来", .unknown)
+            return (en ? "No updates for \(daysSinceLastCommit ?? 0)d" : "\(daysSinceLastCommit ?? 0) 天没更新", .quiet)
+        case .recent:      return (en ? "Normal" : "正常", .recent)
+        case .unknown:     return (en ? "Status unreadable" : "状态读不出来", .unknown)
         }
     }
+    /// 默认中文（判据与既有调用兼容）。界面调用方传 `en:`。
+    var stateWord: (text: String, tone: Liveness) { stateWord(en: false) }
 
     /// 「N 个已跟踪分支」＋「仓库共 M 个」的披露。
     /// M 读不出来时只报追踪数并说明，不能显示 0 也不能假装知道。
-    var branchScopeLine: String {
+    func branchScopeLine(en: Bool = false) -> String {
         let tracked = branches.count
         if repoBranchCount < 0 {
-            return "\(tracked) 个已跟踪分支（仓库真实分支数读不出来）"
+            return en ? "\(tracked) tracked branches (repo branch count unreadable)"
+                      : "\(tracked) 个已跟踪分支（仓库真实分支数读不出来）"
         }
         if repoBranchCount > tracked {
-            return "\(tracked)/\(repoBranchCount) 个分支已跟踪"
+            return en ? "\(tracked)/\(repoBranchCount) branches tracked"
+                      : "\(tracked)/\(repoBranchCount) 个分支已跟踪"
         }
-        return "\(tracked) 个分支"
+        return en ? "\(tracked) branches" : "\(tracked) 个分支"
     }
+    var branchScopeLine: String { branchScopeLine(en: false) }
 
     /// 工程脉搏（有值得说才返回）
     ///

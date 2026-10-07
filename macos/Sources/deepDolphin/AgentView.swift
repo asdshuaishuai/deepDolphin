@@ -99,6 +99,7 @@ final class AgentChatModel: ObservableObject {
 }
 
 struct AgentView: View {
+    @ObservedObject private var l10n = L10n.shared
     @StateObject private var chat: AgentChatModel
     @Environment(\.dismiss) private var dismiss
     @FocusState private var inputFocused: Bool
@@ -127,7 +128,7 @@ struct AgentView: View {
     private var header: some View {
         HStack {
             Image(systemName: "sparkles").foregroundStyle(.purple)
-            Text("AI 助手 · \(chat.target.label)")
+            Text(L10n.t("agent.title", chat.target.label))
                 .font(.headline)
             Spacer()
             Button {
@@ -136,8 +137,8 @@ struct AgentView: View {
                 Image(systemName: "trash")
             }
             .buttonStyle(.borderless)
-            .help("清空对话")
-            .accessibilityLabel(A11y.label("清空对话"))
+            .help(L10n.t("agent.clear"))
+            .accessibilityLabel(A11y.label(L10n.t("agent.clear")))
             .disabled(chat.history.isEmpty)
 
             Button {
@@ -150,8 +151,8 @@ struct AgentView: View {
             }
             .buttonStyle(.borderless)
             .keyboardShortcut(.cancelAction)
-            .help("关闭")
-            .accessibilityLabel(A11y.label("关闭"))
+            .help(L10n.t("common.close"))
+            .accessibilityLabel(A11y.label(L10n.t("common.close")))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -177,7 +178,7 @@ struct AgentView: View {
                     if chat.busy {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small)
-                            Text(chat.cancelled ? "正在停止…" : "AI 正在思考…")
+                            Text(chat.cancelled ? L10n.t("agent.stopping") : L10n.t("agent.thinking"))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -199,7 +200,7 @@ struct AgentView: View {
 
     private var emptyHint: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            Text("可以问：")
+            Text(L10n.t("agent.suggest"))
                 .font(.headline)
             ForEach(chat.target == .group ? groupSamples : projectSamples, id: \.self) { s in
                 Button {
@@ -212,17 +213,17 @@ struct AgentView: View {
                 .disabled(!chat.isConfigured)
             }
             if !chat.isConfigured {
-                Text("AI 尚未配置 —— 先到 AI 设置里选 provider 并填 API Key。")
+                Text(L10n.t("agent.notConfigured"))
                     .font(.caption).foregroundStyle(.orange)
             }
         }
     }
 
     private var groupSamples: [String] {
-        ["哪些项目有未提交改动？", "最近一周哪些项目停滞了？", "按里程碑汇总一下当前进度。"]
+        [L10n.t("agent.sample.g1"), L10n.t("agent.sample.g2"), L10n.t("agent.sample.g3")]
     }
     private var projectSamples: [String] {
-        ["这个项目现在什么状态？", "有哪些未完成的里程碑？", "跑一次浅更新并总结变化。"]
+        [L10n.t("agent.sample.p1"), L10n.t("agent.sample.p2"), L10n.t("agent.sample.p3")]
     }
 
     @ViewBuilder
@@ -261,8 +262,8 @@ struct AgentView: View {
                 Image(systemName: "arrow.clockwise")
             }
             .buttonStyle(.borderless)
-            .help("重发上一条")
-            .accessibilityLabel(A11y.label("重发上一条"))
+            .help(L10n.t("agent.resend"))
+            .accessibilityLabel(A11y.label(L10n.t("agent.resend")))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, DSSpacing.sm)
@@ -270,7 +271,7 @@ struct AgentView: View {
 
     private var inputBar: some View {
         HStack(alignment: .bottom, spacing: DSSpacing.sm) {
-            TextField("问点什么…（⌘↩ 发送）", text: $chat.draft, axis: .vertical)
+            TextField(L10n.t("agent.inputPlaceholder"), text: $chat.draft, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(1...6)
                 .focused($inputFocused)
@@ -283,8 +284,8 @@ struct AgentView: View {
                     Image(systemName: "stop.circle.fill")
                 }
                 .buttonStyle(.borderless)
-                .help("停止")
-                .accessibilityLabel(A11y.label("停止"))
+                .help(L10n.t("agent.stop"))
+                .accessibilityLabel(A11y.label(L10n.t("agent.stop")))
             }
 
             Button {
@@ -295,7 +296,7 @@ struct AgentView: View {
             .buttonStyle(.borderless)
             .disabled(!chat.sendDecision.isAllowed)
             .help(sendHelp)
-            .accessibilityLabel(A11y.label(fromHelp: sendHelp, fallback: "发送"))
+            .accessibilityLabel(A11y.label(fromHelp: sendHelp, fallback: L10n.t("agent.send")))
             .keyboardShortcut(.return, modifiers: .command)
         }
         .padding(DSSpacing.md)
@@ -304,10 +305,10 @@ struct AgentView: View {
     /// 按钮灰着的时候要说为什么，否则用户只能猜。
     private var sendHelp: String {
         switch chat.sendDecision {
-        case .allowed: return "发送"
-        case .blocked(.empty): return "先输入内容"
-        case .blocked(.notConfigured): return "AI 未配置 —— 先到 AI 设置填写"
-        case .blocked(.busy): return "正在回答上一条"
+        case .allowed: return L10n.t("agent.send")
+        case .blocked(.empty): return L10n.t("agent.send.empty")
+        case .blocked(.notConfigured): return L10n.t("agent.send.notConfigured")
+        case .blocked(.busy): return L10n.t("agent.send.busy")
         }
     }
 }

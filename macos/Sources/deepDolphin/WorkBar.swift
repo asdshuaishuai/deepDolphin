@@ -19,6 +19,7 @@ import SwiftUI
 
 struct WorkBar: View {
     @EnvironmentObject var model: AppModel
+    @ObservedObject private var l10n = L10n.shared
 
     var body: some View {
         HStack(spacing: DSSpacing.md) {
@@ -61,7 +62,7 @@ struct WorkBar: View {
                 .font(.caption)
                 .foregroundStyle(DSColor.textTertiary)
             Picker("", selection: scopeBinding) {
-                Text("全局看板（全部 \(model.projects.count) 个项目）")
+                Text(L10n.t("workbar.global", model.projects.count))
                     .tag(ScopeChoice.group)
                 // 只列真实存在的项目。`model.projects` 为空时这一项不会被选中，
                 // 而 Picker 会退回第一项（group），所以不会出现「选了一个不存在的仓库」。
@@ -71,8 +72,8 @@ struct WorkBar: View {
             }
             .labelsHidden()
             .frame(maxWidth: 320)
-            .help("在「全局看板」与「单个仓库的独立管控页」之间切换")
-            .accessibilityLabel(A11y.label("范围选择器"))
+            .help(L10n.t("workbar.scope.help"))
+            .accessibilityLabel(A11y.label(L10n.t("workbar.scope.a11y")))
         }
     }
 
@@ -116,7 +117,7 @@ struct SidebarStatusStrip: View {
                 Circle()
                     .fill(busy ? DSColor.accent : DSColor.shallow)
                     .frame(width: 7, height: 7)
-                Text(busy ? "正在采集…" : "空闲")
+                Text(busy ? L10n.t("workbar.collecting") : L10n.t("workbar.idle"))
                     .font(.caption2)
                 Spacer(minLength: DSSpacing.xs)
                 if let t = model.lastRefreshed {
@@ -127,12 +128,12 @@ struct SidebarStatusStrip: View {
             }
             // 读不出来与「还没刷新过」是两件事，措辞必须不同。
             if let err = model.lastError, model.projects.isEmpty {
-                Text("引擎连接失败")
+                Text(L10n.t("panel.error.engine"))
                     .font(.caption2)
                     .foregroundStyle(.orange)
                     .lineLimit(1)
             } else if model.lastRefreshed == nil {
-                Text("尚未刷新")
+                Text(L10n.t("workbar.neverRefreshed"))
                     .font(.caption2)
                     .foregroundStyle(DSColor.textTertiary)
             }

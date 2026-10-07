@@ -11,6 +11,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 struct ScanSheet: View {
+    @ObservedObject private var l10n = L10n.shared
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
@@ -31,31 +32,31 @@ struct ScanSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             Picker("", selection: $mode) {
-                Text("添加单个项目").tag(0)
-                Text("批量扫描目录").tag(1)
+                Text(L10n.t("scan.tab.single")).tag(0)
+                Text(L10n.t("scan.tab.batch")).tag(1)
             }
             .pickerStyle(.segmented)
             .padding([.horizontal, .top], 16)
 
             Form {
                 if mode == 0 {
-                    Section("项目路径") {
+                    Section(L10n.t("scan.path")) {
                         pathRow(text: $singlePath,
-                                placeholder: "选择一个 git 仓库文件夹",
+                                placeholder: L10n.t("scan.path.help"),
                                 problem: problemFor(singlePath))
-                        TextField("项目名（可选）", text: $singleName)
+                        TextField(L10n.t("scan.name"), text: $singleName)
                             .textFieldStyle(.roundedBorder)
                     }
                 } else {
-                    Section("扫描根目录") {
+                    Section(L10n.t("scan.root")) {
                         pathRow(text: $scanRoot,
-                                placeholder: "选择要扫描的父目录",
+                                placeholder: L10n.t("scan.root.help"),
                                 problem: problemFor(scanRoot))
-                        Stepper("扫描深度：\(scanDepth) 层", value: $scanDepth, in: 1...6)
+                        Stepper(L10n.t("scan.depth", scanDepth), value: $scanDepth, in: 1...6)
                     }
                 }
                 if !results.isEmpty {
-                    Section("结果") {
+                    Section(L10n.t("scan.results")) {
                         ForEach(results, id: \.self) { line in
                             Text(line).font(.caption).foregroundStyle(.secondary)
                         }
@@ -69,12 +70,12 @@ struct ScanSheet: View {
 
             HStack {
                 Spacer()
-                Button("取消") {
+                Button(L10n.t("common.cancel")) {
                     work?.cancel()
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
-                Button(mode == 0 ? "添加" : "扫描") { submit() }
+                Button(mode == 0 ? L10n.t("scan.add") : L10n.t("scan.run")) { submit() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(busy || currentProblem != nil)
                     .padding(.leading, DSSpacing.sm)
@@ -126,7 +127,7 @@ struct ScanSheet: View {
                 TextField(placeholder, text: text)
                     .textFieldStyle(.roundedBorder)
                     .focused($pathFocused)
-                Button("选择…") { choosePath(into: text) }
+                Button(L10n.t("scan.choose")) { choosePath(into: text) }
                     .disabled(busy)
             }
             if let problem {
@@ -221,7 +222,7 @@ struct ScanSheet: View {
                     // 所以行为没错 —— 但那段死代码会让人以为"发的是 body"，
                     // 改 EngineCLI 时就可能改错地方。删掉。
                     _ = try await EngineCLI.shared.addProject(path: prepared.path, name: singleName)
-                    results = ["已注册 \(prepared.path)"]
+                    results = [L10n.t("scan.added", prepared.path)]
                 } else {
                     let data = try await EngineCLI.shared.scan(root: prepared.path, depth: scanDepth)
                     if let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -232,8 +233,8 @@ struct ScanSheet: View {
                         let note = ScanCoverage.note(cov)
                         // 披露分母：只说"新增 0 个"会被读成"扫过了但没有仓库"，
                         // 而"扫了 120 个目录一个都没有"是完全不同的两件事。
-                        var line = "新增 \(added) 个 / 共发现 \(found) 个"
-                        if existing > 0 { line += "（已存在 \(existing) 个跳过）" }
+                        var line = L10n.t("scan.summary", added, found)
+                        if existing > 0 { line += L10n.t("scan.existing", existing) }
                         // ⚠️ 「该目录树里没有 git 仓库」**只在真的扫完时才许说**。
                         // 本表默认深度就是 2，扫一棵仓库在第 4 层的树 →
                         //   found=0、depthCapped=true

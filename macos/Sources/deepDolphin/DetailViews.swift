@@ -4,6 +4,7 @@ import SwiftUI
 // MARK: - 项目详情
 
 struct ProjectDetailView: View {
+    @ObservedObject private var l10n = L10n.shared
     @EnvironmentObject var model: AppModel
     let projectName: String
     @State private var commitMessage = ""
@@ -28,12 +29,12 @@ struct ProjectDetailView: View {
                 // 这正是「把读不出来说成还在读」。
                 EmptyState(
                     icon: "exclamationmark.triangle",
-                    title: "读不出来：\(projectName)",
+                    title: L10n.t("detail.unreadable.title", projectName),
                     subtitle: err
                 )
                 .padding(DSSpacing.xxl)
             } else {
-                ProgressView("加载 \(projectName) …")
+                ProgressView(L10n.t("detail.loading", projectName))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -55,20 +56,20 @@ struct ProjectDetailView: View {
                         .tinted(.red.opacity(0.08))
                 }
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
-                    Card(title: "工程脉搏") { pulseCard(p) }
-                    Card(title: "提交构成（近期）") { commitTypeCard(p) }
+                    Card(title: L10n.t("detail.pulse")) { pulseCard(p) }
+                    Card(title: L10n.t("detail.composition")) { commitTypeCard(p) }
                 }
                 // ⚠️ 提交卡在页头那排按钮**下面**（不是原来的中下部）。
                 //    页头已经放了拉取/推送/抓取/暂存/恢复，
                 //    把提交留在四张卡之后等于「同一组动作被拆成两半、还隔了四张卡」。
                 if p.isGit {
-                    Card(title: "提交改动") { gitCard(p) }
+                    Card(title: L10n.t("detail.commitChanges")) { gitCard(p) }
                 }
                 // ⚠️ branches.count 是引擎**追踪到基线**的数量，不是仓库真实分支数。
                 // 实测 16 个分支的仓库这里只显示 7 个；刚注册还没 track 过的仓库显示 0，
                 // 而仓库实际有 2 个分支 —— 字面写「分支进度（0）」会让人认定仓库没有分支。
                 // repoBranchCount = -1 时更要说明「读不出来」，不能显示 0。
-                Card(title: "分支进度 · \(p.branchScopeLine)") { branchCard(p) }
+                Card(title: L10n.t("detail.branchProgress", p.branchScopeLine(en: L10n.shared.language.usesEnglishFacts))) { branchCard(p) }
                 // ⚠️ 里程碑原来**只在里程碑页里有**。
                 //    而这一页才是「这个仓库的独立管控页」——
                 //    仪表盘卡、项目卡、管控页三处都不显示里程碑，
@@ -80,7 +81,7 @@ struct ProjectDetailView: View {
                     // 引擎的 journal 上限是 8 条（light=3 / JSON 恒 8），
                     // 而 progress.entryCount 是**真实条数**。数组长度当全量 ⇒
                     // 用户看到 8 条就以为「就更新过 8 次」。
-                    Card(title: "进度日志 · \(p.progress.entryCountLine)") { journalCard(journal, of: p) }
+                    Card(title: L10n.t("detail.journalCard", p.progress.entryCountLine)) { journalCard(journal, of: p) }
                 }
                 // ⚠️ 原来是 `if let docs = …, !docs.isEmpty { 画卡片 }` ——
                 //    三种情况（正在读 / 没有文档 / 读不出来）**渲染成同一个画面**：
@@ -96,21 +97,21 @@ struct ProjectDetailView: View {
                         }
                     }
                 case .failed(let msg):
-                    Card(title: "托管文档") {
-                        Label("读不出来：\(msg)", systemImage: "exclamationmark.triangle")
+                    Card(title: L10n.t("detail.managedDocs")) {
+                        Label(L10n.t("detail.unreadable.title", msg), systemImage: "exclamationmark.triangle")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
                 case .loading:
-                    Card(title: "托管文档") {
-                        ProgressView("读取文档…")
+                    Card(title: L10n.t("detail.managedDocs")) {
+                        ProgressView(L10n.t("detail.docsLoading"))
                             .font(.caption)
                             .controlSize(.small)
                     }
                 case .empty:
                     // 「真的没有文档」与「读不出来」是两件事，必须分别说。
-                    Card(title: "托管文档") {
-                        Text("这个项目还没有受管的文档。跑一次浅更新会生成 README / AGENTS / CLAUDE。")
+                    Card(title: L10n.t("detail.managedDocs")) {
+                        Text(L10n.t("detail.docs.empty"))
                             .font(.caption)
                             .foregroundStyle(DSColor.textSecondary)
                     }
@@ -140,12 +141,12 @@ struct ProjectDetailView: View {
     /// 两处的可用性判定就会分叉（这里要判 `busyProject`），而那只有真点一次才发现。
     private func gitOpButtons(_ p: ProjectStatus) -> some View {
         HStack(spacing: DSSpacing.xs) {
-            gitOpButton(p, "拉取", "arrow.down.to.line", "pull")
-            gitOpButton(p, "推送", "arrow.up.to.line", "push")
-            gitOpButton(p, "抓取", "arrow.triangle.2.circlepath", "fetch")
+            gitOpButton(p, L10n.t("gitop.pull"), "arrow.down.to.line", "pull")
+            gitOpButton(p, L10n.t("gitop.push"), "arrow.up.to.line", "push")
+            gitOpButton(p, L10n.t("gitop.fetch"), "arrow.triangle.2.circlepath", "fetch")
             Divider().frame(height: 14)
-            gitOpButton(p, "暂存", "archivebox", "stash")
-            gitOpButton(p, "恢复", "tray.and.arrow.down", "unstash")
+            gitOpButton(p, L10n.t("gitop.stash"), "archivebox", "stash")
+            gitOpButton(p, L10n.t("gitop.unstash"), "tray.and.arrow.down", "unstash")
             if model.busyProject == p.name {
                 ProgressView().controlSize(.small)
             }
@@ -155,10 +156,10 @@ struct ProjectDetailView: View {
     private func gitCard(_ p: ProjectStatus) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: DSSpacing.sm) {
-                TextField("提交信息（提交全部改动）", text: $commitMessage)
+                TextField(L10n.t("gitop.messagePlaceholder"), text: $commitMessage)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { pendingCommit = p }
-                Button("提交") { pendingCommit = p }
+                Button(L10n.t("gitop.commit")) { pendingCommit = p }
                     .disabled(commitMessage.trimmingCharacters(in: .whitespaces).isEmpty || model.busyProject == p.name)
             }
 
@@ -168,7 +169,7 @@ struct ProjectDetailView: View {
                         Image(systemName: out.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
                             .foregroundStyle(out.ok ? Color.green : Color.red)
                             .font(.caption)
-                        Text(out.ok ? "成功" : "失败")
+                        Text(out.ok ? L10n.t("common.success") : L10n.t("common.failure"))
                             .font(.caption.weight(.medium))
                             .foregroundStyle(out.ok ? Color.green : Color.red)
                         Spacer()
@@ -179,8 +180,8 @@ struct ProjectDetailView: View {
                                 .font(.caption2)
                         }
                         .buttonStyle(.borderless)
-                        .help("清除输出")
-                        .accessibilityLabel(A11y.label("清除输出"))
+                        .help(L10n.t("gitop.clearOutput"))
+                        .accessibilityLabel(A11y.label(L10n.t("gitop.clearOutput")))
                     }
                     ScrollView {
                         Text(out.text)
@@ -202,11 +203,11 @@ struct ProjectDetailView: View {
             ),
             titleVisibility: .visible
         ) {
-            Button("全部提交", role: .destructive) {
+            Button(L10n.t("gitop.commitAll"), role: .destructive) {
                 if let p = pendingCommit { doCommit(p) }
                 pendingCommit = nil
             }
-            Button("取消", role: .cancel) { pendingCommit = nil }
+            Button(L10n.t("common.cancel"), role: .cancel) { pendingCommit = nil }
         } message: {
             Text(pendingCommit.map { DestructiveGuard.commitMessage(scope: commitScope($0)) } ?? "")
         }
@@ -251,9 +252,9 @@ struct ProjectDetailView: View {
                     //    同一个仓库，仪表盘说「47 天没更新」、管控页什么都不说 ——
                     //    用户会以为管控页漏了，而实际上是两处各算各的。
                     //    现在统一走 `ProjectStatus.stateWord`（模型层那一份）。
-                    Chip(text: p.stateWord.text, tint: stateTint(p.stateWord.tone))
+                    Chip(text: p.stateWord(en: L10n.shared.language.usesEnglishFacts).text, tint: stateTint(p.stateWord.tone))
                     if !p.isGit {
-                        Chip(text: "非 git", tint: .gray)
+                        Chip(text: L10n.t("detail.notGit"), tint: .gray)
                     }
                     if model.busyProject == p.name {
                         ProgressView().controlSize(.small)
@@ -322,16 +323,16 @@ struct ProjectDetailView: View {
                         Image(systemName: "folder")
                     }
                     .buttonStyle(.borderless)
-                    .help("在 Finder 中显示")
-                    .accessibilityLabel(A11y.label("在 Finder 中显示"))
+                    .help(L10n.t("detail.finder"))
+                    .accessibilityLabel(A11y.label(L10n.t("detail.finder")))
                     Button {
                         SysOpen.openTerminal(at: p.path)
                     } label: {
                         Image(systemName: "terminal")
                     }
                     .buttonStyle(.borderless)
-                    .help("在终端中打开")
-                    .accessibilityLabel(A11y.label("在终端中打开"))
+                    .help(L10n.t("detail.terminal"))
+                    .accessibilityLabel(A11y.label(L10n.t("detail.terminal")))
                     if !p.remote.isEmpty {
                         Button {
                             SysOpen.openRemote(p.remote)
@@ -339,8 +340,8 @@ struct ProjectDetailView: View {
                             Image(systemName: "globe")
                         }
                         .buttonStyle(.borderless)
-                        .help("打开远端仓库")
-                        .accessibilityLabel(A11y.label("打开远端仓库"))
+                        .help(L10n.t("detail.remote"))
+                        .accessibilityLabel(A11y.label(L10n.t("detail.remote")))
                     }
                 }
             }
@@ -362,10 +363,10 @@ struct ProjectDetailView: View {
                             radius: DSRadius.control)
             }
             HStack(spacing: DSSpacing.sm) {
-                Chip(text: "未提交 \(p.userDirtyCount)", tint: statTint(p.userDirtyCount))
-                Chip(text: "未跟踪 \(p.untrackedCount)", tint: statTint(p.untrackedCount))
+                Chip(text: L10n.t("detail.chip.dirty", p.userDirtyCount), tint: statTint(p.userDirtyCount))
+                Chip(text: L10n.t("detail.chip.untracked", p.untrackedCount), tint: statTint(p.untrackedCount))
                 Chip(text: "stash \(p.stashCount)", tint: statTint(p.stashCount))
-                Chip(text: "工作区 \(p.worktreeCount)", tint: .secondary)
+                Chip(text: L10n.t("detail.chip.worktree", p.worktreeCount), tint: .secondary)
             }
             // `dirty` 是**另一个口径**：上面那几个数是「用户改的」，
             // 这个对象是引擎判的（带 `ok` —— 读不出来时 ok 缺席/false，数字全是 0）。
@@ -383,7 +384,7 @@ struct ProjectDetailView: View {
                         .foregroundStyle(DSColor.textTertiary)
                         .lineLimit(2)
                         .textSelection(.enabled)
-                        .accessibilityLabel(A11y.label("未提交的文件"))
+                        .accessibilityLabel(A11y.label(L10n.t("detail.a11y.dirtyFiles")))
                         .accessibilityValue(files)
                 }
             }
@@ -391,16 +392,16 @@ struct ProjectDetailView: View {
             // 实测一个刚注册的项目 tags=[] manifests=[]，所以空数组一律不占位 ——
             // 画一个空的「标签」行只会让人以为这里本来该有东西而没采到。
             if let tags = p.tags, !tags.isEmpty {
-                projectFacts("标签", tags)
+                projectFacts(L10n.t("detail.facts.tags"), tags)
             }
             if let mf = p.manifests, !mf.isEmpty {
-                projectFacts("依赖清单", mf)
+                projectFacts(L10n.t("detail.facts.manifests"), mf)
             }
             // `docs[].exists` 区分「引擎管着这个文件但还没建」与「压根没有这回事」——
             // 对用户是两件不同的事：前者是「你还没写」，后者是「这里不用写」。
             // 合成一份文件名清单就把这个区别抹掉了。
             if let docs = p.docs, !docs.isEmpty {
-                projectFacts("托管文档", docs.map { "\($0.file)（\($0.exists ? "已建" : "未建")）" })
+                projectFacts(L10n.t("detail.managedDocs"), docs.map { "\($0.file)（\($0.exists ? L10n.t("detail.docs.exists") : L10n.t("detail.docs.missing"))）" })
             }
             if let types = p.commitTypeLine {
                 Text(types)
@@ -408,11 +409,11 @@ struct ProjectDetailView: View {
                     .foregroundStyle(.secondary)
             }
             if !p.lastCommitAgo.isEmpty {
-                Text("最近提交：\(p.lastCommitAgo)")
+                Text(L10n.t("detail.lastCommit", p.lastCommitAgo))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Text("当前 \(p.currentBranch.isEmpty ? "—" : p.currentBranch) · 默认 \(p.defaultBranch.isEmpty ? "—" : p.defaultBranch)")
+            Text(L10n.t("detail.branches.currentDefault", p.currentBranch.isEmpty ? "—" : p.currentBranch, p.defaultBranch.isEmpty ? "—" : p.defaultBranch))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
@@ -431,14 +432,14 @@ struct ProjectDetailView: View {
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(DSColor.textTertiary)
-            Text(shown.joined(separator: " · ") + (hidden > 0 ? " · 还有 \(hidden) 个" : ""))
+            Text(shown.joined(separator: " · ") + (hidden > 0 ? L10n.t("detail.facts.more", hidden) : ""))
                 .font(.caption)
                 .foregroundStyle(DSColor.textSecondary)
                 .lineLimit(2)
                 .textSelection(.enabled)
         }
         .accessibilityElement()
-        .accessibilityLabel(A11y.label(title, value: shown.joined(separator: "、") + (hidden > 0 ? "，还有 \(hidden) 个" : "")))
+        .accessibilityLabel(A11y.label(title, value: shown.joined(separator: "、") + (hidden > 0 ? L10n.t("detail.facts.moreA11y", hidden) : "")))
     }
 
     // MARK: 提交构成
@@ -468,7 +469,7 @@ struct ProjectDetailView: View {
                 }
             }
         } else {
-            EmptyState(icon: "chart.bar", title: "暂无提交数据")
+            EmptyState(icon: "chart.bar", title: L10n.t("detail.commit.none"))
                 .frame(height: 80)
         }
     }
@@ -495,9 +496,9 @@ struct ProjectDetailView: View {
     private func milestoneCard(_ p: ProjectStatus) -> some View {
         let mine = DashMilestoneScope.items(model.milestones, project: p.name)
         let t = DashMilestoneScope.tally(mine)
-        Card(title: "里程碑 · \(mine.count) 条") {
+        Card(title: L10n.t("detail.ms.count", mine.count)) {
             if model.milestonesState.phase(hasContent: !model.milestones.isEmpty) == .loading {
-                ProgressView("读取里程碑…").frame(height: 60)
+                ProgressView(L10n.t("detail.ms.loading")).frame(height: 60)
             } else if mine.isEmpty {
                 // 两种「没有」必须说不同的话：这个仓库真的没建里程碑，
                 // 还是里程碑数据根本读不出来。后者显示「去建里程碑」是误导。
@@ -506,8 +507,8 @@ struct ProjectDetailView: View {
                         .font(.callout)
                         .foregroundStyle(.orange)
                 } else {
-                    EmptyState(icon: "flag.2.crossed", title: "还没有里程碑",
-                                subtitle: "在「里程碑」页新建，绑定 git tag 后 tag 出现即自动判定达成")
+                    EmptyState(icon: "flag.2.crossed", title: L10n.t("detail.ms.none"),
+                                subtitle: L10n.t("detail.ms.none.hint"))
                         .frame(height: 80)
                 }
             } else {
@@ -528,7 +529,7 @@ struct ProjectDetailView: View {
                                 .foregroundStyle(DSColor.textSecondary)
                                 .monospacedDigit()
                             if t.unknown > 0 {
-                                Text("· \(t.unknown) 个读不出来（不计入分母）")
+                                Text(L10n.t("detail.ms.unknownDenom", t.unknown))
                                     .font(DSTypography.label)
                                     .foregroundStyle(.orange)
                             }
@@ -549,7 +550,7 @@ struct ProjectDetailView: View {
     @ViewBuilder
     private func branchCard(_ p: ProjectStatus) -> some View {
         if p.branches.isEmpty {
-            EmptyState(icon: "arrow.triangle.branch", title: "暂无进度记录", subtitle: "运行一次「浅更新」后，各分支进度会出现在这里")
+            EmptyState(icon: "arrow.triangle.branch", title: L10n.t("detail.branch.empty"), subtitle: L10n.t("detail.branch.empty.hint"))
                 .frame(height: 90)
         } else {
             VStack(spacing: DSSpacing.sm) {
@@ -560,10 +561,10 @@ struct ProjectDetailView: View {
                             .font(.system(.callout, design: .monospaced))
                             .lineLimit(1)
                         if b.isCurrent {
-                            Chip(text: "当前", tint: .blue)
+                            Chip(text: L10n.t("detail.branch.current"), tint: .blue)
                         }
                         if b.isDefault {
-                            Chip(text: "默认", tint: .secondary)
+                            Chip(text: L10n.t("detail.branch.default"), tint: .secondary)
                         }
                         Spacer()
                         Text(b.statusLabel)
@@ -581,11 +582,11 @@ struct ProjectDetailView: View {
                         if b.pendingCommits > 0 {
                             // ⚠️ 基线被重建过 ⇒ 原提交区间不可比，这个数字已无意义。
                             // 照报「待记录 37」会让用户以为漏记了 37 个提交。
-                            Text("待记录数已失效（基线重建）")
+                            Text(L10n.t("detail.pending.invalid"))
                                 .font(.caption)
                                 .foregroundStyle(.orange)
                         } else if b.baselineReset {
-                            Text("基线已重建")
+                            Text(L10n.t("detail.baseline.reset"))
                                 .font(.caption)
                                 .foregroundStyle(DSColor.textTertiary)
                         }
@@ -602,7 +603,7 @@ struct ProjectDetailView: View {
                             .font(.caption2)
                             .foregroundStyle(DSColor.textTertiary)
                             .help(b.headTip)
-                            .accessibilityLabel(A11y.label("当前提交"))
+                            .accessibilityLabel(A11y.label(L10n.t("detail.a11y.head")))
                             .accessibilityValue(b.headTip)
                         // `highlights` 是**逐条**的具体事件（实测 ["更新：“第二次”", …]），
                         // 与上面那句概括不同。用户问「这条分支最近动了什么」，
@@ -618,7 +619,7 @@ struct ProjectDetailView: View {
                         HStack {
                             // ⚠️ 同上：基线重建后这个差值不可比，不能照报。
                             if b.aheadOfDefault > 0 && !b.baselineReset {
-                                Text("领先默认分支 \(b.aheadOfDefault)")
+                                Text(L10n.t("detail.branch.ahead", b.aheadOfDefault))
                                     .font(.caption2)
                                     .foregroundStyle(.blue)
                             }
@@ -710,12 +711,12 @@ struct ProjectDetailView: View {
             // 同样地，journal.md 里有解析不了的行时也要说，
             // 否则「日志很短」和「日志读不出来」在界面上完全同构。
             if p.journalTruncated {
-                Text("只显示最近 \(journal.count) 条（按 \(p.journalLimit) 条取的窗口，不是全部）")
+                Text(L10n.t("detail.journal.truncated", journal.count, p.journalLimit))
                     .font(.caption2)
                     .foregroundStyle(.orange)
             }
             if p.journalUnparsableLines > 0 {
-                Text("另有 \(p.journalUnparsableLines) 行日志解析不了（不是「日志到此为止」）")
+                Text(L10n.t("detail.journal.unparsable", p.journalUnparsableLines))
                     .font(.caption2)
                     .foregroundStyle(.orange)
             }
@@ -760,6 +761,7 @@ struct FlowLayout<Content: View>: View {
 // MARK: - 仪表盘
 
 struct DashboardView: View {
+    @ObservedObject private var l10n = L10n.shared
     @EnvironmentObject var model: AppModel
     /// 筛选行。判定在 `DashboardScope.swift`（纯函数，可单测）——
     /// 摆在界面上的控件若不影响数据，就只是装饰。
@@ -784,7 +786,7 @@ struct DashboardView: View {
                 case .failed(let msg):
                     EmptyState(
                         icon: "exclamationmark.triangle",
-                        title: "仪表盘读不出来",
+                        title: L10n.t("dash.failed.title"),
                         subtitle: msg
                     )
                     .frame(maxWidth: .infinity)
@@ -792,13 +794,13 @@ struct DashboardView: View {
                 case .empty:
                     EmptyState(
                         icon: "chart.bar.xaxis",
-                        title: "仪表盘还没有数据",
-                        subtitle: "注册项目后运行一次浅更新"
+                        title: L10n.t("dash.empty.title"),
+                        subtitle: L10n.t("dash.empty.hint")
                     )
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 40)
                 case .loading:
-                    ProgressView("汇总项目群…")
+                    ProgressView(L10n.t("dash.loading"))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                         .frame(minHeight: 300)
                 }
@@ -815,7 +817,7 @@ struct DashboardView: View {
         // （项目数 / 分支数 / 布尔三种单位相加），KPI 卡用 `listed` + 项目数。
         // 用户先看到的是页头那个大数字。
         // 现在两边都从这一个数组取 —— **不是加判据，是消掉分叉的那个源头**。
-        let kpis = DashKPIBuilder.kpis(d, projects: model.projects)
+        let kpis = DashKPIBuilder.kpis(d, projects: model.projects, en: L10n.shared.language.usesEnglishFacts)
         return VStack(alignment: .leading, spacing: DSSpacing.lg) {
             // ── 段 1：页头（渐变 hero）──
             // hero 的取值纪律：文字全白（渐变最浅端也有足够对比度），
@@ -826,7 +828,7 @@ struct DashboardView: View {
                     Text(L10n.t("dash.title"))
                         .font(.system(.title, design: .rounded).weight(.bold))
                         .foregroundStyle(.white)
-                    Text(DashKPIBuilder.summaryLine(kpis))
+                    Text(DashKPIBuilder.summaryLine(kpis, en: L10n.shared.language.usesEnglishFacts))
                         .font(.callout)
                         .foregroundStyle(.white.opacity(0.85))
                 }
@@ -893,7 +895,7 @@ struct DashboardView: View {
 
             // 语言分布 + 里程碑
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
-                Card(title: "语言分布（跟踪文件数）") {
+                Card(title: L10n.t("dash.langDist")) {
                     // 覆盖度披露走纯函数 languageCoverage（缺陷 #187）。
                     // 内联在这里的话，「失败被当成没有」只能靠肉眼发现。
                     // ⚠️ shownCount 必须是**这张卡片实际画出来**的条数（缺陷 #205）。
@@ -958,11 +960,11 @@ struct DashboardView: View {
                         EmptyState(
                             icon: d.milestones.counts.degraded ? "exclamationmark.triangle" : "flag",
                             title: d.milestones.counts.degraded
-                                ? "里程碑读不出来（不是「没有」）"
-                                : "暂无里程碑",
+                                ? L10n.t("dash.msCard.unreadable")
+                                : L10n.t("dash.msCard.none"),
                             subtitle: d.milestones.counts.degraded
-                                ? "milestones.json \(d.milestones.counts.storeHealth)，读到 \(d.milestones.counts.readCount) 条"
-                                : "在「里程碑」页添加"
+                                ? L10n.t("dash.msCard.degradedetail", d.milestones.counts.storeHealth, d.milestones.counts.readCount)
+                                : L10n.t("dash.msCard.addHint")
                         ).frame(height: 70)
                     } else {
                         // ⚠️ 切片与上限来自 MilestoneCard.swift（缺陷 #207）：
@@ -970,7 +972,7 @@ struct DashboardView: View {
                         // （「进行中 8」），8 条里静默藏掉 3 条。
                         // 画几条必须用 slice.shown，不许再写第二个字面量 ——
                         // 那正是让披露与画出来的东西对不上的原因。
-                        let slice = milestoneCardSlice(itemCount: d.milestones.items.count)
+                        let slice = milestoneCardSlice(itemCount: d.milestones.items.count, en: L10n.shared.language.usesEnglishFacts)
                         VStack(spacing: 6) {
                             ForEach(d.milestones.items.prefix(slice.shown)) { m in
                                 milestoneRow(m)
@@ -988,7 +990,7 @@ struct DashboardView: View {
 
             // 活跃项目
             if !d.activeProjects.isEmpty {
-                Card(title: "近 7 天活跃项目（\(d.activeProjects.count)）") {
+                Card(title: L10n.t("dash.active.title", d.activeProjects.count)) {
                     VStack(spacing: 7) {
                         ForEach(d.activeProjects, id: \.name) { a in
                             HStack {
@@ -1044,23 +1046,22 @@ struct DashboardView: View {
         let shown = all.filter { model.dashFilter.keeps(project: $0) }
         return VStack(alignment: .leading, spacing: DSSpacing.md) {
             HStack {
-                Text("各项目演进进度与里程碑明细")
+                Text(L10n.t("dash.grid.title"))
                     .font(.headline)
                 Spacer()
                 // 明细标题必须**跟着筛选走**并说清被筛掉了多少 ——
                 // 标题写「（12）」而下面画 3 张卡，就是本项目踩过多次的那族缺陷。
                 Text(shown.count == all.count
-                     ? "共 \(all.count) 个项目"
-                     : "\(shown.count)/\(all.count) 个项目（最近更新在 \(model.dashFilter.span.label)）")
+                     ? L10n.t("dash.grid.all", all.count)
+                     : L10n.t("dash.grid.filtered", shown.count, all.count, model.dashFilter.span.label(en: L10n.shared.language.usesEnglishFacts)))
                     .font(.caption)
                     .foregroundStyle(DSColor.textSecondary)
             }
             if shown.isEmpty {
                 EmptyState(
                     icon: "line.3.horizontal.decrease.circle",
-                    title: "这个时间跨度下没有项目",
-                    subtitle: "共 \(all.count) 个项目，最近 \(model.dashFilter.span.label)更新过。" +
-                             "读不出更新时间的项目始终保留，不会被筛掉"
+                    title: L10n.t("dash.grid.none.title"),
+                    subtitle: L10n.t("dash.grid.none.body", all.count, model.dashFilter.span.label(en: L10n.shared.language.usesEnglishFacts))
                 )
                 .frame(minHeight: 120)
             } else {
@@ -1115,13 +1116,15 @@ struct DashboardView: View {
 /// 原来标题只有「进行中 N · 已达成 M」，unknown 被静默吞掉 ——
 /// 仓库损坏时用户看到「进行中 0 · 已达成 0」，读出来是「这个项目一个里程碑都没有」。
 func milestoneCardTitle(_ c: MilestoneCounts) -> String {
-    var parts = ["进行中 \(c.open)", "已达成 \(c.done)"]
-    if c.dropped > 0 { parts.append("已放弃 \(c.dropped)") }
-    if c.unknown > 0 { parts.append("⚠ 无法核验 \(c.unknown)") }
-    if c.excludedDisabled > 0 { parts.append("已停用项目的 \(c.excludedDisabled) 条未计入") }
-    if c.orphaned > 0 { parts.append("⚠ \(c.orphaned) 条所属项目已不存在") }
+    let en = L10n.shared.language.usesEnglishFacts
+    var parts = [L10n.t("ms.title.open", c.open), L10n.t("ms.title.done", c.done)]
+    if c.dropped > 0 { parts.append(L10n.t("ms.title.dropped", c.dropped)) }
+    if c.unknown > 0 { parts.append(L10n.t("ms.title.unknown", c.unknown)) }
+    if c.excludedDisabled > 0 { parts.append(L10n.t("ms.title.excluded", c.excludedDisabled)) }
+    if c.orphaned > 0 { parts.append(L10n.t("ms.title.orphaned", c.orphaned)) }
     if c.degraded || c.storeHealth != "ok" {
         parts.append("⚠ milestones.json \(c.storeHealth)")
     }
-    return "里程碑（" + parts.joined(separator: " · ") + "）"
+    return en ? "Milestones (" + parts.joined(separator: " · ") + ")"
+              : L10n.t("ms.title.head", parts.joined(separator: " · "))
 }

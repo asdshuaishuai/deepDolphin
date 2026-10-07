@@ -87,7 +87,7 @@ enum Conversation {
             case "assistant":
                 var t = m.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 if t.isEmpty, let calls = m.toolCalls, !calls.isEmpty {
-                    t = "（调用工具：" + calls.map(\.name).joined(separator: "、") + "）"
+                    t = L10n.t("agent.toolCalls", calls.map(\.name).joined(separator: "、"))
                 }
                 if !t.isEmpty { out.append(.assistant("m\(i)", t)) }
             case "tool":

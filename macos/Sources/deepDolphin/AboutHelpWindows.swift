@@ -38,8 +38,8 @@ struct AboutWindowView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 30)
-            .padding(.bottom, 26)
+            .padding(.top, DSSpacing.xxl)
+            .padding(.bottom, DSSpacing.xl)
             .padding(.horizontal, DSSpacing.xl)
             .background {
                 ZStack {

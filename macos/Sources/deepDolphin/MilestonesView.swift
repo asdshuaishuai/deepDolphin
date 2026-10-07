@@ -3,6 +3,7 @@
 import SwiftUI
 
 struct MilestonesView: View {
+    @ObservedObject private var l10n = L10n.shared
     @EnvironmentObject var model: AppModel
     @State private var showAddSheet = false
     /// 搜索词。空 = 不过滤。
@@ -65,17 +66,17 @@ struct MilestonesView: View {
             if case .failed(let msg) = model.milestonesState {
                 EmptyState(
                     icon: "exclamationmark.triangle",
-                    title: "里程碑读不出来",
+                    title: L10n.t("ms.page.unreadable"),
                     subtitle: msg
                 )
             } else if model.milestonesState.phase(hasContent: !model.milestones.isEmpty) == .loading {
-                ProgressView("读取里程碑…")
+                ProgressView(L10n.t("ms.page.loading"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let reason = SearchFilter.emptyReason(
                 allCount: scoped.count, shownCount: shown.count, query: query) {
                 EmptyState(
                     icon: "flag.2.crossed",
-                    title: SearchFilter.emptyText(reason, noun: "里程碑"),
+                    title: SearchFilter.emptyText(reason, noun: L10n.t("nav.milestones"), en: L10n.shared.language.usesEnglishFacts),
                     subtitle: emptySubtitle(reason)
                 )
             } else {
@@ -97,11 +98,11 @@ struct MilestonesView: View {
                             HStack {
                                 Text(projectFilter == nil
                                      ? group.project
-                                     : "\(group.project)（\(group.items.count)）")
+                                     : L10n.t("ms.group.count", group.project, group.items.count))
                                 Spacer()
                                 if let s = SearchFilter.resultSummary(
                                     allCount: scoped.count, shownCount: shown.count,
-                                    noun: "里程碑") {
+                                    noun: L10n.t("nav.milestones"), en: L10n.shared.language.usesEnglishFacts) {
                                     Text(s)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
@@ -115,11 +116,11 @@ struct MilestonesView: View {
                     // 说成这个仓库的完成率。unknown 单列，不混进任何一侧。
                     Section {
                         HStack(spacing: DSSpacing.md) {
-                            stat("进行中", tally.open, .secondary)
-                            stat("已达成", tally.done, .green)
-                            stat("已放弃", tally.dropped, .secondary)
+                            stat(L10n.t("ms.filter.open"), tally.open, .secondary)
+                            stat(L10n.t("ms.filter.done"), tally.done, .green)
+                            stat(L10n.t("ms.filter.dropped"), tally.dropped, .secondary)
                             if tally.unknown > 0 {
-                                stat("读不出来", tally.unknown, .orange)
+                                stat(L10n.t("ms.filter.unreadable"), tally.unknown, .orange)
                             }
                             Spacer()
                         }
@@ -130,29 +131,29 @@ struct MilestonesView: View {
                             // 明细被窗口截过 ⇒ 上面那些数只是**下界**。
                             // 静默报一个偏小的数，与「上限当全量」是同一族谎报。
                             Label(
-                                "明细只给了 \(model.milestones.count) 条，"
-                                + "引擎读到 \(model.dashboard?.milestones.counts.readCount ?? 0) 条"
-                                + " —— 上面按明细统计，不是全量",
+                                L10n.t("ms.detailPartial", model.milestones.count)
+                                + L10n.t("ms.detailPartial2", model.dashboard?.milestones.counts.readCount ?? 0)
+                                + L10n.t("ms.detailPartial3"),
                                 systemImage: "exclamationmark.triangle.fill")
                                 .font(.caption)
                                 .foregroundStyle(.orange)
                         }
                     } header: {
-                        Text(projectFilter.map { "\($0) 的里程碑" } ?? "全部项目")
+                        Text(projectFilter.map { L10n.t("ms.scope.project", $0) } ?? L10n.t("ms.scope.all"))
                     }
                     }
                     .listStyle(.inset)
                 }
             }
         }
-        .searchable(text: $query, placement: .toolbar, prompt: "搜索里程碑名称")
-        .navigationTitle("里程碑")
+        .searchable(text: $query, placement: .toolbar, prompt: L10n.t("ms.search.placeholder"))
+        .navigationTitle(L10n.t("ms.page.title"))
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     showAddSheet = true
                 } label: {
-                    Label("新建里程碑", systemImage: "plus")
+                    Label(L10n.t("ms.new"), systemImage: "plus")
                 }
             }
         }
@@ -172,26 +173,26 @@ struct MilestonesView: View {
     /// 筛选条自己把「筛到谁 / 筛掉了多少」写出来。
     private var milestoneFilterBar: some View {
         HStack(spacing: DSSpacing.md) {
-            Text("仓库")
+            Text(L10n.t("ms.scope.repo"))
                 .font(DSTypography.label)
                 .foregroundStyle(DSColor.textSecondary)
 
             Picker("", selection: $projectFilter) {
-                Text("全部项目").tag(String?.none)
+                Text(L10n.t("ms.scope.all")).tag(String?.none)
                 ForEach(knownProjects, id: \.self) { name in
                     Text(name).tag(String?.some(name))
                 }
             }
             .labelsHidden()
             .frame(width: 180)
-            .help("只看某一个仓库的里程碑")
-            .accessibilityLabel(A11y.label("按仓库筛选里程碑"))
+            .help(L10n.t("ms.scope.repo.help"))
+            .accessibilityLabel(A11y.label(L10n.t("ms.scope.repo.a11y")))
             .disabled(knownProjects.isEmpty)
 
             // 筛选生效时说清「从多少条里筛到多少条」——
             // 只报筛后的条数，读者没法判断是被筛掉了还是本来就没那么多。
             if projectFilter != nil || !query.isEmpty {
-                Text("筛出 \(shown.count) / \(scoped.count) 条")
+                Text(L10n.t("ms.filtered", shown.count, scoped.count))
                     .font(DSTypography.label)
                     .foregroundStyle(DSColor.textSecondary)
                     .monospacedDigit()
@@ -207,11 +208,11 @@ struct MilestonesView: View {
     /// 更要紧的是，还有一种是「范围里根本没有里程碑数据」。
     private func emptySubtitle(_ reason: SearchFilter.Empty) -> String {
         if let p = projectFilter, scoped.isEmpty, reason == .noData {
-            return "「\(p)」还没有里程碑。切到全局看板可以看其它仓库的。"
+            return L10n.t("ms.empty.project", p)
         }
         return reason == .noData
-            ? "里程碑绑定 git tag 后，tag 出现即自动判定达成"
-            : "换个关键词，或清空搜索框看全部"
+            ? L10n.t("ms.empty.hint")
+            : L10n.t("ms.empty.search")
     }
 
     private func stat(_ title: String, _ n: Int, _ tint: Color) -> some View {
@@ -225,6 +226,7 @@ struct MilestonesView: View {
 // MARK: - 行
 
 struct MilestoneRow: View {
+    @ObservedObject private var l10n = L10n.shared
     @Environment(\.openWindow) private var openWindow
     @EnvironmentObject var model: AppModel
     let milestone: MilestoneItem
@@ -269,7 +271,7 @@ struct MilestoneRow: View {
                     // 两者在 UI 上完全同构。引擎恒发 commitsSinceReadable 就是为了区分。
                     if milestone.commitsSinceReadable {
                         if milestone.commitsSince > 0 {
-                            Text("创建以来 \(milestone.commitsSince) 提交")
+                            Text(L10n.t("ms.row.since", String(milestone.commitsSince)))
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
                         }
@@ -292,11 +294,11 @@ struct MilestoneRow: View {
                     .font(.callout.weight(.medium))
                     .foregroundStyle(statusTint)
                 if !milestone.dueText.isEmpty {
-                    Text("目标 \(milestone.targetDate) · \(milestone.dueText)")
+                    Text(L10n.t("ms.row.due", milestone.targetDate, milestone.dueText))
                         .font(.caption2)
                         .foregroundStyle(milestone.overdue ? .red : .secondary)
                 } else if !milestone.targetDate.isEmpty {
-                    Text("目标 \(milestone.targetDate)")
+                    Text(L10n.t("ms.row.dueOnly", milestone.targetDate))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -305,18 +307,18 @@ struct MilestoneRow: View {
             // 行内直达按钮（不用 Menu：List 行内 Menu 命中率不可靠）
             HStack(spacing: 2) {
                 if milestone.status == "open" {
-                    actionButton("达成", "checkmark.circle.fill", .green) {
+                    actionButton(L10n.t("ms.row.done"), "checkmark.circle.fill", .green) {
                         Task { await model.milestoneAction(milestone, action: "done") }
                     }
                 }
                 // unknown（仓库读不出来）时不给「重开」按钮：引擎会把 open
                 // 按「tag 达成即自动完成」算回 unknown，用户点了只会看到没变化。
                 if milestone.status != "open" && !milestone.isUnknown {
-                    actionButton("重开", "arrow.counterclockwise.circle.fill", .blue) {
+                    actionButton(L10n.t("ms.row.reopen"), "arrow.counterclockwise.circle.fill", .blue) {
                         Task { await model.milestoneAction(milestone, action: "reopen") }
                     }
                 }
-                actionButton("删除", "trash.fill", .red) {
+                actionButton(L10n.t("ms.row.delete"), "trash.fill", .red) {
                     pendingAction = .removeMilestone
                 }
             }
@@ -359,16 +361,16 @@ struct MilestoneRow: View {
     @ViewBuilder
     private var rowActions: some View {
         if milestone.status != "done" {
-            Button("标记达成") { Task { await model.milestoneAction(milestone, action: "done") } }
+            Button(L10n.t("ms.action.done")) { Task { await model.milestoneAction(milestone, action: "done") } }
         }
         if milestone.status != "open" {
-            Button("重新打开") { Task { await model.milestoneAction(milestone, action: "reopen") } }
+            Button(L10n.t("ms.action.reopen")) { Task { await model.milestoneAction(milestone, action: "reopen") } }
         }
         if milestone.status != "dropped" {
-            Button("放弃") { pendingAction = .dropMilestone }
+            Button(L10n.t("ms.action.drop")) { pendingAction = .dropMilestone }
         }
         Divider()
-        Button("打开项目") {
+        Button(L10n.t("ms.action.openProject")) {
             Task {
                 model.go(.project(milestone.projectName))
                 openWindow(id: "panel")
@@ -376,7 +378,7 @@ struct MilestoneRow: View {
             }
         }
         Divider()
-        Button("删除", role: .destructive) { pendingAction = .removeMilestone }
+        Button(L10n.t("ms.row.delete"), role: .destructive) { pendingAction = .removeMilestone }
     }
 
     private func actionButton(_ label: String, _ icon: String, _ tint: Color, action: @escaping () -> Void) -> some View {
@@ -389,7 +391,7 @@ struct MilestoneRow: View {
         }
         .buttonStyle(.plain)
         .help(label)
-        .accessibilityLabel(A11y.label(fromHelp: label, fallback: "里程碑操作"))
+        .accessibilityLabel(A11y.label(fromHelp: label, fallback: L10n.t("ms.actions.a11y")))
     }
 
     private var icon: String {
@@ -420,6 +422,7 @@ struct MilestoneRow: View {
 // MARK: - 新建里程碑
 
 struct AddMilestoneSheet: View {
+    @ObservedObject private var l10n = L10n.shared
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
@@ -438,19 +441,19 @@ struct AddMilestoneSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                Picker("项目", selection: $project) {
+                Picker(L10n.t("ms.form.project"), selection: $project) {
                     ForEach(model.projects) { p in
                         Text(p.name).tag(p.name)
                     }
                 }
-                TextField("名称（如 v1.0）", text: $name)
+                TextField(L10n.t("ms.form.name"), text: $name)
                     .focused($nameFocused)
-                TextField("绑定 tag（可选，tag 存在即自动达成）", text: $tag)
-                Toggle("设定目标日期", isOn: $hasDate)
+                TextField(L10n.t("ms.form.tag"), text: $tag)
+                Toggle(L10n.t("ms.form.setDate"), isOn: $hasDate)
                 if hasDate {
-                    DatePicker("目标日期", selection: $date, displayedComponents: .date)
+                    DatePicker(L10n.t("ms.form.date"), selection: $date, displayedComponents: .date)
                 }
-                TextField("描述（可选）", text: $desc)
+                TextField(L10n.t("ms.form.desc"), text: $desc)
             }
             .formStyle(.grouped)
 
@@ -463,9 +466,9 @@ struct AddMilestoneSheet: View {
 
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
+                Button(L10n.t("common.cancel")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("创建") { submit() }
+                Button(L10n.t("ms.form.create")) { submit() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(project.isEmpty || name.isEmpty || submitting)
                     .padding(.leading, DSSpacing.sm)

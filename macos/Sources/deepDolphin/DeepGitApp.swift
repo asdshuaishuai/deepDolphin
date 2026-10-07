@@ -33,7 +33,7 @@ import UserNotifications
 /// DockMenuTarget 各抄一份，改一处忘另一处必然发生）。
 enum PanelWindow {
     /// 窗口标题。`Window(...)` 与 `.navigationTitle(...)` 都用它。
-    static let title = "deepDolphin 面板"
+    static let title = "deepDolphin"
 
     /// 这扇窗是不是主面板。
     ///

@@ -30,6 +30,8 @@ import SwiftUI
 /// 用户拨了「近 7 天」而卡片纹丝不动，于是整条筛选行被当成装饰，
 /// 而他不知道真正的数据是全部项目的。判据在 ClientCheck。
 struct DashboardFilterBar: View {
+    @ObservedObject private var l10n = L10n.shared
+    private var enFacts: Bool { L10n.shared.language.usesEnglishFacts }
     @Binding var filter: DashFilter
     /// 只列真实出现过的提交类型。空数组时下拉禁用并说明原因，
     /// 而不是给一个只有「所有提交类型」一项的空壳菜单。
@@ -39,7 +41,7 @@ struct DashboardFilterBar: View {
 
     var body: some View {
         HStack(spacing: DSSpacing.md) {
-            Text("时间跨度")
+            Text(L10n.t("dash.filter.span"))
                 .font(DSTypography.label)
                 .foregroundStyle(DSColor.textSecondary)
 
@@ -52,11 +54,11 @@ struct DashboardFilterBar: View {
             .labelsHidden()
             .frame(width: 200)
             // 口径要写在控件旁边：这是「最近更新」分档，不是「这段时间的提交量」。
-            .help("按项目最近一次更新的天数分档（不是统计这段时间内的提交量）")
-            .accessibilityLabel(A11y.label("时间跨度筛选"))
+            .help(L10n.t("dash.filter.span.help"))
+            .accessibilityLabel(A11y.label(L10n.t("dash.filter.span.a11y")))
 
             Picker("", selection: $filter.commits) {
-                Text(DashCommitFilter.all.label).tag(DashCommitFilter.all)
+                Text(DashCommitFilter.all.label(en: enFacts)).tag(DashCommitFilter.all)
                 ForEach(commitTypes, id: \.self) { t in
                     Text(t).tag(DashCommitFilter.only(t))
                 }
@@ -65,21 +67,21 @@ struct DashboardFilterBar: View {
             .frame(width: 170)
             .disabled(commitTypes.isEmpty)
             .help(commitTypes.isEmpty
-                  ? "还没有采到任何提交类型（需要仓库有提交历史）"
-                  : "只影响每张项目卡的提交结构条与图例，不改上方 KPI 数字")
-            .accessibilityLabel(A11y.label("提交类型筛选"))
+                  ? L10n.t("dash.filter.nocommits")
+                  : L10n.t("dash.filter.commits.help"))
+            .accessibilityLabel(A11y.label(L10n.t("dash.filter.commits.a11y")))
 
             Button(action: onReindex) {
                 if reindexing {
                     ProgressView().controlSize(.small)
                 } else {
-                    Label("重新索引", systemImage: "arrow.clockwise")
+                    Label(L10n.t("dash.reindex"), systemImage: "arrow.clockwise")
                 }
             }
             .controlSize(.small)
             .disabled(reindexing)
-            .help("重新采集一次浅更新")
-            .accessibilityLabel(A11y.label("重新索引"))
+            .help(L10n.t("dash.reindex.help"))
+            .accessibilityLabel(A11y.label(L10n.t("dash.reindex")))
 
             Spacer()
         }
@@ -168,6 +170,7 @@ struct KPIWideCard: View {
 /// 结构照设计稿的层次：标识 → 状态 → 描述 → 里程碑 → 提交结构 → 最近提交 → 入口。
 struct ProjectProgressCard: View {
     @EnvironmentObject var model: AppModel
+    @ObservedObject private var l10n = L10n.shared
     let project: ProjectStatus
     /// 只传**属于这个项目**的里程碑。传全量再在里面筛，
     /// 迟早会有人忘了筛 —— 卡片上出现别的项目的里程碑，
@@ -204,7 +207,7 @@ struct ProjectProgressCard: View {
     /// 现在统一消费模型层的 `ProjectStatus.stateWord`（`liveness` 那一份），
     /// 看板与项目卡对同一个项目必然给出同一个词。
     private var stateWord: (String, Color) {
-        let s = project.stateWord
+        let s = project.stateWord(en: L10n.shared.language.usesEnglishFacts)
         let color: Color
         switch s.tone {
         case .unreadable, .unknown: color = .red
@@ -225,7 +228,7 @@ struct ProjectProgressCard: View {
         // 这正是本项目最高发的那族：把「不知道」说成「没有」。
         if let b = project.primaryBranch { return b.name }
         if !project.currentBranch.isEmpty { return project.currentBranch }
-        return "无分支记录"
+        return L10n.t("detail.nobranch")
     }
 
     /// 明细（HEAD、状态、进度）是否拿得到。拿不到时那一行要**说清楚**，
@@ -256,8 +259,8 @@ struct ProjectProgressCard: View {
 
             // 行 2：一句描述。读不出来时不能编一句。
             Text(project.isUnreadable
-                 ? (project.error ?? "这个项目读不出来")
-                 : (project.headline.isEmpty ? "没有提交摘要" : project.headline))
+                 ? (project.error ?? L10n.t("dash.card.unreadable"))
+                 : (project.headline.isEmpty ? L10n.t("dash.card.nosummary") : project.headline))
                 .font(.caption)
                 .foregroundStyle(project.isUnreadable ? .red : DSColor.textSecondary)
                 .lineLimit(2)
@@ -267,7 +270,7 @@ struct ProjectProgressCard: View {
             HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
                 milestoneLine
                 Spacer(minLength: DSSpacing.sm)
-                Text("分支")
+                Text(L10n.t("dash.card.branch"))
                     .font(DSTypography.label)
                     .foregroundStyle(DSColor.textTertiary)
                 Text(branchLabel)
@@ -298,12 +301,12 @@ struct ProjectProgressCard: View {
                 } else if branchDetailMissing {
                     // 明细读不到 ≠ 没有提交。这句话必须存在，
                     // 否则「空着的一行」会被读成「这个项目什么都没干」。
-                    Text("分支明细未纳入追踪（提交类型分布仍可用）")
+                    Text(L10n.t("detail.branch.untracked"))
                         .font(DSTypography.label)
                         .foregroundStyle(DSColor.textTertiary)
                         .lineLimit(1)
                 } else {
-                    Text("读不出来")
+                    Text(L10n.t("dash.card.unreadableShort"))
                         .font(DSTypography.label)
                         .foregroundStyle(.red)
                 }
@@ -314,18 +317,18 @@ struct ProjectProgressCard: View {
                     model.go(.project(project.name))
                 } label: {
                     HStack(spacing: 3) {
-                        Text("进入管控")
+                        Text(L10n.t("detail.enter"))
                         Image(systemName: "arrow.right")
                     }
                     .font(DSTypography.label)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, DSSpacing.sm)
                     .padding(.vertical, 3)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(DSColor.accent)
                 .background(DSColor.accent.opacity(0.12), in: Capsule())
-                .help("打开 \(project.name) 的独立管控页")
-                .accessibilityLabel(A11y.label("进入 \(project.name) 的独立管控页"))
+                .help(L10n.t("detail.enter.help", project.name))
+                .accessibilityLabel(A11y.label(L10n.t("detail.enter.a11y", project.name)))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -341,16 +344,16 @@ struct ProjectProgressCard: View {
     private var milestoneLine: some View {
         let m = milestoneRatio
         if m.decided == 0 && m.unknown > 0 {
-            Text("里程碑读不出来（\(m.unknown) 个）")
+            Text(L10n.t("dash.ms.unreadableCount", m.unknown))
                 .font(DSTypography.label)
                 .foregroundStyle(.orange)
         } else if m.decided == 0 {
-            Text("未设里程碑")
+            Text(L10n.t("dash.ms.none"))
                 .font(DSTypography.label)
                 .foregroundStyle(DSColor.textTertiary)
         } else {
             HStack(alignment: .firstTextBaseline, spacing: DSSpacing.xs) {
-                Text("里程碑")
+                Text(L10n.t("dash.ms.label"))
                     .font(DSTypography.label)
                     .foregroundStyle(DSColor.textTertiary)
                 Text("\(m.done)/\(m.decided)")
@@ -361,7 +364,7 @@ struct ProjectProgressCard: View {
                     .foregroundStyle(DSColor.deep)
                 if m.unknown > 0 {
                     // unknown 单列：混进「已达成/进行中」就是把无知说成事实
-                    Text("· \(m.unknown) 个读不出来")
+                    Text(L10n.t("dash.ms.unknownNote", m.unknown))
                         .font(DSTypography.label)
                         .foregroundStyle(.orange)
                 }
@@ -375,12 +378,12 @@ struct ProjectProgressCard: View {
     private var commitComposition: some View {
         let kept = filter.keptStats(project.commitTypes ?? [])
         if let all = project.commitTypes, all.isEmpty {
-            Text("这个项目没有提交历史（或读不出来）")
+            Text(L10n.t("dash.card.nohistory"))
                 .font(DSTypography.label)
                 .foregroundStyle(DSColor.textTertiary)
         } else if kept.isEmpty {
             // 筛到一个都不剩时**必须说出来**，不能画一根空条装作「没有提交」
-            Text("该筛选下这个项目没有匹配的提交类型")
+            Text(L10n.t("dash.card.nomatch"))
                 .font(DSTypography.label)
                 .foregroundStyle(DSColor.textTertiary)
         } else {
@@ -391,18 +394,18 @@ struct ProjectProgressCard: View {
             let slice = commitTypeCardSlice(entries: kept.map { ($0.type, $0.count) })
             VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 HStack {
-                    Text("提交结构")
+                    Text(L10n.t("dash.card.composition"))
                         .font(DSTypography.label)
                         .foregroundStyle(DSColor.textTertiary)
                     Spacer()
                     // 样本披露必须在场：commitTypes 是**最近 N 条的样本**，
                     // 拿样本当全量展示是本项目修过的缺陷。
                     if project.commitTypesTruncated {
-                        Text("样本")
+                        Text(L10n.t("dash.card.sample"))
                             .font(DSTypography.label)
                             .foregroundStyle(.orange)
-                            .help("引擎只给了最近若干条提交的类型分布，不是全量")
-                            .accessibilityLabel(A11y.label("提交类型是样本，不是全量"))
+                            .help(L10n.t("dash.card.sample.help"))
+                            .accessibilityLabel(A11y.label(L10n.t("dash.card.sample.a11y")))
                     }
                 }
                 SegmentedBar(segments: slice.entries.enumerated().map { i, e in

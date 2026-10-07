@@ -323,7 +323,7 @@ do {
 
     check("工具栏里「刷新」只出现一次，且带 isLoading 禁用") {
         let t = try codeOf("PanelView.swift")
-        guard count(t, "Label(\"刷新\"") == 1 else {
+        guard count(t, "Label(L10n.t(\"toolbar.refresh\")") == 1 else {
             throw fail("「刷新」出现 \(count(t, "Label(\"刷新\"") ) 次 ⇒ 重复按钮")
         }
         guard t.contains(".disabled(model.isLoading)") else {
@@ -1254,7 +1254,7 @@ do {
     }
 
     check("扫描结果必须披露分母（只说「新增 0 个」会被读成「这目录没仓库」）") {
-        guard scan.contains("共发现") else {
+        guard scan.contains("scan.summary") else {
             throw fail("扫描结果没说一共发现了多少个 —— 「新增 0」与「扫了 120 个目录一个都没有」被混成一句话")
         }
         return "披露了分母"
@@ -3536,7 +3536,7 @@ do {
         // `countedRow(title: "看板", …)`（带待处理计数），判据却还在找旧写法，
         // 于是报「看板入口被删了」—— 报错的其实是判据的写法假设，不是代码。
         // 与不变量 107 同一条：判据要钉「这个入口在不在」，不钉「它用哪个构造点写的」。
-        guard pv.contains("viewShortcut(.board") || pv.contains("countedRow(title: \"看板\"") else {
+        guard pv.contains("viewShortcut(.board") || pv.contains("countedRow(title: \"看板\"") || pv.contains("countedRow(title: L10n.t(\"nav.board\")") else {
             throw fail("侧栏没有看板入口了 —— 确认它是否真的被删了")
         }
         // detail 侧也还得能路由过去
@@ -3703,6 +3703,7 @@ do {
         func entryCount(_ target: ShortcutTarget, _ title: String) -> Int {
             pv.components(separatedBy: "viewShortcut(.\(target)").count - 1
                 + pv.components(separatedBy: "countedRow(title: \"\(title)\"").count - 1
+                + pv.components(separatedBy: "countedRow(title: L10n.t(\"nav.\(target == .board ? "board" : "dashboard")\"").count - 1
         }
         for (target, title) in [(ShortcutTarget.dashboard, "仪表盘"), (.board, "看板")] {
             let n = entryCount(target, title)
@@ -3713,6 +3714,7 @@ do {
         // 里程碑那条不走 viewShortcut（它要带计数），单独钉
         let ms = pv.components(separatedBy: "Label(\"里程碑\"").count - 1
             + pv.components(separatedBy: "countedRow(title: \"里程碑\"").count - 1
+            + pv.components(separatedBy: "countedRow(title: L10n.t(\"nav.milestones\")").count - 1
         guard ms == 1 else {
             throw fail("「里程碑」的侧栏入口出现 \(ms) 次 ⇒ 重复入口（应为 1）")
         }
@@ -3830,7 +3832,7 @@ do {
 
     check("托管文档必须区分「已建」与「未建」") {
         let code = try strippedCode("DetailViews.swift")
-        guard code.contains("exists ? \"已建\"") && code.contains("\"未建\"") else {
+        guard code.contains("exists ? L10n.t(\"detail.docs.exists\")") && code.contains("detail.docs.missing") else {
             throw fail("docs[].exists 没被渲染。\n" +
                 "      「引擎管着但你还没写」与「压根没有这回事」对用户是两件事，\n" +
                 "      合成一份文件名清单就把区别抹掉了")
@@ -3840,8 +3842,8 @@ do {
 
     check("引擎的 tags / manifests / overall.summary 必须有落点") {
         let code = try strippedCode("DetailViews.swift")
-        for (label, needle) in [("tags", "projectFacts(\"标签\""),
-                                 ("manifests", "projectFacts(\"依赖清单\""),
+        for (label, needle) in [("tags", "projectFacts(L10n.t(\"detail.facts.tags\")"),
+                                 ("manifests", "projectFacts(L10n.t(\"detail.facts.manifests\")"),
                                  ("overall.summary", "displaySummary")] {
             guard code.contains(needle) else {
                 throw fail("\(label) 没有渲染 —— 模型收了、引擎算了、界面不说 ⇒ 等于没算")
@@ -4172,7 +4174,7 @@ do {
         if a.contains("Label(\"浅更新\", systemImage:") || a.contains("Label(\"深度更新\", systemImage:") {
             throw fail("UpdateActionMenu 里还有裸的浅/深更新项 ⇒ 与顶栏双轨按钮重复")
         }
-        guard a.contains("浅更新 + AI 摘要") && a.contains("深度更新 + AI 报告") else {
+        guard a.contains("menu.shallowAI") && a.contains("menu.deepAI") else {
             throw fail("菜单里的 AI 变体不见了 —— 顶栏双轨按钮不覆盖它们")
         }
         return "菜单只剩 AI 变体与排程"
@@ -4183,7 +4185,7 @@ do {
         guard p.contains("DualTrackButtons()") else {
             throw fail("工具栏没有挂 DualTrackButtons ⇒ 最常做的两个动作还藏在菜单里")
         }
-        guard p.contains("Label(\"搜索项目\"") else {
+        guard p.contains("Label(L10n.t(\"toolbar.search\")") else {
             throw fail("工具栏的 ⌘F 搜索按钮不见了（重排时把它弄丢过一次）")
         }
         let d = try strippedCode("AIIntegration.swift")
@@ -4308,7 +4310,7 @@ do {
             throw fail("仪表盘没有走 dashboardState ⇒ 采集失败时主区会永远转圈，\n" +
                 "      而错误横幅同时挂在顶部，用户看到「一条报错 + 一个不结束的加载中」")
         }
-        guard v.contains("仪表盘读不出来") else { throw fail("仪表盘没有错误态视图") }
+        guard v.contains("dash.failed.title") else { throw fail("仪表盘没有错误态视图") }
         let m = try strippedCode("Model.swift")
         guard m.contains("dashboardState = .failed(msg)") else {
             throw fail("fetchDashboard 失败时没有写 dashboardState")
@@ -4321,7 +4323,7 @@ do {
         guard v.contains("model.milestonesState") else {
             throw fail("里程碑页没有读 milestonesState ⇒ 读取失败会渲染成「还没有里程碑」")
         }
-        guard v.contains("里程碑读不出来") else { throw fail("里程碑没有错误态视图") }
+        guard v.contains("ms.page.unreadable") else { throw fail("里程碑没有错误态视图") }
         // 判定顺序：failed 分支必须在 emptyReason 之前
         let failedAt = v.range(of: "case .failed(let msg) = model.milestonesState")
         let emptyAt = v.range(of: "SearchFilter.emptyReason(")
@@ -4381,8 +4383,8 @@ do {
         // ⚠️ 空的切片要一路取到 switch 末尾：case 顺序是
         // content → failed → loading → **empty**，所以 empty 后面没有下一个 case 可切。
         let empty = String(sw[emptyAt.lowerBound...])
-        guard failed.contains("读不出来") else { throw fail("失败态没说「读不出来」") }
-        guard empty.contains("还没有受管的文档") else {
+        guard failed.contains("detail.unreadable.title") else { throw fail("失败态没说「读不出来」") }
+        guard empty.contains("detail.docs.empty") else {
             throw fail("空态没说「还没有受管的文档」⇒ 与失败态区分不开，用户仍会把读失败当成没有")
         }
         if empty.contains("读不出来") {
@@ -4437,12 +4439,12 @@ do {
         let ms = try strippedCode("MilestonesView.swift")
         let ss = try strippedCode("ScanSheet.swift")
         // 里程碑：项目有默认值，名称才是空着等人填的
-        guard let f = slice(ms, from: "TextField(\"名称", to: "TextField(\"绑定 tag"),
+        guard let f = slice(ms, from: "TextField(L10n.t(\"ms.form.name\")", to: "TextField(L10n.t(\"ms.form.tag\")"),
               f.contains(".focused($nameFocused)") else {
             throw fail("里程碑的焦点没落在「名称」框上（挂到别的字段或压根没挂）")
         }
         // 扫描面板：路径是唯一必填项，项目名是可选的
-        guard let f = slice(ss, from: "TextField(placeholder, text: text)", to: "Button(\"选择…\")"),
+        guard let f = slice(ss, from: "TextField(placeholder, text: text)", to: "Button(L10n.t(\"scan.choose\")"),
               f.contains(".focused($pathFocused)") else {
             throw fail("扫描面板的焦点没落在路径框上")
         }
@@ -5076,7 +5078,7 @@ do {
         // 真 app 实测「标题 · 4 个仓库 / 正文 已注册项目 5 个」——
         // 因为全量会先刷新注册表再冻结，点下去时看到的 N 可能比实际执行的少。
         let view = try strippedCode("AgentBulkView.swift")
-        if !view.contains("\\(report.attempted) 个仓库") {
+        if !view.contains("bulk.title") {
             throw fail("面板标题没用结果里的真实仓库数 ⇒ 会和正文「已注册项目 N 个」自相矛盾")
         }
         return "先刷新、后冻结；标题取真值"
@@ -5424,11 +5426,11 @@ do {
             throw fail("summaryLine 里出现了「\(raw)」⇒ 它又在独立算一遍，页头与 KPI 卡会分叉")
         }
         let views = try strippedCode("DetailViews.swift")
-        guard views.contains("DashKPIBuilder.summaryLine(kpis)") else {
+        guard views.contains("DashKPIBuilder.summaryLine(kpis") else {
             throw fail("仪表盘页头没有走 summaryLine(kpis) ⇒ 摘要与 KPI 卡是两个算法")
         }
         // 页头拿的必须是同一个数组：kpis 只能算一次。
-        let n = views.components(separatedBy: "DashKPIBuilder.kpis(d, projects: model.projects)").count - 1
+        let n = views.components(separatedBy: "DashKPIBuilder.kpis(d, projects: model.projects").count - 1
         guard n == 1 else {
             throw fail("kpis 被算出了 \(n) 次（应为 1）⇒ 页头和 KPI 卡可能拿的不是同一份")
         }
@@ -5479,8 +5481,8 @@ do {
         guard let body = slice(views, from: "private func content(", to: "private func gitOpButtons(") else {
             throw fail("切不出详情页内容装配（结构变了，先更新这条判据）")
         }
-        guard let pulseAt = body.range(of: "工程脉搏"),
-              let commitCardAt = body.range(of: "提交改动") else {
+        guard let pulseAt = body.range(of: "detail.pulse"),
+              let commitCardAt = body.range(of: "detail.commitChanges") else {
             throw fail("切不出「工程脉搏」或「提交改动」卡（结构变了，先更新这条判据）")
         }
         guard commitCardAt.lowerBound > pulseAt.lowerBound else {

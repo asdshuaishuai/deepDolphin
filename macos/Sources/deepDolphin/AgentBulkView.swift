@@ -18,7 +18,7 @@ struct AgentBulkResultSheet: View {
 
     var body: some View {
         AIResultSheet(
-            title: "全量\(report.deep ? "深度" : "浅")更新 · \(report.attempted) 个仓库",
+            title: L10n.t("bulk.title", report.deep ? L10n.t("bulk.deepWord") : L10n.t("bulk.shallowWord"), report.attempted),
             markdown: report.markdown,
             busy: false,
             errorText: nil,

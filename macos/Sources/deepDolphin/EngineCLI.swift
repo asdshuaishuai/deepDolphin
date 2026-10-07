@@ -29,15 +29,15 @@ enum EngineError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notFound:
-            return "找不到 moonGit 引擎。请运行 moonGit/scripts/install.sh 安装，或设置 DEEPGIT_BIN"
+            return L10n.t("err.engineNotFound")
         case .failed(let msg):
             return msg
         case .failedWithPayload(let msg, _):
             return msg
         case .timeout(let sec):
-            return "引擎调用超时（\(sec)s）"
+            return L10n.t("err.engineTimeout")
         case .cancelled(let cmd):
-            return "已停止：\(cmd)"
+            return L10n.t("err.stopped", cmd)
         }
     }
 
@@ -61,9 +61,9 @@ enum EngineError: LocalizedError {
     ///
     /// 消费方一律改用本属性，不要再用 `errorDescription` / `localizedDescription`。
     var userMessage: String {
-        guard case .failedWithPayload = self else { return errorDescription ?? "引擎失败（无详细信息）" }
+        guard case .failedWithPayload = self else { return errorDescription ?? L10n.t("err.noDetail") }
         return EngineFailure.reason(payload: jsonPayload,
-                                    fallback: errorDescription ?? "引擎失败（无详细信息）")
+                                    fallback: errorDescription ?? L10n.t("err.noDetail"))
     }
 
     /// 给 `catch` 块用的统一入口：`catch { lastError = ??? }` 写成
@@ -197,7 +197,7 @@ final class EngineCLI: @unchecked Sendable {
         }
 
         do { try proc.run() } catch {
-            throw EngineError.failed("无法启动引擎（\(bin)）：\(error.localizedDescription)")
+            throw EngineError.failed(L10n.t("err.launchFailed", bin, error.localizedDescription))
         }
         registry.add(proc, command: args.first ?? "")
 
@@ -263,7 +263,7 @@ final class EngineCLI: @unchecked Sendable {
                 // 退出码信息挂在消息上，调用方若只想要数据可以忽略。
                 let note = msg.isEmpty ? "" : "\n\(msg)"
                 throw EngineError.failedWithPayload(
-                    message: "引擎退出码 \(proc.terminationStatus)\(note)",
+                    message: L10n.t("err.exitCode", proc.terminationStatus) + note,
                     payload: outBuf
                 )
             }
@@ -283,7 +283,7 @@ final class EngineCLI: @unchecked Sendable {
             var parts: [String] = []
             if !outText.isEmpty { parts.append(outText) }
             if !msg.isEmpty { parts.append(msg) }
-            if parts.isEmpty { parts.append("引擎退出码 \(proc.terminationStatus)") }
+            if parts.isEmpty { parts.append(L10n.t("err.exitCode", proc.terminationStatus)) }
             throw EngineError.failed(parts.joined(separator: "\n"))
         }
         return outBuf

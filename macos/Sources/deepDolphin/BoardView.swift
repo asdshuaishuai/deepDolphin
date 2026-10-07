@@ -55,13 +55,23 @@ enum BoardColumn: String, CaseIterable, Identifiable {
     }
 
     /// 这一列的判定依据 —— 空列也要说清「为什么空」，
+    /// 界面显示名（rawValue 是中文身份串，只作标识不作展示）。
+    func label(en: Bool) -> String {
+        switch self {
+        case .attention: return en ? "Needs Attention" : "待处理"
+        case .active:    return en ? "Active" : "活跃中"
+        case .quiet:     return en ? "Quiet" : "久未更新"
+        case .other:     return en ? "Other" : "其他"
+        }
+    }
+
     /// 否则「0」既可能是「真没有」也可能是「没量出来」。
     var basis: String {
         switch self {
-        case .attention: return "有未提交、未跟踪、stash 或待合入的分支"
-        case .active:    return "30 天内有过新提交"
-        case .quiet:     return "超过 30 天没有新提交（引擎 active30d 那条线）"
-        case .other:     return "采集失败、非 git，或提交时间读不出来"
+        case .attention: return L10n.t("board.basis.attention")
+        case .active:    return L10n.t("board.basis.active")
+        case .quiet:     return L10n.t("board.basis.quiet")
+        case .other:     return L10n.t("board.basis.other")
         }
     }
 }
@@ -79,6 +89,7 @@ extension ProjectStatus {
 }
 
 struct BoardPage: View {
+    @ObservedObject private var l10n = L10n.shared
     @EnvironmentObject var model: AppModel
 
     /// 看板看到的项目集合。
@@ -110,7 +121,7 @@ struct BoardPage: View {
                     HStack(spacing: 6) {
                         Image(systemName: column.icon)
                             .foregroundStyle(column.color)
-                        Text(column.rawValue)
+                        Text(column.label(en: L10n.shared.language.usesEnglishFacts))
                         // ⚠️ 计数必须和下面真的列出来的行数一致 ——
                         //    原来这里是 7、列出来 4（prefix(4)），差额只写在「还有 3 个…」里。
                         Text("\(list.count)")
@@ -121,11 +132,12 @@ struct BoardPage: View {
             }
         }
         .listStyle(.inset)
-        .navigationTitle("看板")
+        .navigationTitle(L10n.t("board.title"))
     }
 }
 
 struct BoardCard: View {
+    @ObservedObject private var l10n = L10n.shared
     @Environment(\.openWindow) private var openWindow
     @EnvironmentObject var model: AppModel
     let project: ProjectStatus
@@ -139,7 +151,7 @@ struct BoardCard: View {
     private var currentBranch: BranchStatus? { project.primaryBranch }
 
     /// 状态词。与项目卡共用 `ProjectStatus.stateWord`（模型层那一份）。
-    private var state: (text: String, tone: ProjectStatus.Liveness) { project.stateWord }
+    private var state: (text: String, tone: ProjectStatus.Liveness) { project.stateWord(en: L10n.shared.language.usesEnglishFacts) }
 
     private var stateColor: Color {
         switch state.tone {
@@ -188,17 +200,17 @@ struct BoardCard: View {
 
                 HStack(spacing: 5) {
                     if project.userDirtyCount > 0 { Chip(text: "●\(project.userDirtyCount)", tint: .orange) }
-                    if project.untrackedCount > 0 { Chip(text: "未跟踪 \(project.untrackedCount)", tint: .orange) }
+                    if project.untrackedCount > 0 { Chip(text: L10n.t("board.chip.untracked", project.untrackedCount), tint: .orange) }
                     if project.stashCount > 0 { Chip(text: "stash \(project.stashCount)", tint: .secondary) }
                     if let b = currentBranch, b.pendingCommits > 0 {
-                        Chip(text: "\(b.pendingCommits) 待记录", tint: .blue)
+                        Chip(text: L10n.t("board.chip.pending", b.pendingCommits), tint: .blue)
                     }
                     // 分支行：追踪数组拿不到时退回引擎声明的当前分支名。
                     // 「没有分支记录」和「这个项目没有分支」是两回事。
                     if let b = currentBranch {
-                        Chip(text: "分支 \(b.name)", tint: .secondary)
+                        Chip(text: L10n.t("board.chip.branch", b.name), tint: .secondary)
                     } else if !project.currentBranch.isEmpty {
-                        Chip(text: "分支 \(project.currentBranch)", tint: .secondary)
+                        Chip(text: L10n.t("board.chip.branch", project.currentBranch), tint: .secondary)
                     }
                 }
             }
@@ -213,8 +225,8 @@ struct BoardCard: View {
                         .font(.caption)
                 }
                 .buttonStyle(.borderless)
-                .help("浅更新")
-                .accessibilityLabel(A11y.label("浅更新"))
+                .help(L10n.t("workbar.shallow"))
+                .accessibilityLabel(A11y.label(L10n.t("workbar.shallow")))
                 .disabled(model.busyProject == project.name || model.busyAll)
 
                 Button {
@@ -224,21 +236,21 @@ struct BoardCard: View {
                         .font(.caption)
                 }
                 .buttonStyle(.borderless)
-                .help("AI 项目说明")
-                .accessibilityLabel(A11y.label("AI 项目说明"))
+                .help(L10n.t("board.brief"))
+                .accessibilityLabel(A11y.label(L10n.t("board.brief")))
                 .disabled(briefBusy)
 
                 Spacer()
                 // 最后一次提交时间。看板的价值就是「多久没人动它」，
                 // 只写一句「暂无新变化」回答不了这个问题。
                 if let age = project.daysSinceLastCommit {
-                    Text(age == 0 ? "今天提交过" : "\(age) 天前提交")
+                    Text(age == 0 ? L10n.t("board.committedToday") : L10n.t("board.committedDaysAgo", age))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .monospacedDigit()
                         .lineLimit(1)
                 } else {
-                    Text("提交时间读不出来")
+                    Text(L10n.t("board.committedUnknown"))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
@@ -256,7 +268,7 @@ struct BoardCard: View {
         }
         .sheet(isPresented: $briefSheet) {
             AIResultSheet(
-                title: "项目说明 · \(project.name)",
+                title: L10n.t("board.briefTitle", project.name),
                 markdown: briefText,
                 busy: briefBusy,
                 errorText: briefError,

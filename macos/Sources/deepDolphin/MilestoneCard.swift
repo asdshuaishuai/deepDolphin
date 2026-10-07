@@ -36,7 +36,8 @@ struct MilestoneCardSlice: Equatable {
 /// 三次的修法也必须是同一个形状 —— 判定抽成纯函数、披露写进界面、由 lint 守住接线。
 func milestoneCardSlice(
     itemCount: Int,
-    cardMax: Int = MILESTONE_CARD_MAX
+    cardMax: Int = MILESTONE_CARD_MAX,
+    en: Bool = false
 ) -> MilestoneCardSlice {
     let total = max(0, itemCount)
     guard total > 0 else {
@@ -53,6 +54,7 @@ func milestoneCardSlice(
         shown: shown,
         total: total,
         cut: true,
-        note: "只显示前 \(shown) 条（共 \(total) 条），完整清单见「里程碑」页"
+        note: en ? "Showing the first \(shown) of \(total); see the Milestones page for the full list"
+                 : "只显示前 \(shown) 条（共 \(total) 条），完整清单见「里程碑」页"
     )
 }

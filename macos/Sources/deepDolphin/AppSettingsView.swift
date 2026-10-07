@@ -64,7 +64,7 @@ struct AboutCombinedTab: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: DSSpacing.xxl) {
                 VStack(spacing: DSSpacing.sm) {
                     Image(nsImage: NSApp.applicationIconImage)
                         .resizable()
@@ -83,7 +83,7 @@ struct AboutCombinedTab: View {
                         .foregroundStyle(.white.opacity(0.7))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 22)
+                .padding(.vertical, DSSpacing.xxl)
                 .background {
                     ZStack {
                         DSGradient.hero
@@ -103,7 +103,7 @@ struct AboutCombinedTab: View {
                 Divider()
                 docSection(l10n.doc(.changelog))
             }
-            .padding(16)
+            .padding(DSSpacing.lg)
         }
     }
 

@@ -111,21 +111,22 @@ enum SearchFilter {
     }
 
     /// 空结果文案。两态必须给出**不同**的话，且都要给出下一步。
-    static func emptyText(_ reason: Empty, noun: String) -> String {
+    static func emptyText(_ reason: Empty, noun: String, en: Bool = false) -> String {
         switch reason {
         case .noData:
-            return "暂无\(noun)"
+            return en ? "No \(noun) yet" : "暂无\(noun)"
         case .noMatch(let q):
             // 说清「有东西但没匹配上」，并把查询原样回显，用户才知道自己搜了什么
-            return "没有\(noun)匹配「\(q)」"
+            return en ? "No \(noun) matching \"\(q)\"" : "没有\(noun)匹配「\(q)」"
         }
     }
 
     /// 命中数量摘要，供 VoiceOver 与视觉提示共用。
     /// 搜到 0 条与没搜索过，文案不同。
-    static func resultSummary(allCount: Int, shownCount: Int, noun: String) -> String? {
+    static func resultSummary(allCount: Int, shownCount: Int, noun: String, en: Bool = false) -> String? {
         if allCount == 0 { return nil }
         if shownCount == allCount { return nil }   // 没过滤，不需要额外说明
-        return "匹配 \(shownCount) / \(allCount) 个\(noun)"
+        return en ? "Matched \(shownCount) / \(allCount) \(noun)"
+                  : "匹配 \(shownCount) / \(allCount) 个\(noun)"
     }
 }

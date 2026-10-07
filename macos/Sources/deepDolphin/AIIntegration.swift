@@ -30,11 +30,11 @@ struct AIResultSheet: View {
                         pb.clearContents()
                         pb.setString(markdown, forType: .string)
                     } label: {
-                        Label("复制", systemImage: "doc.on.doc")
+                        Label(L10n.t("common.copy"), systemImage: "doc.on.doc")
                     }
                     .buttonStyle(.borderless)
-                    .help("复制 Markdown")
-                    .accessibilityLabel(A11y.label("复制 Markdown"))
+                    .help(L10n.t("airesult.copyMarkdown"))
+                    .accessibilityLabel(A11y.label(L10n.t("airesult.copyMarkdown")))
                 }
                 if let regen = onRegenerate, !busy {
                     Button {
@@ -43,8 +43,8 @@ struct AIResultSheet: View {
                         Image(systemName: "arrow.clockwise")
                     }
                     .buttonStyle(.borderless)
-                    .help("重新生成")
-                    .accessibilityLabel(A11y.label("重新生成"))
+                    .help(L10n.t("airesult.regenerate"))
+                    .accessibilityLabel(A11y.label(L10n.t("airesult.regenerate")))
                 }
                 // ⚠️ 原来**没有关闭按钮**，而 `dismiss` 声明了却一次都没用。
                 // macOS 的 sheet 是贴在窗口上的，没有窗口红点可点，
@@ -61,8 +61,8 @@ struct AIResultSheet: View {
                 }
                 .buttonStyle(.borderless)
                 .keyboardShortcut(.cancelAction)
-                .help("关闭")
-                .accessibilityLabel(A11y.label("关闭"))
+                .help(L10n.t("common.close"))
+                .accessibilityLabel(A11y.label(L10n.t("common.close")))
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -72,7 +72,7 @@ struct AIResultSheet: View {
             if busy {
                 VStack(spacing: 10) {
                     ProgressView()
-                    Text("AI 正在收集引擎事实并生成…")
+                    Text(L10n.t("airesult.collecting"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -81,7 +81,7 @@ struct AIResultSheet: View {
                 VStack(spacing: DSSpacing.sm) {
                     Label(err, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red)
-                    Button("重试") { onRegenerate?() }
+                    Button(L10n.t("common.retry")) { onRegenerate?() }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -156,16 +156,16 @@ extension AppModel {
         guard !busyAll else { return }
         let ok = await updateAll(deep: false, silent: true)
         guard ok else {
-            Notifier.shared.notify(title: "定时更新失败", body: AppModel.shared.lastError ?? "未知错误")
+            Notifier.shared.notify(title: L10n.t("notify.updateFailed"), body: AppModel.shared.lastError ?? L10n.t("notify.unknownError"))
             return
         }
         // AI 已配置 → 生成简报并通知
         if AIConfig.load().isConfigured {
             do {
                 let digest = try await AgentCore.scheduledDigest()
-                Notifier.shared.notify(title: "定时更新简报", body: String(digest.prefix(180)))
+                Notifier.shared.notify(title: L10n.t("notify.digestTitle"), body: String(digest.prefix(180)))
             } catch {
-                Notifier.shared.notify(title: "定时更新完成", body: "全部项目进度已记录（AI 简报失败：\(EngineError.userMessage(for: error).prefix(60)))")
+                Notifier.shared.notify(title: L10n.t("notify.digestDone.title"), body: L10n.t("notify.digestDone.bodyAI", String(EngineError.userMessage(for: error).prefix(60))))
             }
         } else {
             Notifier.shared.notify(title: "定时更新完成", body: "\(projects.count) 个项目进度已记录")
@@ -193,7 +193,7 @@ struct UpdateActionMenu: View {
     /// 本次 sheet 是**哪种模式**发起的 —— 「重试」必须重试同一个动作。
     ///
     /// ⚠️ 原来 `onRegenerate: nil`，于是错误态那个「重试」按钮点了没反应
-    /// （`Button("重试") { onRegenerate?() }` 里那个 `?` 静默吞掉）。
+    /// （`Button(L10n.t("common.retry")) { onRegenerate?() }` 里那个 `?` 静默吞掉）。
     /// 而那恰恰是最需要重试的时刻：引擎失败、网络失败、AI 超时。
     /// 另外三个 AIResultSheet 调用点（项目群说明 / 项目说明 / 看板说明）
     /// 都传了真闭包，只有这里漏了。
@@ -204,12 +204,12 @@ struct UpdateActionMenu: View {
             Button {
                 updateAction(deep: false, withAI: true)
             } label: {
-                Label("浅更新 + AI 摘要", systemImage: "sparkles")
+                Label(L10n.t("menu.shallowAI"), systemImage: "sparkles")
             }
             Button {
                 updateAction(deep: true, withAI: true)
             } label: {
-                Label("深度更新 + AI 报告", systemImage: "sparkles.rectangle.stack")
+                Label(L10n.t("menu.deepAI"), systemImage: "sparkles.rectangle.stack")
             }
             if project == nil {
                 Divider()
@@ -222,12 +222,12 @@ struct UpdateActionMenu: View {
             // 而其中一份还少了范围信息（菜单项的标题不会随 selection 变）。
             HStack(spacing: DSSpacing.xs) {
                 Image(systemName: "ellipsis.circle")
-                Text("更多")
+                Text(L10n.t("menu.more"))
             }
         }
         .fixedSize()
-        .help("带 AI 的更新变体与定时更新")
-        .accessibilityLabel(A11y.label("更多更新选项"))
+        .help(L10n.t("menu.more.help"))
+        .accessibilityLabel(A11y.label(L10n.t("menu.more.a11y")))
         .sheet(isPresented: $showAI) {
             AIResultSheet(
                 title: aiTitle,
@@ -247,14 +247,14 @@ struct UpdateActionMenu: View {
                 aiResult = nil
                 // 记下模式，供「重试」用（见 aiDeep 的注释）
                 aiDeep = deep
-                aiTitle = "\(deep ? "深度更新" : "浅更新")AI 报告\(project.map { " · " + $0.name } ?? "")"
+                aiTitle = L10n.t("airesult.aiReport", deep ? L10n.t("update.deepWord") : L10n.t("update.shallowWord"), project.map { " · " + $0.name } ?? "")
                 showAI = true
                 do {
                     if let p = project {
                         model.busyProject = p.name
                         let summary = try await model.updateWithAISummary(p, deep: deep)
                         aiResult = summary
-                        Notifier.shared.notify(title: deep ? "深度更新完成" : "浅更新完成", body: "AI 摘要已生成")
+                        Notifier.shared.notify(title: deep ? L10n.t("notify.deepDone.title") : L10n.t("notify.shallowDone.title"), body: L10n.t("notify.aiSummary.body"))
                     } else {
                         // ⚠️ 原来直接调 `EngineCLI.shared.updateAll(deep:)`，
                         // **绕过了** AppModel.updateAll 的 `busyAll` 闸门
@@ -265,7 +265,7 @@ struct UpdateActionMenu: View {
                         _ = await model.updateAll(deep: deep, silent: true)
                         let digest = try await AgentCore.scheduledDigest()
                         aiResult = digest
-                        Notifier.shared.notify(title: "批量更新完成", body: "AI 简报已生成")
+                        Notifier.shared.notify(title: L10n.t("notify.bulkDone.title"), body: L10n.t("notify.bulkDone.body"))
                     }
                 } catch {
                     aiError = EngineError.userMessage(for: error)
@@ -346,10 +346,10 @@ struct DualTrackButtons: View {
                 }
             }
             .disabled(model.updateScopeBusy)
-            .help("记录自上次以来还没被引擎记下的提交（当前 \(pending) 个）（\(ShortcutMap.shallow.display)）")
+            .help(L10n.t("menu.shallow.help", pending, ShortcutMap.shallow.display))
             .accessibilityLabel(A11y.label(
-                ScopeRules.shallowLabel(scope),
-                value: pending > 0 ? "有 \(pending) 个待记录" : "没有待记录的提交"))
+                ScopeRules.shallowLabel(scope, en: L10n.shared.language.usesEnglishFacts),
+                value: pending > 0 ? L10n.t("menu.shallow.a11y.value", pending) : L10n.t("menu.shallow.a11y.none")))
 
             Button {
                 model.runUpdate(deep: true)
@@ -361,10 +361,10 @@ struct DualTrackButtons: View {
                 }
             }
             .disabled(model.updateScopeBusy)
-            .help("重写托管文档：\(ScopeRules.deepTouches)。这一步会改写你的文件（\(ShortcutMap.deep.display)）")
+            .help(L10n.t("menu.deep.help", ScopeRules.deepTouches, ShortcutMap.deep.display))
             .accessibilityLabel(A11y.label(
                 ScopeRules.deepLabel(scope),
-                value: "会改写 " + ScopeRules.deepTouches))
+                value: L10n.t("menu.deep.a11y.value", ScopeRules.deepTouches)))
 
             if model.updateScopeBusy {
                 ProgressView().controlSize(.small)
@@ -378,16 +378,16 @@ struct ScheduleMenu: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        Picker("定时更新", selection: Binding(
+        Picker(L10n.t("schedule.label"), selection: Binding(
             get: { model.autoUpdateHours },
             set: { model.setAutoUpdate(hours: $0) }
         )) {
-            Text("关闭").tag(0)
-            Text("每 1 小时").tag(1)
-            Text("每 3 小时").tag(3)
-            Text("每 6 小时").tag(6)
-            Text("每 12 小时").tag(12)
-            Text("每 24 小时").tag(24)
+            Text(L10n.t("schedule.off")).tag(0)
+            Text(L10n.t("schedule.h1")).tag(1)
+            Text(L10n.t("schedule.h3")).tag(3)
+            Text(L10n.t("schedule.h6")).tag(6)
+            Text(L10n.t("schedule.h12")).tag(12)
+            Text(L10n.t("schedule.h24")).tag(24)
         }
     }
 }
@@ -411,12 +411,12 @@ struct GroupBriefButton: View {
                 } else {
                     Image(systemName: "sparkles")
                 }
-                Text("项目群说明")
+                Text(L10n.t("brief.button"))
             }
         }
         .disabled(busy)
-        .help("AI 生成项目群说明（结合全部项目事实）")
-        .accessibilityLabel(A11y.label("AI 生成项目群说明（结合全部项目事实）"))
+        .help(L10n.t("brief.help"))
+        .accessibilityLabel(A11y.label(L10n.t("brief.help")))
         .sheet(isPresented: $show) {
             AIResultSheet(
                 title: "项目群说明",
@@ -468,11 +468,11 @@ struct ProjectBriefButton: View {
             }
         }
         .disabled(busy)
-        .help("AI 生成项目说明（结合 README、代码构成与进度事实）")
-        .accessibilityLabel(A11y.label("AI 生成项目说明（结合 README、代码构成与进度事实）"))
+        .help(L10n.t("brief.project.help"))
+        .accessibilityLabel(A11y.label(L10n.t("brief.project.help")))
         .sheet(isPresented: $show) {
             AIResultSheet(
-                title: "项目说明 · \(project.name)",
+                title: L10n.t("brief.projectTitle", project.name),
                 markdown: result,
                 busy: busy,
                 errorText: errorText,

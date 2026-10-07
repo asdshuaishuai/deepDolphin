@@ -27,13 +27,15 @@ enum DashSpan: String, CaseIterable, Hashable {
     case d30
     case d7
 
-    var label: String {
+    /// 界面用：`label(en: L10n 语言判定)`。默认 zh 保持纯层默认行为（判据断言依赖）。
+    func label(en: Bool) -> String {
         switch self {
-        case .all: return "全量"
-        case .d30: return "近 30 天"
-        case .d7:  return "近 7 天"
+        case .all: return en ? "All" : "全量"
+        case .d30: return en ? "30d" : "近 30 天"
+        case .d7:  return en ? "7d" : "近 7 天"
         }
     }
+    var label: String { label(en: false) }
 
     /// 该档位的时间窗（天）。nil = 不按时间筛。
     ///
@@ -75,12 +77,13 @@ enum DashCommitFilter: Hashable {
         }
     }
 
-    var label: String {
+    func label(en: Bool) -> String {
         switch self {
-        case .all:       return "所有提交类型"
+        case .all:       return en ? "All commit types" : "所有提交类型"
         case .only(let t): return t
         }
     }
+    var label: String { label(en: false) }
 }
 
 // MARK: - 组合筛选
@@ -206,7 +209,8 @@ struct DashKPI: Hashable, Identifiable {
 /// 口径全在纯函数里，视图不自己算。
 enum DashKPIBuilder {
     /// `d` 是仪表盘聚合；`projects` 是逐项目（用于算 tag / 活跃副说明）。
-    static func kpis(_ d: Dashboard, projects: [ProjectStatus]) -> [DashKPI] {
+    /// `en` = 事实文本走英文（AppLanguage.usesEnglishFacts）。默认 zh（判据兼容）。
+    static func kpis(_ d: Dashboard, projects: [ProjectStatus], en: Bool = false) -> [DashKPI] {
         let listed = d.projects.listed
         let failed = d.projects.failed
 
@@ -219,9 +223,10 @@ enum DashKPIBuilder {
         //    （`dashboard.cj:721-722`：「必须钉住『listed 才是注册表条数』这个前提，
         //      否则下一个人又会去用 total」）—— 上一个「下一个人」就是这张卡。
         //    失败数降级到副说明披露，那才是它该在的位置。
-        var projectsCaption = "可读取 \(d.projects.total)/\(listed) · 近 7 天活跃 \(d.projects.active7d)"
-            + " · 近 30 天 \(d.projects.active30d)"
-        if failed > 0 { projectsCaption += " · 采集失败 \(failed) 个" }
+        var projectsCaption = en
+            ? "readable \(d.projects.total)/\(listed) · active 7d \(d.projects.active7d) · active 30d \(d.projects.active30d)"
+            : "可读取 \(d.projects.total)/\(listed) · 近 7 天活跃 \(d.projects.active7d) · 近 30 天 \(d.projects.active30d)"
+        if failed > 0 { projectsCaption += en ? " · \(failed) failed to collect" : " · 采集失败 \(failed) 个" }
 
         // 2. 里程碑完成率 —— 分母只取「达没达成有答案的」
         //    （done + open），**不把 unknown 塞进分母**：unknown 是「不知道」，
@@ -229,8 +234,8 @@ enum DashKPIBuilder {
         let ms = d.milestones.counts
         let decided = ms.done + ms.open
         let pct = decided > 0 ? Int((Double(ms.done) * 100 / Double(decided)).rounded()) : 0
-        var msCaption = "进行中 \(ms.open) · 已达成 \(ms.done)"
-        if ms.unknown > 0 { msCaption += " · \(ms.unknown) 个读不出来" }
+        var msCaption = en ? "\(ms.open) open · \(ms.done) done" : "进行中 \(ms.open) · 已达成 \(ms.done)"
+        if ms.unknown > 0 { msCaption += en ? " · \(ms.unknown) unreadable" : " · \(ms.unknown) 个读不出来" }
 
         // 3. 待处理项 —— ⚠️ 必须是**项目数**，且必须与侧栏徽标 / 看板「待处理」列
         //    **同一个规则**（`ProjectStatus.needsAction`）。
@@ -247,9 +252,11 @@ enum DashKPIBuilder {
         let mergeBranchCount = projects.reduce(0) { acc, p in
             acc + p.branches.filter { $0.isMergeCandidate }.count
         }
-        var attentionCaption = "有未提交/未跟踪/stash 的 \(d.projects.dirty) 个"
-        if mergeBranchCount > 0 { attentionCaption += " · 待合入分支 \(mergeBranchCount) 条" }
-        attentionCaption += " · 未跟踪文件 \(d.work.untrackedFiles) 个"
+        var attentionCaption = en
+            ? "\(d.projects.dirty) with uncommitted/untracked/stash"
+            : "有未提交/未跟踪/stash 的 \(d.projects.dirty) 个"
+        if mergeBranchCount > 0 { attentionCaption += en ? " · \(mergeBranchCount) merge-candidate branches" : " · 待合入分支 \(mergeBranchCount) 条" }
+        attentionCaption += en ? " · \(d.work.untrackedFiles) untracked files" : " · 未跟踪文件 \(d.work.untrackedFiles) 个"
 
         // 4. 分支 —— ⚠️ **这里原本直接用 `d.work.branches`，是个谎报。**
         //    引擎的 `work.branches` = 各项目 `branches` **追踪数组**的长度之和
@@ -263,27 +270,29 @@ enum DashKPIBuilder {
         //    两者不一致本身就是一条该说给用户听的信息。
         let realBranches = projects.reduce(0) { $0 + max(0, $1.repoBranchCount) }
         let unreadableBranchCount = projects.filter { $0.repoBranchCount < 0 }.count
-        var reachCaption = "\(d.work.stashes) 个 stash · \(d.work.untrackedFiles) 个未跟踪文件"
-        reachCaption += " · 已跟踪明细 \(d.work.branches) 条"
+        var reachCaption = en
+            ? "\(d.work.stashes) stashes · \(d.work.untrackedFiles) untracked files"
+            : "\(d.work.stashes) 个 stash · \(d.work.untrackedFiles) 个未跟踪文件"
+        reachCaption += en ? " · \(d.work.branches) tracked entries" : " · 已跟踪明细 \(d.work.branches) 条"
         if unreadableBranchCount > 0 {
-            reachCaption += " · \(unreadableBranchCount) 个项目的分支数读不出来"
+            reachCaption += en ? " · branches unreadable for \(unreadableBranchCount) projects" : " · \(unreadableBranchCount) 个项目的分支数读不出来"
         } else if d.work.branches < realBranches {
-            reachCaption += "（其余未纳入追踪）"
+            reachCaption += en ? " (rest untracked)" : "（其余未纳入追踪）"
         }
         let tagCount = projects.reduce(0) { $0 + ($1.tags?.count ?? 0) }
         let tagKnown = projects.contains { $0.tags != nil }
         if tagKnown { reachCaption += " · \(tagCount) 个 tag" }
 
         return [
-            DashKPI(kind: .projects, title: "项目总数", value: listed,
+            DashKPI(kind: .projects, title: en ? "Projects" : "项目总数", value: listed,
                     caption: projectsCaption),
-            DashKPI(kind: .milestones, title: "里程碑完成率", value: pct,
+            DashKPI(kind: .milestones, title: en ? "Milestone completion" : "里程碑完成率", value: pct,
                     caption: msCaption,
                     progress: decided > 0 ? Double(ms.done) / Double(decided) : nil),
-            DashKPI(kind: .attention, title: "待处理", value: attentionProjects.count,
+            DashKPI(kind: .attention, title: en ? "Needs attention" : "待处理", value: attentionProjects.count,
                     caption: attentionCaption,
                     tint: attentionProjects.isEmpty ? 0 : 1),
-            DashKPI(kind: .reach, title: "分支", value: realBranches,
+            DashKPI(kind: .reach, title: en ? "Branches" : "分支", value: realBranches,
                     caption: reachCaption),
         ]
     }
@@ -300,7 +309,15 @@ enum DashKPIBuilder {
         func value(_ kind: DashKPI.Kind) -> Int { kpis.first { $0.kind == kind }?.value ?? 0 }
         let projects = value(.projects)
         let attention = value(.attention)
-        guard attention > 0 else { return "共 \(projects) 个项目" }
-        return "\(projects) 个项目 · \(attention) 个项目待处理"
+        // en 由调用方以 summaryLine(_:en:) 选择；默认 zh 保持兼容。
+        return summaryLine(kpis, en: false)
+    }
+
+    static func summaryLine(_ kpis: [DashKPI], en: Bool) -> String {
+        func value(_ kind: DashKPI.Kind) -> Int { kpis.first { $0.kind == kind }?.value ?? 0 }
+        let projects = value(.projects)
+        let attention = value(.attention)
+        guard attention > 0 else { return en ? "\(projects) projects" : "共 \(projects) 个项目" }
+        return en ? "\(projects) projects · \(attention) need attention" : "\(projects) 个项目 · \(attention) 个项目待处理"
     }
 }

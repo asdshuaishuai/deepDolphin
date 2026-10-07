@@ -497,7 +497,7 @@ final class AppModel: ObservableObject {
         // TCC 预检：外置卷上的项目在 GUI app 未获授权时，git 子进程会被内核无限阻塞。
         // FileManager.isReadableFile 立即返回（不 spawn 子进程），提前拦截并给用户明确指引。
         if let first = projects.first, !FileManager.default.isReadableFile(atPath: first.path) {
-            lastError = "无法访问项目目录（\(first.path)）——\n请在 系统设置 → 隐私与安全性 → 完全磁盘访问权限 中允许 deepDolphin"
+            lastError = L10n.t("err.fdaRequired") + "\n\(first.path)"
             engineFound = true
             return
         }

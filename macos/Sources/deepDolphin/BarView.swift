@@ -6,6 +6,7 @@ import SwiftUI
 struct BarView: View {
     @Environment(\.openWindow) private var openWindow
     @EnvironmentObject var model: AppModel
+    @ObservedObject private var l10n = L10n.shared
 
     /// 待确认的批量更新。nil = 没在等确认。
     ///
@@ -41,7 +42,7 @@ struct BarView: View {
 
     private var header: some View {
         HStack(spacing: DSSpacing.sm) {
-            Text("项目群进度")
+            Text(L10n.t("bar.title"))
                 .font(.headline)
             if let line = model.summaryLine {
                 Text(line)
@@ -59,8 +60,8 @@ struct BarView: View {
                 Image(systemName: "arrow.clockwise")
             }
             .buttonStyle(.borderless)
-            .help("刷新")
-            .accessibilityLabel(A11y.label("刷新"))
+            .help(L10n.t("toolbar.refresh"))
+            .accessibilityLabel(A11y.label(L10n.t("toolbar.refresh")))
         }
         .padding(.horizontal, DSSpacing.md)
         .padding(.bottom, DSSpacing.xs)
@@ -79,7 +80,7 @@ struct BarView: View {
                 Button {
                     openMainPanel(section: .dashboard)
                 } label: {
-                    Text("还有 \(model.projects.count - 12) 个项目，打开面板查看…")
+                    Text(L10n.t("bar.moreProjects", model.projects.count - 12))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -94,12 +95,12 @@ struct BarView: View {
 
     private var missingEngine: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            Label("未找到 moonGit 引擎", systemImage: "questionmark.circle")
+            Label(L10n.t("bar.noEngine"), systemImage: "questionmark.circle")
                 .font(.subheadline.weight(.medium))
-            Text("运行 deepgit-engine 的 scripts/install.sh 安装，或设 DEEPGIT_BIN")
+            Text(L10n.t("bar.noEngine.hint"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Button("重新检测") {
+            Button(L10n.t("bar.redetect")) {
                 EngineCLI.shared.refreshBinary()
                 Task { await model.refreshAll() }
             }
@@ -112,22 +113,22 @@ struct BarView: View {
     private var emptyOrError: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
             if let err = model.lastError {
-                Label("引擎错误", systemImage: "exclamationmark.triangle")
+                Label(L10n.t("bar.engineError"), systemImage: "exclamationmark.triangle")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.red)
                 Text(err)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
-                Button("重试") {
+                Button(L10n.t("common.retry")) {
                     Task { await model.refreshAll() }
                 }
                 .controlSize(.small)
             } else {
-                Text(model.isLoading ? "读取中…" : "暂无已注册项目")
+                Text(model.isLoading ? L10n.t("bar.loading") : L10n.t("panel.empty.projects"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Text("运行 deepgit scan <目录> 注册项目群")
+                Text(L10n.t("panel.empty.scanHint"))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -143,7 +144,7 @@ struct BarView: View {
             Button {
                 openMainPanel(section: .dashboard)
             } label: {
-                Label("打开面板", systemImage: "rectangle.inset.filled.and.person.filled")
+                Label(L10n.t("bar.openPanel"), systemImage: "rectangle.inset.filled.and.person.filled")
                     .labelStyle(.titleAndIcon)
             }
             .controlSize(.small)
@@ -154,7 +155,7 @@ struct BarView: View {
                 if model.busyAll {
                     ProgressView().controlSize(.mini)
                 } else {
-                    Text("全部浅更新")
+                    Text(L10n.t("bar.shallowAll"))
                 }
             }
             .controlSize(.small)
@@ -168,12 +169,12 @@ struct BarView: View {
                 Image(systemName: "power")
             }
             .buttonStyle(.borderless)
-            .help("完全退出")
-            .accessibilityLabel(A11y.label("完全退出"))
+            .help(L10n.t("bar.quit"))
+            .accessibilityLabel(A11y.label(L10n.t("bar.quit")))
         }
         .padding(.horizontal, DSSpacing.md)
         .confirmationDialog(
-            pendingBulk.map { "全部\($0.label)？" } ?? "",
+            pendingBulk.map { L10n.t("bar.bulkConfirm", $0.label) } ?? "",
             isPresented: Binding(
                 get: { pendingBulk != nil },
                 set: { if !$0 { pendingBulk = nil } }
@@ -186,7 +187,7 @@ struct BarView: View {
                     pendingBulk = nil
                 }
             }
-            Button("取消", role: .cancel) { pendingBulk = nil }
+            Button(L10n.t("common.cancel"), role: .cancel) { pendingBulk = nil }
         } message: {
             Text(pendingBulk.map {
                 DestructiveGuard.bulkUpdateMessage(projectCount: model.projects.count, track: $0)
@@ -271,6 +272,6 @@ struct MenuProjectRow: View {
         if let b = currentBranch, !b.headAgo.isEmpty {
             return "\(b.headAgo) · \(b.statusLabel)"
         }
-        return project.lastCommitAgo.isEmpty ? "非 git 项目" : project.lastCommitAgo
+        return project.lastCommitAgo.isEmpty ? L10n.t("bar.notGit") : project.lastCommitAgo
     }
 }

@@ -9,6 +9,7 @@ import SwiftUI
 
 struct PanelView: View {
     @EnvironmentObject var model: AppModel
+    @ObservedObject private var l10n = L10n.shared
     @Environment(\.openSettings) private var openSettings
     @State private var showScan = false
     @State private var showHelp = false
@@ -70,20 +71,20 @@ struct PanelView: View {
                 Image(systemName: "lock.shield")
                     .font(.largeTitle)
                     .foregroundStyle(.orange)
-                Text("需要完全磁盘访问权限")
+                Text(L10n.t("panel.tcc.title"))
                     .font(.title3.weight(.semibold))
-                Text("deepDolphin 需要访问外置卷上的项目目录。请在系统设置中允许，然后重启 deepDolphin。")
+                Text(L10n.t("panel.tcc.body"))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 30)
-                Button("打开系统设置") {
+                Button(L10n.t("common.openSystemSettings")) {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
                         NSWorkspace.shared.open(url)
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                Button("稍后") { showTCCGuide = false }
+                Button(L10n.t("common.later")) { showTCCGuide = false }
                     .foregroundStyle(.secondary)
             }
             .frame(width: 400, height: 280)
@@ -117,13 +118,13 @@ struct PanelView: View {
             // 「添加 / 扫描项目」是**动作**不是导航项，原来它自己占一个
             // **没有标题的单项 Section**，正好卡在两组中间把信息架构切成三段 ——
             // 移到底部动作区（见下），两组才真的是两组。
-            Section("视图") {
+            Section(L10n.t("nav.views")) {
                 // ⌘1–⌘3 的键位声明在 ShortcutMap（唯一来源），这里只消费。
                 // ⚠️ 快捷键挂在**已有的导航项**上，不另开一个「视图切换」分组 ——
                 //    另开一组会把同一批视图列两遍，两组还不一致（只有这组带计数），
                 //    既破坏侧栏的信息架构，又让人以为它们是两种不同的东西。
                 viewShortcut(.dashboard, key: .dashboard)
-                countedRow(title: "看板", icon: icon(for: .board), route: .board,
+                countedRow(title: L10n.t("nav.board"), icon: icon(for: .board), route: .board,
                            target: .board, count: attentionCount)
                 // ⚠️ 这里**原来用的是 `.badge(...)`**，而那一行因此**点不动**。
                 //    实测（本机 macOS 26）：侧栏「里程碑」连点 5 次，
@@ -135,23 +136,23 @@ struct PanelView: View {
                 //    只有真去点它才会发现是死的 —— 而「进不去的导航项」
                 //    等于这个视图对鼠标用户不存在。
                 //    计数改用行内文字（`countedRow`），不用 badge。
-                countedRow(title: "里程碑", icon: icon(for: .milestones), route: .milestones,
+                countedRow(title: L10n.t("nav.milestones"), icon: icon(for: .milestones), route: .milestones,
                            target: .milestones, count: milestoneCountValue)
             }
-            Section("仓库（\(shownProjects.count)/\(model.projects.count)）") {
+            Section(L10n.t("nav.repos.count", shownProjects.count, model.projects.count)) {
                 // ⌘4 打开当前选中的项目。
                 // ⚠️ 没有项目时**什么都不做** —— 不能把 selection 改成某个不存在的项目，
                 // 也不能弹一个空详情页（那正是「点了没反应」的另一种形态）。
                 // 已经在项目详情里时也不动：再点一次等于原地踏步。
                 if case .project = model.selection {
-                    Label("项目详情", systemImage: "folder")
+                    Label(L10n.t("nav.projectDetail"), systemImage: "folder")
                         .foregroundStyle(.secondary)
-                        .accessibilityLabel(A11y.label(fromHelp: "已在项目详情", fallback: "项目详情"))
+                        .accessibilityLabel(A11y.label(fromHelp: L10n.t("nav.projectDetailHere"), fallback: L10n.t("nav.projectDetail")))
                 } else if !model.projects.isEmpty {
                     Button {
                         if let first = model.projects.first { model.go(.project(first.name)) }
                     } label: {
-                        Label("打开项目详情", systemImage: "folder")
+                        Label(L10n.t("nav.openProjectDetail"), systemImage: "folder")
                     }
                     .keyboardShortcut(
                         ShortcutMap.shortcut(for: .currentProject)?.keyEquivalentSwiftUI ?? KeyEquivalent("\u{0}"),
@@ -159,7 +160,7 @@ struct PanelView: View {
                 }
                 if let reason = SearchFilter.emptyReason(
                     allCount: model.projects.count, shownCount: shownProjects.count, query: projectQuery) {
-                    Text(SearchFilter.emptyText(reason, noun: "项目"))
+                    Text(SearchFilter.emptyText(reason, noun: L10n.t("panel.noun.project"), en: L10n.shared.language.usesEnglishFacts))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -207,7 +208,7 @@ struct PanelView: View {
                 Button {
                     showScan = true
                 } label: {
-                    Label("添加 / 扫描项目", systemImage: "plus.circle")
+                    Label(L10n.t("nav.addScan"), systemImage: "plus.circle")
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                 }
@@ -215,8 +216,8 @@ struct PanelView: View {
                 .padding(.horizontal, DSSpacing.md)
                 .padding(.vertical, DSSpacing.sm)
                 .foregroundStyle(.blue)
-                .help("注册一个项目，或扫描目录自动发现项目")
-                .accessibilityLabel(A11y.label("添加或扫描项目"))
+                .help(L10n.t("panel.addScan.help"))
+                .accessibilityLabel(A11y.label(L10n.t("panel.addScan.a11y")))
                 Divider()
                 SidebarStatusStrip(model: model)
             }
@@ -233,7 +234,7 @@ struct PanelView: View {
             Image(systemName: "magnifyingglass")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
-            TextField("搜索项目或分支", text: $projectQuery)
+            TextField(L10n.t("panel.search.placeholder"), text: $projectQuery)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
                 .font(.callout)
@@ -246,12 +247,12 @@ struct PanelView: View {
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(A11y.label("清除搜索"))
+                .accessibilityLabel(A11y.label(L10n.t("panel.search.clear")))
             }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, DSSpacing.xs)
-        .accessibilityLabel(A11y.label(fromHelp: "搜索项目或分支", fallback: "搜索"))
+        .accessibilityLabel(A11y.label(fromHelp: L10n.t("panel.search.placeholder"), fallback: L10n.t("common.search")))
     }
 
     // MARK: 视图切换的目标映射
@@ -345,10 +346,10 @@ struct PanelView: View {
 
     private func title(for section: RootSection) -> String {
         switch section {
-        case .dashboard:  return "仪表盘"
-        case .board:      return "看板"
-        case .milestones: return "里程碑"
-        case .project:    return "项目"
+        case .dashboard:  return L10n.t("nav.dashboard")
+        case .board:      return L10n.t("nav.board")
+        case .milestones: return L10n.t("nav.milestones")
+        case .project:    return L10n.t("nav.projects")
         }
     }
 
@@ -383,7 +384,7 @@ struct PanelView: View {
                         .font(.caption2)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(A11y.label("关闭提示"))
+                .accessibilityLabel(A11y.label(L10n.t("common.noticeClose")))
             }
             .padding(.horizontal, DSSpacing.md)
             .padding(.vertical, 6)
@@ -399,8 +400,8 @@ struct PanelView: View {
                         .font(.caption)
                         .lineLimit(2)
                     Spacer()
-                    if err.contains("完全磁盘访问") || err.contains("可移除宗卷") {
-                        Button("打开系统设置") {
+                    if err.contains(L10n.t("err.fdaRequired")) || err.contains("完全磁盘访问") || err.contains("可移除宗卷") || err.lowercased().contains("full disk access") {
+                        Button(L10n.t("common.openSystemSettings")) {
                             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
                                 NSWorkspace.shared.open(url)
                             }
@@ -431,13 +432,13 @@ struct PanelView: View {
         if !model.engineFound {
             setupGuide
         } else if model.projects.isEmpty && model.isLoading {
-            ProgressView("读取项目群…")
+            ProgressView(L10n.t("panel.loading"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.projects.isEmpty {
             EmptyState(
                 icon: "shippingbox",
-                title: model.lastError != nil ? "引擎连接失败" : "暂无已注册项目",
-                subtitle: model.lastError ?? "运行 deepgit scan <目录> 注册项目群"
+                title: model.lastError != nil ? L10n.t("panel.error.engine") : L10n.t("panel.empty.projects"),
+                subtitle: model.lastError ?? L10n.t("panel.empty.scanHint")
             )
         } else {
             VStack(spacing: 0) {
@@ -476,19 +477,19 @@ struct PanelView: View {
             Image(systemName: "arrow.down.circle")
                 .font(.largeTitle)
                 .foregroundStyle(.tertiary)
-            Text("需要 moonGit 引擎")
+            Text(L10n.t("setup.title"))
                 .font(.title3.weight(.medium))
-            Text("引擎是独立安装的本地服务，客户端只负责展示。")
+            Text(L10n.t("setup.body"))
                 .foregroundStyle(.secondary)
             GroupBox {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("1. 仓库内执行：sh scripts/install.sh")
-                    Text("2. 注册项目群：deepgit scan ~/dev --depth 4")
-                    Text("3. 回到本面板点击刷新")
+                    Text(L10n.t("setup.step1"))
+                    Text(L10n.t("setup.step2"))
+                    Text(L10n.t("setup.step3"))
                 }
                 .font(.system(.callout, design: .monospaced))
             }
-            Button("重新检测引擎") {
+            Button(L10n.t("setup.recheck")) {
                 EngineCLI.shared.refreshBinary()
                 Task { await model.refreshAll() }
             }
@@ -522,11 +523,11 @@ struct PanelView: View {
             Button {
                 Task { await model.refreshAll() }
             } label: {
-                Label("刷新", systemImage: "arrow.clockwise")
+                Label(L10n.t("toolbar.refresh"), systemImage: "arrow.clockwise")
             }
             .disabled(model.isLoading)
-            .help("重新读取状态、仪表盘与里程碑（\(ShortcutMap.refresh.display)）")
-            .accessibilityLabel(A11y.label("重新读取状态、仪表盘与里程碑"))
+            .help(L10n.t("toolbar.refresh.help", ShortcutMap.refresh.display))
+            .accessibilityLabel(A11y.label(L10n.t("toolbar.refresh.a11y")))
 
             // AI 变体与定时更新（裸的浅/深更新已升为双轨按钮）
             UpdateActionMenu()
@@ -538,10 +539,10 @@ struct PanelView: View {
             Button {
                 showAgent = true
             } label: {
-                Label("AI 助手", systemImage: "sparkles")
+                Label(L10n.t("toolbar.agent"), systemImage: "sparkles")
             }
-            .help("与 AI 多轮对话（P0-5）")
-            .accessibilityLabel(A11y.label("与 AI 多轮对话（P0-5）"))
+            .help(L10n.t("toolbar.agent.help"))
+            .accessibilityLabel(A11y.label(L10n.t("toolbar.agent.help")))
 
             // ⚠️ 打开的是**系统原生设置窗口**（Settings scene，⌘, 同一个）。
             // 原来这里把 AppSettingsView 再弹一层 sheet —— 于是同一份设置有
@@ -550,10 +551,10 @@ struct PanelView: View {
             Button {
                 openSettings()
             } label: {
-                Label("设置", systemImage: "gearshape")
+                Label(L10n.t("toolbar.settings"), systemImage: "gearshape")
             }
-            .help("打开设置（\(ShortcutMap.settings.display)）")
-            .accessibilityLabel(A11y.label("打开设置"))
+            .help(L10n.t("toolbar.settings.help", ShortcutMap.settings.display))
+            .accessibilityLabel(A11y.label(L10n.t("toolbar.settings.a11y")))
 
             // 设计稿顶栏右段：搜索。
             // ⚠️ 之所以做成一个**看得见的按钮**而不只留快捷键：
@@ -562,11 +563,11 @@ struct PanelView: View {
             Button {
                 searchFocused = true
             } label: {
-                Label("搜索项目", systemImage: "magnifyingglass")
+                Label(L10n.t("toolbar.search"), systemImage: "magnifyingglass")
             }
             .keyboardShortcut(ShortcutMap.find.keyEquivalentSwiftUI, modifiers: ShortcutMap.find.modifiersSwiftUI)
-            .help("在项目与分支中搜索（\(ShortcutMap.find.display)）")
-            .accessibilityLabel(A11y.label("在项目与分支中搜索"))
+            .help(L10n.t("toolbar.search.help", ShortcutMap.find.display))
+            .accessibilityLabel(A11y.label(L10n.t("toolbar.search.a11y")))
         }
     }
 }

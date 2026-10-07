@@ -67,18 +67,18 @@ enum ScopeRules {
     /// 按钮标题。**必须带范围**：设计稿里同一个按钮会随范围改文案
     /// （「浅更新 (Shallow Sync All)」/「浅更新 (Shallow Sync)」），
     /// 不带的话用户按下之前无从知道会动谁。
-    static func shallowLabel(_ s: UpdateScope) -> String {
+    static func shallowLabel(_ s: UpdateScope, en: Bool = false) -> String {
         switch s {
-        case .all: return "浅更新 · 全部"
-        case .project(let n): return "浅更新 · \(n)"
+        case .all: return en ? "Shallow · All" : "浅更新 · 全部"
+        case .project(let n): return en ? "Shallow · \(n)" : "浅更新 · \(n)"
         }
     }
 
     /// 深更新同理。
-    static func deepLabel(_ s: UpdateScope) -> String {
+    static func deepLabel(_ s: UpdateScope, en: Bool = false) -> String {
         switch s {
-        case .all: return "深更新 · 全部"
-        case .project(let n): return "深更新 · \(n)"
+        case .all: return en ? "Deep · All" : "深更新 · 全部"
+        case .project(let n): return en ? "Deep · \(n)" : "深更新 · \(n)"
         }
     }
 
