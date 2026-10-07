@@ -177,48 +177,7 @@ struct DeepGitApp: App {
                 .environmentObject(model)
                         }
         .defaultSize(width: 1100, height: 720)
-        .commands {
-            CommandGroup(replacing: .newItem) {}
-            CommandMenu("操作") {
-                // 双轨动作在这里也有一份 —— 菜单项是 macOS 的惯例入口，
-                // 而且 ⇧⌘U / ⌥⇧⌘D 挂在这里**一定有效**（挂在 toolbar 按钮上
-                // 虽然也合法，但那是另一套分发路径，不拿它赌）。
-                // 两条调的都是 `model.runUpdate(deep:)`，
-                // 所以范围、确认框、忙碌判定与顶栏按钮**完全一致**。
-                //
-                // ⚠️ ⌥⇧⌘D 此前**声明了却从来没绑定**：ShortcutMap.deep 写在表里、
-                //    冲突检查也把它算进去，但没有一处 keyboardShortcut 用它 ——
-                //    于是 §3.2 要求的「⌥⇧⌘D 深更新」是不存在的功能。
-                //    绑了才算数。
-                Button(ScopeRules.shallowLabel(model.updateScope)) {
-                    model.runUpdate(deep: false)
-                }
-                .keyboardShortcut(ShortcutMap.shallow.keyEquivalentSwiftUI, modifiers: ShortcutMap.shallow.modifiersSwiftUI)
-                .disabled(model.updateScopeBusy)
-
-                Button(ScopeRules.deepLabel(model.updateScope)) {
-                    model.runUpdate(deep: true)
-                }
-                .keyboardShortcut(ShortcutMap.deep.keyEquivalentSwiftUI, modifiers: ShortcutMap.deep.modifiersSwiftUI)
-                .disabled(model.updateScopeBusy)
-
-                Divider()
-
-                Button("刷新") {
-                    Task { await model.refreshAll() }
-                }
-                .keyboardShortcut(ShortcutMap.refresh.keyEquivalentSwiftUI, modifiers: ShortcutMap.refresh.modifiersSwiftUI)
-
-                // 停止：不加这个，批量更新一旦开始就只能等 15 分钟。
-                // 它终止的是**引擎子进程**，不是只取消 Swift 侧的 Task
-                // —— 后者对 Task.detached 里的阻塞调用无效（见 EngineCLI 注释）。
-                Button("停止更新") {
-                    model.stopUpdate()
-                }
-                .keyboardShortcut(ShortcutMap.stop.keyEquivalentSwiftUI, modifiers: ShortcutMap.stop.modifiersSwiftUI)
-                .disabled(!model.canStopUpdate)
-            }
-        }
+        .commands { AppCommands() }
 
         // 菜单栏速览
         MenuBarExtra {
@@ -239,6 +198,18 @@ struct DeepGitApp: App {
             AppSettingsView()
                 .environmentObject(model)
         }
+
+        // 原生菜单栏「关于 deepDolphin」打开的独立窗口（正经 Mac 应用三件套之一）
+        Window(L10n.t("menu.about"), id: "about") {
+            AboutWindowView()
+        }
+        .windowResizability(.contentSize)
+
+        // 原生菜单栏「帮助」打开的独立窗口（与设置面板帮助 Tab 同一份文档内容）
+        Window(L10n.t("menu.help"), id: "help") {
+            HelpWindowView()
+        }
+        .defaultSize(width: 560, height: 640)
     }
 
     private var menuTint: Color {
@@ -247,6 +218,86 @@ struct DeepGitApp: App {
         case "orange": return .orange
         case "red": return .red
         default: return .secondary
+        }
+    }
+}
+
+// ⚠️ 应用菜单命令必须放进独立的 `Commands` 结构体：
+// `.commands { }` 尾闭包里取不到 `@Environment(\.openWindow)`，
+// 编译期直接报错 —— 这是 SwiftUI 的硬边界，不是写法偏好。
+struct AppCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+    @ObservedObject private var model = AppModel.shared
+    @ObservedObject private var l10n = L10n.shared
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {}
+
+        // 应用菜单：关于（设置 ⌘, 由 Settings scene 自动带上）。
+        // ⚠️ 关于项与帮助窗口共用 AboutWindowView —— 标准关于面板放不下
+        // 「这是谁 · 引擎是什么 · 仓库在哪」三件事（见 AboutHelpWindows.swift）。
+        CommandGroup(replacing: .appInfo) {
+            Button(l10n.str["menu.about"] ?? "关于 deepDolphin") {
+                openWindow(id: "about")
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
+
+        CommandMenu("操作") {
+            // 双轨动作在这里也有一份 —— 菜单项是 macOS 的惯例入口，
+            // 而且 ⇧⌘U / ⌥⇧⌘D 挂在这里**一定有效**（挂在 toolbar 按钮上
+            // 虽然也合法，但那是另一套分发路径，不拿它赌）。
+            // 两条调的都是 `model.runUpdate(deep:)`，
+            // 所以范围、确认框、忙碌判定与顶栏按钮**完全一致**。
+            //
+            // ⚠️ ⌥⇧⌘D 此前**声明了却从来没绑定**：ShortcutMap.deep 写在表里、
+            //    冲突检查也把它算进去，但没有一处 keyboardShortcut 用它 ——
+            //    于是 §3.2 要求的「⌥⇧⌘D 深更新」是不存在的功能。
+            //    绑了才算数。
+            Button(ScopeRules.shallowLabel(model.updateScope)) {
+                model.runUpdate(deep: false)
+            }
+            .keyboardShortcut(ShortcutMap.shallow.keyEquivalentSwiftUI, modifiers: ShortcutMap.shallow.modifiersSwiftUI)
+            .disabled(model.updateScopeBusy)
+
+            Button(ScopeRules.deepLabel(model.updateScope)) {
+                model.runUpdate(deep: true)
+            }
+            .keyboardShortcut(ShortcutMap.deep.keyEquivalentSwiftUI, modifiers: ShortcutMap.deep.modifiersSwiftUI)
+            .disabled(model.updateScopeBusy)
+
+            Divider()
+
+            Button("刷新") {
+                Task { await model.refreshAll() }
+            }
+            .keyboardShortcut(ShortcutMap.refresh.keyEquivalentSwiftUI, modifiers: ShortcutMap.refresh.modifiersSwiftUI)
+
+            // 停止：不加这个，批量更新一旦开始就只能等 15 分钟。
+            // 它终止的是**引擎子进程**，不是只取消 Swift 侧的 Task
+            // —— 后者对 Task.detached 里的阻塞调用无效（见 EngineCLI 注释）。
+            Button("停止更新") {
+                model.stopUpdate()
+            }
+            .keyboardShortcut(ShortcutMap.stop.keyEquivalentSwiftUI, modifiers: ShortcutMap.stop.modifiersSwiftUI)
+            .disabled(!model.canStopUpdate)
+        }
+
+        // 帮助菜单：应用内帮助（独立窗口）+ 两个仓库入口。
+        // CommandGroup(.help) 的存在本身让「帮助」菜单出现在菜单栏 ——
+        // 原来应用根本没有这一项，而「设置/关于/帮助」是正经 Mac 应用的三件套。
+        CommandGroup(after: .help) {
+            Button(l10n.str["menu.help"] ?? "deepGit 帮助") {
+                openWindow(id: "help")
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            Divider()
+            Button("\(l10n.str["menu.github"] ?? "GitHub") · deepDolphin") {
+                NSWorkspace.shared.open(URL(string: "https://github.com/asdshuaishuai/deepDolphin")!)
+            }
+            Button("\(l10n.str["menu.engine"] ?? "Engine") · moonGit") {
+                NSWorkspace.shared.open(URL(string: "https://github.com/asdshuaishuai/moongit")!)
+            }
         }
     }
 }

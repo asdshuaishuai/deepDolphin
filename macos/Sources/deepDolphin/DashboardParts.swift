@@ -98,18 +98,41 @@ struct DashboardFilterBar: View {
 struct KPIWideCard: View {
     let kpi: DashKPI
 
-    private var tint: Color { kpi.tint == 1 ? .orange : .primary }
+    /// 语义色与图标都从 `kind` 推，不靠调用方传 —— 四个问句各配一个
+    /// 固定的颜色/图标，全部仪表盘的同一问句永远同色。
+    /// attention 保留 `tint` 位：0（没事）绿、1（有事）橙，颜色随事实变。
+    private var accent: Color {
+        switch kpi.kind {
+        case .projects:   return DSColor.accent
+        case .milestones: return DSColor.deep
+        case .attention:  return kpi.tint == 1 ? .orange : DSColor.shallow
+        case .reach:      return DSColor.shallow
+        }
+    }
+
+    private var icon: String {
+        switch kpi.kind {
+        case .projects:   return "square.grid.2x2"
+        case .milestones: return "flag.checkered"
+        case .attention:  return "hand.tap"
+        case .reach:      return "arrow.triangle.branch"
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.xs) {
-            Text(kpi.title)
-                .font(DSTypography.label)
-                .foregroundStyle(DSColor.textSecondary)
+            HStack(alignment: .top) {
+                Text(kpi.title)
+                    .font(DSTypography.label)
+                    .foregroundStyle(DSColor.textSecondary)
+                Spacer(minLength: DSSpacing.sm)
+                DSIconTile(systemName: icon, tint: accent, size: 28)
+            }
 
             HStack(alignment: .firstTextBaseline, spacing: DSSpacing.xs) {
                 Text("\(kpi.value)")
                     .font(DSTypography.metric)
-                    .foregroundStyle(tint)
+                    .foregroundStyle(accent)
                 if kpi.kind == .milestones {
                     Text("%")
                         .font(.headline)
@@ -124,7 +147,7 @@ struct KPIWideCard: View {
                 // 给「3 个待处理」也画一根进度条是装饰，不是信息。
                 ProgressView(value: p)
                     .progressViewStyle(.linear)
-                    .tint(DSColor.deep)
+                    .tint(accent)
             }
 
             Text(kpi.caption)
@@ -290,14 +313,17 @@ struct ProjectProgressCard: View {
                 Button {
                     model.go(.project(project.name))
                 } label: {
-                    HStack(spacing: 2) {
+                    HStack(spacing: 3) {
                         Text("进入管控")
                         Image(systemName: "arrow.right")
                     }
                     .font(DSTypography.label)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(DSColor.accent)
+                .background(DSColor.accent.opacity(0.12), in: Capsule())
                 .help("打开 \(project.name) 的独立管控页")
                 .accessibilityLabel(A11y.label("进入 \(project.name) 的独立管控页"))
             }

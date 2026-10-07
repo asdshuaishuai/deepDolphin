@@ -26,6 +26,13 @@ enum DSPalette {
     static let shallow      = 0x10B981   // 绿 · 浅更新（代码/提交轨）
     static let deep         = 0x8B5CF6   // 紫 · 深更新（AI 记忆/文档轨）
     static let ai           = 0x06B6D4   // 青 · AI
+    // 渐变端点（hero 页头 / KPI 卡 / 按钮质感层的第二色）
+    static let heroIndigo   = 0x4F46E5   // 靛 · hero 起点色
+    static let heroViolet   = 0x7C3AED   // 紫 · hero 中段
+    static let heroCyan     = 0x06B6D4   // 青 · hero 终点色（与 ai 同值，语义各自命名）
+    static let shallowAlt   = 0x34D399   // 浅更新渐变的亮端
+    static let deepAlt      = 0xA78BFA   // 深更新渐变的亮端
+    static let accentAlt    = 0x60A5FA   // 强调渐变的亮端
 }
 
 // MARK: - 状态

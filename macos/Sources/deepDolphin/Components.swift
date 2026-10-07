@@ -36,9 +36,7 @@ struct StatCard: View {
                     .minimumScaleFactor(0.6)
                 Spacer()
                 if !icon.isEmpty {
-                    Image(systemName: icon)
-                        .foregroundStyle(tint.opacity(0.55))
-                        .font(DSTypography.label)
+                    DSIconTile(systemName: icon, tint: tint, size: 26)
                 }
             }
             Text(label)
@@ -99,9 +97,16 @@ struct Card<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(DSTypography.cardTitle)
-                .foregroundStyle(DSColor.textSecondary)
+            // 标题前的短色标：给「这一块是什么」一个可扫视的锚点。
+            // 长度/颜色收敛在这里，别处不要再手写第二根色条。
+            HStack(spacing: 7) {
+                DSRect.shape(1.5)
+                    .fill(DSGradient.accent)
+                    .frame(width: 3, height: 13)
+                Text(title)
+                    .font(DSTypography.cardTitle)
+                    .foregroundStyle(DSColor.textPrimary)
+            }
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)

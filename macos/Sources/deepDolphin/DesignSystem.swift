@@ -164,6 +164,35 @@ enum DSMotion {
     static let standard = Animation.easeInOut(duration: 0.20)
 }
 
+// MARK: - 渐变
+
+/// 主题的质感层。**渐变只做两件事**：hero 页头的底、以及同一语义色内部
+/// 的深→亮过渡（`shallow`/`deep`/`accent` 的第二端点是同一个语义色的亮变体，
+/// 不是第二种语义）——拿别的语义色来拼渐变等于发明第四种双轨色。
+enum DSGradient {
+    /// hero 页头：靛 → 紫 → 青。仪表盘页头与关于页头共用，
+    /// 两处必须同一张底 —— 这是产品的「封面」，两张封面各画各的迟早分叉。
+    static let hero = LinearGradient(
+        colors: [Color(rgbHex: DSPalette.heroIndigo), Color(rgbHex: DSPalette.heroViolet), Color(rgbHex: DSPalette.heroCyan)],
+        startPoint: .topLeading, endPoint: .bottomTrailing)
+
+    static let shallow = LinearGradient(
+        colors: [DSColor.shallow, Color(rgbHex: DSPalette.shallowAlt)],
+        startPoint: .topLeading, endPoint: .bottomTrailing)
+
+    static let deep = LinearGradient(
+        colors: [DSColor.deep, Color(rgbHex: DSPalette.deepAlt)],
+        startPoint: .topLeading, endPoint: .bottomTrailing)
+
+    static let ai = LinearGradient(
+        colors: [DSColor.ai, Color(rgbHex: DSPalette.accentAlt)],
+        startPoint: .topLeading, endPoint: .bottomTrailing)
+
+    static let accent = LinearGradient(
+        colors: [DSColor.accent, Color(rgbHex: DSPalette.heroCyan)],
+        startPoint: .topLeading, endPoint: .bottomTrailing)
+}
+
 // MARK: - 卡片表面
 
 /// 统一卡片表面。以前 `Color(nsColor: .controlBackgroundColor) + RoundedRectangle`
@@ -209,8 +238,17 @@ enum DSRect {
 }
 
 extension View {
+    /// 统一卡片表面：底色 + 发丝描边 + 单层软阴影。
+    ///
+    /// 【为什么在唯一构造点加质感】底色、描边、阴影三者必须**同进同退**——
+    /// 只给某几张卡加阴影，用户读到的是「这几张卡比较重要」（假层级）；
+    /// 全部卡都有同一档质感，层次才回到内容本身。描边用 border token：
+    /// 亮色下是浅灰发丝线，暗色下把卡片从同色底上「托」出来；
+    /// 阴影压到 0.05 —— 是让平面有一点点浮起，不是卡片投影设计。
     func surface(_ level: DSLevel = .card) -> some View {
         background(level.fill, in: DSRect.shape(level.radius))
+            .overlay(DSRect.shape(level.radius).strokeBorder(DSColor.border.opacity(0.8), lineWidth: 0.5))
+            .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 1)
     }
 
     /// 语义着色表面。**刻意与 `surface` 分开**：
@@ -225,5 +263,26 @@ extension View {
     /// 也踩过（`cond ? .secondary : .red` 两边类型不同族）。
     func tinted<S: ShapeStyle>(_ color: S, radius: CGFloat = DSRadius.card) -> some View {
         background(color, in: DSRect.shape(radius))
+    }
+}
+
+// MARK: - 图标色块
+
+/// 统计卡 / KPI 卡右上角的语义图标：圆角色块底 + 语义色图标。
+///
+/// ⚠️ 色块底的透明度在这里收敛（0.14）——原来散在调用方的 `.opacity(0.55)`
+/// 文字色与 `.opacity(0.14)` 底色各写各的，两张卡一深一浅。
+/// 图标与底必须是**同一个语义色**的两个透明度，这是「色块」而不是「贴纸」。
+struct DSIconTile: View {
+    let systemName: String
+    let tint: Color
+    var size: CGFloat = 30
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: size * 0.48, weight: .semibold))
+            .foregroundStyle(tint)
+            .frame(width: size, height: size)
+            .background(tint.opacity(0.14), in: DSRect.shape(DSRadius.control))
     }
 }

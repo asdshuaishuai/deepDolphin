@@ -263,12 +263,33 @@ struct PanelView: View {
     ///
     /// 键位来自 `ShortcutMap`（唯一声明处）；不在那里的目标**不给**快捷键 ——
     /// 给 `"\u{0}"` 意味着那个键永远匹配不到，用户按了没反应却看不出为什么。
+    ///
+    /// 图标着色走 `sectionTint`：HStack + 单独给 Image 上色，
+    /// 不用 `Label(...).foregroundStyle(...)` —— 那会把标题一起染成彩色，
+    /// 选中态的正文反而读不清。图标彩色、文字保持正文色，是 macOS
+    /// 现代侧栏（音乐/播客）的做法。
     private func viewShortcut(_ section: RootSection, key target: ShortcutTarget) -> some View {
-        Label(title(for: section), systemImage: icon(for: section))
-            .tag(section)
-            .keyboardShortcut(
-                ShortcutMap.shortcut(for: target)?.keyEquivalentSwiftUI ?? KeyEquivalent("\u{0}"),
-                modifiers: ShortcutMap.shortcut(for: target)?.modifiersSwiftUI ?? [.command])
+        HStack(spacing: 7) {
+            Image(systemName: icon(for: section))
+                .foregroundStyle(sectionTint(section))
+                .frame(width: 16)
+            Text(title(for: section))
+        }
+        .tag(section)
+        .keyboardShortcut(
+            ShortcutMap.shortcut(for: target)?.keyEquivalentSwiftUI ?? KeyEquivalent("\u{0}"),
+            modifiers: ShortcutMap.shortcut(for: target)?.modifiersSwiftUI ?? [.command])
+    }
+
+    /// 侧栏三个固定视图的语义色。**同一视图在任何入口同色**：
+    /// 仪表盘蓝、看板橙、里程碑紫（deep 双轨紫），与 KPI 卡、hero 同源。
+    private func sectionTint(_ section: RootSection) -> Color {
+        switch section {
+        case .dashboard:  return DSColor.accent
+        case .board:      return .orange
+        case .milestones: return DSColor.deep
+        case .project:    return DSColor.shallow
+        }
     }
 
     /// 带行尾计数的侧栏导航项。**看板与里程碑共用这一处**。
@@ -284,7 +305,10 @@ struct PanelView: View {
     private func countedRow(title: String, icon: String, route: RootSection,
                             target: ShortcutTarget, count: Int?) -> some View {
         HStack(spacing: 6) {
-            Label(title, systemImage: icon)
+            Image(systemName: icon)
+                .foregroundStyle(sectionTint(route))
+                .frame(width: 16)
+            Text(title)
             Spacer(minLength: 8)
             if let count {
                 Text("\(count)")

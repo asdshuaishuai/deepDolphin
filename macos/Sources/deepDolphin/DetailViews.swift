@@ -817,23 +817,40 @@ struct DashboardView: View {
         // 现在两边都从这一个数组取 —— **不是加判据，是消掉分叉的那个源头**。
         let kpis = DashKPIBuilder.kpis(d, projects: model.projects)
         return VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            // ── 段 1：页头 ──
-            // ⚠️ 原来这里是一整块紫蓝渐变 hero + **8 张平铺统计卡**
-            // （项目/7天/30天/脏/分支/待合入/未跟踪/stash），每张只有
-            // 「数字 + 标签」，没有主次、没有解释，也没有筛选。
-            // 渐变没有信息量，却把页头和统计卡挤成同一团。
-            // 这一版按设计稿的四段式重排：**层次**问题优先于配色问题。
-            HStack(alignment: .firstTextBaseline, spacing: DSSpacing.md) {
+            // ── 段 1：页头（渐变 hero）──
+            // hero 的取值纪律：文字全白（渐变最浅端也有足够对比度），
+            // 装饰光斑是静态的白色低透明度圆 —— 渐变是这张卡片的底，
+            // 不承载信息；信息仍在标题与摘要那两行。
+            HStack(alignment: .center, spacing: DSSpacing.md) {
                 VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                    Text("项目群脉搏")
-                        .font(.title2.weight(.bold))
+                    Text(L10n.t("dash.title"))
+                        .font(.system(.title, design: .rounded).weight(.bold))
+                        .foregroundStyle(.white)
                     Text(DashKPIBuilder.summaryLine(kpis))
                         .font(.callout)
-                        .foregroundStyle(DSColor.textSecondary)
+                        .foregroundStyle(.white.opacity(0.85))
                 }
                 Spacer(minLength: DSSpacing.md)
                 GroupBriefButton()
+                    .buttonStyle(.bordered)
+                    .tint(.white)
             }
+            .padding(DSSpacing.xl)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                ZStack(alignment: .topTrailing) {
+                    DSGradient.hero
+                    Circle()
+                        .fill(.white.opacity(0.08))
+                        .frame(width: 220, height: 220)
+                        .offset(x: 60, y: -80)
+                    Circle()
+                        .fill(.white.opacity(0.06))
+                        .frame(width: 130, height: 130)
+                        .offset(x: -60, y: 40)
+                }
+            }
+            .clipShape(DSRect.shape(DSRadius.card))
 
             // ── 段 2：筛选行（设计稿有，我们原来没有）──
             // 三个控件**都真的改变下面画什么**（判定见 DashboardScope.swift）：
