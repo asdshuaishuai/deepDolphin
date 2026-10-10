@@ -59,9 +59,10 @@ enum ShortcutTarget: Equatable {
     case board
     case milestones
     case graph
+    case arch
     case confidence
     case patchCheck
-    /// 打开当前选中的项目（详情是动态的，没有固定第 4 个视图）
+    /// 打开当前选中的项目（详情是动态的，没有固定第 N 个视图）
     case currentProject
 }
 
@@ -83,16 +84,16 @@ enum ShortcutMap {
     // —— 视图切换 ——
     //
     // ⚠️ 早先注释写「实际侧栏只有三个固定入口，没有 ⌘5——硬凑一个只会让用户
-    // 按了没反应」。后来引擎补齐了代码图谱/置信度/补丁体检三个**真页面**，
-    // 固定视图从三个变成六个——这里的原则没变：**键位只跟着真实存在的视图走**，
+    // 按了没反应」。后来引擎补齐了代码图谱/架构图/置信度/补丁体检四个**真页面**，
+    // 固定视图从三个变成七个——原则不变：**键位只跟着真实存在的视图走**，
     // 有一个视图才有一个键位，视图删了键位必须跟着删。
     //   ⌘1 ⇄ 总览      ⌘2 ⇄ 看板      ⌘3 ⇄ 里程碑
     //   ⌘4 ⇄ 打开当前选中的项目（没有项目时**不许**动 selection）
-    //   ⌘5 ⇄ 代码图谱   ⌘6 ⇄ 置信度    ⌘7 ⇄ 补丁体检
+    //   ⌘5 ⇄ 代码图谱   ⌘6 ⇄ 架构图    ⌘7 ⇄ 置信度    ⌘8 ⇄ 补丁体检
     /// 固定视图的顺序。**这个数组的长度就是 ⌘N 的上界**，
     /// 别的地方不许再写数字快捷键。
     static let viewOrder: [ShortcutTarget] = [
-        .dashboard, .board, .milestones, .graph, .confidence, .patchCheck,
+        .dashboard, .board, .milestones, .graph, .arch, .confidence, .patchCheck,
     ]
 
     /// 第 n 个视图的数字快捷键（n 从 1 起）。越界返回 nil —— 不硬凑。
@@ -107,8 +108,9 @@ enum ShortcutMap {
         case .board:       return Shortcut(systemKey: nil, key: "2", modifiers: ["cmd"])
         case .milestones:  return Shortcut(systemKey: nil, key: "3", modifiers: ["cmd"])
         case .graph:       return Shortcut(systemKey: nil, key: "5", modifiers: ["cmd"])
-        case .confidence:  return Shortcut(systemKey: nil, key: "6", modifiers: ["cmd"])
-        case .patchCheck:  return Shortcut(systemKey: nil, key: "7", modifiers: ["cmd"])
+        case .arch:        return Shortcut(systemKey: nil, key: "6", modifiers: ["cmd"])
+        case .confidence:  return Shortcut(systemKey: nil, key: "7", modifiers: ["cmd"])
+        case .patchCheck:  return Shortcut(systemKey: nil, key: "8", modifiers: ["cmd"])
         case .currentProject: return Shortcut(systemKey: nil, key: "4", modifiers: ["cmd"])
         }
     }

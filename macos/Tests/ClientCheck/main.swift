@@ -3591,22 +3591,23 @@ do {
     check("⌘N 的上界 = 固定视图数，键位只跟着真实存在的视图走") {
         // 引擎补齐图谱/置信度/补丁体检后，固定视图从三个变成六个；
         // 原则不变：**有一个视图才有一个键位**，视图删了键位必须跟着删。
-        guard ShortcutMap.viewOrder.count == 6 else {
+        guard ShortcutMap.viewOrder.count == 7 else {
             throw fail("固定视图数是 \(ShortcutMap.viewOrder.count)，与侧栏实际入口不符")
         }
         guard ShortcutMap.view(at: 1) == .dashboard,
               ShortcutMap.view(at: 2) == .board,
               ShortcutMap.view(at: 3) == .milestones,
               ShortcutMap.view(at: 4) == .graph,
-              ShortcutMap.view(at: 5) == .confidence,
-              ShortcutMap.view(at: 6) == .patchCheck else {
-            throw fail("⌘1–⌘6 与侧栏顺序对不上")
+              ShortcutMap.view(at: 5) == .arch,
+              ShortcutMap.view(at: 6) == .confidence,
+              ShortcutMap.view(at: 7) == .patchCheck else {
+            throw fail("⌘1–⌘7 与侧栏顺序对不上")
         }
         // 越界返回 nil —— 硬凑不存在的键只会让用户按了没反应
-        guard ShortcutMap.view(at: 7) == nil, ShortcutMap.view(at: 0) == nil else {
+        guard ShortcutMap.view(at: 8) == nil, ShortcutMap.view(at: 0) == nil else {
             throw fail("越界的数字快捷键仍返回了目标 ⇒ 会有按了没反应的键")
         }
-        return "6 个固定视图，越界返回 nil（键位数 = 视图数）"
+        return "7 个固定视图，越界返回 nil（键位数 = 视图数）"
     }
 
     check("⌘4 单独留给「打开当前选中项目」（详情是动态的，没有固定视图会占它）") {
