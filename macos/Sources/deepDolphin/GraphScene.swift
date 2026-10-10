@@ -223,6 +223,14 @@ enum GraphService {
         return tree["functionGraph"] as? [String: Any] ?? [:]
     }
 
+    /// `graph functions --json`：函数级图谱的专用 CLI 面（engine c7a2ddc）。
+    /// findings 带 kind/label/dim/evidence——树形代码图谱页的数据源。
+    /// ⚠️ 不能改回读 tree --json 的 functionGraph 键：那个契约里根本没有
+    /// 这个键（恒为空），旧页面因此从没渲染出函数级内容。
+    static func loadFunctions(project: String) async throws -> [String: Any] {
+        try await runJSON(["graph", "functions", project, "--json"], timeout: 300)
+    }
+
     private static func projectName(_ name: String) -> String { name }
 
     static func loadConfidence(project: String) async throws -> [String: Any] {

@@ -152,6 +152,50 @@ func run() async {
     // argv[2] 选离屏路径：空 = 裸视图；"window" = 装进 NSWindow 但不上屏；
     // "panel" = 整个面板，连侧栏与顶栏一起拍。
     let mode = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : ""
+    if mode == "codegraph" {
+        // 代码图谱页：VM 先离屏装好数据（引擎 3 条并行调用），再挂视图。
+        // 不能指望页面自己的 .task——离屏环境里它没有跑完的机会（见上）。
+        let vm = CodeGraphVM()
+        vm.projectName = "alpha"
+        await vm.load(all: model.projects)
+        var w2 = 0
+        while (!vm.rootLoaded || vm.loading) && w2 < 120 {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            w2 += 1
+        }
+        log("harness: codegraph rootLoaded=\(vm.rootLoaded) rows=\(vm.rows.count) 等了 \(w2) 轮\n")
+        log("harness: root kids = \(vm.rootKidsDebug)\n")
+        // 首屏第一眼要有内容：选中带疑点的符号，直接展示置信度 tab。
+        // ⚠️ 必须全树找——rows 只含可见行，文件未展开时符号行不在里面
+        // （第一版就是栽在这：fixture 明明有疑点，却截了空树详情）。
+        if let sym = vm.firstRiskSymbol {
+            vm.select(sym, tab: .conf)
+            log("harness: 选中 \(sym.name)（findings \(sym.ownFindings.count)）\n")
+        } else {
+            log("harness: ⚠️ 没有带疑点的符号——检查 fixture 是否注入\n")
+        }
+        // 源码 tab 的对照机位：同一份数据再装一个 VM，选中带疑点符号直开源码
+        // （验证引擎内嵌实码 + 客户端 SyntaxHighlight + 命中行高亮的整条链）。
+        let srcVM = CodeGraphVM()
+        srcVM.projectName = "alpha"
+        await srcVM.load(all: model.projects)
+        var w3 = 0
+        while (!srcVM.rootLoaded || srcVM.loading) && w3 < 120 {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            w3 += 1
+        }
+        if let sym2 = srcVM.firstRiskSymbol {
+            srcVM.select(sym2, tab: .source)
+        }
+        let shots2: [(base: String, w: CGFloat, h: CGFloat, view: AnyView)] = [
+            ("codegraph", 1180, 760,
+             AnyView(CodeGraphPage(vm: vm).environmentObject(model))),
+            ("codegraph-src", 1180, 760,
+             AnyView(CodeGraphPage(vm: srcVM).environmentObject(model))),
+        ]
+        await render(shots: shots2, outPath: outPath, model: model, useWindow: true)
+        exit(0)
+    }
     if mode == "panel" {
         await renderPanel(w: 1100, h: 760, model: model, outPath: outPath)
         exit(0)

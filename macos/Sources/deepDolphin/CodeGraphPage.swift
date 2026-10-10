@@ -1,565 +1,923 @@
-// CodeGraphPage.swift — 代码图谱页（与架构图是两个东西）。
+// CodeGraphPage.swift — 代码图谱页（图树主轴，与 HTML 交付物同构）。
 //
-// 形态参考 deepOrca 的 SymbolGraphView：**以符号为中心的三列关系图**——
-// 引用方 | 焦点符号 | 影响面，点击任一文件卡就选中它；渐进披露
-// （每列先出前 N 条，"更多"再放一批，hub 符号也能秒出图）。
+// 形态：左树右详情双栏（HSplitView 可拖）——**代码图谱是代码层级关系的展示**：
+// 项目 → 目录 → 文件 → 符号，严格四层。置信度不是独立板块，是树节点的
+// **属性**：每行右侧挂 ⚠N 徽标（档位色随最高权重），目录/文件向上汇总；
+// 详细疑点在被选中节点的「置信度」tab 里展开——图谱回答「谁在哪」，
+// 置信度回答「哪里不能信」。
 //
-// 与置信度的结合：`graph confidence` 的 findings 按文件聚合，文件卡右上角
-// 挂疑点徽标（罚分越高越红）——图谱回答「谁连着谁」，置信度回答「哪里不能信」。
-// 选中文件后，下方列出该文件的疑点（披露式：收起=位置，点击展开实码）。
+// 数据：`graph functions --json`（函数级图谱 + findings 内嵌 label/dim/evidence，
+// engine c7a2ddc）× `graph confidence --json`（全局分数 + 孤儿 findings）×
+// `graph tree --json`（文件/符号骨架）。⚠️ 不要改回读 tree 的 functionGraph
+// 键——那个契约里没有这个键（恒为空，旧页面因此从没出过函数级内容）。
 //
-// 注意：引擎的引用是**词法级**（file → 引用计数），不是编译器闭包——
-// 列头与提示文案都带这个限定。
+// 与引擎 HTML 高亮的分工：本页高亮走客户端自己的 SyntaxHighlight
+// （AttributedString），引擎高亮只存在于导出的 HTML。
 import SwiftUI
+
+// MARK: - 树模型
+
+enum GNodeKind { case root, dir, file, sym }
+
+/// 一条置信度疑点（引擎 findings 的精简形态，字段与 CLI 契约对齐）。
+struct GFinding: Identifiable {
+    let kind: String       // raw id，如 high-complexity
+    let label: String      // 人类可读，如 圈复杂度过高
+    let dim: String        // 分组维度 variable/function/…
+    let file: String
+    let line: Int
+    let weight: Int
+    let evidence: String
+    /// id 必须含文件：不同文件的同类同行号疑点在目录 roll-up 里会撞 id。
+    var id: String { "\(file)#\(kind)#\(line)#\(weight)" }
+}
+
+/// 树节点。置信度是节点的属性（ownFindings + 向上汇总的 rollN/rollW）。
+final class GNode: Identifiable {
+    let kind: GNodeKind
+    let id: String
+    let name: String
+    var path: String = ""           // dir/file: 相对路径；sym: 所在文件路径
+    var kids: [GNode] = []
+    weak var parent: GNode?
+    // file
+    var lang = ""
+    var lines = 0
+    // dir（汇总）
+    var fileCount = 0
+    // sym
+    var symKind = ""
+    var declLine = 0
+    // 置信度属性
+    var ownFindings: [GFinding] = []
+    var rollN = 0
+    var rollW = 0
+
+    init(kind: GNodeKind, id: String, name: String) {
+        self.kind = kind
+        self.id = id
+        self.name = name
+    }
+
+    /// 节点（含子树）的全部 findings——文件/目录详情的「置信度」tab 用。
+    /// sym 只看自己；容器节点收集整棵子树（pill 数字与详情条数必须一致）。
+    func collectFindings(_ out: inout [GFinding]) {
+        out.append(contentsOf: ownFindings)
+        for c in kids { c.collectFindings(&out) }
+    }
+
+    var subtreeFindings: [GFinding] {
+        var out: [GFinding] = []
+        collectFindings(&out)
+        return out
+    }
+}
+
+struct GTreeRow: Identifiable {
+    let node: GNode
+    let depth: Int
+    var id: String { node.id }
+}
+
+// MARK: - 视图模型
 
 @MainActor
 final class CodeGraphVM: ObservableObject {
+    enum DetailTab { case source, conf, rel }
+
     @Published var projectName = ""
-    @Published var focusSymbol = ""
     @Published var loading = false
     @Published var error: String?
+    @Published var query = "" { didSet { if oldValue != query { searchOvr.removeAll(); rebuildRows() } } }
+    @Published private(set) var rows: [GTreeRow] = []
+    @Published private(set) var expanded: Set<String> = []
+    @Published var selID: String?
+    @Published var detailTab: DetailTab = .source
+    @Published private(set) var score: Int = 100
+    @Published private(set) var astNote = ""
 
-    struct TreeFile: Identifiable {
-        let path: String
-        let lang: String
-        let lines: Int
-        let symbolCount: Int
-        let inDeg: Int          // 被引用数（referenceEdges 入度）
-        let outDeg: Int         // 引用数（出度）
-        let penalty: Int
-        let findingCount: Int
-        var id: String { path }
+    private var root: GNode?
+    private var nodeByID: [String: GNode] = [:]
+    private var snippets: [String: String] = [:]
+    private var edges: [(from: String, to: String)] = []
+    /// 搜索态的手动展开/收起覆盖（auto 展开是算出来的，别被刷新冲掉）。
+    private var searchOvr: [String: Bool] = [:]
+    /// 搜索态的可见性缓存（name 命中或后代命中）。
+    private var visCache: [String: Bool] = [:]
+
+    var selectedNode: GNode? {
+        selID.flatMap { nodeByID[$0] }
     }
 
-    struct FileChip: Identifiable {
-        let file: String
-        /// 影响面列携带的受影响符号名（引用方列为空）。
-        let symbol: String
-        let weight: Int          // 引用权重（引用方列）
-        let penalty: Int         // 该文件的置信度罚分（findings 权重合计）
-        let findingCount: Int
-        var id: String { file + "#" + symbol }
+    var rootLoaded: Bool { root != nil }
+
+    /// 全树第一个带疑点的符号（harness 首屏定位用；与展开态无关——
+    /// rows 只含可见行，折叠的文件下 Symbol 行根本不在里面）。
+    var firstRiskSymbol: GNode? {
+        guard let root else { return nil }
+        var queue = [root]
+        while let n = queue.popLast() {
+            if n.kind == .sym && !n.ownFindings.isEmpty { return n }
+            queue.append(contentsOf: n.kids)
+        }
+        return nil
     }
 
-    @Published var defs: [[String: Any]] = []
-    /// 关系树：按被引用数降序的文件清单（图谱的「索引关系树」半边）。
-    @Published var treeFiles: [TreeFile] = []
-
-    // ── 函数级图谱（图谱 × 置信度结合的核心数据）──
-    struct FunctionNode: Identifiable {
-        let id: String
-        let file: String
-        let name: String
-        let kind: String
-        let line: Int
-        let lang: String
-        let weight: Int
-        let findings: [[String: Any]]
+    var projectPath: String {
+        AppModel.shared.projects.first { $0.name == projectName }?.path ?? ""
     }
-    /// 异常函数清单（按权重降序）——首屏第一眼的内容。
-    @Published var riskFunctions: [FunctionNode] = []
-    /// 当前焦点函数（点击异常清单/引用卡切换）。
-    @Published var focusFn: FunctionNode?
-    /// 焦点的引用方/被调（函数级调用边）。
-    @Published var focusCallers: [FunctionNode] = []
-    @Published var focusCallees: [FunctionNode] = []
-    /// 函数索引（id → node）供调用边解析。
-    @Published private(set) var fnIndex: [String: FunctionNode] = [:]
-    @Published private(set) var fnEdges: [[String: Any]] = []
-    @Published private(set) var fnSnippets: [String: String] = [:]
-    @Published var callers: [FileChip] = []
-    @Published var impacts: [FileChip] = []
-    /// 每文件置信度罚分与条数（findings 按文件聚合）。
-    @Published var penaltyByFile: [String: (penalty: Int, count: Int)] = [:]
-    @Published var allFindings: [[String: Any]] = []
-    /// 选中的文件（下方列出该文件疑点，披露式展开实码）。
-    @Published var selectedFile: String?
 
-    // 渐进披露（deepOrca 的 band 思路：先小批量出图，"更多"再放一批）
-    @Published var callerBand = 12
-    @Published var impactBand = 12
-    let bandStep = 24
+    // MARK: 加载
 
-    func load(all: [ProjectStatus], symbol: String? = nil) async {
+    func load(all: [ProjectStatus]) async {
         if projectName.isEmpty, let first = all.first { projectName = first.name }
-        let q = symbol ?? focusSymbol
-        guard !projectName.isEmpty, !q.isEmpty else { return }
+        guard !projectName.isEmpty else { return }
         loading = true
         error = nil
         do {
-            async let sym = GraphService.loadSymbol(project: projectName, symbol: q)
-            async let imp = GraphService.loadImpact(project: projectName, symbol: q)
-            async let conf = GraphService.loadConfidence(project: projectName)
-            async let tree = GraphService.loadTree(project: projectName)
-            let (s, i, c, t) = try await (sym, imp, conf, tree)
-            applyConfidence(c)
-            applyTree(t)
-            applyFunctionGraph(t["functionGraph"] as? [String: Any] ?? [:])
-            defs = s["defs"] as? [[String: Any]] ?? []
-            let refs = s["referencedBy"] as? [[String: Any]] ?? []
-            callers = refs.map { r in
-                let f = r["file"] as? String ?? ""
-                return FileChip(file: f, symbol: "", weight: r["weight"] as? Int ?? 0,
-                                penalty: penaltyByFile[f]?.penalty ?? 0,
-                                findingCount: penaltyByFile[f]?.count ?? 0)
-            }
-            .sorted { $0.weight > $1.weight }
-            // ⚠️ 引擎 impactJson 的键是 refFiles（[String]）与 impactedSymbols
-            // （[{file,symbol,kind}]），没有 "files"——第一版读错键，影响面列恒空
-            // （自测抓到）。影响面用符号级清单，chip 显示 file · symbol。
-            let impacted = i["impactedSymbols"] as? [[String: Any]] ?? []
-            impacts = impacted.map { d in
-                let f = d["file"] as? String ?? ""
-                return FileChip(file: f, symbol: d["symbol"] as? String ?? "",
-                                weight: 0,
-                                penalty: penaltyByFile[f]?.penalty ?? 0,
-                                findingCount: penaltyByFile[f]?.count ?? 0)
-            }
-            focusSymbol = q
-            selectedFile = nil
-            callerBand = 12
-            impactBand = 12
+            async let treeT = GraphService.loadTree(project: projectName)
+            async let confT = GraphService.loadConfidence(project: projectName)
+            async let fnT = GraphService.loadFunctions(project: projectName)
+            let (t, c, f) = try await (treeT, confT, fnT)
+            apply(tree: t, confidence: c, functions: f)
         } catch {
             self.error = EngineError.userMessage(for: error)
         }
         loading = false
     }
 
-    /// 关系树 → 按被引用数降序的文件清单（入度/出度/符号数 + 置信度罚分）。
-    func applyTree(_ t: [String: Any]) {
+    private func apply(tree t: [String: Any], confidence c: [String: Any], functions f: [String: Any]) {
+        score = c["score"] as? Int ?? 100
+        astNote = c["astNote"] as? String ?? ""
+        snippets = f["codeSnippets"] as? [String: String] ?? [:]
+        edges = (f["functionEdges"] as? [[String: Any]] ?? []).compactMap { e in
+            guard let from = e["from"] as? String, let to = e["to"] as? String else { return nil }
+            return (from, to)
+        }
+        // findings：graph functions 的函数级 findings 已按符号体归属好；
+        // confidence 侧再取一份孤儿（不落在任何符号体里的）挂到文件。
+        // 归属键 = 文件+行号+kind：同名同行号的疑点在不同文件互不干扰。
+        var fnFindings: [String: [GFinding]] = [:]   // fnId → findings
+        var attributed = Set<String>()
+        for fn in f["functions"] as? [[String: Any]] ?? [] {
+            guard let id = fn["id"] as? String else { continue }
+            let file = fn["file"] as? String ?? ""
+            let list = (fn["findings"] as? [[String: Any]] ?? []).map { d -> GFinding in
+                attributed.insert(file + "#" + (d["line"] as? Int ?? 0).description + "#" + (d["kind"] as? String ?? ""))
+                return GFinding(d, file: file)
+            }
+            fnFindings[id] = list
+        }
+        var fileOrphans: [String: [GFinding]] = [:]
+        for d in c["findings"] as? [[String: Any]] ?? [] {
+            let file = d["file"] as? String ?? ""
+            let key = file + "#" + (d["line"] as? Int ?? 0).description + "#" + (d["kind"] as? String ?? "")
+            if !attributed.contains(key) {
+                fileOrphans[file, default: []].append(GFinding(d, file: file))
+            }
+        }
+
+        // 骨架：文件 → 目录树；符号挂在文件下（引擎 id：f:file:line:name）
+        let rootName = (t["root"] as? String) ?? projectName
+        let r = GNode(kind: .root, id: "root", name: (rootName as NSString).lastPathComponent)
+        var dirs: [String: GNode] = [:]
+        func dirNode(_ segs: [Substring]) -> GNode {
+            let path = segs.joined(separator: "/")
+            if let d = dirs[path] { return d }
+            let parent = segs.count == 1 ? r : dirNode(Array(segs[0..<segs.count - 1]))
+            let d = GNode(kind: .dir, id: "d:" + path, name: String(segs.last!))
+            d.path = path
+            d.parent = parent
+            parent.kids.append(d)
+            dirs[path] = d
+            return d
+        }
         let files = t["files"] as? [[String: Any]] ?? []
-        var inDeg: [String: Int] = [:]
-        var outDeg: [String: Int] = [:]
-        for e in t["referenceEdges"] as? [[Any]] ?? [] {
-            guard e.count >= 3,
-                  let from = e[0] as? String, let to = e[1] as? String,
-                  let w = e[2] as? Int else { continue }
-            outDeg[from, default: 0] += w
-            inDeg[to, default: 0] += w
+        for fe in files {
+            let path = fe["path"] as? String ?? ""
+            let segs = path.split(separator: "/").map { $0 }
+            guard let last = segs.last else { continue }
+            let parentDir = segs.count == 1 ? r : dirNode(Array(segs[0..<segs.count - 1]))
+            let fileNode = GNode(kind: .file, id: "f:" + path, name: String(last))
+            fileNode.path = path
+            fileNode.lang = fe["lang"] as? String ?? ""
+            fileNode.lines = fe["lines"] as? Int ?? 0
+            fileNode.parent = parentDir
+            parentDir.kids.append(fileNode)
+            let syms = fe["symbols"] as? [[String: Any]] ?? []
+            for s in syms {
+                let sid = s["id"] as? String
+                    ?? "f:\(path):\(s["line"] as? Int ?? 0):\(s["name"] as? String ?? "")"
+                let sn = GNode(kind: .sym, id: sid, name: s["name"] as? String ?? "")
+                sn.path = path
+                sn.lang = fileNode.lang
+                sn.symKind = s["kind"] as? String ?? "func"
+                sn.declLine = s["line"] as? Int ?? 0
+                sn.parent = fileNode
+                sn.ownFindings = fnFindings[sid] ?? []
+                fileNode.kids.append(sn)
+            }
+            fileNode.ownFindings = fileOrphans[path] ?? []
         }
-        treeFiles = files.map { f in
-            let path = f["path"] as? String ?? ""
-            let syms = f["symbols"] as? [[String: Any]] ?? []
-            return TreeFile(
-                path: path,
-                lang: f["lang"] as? String ?? "",
-                lines: f["lines"] as? Int ?? 0,
-                symbolCount: syms.count,
-                inDeg: inDeg[path] ?? 0,
-                outDeg: outDeg[path] ?? 0,
-                penalty: penaltyByFile[path]?.penalty ?? 0,
-                findingCount: penaltyByFile[path]?.count ?? 0)
+        root = r
+        nodeByID = [:]
+        func indexTree(_ n: GNode) {
+            nodeByID[n.id] = n
+            n.kids.forEach(indexTree)
         }
-        .sorted { $0.inDeg > $1.inDeg }
+        indexTree(r)
+        sortTree(r)
+        rollup(r)
+        // 默认展开：根 + 一级目录（同 HTML 交付物）
+        expanded = [r.id]
+        r.kids.forEach { if $0.kind == .dir { expanded.insert($0.id) } }
+        selID = nil
+        detailTab = .source
+        rebuildRows()
     }
 
-    /// 函数级图谱落地：异常清单 + 索引 + 默认焦点（权重最高）。
-    func applyFunctionGraph(_ fg: [String: Any]) {
-        let raw = fg["functions"] as? [[String: Any]] ?? []
-        var nodes: [FunctionNode] = []
-        var idx: [String: FunctionNode] = [:]
-        for f in raw {
-            let n = FunctionNode(
-                id: f["id"] as? String ?? "",
-                file: f["file"] as? String ?? "",
-                name: f["name"] as? String ?? "",
-                kind: f["kind"] as? String ?? "",
-                line: f["line"] as? Int ?? 0,
-                lang: f["lang"] as? String ?? "cangjie",
-                weight: f["weight"] as? Int ?? 0,
-                findings: f["findings"] as? [[String: Any]] ?? [])
-            nodes.append(n)
-            idx[n.id] = n
+    /// 目录在前、文件在后，符号按声明行（同一文件的符号保持源码顺序）。
+    private func sortTree(_ n: GNode) {
+        n.kids.sort { a, b in
+            let aw = a.kind == .dir ? 0 : (a.kind == .file ? 1 : 2)
+            let bw = b.kind == .dir ? 0 : (b.kind == .file ? 1 : 2)
+            if aw != bw { return aw < bw }
+            if a.kind == .sym && b.kind == .sym { return a.declLine < b.declLine }
+            return a.name.localizedStandardCompare(b.name) == .orderedAscending
         }
-        fnIndex = idx
-        fnEdges = fg["functionEdges"] as? [[String: Any]] ?? []
-        fnSnippets = fg["codeSnippets"] as? [String: String] ?? [:]
-        riskFunctions = nodes
-            .filter { !$0.findings.isEmpty }
-            .sorted { $0.weight > $1.weight }
-        // 默认焦点 = 权重最高的异常函数（首屏第一眼最有内容的落点）
-        if let first = riskFunctions.first {
-            setFocusFunction(first.id)
+        n.kids.forEach(sortTree)
+    }
+
+    /// 调试/测试：根的直接子节点顺序（harness 日志用，验证目录在前的排序）。
+    var rootKidsDebug: [(String, String)] {
+        (root?.kids ?? []).map { node -> (String, String) in
+            let tag = node.kind == .dir ? "d" : (node.kind == .file ? "f" : "s")
+            return (tag, node.name)
         }
     }
 
-    /// 聚焦某函数：解析函数级调用边，填充引用方/被调两列。
-    func setFocusFunction(_ id: String) {
-        guard let n = fnIndex[id] else { return }
-        focusFn = n
-        var callers: [FunctionNode] = []
-        var callees: [FunctionNode] = []
-        for e in fnEdges {
-            let from = e["from"] as? String ?? ""
-            let to = e["to"] as? String ?? ""
-            if to == id, let c = fnIndex[from] { callers.append(c) }
-            if from == id, let c = fnIndex[to] { callees.append(c) }
+    /// 置信度汇总：rollN = 子树疑点数，rollW = 子树最高权重（徽标档位色）。
+    private func rollup(_ n: GNode) {
+        var cnt = n.ownFindings.count
+        var w = n.ownFindings.map(\.weight).max() ?? 0
+        var files = 0
+        for c in n.kids {
+            rollup(c)
+            cnt += c.rollN
+            w = max(w, c.rollW)
+            if c.kind == .file { files += 1 } else { files += c.fileCount }
         }
-        focusCallers = callers
-        focusCallees = callees
+        n.rollN = cnt
+        n.rollW = w
+        n.fileCount = files
     }
 
-    /// 焦点函数的源码（引擎内嵌的截断实码）。
-    var focusCode: String? {
-        guard let f = focusFn else { return nil }
-        return fnSnippets[f.id]
+    // MARK: 行扁平化（搜索 + 展开态）
+
+    private var activeQuery: String {
+        query.trimmingCharacters(in: .whitespaces).lowercased()
     }
 
-    /// findings 按文件聚合 → 罚分表。
-    func applyConfidence(_ c: [String: Any]) {
-        let fs = c["findings"] as? [[String: Any]] ?? []
-        allFindings = fs
-        var agg: [String: (Int, Int)] = [:]
-        for f in fs {
-            let file = f["file"] as? String ?? ""
-            let w = f["weight"] as? Int ?? 0
-            let cur = agg[file] ?? (0, 0)
-            agg[file] = (cur.0 + w, cur.1 + 1)
+    private func rebuildRows() {
+        guard let root else { rows = []; return }
+        let q = activeQuery
+        visCache.removeAll()
+        if !q.isEmpty { _ = visibleInSearch(root, q: q) }
+        var out: [GTreeRow] = []
+        walk(root, depth: 0, q: q, out: &out)
+        rows = out
+    }
+
+    private func visibleInSearch(_ n: GNode, q: String) -> Bool {
+        if let cached = visCache[n.id] { return cached }
+        var hit = n.name.lowercased().contains(q)
+        for c in n.kids where visibleInSearch(c, q: q) { hit = true }
+        visCache[n.id] = hit
+        return hit
+    }
+
+    private func walk(_ n: GNode, depth: Int, q: String, out: inout [GTreeRow]) {
+        if !q.isEmpty, visCache[n.id] != true { return }
+        out.append(GTreeRow(node: n, depth: depth))
+        guard !n.kids.isEmpty else { return }
+        if isOpen(n) {
+            for c in n.kids { walk(c, depth: depth + 1, q: q, out: &out) }
         }
-        penaltyByFile = agg.mapValues { (penalty: $0.0, count: $0.1) }
     }
 
-    func findings(in file: String) -> [[String: Any]] {
-        allFindings.filter { ($0["file"] as? String ?? "") == file }
+    func isOpen(_ n: GNode) -> Bool {
+        if activeQuery.isEmpty { return expanded.contains(n.id) }
+        if let ovr = searchOvr[n.id] { return ovr }
+        // 搜索态自动展开：有命中后代的节点展开（命中即见路径）
+        return n.kids.contains { visCache[$0.id] == true }
     }
 
-    var projectPath: String {
-        AppModel.shared.projects.first { $0.name == projectName }?.path ?? ""
+    func hasKids(_ n: GNode) -> Bool { !n.kids.isEmpty }
+
+    // MARK: 交互
+
+    func toggle(_ n: GNode) {
+        guard !n.kids.isEmpty else { return }
+        if activeQuery.isEmpty {
+            if !expanded.insert(n.id).inserted { expanded.remove(n.id) }
+        } else {
+            searchOvr[n.id] = !isOpen(n)
+        }
+        rebuildRows()
+    }
+
+    /// 选中符号（或容器）并展开详情；reveal = 展开祖先让它可见。
+    func select(_ n: GNode, tab: DetailTab? = nil, reveal: Bool = true) {
+        if reveal {
+            var p = n.parent
+            while let cur = p {
+                expanded.insert(cur.id)
+                searchOvr[cur.id] = true
+                p = cur.parent
+            }
+        }
+        selID = n.id
+        detailTab = tab ?? (n.kind == .sym ? .source : .conf)
+        if reveal { rebuildRows() }
+    }
+
+    // MARK: 详情数据
+
+    /// 源码 tab 的行（引擎内嵌截断实码 + 行号；finding 行高亮）。
+    var sourceLines: [CodeSnippetLine]? {
+        guard let n = selectedNode, n.kind == .sym, let code = snippets[n.id] else { return nil }
+        let hitLines = Set(n.ownFindings.map(\.line))
+        let raw = code.split(separator: "\n", omittingEmptySubsequences: false)
+        guard !raw.isEmpty else { return nil }
+        return raw.enumerated().map { idx, text in
+            CodeSnippetLine(lineNumber: n.declLine + idx, text: String(text),
+                            isHit: hitLines.contains(n.declLine + idx))
+        }
+    }
+
+    var sourceLang: String {
+        let l = selectedNode?.lang ?? ""
+        return l.isEmpty ? "cangjie" : l
+    }
+
+    /// 关系 tab：函数级调用边（词法近似，见引擎 functionGraphData 注释）。
+    var callers: [GNode] {
+        guard let id = selID else { return [] }
+        return edges.compactMap { $0.to == id ? nodeByID[$0.from] : nil }
+    }
+    var callees: [GNode] {
+        guard let id = selID else { return [] }
+        return edges.compactMap { $0.from == id ? nodeByID[$0.to] : nil }
     }
 }
 
+extension GFinding {
+    init(_ d: [String: Any], file: String) {
+        kind = d["kind"] as? String ?? ""
+        label = d["label"] as? String ?? kind
+        dim = d["dim"] as? String ?? "structure"
+        self.file = file
+        line = d["line"] as? Int ?? 0
+        weight = d["weight"] as? Int ?? 0
+        evidence = d["evidence"] as? String ?? ""
+    }
+}
+
+// MARK: - 档位色 / 语言点色（与 HTML 交付物同源）
+
+private enum Tier {
+    static func color(_ w: Int) -> Color {
+        if w >= 8 { return .red }
+        if w >= 5 { return .orange }
+        return Color(nsColor: .systemGray)
+    }
+}
+
+private enum LangDot {
+    static func color(_ lang: String) -> Color {
+        switch lang {
+        case "swift": return Color(red: 0.94, green: 0.32, blue: 0.22)
+        case "cangjie": return Color(red: 0.97, green: 0.50, blue: 0.12)
+        case "ts": return Color(red: 0.19, green: 0.47, blue: 0.71)
+        case "python": return Color(red: 0.21, green: 0.45, blue: 0.65)
+        case "go": return Color(red: 0.00, green: 0.68, blue: 0.85)
+        case "rust": return Color(red: 0.87, green: 0.65, blue: 0.52)
+        case "java": return Color(red: 0.69, green: 0.45, blue: 0.10)
+        case "kotlin": return Color(red: 0.66, green: 0.48, blue: 1.00)
+        case "c": return Color(nsColor: .systemGray)
+        default: return Color(nsColor: .systemGray)
+        }
+    }
+}
+
+/// 符号种类徽标字母（func/class/enum/struct/…）。
+private enum KindBadge {
+    static func letter(_ kind: String) -> String {
+        switch kind {
+        case "func", "function": return "F"
+        case "class": return "C"
+        case "enum": return "E"
+        case "struct": return "S"
+        case "interface": return "I"
+        case "type", "typealias": return "T"
+        default: return String(kind.prefix(1)).uppercased()
+        }
+    }
+}
+
+// MARK: - 页面
+
 struct CodeGraphPage: View {
     @EnvironmentObject var model: AppModel
-    @StateObject private var vm = CodeGraphVM()
-    @State private var query = ""
+    @StateObject private var vm: CodeGraphVM
+
+    init() {
+        _vm = StateObject(wrappedValue: CodeGraphVM())
+    }
+
+    /// 渲染 harness / 预载入口：注入已加载的 VM（离屏截图时引擎调用不能靠
+    /// .task 时机，得先装好数据再挂视图）。
+    init(vm: CodeGraphVM) {
+        _vm = StateObject(wrappedValue: vm)
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: DSSpacing.md) {
-                bar
-                if let err = vm.error {
-                    Text(err).foregroundStyle(.orange).font(.callout)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 0) {
+            topBar
+            Divider()
+            if let err = vm.error {
+                HStack(spacing: DSSpacing.sm) {
+                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                    Text(err).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
                 }
-                if vm.defs.isEmpty && !vm.loading {
-                    emptyHint
-                } else {
-                    functionFocusSection
-                    threeColumns
-                    fileDetail
-                    treeSection
-                }
+                .padding(.horizontal, DSSpacing.lg).padding(.vertical, DSSpacing.xs)
+                Divider()
             }
-            .padding(DSSpacing.lg)
+            if vm.rootLoaded {
+                HSplitView {
+                    treePane
+                        .frame(minWidth: 300, idealWidth: 360, maxWidth: 620)
+                    detailPane
+                        .frame(minWidth: 420, maxWidth: .infinity)
+                        .layoutPriority(1)
+                }
+            } else if vm.loading {
+                Spacer()
+                ProgressView()
+                Spacer()
+            } else {
+                emptyHint
+            }
         }
         .task {
             if vm.projectName.isEmpty && !model.projects.isEmpty {
                 vm.projectName = model.projects.first!.name
+                await vm.load(all: model.projects)
             }
+        }
+        .onChange(of: vm.projectName) { _, newName in
+            guard !newName.isEmpty else { return }
+            Task { await vm.load(all: model.projects) }
         }
     }
 
-    private var bar: some View {
+    private var topBar: some View {
         HStack(spacing: DSSpacing.md) {
             GraphProjectPicker(projectName: $vm.projectName)
-            TextField(L10n.t("cgraph.search"), text: $query)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 260)
-                .onSubmit { Task { await vm.load(all: model.projects, symbol: query) } }
-            Button(L10n.t("cgraph.center")) {
-                Task { await vm.load(all: model.projects, symbol: query) }
+            Button {
+                Task { await vm.load(all: model.projects) }
+            } label: {
+                Image(systemName: "arrow.clockwise")
             }
-            .disabled(vm.loading || query.trimmingCharacters(in: .whitespaces).isEmpty)
+            .buttonStyle(.borderless)
+            .help(L10n.t("cgraph.reload"))
             if vm.loading { ProgressView().controlSize(.small) }
             Spacer()
+            if vm.rootLoaded {
+                Text(L10n.t("cgraph.scoreTitle") + " \(vm.score)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
         }
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.sm)
     }
 
     private var emptyHint: some View {
-        Text(L10n.t("cgraph.hint"))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, DSSpacing.xl)
-    }
-
-    /// 函数级焦点视图：焦点面板（语法高亮实码 + 疑点）+ 三列
-    /// （引用方 | 异常函数清单 | 被调/影响）——deepOrca 式布局。
-    @ViewBuilder
-    private var functionFocusSection: some View {
-        if let fn = vm.focusFn {
-            VStack(alignment: .leading, spacing: DSSpacing.sm) {
-                HStack(spacing: DSSpacing.sm) {
-                    Text(fn.name)
-                        .font(.headline.monospaced())
-                        .padding(.horizontal, DSSpacing.sm)
-                        .padding(.vertical, DSSpacing.xs)
-                        .background(
-                            fn.weight >= 10 ? Color.red.opacity(0.15) :
-                            fn.weight >= 6 ? Color.orange.opacity(0.15) :
-                            Color.blue.opacity(0.10),
-                            in: DSRect.shape(DSRadius.control))
-                    Text("\(fn.file):\(fn.line) · \(fn.kind)")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                    if fn.findings.isEmpty {
-                        Label(L10n.t("cgraph.fileClean"), systemImage: "checkmark.seal")
-                            .font(.caption).foregroundStyle(.green)
-                    } else {
-                        Label(L10n.t("cgraph.anomalyCount", fn.findings.count), systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(fn.weight >= 10 ? .red : .orange)
-                    }
-                    Spacer()
-                }
-                if !fn.findings.isEmpty {
-                    ForEach(Array(fn.findings.enumerated()), id: \.offset) { _, d in
-                        HStack(spacing: DSSpacing.sm) {
-                            Text("⚠\(d["weight"] as? Int ?? 0)")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle((d["weight"] as? Int ?? 0) >= 10 ? .red : .orange)
-                            Text("\(d["kind"] as? String ?? "") @ L\(d["line"] as? Int ?? 0)")
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                if let code = vm.focusCode {
-                    let lines = code.split(separator: "\n", omittingEmptySubsequences: false)
-                        .enumerated().map { idx, raw in
-                            CodeSnippetLine(lineNumber: fn.line + idx, text: String(raw),
-                                             isHit: idx == 0)
-                        }
-                    CodeSnippetView(lines: lines, lang: fn.lang)
-                        .frame(maxHeight: 280)
-                }
-                HStack(alignment: .top, spacing: DSSpacing.md) {
-                    fnColumn(L10n.t("cgraph.callers"), vm.focusCallers)
-                    riskColumn
-                    fnColumn(L10n.t("cgraph.impactCol"), vm.focusCallees)
-                }
-            }
-            .padding(DSSpacing.md)
-            .background(.quaternary.opacity(0.3), in: DSRect.shape(DSRadius.card))
+        VStack(spacing: DSSpacing.sm) {
+            Image(systemName: "point.3.connected.trianglepath.dotted")
+                .font(.title).foregroundStyle(.tertiary)
+            Text(L10n.t("cgraph.hint"))
+                .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func fnColumn(_ title: String, _ fns: [CodeGraphVM.FunctionNode]) -> some View {
-        VStack(alignment: .leading, spacing: DSSpacing.xs) {
-            Text("\(title) (\(fns.count))").font(.caption.weight(.semibold))
-            ForEach(Array(fns.prefix(12).enumerated()), id: \.offset) { _, n in
-                Button {
-                    vm.setFocusFunction(n.id)
-                } label: {
-                    HStack(spacing: DSSpacing.xs) {
-                        Text(n.name).font(.caption.monospaced()).lineLimit(1)
-                        Spacer()
-                        if !n.findings.isEmpty {
-                            Text("⚠\(n.findings.count)")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, DSSpacing.xs)
-                                .background(n.weight >= 10 ? Color.red :
-                                                n.weight >= 6 ? Color.orange : Color.gray,
-                                            in: Capsule())
-                        }
-                    }
-                    .padding(.horizontal, DSSpacing.sm).padding(.vertical, DSSpacing.xs)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            if fns.isEmpty {
-                Text(L10n.t("graph.noDeps")).font(.caption2).foregroundStyle(.tertiary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
+    // MARK: 左栏：代码图谱树
 
-    private var riskColumn: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.xs) {
-            Text(L10n.t("cgraph.riskList", vm.riskFunctions.count)).font(.caption.weight(.semibold))
-            ForEach(Array(vm.riskFunctions.prefix(16).enumerated()), id: \.offset) { _, n in
-                Button {
-                    vm.setFocusFunction(n.id)
-                } label: {
-                    HStack(spacing: DSSpacing.xs) {
-                        Text(n.name).font(.caption.monospaced()).lineLimit(1)
-                        Spacer()
-                        Text("⚠\(n.findings.count)")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, DSSpacing.xs)
-                            .background(n.weight >= 10 ? Color.red :
-                                            n.weight >= 6 ? Color.orange : Color.gray,
-                                        in: Capsule())
-                    }
-                    .padding(.horizontal, DSSpacing.sm).padding(.vertical, DSSpacing.xs)
-                    .background(vm.focusFn?.id == n.id
-                                ? AnyShapeStyle(Color.accentColor.opacity(0.14))
-                                : AnyShapeStyle(.clear),
-                                in: DSRect.shape(DSRadius.chip))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// 三列：引用方 | 焦点符号 | 影响面（词法级，列头带限定）。
-    private var threeColumns: some View {
-        HStack(alignment: .top, spacing: DSSpacing.md) {
-            chipColumn(L10n.t("cgraph.callers"), chips: vm.callers, band: $vm.callerBand)
-            focusColumn
-            chipColumn(L10n.t("cgraph.impactCol"), chips: vm.impacts, band: $vm.impactBand)
-        }
-    }
-
-    private func chipColumn(_ title: String, chips: [CodeGraphVM.FileChip], band: Binding<Int>) -> some View {
-        VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            Text(title).font(DSTypography.sectionTitle)
-            let visible = chips.prefix(band.wrappedValue)
-            ForEach(Array(visible.enumerated()), id: \.offset) { _, chip in
-                fileChip(chip)
-            }
-            if chips.count > band.wrappedValue {
-                Button(L10n.t("cgraph.more", chips.count - band.wrappedValue)) {
-                    band.wrappedValue += vm.bandStep
-                }
-                .buttonStyle(.borderless)
-                .font(.caption)
-            }
-            if chips.isEmpty {
-                Text(L10n.t("graph.noDeps")).font(.caption).foregroundStyle(.tertiary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func fileChip(_ chip: CodeGraphVM.FileChip) -> some View {
-        Button {
-            vm.selectedFile = (vm.selectedFile == chip.file) ? nil : chip.file
-        } label: {
-            HStack(spacing: DSSpacing.xs) {
-                Text(chip.symbol.isEmpty ? chip.file : chip.file + " · " + chip.symbol)
+    private var treePane: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: DSSpacing.sm) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
+                    .font(.caption)
+                TextField(L10n.t("cgraph.treeSearch"), text: $vm.query)
+                    .textFieldStyle(.plain)
                     .font(.system(.caption, design: .monospaced))
-                    .lineLimit(1)
-                Spacer()
-                // 置信度徽标：罚分越高越红（图谱 × 置信度的结合点）
-                if chip.findingCount > 0 {
-                    Text("⚠\(chip.findingCount)")
-                        .font(.caption2.weight(.bold).monospacedDigit())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, DSSpacing.xs).padding(.vertical, DSSpacing.sm)
-                        .background(chip.penalty >= 20 ? Color.red :
-                                        chip.penalty >= 8 ? Color.orange : Color.gray,
-                                    in: Capsule())
-                }
-                if chip.weight > 0 {
-                    Text("×\(chip.weight)")
-                        .font(.caption2.monospacedDigit())
+                if !vm.query.isEmpty {
+                    Button {
+                        vm.query = ""
+                    } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.borderless)
                         .foregroundStyle(.tertiary)
                 }
             }
-            .padding(.horizontal, DSSpacing.sm).padding(.vertical, DSSpacing.xs)
-            .background(
-                // ⚠️ 三元两侧必须同族：Color 与 HierarchicalShapeStyle 不能直接混
-                vm.selectedFile == chip.file
-                    ? AnyShapeStyle(Color.accentColor.opacity(0.14))
-                    : AnyShapeStyle(.quaternary.opacity(0.4)),
-                in: DSRect.shape(DSRadius.chip))
-            .contentShape(Rectangle())
+            .padding(.horizontal, DSSpacing.md)
+            .padding(.vertical, DSSpacing.sm)
+            Divider()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(vm.rows) { row in
+                        TreeRowView(vm: vm, node: row.node, depth: row.depth)
+                    }
+                    if vm.rows.isEmpty {
+                        Text(L10n.t("cgraph.noResult"))
+                            .font(.caption).foregroundStyle(.tertiary)
+                            .padding(DSSpacing.md)
+                    }
+                }
+                .padding(.vertical, DSSpacing.xs)
+            }
         }
-        .buttonStyle(.plain)
+        .background(.quaternary.opacity(0.18))
     }
 
-    private var focusColumn: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            Text(L10n.t("cgraph.focus")).font(DSTypography.sectionTitle)
-            Text(vm.focusSymbol.isEmpty ? L10n.t("cgraph.hint") : vm.focusSymbol)
-                .font(DSTypography.metric)
-            ForEach(Array(vm.defs.enumerated()), id: \.offset) { _, d in
-                Text("\(d["file"] as? String ?? ""):\(d["line"] as? Int ?? 0) · \(d["kind"] as? String ?? "")")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+    // MARK: 右栏：详情
+
+    private var detailPane: some View {
+        Group {
+            if let n = vm.selectedNode {
+                VStack(alignment: .leading, spacing: 0) {
+                    detailHeader(n)
+                    Divider()
+                    tabBar(n)
+                    Divider()
+                    detailBody(n)
+                }
+            } else {
+                VStack(spacing: DSSpacing.sm) {
+                    Image(systemName: "sidebar.squares.left")
+                        .font(.title2).foregroundStyle(.tertiary)
+                    Text(L10n.t("cgraph.selectHint"))
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+    }
+
+    private func detailHeader(_ n: GNode) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
+            Text(kindTag(n))
+                .font(.caption2.weight(.bold).monospaced())
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(Color.accentColor.opacity(0.14), in: DSRect.shape(DSRadius.chip))
+            Text(n.name)
+                .font(.system(.title3, design: .monospaced).weight(.semibold))
+                .lineLimit(1)
+            Text(n.kind == .sym ? "\(n.path):\(n.declLine)" : n.path)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle)
+            Spacer()
+            if n.subtreeFindings.isEmpty {
+                Label(L10n.t("cgraph.clean"), systemImage: "checkmark.seal")
+                    .font(.caption).foregroundStyle(.green)
+            } else {
+                Text("⚠\(n.subtreeFindings.count)")
+                    .font(.caption.weight(.bold).monospacedDigit())
+                    .foregroundStyle(Tier.color(n.rollW))
+                    .help(L10n.t("cgraph.tabConf"))
+            }
+        }
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.md)
+    }
+
+    private func kindTag(_ n: GNode) -> String {
+        switch n.kind {
+        case .sym: return n.symKind.uppercased()
+        case .file: return L10n.t("cgraph.kFile")
+        case .dir: return L10n.t("cgraph.kDir")
+        case .root: return L10n.t("cgraph.kProject")
+        }
+    }
+
+    private func tabs(for n: GNode) -> [(CodeGraphVM.DetailTab, String)] {
+        if n.kind == .sym {
+            var out: [(CodeGraphVM.DetailTab, String)] = [(.source, L10n.t("cgraph.tabSource"))]
+            if !n.ownFindings.isEmpty {
+                out.append((.conf, "\(L10n.t("cgraph.tabConf")) (\(n.ownFindings.count))"))
+            }
+            out.append((.rel, L10n.t("cgraph.tabRel")))
+            return out
+        }
+        return [(.conf, "\(L10n.t("cgraph.tabConf")) (\(n.subtreeFindings.count))")]
+    }
+
+    private func tabBar(_ n: GNode) -> some View {
+        HStack(spacing: DSSpacing.lg) {
+            ForEach(tabs(for: n), id: \.0) { tab, label in
+                Button {
+                    vm.detailTab = tab
+                } label: {
+                    VStack(spacing: 4) {
+                        Text(label)
+                            .font(.callout.weight(vm.detailTab == tab ? .semibold : .regular))
+                            .foregroundStyle(vm.detailTab == tab ? .primary : .secondary)
+                        Rectangle()
+                            .fill(vm.detailTab == tab ? Color.accentColor : .clear)
+                            .frame(height: 2)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.top, DSSpacing.sm)
+    }
+
+    @ViewBuilder
+    private func detailBody(_ n: GNode) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                switch vm.detailTab {
+                case .source: sourceTab(n)
+                case .conf: confTab(n)
+                case .rel: relTab(n)
+                }
+            }
+            .padding(DSSpacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // 源码 tab：引擎内嵌实码 + 客户端 SyntaxHighlight（与引擎 HTML 高亮分工）
+    @ViewBuilder
+    private func sourceTab(_ n: GNode) -> some View {
+        if let lines = vm.sourceLines {
+            CodeSnippetView(lines: lines, lang: vm.sourceLang)
+        } else {
+            Text(L10n.t("cgraph.srcNa"))
+                .font(.caption).foregroundStyle(.tertiary)
+        }
+    }
+
+    // 置信度 tab：按维度分组，pill = 档位色 + 人类可读标签，证据自足
+    private func confTab(_ n: GNode) -> some View {
+        let findings = n.subtreeFindings
+        return VStack(alignment: .leading, spacing: 0) {
+            if !vm.astNote.isEmpty {
+                Text(vm.astNote)
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .padding(.bottom, DSSpacing.sm)
+            }
+            if findings.isEmpty {
+                Text(L10n.t("cgraph.clean"))
+                    .font(.callout).foregroundStyle(.secondary)
+            } else {
+                let order = ["variable", "function", "type", "pointer", "concurrency", "structure"]
+                let groups = Dictionary(grouping: findings, by: \.dim)
+                ForEach(order.filter { groups[$0] != nil }, id: \.self) { dim in
+                    let g = (groups[dim] ?? []).sorted { $0.weight > $1.weight }
+                    VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                        Text("\(dimTitle(dim)) · \(g.count)")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, DSSpacing.sm)
+                        ForEach(g) { f in
+                            FindingRow(finding: f)
+                        }
+                    }
+                }
+                // 未知维度兜底（引擎新增 dim 时客户端不丢数据）
+                ForEach(Array(groups.keys.filter { !order.contains($0) }.sorted()), id: \.self) { dim in
+                    VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                        Text("\(dim) · \(groups[dim]?.count ?? 0)")
+                            .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
+                            .padding(.top, DSSpacing.sm)
+                        ForEach(groups[dim] ?? []) { f in FindingRow(finding: f) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func dimTitle(_ dim: String) -> String {
+        L10n.t("cgraph.dim." + dim)
+    }
+
+    // 关系 tab：调用方 / 被调，点击 = 左树 re-center 该符号
+    private func relTab(_ n: GNode) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            relSection(title: L10n.t("cgraph.callersTitle"), nodes: vm.callers,
+                       empty: L10n.t("cgraph.noCallers"))
+            relSection(title: L10n.t("cgraph.calleesTitle"), nodes: vm.callees,
+                       empty: L10n.t("cgraph.noCallees"))
             Text(L10n.t("cgraph.lexicalNote"))
                 .font(.caption2).foregroundStyle(.tertiary)
+                .padding(.top, DSSpacing.md)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(DSSpacing.md)
-        .background(.quaternary.opacity(0.3), in: DSRect.shape(DSRadius.control))
     }
 
-    /// 关系树：文件级被引用排行（入度/出度/符号数 + 置信度徽标）。
-    /// 点击行 = 选中文件，与上方三列共享同一个详情区。
-    private var treeSection: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            Text(L10n.t("cgraph.treeTitle")).font(DSTypography.sectionTitle)
-            Text(L10n.t("cgraph.treeHint"))
-                .font(.caption).foregroundStyle(.secondary)
-            ForEach(vm.treeFiles) { f in
+    private func relSection(title: String, nodes: [GNode], empty: String) -> some View {
+        VStack(alignment: .leading, spacing: DSSpacing.xs) {
+            Text("\(title) · \(nodes.count)")
+                .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
+                .padding(.top, DSSpacing.sm)
+            ForEach(nodes) { peer in
                 Button {
-                    vm.selectedFile = (vm.selectedFile == f.path) ? nil : f.path
+                    vm.select(peer, tab: .source)
                 } label: {
                     HStack(spacing: DSSpacing.sm) {
-                        Text(f.path)
+                        Text(peer.name)
                             .font(.system(.caption, design: .monospaced))
                             .lineLimit(1)
+                        Text(peer.path)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1).truncationMode(.middle)
                         Spacer()
-                        if f.findingCount > 0 {
-                            Text("⚠\(f.findingCount)")
+                        if !peer.ownFindings.isEmpty {
+                            Text("⚠\(peer.ownFindings.count)")
                                 .font(.caption2.weight(.bold).monospacedDigit())
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, DSSpacing.xs)
-                                .background(f.penalty >= 20 ? Color.red :
-                                                f.penalty >= 8 ? Color.orange : Color.gray,
-                                            in: Capsule())
+                                .foregroundStyle(Tier.color(peer.rollW))
                         }
-                        Text(L10n.t("cgraph.depsIn", f.inDeg))
-                            .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                        Text(L10n.t("cgraph.depsOut", f.outDeg))
-                            .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
-                        Text(L10n.t("cgraph.syms", f.symbolCount))
-                            .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                        Image(systemName: "arrow.turn.down.left")
+                            .font(.caption2).foregroundStyle(.tertiary)
                     }
                     .padding(.horizontal, DSSpacing.sm).padding(.vertical, DSSpacing.xs)
-                    .background(vm.selectedFile == f.path
-                                ? AnyShapeStyle(Color.accentColor.opacity(0.14))
-                                : AnyShapeStyle(.clear),
-                                in: DSRect.shape(DSRadius.chip))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
+            if nodes.isEmpty {
+                Text(empty).font(.caption2).foregroundStyle(.tertiary)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - 树行（置信度徽标是行内属性，不是独立板块）
+
+private struct TreeRowView: View {
+    @ObservedObject var vm: CodeGraphVM
+    let node: GNode
+    let depth: Int
+
+    private var selected: Bool { vm.selID == node.id }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            chevron
+            leading
+            Text(node.name)
+                .font(.system(node.kind == .sym ? .caption : .callout, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 4)
+            meta
+            pill
+        }
+        .padding(.leading, 4 + CGFloat(depth) * 14)
+        .padding(.trailing, DSSpacing.sm)
+        .frame(height: node.kind == .root ? 32 : (node.kind == .sym ? 22 : 26))
+        .background(selected ? AnyShapeStyle(Color.accentColor.opacity(0.12)) : AnyShapeStyle(.clear),
+                    in: DSRect.shape(DSRadius.chip))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if node.kind == .sym {
+                vm.select(node, tab: .source, reveal: false)
+            } else {
+                vm.toggle(node)
+            }
+        }
     }
 
-    /// 选中文件的疑点（披露式：点击展开实码）。
     @ViewBuilder
-    private var fileDetail: some View {
-        if let file = vm.selectedFile {
-            let findings = vm.findings(in: file)
-            VStack(alignment: .leading, spacing: DSSpacing.sm) {
-                Text(L10n.t("cgraph.fileFindings", file, findings.count))
-                    .font(DSTypography.sectionTitle)
-                if findings.isEmpty {
-                    Text(L10n.t("cgraph.fileClean"))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                ForEach(Array(findings.enumerated()), id: \.offset) { _, f in
-                    FindingDisclosureRow(
-                        projectPath: vm.projectPath,
-                        kindLabel: f["kind"] as? String ?? "",
-                        file: f["file"] as? String ?? "",
-                        line: f["line"] as? Int ?? 0,
-                        symbol: f["symbol"] as? String ?? "",
-                        weight: f["weight"] as? Int ?? 0,
-                        evidence: f["evidence"] as? String ?? ""
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+    private var chevron: some View {
+        if vm.hasKids(node) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .rotationEffect(.degrees(vm.isOpen(node) ? 90 : 0))
+                .frame(width: 12)
+                .onTapGesture { vm.toggle(node) }
+        } else {
+            Color.clear.frame(width: 12)
         }
+    }
+
+    @ViewBuilder
+    private var leading: some View {
+        switch node.kind {
+        case .root:
+            Image(systemName: "cube.fill")
+                .font(.system(size: 10)).foregroundStyle(.secondary)
+        case .dir:
+            Image(systemName: "folder.fill")
+                .font(.system(size: 10)).foregroundStyle(Color(nsColor: .systemBlue).opacity(0.7))
+        case .file:
+            Circle()
+                .fill(LangDot.color(node.lang))
+                .frame(width: 7, height: 7)
+        case .sym:
+            Text(KindBadge.letter(node.symKind))
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 14, height: 14)
+                .background(.quaternary.opacity(0.6), in: DSRect.shape(DSRadius.chip))
+        }
+    }
+
+    @ViewBuilder
+    private var meta: some View {
+        switch node.kind {
+        case .file:
+            if node.lines > 0 {
+                Text("\(node.lines)")
+                    .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+            }
+        case .sym:
+            Text("\(node.declLine)")
+                .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+        case .dir:
+            // 裸数字 + tooltip（同 HTML 交付物）；带单位文案在 1 时会出「1 files」
+            Text("\(node.fileCount)")
+                .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                .help(L10n.t("cgraph.filesUnit", node.fileCount))
+        case .root:
+            Text("\(vm.score)")
+                .font(.caption2.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// ⚠N 徽标：置信度作为树节点属性的唯一视觉表达，档位色 = 子树最高权重。
+    @ViewBuilder
+    private var pill: some View {
+        if node.rollN > 0 {
+            Text("⚠\(node.rollN)")
+                .font(.caption2.weight(.bold).monospacedDigit())
+                .foregroundStyle(Tier.color(node.rollW))
+                .padding(.horizontal, 6).padding(.vertical, 1)
+                .background(Tier.color(node.rollW).opacity(0.12), in: Capsule())
+                .overlay(Capsule().strokeBorder(Tier.color(node.rollW).opacity(0.45), lineWidth: 0.5))
+                .help(pillHelp)
+                .onTapGesture { vm.select(node, tab: .conf, reveal: false) }
+        }
+    }
+
+    private var pillHelp: String {
+        let agg = Dictionary(grouping: node.subtreeFindings, by: \.label)
+            .map { "\($0.key) ×\($0.value.count)" }
+            .sorted()
+            .joined(separator: "、")
+        return agg.isEmpty ? L10n.t("cgraph.tabConf") : agg
+    }
+}
+
+// MARK: - 疑点行（置信度 tab 内）
+
+private struct FindingRow: View {
+    let finding: GFinding
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: DSSpacing.sm) {
+                Text(finding.label)
+                    .font(.system(.caption, design: .monospaced).weight(.medium))
+                    .foregroundStyle(Tier.color(finding.weight))
+                    .padding(.horizontal, 7).padding(.vertical, 1)
+                    .background(Tier.color(finding.weight).opacity(0.12), in: Capsule())
+                    .overlay(Capsule().strokeBorder(Tier.color(finding.weight).opacity(0.45), lineWidth: 0.5))
+                    .help("\(finding.kind) w\(finding.weight)")
+                Spacer()
+                // 目录/项目 roll-up 里一条疑点来自哪个文件必须可见（HTML 版缺这个）
+                Text("\(finding.file):\(finding.line)")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            if !finding.evidence.isEmpty {
+                Text(finding.evidence)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 3)
     }
 }

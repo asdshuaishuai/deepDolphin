@@ -49,6 +49,83 @@ if [ ! -d "$SANDBOX_PROJECTS/beta/.git" ]; then
     git -c user.name=t -c user.email=t@t commit -q -m "fix: first" )
 fi
 
+# 代码图谱页（codegraph 模式）的 fixture：alpha 只有 a.txt 时图谱是空壳。
+# 植入确定性疑点：高圈复杂度（12 决策点）/ 死分支（return 后同层语句）/
+# 混合职责（readFileText + match 同函数）/ 近重复（两文件同体 helper）。
+if [ ! -f "$SANDBOX_PROJECTS/alpha/.graph-fixture" ]; then
+  ( cd "$SANDBOX_PROJECTS/alpha"
+    mkdir -p src/core src/util
+    cat > src/core/parser.cj <<'FIXEOF'
+package alpha.core
+
+// 高圈复杂度：12 个决策点（阈值 10）
+func parseTokens(input: Array<String>): Int64 {
+    var n: Int64 = 0
+    if (input.size > 0) { n += 1 }
+    if (input.size > 1) { n += 1 }
+    if (input.size > 2) { n += 1 }
+    if (input.size > 3) { n += 1 }
+    if (input.size > 4) { n += 1 }
+    if (input.size > 5) { n += 1 }
+    if (input.size > 6) { n += 1 }
+    if (input.size > 7) { n += 1 }
+    if (input.size > 8) { n += 1 }
+    if (input.size > 9) { n += 1 }
+    if (input.size > 10) { n += 1 }
+    while (n > 100) { n = n - 1 }
+    return n
+    var dead: Int64 = 1
+}
+
+func helper(): Int64 {
+    let a: Int64 = 1
+    let b: Int64 = 2
+    return a + b
+}
+FIXEOF
+    cat > src/core/store.cj <<'FIXEOF'
+package alpha.core
+
+// 混合职责：同函数内文件 I/O + 计算
+func loadAndScore(): Int64 {
+    let t = readFileText("data.txt")
+    match (t) {
+        case Some(s) => return Int64(s.size)
+        case None => return 0
+    }
+}
+
+// 近重复：与 parser.cj 的 helper 归一化后完全一致
+func helper(): Int64 {
+    let a: Int64 = 1
+    let b: Int64 = 2
+    return a + b
+}
+FIXEOF
+    cat > src/util/helpers.cj <<'FIXEOF'
+package alpha.util
+
+func clamp(v: Int64, lo: Int64, hi: Int64): Int64 {
+    if (v < lo) { return lo }
+    if (v > hi) { return hi }
+    return v
+}
+FIXEOF
+    cat > Tools.swift <<'FIXEOF'
+import Foundation
+
+func formatReport(_ lines: [String]) -> String {
+    var out = ""
+    if lines.isEmpty { return out }
+    for l in lines {
+        if l.contains("TODO") { out += "[!]" + l + "\n" }
+    }
+    return out
+}
+FIXEOF
+    touch .graph-fixture )
+fi
+
 export DEEPGIT_HOME="$SANDBOX_HOME"
 "$ENGINE_BIN" add "$SANDBOX_PROJECTS/alpha" --name alpha >/dev/null 2>&1
 "$ENGINE_BIN" add "$SANDBOX_PROJECTS/beta"  --name beta  >/dev/null 2>&1
