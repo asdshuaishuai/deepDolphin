@@ -19,6 +19,18 @@ final class CodeGraphVM: ObservableObject {
     @Published var loading = false
     @Published var error: String?
 
+    struct TreeFile: Identifiable {
+        let path: String
+        let lang: String
+        let lines: Int
+        let symbolCount: Int
+        let inDeg: Int          // 被引用数（referenceEdges 入度）
+        let outDeg: Int         // 引用数（出度）
+        let penalty: Int
+        let findingCount: Int
+        var id: String { path }
+    }
+
     struct FileChip: Identifiable {
         let file: String
         /// 影响面列携带的受影响符号名（引用方列为空）。
@@ -30,6 +42,8 @@ final class CodeGraphVM: ObservableObject {
     }
 
     @Published var defs: [[String: Any]] = []
+    /// 关系树：按被引用数降序的文件清单（图谱的「索引关系树」半边）。
+    @Published var treeFiles: [TreeFile] = []
     @Published var callers: [FileChip] = []
     @Published var impacts: [FileChip] = []
     /// 每文件置信度罚分与条数（findings 按文件聚合）。
@@ -53,8 +67,10 @@ final class CodeGraphVM: ObservableObject {
             async let sym = GraphService.loadSymbol(project: projectName, symbol: q)
             async let imp = GraphService.loadImpact(project: projectName, symbol: q)
             async let conf = GraphService.loadConfidence(project: projectName)
-            let (s, i, c) = try await (sym, imp, conf)
+            async let tree = GraphService.loadTree(project: projectName)
+            let (s, i, c, t) = try await (sym, imp, conf, tree)
             applyConfidence(c)
+            applyTree(t)
             defs = s["defs"] as? [[String: Any]] ?? []
             let refs = s["referencedBy"] as? [[String: Any]] ?? []
             callers = refs.map { r in
@@ -83,6 +99,34 @@ final class CodeGraphVM: ObservableObject {
             self.error = EngineError.userMessage(for: error)
         }
         loading = false
+    }
+
+    /// 关系树 → 按被引用数降序的文件清单（入度/出度/符号数 + 置信度罚分）。
+    func applyTree(_ t: [String: Any]) {
+        let files = t["files"] as? [[String: Any]] ?? []
+        var inDeg: [String: Int] = [:]
+        var outDeg: [String: Int] = [:]
+        for e in t["referenceEdges"] as? [[Any]] ?? [] {
+            guard e.count >= 3,
+                  let from = e[0] as? String, let to = e[1] as? String,
+                  let w = e[2] as? Int else { continue }
+            outDeg[from, default: 0] += w
+            inDeg[to, default: 0] += w
+        }
+        treeFiles = files.map { f in
+            let path = f["path"] as? String ?? ""
+            let syms = f["symbols"] as? [[String: Any]] ?? []
+            return TreeFile(
+                path: path,
+                lang: f["lang"] as? String ?? "",
+                lines: f["lines"] as? Int ?? 0,
+                symbolCount: syms.count,
+                inDeg: inDeg[path] ?? 0,
+                outDeg: outDeg[path] ?? 0,
+                penalty: penaltyByFile[path]?.penalty ?? 0,
+                findingCount: penaltyByFile[path]?.count ?? 0)
+        }
+        .sorted { $0.inDeg > $1.inDeg }
     }
 
     /// findings 按文件聚合 → 罚分表。
@@ -126,6 +170,7 @@ struct CodeGraphPage: View {
                 } else {
                     threeColumns
                     fileDetail
+                    treeSection
                 }
             }
             .padding(DSSpacing.lg)
@@ -243,6 +288,51 @@ struct CodeGraphPage: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(DSSpacing.md)
         .background(.quaternary.opacity(0.3), in: DSRect.shape(DSRadius.control))
+    }
+
+    /// 关系树：文件级被引用排行（入度/出度/符号数 + 置信度徽标）。
+    /// 点击行 = 选中文件，与上方三列共享同一个详情区。
+    private var treeSection: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            Text(L10n.t("cgraph.treeTitle")).font(DSTypography.sectionTitle)
+            Text(L10n.t("cgraph.treeHint"))
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(vm.treeFiles) { f in
+                Button {
+                    vm.selectedFile = (vm.selectedFile == f.path) ? nil : f.path
+                } label: {
+                    HStack(spacing: DSSpacing.sm) {
+                        Text(f.path)
+                            .font(.system(.caption, design: .monospaced))
+                            .lineLimit(1)
+                        Spacer()
+                        if f.findingCount > 0 {
+                            Text("⚠\(f.findingCount)")
+                                .font(.caption2.weight(.bold).monospacedDigit())
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, DSSpacing.xs)
+                                .background(f.penalty >= 20 ? Color.red :
+                                                f.penalty >= 8 ? Color.orange : Color.gray,
+                                            in: Capsule())
+                        }
+                        Text(L10n.t("cgraph.depsIn", f.inDeg))
+                            .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                        Text(L10n.t("cgraph.depsOut", f.outDeg))
+                            .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                        Text(L10n.t("cgraph.syms", f.symbolCount))
+                            .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, DSSpacing.sm).padding(.vertical, DSSpacing.xs)
+                    .background(vm.selectedFile == f.path
+                                ? AnyShapeStyle(Color.accentColor.opacity(0.14))
+                                : AnyShapeStyle(.clear),
+                                in: DSRect.shape(DSRadius.chip))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 选中文件的疑点（披露式：点击展开实码）。

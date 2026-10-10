@@ -36,6 +36,7 @@ final class ArchPageVM: ObservableObject {
 struct ArchPage: View {
     @EnvironmentObject var model: AppModel
     @StateObject private var vm = ArchPageVM()
+    @State private var openError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,10 +50,20 @@ struct ArchPage: View {
                 .disabled(vm.loading || vm.projectName.isEmpty)
                 .help(L10n.t("common.refresh"))
                 .accessibilityLabel(A11y.label(L10n.t("common.refresh")))
+                Button {
+                    Task { await openCanvasInBrowser() }
+                } label: {
+                    Label(L10n.t("arch.openHtml"), systemImage: "safari")
+                }
+                .disabled(vm.loading || vm.projectName.isEmpty)
                 Spacer()
                 if vm.loading { ProgressView().controlSize(.small) }
             }
             .padding(DSSpacing.md)
+            if let err = openError {
+                Text(err).foregroundStyle(.orange).font(.callout)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DSSpacing.md)
+            }
             if let err = vm.error {
                 Text(err).foregroundStyle(.orange).font(.callout)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DSSpacing.md)
@@ -69,6 +80,21 @@ struct ArchPage: View {
             if vm.projectName.isEmpty || !model.projects.contains(where: { $0.name == vm.projectName }) {
                 await vm.load(all: model.projects)
             }
+        }
+    }
+
+    /// 导出 Web Canvas 交互图（引擎默认格式）到临时文件并用默认浏览器打开。
+    private func openCanvasInBrowser() async {
+        openError = nil
+        do {
+            let data = try await EngineCLI.shared.runData(
+                ["graph", "arch", vm.projectName, "--format", "html"], timeout: 300)
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("deepdolphin-arch-\(vm.projectName).html")
+            try data.write(to: tmp)
+            SysOpen.file(tmp.path)
+        } catch {
+            openError = EngineError.userMessage(for: error)
         }
     }
 

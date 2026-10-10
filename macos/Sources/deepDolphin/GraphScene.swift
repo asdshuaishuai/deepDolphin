@@ -211,6 +211,11 @@ enum GraphService {
         try await runJSON(["graph", "impact", project, symbol, "--json"])
     }
 
+    /// 关系树（扁平契约）：files[{path,lang,lines,symbols[]}] + import/reference 边。
+    static func loadTree(project: String) async throws -> [String: Any] {
+        try await runJSON(["graph", "tree", project, "--depth", "8", "--json"], timeout: 300)
+    }
+
     static func loadConfidence(project: String) async throws -> [String: Any] {
         try await runJSON(["graph", "confidence", project, "--json"], timeout: 300)
     }

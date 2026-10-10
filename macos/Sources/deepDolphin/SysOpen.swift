@@ -1,6 +1,10 @@
 import AppKit
 
 enum SysOpen {
+    /// 用系统默认程序打开本地文件（如引擎导出的 Web Canvas 交互架构图 → 浏览器）。
+    static func file(_ path: String) {
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+    }
     static func revealInFinder(_ path: String) {
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
     }
