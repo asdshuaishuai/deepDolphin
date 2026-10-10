@@ -44,6 +44,29 @@ final class CodeGraphVM: ObservableObject {
     @Published var defs: [[String: Any]] = []
     /// 关系树：按被引用数降序的文件清单（图谱的「索引关系树」半边）。
     @Published var treeFiles: [TreeFile] = []
+
+    // ── 函数级图谱（图谱 × 置信度结合的核心数据）──
+    struct FunctionNode: Identifiable {
+        let id: String
+        let file: String
+        let name: String
+        let kind: String
+        let line: Int
+        let lang: String
+        let weight: Int
+        let findings: [[String: Any]]
+    }
+    /// 异常函数清单（按权重降序）——首屏第一眼的内容。
+    @Published var riskFunctions: [FunctionNode] = []
+    /// 当前焦点函数（点击异常清单/引用卡切换）。
+    @Published var focusFn: FunctionNode?
+    /// 焦点的引用方/被调（函数级调用边）。
+    @Published var focusCallers: [FunctionNode] = []
+    @Published var focusCallees: [FunctionNode] = []
+    /// 函数索引（id → node）供调用边解析。
+    @Published private(set) var fnIndex: [String: FunctionNode] = [:]
+    @Published private(set) var fnEdges: [[String: Any]] = []
+    @Published private(set) var fnSnippets: [String: String] = [:]
     @Published var callers: [FileChip] = []
     @Published var impacts: [FileChip] = []
     /// 每文件置信度罚分与条数（findings 按文件聚合）。
@@ -71,6 +94,7 @@ final class CodeGraphVM: ObservableObject {
             let (s, i, c, t) = try await (sym, imp, conf, tree)
             applyConfidence(c)
             applyTree(t)
+            applyFunctionGraph(t["functionGraph"] as? [String: Any] ?? [:])
             defs = s["defs"] as? [[String: Any]] ?? []
             let refs = s["referencedBy"] as? [[String: Any]] ?? []
             callers = refs.map { r in
@@ -129,6 +153,58 @@ final class CodeGraphVM: ObservableObject {
         .sorted { $0.inDeg > $1.inDeg }
     }
 
+    /// 函数级图谱落地：异常清单 + 索引 + 默认焦点（权重最高）。
+    func applyFunctionGraph(_ fg: [String: Any]) {
+        let raw = fg["functions"] as? [[String: Any]] ?? []
+        var nodes: [FunctionNode] = []
+        var idx: [String: FunctionNode] = [:]
+        for f in raw {
+            let n = FunctionNode(
+                id: f["id"] as? String ?? "",
+                file: f["file"] as? String ?? "",
+                name: f["name"] as? String ?? "",
+                kind: f["kind"] as? String ?? "",
+                line: f["line"] as? Int ?? 0,
+                lang: f["lang"] as? String ?? "cangjie",
+                weight: f["weight"] as? Int ?? 0,
+                findings: f["findings"] as? [[String: Any]] ?? [])
+            nodes.append(n)
+            idx[n.id] = n
+        }
+        fnIndex = idx
+        fnEdges = fg["functionEdges"] as? [[String: Any]] ?? []
+        fnSnippets = fg["codeSnippets"] as? [String: String] ?? [:]
+        riskFunctions = nodes
+            .filter { !$0.findings.isEmpty }
+            .sorted { $0.weight > $1.weight }
+        // 默认焦点 = 权重最高的异常函数（首屏第一眼最有内容的落点）
+        if let first = riskFunctions.first {
+            setFocusFunction(first.id)
+        }
+    }
+
+    /// 聚焦某函数：解析函数级调用边，填充引用方/被调两列。
+    func setFocusFunction(_ id: String) {
+        guard let n = fnIndex[id] else { return }
+        focusFn = n
+        var callers: [FunctionNode] = []
+        var callees: [FunctionNode] = []
+        for e in fnEdges {
+            let from = e["from"] as? String ?? ""
+            let to = e["to"] as? String ?? ""
+            if to == id, let c = fnIndex[from] { callers.append(c) }
+            if from == id, let c = fnIndex[to] { callees.append(c) }
+        }
+        focusCallers = callers
+        focusCallees = callees
+    }
+
+    /// 焦点函数的源码（引擎内嵌的截断实码）。
+    var focusCode: String? {
+        guard let f = focusFn else { return nil }
+        return fnSnippets[f.id]
+    }
+
     /// findings 按文件聚合 → 罚分表。
     func applyConfidence(_ c: [String: Any]) {
         let fs = c["findings"] as? [[String: Any]] ?? []
@@ -168,6 +244,7 @@ struct CodeGraphPage: View {
                 if vm.defs.isEmpty && !vm.loading {
                     emptyHint
                 } else {
+                    functionFocusSection
                     threeColumns
                     fileDetail
                     treeSection
@@ -203,6 +280,129 @@ struct CodeGraphPage: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.top, DSSpacing.xl)
+    }
+
+    /// 函数级焦点视图：焦点面板（语法高亮实码 + 疑点）+ 三列
+    /// （引用方 | 异常函数清单 | 被调/影响）——deepOrca 式布局。
+    @ViewBuilder
+    private var functionFocusSection: some View {
+        if let fn = vm.focusFn {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
+                HStack(spacing: DSSpacing.sm) {
+                    Text(fn.name)
+                        .font(.headline.monospaced())
+                        .padding(.horizontal, DSSpacing.sm)
+                        .padding(.vertical, DSSpacing.xs)
+                        .background(
+                            fn.weight >= 10 ? Color.red.opacity(0.15) :
+                            fn.weight >= 6 ? Color.orange.opacity(0.15) :
+                            Color.blue.opacity(0.10),
+                            in: DSRect.shape(DSRadius.control))
+                    Text("\(fn.file):\(fn.line) · \(fn.kind)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                    if fn.findings.isEmpty {
+                        Label(L10n.t("cgraph.fileClean"), systemImage: "checkmark.seal")
+                            .font(.caption).foregroundStyle(.green)
+                    } else {
+                        Label(L10n.t("cgraph.anomalyCount", fn.findings.count), systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(fn.weight >= 10 ? .red : .orange)
+                    }
+                    Spacer()
+                }
+                if !fn.findings.isEmpty {
+                    ForEach(Array(fn.findings.enumerated()), id: \.offset) { _, d in
+                        HStack(spacing: DSSpacing.sm) {
+                            Text("⚠\(d["weight"] as? Int ?? 0)")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle((d["weight"] as? Int ?? 0) >= 10 ? .red : .orange)
+                            Text("\(d["kind"] as? String ?? "") @ L\(d["line"] as? Int ?? 0)")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if let code = vm.focusCode {
+                    let lines = code.split(separator: "\n", omittingEmptySubsequences: false)
+                        .enumerated().map { idx, raw in
+                            CodeSnippetLine(lineNumber: fn.line + idx, text: String(raw),
+                                             isHit: idx == 0)
+                        }
+                    CodeSnippetView(lines: lines, lang: fn.lang)
+                        .frame(maxHeight: 280)
+                }
+                HStack(alignment: .top, spacing: DSSpacing.md) {
+                    fnColumn(L10n.t("cgraph.callers"), vm.focusCallers)
+                    riskColumn
+                    fnColumn(L10n.t("cgraph.impactCol"), vm.focusCallees)
+                }
+            }
+            .padding(DSSpacing.md)
+            .background(.quaternary.opacity(0.3), in: DSRect.shape(DSRadius.card))
+        }
+    }
+
+    private func fnColumn(_ title: String, _ fns: [CodeGraphVM.FunctionNode]) -> some View {
+        VStack(alignment: .leading, spacing: DSSpacing.xs) {
+            Text("\(title) (\(fns.count))").font(.caption.weight(.semibold))
+            ForEach(Array(fns.prefix(12).enumerated()), id: \.offset) { _, n in
+                Button {
+                    vm.setFocusFunction(n.id)
+                } label: {
+                    HStack(spacing: DSSpacing.xs) {
+                        Text(n.name).font(.caption.monospaced()).lineLimit(1)
+                        Spacer()
+                        if !n.findings.isEmpty {
+                            Text("⚠\(n.findings.count)")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, DSSpacing.xs)
+                                .background(n.weight >= 10 ? Color.red :
+                                                n.weight >= 6 ? Color.orange : Color.gray,
+                                            in: Capsule())
+                        }
+                    }
+                    .padding(.horizontal, DSSpacing.sm).padding(.vertical, DSSpacing.xs)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            if fns.isEmpty {
+                Text(L10n.t("graph.noDeps")).font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var riskColumn: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.xs) {
+            Text(L10n.t("cgraph.riskList", vm.riskFunctions.count)).font(.caption.weight(.semibold))
+            ForEach(Array(vm.riskFunctions.prefix(16).enumerated()), id: \.offset) { _, n in
+                Button {
+                    vm.setFocusFunction(n.id)
+                } label: {
+                    HStack(spacing: DSSpacing.xs) {
+                        Text(n.name).font(.caption.monospaced()).lineLimit(1)
+                        Spacer()
+                        Text("⚠\(n.findings.count)")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, DSSpacing.xs)
+                            .background(n.weight >= 10 ? Color.red :
+                                            n.weight >= 6 ? Color.orange : Color.gray,
+                                        in: Capsule())
+                    }
+                    .padding(.horizontal, DSSpacing.sm).padding(.vertical, DSSpacing.xs)
+                    .background(vm.focusFn?.id == n.id
+                                ? AnyShapeStyle(Color.accentColor.opacity(0.14))
+                                : AnyShapeStyle(.clear),
+                                in: DSRect.shape(DSRadius.chip))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 三列：引用方 | 焦点符号 | 影响面（词法级，列头带限定）。

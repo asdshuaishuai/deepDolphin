@@ -216,6 +216,15 @@ enum GraphService {
         try await runJSON(["graph", "tree", project, "--depth", "8", "--json"], timeout: 300)
     }
 
+    /// 函数级图谱（functionGraph）：functions[{id,file,name,kind,line,lang,findings,weight}]
+    /// + functionEdges[{from,to,w}] + codeSnippets{id:code}——图谱×置信度结合的数据源。
+    static func loadFunctionGraph(project: String) async throws -> [String: Any] {
+        let tree = try await loadTree(project: projectName(project))
+        return tree["functionGraph"] as? [String: Any] ?? [:]
+    }
+
+    private static func projectName(_ name: String) -> String { name }
+
     static func loadConfidence(project: String) async throws -> [String: Any] {
         try await runJSON(["graph", "confidence", project, "--json"], timeout: 300)
     }
