@@ -23,8 +23,8 @@ Linux / Windows 上没有这个障碍。
 **仓颉 Canvas 移植**：在 CangjieGUI 宿主内实现 moongit-graph-scene v1 的 Canvas2D
 方法子集（beginPath/fill/stroke/arc/bezierCurveTo/setLineDash/gradient/globalAlpha/
 shadow/font/textAlign…，以契约清单为移植验收清单），消费 `graph arch/tree
---format scene` 导出的同一份数据。数据与渲染分离：引擎零实现时的 Web Canvas HTML
-导出是兜底出口，本平台的正路是 scene 数据 + 本机仓颉 Canvas。
+--format scene` 导出的同一份数据。数据与渲染分离：本平台的正路是 scene 数据 + 本机仓颉 Canvas 在应用内直接绘制；
+引擎的 HTML 单文件导出是引擎层交付物（只有引擎/被 agent 驱动时消费），不是本平台的渲染路径。
 （macOS 端的对应实现见 moonGit 同目录 `ArchCanvasView.swift`，可作逐方法对照的参考。）
 
 ## 快速开始

@@ -46,22 +46,25 @@
 - [ ] 引擎不可达 → 明确报错 + 引导安装，不静默失败
 - [ ] key 只进平台安全存储，不进日志/配置文件明文
 
-## 3.5 平台 Canvas 分派（2026-10-10 定稿）
+## 3.5 平台 Canvas 分派（2026-10-10 修订）
 
 图谱/架构图的渲染遵循引擎契约 [graph-scene-schema.md]（moonGit 仓库 docs/）的**分派规则**：
 
-> **有客户端实现，就跟客户端走；没有客户端实现，才用 Web 技术兜底。**
+> **运行时渲染一律走平台 Canvas 实现，没有例外。**
+> 引擎的 `graph arch/tree --format html` 单文件导出**不是渲染路径**，而是引擎层交付物——
+> 供只有引擎层的环境（终端/CI）与其他智能体驱动场景消费。
 
 | 平台 | Canvas 实现 | 数据 |
 |---|---|---|
 | macOS | SwiftUI GraphicsContext（`ArchCanvasView`，已实现） | `graph arch --format scene` |
 | Linux（本仓 `linux/`，仓颉客户端） | **仓颉 Canvas 移植**（CangjieGUI 宿主，实现同一 Canvas2D 子集） | 同上 |
 | DDE / deepin（本仓 `deepin/`，C++ 客户端） | **Qt QPainter Canvas**（实现同一子集） | 同上 |
-| Windows / 鸿蒙 PC | 待定——未指定前由引擎 Web 导出兜底 | `graph arch` 默认导出 |
+| Windows / 鸿蒙 PC | 平台 Canvas 实现（排期，不做 Web 运行时渲染） | `--format scene` |
 
 三条不变量（与引擎契约文档一致）：数据单来源（scene 契约，渲染端换栈数据零改动）；
-Web 兜底与平台实现长期共存（兜底不是降级）；平台 Canvas 以契约方法清单为移植验收清单。
-代码图谱的 Web 导出同理：`graph tree` 默认即 Web Canvas HTML（`MoongitCodeGraph.renderTo`）。
+平台渲染零外包（客户端存在的地方不允许打开浏览器看图）；平台 Canvas 以契约方法清单为
+移植验收清单。HTML 导出的定位是引擎层交付物：只有引擎层的环境与其他智能体驱动场景
+消费它（`graph tree` 默认即单文件交互图，`MoongitCodeGraph.renderTo`）。
 
 ## 4. 引擎侧为 agent 提供的能力（平台无关）
 
