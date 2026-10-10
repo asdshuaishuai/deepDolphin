@@ -138,6 +138,13 @@ struct PanelView: View {
                 //    计数改用行内文字（`countedRow`），不用 badge。
                 countedRow(title: L10n.t("nav.milestones"), icon: icon(for: .milestones), route: .milestones,
                            target: .milestones, count: milestoneCountValue)
+                // 引擎图谱/置信度新能力页（⌘5–⌘7，键位随 ShortcutMap.viewOrder）
+                countedRow(title: L10n.t("nav.graph"), icon: icon(for: .graph), route: .graph,
+                           target: .graph, count: nil)
+                countedRow(title: L10n.t("nav.confidence"), icon: icon(for: .confidence), route: .confidence,
+                           target: .confidence, count: nil)
+                countedRow(title: L10n.t("nav.patchcheck"), icon: icon(for: .patchCheck), route: .patchCheck,
+                           target: .patchCheck, count: nil)
             }
             Section(L10n.t("nav.repos.count", shownProjects.count, model.projects.count)) {
                 // ⌘4 打开当前选中的项目。
@@ -279,13 +286,17 @@ struct PanelView: View {
             modifiers: ShortcutMap.shortcut(for: target)?.modifiersSwiftUI ?? [.command])
     }
 
-    /// 侧栏三个固定视图的语义色。**同一视图在任何入口同色**：
-    /// 仪表盘蓝、看板橙、里程碑紫（deep 双轨紫），与 KPI 卡、hero 同源。
+    /// 侧栏固定视图的语义色。**同一视图在任何入口同色**：
+    /// 仪表盘蓝、看板橙、里程碑紫（deep 双轨紫）、图谱靛、置信度绿、
+    /// 补丁体检粉 —— 与 KPI 卡、hero 同源。
     private func sectionTint(_ section: RootSection) -> Color {
         switch section {
         case .dashboard:  return DSColor.accent
         case .board:      return .orange
         case .milestones: return DSColor.deep
+        case .graph:      return .indigo
+        case .confidence: return .green
+        case .patchCheck: return .pink
         case .project:    return DSColor.shallow
         }
     }
@@ -349,6 +360,9 @@ struct PanelView: View {
         case .dashboard:  return L10n.t("nav.dashboard")
         case .board:      return L10n.t("nav.board")
         case .milestones: return L10n.t("nav.milestones")
+        case .graph:      return L10n.t("nav.graph")
+        case .confidence: return L10n.t("nav.confidence")
+        case .patchCheck: return L10n.t("nav.patchcheck")
         case .project:    return L10n.t("nav.projects")
         }
     }
@@ -358,6 +372,9 @@ struct PanelView: View {
         case .dashboard:  return "square.grid.2x2"
         case .board:      return "rectangle.split.3x1"
         case .milestones: return "flag.2.crossed"
+        case .graph:      return "diagram.projective"
+        case .confidence: return "gauge.with.dial"
+        case .patchCheck: return "stethoscope"
         case .project:    return "folder"
         }
     }
@@ -461,6 +478,12 @@ struct PanelView: View {
                 BoardPage()
             case .milestones:
                 MilestonesView()
+            case .graph:
+                GraphPage()
+            case .confidence:
+                ConfidencePage()
+            case .patchCheck:
+                PatchCheckPage()
             case .project(let name):
                 ProjectDetailView(projectName: name)
             case nil:

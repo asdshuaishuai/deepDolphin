@@ -58,7 +58,10 @@ enum ShortcutTarget: Equatable {
     case dashboard
     case board
     case milestones
-    /// 打开当前选中的项目（详情是动态的，没有第 4 个固定视图）
+    case graph
+    case confidence
+    case patchCheck
+    /// 打开当前选中的项目（详情是动态的，没有固定第 4 个视图）
     case currentProject
 }
 
@@ -79,18 +82,20 @@ enum ShortcutMap {
 
     // —— 视图切换 ——
     //
-    // ⚠️ 规范写的是「⌘1–⌘5 切视图」，那是按它设想的**五个**固定视图写的。
-    // 实际侧栏只有**三个**固定入口（总览 / 看板 / 里程碑），
-    // 项目详情是**动态**的（N 个项目 ⇒ N 个入口，没有固定第 4 个）。
-    // 所以：
+    // ⚠️ 早先注释写「实际侧栏只有三个固定入口，没有 ⌘5——硬凑一个只会让用户
+    // 按了没反应」。后来引擎补齐了代码图谱/置信度/补丁体检三个**真页面**，
+    // 固定视图从三个变成六个——这里的原则没变：**键位只跟着真实存在的视图走**，
+    // 有一个视图才有一个键位，视图删了键位必须跟着删。
     //   ⌘1 ⇄ 总览      ⌘2 ⇄ 看板      ⌘3 ⇄ 里程碑
     //   ⌘4 ⇄ 打开当前选中的项目（没有项目时**不许**动 selection）
-    // 没有「⌘5」——硬凑一个只会让用户按了没反应。
+    //   ⌘5 ⇄ 代码图谱   ⌘6 ⇄ 置信度    ⌘7 ⇄ 补丁体检
     /// 固定视图的顺序。**这个数组的长度就是 ⌘N 的上界**，
     /// 别的地方不许再写数字快捷键。
-    static let viewOrder: [ShortcutTarget] = [.dashboard, .board, .milestones]
+    static let viewOrder: [ShortcutTarget] = [
+        .dashboard, .board, .milestones, .graph, .confidence, .patchCheck,
+    ]
 
-    /// 第 n 个视图的数字快捷键（n 从 1 起）。越界返回 nil —— 不硬凑 ⌘5。
+    /// 第 n 个视图的数字快捷键（n 从 1 起）。越界返回 nil —— 不硬凑。
     static func view(at index: Int) -> ShortcutTarget? {
         guard index >= 1, index <= viewOrder.count else { return nil }
         return viewOrder[index - 1]
@@ -101,6 +106,9 @@ enum ShortcutMap {
         case .dashboard:   return Shortcut(systemKey: nil, key: "1", modifiers: ["cmd"])
         case .board:       return Shortcut(systemKey: nil, key: "2", modifiers: ["cmd"])
         case .milestones:  return Shortcut(systemKey: nil, key: "3", modifiers: ["cmd"])
+        case .graph:       return Shortcut(systemKey: nil, key: "5", modifiers: ["cmd"])
+        case .confidence:  return Shortcut(systemKey: nil, key: "6", modifiers: ["cmd"])
+        case .patchCheck:  return Shortcut(systemKey: nil, key: "7", modifiers: ["cmd"])
         case .currentProject: return Shortcut(systemKey: nil, key: "4", modifiers: ["cmd"])
         }
     }

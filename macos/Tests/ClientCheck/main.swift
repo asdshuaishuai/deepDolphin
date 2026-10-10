@@ -3578,33 +3578,38 @@ do {
         guard ShortcutMap.all.contains(where: { $0.keyEquivalent == "4" }) else {
             throw fail("all 里没有 ⌘4 ⇒ 与它撞车的键查不出来（NC67-d 抓到的就是这条）")
         }
-        // 全表条数 = 7 个动作 + 3 个固定视图 + 1 个 currentProject
-        guard ShortcutMap.all.count == 11 else {
-            throw fail("全表是 \(ShortcutMap.all.count) 个键位，预期 11（7 动作 + 3 视图 + 1 打开项目）")
+        // 全表条数 = 7 个动作 + 固定视图（随 viewOrder 走）+ 1 个 currentProject。
+        // ⚠️ 不许写死数字：视图数变了这里必须自动跟着，否则每次加页面都要来这里撒谎。
+        let expectedKeys = 7 + ShortcutMap.viewOrder.count + 1
+        guard ShortcutMap.all.count == expectedKeys else {
+            throw fail("全表是 \(ShortcutMap.all.count) 个键位，预期 \(expectedKeys)（7 动作 + \(ShortcutMap.viewOrder.count) 视图 + 1 打开项目）")
         }
-        return "11 个键位全部在册"
+        return "\(expectedKeys) 个键位全部在册"
     }
 
-    // —— 视图数与规范对齐 ——
-    check("⌘N 的上界 = 固定视图数，不许硬凑规范里写的 ⌘5") {
-        // 规范 §3.2 写「⌘1–⌘5 切视图」，那是按它设想的五个固定视图写的。
-        // 实际侧栏只有三个固定入口，项目详情是动态的。
-        guard ShortcutMap.viewOrder.count == 3 else {
+    // —— 视图数与侧栏对齐 ——
+    check("⌘N 的上界 = 固定视图数，键位只跟着真实存在的视图走") {
+        // 引擎补齐图谱/置信度/补丁体检后，固定视图从三个变成六个；
+        // 原则不变：**有一个视图才有一个键位**，视图删了键位必须跟着删。
+        guard ShortcutMap.viewOrder.count == 6 else {
             throw fail("固定视图数是 \(ShortcutMap.viewOrder.count)，与侧栏实际入口不符")
         }
         guard ShortcutMap.view(at: 1) == .dashboard,
               ShortcutMap.view(at: 2) == .board,
-              ShortcutMap.view(at: 3) == .milestones else {
-            throw fail("⌘1–⌘3 与侧栏顺序对不上")
+              ShortcutMap.view(at: 3) == .milestones,
+              ShortcutMap.view(at: 4) == .graph,
+              ShortcutMap.view(at: 5) == .confidence,
+              ShortcutMap.view(at: 6) == .patchCheck else {
+            throw fail("⌘1–⌘6 与侧栏顺序对不上")
         }
-        // 越界返回 nil —— 硬凑 ⌘4/⌘5 只会让用户按了没反应
-        guard ShortcutMap.view(at: 4) == nil, ShortcutMap.view(at: 5) == nil, ShortcutMap.view(at: 0) == nil else {
+        // 越界返回 nil —— 硬凑不存在的键只会让用户按了没反应
+        guard ShortcutMap.view(at: 7) == nil, ShortcutMap.view(at: 0) == nil else {
             throw fail("越界的数字快捷键仍返回了目标 ⇒ 会有按了没反应的键")
         }
-        return "3 个固定视图，越界返回 nil（不硬凑 ⌘5）"
+        return "6 个固定视图，越界返回 nil（键位数 = 视图数）"
     }
 
-    check("⌘4 单独留给「打开当前选中项目」（详情是动态的，没有第 4 个固定视图）") {
+    check("⌘4 单独留给「打开当前选中项目」（详情是动态的，没有固定视图会占它）") {
         guard ShortcutMap.shortcut(for: .currentProject)?.keyEquivalent == "4" else {
             throw fail("⌘4 没绑给打开项目详情")
         }
@@ -3612,7 +3617,7 @@ do {
         guard !ShortcutMap.viewOrder.contains(.currentProject) else {
             throw fail("currentProject 混进了固定视图列表 ⇒ ⌘4 会被重复占用")
         }
-        return "⌘4 独立，不与 ⌘1–⌘3 冲突"
+        return "⌘4 独立，不与 ⌘1–⌘3、⌘5–⌘7 冲突"
     }
 
     // —— 展示 ——

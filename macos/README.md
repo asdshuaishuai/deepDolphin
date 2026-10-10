@@ -116,6 +116,7 @@ Sources/deepDolphin/
   CommitTypeComposition.swift   纯函数：提交类型构成 + 截断披露
   Components.swift              StatusDot / StatCard / SegmentedBar / Card 等基础件
   ContextEnvelope.swift         纯函数：agent 上下文包裁剪
+  ArchCanvasView.swift          moongit-graph-scene v1 的 SwiftUI 驱动（Canvas + 命中区下钻/选中 + 粒子流光）
   DashboardParts.swift          仪表盘四段式零件：筛选行 / KPI 宽卡 / 逐项目进度卡（设计稿布局）
   DashboardScope.swift          纯函数：时间窗 + 提交类型筛选、4 张 KPI 的归并口径
   DeepGitApp.swift              入口：Window 面板 + MenuBarExtra + Settings + 原生菜单（关于/帮助）+ 深链
@@ -126,6 +127,8 @@ Sources/deepDolphin/
   DocsPages.swift               纯函数：关于/帮助/开源感谢/更新日志的四语言固定文档
   EngineCLI.swift               引擎发现 + 按需拉起 CLI 子进程 + ProcessRegistry（批量更新可真停）
   EngineFailure.swift           纯函数：引擎失败分类与文案
+  GraphPages.swift              代码图谱页 / 置信度页 / 补丁体检页（三层置信度的人工裁决层）
+  GraphScene.swift              moongit-graph-scene v1 模型 + token 解析 + 引擎图谱七件套服务
   L10n.swift                    多语言系统（zh-CN/en/zh-TW/ja 四语言表 + t() + 固定文档入口）
   LanguageCoverage.swift        纯函数：语言分布占比
   LoadState.swift               纯函数：一个数据源的加载四态 → 该画加载/空/错误哪一种

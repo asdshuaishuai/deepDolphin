@@ -20,6 +20,9 @@ enum RootSection: Hashable {
     case dashboard
     case milestones
     case board
+    case graph        // 代码图谱 + 交互架构图（scene 画布）
+    case confidence   // 代码置信度
+    case patchCheck   // 补丁置信度三层体检
     case project(String)  // 项目名
 }
 
@@ -87,6 +90,9 @@ enum Route {
         switch raw {
         case "milestones": return .milestones
         case "board": return .board
+        case "graph": return .graph
+        case "confidence": return .confidence
+        case "patchcheck": return .patchCheck
         case "dashboard": return .dashboard
         default: return .dashboard
         }
