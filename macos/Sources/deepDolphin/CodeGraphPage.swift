@@ -21,10 +21,12 @@ final class CodeGraphVM: ObservableObject {
 
     struct FileChip: Identifiable {
         let file: String
+        /// 影响面列携带的受影响符号名（引用方列为空）。
+        let symbol: String
         let weight: Int          // 引用权重（引用方列）
         let penalty: Int         // 该文件的置信度罚分（findings 权重合计）
         let findingCount: Int
-        var id: String { file }
+        var id: String { file + "#" + symbol }
     }
 
     @Published var defs: [[String: Any]] = []
@@ -57,16 +59,21 @@ final class CodeGraphVM: ObservableObject {
             let refs = s["referencedBy"] as? [[String: Any]] ?? []
             callers = refs.map { r in
                 let f = r["file"] as? String ?? ""
-                return FileChip(file: f, weight: r["weight"] as? Int ?? 0,
+                return FileChip(file: f, symbol: "", weight: r["weight"] as? Int ?? 0,
                                 penalty: penaltyByFile[f]?.penalty ?? 0,
                                 findingCount: penaltyByFile[f]?.count ?? 0)
             }
             .sorted { $0.weight > $1.weight }
-            let impactFiles = i["files"] as? [String] ?? []
-            impacts = impactFiles.map { f in
-                FileChip(file: f, weight: 0,
-                         penalty: penaltyByFile[f]?.penalty ?? 0,
-                         findingCount: penaltyByFile[f]?.count ?? 0)
+            // ⚠️ 引擎 impactJson 的键是 refFiles（[String]）与 impactedSymbols
+            // （[{file,symbol,kind}]），没有 "files"——第一版读错键，影响面列恒空
+            // （自测抓到）。影响面用符号级清单，chip 显示 file · symbol。
+            let impacted = i["impactedSymbols"] as? [[String: Any]] ?? []
+            impacts = impacted.map { d in
+                let f = d["file"] as? String ?? ""
+                return FileChip(file: f, symbol: d["symbol"] as? String ?? "",
+                                weight: 0,
+                                penalty: penaltyByFile[f]?.penalty ?? 0,
+                                findingCount: penaltyByFile[f]?.count ?? 0)
             }
             focusSymbol = q
             selectedFile = nil
@@ -188,7 +195,7 @@ struct CodeGraphPage: View {
             vm.selectedFile = (vm.selectedFile == chip.file) ? nil : chip.file
         } label: {
             HStack(spacing: DSSpacing.xs) {
-                Text(chip.file)
+                Text(chip.symbol.isEmpty ? chip.file : chip.file + " · " + chip.symbol)
                     .font(.system(.caption, design: .monospaced))
                     .lineLimit(1)
                 Spacer()
