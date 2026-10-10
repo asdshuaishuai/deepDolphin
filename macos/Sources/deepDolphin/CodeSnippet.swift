@@ -96,6 +96,8 @@ enum CodeSnippet {
 
 struct CodeSnippetView: View {
     let lines: [CodeSnippetLine]
+    /// 源码语言（引擎 functionGraph.lang；nil = 按仓颉兜底）
+    var lang: String = "cangjie"
     @State private var copied = false
 
     var body: some View {
@@ -128,9 +130,8 @@ struct CodeSnippetView: View {
                         .font(.system(.caption2, design: .monospaced))
                         .foregroundStyle(l.isHit ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.tertiary))
                         .frame(width: 34, alignment: .trailing)
-                    Text(l.text.isEmpty ? " " : l.text)
+                    Text(SyntaxHighlight.highlight(l.text, lang: lang))
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(l.isHit ? .primary : .secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 }
@@ -213,5 +214,130 @@ struct FindingDisclosureRow: View {
         }
         .padding(DSSpacing.sm)
         .background(.quaternary.opacity(0.35), in: DSRect.shape(DSRadius.control))
+    }
+}
+
+// MARK: - Swift 原生多语言语法高亮（客户端独立实现，与引擎 HTML 高亮无关）
+
+/// 客户端自己的高亮引擎：`AttributedString` + 按语言查表。
+/// 消费引擎 `functionGraph.lang` 字段，但着色实现完全是 SwiftUI 的。
+/// 四类 token：关键字（紫）/ 字符串（绿）/ 注释（灰）/ 数字（黄）。
+enum SyntaxHighlight {
+    /// 各语言关键字集（与引擎 detectLang 的 9 种语言对齐）。
+    static let keywords: [String: Set<String>] = [
+        "cangjie": ["package","import","class","struct","enum","interface","extend","func","let","var","const",
+                   "match","case","if","else","while","for","return","try","catch","throw","true","false",
+                   "this","super","init","override","public","private","internal","protected","static",
+                   "abstract","open","where","in","as","is","spawn","prop","volatile","unsafe","mut","ref",
+                   "final","sealed","typealias","operator","infix"],
+        "swift": ["import","class","struct","enum","protocol","func","let","var","if","else","guard","while",
+                  "for","return","try","catch","throw","true","false","self","super","init","override",
+                  "public","private","internal","fileprivate","open","static","final","where","in","as","is",
+                  "extension","weak","unowned","lazy","mutating","didSet","willSet","some","any","async",
+                  "await","throws","rethrows","case","switch","default","break","continue","fallthrough"],
+        "ts": ["import","export","from","class","extends","implements","interface","type","enum","function",
+               "const","let","var","if","else","while","for","of","in","return","try","catch","throw",
+               "true","false","null","undefined","this","super","new","delete","typeof","instanceof","void",
+               "async","await","yield","static","get","set","public","private","protected","readonly",
+               "abstract","as","is","break","continue","case","switch","default","do"],
+        "python": ["import","from","class","def","lambda","if","elif","else","while","for","in","return",
+                   "try","except","finally","raise","True","False","None","self","super","global","nonlocal",
+                   "yield","async","await","with","as","pass","break","continue","and","or","not","is","del"],
+        "go": ["package","import","func","var","const","type","struct","interface","map","chan","go","defer",
+               "if","else","for","range","return","switch","case","default","true","false","nil","break",
+               "continue","goto","fallthrough","select"],
+        "rust": ["fn","let","mut","const","struct","enum","trait","impl","for","in","if","else","while","loop",
+                 "match","return","true","false","self","Self","super","crate","mod","pub","use","extern","as",
+                 "where","async","await","move","ref","dyn","type","unsafe","break","continue"],
+        "java": ["package","import","class","interface","enum","record","extends","implements","public","private",
+                 "protected","static","final","abstract","void","int","long","double","float","boolean","char",
+                 "byte","short","if","else","while","for","return","try","catch","finally","throw","throws",
+                 "true","false","null","this","super","new","instanceof","synchronized","volatile","transient",
+                 "default","sealed","permits","var","break","continue","do","switch","case"],
+        "kotlin": ["package","import","class","object","interface","fun","val","var","if","else","when","while",
+                   "for","return","try","catch","finally","throw","true","false","null","this","super","init",
+                   "override","open","abstract","final","sealed","data","companion","internal","private",
+                   "protected","public","lateinit","lazy","by","is","as","in","out","reified","suspend",
+                   "inline","operator","infix","external","const","break","continue","do"],
+        "c": ["auto","break","case","char","const","continue","default","do","double","else","enum","extern",
+              "float","for","goto","if","inline","int","long","register","restrict","return","short","signed",
+              "sizeof","static","struct","switch","typedef","union","unsigned","void","volatile","while",
+              "class","public","private","protected","virtual","override","final","template","typename",
+              "namespace","using","new","delete","nullptr","constexpr","noexcept"],
+    ]
+
+    /// 单语言注释前缀（python/shell 用 #，其余 //）。
+    static func lineCommentPrefix(for lang: String) -> String {
+        return lang == "python" ? "#" : "//"
+    }
+
+    /// 高亮一行代码 → AttributedString（四类 token 着色）。
+    /// O(n) 单遍扫描；Swift Character 索引天然处理多字节字符。
+    static func highlight(_ line: String, lang: String) -> AttributedString {
+        var result = AttributedString(line.isEmpty ? " " : line)
+        let kws = keywords[lang] ?? keywords["cangjie"]!
+        let cmPrefix = lineCommentPrefix(for: lang)
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+        // 注释行：整行灰
+        if trimmed.hasPrefix(cmPrefix) {
+            result.foregroundColor = .secondary
+            return result
+        }
+
+        let chars = Array(line)
+        var i = 0
+
+        func colorRange(_ from: Int, _ to: Int, _ color: Color) {
+            guard from < to, to <= chars.count else { return }
+            let s = result.index(result.startIndex, offsetByCharacters: from)
+            let e = result.index(s, offsetByCharacters: to - from)
+            result[s..<e].foregroundColor = color
+        }
+
+        func isIdentChar(_ c: Character) -> Bool { c.isLetter || c == "_" || c.isNumber }
+        func isIdentStart(_ c: Character) -> Bool { c.isLetter || c == "_" }
+
+        while i < chars.count {
+            let c = chars[i]
+            // 字符串（绿）
+            if c == "\"" || c == "'" {
+                var j = i + 1
+                while j < chars.count && chars[j] != c { j += 1 }
+                colorRange(i, min(j + 1, chars.count), .green)
+                i = j + 1
+                continue
+            }
+            // 行内注释（// 或 #，灰到行尾）
+            if i + 1 < chars.count && c == "/" && chars[i + 1] == "/" {
+                colorRange(i, chars.count, .secondary)
+                break
+            }
+            if c == "#" && lang == "python" {
+                colorRange(i, chars.count, .secondary)
+                break
+            }
+            // 标识符（关键字紫）
+            if isIdentStart(c) {
+                var j = i
+                while j < chars.count && isIdentChar(chars[j]) { j += 1 }
+                let word = String(chars[i..<j])
+                if kws.contains(word) {
+                    colorRange(i, j, .purple)
+                }
+                i = j
+                continue
+            }
+            // 数字（黄）
+            if c.isNumber {
+                var j = i
+                while j < chars.count && (chars[j].isNumber || chars[j].isHexDigit || "xX._".contains(chars[j])) { j += 1 }
+                colorRange(i, j, .yellow)
+                i = j
+                continue
+            }
+            i += 1
+        }
+        return result
     }
 }
