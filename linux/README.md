@@ -17,6 +17,16 @@ Linux / Windows 上没有这个障碍。
 >
 > 图标与其他平台共用一套，见 [../assets/icon/README.md](../assets/icon/README.md)。
 
+## Canvas 指定：仓颉 Canvas 移植（scene 契约）
+
+引擎契约（moonGit docs/graph-scene-schema.md）为本平台**指定**的图谱渲染实现是
+**仓颉 Canvas 移植**：在 CangjieGUI 宿主内实现 moongit-graph-scene v1 的 Canvas2D
+方法子集（beginPath/fill/stroke/arc/bezierCurveTo/setLineDash/gradient/globalAlpha/
+shadow/font/textAlign…，以契约清单为移植验收清单），消费 `graph arch/tree
+--format scene` 导出的同一份数据。数据与渲染分离：引擎零实现时的 Web Canvas HTML
+导出是兜底出口，本平台的正路是 scene 数据 + 本机仓颉 Canvas。
+（macOS 端的对应实现见 moonGit 同目录 `ArchCanvasView.swift`，可作逐方法对照的参考。）
+
 ## 快速开始
 
 > ⚠ **在 Linux 上跑之前先读 [VERIFY-ON-LINUX.md](VERIFY-ON-LINUX.md)** ——

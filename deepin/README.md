@@ -6,6 +6,14 @@ moonGit（仓颉引擎，仓内别名 deepgit）项目群进度客户端的 Linu
 技术方案与逐文件设计：`/tmp/dd-deepin-port/PLAN.md`（下称 PLAN）；JSON 契约唯一来源：
 `/tmp/dd-deepin-port/contract.md`（下称 CONTRACT）+ 引擎仓库 `/home/superShuai/code/moongit/`。
 
+## Canvas 指定：Qt QPainter Canvas（scene 契约）
+
+引擎契约（moonGit docs/graph-scene-schema.md）为本平台**指定**的图谱/架构图渲染实现是
+**Qt/QPainter Canvas**（C++ 实现同一 Canvas2D 方法子集，以契约清单为移植验收清单），
+消费 `graph arch/tree --format scene` 导出的 moongit-graph-scene v1 数据。
+数据与渲染分离：引擎零实现时的 Web Canvas HTML 导出是兜底出口，本平台的正路是
+scene 数据 + QPainter 本机绘制。（macOS 端对应实现 `ArchCanvasView.swift` 可作逐方法对照。）
+
 ---
 
 ## 功能清单与 mac 版对应关系

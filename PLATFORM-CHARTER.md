@@ -46,8 +46,25 @@
 - [ ] 引擎不可达 → 明确报错 + 引导安装，不静默失败
 - [ ] key 只进平台安全存储，不进日志/配置文件明文
 
+## 3.5 平台 Canvas 分派（2026-10-10 定稿）
+
+图谱/架构图的渲染遵循引擎契约 [graph-scene-schema.md]（moonGit 仓库 docs/）的**分派规则**：
+
+> **有客户端实现，就跟客户端走；没有客户端实现，才用 Web 技术兜底。**
+
+| 平台 | Canvas 实现 | 数据 |
+|---|---|---|
+| macOS | SwiftUI GraphicsContext（`ArchCanvasView`，已实现） | `graph arch --format scene` |
+| Linux（本仓 `linux/`，仓颉客户端） | **仓颉 Canvas 移植**（CangjieGUI 宿主，实现同一 Canvas2D 子集） | 同上 |
+| DDE / deepin（本仓 `deepin/`，C++ 客户端） | **Qt QPainter Canvas**（实现同一子集） | 同上 |
+| Windows / 鸿蒙 PC | 待定——未指定前由引擎 Web 导出兜底 | `graph arch` 默认导出 |
+
+三条不变量（与引擎契约文档一致）：数据单来源（scene 契约，渲染端换栈数据零改动）；
+Web 兜底与平台实现长期共存（兜底不是降级）；平台 Canvas 以契约方法清单为移植验收清单。
+代码图谱的 Web 导出同理：`graph tree` 默认即 Web Canvas HTML（`MoongitCodeGraph.renderTo`）。
+
 ## 4. 引擎侧为 agent 提供的能力（平台无关）
 
-- **MCP**：`deepgit mcp`（stdio JSON-RPC：tools/resources/prompts，15 工具）——任何 MCP 宿主接入
-- **Skill**：`deepgit skill print|install` —— 教学包（接入方式/任务配方/红线），供编码类 agent 学习使用
-- **CLI**：`deepgit context|tools|status|dashboard --json` —— 一次性问答与脚本（客户端主通道）
+- **MCP**：`moongit mcp`（stdio JSON-RPC，23 工具：进度管理 14 + 代码图谱 6 + 补丁置信度 3）——任何 MCP 宿主接入
+- **Skill**：`moongit skill print|install` —— 教学包（接入方式/任务配方/红线），供编码类 agent 学习使用
+- **CLI**：`moongit context|tools|status|dashboard --json` 与 `graph overview|tree|symbol|impact|arch|confidence|patchconf` —— 一次性问答与脚本（客户端主通道）
