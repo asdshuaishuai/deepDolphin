@@ -1,5 +1,10 @@
 // ArchPage.swift — 架构图页（独立于代码图谱）。
 //
+// ⚠️ 渲染归属：本页**直接用客户端自己的 Canvas 实现**（ArchCanvasView 的
+// SwiftUI GraphicsContext = Swift 语言版的 Canvas2D 对应物）把 scene 契约
+// 画在应用内——不导出 HTML、不开浏览器。Web 驱动只是引擎多出口之一，
+// 客户端的正路永远是 scene 数据 + 本机 Canvas。
+//
 // 分工：**架构图**回答「模块怎么分层、依赖是否违规」（scene 画布，引擎确定性
 // 布局与治理信号）；**代码图谱**（CodeGraphPage）回答「符号谁连着谁、哪里
 // 不能信」。两者数据源不同（scene JSON vs symbol/impact/confidence），页面
@@ -36,7 +41,6 @@ final class ArchPageVM: ObservableObject {
 struct ArchPage: View {
     @EnvironmentObject var model: AppModel
     @StateObject private var vm = ArchPageVM()
-    @State private var openError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,20 +54,10 @@ struct ArchPage: View {
                 .disabled(vm.loading || vm.projectName.isEmpty)
                 .help(L10n.t("common.refresh"))
                 .accessibilityLabel(A11y.label(L10n.t("common.refresh")))
-                Button {
-                    Task { await openCanvasInBrowser() }
-                } label: {
-                    Label(L10n.t("arch.openHtml"), systemImage: "safari")
-                }
-                .disabled(vm.loading || vm.projectName.isEmpty)
                 Spacer()
                 if vm.loading { ProgressView().controlSize(.small) }
             }
             .padding(DSSpacing.md)
-            if let err = openError {
-                Text(err).foregroundStyle(.orange).font(.callout)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DSSpacing.md)
-            }
             if let err = vm.error {
                 Text(err).foregroundStyle(.orange).font(.callout)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DSSpacing.md)
@@ -83,20 +77,6 @@ struct ArchPage: View {
         }
     }
 
-    /// 导出 Web Canvas 交互图（引擎默认格式）到临时文件并用默认浏览器打开。
-    private func openCanvasInBrowser() async {
-        openError = nil
-        do {
-            let data = try await EngineCLI.shared.runData(
-                ["graph", "arch", vm.projectName, "--format", "html"], timeout: 300)
-            let tmp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("deepdolphin-arch-\(vm.projectName).html")
-            try data.write(to: tmp)
-            SysOpen.file(tmp.path)
-        } catch {
-            openError = EngineError.userMessage(for: error)
-        }
-    }
 
     /// 契约要求：警示与截断必须如实披露（缺键不得当作「没有」）。
     @ViewBuilder
