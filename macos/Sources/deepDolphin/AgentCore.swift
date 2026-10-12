@@ -103,6 +103,13 @@ enum AgentCore {
             return (false, ToolArgs.missingMessage(tool: name, missing: absent))
         }
         func str(_ key: String) -> String { params[key] as? String ?? "" }
+        // 模型给的布尔/数字经 JSONSerialization 可能落成 Bool/Int/Double/String
+        func flag(_ key: String) -> Bool { (params[key] as? Bool) == true }
+        func num(_ key: String) -> String {
+            if let v = params[key] as? Int { return String(v) }
+            if let v = params[key] as? Double { return String(Int(v)) }
+            return params[key] as? String ?? ""
+        }
         do {
             switch name {
             case "get_group_context":
@@ -139,6 +146,131 @@ enum AgentCore {
             case "milestone_done":
                 try await EngineCLI.shared.milestoneAction(project: str("project"), name: str("name"), action: "done")
                 return (true, "完成")
+            // ── 图能力工具面（arch_* / index_* / confidence_* / render /
+            // codegraph_* 别名，2026-10-13 契约检查第 12 组抓到的漂移）。
+            // 全部 CLI 子进程，命令形态与引擎 cli.cj 的 usage 逐一对应；
+            // 重命令（gen/update/render）给长超时——大仓整图构建是秒级到
+            // 几十秒级。可选参数只在模型真传了才拼进 argv，缺省交给引擎。
+            case "arch_gen":
+                var argv = ["arch", "gen", str("name")]
+                let f = str("format")
+                if !f.isEmpty { argv += ["--format", f] }
+                let data = try await EngineCLI.shared.runData(argv, timeout: 600)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "arch_update":
+                var argv = ["arch", "update", str("name")]
+                if flag("force") { argv += ["--force"] }
+                let data = try await EngineCLI.shared.runData(argv, timeout: 600)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "arch_query":
+                var argv = ["arch", "query", str("name")]
+                let m = str("module")
+                if !m.isEmpty { argv += [m] }
+                if flag("violations") { argv += ["--violations"] }
+                let data = try await EngineCLI.shared.runData(argv, timeout: 300)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "index_gen":
+                // manifest 默认 json（喂模型的结构化视图）；显式传了才覆盖
+                var argv = ["index", "gen", str("name"), "--format", "json"]
+                let f = str("format")
+                if !f.isEmpty { argv = ["index", "gen", str("name"), "--format", f] }
+                let d = num("depth")
+                if !d.isEmpty { argv += ["--depth", d] }
+                let data = try await EngineCLI.shared.runData(argv, timeout: 600)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "index_update":
+                var argv = ["index", "update", str("name")]
+                if flag("force") { argv += ["--force"] }
+                let data = try await EngineCLI.shared.runData(argv, timeout: 600)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "index_overview":
+                let data = try await EngineCLI.shared.runData(["index", "overview", str("name")], timeout: 120)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "index_query":
+                // usage: index query <symbol> [project] | index query --file <path> [project]
+                var argv = ["index", "query"]
+                let file = str("file")
+                let sym = str("symbol")
+                if !file.isEmpty { argv += ["--file", file] }
+                if !sym.isEmpty { argv += [sym] }
+                argv += [str("name")]
+                let data = try await EngineCLI.shared.runData(argv, timeout: 180)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "confidence_gen":
+                var argv = ["confidence", "gen", str("name"), "--format", "json"]
+                let f = str("format")
+                if !f.isEmpty { argv = ["confidence", "gen", str("name"), "--format", f] }
+                if flag("no_ast") { argv += ["--no-ast"] }
+                if flag("db") { argv += ["--db"] }
+                let data = try await EngineCLI.shared.runData(argv, timeout: 600)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "confidence_query":
+                var argv = ["confidence", "query", str("name")]
+                for (k, flagName) in [("file", "--file"), ("symbol", "--symbol"), ("kind", "--kind")] {
+                    let v = str(k)
+                    if !v.isEmpty { argv += [flagName, v] }
+                }
+                let w = num("weight")
+                if !w.isEmpty { argv += ["--weight", w] }
+                let top = num("top")
+                if !top.isEmpty { argv += ["--top", top] }
+                let data = try await EngineCLI.shared.runData(argv, timeout: 120)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "render":
+                // 回执只有落盘路径与复用/新绘判定（不内塞 HTML 全文）
+                let target = str("target").isEmpty ? "index" : str("target")
+                var argv = ["render", target, str("name")]
+                if flag("confidence") { argv += ["--confidence"] }
+                if flag("force") { argv += ["--force"] }
+                let data = try await EngineCLI.shared.runData(argv, timeout: 600)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "codegraph_overview":
+                let data = try await EngineCLI.shared.runData(["graph", "overview", str("name"), "--json"], timeout: 300)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "codegraph_tree":
+                var argv = ["graph", "tree", str("name"), "--json"]
+                let d = num("depth")
+                if !d.isEmpty { argv += ["--depth", d] }
+                let data = try await EngineCLI.shared.runData(argv, timeout: 600)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "codegraph_symbol":
+                let data = try await EngineCLI.shared.runData(
+                    ["graph", "symbol", str("name"), str("symbol"), "--json"], timeout: 300)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "codegraph_impact":
+                let data = try await EngineCLI.shared.runData(
+                    ["graph", "impact", str("name"), str("symbol"), "--json"], timeout: 300)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "codegraph_arch":
+                let f = str("format").isEmpty ? "html" : str("format")
+                let data = try await EngineCLI.shared.runData(
+                    ["graph", "arch", str("name"), "--format", f], timeout: 600)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "codegraph_confidence":
+                // 引擎 CLI 形态：graph confidence <name>（--json=结构化 / --llm=复核提示词 / 缺省=text）
+                let f = str("format")
+                var argv = ["graph", "confidence", str("name")]
+                if f == "llm" { argv += ["--llm"] }
+                else if f != "text" { argv += ["--json"] }
+                let data = try await EngineCLI.shared.runData(argv, timeout: 600)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "codegraph_patch_confidence":
+                let data = try await EngineCLI.shared.runData(
+                    ["graph", "patchconf", str("name"), "--patch", str("patch_path")], timeout: 300)
+                return (true, String(data: data, encoding: .utf8) ?? "")
+            case "codegraph_patch_merge":
+                // 工具参数是两段 JSON **文本**；引擎 CLI 吃文件路径——落临时文件再合并
+                let fm = FileManager.default
+                let dir = fm.temporaryDirectory.appendingPathComponent("moongit-patchmerge-\(UUID().uuidString)")
+                try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+                let f1 = dir.appendingPathComponent("algorithm.json")
+                let f2 = dir.appendingPathComponent("agent.json")
+                try str("algorithm_json").write(to: f1, atomically: true, encoding: .utf8)
+                try str("agent_json").write(to: f2, atomically: true, encoding: .utf8)
+                defer { try? fm.removeItem(at: dir) }
+                let data = try await EngineCLI.shared.runData(
+                    ["graph", "patchconf", "--merge", f1.path, f2.path], timeout: 120)
+                return (true, String(data: data, encoding: .utf8) ?? "")
             default:
                 return (false, "未知工具：\(name)")
             }

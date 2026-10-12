@@ -19,6 +19,8 @@ PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTCOME="$PKG_DIR/Sources/deepDolphin/AgentOutcome.swift"
 MSG="$PKG_DIR/Sources/deepDolphin/ChatMessage.swift"
 CONVO="$PKG_DIR/Sources/deepDolphin/AgentConversation.swift"
+L10N="$PKG_DIR/Sources/deepDolphin/L10n.swift"
+DOC_PAGES="$PKG_DIR/Sources/deepDolphin/DocsPages.swift"
 AIERR="$PKG_DIR/Sources/deepDolphin/AIErrorMessage.swift"
 ARGS="$PKG_DIR/Sources/deepDolphin/ToolArgs.swift"
 CHECKER="$PKG_DIR/Tests/AgentCheck/main.swift"
@@ -36,7 +38,7 @@ trap cleanup EXIT
 SDK="$(xcrun --show-sdk-path --sdk macosx 2>/dev/null)"
 BIN="$SANDBOX/agent-check"
 echo "编译 agent 检查（AgentOutcome + ChatMessage + AgentConversation + AIErrorMessage + ToolArgs 本体 + 检查程序）…"
-if ! swiftc -O -sdk "$SDK" "$OUTCOME" "$MSG" "$CONVO" "$AIERR" "$ARGS" "$CHECKER" -o "$BIN" 2>"$SANDBOX/compile.log"; then
+if ! swiftc -O -sdk "$SDK" "$OUTCOME" "$MSG" "$CONVO" "$L10N" "$DOC_PAGES" "$AIERR" "$ARGS" "$CHECKER" -o "$BIN" 2>"$SANDBOX/compile.log"; then
   echo "✗ 编译失败：" >&2
   sed 's/^/  /' "$SANDBOX/compile.log" >&2
   exit 1

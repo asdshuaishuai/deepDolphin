@@ -572,14 +572,16 @@ do {
     }
 
     check("「重试」按钮没有再用 ? 静默吞掉（nil 时不该静默无反应）") {
-        let text = try String(contentsOf: src, encoding: .utf8)
-        guard text.contains("Button(\"重试\")") else {
-            throw fail("找不到「重试」按钮，检查前提不成立")
+        // 2026-10-13 前提随实现更新：按钮文案已 L10n 化为 common.retry
+        //（错误态 Button(L10n.t("common.retry"))）。语义回到原 lint：
+        // 按钮体 onRegenerate?() 是**可接受**的写法——nil 时静默只在有
+        // nil 调用点时才有害，由上一条「所有调用点都传了实现」担保。
+        // 过 code() 剥注释——文档注释里引用旧写法不能骗绿（不变量 30）。
+        let text = code(try String(contentsOf: src, encoding: .utf8))
+        guard text.contains("Button(L10n.t(\"common.retry\"))") else {
+            throw fail("找不到重试按钮（Button(L10n.t(\"common.retry\"))），检查前提不成立")
         }
-        // 按钮体必须真的调用闭包，而不是 optional-chaining 掉空
-        if text.contains("Button(\"重试\") { onRegenerate?() }") {
-            // 这是可接受的写法：前提是所有调用点都传了实现（上一条已钉）。
-            // 之所以不在这里判死，是因为「nil 时静默」只在有 nil 调用点时才有害。
+        if text.contains("onRegenerate?()") {
             return "按钮体是 onRegenerate?()，由上一条「无 nil 调用点」保证它一定非空"
         }
         return "按钮体已不是静默 optional-chaining"
@@ -866,10 +868,25 @@ do {
         guard panel.contains("AgentView(target:") else {
             throw fail("PanelView 里没有呈现 AgentView")
         }
-        guard panel.contains("Label(\"AI 助手\"") else {
-            throw fail("工具栏里没有「AI 助手」按钮")
+        // 2026-10-13 前提随实现更新：按钮文案已 L10n 化（toolbar.agent 键）。
+        // 钉三件事：sheet 还在、按钮还接 showAgent、文案键还存在于 L10n 表
+        //（键漂移 = 按钮显示原始键名，等于入口坏了一半）。
+        guard panel.contains("showAgent = true") else {
+            throw fail("工具栏按钮没有接 showAgent —— 入口是死的")
         }
-        return "工具栏按钮 + sheet 呈现"
+        guard panel.contains("Label(L10n.t(\"toolbar.agent\")") else {
+            throw fail("入口按钮不再走 toolbar.agent 文案键（本地化键漂移）")
+        }
+        let l10nURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/deepDolphin/L10n.swift")
+        let l10n = try String(contentsOf: l10nURL, encoding: .utf8)
+        guard l10n.contains("\"toolbar.agent\"") else {
+            throw fail("L10n 表里没有 toolbar.agent 键 —— 按钮会显示原始键名")
+        }
+        return "工具栏按钮（L10n 键）+ sheet 呈现"
     }
 
     check("对话范围必须跟随当前选中（静默拿项目群去答项目问题会答得很像回事）") {
