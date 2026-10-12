@@ -92,6 +92,24 @@ final class CodeGraphVM: ObservableObject {
     @Published private(set) var rows: [GTreeRow] = []
     @Published private(set) var expanded: Set<String> = []
     @Published var selID: String?
+    /// 热力图下钻：nil = 全部文件层；非 nil = 该文件的符号层
+    @Published var heatDrill: GNode?
+
+    /// 热力图数据面：当前层级应铺排的节点（nil = 根下所有文件，跨目录；
+    /// 钻取态 = 该文件的符号，按声明行序）
+    func heatNodes() -> [GNode] {
+        if let f = heatDrill {
+            return f.kids.filter { $0.kind == .sym }.sorted { $0.declLine < $1.declLine }
+        }
+        guard let root else { return [] }
+        var out: [GNode] = []
+        var stack = root.kids
+        while let n = stack.popLast() {
+            if n.kind == .file { out.append(n) }
+            if n.kind == .dir { stack.append(contentsOf: n.kids) }
+        }
+        return out.sorted { $0.name < $1.name }
+    }
     @Published var detailTab: DetailTab = .source
     @Published private(set) var score: Int = 100
     @Published private(set) var astNote = ""
@@ -441,6 +459,8 @@ struct CodeGraphPage: View {
         _vm = StateObject(wrappedValue: vm)
     }
 
+    @State private var heatMode = false
+
     var body: some View {
         VStack(spacing: 0) {
             topBar
@@ -492,6 +512,7 @@ struct CodeGraphPage: View {
             }
             .buttonStyle(.borderless)
             .help(L10n.t("cgraph.reload"))
+            .accessibilityLabel(A11y.label(L10n.t("cgraph.reload")))
             if vm.loading { ProgressView().controlSize(.small) }
             Spacer()
             if vm.rootLoaded {
@@ -531,10 +552,25 @@ struct CodeGraphPage: View {
                         .buttonStyle(.borderless)
                         .foregroundStyle(.tertiary)
                 }
+                Spacer()
+                // 显示模式：列表树 / 符号索引热力图（treemap 原生画布）
+                Picker(L10n.t("cgraph.heat"), selection: $heatMode) {
+                    Text(L10n.t("cgraph.list")).tag(false)
+                    Text(L10n.t("cgraph.heat")).tag(true)
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+                .fixedSize()
+                .accessibilityLabel(A11y.label(L10n.t("cgraph.heat")))
             }
             .padding(.horizontal, DSSpacing.md)
             .padding(.vertical, DSSpacing.sm)
             Divider()
+            if heatMode {
+                // 符号索引热力图：treemap 原生画布（点文件下钻符号层，
+                // 点符号选中 → 右栏详情；口径与 HTML 交付物一致）
+                CodeGraphHeatView(vm: vm) { _ in }
+            } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(vm.rows) { row in
@@ -547,6 +583,7 @@ struct CodeGraphPage: View {
                     }
                 }
                 .padding(.vertical, DSSpacing.xs)
+            }
             }
         }
         .background(.quaternary.opacity(0.18))
@@ -598,6 +635,7 @@ struct CodeGraphPage: View {
                     .font(.caption.weight(.bold).monospacedDigit())
                     .foregroundStyle(Tier.color(n.rollW))
                     .help(L10n.t("cgraph.tabConf"))
+                    .accessibilityLabel(A11y.label(L10n.t("cgraph.tabConf")))
             }
         }
         .padding(.horizontal, DSSpacing.lg)
@@ -857,6 +895,7 @@ private struct TreeRowView: View {
             Text("\(node.fileCount)")
                 .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
                 .help(L10n.t("cgraph.filesUnit", node.fileCount))
+                .accessibilityLabel(A11y.label(L10n.t("cgraph.filesUnit", node.fileCount)))
         case .root:
             Text("\(vm.score)")
                 .font(.caption2.weight(.semibold).monospacedDigit())
@@ -875,6 +914,7 @@ private struct TreeRowView: View {
                 .background(Tier.color(node.rollW).opacity(0.12), in: Capsule())
                 .overlay(Capsule().strokeBorder(Tier.color(node.rollW).opacity(0.45), lineWidth: 0.5))
                 .help(pillHelp)
+                .accessibilityLabel(A11y.label(pillHelp))
                 .onTapGesture { vm.select(node, tab: .conf, reveal: false) }
         }
     }
@@ -903,6 +943,7 @@ private struct FindingRow: View {
                     .background(Tier.color(finding.weight).opacity(0.12), in: Capsule())
                     .overlay(Capsule().strokeBorder(Tier.color(finding.weight).opacity(0.45), lineWidth: 0.5))
                     .help("\(finding.kind) w\(finding.weight)")
+                    .accessibilityLabel(A11y.label("\(finding.kind) w\(finding.weight)"))
                 Spacer()
                 // 目录/项目 roll-up 里一条疑点来自哪个文件必须可见（HTML 版缺这个）
                 Text("\(finding.file):\(finding.line)")

@@ -196,6 +196,33 @@ func run() async {
         await render(shots: shots2, outPath: outPath, model: model, useWindow: true)
         exit(0)
     }
+    if mode == "heatmap" {
+        // 符号索引热力图（原生 treemap Canvas）：两拍——全部文件层 +
+        // 钻取符号最多的文件后的符号层。数据同一份真实引擎输出（alpha 夹具）。
+        let vm = CodeGraphVM()
+        vm.projectName = "alpha"
+        await vm.load(all: model.projects)
+        var w2 = 0
+        while (!vm.rootLoaded || vm.loading) && w2 < 120 {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            w2 += 1
+        }
+        let shotsH: [(base: String, w: CGFloat, h: CGFloat, view: AnyView)] = [
+            ("heatmap", 1000, 760,
+             AnyView(CodeGraphHeatView(vm: vm) { _ in })),
+        ]
+        await render(shots: shotsH, outPath: outPath, model: model, useWindow: true)
+        // 下钻：符号最多的文件
+        if let f = vm.heatNodes().max(by: { $0.kids.count < $1.kids.count }), f.kids.count > 1 {
+            vm.heatDrill = f
+            let shotsD: [(base: String, w: CGFloat, h: CGFloat, view: AnyView)] = [
+                ("heatmap-drill", 1000, 760,
+                 AnyView(CodeGraphHeatView(vm: vm) { _ in })),
+            ]
+            await render(shots: shotsD, outPath: outPath, model: model, useWindow: true)
+        }
+        exit(0)
+    }
     if mode == "panel" {
         await renderPanel(w: 1100, h: 760, model: model, outPath: outPath)
         exit(0)

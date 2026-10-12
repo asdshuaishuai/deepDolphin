@@ -114,6 +114,8 @@ Sources/deepDolphin/
   ChatMessage.swift             聊天消息模型（零依赖，供 agent-check 编译）
   ClientDecisions.swift         纯函数：刷新合并门闩等（撞上不丢弃，排队补跑）
   CodeGraphPage.swift           代码图谱页（deepOrca 式三列符号关系 × 置信度徽标叠加）
+  CodeGraphHeatmap.swift        符号索引热力图（原生 Canvas treemap：面积 ∝ 行数，
+                                颜色 = 置信度指数；点文件下钻符号层，选中走右栏详情）
   CodeSnippet.swift             低置信度代码块组件（披露式行 + 源码/diff 片段提取）
   CommitCountScope.swift        纯函数：提交数分母口径
   CommitTypeComposition.swift   纯函数：提交类型构成 + 截断披露
