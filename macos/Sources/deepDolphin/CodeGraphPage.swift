@@ -203,7 +203,7 @@ final class CodeGraphVM: ObservableObject {
     // MARK: 加载
 
     func load(all: [ProjectStatus]) async {
-        if projectName.isEmpty, let first = all.first { projectName = first.name }
+        // 单仓库限制：未显式选定仓库时什么都不跑（不回退第一个项目）
         guard !projectName.isEmpty else { return }
         loading = true
         error = nil
@@ -558,8 +558,9 @@ struct CodeGraphPage: View {
             }
         }
         .task {
-            if vm.projectName.isEmpty && !model.projects.isEmpty {
-                vm.projectName = model.projects.first!.name
+            // 单仓库限制：只在显式选定的仓库仍存在时加载；绝不自动选取
+            if !vm.projectName.isEmpty,
+               model.projects.contains(where: { $0.name == vm.projectName }) {
                 await vm.load(all: model.projects)
             }
         }
@@ -596,9 +597,17 @@ struct CodeGraphPage: View {
         VStack(spacing: DSSpacing.sm) {
             Image(systemName: "point.3.connected.trianglepath.dotted")
                 .font(.title).foregroundStyle(.tertiary)
-            Text(L10n.t("cgraph.hint"))
-                .foregroundStyle(.secondary)
+            if vm.projectName.isEmpty {
+                // 单仓库限制：未选定仓库 = 引导先选，不显示定位提示
+                Text(L10n.t("graph.needProject"))
+                    .font(.callout).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text(L10n.t("cgraph.hint"))
+                    .foregroundStyle(.secondary)
+            }
         }
+        .padding(.horizontal, DSSpacing.lg)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 

@@ -5565,6 +5565,56 @@ do {
     }
 }
 
+
+// MARK: - 图谱页单仓库限制（用户定稿：架构图/代码图谱只能按单仓库执行）
+//
+// 三道源码守卫钉死「从客户端限制死」：
+//   ① 两页都不得有 projects.first 隐式回退（静默拿第一个仓库跑图 = 用户没选也在跑）
+//   ② 两页都必须有 needsProject / projectName.isEmpty 空态守卫（未选定 = 一个像素不画）
+//   ③ 项目选择器不得提供仓库组/全部选项（图谱没有项目群形态）
+
+print("【图】图谱页单仓库限制（架构图 + 代码图谱）")
+do {
+    let base = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()   // ClientCheck
+        .deletingLastPathComponent()   // Tests
+        .deletingLastPathComponent()   // <pkg>
+    let cgraph = try String(contentsOf: base.appendingPathComponent("Sources/deepDolphin/CodeGraphPage.swift"), encoding: .utf8)
+    let arch = try String(contentsOf: base.appendingPathComponent("Sources/deepDolphin/ArchPage.swift"), encoding: .utf8)
+    let picker = try String(contentsOf: base.appendingPathComponent("Sources/deepDolphin/GraphPages.swift"), encoding: .utf8)
+
+    // ① 隐式回退封死：只禁两种「取首仓库」形态——`projects.first?.name`
+    //    （可选链隐式选第一个）与 `projects.first!`（强解隐式选第一个）。
+    //    `projects.first(where:)` 是按名查找，合法，不能误伤（不变量 30：
+    //    lint 模式过宽会把合法代码打成缺陷）。
+    for (name, text) in [("CodeGraphPage.swift", cgraph), ("ArchPage.swift", arch)] {
+        for banned in ["projects.first?.name", "projects.first!"] {
+            guard !text.contains(banned) else {
+                throw fail("\(name) 仍在隐式回退第一个项目（\(banned)）——图谱只能按用户显式选定的单仓库执行")
+            }
+        }
+    }
+    // ② 空态守卫在：未选定仓库时必须走引导空态，画布不渲染
+    guard cgraph.contains("vm.projectName.isEmpty") else {
+        throw fail("CodeGraphPage 没有未选定仓库的空态守卫")
+    }
+    guard arch.contains("var needsProject: Bool") && arch.contains("if vm.needsProject") else {
+        throw fail("ArchPage 没有未选定仓库的空态守卫（needsProject）")
+    }
+    // ③ 选择器只有单项目条目：不许出现「全部/项目群/group」聚合选项
+    for banned in ["全部", "项目群", "All projects", "group"] {
+        guard !picker.contains(banned) else {
+            throw fail("GraphProjectPicker 出现聚合选项字面量（\(banned)）——图谱没有项目群形态")
+        }
+    }
+    // 引导文案键在（四语言表至少 zhCN 有一份，L10n 缺键 = 按钮显示原始键名）
+    let l10n = try String(contentsOf: base.appendingPathComponent("Sources/deepDolphin/L10n.swift"), encoding: .utf8)
+    guard l10n.contains("\"graph.needProject\"") else {
+        throw fail("L10n 缺 graph.needProject 键——空态引导文案缺失")
+    }
+    print("  ✓ 图谱两页只能按显式选定的单仓库执行（无回退/有空态/无聚合选项）")
+}
+
 print("")
 if failures.isEmpty {
     print("✅ 客户端检查通过：\(checks) 项")

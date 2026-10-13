@@ -19,10 +19,10 @@ final class ArchPageVM: ObservableObject {
     @Published var overview: [String: Any] = [:]
     let canvas = ArchCanvasVM()
 
+    /// 单仓库限制：未显式选定仓库时什么都不跑（不回退第一个项目）
+    var needsProject: Bool { projectName.isEmpty }
+
     func load(all: [ProjectStatus]) async {
-        if projectName.isEmpty, let first = all.first {
-            projectName = first.name
-        }
         guard !projectName.isEmpty else { return }
         loading = true
         error = nil
@@ -62,16 +62,30 @@ struct ArchPage: View {
                 Text(err).foregroundStyle(.orange).font(.callout)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DSSpacing.md)
             }
-            VStack(spacing: DSSpacing.sm) {
-                ArchCanvasView(vm: vm.canvas)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                sceneFooter
+            if vm.needsProject {
+                // 单仓库限制：未选定仓库 = 只给空态引导，画布一个像素都不画
+                VStack(spacing: DSSpacing.sm) {
+                    Image(systemName: "cube.transparent")
+                        .font(.title).foregroundStyle(.tertiary)
+                    Text(L10n.t("graph.needProject"))
+                        .font(.callout).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: DSSpacing.sm) {
+                    ArchCanvasView(vm: vm.canvas)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    sceneFooter
+                }
+                .padding(.horizontal, DSSpacing.md)
+                .padding(.bottom, DSSpacing.sm)
             }
-            .padding(.horizontal, DSSpacing.md)
-            .padding(.bottom, DSSpacing.sm)
         }
         .task {
-            if vm.projectName.isEmpty || !model.projects.contains(where: { $0.name == vm.projectName }) {
+            // 单仓库限制：只在显式选定的仓库仍存在时加载；绝不回退第一个项目
+            if !vm.projectName.isEmpty,
+               model.projects.contains(where: { $0.name == vm.projectName }) {
                 await vm.load(all: model.projects)
             }
         }
