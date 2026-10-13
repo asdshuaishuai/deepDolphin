@@ -257,10 +257,13 @@ struct CodeGraphHeatView: View {
                 crumb(f)
                 Divider()
             }
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animated)) { tl in
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animated)) { (tl: TimelineViewDefaultContext) in
                 GeometryReader { geo in
-                    let cards = CGLayout.layout(vm: vm, nodes: vm.heatNodes(), in: geo.size)
-                    let routes = CGEdgeRouting.routes(vm: vm, cards: cards)
+                    // 布局/走线按（层级 + 画布尺寸 + 边数）缓存在 VM：
+                    // 30fps 重绘只重画时变项，重心扫描与走线不每帧重跑
+                    let grid = vm.heatGrid(size: geo.size)
+                    let cards = grid.cards
+                    let routes = grid.routes
                     let now = timelineDelta(tl)
                     Canvas { ctx, _ in
                         draw(now: now, cards: cards, routes: routes, into: &ctx, canvas: geo.size)
@@ -324,8 +327,8 @@ struct CodeGraphHeatView: View {
             line.move(to: r.smoothed[0])
             for p in r.smoothed.dropFirst() { line.addLine(to: p) }
             ctx.stroke(line,
-                       with: .color(ecol.opacity(fade * (lit ? 0.92 : 0.5))),
-                       style: StrokeStyle(lineWidth: (lit ? 2.4 : min(2.2, 0.9 + Double(r.w) * 0.14)),
+                       with: .color(ecol.opacity(fade * (lit ? 0.92 : 0.42 + pulse * 0.16))),
+                       style: StrokeStyle(lineWidth: (lit ? 2.4 : min(2.2, 0.9 + Double(r.w) * 0.14 + pulse * 0.25)),
                                           lineCap: .round,
                                           dash: r.tier == "guessed" ? [5, 4] : [],
                                           dashPhase: animated ? -now * 7 : 0))
@@ -340,15 +343,21 @@ struct CodeGraphHeatView: View {
                 arrow.closeSubpath()
                 ctx.fill(arrow, with: .color(ecol.opacity(fade * 0.9)))
             }
-            // 粒子沿线（运行轨迹方向指示）
+            // 粒子 = 亮头 + 渐淡拖尾（沿线取样一小段，方向一目了然）
             if animated {
                 var h = 0
                 for ch in r.from.utf8 { h = (h &* 31 &+ Int(ch)) & 0x7fffffff }
                 let tt = (now * (0.12 + Double(r.w) * 0.02) + Double(h % 97) / 97.0)
                     .truncatingRemainder(dividingBy: 1)
-                if let p = r.sample(tt) {
-                    ctx.fill(Path(ellipseIn: CGRect(x: p.x - 2, y: p.y - 2, width: 4, height: 4)),
-                             with: .color(ecol.opacity(fade * 0.55 + pulse * 0.2)))
+                if let p = r.sample(CGFloat(tt)), let q = r.sample(CGFloat(max(0, tt - 0.045))) {
+                    var trail = Path()
+                    trail.move(to: q)
+                    trail.addLine(to: p)
+                    ctx.stroke(trail, with: .color(ecol.opacity(fade * 0.35)), lineWidth: 1.6)
+                    ctx.fill(Path(ellipseIn: CGRect(x: p.x - 2.2, y: p.y - 2.2, width: 4.4, height: 4.4)),
+                             with: .color(ecol.opacity(fade * 0.6 + pulse * 0.15)))
+                    ctx.fill(Path(ellipseIn: CGRect(x: p.x - 0.9, y: p.y - 0.9, width: 1.8, height: 1.8)),
+                             with: .color(Color.white.opacity(fade * 0.8)))
                 }
             }
         }
@@ -377,11 +386,20 @@ struct CodeGraphHeatView: View {
                     || (e.from == sel && e.to == n.id) || (e.to == sel && e.from == n.id)
             }
         }
-        let alpha: CGFloat = dim ? 0.45 : 1
+        // 入场错峰：#序越大越晚浮现（带内行主序），easeOutQuad 收尾
+        let delay = Double(c.rank - 1) * 0.03 + Double(c.layerIndex) * 0.08
+        let appearLocal = min(1, max(0, (now - delay) / 0.35))
+        let appear = 1 - (1 - appearLocal) * (1 - appearLocal)
+        var alpha: CGFloat = (dim ? 0.45 : 1) * CGFloat(appear)
+        // 漂浮：整卡 ±1.2px 微动（相位按色相错开——网格不散、画面是活的）
+        let floatX = animated ? sin(now * 0.5 + phase) * 1.2 : 0
+        let floatY = animated ? cos(now * 0.42 + phase * 0.8) * 1.2 : 0
         // 呼吸（框体内）：尺度 ±0.3% + 填充亮度脉动
-        let grow: CGFloat = animated ? 1 + pulse * 0.003 + (isSelected ? 0.003 : 0) : 1
-        let x = c.x + c.w / 2 - c.w * grow / 2
-        let y = c.y + c.h / 2 - c.h * grow / 2
+        let grow: CGFloat = animated
+            ? (1 + pulse * 0.003 + (isSelected ? 0.003 : 0)) * (0.92 + 0.08 * CGFloat(appear))
+            : 1
+        let x = c.x + c.w / 2 - c.w * grow / 2 + floatX
+        let y = c.y + c.h / 2 - c.h * grow / 2 + floatY
         let w = c.w * grow, h = c.h * grow
         // 框体填充：底色 + 置信度热色沉积（透明度按档位）
         let heatAlpha = (score < 60 ? 0.20 : (score < 80 ? 0.16 : 0.12))
@@ -398,14 +416,22 @@ struct CodeGraphHeatView: View {
                 ? col.opacity(0.55 + pulse * 0.25)
                 : (hasFindings ? col.opacity(0.45 + pulse * 0.2) : Color.white.opacity(0.14 + pulse * 0.06))
         ), lineWidth: isSelected ? 2 : (hasFindings ? 1.3 : 1.15))
-        // 顶部流光（框体内扫过）
+        // 顶部流光：亮带沿顶边循环扫过（位置/相位每卡错开）
         if animated {
-            let sweep = ((now * 0.13 + phase * 0.11).truncatingRemainder(dividingBy: 1)) * (w - 26)
-            var sheen = Path()
-            sheen.move(to: CGPoint(x: x + 13, y: y + 1))
-            sheen.addLine(to: CGPoint(x: x + w - 13, y: y + 1))
-            ctx.stroke(sheen, with: .color(col.opacity(0.18)), lineWidth: 1)
-            _ = sweep
+            let span = max(1, w - 26)
+            let sweep = ((now * 0.13 + phase * 0.11).truncatingRemainder(dividingBy: 1)) * span
+            let x0 = x + 13 + max(0, sweep - 14)
+            let x1 = x + 13 + min(span, sweep + 14)
+            if x1 > x0 {
+                var sheen = Path()
+                sheen.move(to: CGPoint(x: x0, y: y + 1))
+                sheen.addLine(to: CGPoint(x: x1, y: y + 1))
+                ctx.stroke(sheen,
+                           with: .linearGradient(Gradient(colors: [col.opacity(0), col.opacity(0.5), col.opacity(0)]),
+                                                 startPoint: CGPoint(x: x0, y: y + 1),
+                                                 endPoint: CGPoint(x: x1, y: y + 1)),
+                           lineWidth: 2)
+            }
         }
         // 身份色左条
         var bar = Path()

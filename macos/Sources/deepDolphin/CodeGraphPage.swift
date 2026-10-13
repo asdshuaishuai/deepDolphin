@@ -118,6 +118,20 @@ final class CodeGraphVM: ObservableObject {
         return out.sorted { $0.name < $1.name }
     }
 
+    /// 热力图网格缓存（键 = 层级 + 画布尺寸 + 边数）。30fps 重绘只重画
+    /// 时变项，重心扫描与走线不每帧重跑。
+    private var heatGridCache: (key: String, cards: [CGCard], routes: [CGEdgeRoute])?
+
+    /// 热力图网格（卡片 + 走线），键命中即复用。
+    func heatGrid(size: CGSize) -> (cards: [CGCard], routes: [CGEdgeRoute]) {
+        let key = "\(heatDrill?.id ?? "all")|\(Int(size.width))x\(Int(size.height))|\(fileEdges.count + symEdges.count)"
+        if let c = heatGridCache, c.key == key { return (c.cards, c.routes) }
+        let cards = CGLayout.layout(vm: self, nodes: heatNodes(), in: size)
+        let routes = CGEdgeRouting.routes(vm: self, cards: cards)
+        heatGridCache = (key, cards, routes)
+        return (cards, routes)
+    }
+
     /// 当前层级的边：文件层 = referenceEdges（路径 → 节点 id "f:"+路径）；
     /// 符号层 = 同对聚合的 symEdges。tier 供 guessed 虚线；焦点退淡的
     /// 邻居判定也走这一份。
