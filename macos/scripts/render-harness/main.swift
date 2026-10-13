@@ -165,6 +165,7 @@ func run() async {
         }
         log("harness: codegraph rootLoaded=\(vm.rootLoaded) rows=\(vm.rows.count) 等了 \(w2) 轮\n")
         log("harness: root kids = \(vm.rootKidsDebug)\n")
+        log("harness: fileEdges=\(vm.fileEdges.count) symEdges=\(vm.symEdges.count)\n")
         // 首屏第一眼要有内容：选中带疑点的符号，直接展示置信度 tab。
         // ⚠️ 必须全树找——rows 只含可见行，文件未展开时符号行不在里面
         // （第一版就是栽在这：fixture 明明有疑点，却截了空树详情）。
@@ -207,9 +208,10 @@ func run() async {
             try? await Task.sleep(nanoseconds: 250_000_000)
             w2 += 1
         }
+        log("harness: fileEdges=\(vm.fileEdges.count) symEdges=\(vm.symEdges.count) files=\(vm.heatNodes().count)\n")
         let shotsH: [(base: String, w: CGFloat, h: CGFloat, view: AnyView)] = [
             ("heatmap", 1000, 760,
-             AnyView(CodeGraphHeatView(vm: vm) { _ in })),
+             AnyView(CodeGraphHeatView(vm: vm, staticFrame: true) { _ in })),
         ]
         await render(shots: shotsH, outPath: outPath, model: model, useWindow: true)
         // 下钻：符号最多的文件

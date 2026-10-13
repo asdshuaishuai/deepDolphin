@@ -1,16 +1,22 @@
-// CodeGraphHeatmap.swift — 符号索引热力图的原生 SwiftUI Canvas 驱动。
+// CodeGraphHeatmap.swift — 符号索引热力图的原生 SwiftUI Canvas 驱动
+//（形态与引擎 HTML 交付物完全对齐：力导向气泡）。
 //
-// 形态：treemap（确定性 squarified 布局）——文件瓦片面积 ∝ 行数，颜色 =
-// 置信度热力（与引擎 HTML 同一色阶：≥80 青绿 / ≥60 琥珀 / <60 红）。
-// 点文件瓦片下钻到该文件的符号层（面积 ∝ 符号体行距），面包屑返回；
-// 点符号瓦片 = 选中，右栏详情复用 CodeGraphPage 既有管道（vm.selID）。
+// 布局：CodeGraphVM.bubbles(size:)——确定性力模拟（黄金角散点 + 240 轮，
+// 常数/排序/fitExtent 与引擎 layoutBubbles 逐项对齐），同数据同画布 ⇒
+// 同坐标。绘制期叠加与 HTML 相同的三层时间动效：入场扩散错峰（easeOut
+// 双段）、呼吸 ±3% 半径、漂浮漂移 ±2.4px；粒子沿微弯贝塞尔边匀速流动。
 //
-// 数据：CodeGraphVM 已加载的 GNode 树（graph tree/functions/confidence
-// 三路合流），不另起数据源。罚分口径与引擎一致：文件 = 子树疑点权重和；
-// confScore = floor(100·20/(20+罚分/n))——confidence.cj 公式 confidenceScore
-// 的 Swift 镜像（引擎侧对齐锚点：confidenceScore(20,1)==50）。
+// 语义对齐：
+//   · 颜色 = 置信度指数（confScore 与引擎 confidenceScore 同式同值；
+//     色阶与 HTML confidenceColor 逐字同色：≥80 #59f0b8 / 60–79 #ffc857 /
+//     <60 #ff6b8a）
+//   · 边颜色 = 来源节点身份色（黄金角 137.5° 色相，HTML HUE_OF 同源）
+//   · 符号层 guessed 边虚线（词法不确定要看得出来）
+//   · 点文件气泡下钻符号层（面包屑返回）；点符号气泡 = 选中，右栏详情
+//     复用 CodeGraphPage 既有管道（vm.selID）
 //
-// 布局纯函数：squarified（Bruls et al.）同输入同输出，零随机零时间。
+// reduced-motion / 离屏 harness（staticFrame）直取终帧：无入场动画、
+// 无呼吸漂移、无粒子——布局本身不受影响（确定性）。
 
 import SwiftUI
 
@@ -23,122 +29,26 @@ func cgConfScore(_ penalty: Int, _ files: Int) -> Int {
     return min(100, max(0, s))
 }
 
-/// 文件的罚分 = 子树疑点权重和（与引擎 HEAT 表的文件罚分同口径：
-/// 大多数 finding 按行号归属到符号体，容器罚分含符号级）。
+/// 节点罚分 = 子树疑点权重和（与引擎 HEAT 表的文件罚分同口径）。
 func cgPenalty(_ n: GNode) -> Int {
     n.subtreeFindings.reduce(0) { $0 + $1.weight }
 }
 
-/// 色阶只有一份（与引擎 scoreHex 语义对齐：≥80 绿 / ≥60 黄 / <60 红）。
-func cgHeatColor(_ score: Int, dark: Bool) -> Color {
-    if score >= 80 {
-        return dark ? Color(red: 0.18, green: 0.83, blue: 0.75)
-                    : Color(red: 0.05, green: 0.58, blue: 0.53)
-    }
-    if score >= 60 {
-        return dark ? Color(red: 0.98, green: 0.78, blue: 0.14)
-                    : Color(red: 0.85, green: 0.47, blue: 0.02)
-    }
-    return dark ? Color(red: 0.97, green: 0.44, blue: 0.44)
-                : Color(red: 0.86, green: 0.15, blue: 0.15)
+/// 色阶只有一份（与 HTML confidenceColor 逐字同色；HTML 现为暗色单主题，
+/// 两套外观同色）。
+func cgHeatColor(_ score: Int) -> Color {
+    if score >= 80 { return Color(red: 0.349, green: 0.941, blue: 0.722) }  // #59f0b8
+    if score >= 60 { return Color(red: 1.0, green: 0.784, blue: 0.341) }    // #ffc857
+    return Color(red: 1.0, green: 0.420, blue: 0.541)                       // #ff6b8a
 }
 
-// MARK: - squarified treemap（Bruls et al.，确定性）
-
-enum CGSquarify {
-    /// weights 与 items 一一对应；返回与输入同序的矩形数组。
-    static func tiles(weights: [Double], in rect: CGRect) -> [CGRect] {
-        let total = weights.reduce(0, +)
-        guard total > 0, rect.width >= 1, rect.height >= 1 else {
-            return Array(repeating: .zero, count: weights.count)
-        }
-        let area = weights.map { $0 / total * Double(rect.width * rect.height) }
-        var out = [CGRect](repeating: .zero, count: weights.count)
-        var remaining = rect
-        var start = 0
-        while start < weights.count {
-            // 行铺在剩余矩形的短边上（height >= width → 行横铺在顶部）
-            let layRow = remaining.height >= remaining.width
-            let side = Double(layRow ? remaining.width : remaining.height)
-            var count = 0
-            var rowArea = 0.0
-            var best = Double.greatestFiniteMagnitude
-            while start + count < weights.count {
-                let newRow = rowArea + area[start + count]
-                let thickness = newRow / max(0.001, side)
-                var worst = 0.0
-                for k in 0...count {
-                    let len = area[start + k] / max(0.001, newRow) * side
-                    let ratio = max(len / thickness, thickness / len)
-                    worst = max(worst, ratio)
-                }
-                if count == 0 || worst <= best {
-                    best = worst
-                    rowArea = newRow
-                    count += 1
-                } else {
-                    break
-                }
-            }
-            if count == 0 { count = 1; rowArea = area[start] }
-            let thickness = CGFloat(rowArea / max(0.001, side))
-            var offset = 0.0
-            for k in 0..<count {
-                let len = CGFloat(area[start + k] / max(0.001, rowArea) * side)
-                let r: CGRect
-                if layRow {
-                    r = CGRect(x: remaining.minX + offset, y: remaining.minY,
-                               width: len, height: thickness)
-                } else {
-                    r = CGRect(x: remaining.minX, y: remaining.minY + offset,
-                               width: thickness, height: len)
-                }
-                out[start + k] = r
-                offset += len
-            }
-            remaining = layRow
-                ? CGRect(x: remaining.minX, y: remaining.minY + thickness,
-                         width: remaining.width, height: max(0, remaining.height - thickness))
-                : CGRect(x: remaining.minX + thickness, y: remaining.minY,
-                         width: max(0, remaining.width - thickness), height: remaining.height)
-            start += count
-        }
-        return out
-    }
-}
-
-// MARK: - 瓦片构建（纯函数：树 + 钻取层级 + 画布尺寸 → 瓦片）
-
-struct CGTile: Identifiable {
-    let node: GNode
-    let rect: CGRect
-    let score: Int
-    var id: String { node.id }
-}
-
-enum CGHeatLayout {
-    /// 瓦片权重：文件 ∝ 行数；符号 ∝ 符号体行距（下一符号声明行 − 本行，
-    /// 末尾到文件行数）。纯函数（非隔离）：调用方在 MainActor 取好节点。
-    static func weights(for nodes: [GNode]) -> [Double] {
-        guard let first = nodes.first else { return [] }
-        if first.kind == .sym {
-            let fileLines = max(1, first.parent?.lines ?? 0)
-            return nodes.enumerated().map { i, s in
-                let end = (i + 1 < nodes.count) ? nodes[i + 1].declLine - 1 : fileLines
-                return Double(max(1, end - s.declLine + 1))
-            }
-        }
-        return nodes.map { Double(max(1, $0.lines)) }
-    }
-
-    static func tiles(nodes: [GNode], size: CGSize) -> [CGTile] {
-        guard !nodes.isEmpty, size.width > 20, size.height > 20 else { return [] }
-        let rects = CGSquarify.tiles(weights: weights(for: nodes), in: CGRect(origin: .zero, size: size))
-        return zip(nodes, rects).map { node, rect in
-            CGTile(node: node, rect: rect, score: cgConfScore(cgPenalty(node), 1))
-        }
-        .filter { $0.rect.width > 2 && $0.rect.height > 2 }
-    }
+/// 边的语义色：来源节点身份色相（HTML HUE_OF 同源）；guessed 琥珀。
+func cgEdgeColor(tier: String, hue: Int) -> Color {
+    if tier == "guessed" { return Color(red: 1.0, green: 0.784, blue: 0.341) }
+    let v = hue % 2
+    return Color(hue: Double(hue) / 360.0,
+                 saturation: 0.62 + Double(v) * 0.16,
+                 brightness: 0.52 + Double(v) * 0.14)
 }
 
 // MARK: - 视图
@@ -146,7 +56,13 @@ enum CGHeatLayout {
 struct CodeGraphHeatView: View {
     @ObservedObject var vm: CodeGraphVM
     var onSelect: (GNode) -> Void
+    /// 离屏 harness 直取终帧（无入场动画/呼吸/粒子）
+    var staticFrame = false
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var startedAt: Date?
+
+    private var animated: Bool { !staticFrame && !reduceMotion }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -154,21 +70,38 @@ struct CodeGraphHeatView: View {
                 crumb(f)
                 Divider()
             }
-            GeometryReader { geo in
-                // 取数在 MainActor（vm.heatNodes），布局是纯函数
-                let nodes = vm.heatNodes()
-                let tiles = CGHeatLayout.tiles(nodes: nodes, size: geo.size)
-                Canvas { ctx, _ in
-                    draw(tiles, into: &ctx)
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0,
+                                    paused: !animated)) { tl in
+                GeometryReader { geo in
+                    let bubbles = vm.bubbles(size: geo.size)
+                    let edges = vm.bubbleEdges()
+                    let now = timelineDelta(tl)
+                    Canvas { ctx, size in
+                        draw(now: now, size: size, bubbles: bubbles, edges: edges, into: &ctx)
+                    }
+                    .contentShape(Rectangle())
+                    .gesture(SpatialTapGesture().onEnded { v in
+                        tap(v.location, bubbles: bubbles)
+                    })
                 }
-                .contentShape(Rectangle())
-                .gesture(SpatialTapGesture().onEnded { v in
-                    tap(v.location, tiles: tiles)
-                })
             }
             Divider()
             legend
         }
+        .onChange(of: vm.heatDrill?.id) { _ in
+            if !animated { startedAt = Date(timeIntervalSinceReferenceDate: 0) }
+        }
+    }
+
+    /// 时间轴相对起点（入场进度/呼吸/粒子的时间基准）。staticFrame /
+    /// reduced-motion 直接给大偏移 ⇒ 所有时变项都取终帧。
+    private func timelineDelta(_ tl: TimelineViewDefaultContext) -> Double {
+        if staticFrame || reduceMotion { return 10 }
+        if startedAt == nil {
+            DispatchQueue.main.async { startedAt = tl.date }
+            return 0
+        }
+        return tl.date.timeIntervalSince(startedAt ?? tl.date)
     }
 
     private func crumb(_ f: GNode) -> some View {
@@ -185,51 +118,121 @@ struct CodeGraphHeatView: View {
             Text(f.name).font(.system(.caption, design: .monospaced)).lineLimit(1)
             Spacer()
             Text("⚠\(cgPenalty(f))").font(.caption.monospacedDigit())
-                .foregroundStyle(cgHeatColor(cgConfScore(cgPenalty(f), 1), dark: scheme == .dark))
+                .foregroundStyle(cgHeatColor(cgConfScore(cgPenalty(f), 1)))
         }
         .padding(.horizontal, DSSpacing.md)
         .padding(.vertical, DSSpacing.xs)
     }
 
-    private func draw(_ tiles: [CGTile], into ctx: inout GraphicsContext) {
-        let dark = scheme == .dark
-        for t in tiles {
-            let heat = cgHeatColor(t.score, dark: dark)
-            ctx.fill(Path(t.rect), with: .color(heat.opacity(0.20)))
-            ctx.stroke(Path(t.rect.insetBy(dx: 0.5, dy: 0.5)),
-                       with: .color(heat.opacity(0.85)), lineWidth: 1)
-            if vm.selID == t.node.id {
-                ctx.stroke(Path(t.rect.insetBy(dx: 1.5, dy: 1.5)),
-                           with: .color(.accentColor), lineWidth: 2)
+    // MARK: 绘制（HTML drawBubble/drawCodeEdge 的 GraphicsContext 移植）
+
+    private func draw(now: Double, size: CGSize, bubbles: [CodeGraphVM.CGBubble],
+                      edges: [(from: String, to: String, w: Int, tier: String)],
+                      into ctx: inout GraphicsContext) {
+        let W = max(1, size.width)
+        let H = max(1, size.height)
+        let byId = Dictionary(uniqueKeysWithValues: bubbles.map { ($0.id, $0) })
+        let hueById = Dictionary(uniqueKeysWithValues: bubbles.map { ($0.id, $0.node.hue) })
+        // 气泡几何：入场错峰 + 呼吸 ±3% + 漂移 ±2.4px（HTML drawBubble 同式）
+        var geo: [String: (x: CGFloat, y: CGFloat, r: CGFloat, alpha: CGFloat)] = [:]
+        for b in bubbles {
+            let dC = sqrt(pow(b.x - W / 2, 2) + pow(b.y - H / 2, 2))
+            let df = min(1, dC / (max(W, H) * 0.55))
+            let local = min(1, max(0, now / 0.34 * 1.6 - df * 0.6))
+            let ease = 1 - (1 - local) * (1 - local)
+            let phase = (b.x * 0.7 + b.y * 1.3) * 0.01
+            let rr = b.r * ease * (1 + sin(now * 1.1 + phase) * 0.03)
+            let px = W / 2 + (b.x - W / 2) * ease + sin(now * 0.53 + phase) * 2.4
+            let py = H / 2 + (b.y - H / 2) * ease + cos(now * 0.43 + phase * 0.8) * 2.8
+            geo[b.id] = (px, py, max(0.6, rr), ease)
+        }
+        // 边：微弯贝塞尔 + 箭头 + 粒子（HTML drawCodeEdge 同式）
+        for e in edges {
+            guard let a = byId[e.from], let b = byId[e.to],
+                  let ga = geo[e.from], let gb = geo[e.to] else { continue }
+            let dx = gb.x - ga.x, dy = gb.y - ga.y
+            let dist = sqrt(dx * dx + dy * dy)
+            if dist < 1 { continue }
+            let sx = ga.x + dx / dist * (ga.r + 2), sy = ga.y + dy / dist * (ga.r + 2)
+            let tx = gb.x - dx / dist * (gb.r + 5), ty = gb.y - dy / dist * (gb.r + 5)
+            let mx = (sx + tx) / 2 - dy * 0.12
+            let my = (sy + ty) / 2 + dx * 0.12
+            let hue = hueById[e.from] ?? 0
+            let ecol = cgEdgeColor(tier: e.tier, hue: hue)
+            let lit = vm.selID == e.from || vm.selID == e.to
+            var path = Path()
+            path.move(to: CGPoint(x: sx, y: sy))
+            path.addCurve(to: CGPoint(x: tx, y: ty),
+                          control1: CGPoint(x: mx, y: my),
+                          control2: CGPoint(x: mx, y: my))
+            ctx.stroke(path, with: .color(ecol.opacity(lit ? 0.9 : 0.45)),
+                       style: StrokeStyle(lineWidth: lit ? 1.9 : min(2.6, 0.9 + Double(e.w) * 0.14),
+                                          lineCap: .round,
+                                          dash: e.tier == "guessed" ? [5, 4] : []))
+            // 箭头（末段方向）
+            let ux = tx - mx, uy = ty - my
+            let ul = (sqrt(ux * ux + uy * uy)) > 0 ? sqrt(ux * ux + uy * uy) : 1
+            let nx = ux / ul, ny = uy / ul
+            var arrow = Path()
+            arrow.move(to: CGPoint(x: tx, y: ty))
+            arrow.addLine(to: CGPoint(x: tx - (nx * 5.5 - ny * 2.75), y: ty - (ny * 5.5 + nx * 2.75)))
+            arrow.addLine(to: CGPoint(x: tx - (nx * 5.5 + ny * 2.75), y: ty - (ny * 5.5 - nx * 2.75)))
+            arrow.closeSubpath()
+            ctx.fill(arrow, with: .color(ecol.opacity(lit ? 0.95 : 0.6)))
+            // 粒子：沿曲线匀速流动（确定性相位 = 来源 id 哈希）
+            if animated {
+                var h = 0
+                for ch in e.from.utf8 { h = (h &* 31 &+ Int(ch)) & 0x7fffffff }
+                let tt = (now * 0.7 + Double(h % 97) / 97.0).truncatingRemainder(dividingBy: 1)
+                let iu = 1 - tt
+                let qx = iu * iu * sx + 2 * iu * tt * mx + tt * tt * tx
+                let qy = iu * iu * sy + 2 * iu * tt * my + tt * tt * ty
+                ctx.fill(Path(ellipseIn: CGRect(x: qx - 1.8, y: qy - 1.8, width: 3.6, height: 3.6)),
+                         with: .color(ecol.opacity(0.5)))
             }
-            let w = t.rect.width, h = t.rect.height
-            if w > 64 && h > 34 {
-                ctx.draw(Text(t.node.name)
-                    .font(.caption2).foregroundStyle(dark ? Color.white : Color.black.opacity(0.85)),
-                    at: CGPoint(x: t.rect.minX + 8, y: t.rect.minY + 5), anchor: .topLeading)
-                ctx.draw(Text("⚠\(t.node.rollN)")
-                    .font(.caption2).foregroundStyle(Color(white: dark ? 0.72 : 0.38)),
-                    at: CGPoint(x: t.rect.minX + 8, y: t.rect.maxY - 5), anchor: .bottomLeading)
-            }
-            if w > 40 && h > 20 {
-                ctx.draw(Text(String(t.score))
+        }
+        // 气泡（边之上）
+        for b in bubbles {
+            guard let g = geo[b.id] else { continue }
+            let heat = cgHeatColor(b.score)
+            let selected = vm.selID == b.id
+            let body = Path(ellipseIn: CGRect(x: g.x - g.r, y: g.y - g.r, width: g.r * 2, height: g.r * 2))
+            ctx.fill(body, with: .color(heat.opacity(0.30 * g.alpha)))
+            ctx.stroke(body, with: .color(heat.opacity(0.9 * g.alpha)),
+                       lineWidth: selected ? 2 : 1.3)
+            if g.r >= 13 {
+                ctx.draw(Text(String(b.score))
                     .font(.caption2.monospacedDigit().bold())
-                    .foregroundStyle(heat),
-                    at: CGPoint(x: t.rect.maxX - 8, y: t.rect.minY + 5), anchor: .topTrailing)
+                    .foregroundStyle(heat.opacity(g.alpha)),
+                    at: CGPoint(x: g.x, y: g.y), anchor: .center)
+            }
+            let label = b.node.name + " ·" + String(b.score)
+            let t = label.count > 26 ? String(label.prefix(25)) + "…" : label
+            ctx.draw(Text(t)
+                .font(.caption2)
+                .foregroundStyle(Color(white: 0.85).opacity(0.85 * g.alpha)),
+                at: CGPoint(x: g.x, y: g.y + g.r + 6), anchor: .top)
+            if b.node.rollN > 0 {
+                ctx.draw(Text("⚠\(b.node.rollN)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(Color.orange.opacity(0.85 * g.alpha)),
+                    at: CGPoint(x: g.x, y: g.y + g.r + 18), anchor: .top)
             }
         }
     }
 
-    private func tap(_ p: CGPoint, tiles: [CGTile]) {
-        // 命中测试从最上层（后画的）往回找：小瓦片优先
-        for t in tiles.reversed() where t.rect.contains(p) {
-            if t.node.kind == .file {
-                vm.heatDrill = t.node
-            } else {
-                vm.selID = t.node.id
-                onSelect(t.node)
+    private func tap(_ p: CGPoint, bubbles: [CodeGraphVM.CGBubble]) {
+        for b in bubbles.reversed() {
+            let d = sqrt(pow(p.x - b.x, 2) + pow(p.y - b.y, 2))
+            if d <= b.r + 4 {
+                if b.node.kind == .file {
+                    vm.heatDrill = b.node
+                } else {
+                    vm.selID = b.node.id
+                    onSelect(b.node)
+                }
+                return
             }
-            return
         }
     }
 
@@ -238,13 +241,13 @@ struct CodeGraphHeatView: View {
             ForEach([(80, 100, "高 ≥80"), (60, 79, "中 60–79"), (0, 59, "低 <60")], id: \.0) { lo, hi, label in
                 HStack(spacing: DSSpacing.xs) {
                     Circle()
-                        .fill(cgHeatColor((lo + hi) / 2, dark: scheme == .dark))
+                        .fill(cgHeatColor((lo + hi) / 2))
                         .frame(width: 8, height: 8)
                     Text(label).font(.caption2).foregroundStyle(.secondary)
                 }
             }
             Spacer()
-            Text("面积 ∝ 行数 · 颜色 = 置信度指数")
+            Text("面积 ∝ 行数 · 颜色 = 置信度指数 · 线色 = 来源")
                 .font(.caption2).foregroundStyle(.tertiary)
         }
         .padding(.horizontal, DSSpacing.md)
