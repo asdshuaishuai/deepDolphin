@@ -24,6 +24,66 @@ final class ArchPageVM: ObservableObject {
         self.projectName = projectName
     }
 
+    @Published var generating = false
+    /// 引擎回执（末行）：版本/探针/违规数直接给用户看
+    @Published var genStatus: String?
+    @Published var exportedPath: String?
+
+    private func receipt(_ text: String) -> String? {
+        for line in text.split(separator: "\n").reversed() {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if !t.isEmpty { return t }
+        }
+        return nil
+    }
+
+    private func extractHTMLPath(_ text: String) -> String? {
+        for line in text.split(separator: "\n") {
+            for token in line.split(separator: " ") {
+                let t = token.trimmingCharacters(in: .whitespaces)
+                if t.hasSuffix(".html") && t.hasPrefix("/") { return t }
+            }
+        }
+        return nil
+    }
+
+    /// 生成架构（写 arch.json，探针对账决定首版/版本号），完成后重载画布。
+    func generate() async {
+        generating = true
+        genStatus = nil
+        defer { generating = false }
+        do {
+            let r = try await EngineCLI.shared.runData(
+                ["arch", "gen", projectName], timeout: 600)
+            genStatus = receipt(String(data: r, encoding: .utf8) ?? "")
+            await load()
+        } catch {
+            genStatus = EngineError.userMessage(for: error)
+        }
+    }
+
+    /// 导出架构交互 HTML（render arch；回执带路径与复用/新绘判定）
+    func exportHTML() async {
+        generating = true
+        genStatus = nil
+        defer { generating = false }
+        do {
+            let out = try await EngineCLI.shared.runData(
+                ["render", "arch", projectName], timeout: 600)
+            let text = String(data: out, encoding: .utf8) ?? ""
+            exportedPath = extractHTMLPath(text)
+            genStatus = receipt(text)
+        } catch {
+            genStatus = EngineError.userMessage(for: error)
+        }
+    }
+
+    func openExport() {
+        if let p = exportedPath {
+            NSWorkspace.shared.open(URL(fileURLWithPath: p))
+        }
+    }
+
     func load() async {
         guard !projectName.isEmpty else { return }
         loading = true
@@ -65,13 +125,51 @@ struct ArchPage: View {
                 .disabled(vm.loading)
                 .help(L10n.t("common.refresh"))
                 .accessibilityLabel(A11y.label(L10n.t("common.refresh")))
+                // 生成动作：GUI 具现化引擎的 arch_gen（写 arch.json，探针对账）
+                Button {
+                    Task { await vm.generate() }
+                } label: {
+                    Image(systemName: "wand.and.stars")
+                }
+                .buttonStyle(.borderless)
+                .disabled(vm.generating)
+                .help(L10n.t("arch.generate"))
+                .accessibilityLabel(A11y.label(L10n.t("arch.generate")))
+                // 导出动作：GUI 具现化引擎的 render arch（落盘交互 HTML）
+                Button {
+                    Task { await vm.exportHTML() }
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .buttonStyle(.borderless)
+                .disabled(vm.generating)
+                .help(L10n.t("arch.export"))
+                .accessibilityLabel(A11y.label(L10n.t("arch.export")))
                 Spacer()
-                if vm.loading { ProgressView().controlSize(.small) }
+                if vm.loading || vm.generating { ProgressView().controlSize(.small) }
             }
             .padding(DSSpacing.md)
             if let err = vm.error {
                 Text(err).foregroundStyle(.orange).font(.callout)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DSSpacing.md)
+            }
+            if let status = vm.genStatus {
+                // 生成/导出回执：版本/探针/违规数直接给用户看
+                HStack(spacing: DSSpacing.sm) {
+                    Image(systemName: "gearshape.2").foregroundStyle(.tertiary)
+                    Text(status).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer()
+                    if let p = vm.exportedPath {
+                        Button(L10n.t("arch.export")) {
+                            vm.openExport()
+                        }
+                        .buttonStyle(.borderless).controlSize(.small)
+                        .help(p)
+                        .accessibilityLabel(A11y.label(L10n.t("arch.export")))
+                    }
+                }
+                .padding(.horizontal, DSSpacing.md).padding(.vertical, DSSpacing.xs)
             }
             VStack(spacing: DSSpacing.sm) {
                 ArchCanvasView(vm: vm.canvas)

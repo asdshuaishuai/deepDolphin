@@ -136,6 +136,74 @@ final class CodeGraphVM: ObservableObject {
         return (cards, routes)
     }
 
+    // MARK: 生成动作（GUI 具现化引擎能力：index_gen / confidence_gen / render）
+
+    @Published var generating = false
+    /// 引擎回执（末行）：版本/探针/自愈披露直接给用户看
+    @Published var genStatus: String?
+    /// 导出的交互 HTML 路径（render 回执提取）
+    @Published var exportedPath: String?
+
+    private func receipt(_ text: String) -> String? {
+        for line in text.split(separator: "\n").reversed() {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if !t.isEmpty { return t }
+        }
+        return nil
+    }
+
+    private func extractHTMLPath(_ text: String) -> String? {
+        for line in text.split(separator: "\n") {
+            for token in line.split(separator: " ") {
+                let t = token.trimmingCharacters(in: .whitespaces)
+                if t.hasSuffix(".html") && t.hasPrefix("/") { return t }
+            }
+        }
+        return nil
+    }
+
+    /// 生成索引 + 置信度（写 codegraph.db / index.json / confidence.json），
+    /// 完成后重载页面数据——GUI 直接消化引擎的生成能力，不只读不写。
+    func generate() async {
+        generating = true
+        genStatus = nil
+        defer { generating = false }
+        do {
+            let r1 = try await EngineCLI.shared.runData(
+                ["index", "gen", projectName, "--stats"], timeout: 600)
+            let r2 = try await EngineCLI.shared.runData(
+                ["confidence", "gen", projectName], timeout: 600)
+            genStatus = receipt(String(data: r2, encoding: .utf8) ?? "")
+                ?? receipt(String(data: r1, encoding: .utf8) ?? "")
+            heatGridCache = nil   // 生成后数据全换，网格缓存失效
+            await load()
+        } catch {
+            genStatus = EngineError.userMessage(for: error)
+        }
+    }
+
+    /// 导出交互 HTML（render index --confidence；回执带路径与复用/新绘判定）
+    func exportHTML() async {
+        generating = true
+        genStatus = nil
+        defer { generating = false }
+        do {
+            let out = try await EngineCLI.shared.runData(
+                ["render", "index", projectName, "--confidence"], timeout: 600)
+            let text = String(data: out, encoding: .utf8) ?? ""
+            exportedPath = extractHTMLPath(text)
+            genStatus = receipt(text)
+        } catch {
+            genStatus = EngineError.userMessage(for: error)
+        }
+    }
+
+    func openExport() {
+        if let p = exportedPath {
+            NSWorkspace.shared.open(URL(fileURLWithPath: p))
+        }
+    }
+
     /// 当前层级的边：文件层 = referenceEdges（路径 → 节点 id "f:"+路径）；
     /// 符号层 = 同对聚合的 symEdges。tier 供 guessed 虚线；焦点退淡的
     /// 邻居判定也走这一份。
@@ -548,6 +616,25 @@ struct CodeGraphPage: View {
                 .padding(.horizontal, DSSpacing.lg).padding(.vertical, DSSpacing.xs)
                 Divider()
             }
+            if let status = vm.genStatus {
+                // 生成/导出回执：引擎的版本/探针/自愈披露直接给用户看
+                HStack(spacing: DSSpacing.sm) {
+                    Image(systemName: "gearshape.2").foregroundStyle(.tertiary)
+                    Text(status).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer()
+                    if let p = vm.exportedPath {
+                        Button(L10n.t("cgraph.export")) {
+                            vm.openExport()
+                        }
+                        .buttonStyle(.borderless).controlSize(.small)
+                        .help(p)
+                        .accessibilityLabel(A11y.label(L10n.t("cgraph.export")))
+                    }
+                }
+                .padding(.horizontal, DSSpacing.lg).padding(.vertical, DSSpacing.xs)
+                Divider()
+            }
             if vm.rootLoaded {
                 HSplitView {
                     treePane
@@ -583,7 +670,27 @@ struct CodeGraphPage: View {
             .buttonStyle(.borderless)
             .help(L10n.t("cgraph.reload"))
             .accessibilityLabel(A11y.label(L10n.t("cgraph.reload")))
-            if vm.loading { ProgressView().controlSize(.small) }
+            // 生成动作：GUI 具现化引擎的 index_gen + confidence_gen（写库/落盘）
+            Button {
+                Task { await vm.generate() }
+            } label: {
+                Image(systemName: "wand.and.stars")
+            }
+            .buttonStyle(.borderless)
+            .disabled(vm.generating)
+            .help(L10n.t("cgraph.generate"))
+            .accessibilityLabel(A11y.label(L10n.t("cgraph.generate")))
+            // 导出动作：GUI 具现化引擎的 render index --confidence（落盘交互 HTML）
+            Button {
+                Task { await vm.exportHTML() }
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .buttonStyle(.borderless)
+            .disabled(vm.generating)
+            .help(L10n.t("cgraph.export"))
+            .accessibilityLabel(A11y.label(L10n.t("cgraph.export")))
+            if vm.loading || vm.generating { ProgressView().controlSize(.small) }
             Spacer()
             if vm.rootLoaded {
                 Text(L10n.t("cgraph.scoreTitle") + " \(vm.score)")

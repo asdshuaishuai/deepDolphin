@@ -5619,7 +5619,22 @@ do {
     guard l10n.contains("\"graph.needProject\"") else {
         throw fail("L10n 缺 graph.needProject 键——空态引导文案缺失")
     }
+    // ④ 生成能力必须齐全（GUI 具现化 = 查 + 生成 + 导出三件套）：
+    //    代码图谱页 = index_gen + confidence_gen + render index；
+    //    架构页 = arch_gen + render arch。缺生成 = 客户端只能看不能产
+    for (name, text, needles) in [
+        ("CodeGraphPage.swift", cgraph, ["[\"index\", \"gen\"", "[\"confidence\", \"gen\"",
+                                          "[\"render\", \"index\""]),
+        ("ArchPage.swift", arch, ["[\"arch\", \"gen\"", "[\"render\", \"arch\""]),
+    ] {
+        for needle in needles {
+            guard text.contains(needle) else {
+                throw fail("\(name) 缺生成触发（\(needle)…）——GUI 必须具现化引擎的全部生成能力")
+            }
+        }
+    }
     print("  ✓ 图谱两页只能按显式选定的单仓库执行（无回退/有空态/无聚合选项）")
+    print("  ✓ 生成能力齐全：代码图谱 = index+confidence gen + render 导出；架构页 = arch gen + render 导出")
 }
 
 print("")
