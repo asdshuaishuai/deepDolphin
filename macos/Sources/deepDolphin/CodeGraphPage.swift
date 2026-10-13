@@ -17,7 +17,7 @@ import SwiftUI
 
 // MARK: - 树模型
 
-enum GNodeKind { case root, dir, file, sym }
+enum GNodeKind { case root, dir, file, sym, type, boundary }
 
 /// 一条置信度疑点（引擎 findings 的精简形态，字段与 CLI 契约对齐）。
 struct GFinding: Identifiable {
@@ -118,126 +118,9 @@ final class CodeGraphVM: ObservableObject {
         return out.sorted { $0.name < $1.name }
     }
 
-    // MARK: 热力图布局（确定性力模拟——常数/轮次/排序与引擎 HTML
-    // layoutBubbles 逐项对齐，同数据同画布 ⇒ 同坐标）
-
-    struct CGBubble: Identifiable {
-        let node: GNode
-        let x: CGFloat
-        let y: CGFloat
-        let r: CGFloat
-        let score: Int
-        var id: String { node.id }
-    }
-
-    private var bubbleCache: (key: String, layout: [CGBubble])?
-
-    /// 当前层级的气泡布局。序列与 HTML 一致：文件按行数降序（名字决胜）、
-    /// 符号按声明行；黄金角散点 → 240 轮力模拟（中心引力 0.02 / 两两斥力
-    /// minD²/(d²+4)·1.4 / 边引力 0.012·min(4,w) / 速度夹 ±30）→ fitExtent
-    /// → 画布夹取。半径：文件 clamp(7+√行数·1.7, 9, 46)、
-    /// 符号 clamp(6+√体行距·1.9, 9, 34)。
-    func bubbles(size: CGSize) -> [CGBubble] {
-        let nodes = heatNodes()
-        let key = "\(heatDrill?.id ?? "all")#\(nodes.count)#\(Int(size.width))x\(Int(size.height))"
-        if let c = bubbleCache, c.key == key { return c.layout }
-        guard !nodes.isEmpty, size.width > 40, size.height > 40 else {
-            bubbleCache = (key, [])
-            return []
-        }
-        let W = Double(size.width), H = Double(size.height)
-        var radii = [Double](repeating: 10, count: nodes.count)
-        if nodes[0].kind == .file {
-            for i in 0..<nodes.count {
-                radii[i] = min(46, max(9, 7 + (Double(max(1, nodes[i].lines)).squareRoot()) * 1.7))
-            }
-        } else {
-            for (i, s) in nodes.enumerated() {
-                let end = (i + 1 < nodes.count) ? nodes[i + 1].declLine - 1 : max(1, s.parent?.lines ?? 0)
-                let body = Double(max(1, end - s.declLine + 1))
-                radii[i] = min(34, max(9, 6 + body.squareRoot() * 1.9))
-            }
-        }
-        var xs = [Double](repeating: 0, count: nodes.count)
-        var ys = xs
-        var vx = xs
-        var vy = xs
-        for i in 0..<nodes.count {
-            let ang = Double(i) * 2.399963
-            let rr = 16 + (Double(i).squareRoot()) * max(16, min(W, H) / 20)
-            xs[i] = W / 2 + cos(ang) * rr
-            ys[i] = H / 2 + sin(ang) * rr
-        }
-        var epairs: [(Int, Int, Double)] = []
-        let idToIdx = Dictionary(uniqueKeysWithValues: nodes.enumerated().map { ($0.element.id, $0.offset) })
-        if nodes[0].kind == .file {
-            for e in fileEdges {
-                if let ai = idToIdx["f:" + e.from], let bi = idToIdx["f:" + e.to], ai != bi {
-                    epairs.append((ai, bi, Double(min(4, e.w))))
-                }
-            }
-        } else {
-            var agg: [String: (Int, Int, Double)] = [:]
-            for e in symEdges {
-                guard let ai = idToIdx[e.from], let bi = idToIdx[e.to], ai != bi else { continue }
-                let k = e.from + "=>" + e.to
-                if let old = agg[k] { agg[k] = (old.0, old.1, old.2 + Double(e.w)) }
-                else { agg[k] = (ai, bi, Double(e.w)) }
-            }
-            epairs = agg.values.map { ($0.0, $0.1, min(4, $0.2)) }
-        }
-        for _ in 0..<240 {
-            for i in 0..<nodes.count {
-                vx[i] += (W / 2 - xs[i]) * 0.02
-                vy[i] += (H / 2 - ys[i]) * 0.02
-            }
-            for i in 0..<nodes.count {
-                for j in i + 1..<nodes.count {
-                    let dx = xs[i] - xs[j], dy = ys[i] - ys[j]
-                    let d2 = dx * dx + dy * dy
-                    let dd = d2.squareRoot() + 0.0001
-                    let minD = radii[i] + radii[j] + 18
-                    let f = minD * minD / (d2 + 4) * 1.4
-                    let inv = f / dd
-                    vx[i] += dx * inv; vy[i] += dy * inv
-                    vx[j] -= dx * inv; vy[j] -= dy * inv
-                }
-            }
-            for p in epairs {
-                let f = 0.012 * p.2
-                vx[p.0] += (xs[p.1] - xs[p.0]) * f; vy[p.0] += (ys[p.1] - ys[p.0]) * f
-                vx[p.1] -= (xs[p.1] - xs[p.0]) * f; vy[p.1] -= (ys[p.1] - ys[p.0]) * f
-            }
-            for i in 0..<nodes.count {
-                vx[i] = min(30, max(-30, vx[i]))
-                vy[i] = min(30, max(-30, vy[i]))
-                xs[i] += vx[i]; ys[i] += vy[i]
-            }
-        }
-        var minX = 1e18, maxX = -1e18, minY = 1e18, maxY = -1e18
-        for i in 0..<nodes.count {
-            minX = min(minX, xs[i]); maxX = max(maxX, xs[i])
-            minY = min(minY, ys[i]); maxY = max(maxY, ys[i])
-        }
-        let spanX = max(1, maxX - minX), spanY = max(1, maxY - minY)
-        let padX = W * 0.08, padY = H * 0.10
-        let sc = min(8, max(0.1, min((W - padX * 2) / spanX, (H - padY * 2) / spanY)))
-        let offX = padX + (W - padX * 2 - spanX * sc) / 2
-        let offY = padY + (H - padY * 2 - spanY * sc) / 2
-        var out: [CGBubble] = []
-        for i in 0..<nodes.count {
-            let r = radii[i]
-            let x = min(W - r - 8, max(r + 8, offX + (xs[i] - minX) * sc))
-            let y = min(H - r - 12, max(r + 30, offY + (ys[i] - minY) * sc))
-            let n = nodes[i]
-            out.append(CGBubble(node: n, x: x, y: y, r: r, score: cgConfScore(cgPenalty(n), 1)))
-        }
-        bubbleCache = (key, out)
-        return out
-    }
-
-    /// 当前层级的边：文件层 = referenceEdges（路径 → 节点 id）；符号层 =
-    /// 同对聚合的 symEdges。tier 供 guessed 虚线。
+    /// 当前层级的边：文件层 = referenceEdges（路径 → 节点 id "f:"+路径）；
+    /// 符号层 = 同对聚合的 symEdges。tier 供 guessed 虚线；焦点退淡的
+    /// 邻居判定也走这一份。
     func bubbleEdges() -> [(from: String, to: String, w: Int, tier: String)] {
         if let f = heatDrill {
             let ids = Set(f.kids.map(\.id))
@@ -249,7 +132,6 @@ final class CodeGraphVM: ObservableObject {
             }
             return agg.values.map { ($0.0, $0.1, $0.2, $0.3) }
         }
-        // 文件节点 id 引擎侧带 "f:" 前缀（对齐 symbol id 形态），查找前补上
         return fileEdges.map { ("f:" + $0.from, "f:" + $0.to, $0.w, "resolved") }
     }
 
@@ -420,9 +302,8 @@ final class CodeGraphVM: ObservableObject {
         r.kids.forEach { if $0.kind == .dir { expanded.insert($0.id) } }
         selID = nil
         detailTab = .source
-        // 热力图：身份色相（边色 = 来源节点色相）+ 气泡布局缓存失效
+        // 热力图：身份色相（边色 = 来源节点色相）
         assignHues()
-        bubbleCache = nil
         rebuildRows()
     }
 
@@ -820,6 +701,8 @@ struct CodeGraphPage: View {
         case .file: return L10n.t("cgraph.kFile")
         case .dir: return L10n.t("cgraph.kDir")
         case .root: return L10n.t("cgraph.kProject")
+        case .type: return "TYPE"
+        case .boundary: return "BOUNDARY"
         }
     }
 
@@ -1048,6 +931,9 @@ private struct TreeRowView: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 14, height: 14)
                 .background(.quaternary.opacity(0.6), in: DSRect.shape(DSRadius.chip))
+        case .type, .boundary:
+            // 列表树不呈现这两类（热力图专属），占位空视图保穷尽
+            EmptyView()
         }
     }
 
@@ -1072,6 +958,8 @@ private struct TreeRowView: View {
             Text("\(vm.score)")
                 .font(.caption2.weight(.semibold).monospacedDigit())
                 .foregroundStyle(.secondary)
+        case .type, .boundary:
+            EmptyView()
         }
     }
 
