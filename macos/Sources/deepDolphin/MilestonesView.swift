@@ -489,18 +489,22 @@ struct AddMilestoneSheet: View {
         }
     }
 
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
     private func submit() {
         submitting = true
         errorText = nil
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
         Task {
             do {
                 try await model.addMilestone(
                     project: project,
                     name: name,
                     tag: tag,
-                    targetDate: hasDate ? formatter.string(from: date) : "",
+                    targetDate: hasDate ? Self.dayFormatter.string(from: date) : "",
                     description: desc
                 )
                 dismiss()

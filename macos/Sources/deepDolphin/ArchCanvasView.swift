@@ -282,11 +282,15 @@ final class ArchCanvasVM: ObservableObject {
 struct ArchCanvasView: View {
     @ObservedObject var vm: ArchCanvasVM
     @Environment(\.colorScheme) private var systemScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 离屏（页面不在可见层）时暂停动画时钟——60fps 永转是电量黑洞
+    @State private var isVis = false
 
     var body: some View {
         let dark = vm.isDark(systemScheme == .dark)
         GeometryReader { geo in
-            TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0,
+                                    paused: !isVis || reduceMotion)) { timeline in
                 let now = timeline.date.timeIntervalSinceReferenceDate
                 Canvas { ctx, size in
                     vm.fitIfNeeded(in: size)
@@ -307,6 +311,8 @@ struct ArchCanvasView: View {
             .onChange(of: geo.size) { newSize in
                 vm.fitIfNeeded(in: newSize)
             }
+            .onAppear { isVis = true }
+            .onDisappear { isVis = false }
         }
     }
 

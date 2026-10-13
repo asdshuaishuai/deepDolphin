@@ -460,13 +460,20 @@ struct ProjectStatus: Decodable, Identifiable, Hashable {
     /// `ISO8601DateFormatter` 的默认策略**不吃带偏移量**的写法，
     /// 解析失败返回 nil —— 而 nil 会被上层读成「读不出来」，
     /// 于是所有项目都留在「全量」里，筛选静默失效。所以这里显式放行偏移量。
+    private static let isoWithOffset: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+    private static let isoWithFrac: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
     static func parseISO8601(_ raw: String) -> Date? {
-        let withOffset = ISO8601DateFormatter()
-        withOffset.formatOptions = [.withInternetDateTime]
-        if let d = withOffset.date(from: raw) { return d }
-        let withFrac = ISO8601DateFormatter()
-        withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return withFrac.date(from: raw)
+        if let d = isoWithOffset.date(from: raw) { return d }
+        return isoWithFrac.date(from: raw)
     }
 
     /// 这个项目**在最近 `days` 天内更新过**吗？`days` 为 nil = 不按时间筛。

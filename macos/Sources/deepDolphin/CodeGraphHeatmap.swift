@@ -247,6 +247,8 @@ struct CodeGraphHeatView: View {
     var staticFrame = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 离屏暂停动画时钟（30fps 空转是电量黑洞）
+    @State private var isVis = false
     @State private var startedAt: Date?
 
     private var animated: Bool { !staticFrame && !reduceMotion }
@@ -257,7 +259,8 @@ struct CodeGraphHeatView: View {
                 crumb(f)
                 Divider()
             }
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animated)) { (tl: TimelineViewDefaultContext) in
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0,
+                                    paused: !animated || !isVis)) { (tl: TimelineViewDefaultContext) in
                 GeometryReader { geo in
                     // 布局/走线按（层级 + 画布尺寸 + 边数）缓存在 VM：
                     // 30fps 重绘只重画时变项，重心扫描与走线不每帧重跑
@@ -280,6 +283,8 @@ struct CodeGraphHeatView: View {
         .onChange(of: vm.heatDrill?.id) { _ in
             startedAt = animated ? nil : Date(timeIntervalSinceReferenceDate: 0)
         }
+        .onAppear { isVis = true }
+        .onDisappear { isVis = false }
     }
 
     private func timelineDelta(_ tl: TimelineViewDefaultContext) -> Double {
