@@ -87,7 +87,11 @@ struct GTreeRow: Identifiable {
 final class CodeGraphVM: ObservableObject {
     enum DetailTab { case source, conf, rel }
 
-    @Published var projectName = ""
+    @Published var projectName: String
+
+    init(projectName: String) {
+        self.projectName = projectName
+    }
     @Published var loading = false
     @Published var error: String?
     @Published var query = "" { didSet { if oldValue != query { searchOvr.removeAll(); rebuildRows() } } }
@@ -202,8 +206,8 @@ final class CodeGraphVM: ObservableObject {
 
     // MARK: 加载
 
-    func load(all: [ProjectStatus]) async {
-        // 单仓库限制：未显式选定仓库时什么都不跑（不回退第一个项目）
+    func load() async {
+        // 单仓库限制：项目名在 init 锁定（入口在具体仓库的面板）
         guard !projectName.isEmpty else { return }
         loading = true
         error = nil
@@ -513,17 +517,20 @@ private enum KindBadge {
 // MARK: - 页面
 
 struct CodeGraphPage: View {
-    @EnvironmentObject var model: AppModel
-    @StateObject private var vm: CodeGraphVM
-
-    init() {
-        _vm = StateObject(wrappedValue: CodeGraphVM())
-    }
+    /// 单仓库限制：项目名在仓库面板的入口处锁定（页面内无切换选择器）
+    let projectName: String
+    @ObservedObject var vm: CodeGraphVM
 
     /// 渲染 harness / 预载入口：注入已加载的 VM（离屏截图时引擎调用不能靠
     /// .task 时机，得先装好数据再挂视图）。
-    init(vm: CodeGraphVM) {
-        _vm = StateObject(wrappedValue: vm)
+    init(projectName: String) {
+        self.projectName = projectName
+        _vm = ObservedObject(wrappedValue: CodeGraphVM(projectName: projectName))
+    }
+    /// harness 注入已加载好的 VM（离屏等待与页面判定同源）
+    init(projectName: String, vm: CodeGraphVM) {
+        self.projectName = projectName
+        _vm = ObservedObject(wrappedValue: vm)
     }
 
     @State private var heatMode = false
@@ -558,23 +565,18 @@ struct CodeGraphPage: View {
             }
         }
         .task {
-            // 单仓库限制：只在显式选定的仓库仍存在时加载；绝不自动选取
-            if !vm.projectName.isEmpty,
-               model.projects.contains(where: { $0.name == vm.projectName }) {
-                await vm.load(all: model.projects)
-            }
-        }
-        .onChange(of: vm.projectName) { _, newName in
-            guard !newName.isEmpty else { return }
-            Task { await vm.load(all: model.projects) }
+            // 单仓库限制：页面只在仓库面板打开（init 锁定），直接加载
+            await vm.load()
         }
     }
 
     private var topBar: some View {
         HStack(spacing: DSSpacing.md) {
-            GraphProjectPicker(projectName: $vm.projectName)
+            // 单仓库限制：页面在仓库面板打开时锁死该仓库（无切换选择器）
+            Image(systemName: "shippingbox").font(.caption).foregroundStyle(.tertiary)
+            Text(projectName).font(.system(.caption, design: .monospaced).weight(.semibold))
             Button {
-                Task { await vm.load(all: model.projects) }
+                Task { await vm.load() }
             } label: {
                 Image(systemName: "arrow.clockwise")
             }

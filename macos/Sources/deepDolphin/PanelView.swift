@@ -138,11 +138,8 @@ struct PanelView: View {
                 //    计数改用行内文字（`countedRow`），不用 badge。
                 countedRow(title: L10n.t("nav.milestones"), icon: icon(for: .milestones), route: .milestones,
                            target: .milestones, count: milestoneCountValue)
-                // 引擎图谱/架构图/置信度/补丁新能力页（⌘5–⌘8，键位随 ShortcutMap.viewOrder）
-                countedRow(title: L10n.t("nav.graph"), icon: icon(for: .graph), route: .graph,
-                           target: .graph, count: nil)
-                countedRow(title: L10n.t("nav.arch"), icon: icon(for: .arch), route: .arch,
-                           target: .arch, count: nil)
+                // 代码图谱 / 架构图不在项目群侧栏：两图只能按单仓库执行，
+                // 入口在具体仓库的面板里（ProjectDetailView），见用户定稿 2026-10-13
                 countedRow(title: L10n.t("nav.confidence"), icon: icon(for: .confidence), route: .confidence,
                            target: .confidence, count: nil)
                 countedRow(title: L10n.t("nav.patchcheck"), icon: icon(for: .patchCheck), route: .patchCheck,
@@ -296,8 +293,6 @@ struct PanelView: View {
         case .dashboard:  return DSColor.accent
         case .board:      return .orange
         case .milestones: return DSColor.deep
-        case .graph:      return .indigo
-        case .arch:       return .teal
         case .confidence: return .green
         case .patchCheck: return .pink
         case .project:    return DSColor.shallow
@@ -363,8 +358,6 @@ struct PanelView: View {
         case .dashboard:  return L10n.t("nav.dashboard")
         case .board:      return L10n.t("nav.board")
         case .milestones: return L10n.t("nav.milestones")
-        case .graph:      return L10n.t("nav.graph")
-        case .arch:       return L10n.t("nav.arch")
         case .confidence: return L10n.t("nav.confidence")
         case .patchCheck: return L10n.t("nav.patchcheck")
         case .project:    return L10n.t("nav.projects")
@@ -376,8 +369,6 @@ struct PanelView: View {
         case .dashboard:  return "square.grid.2x2"
         case .board:      return "rectangle.split.3x1"
         case .milestones: return "flag.2.crossed"
-        case .graph:      return "point.3.filled.connected.trianglepath.dotted"
-        case .arch:       return "diagram.projective"
         case .confidence: return "gauge.with.dial"
         case .patchCheck: return "stethoscope"
         case .project:    return "folder"
@@ -483,10 +474,6 @@ struct PanelView: View {
                 BoardPage()
             case .milestones:
                 MilestonesView()
-            case .graph:
-                CodeGraphPage()
-            case .arch:
-                ArchPage()
             case .confidence:
                 ConfidencePage()
             case .patchCheck:

@@ -8,6 +8,9 @@ struct ProjectDetailView: View {
     @EnvironmentObject var model: AppModel
     let projectName: String
     @State private var commitMessage = ""
+    // 图谱触发入口（用户定稿：两图只能从具体仓库的面板触发，单仓库锁定）
+    @State private var showCodeGraph = false
+    @State private var showArch = false
     /// 待确认的「提交全部改动」。nil = 没在等确认。
     ///
     /// ⚠️ 这条原来点一下就提交。引擎的 `commit` 走 `git add -A`
@@ -37,6 +40,12 @@ struct ProjectDetailView: View {
                 ProgressView(L10n.t("detail.loading", projectName))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+        .sheet(isPresented: $showCodeGraph) {
+            CodeGraphPage(projectName: projectName)
+        }
+        .sheet(isPresented: $showArch) {
+            ArchPage(projectName: projectName)
         }
         .task {
             await model.loadProject(projectName)
@@ -259,6 +268,24 @@ struct ProjectDetailView: View {
                     if model.busyProject == p.name {
                         ProgressView().controlSize(.small)
                     }
+                    // 图谱触发入口（用户定稿：两图只能从具体仓库的面板触发，
+                    // 打开即锁该仓库——项目群侧栏没有这两个入口）
+                    Button {
+                        showCodeGraph = true
+                    } label: {
+                        Label(L10n.t("nav.graph"), systemImage: "point.3.filled.connected.trianglepath.dotted")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(L10n.t("nav.graph"))
+                    .accessibilityLabel(A11y.label(L10n.t("nav.graph")))
+                    Button {
+                        showArch = true
+                    } label: {
+                        Label(L10n.t("nav.arch"), systemImage: "diagram.projective")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(L10n.t("nav.arch"))
+                    .accessibilityLabel(A11y.label(L10n.t("nav.arch")))
                 }
                 Text(p.headline)
                     .foregroundStyle(.secondary)

@@ -20,8 +20,8 @@ enum RootSection: Hashable {
     case dashboard
     case milestones
     case board
-    case graph        // 代码图谱（符号三列关系 × 置信度叠加）
-    case arch         // 架构图（scene 画布：分层/依赖治理）
+    // 代码图谱 / 架构图已撤出项目群路由：两图只能按单仓库执行，
+    // 入口在具体仓库的面板里（ProjectDetailView），见用户定稿 2026-10-13
     case confidence   // 代码置信度
     case patchCheck   // 补丁置信度三层体检
     case project(String)  // 项目名
@@ -91,8 +91,6 @@ enum Route {
         switch raw {
         case "milestones": return .milestones
         case "board": return .board
-        case "graph": return .graph
-        case "arch": return .arch
         case "confidence": return .confidence
         case "patchcheck": return .patchCheck
         case "dashboard": return .dashboard

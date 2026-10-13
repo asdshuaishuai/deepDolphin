@@ -155,9 +155,9 @@ func run() async {
     if mode == "codegraph" {
         // 代码图谱页：VM 先离屏装好数据（引擎 3 条并行调用），再挂视图。
         // 不能指望页面自己的 .task——离屏环境里它没有跑完的机会（见上）。
-        let vm = CodeGraphVM()
+        let vm = CodeGraphVM(projectName: "alpha")
         vm.projectName = "alpha"
-        await vm.load(all: model.projects)
+        await vm.load()
         var w2 = 0
         while (!vm.rootLoaded || vm.loading) && w2 < 120 {
             try? await Task.sleep(nanoseconds: 250_000_000)
@@ -177,9 +177,9 @@ func run() async {
         }
         // 源码 tab 的对照机位：同一份数据再装一个 VM，选中带疑点符号直开源码
         // （验证引擎内嵌实码 + 客户端 SyntaxHighlight + 命中行高亮的整条链）。
-        let srcVM = CodeGraphVM()
+        let srcVM = CodeGraphVM(projectName: "alpha")
         srcVM.projectName = "alpha"
-        await srcVM.load(all: model.projects)
+        await srcVM.load()
         var w3 = 0
         while (!srcVM.rootLoaded || srcVM.loading) && w3 < 120 {
             try? await Task.sleep(nanoseconds: 250_000_000)
@@ -190,9 +190,9 @@ func run() async {
         }
         let shots2: [(base: String, w: CGFloat, h: CGFloat, view: AnyView)] = [
             ("codegraph", 1180, 760,
-             AnyView(CodeGraphPage(vm: vm).environmentObject(model))),
+             AnyView(CodeGraphPage(projectName: "alpha", vm: vm).environmentObject(model))),
             ("codegraph-src", 1180, 760,
-             AnyView(CodeGraphPage(vm: srcVM).environmentObject(model))),
+             AnyView(CodeGraphPage(projectName: "alpha", vm: srcVM).environmentObject(model))),
         ]
         await render(shots: shots2, outPath: outPath, model: model, useWindow: true)
         exit(0)
@@ -200,9 +200,9 @@ func run() async {
     if mode == "heatmap" {
         // 符号索引热力图（原生 treemap Canvas）：两拍——全部文件层 +
         // 钻取符号最多的文件后的符号层。数据同一份真实引擎输出（alpha 夹具）。
-        let vm = CodeGraphVM()
+        let vm = CodeGraphVM(projectName: "alpha")
         vm.projectName = "alpha"
-        await vm.load(all: model.projects)
+        await vm.load()
         var w2 = 0
         while (!vm.rootLoaded || vm.loading) && w2 < 120 {
             try? await Task.sleep(nanoseconds: 250_000_000)

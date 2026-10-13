@@ -3589,25 +3589,26 @@ do {
 
     // —— 视图数与侧栏对齐 ——
     check("⌘N 的上界 = 固定视图数，键位只跟着真实存在的视图走") {
-        // 引擎补齐图谱/置信度/补丁体检后，固定视图从三个变成六个；
-        // 原则不变：**有一个视图才有一个键位**，视图删了键位必须跟着删。
-        guard ShortcutMap.viewOrder.count == 7 else {
-            throw fail("固定视图数是 \(ShortcutMap.viewOrder.count)，与侧栏实际入口不符")
+        // 2026-10-13 代码图谱/架构图撤出项目群侧栏（单仓库限制，入口在
+        // 仓库面板）：固定视图从 7 收缩到 5。原则不变：**有一个视图才有
+        // 一个键位**，视图删了键位必须跟着删。
+        guard ShortcutMap.viewOrder.count == 5 else {
+            throw fail("固定视图数是 \(ShortcutMap.viewOrder.count)，与侧栏实际入口不符（应为 5）")
         }
+        // 2026-10-13 代码图谱/架构图撤出项目群侧栏与快捷键（单仓库限制，
+        // 入口在仓库面板）：键位随 viewOrder 收缩重排——⌘4 置信度 ⌘5 补丁体检
         guard ShortcutMap.view(at: 1) == .dashboard,
               ShortcutMap.view(at: 2) == .board,
               ShortcutMap.view(at: 3) == .milestones,
-              ShortcutMap.view(at: 4) == .graph,
-              ShortcutMap.view(at: 5) == .arch,
-              ShortcutMap.view(at: 6) == .confidence,
-              ShortcutMap.view(at: 7) == .patchCheck else {
-            throw fail("⌘1–⌘7 与侧栏顺序对不上")
+              ShortcutMap.view(at: 4) == .confidence,
+              ShortcutMap.view(at: 5) == .patchCheck else {
+            throw fail("⌘1–⌘5 与侧栏顺序对不上")
         }
-        // 越界返回 nil —— 硬凑不存在的键只会让用户按了没反应
-        guard ShortcutMap.view(at: 8) == nil, ShortcutMap.view(at: 0) == nil else {
+        // 撤出的两个视图不得再占键位；越界返回 nil——硬凑不存在的键只会让用户按了没反应
+        guard ShortcutMap.view(at: 6) == nil, ShortcutMap.view(at: 0) == nil else {
             throw fail("越界的数字快捷键仍返回了目标 ⇒ 会有按了没反应的键")
         }
-        return "7 个固定视图，越界返回 nil（键位数 = 视图数）"
+        return "5 个固定视图，越界返回 nil（键位数 = 视图数）"
     }
 
     check("⌘4 单独留给「打开当前选中项目」（详情是动态的，没有固定视图会占它）") {
@@ -5598,8 +5599,14 @@ do {
     guard cgraph.contains("vm.projectName.isEmpty") else {
         throw fail("CodeGraphPage 没有未选定仓库的空态守卫")
     }
-    guard arch.contains("var needsProject: Bool") && arch.contains("if vm.needsProject") else {
-        throw fail("ArchPage 没有未选定仓库的空态守卫（needsProject）")
+    // 2026-10-13 入口移进仓库面板：项目名在 init 锁定（无选择器可切），
+    // 空态守卫由「页面必须在仓库面板触发」这一入口约束替代——
+    // 守卫改为钉「构造器必填 projectName + 页内无切换选择器」
+    guard arch.contains("init(projectName: String)") else {
+        throw fail("ArchPage 构造器缺 projectName 参数——单仓库锁定被拆了")
+    }
+    guard !arch.contains("GraphProjectPicker") else {
+        throw fail("ArchPage 里仍有 GraphProjectPicker——页内切仓库绕过了面板入口")
     }
     // ③ 选择器只有单项目条目：不许出现「全部/项目群/group」聚合选项
     for banned in ["全部", "项目群", "All projects", "group"] {

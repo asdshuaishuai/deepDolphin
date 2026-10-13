@@ -113,7 +113,7 @@ enum ScopeRules {
         switch selection {
         case .project(let name): return .project(name)
         // 图谱/架构图/置信度/补丁体检同样是全局视图：范围选择器只分「全局 / 单仓库」
-        case .dashboard, .board, .milestones, .graph, .arch, .confidence, .patchCheck, .none: return .group
+        case .dashboard, .board, .milestones, .confidence, .patchCheck, .none: return .group
         }
     }
 
