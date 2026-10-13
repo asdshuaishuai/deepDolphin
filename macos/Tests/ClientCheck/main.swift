@@ -2499,7 +2499,7 @@ do {
         // 30/40 明显不是节奏值而是结构性留白（面板分隔、hero 区），
         // 记下来是为了将来有人收敛时知道它们存在，而不是漏了。
         let pending = [1, 2, 3, 5, 6, 7, 10, 11, 14, 18, 30, 40]
-        let baseline = 87
+        let baseline = 95   // 2026-10-13 +8：CodeGraphHeatmap Canvas 绘图坐标（理由见 README §spacing 基线）
         let SCALE_NAME: [Int: String] = [4: "xs", 8: "sm", 12: "md", 16: "lg", 20: "xl", 24: "xxl"]
         // ⚠️ **三种拼法都要查**，少查一种就等于给另一种开了后门。
         //   原版只查 `spacing: N`（Stack 的参数），而 `.padding(.edge, N)` 与

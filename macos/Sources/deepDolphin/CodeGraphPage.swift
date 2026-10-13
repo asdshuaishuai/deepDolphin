@@ -747,7 +747,7 @@ struct CodeGraphPage: View {
                 Button {
                     vm.detailTab = tab
                 } label: {
-                    VStack(spacing: 4) {
+                    VStack(spacing: DSSpacing.xs) {
                         Text(label)
                             .font(.callout.weight(vm.detailTab == tab ? .semibold : .regular))
                             .foregroundStyle(vm.detailTab == tab ? .primary : .secondary)
@@ -906,7 +906,7 @@ private struct TreeRowView: View {
             meta
             pill
         }
-        .padding(.leading, 4 + CGFloat(depth) * 14)
+        .padding(.leading, DSSpacing.xs + CGFloat(depth) * 14)
         .padding(.trailing, DSSpacing.sm)
         .frame(height: node.kind == .root ? 32 : (node.kind == .sym ? 22 : 26))
         .background(selected ? AnyShapeStyle(Color.accentColor.opacity(0.12)) : AnyShapeStyle(.clear),
@@ -925,7 +925,7 @@ private struct TreeRowView: View {
     private var chevron: some View {
         if vm.hasKids(node) {
             Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .semibold))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(.tertiary)
                 .rotationEffect(.degrees(vm.isOpen(node) ? 90 : 0))
                 .frame(width: 12)
@@ -940,17 +940,17 @@ private struct TreeRowView: View {
         switch node.kind {
         case .root:
             Image(systemName: "cube.fill")
-                .font(.system(size: 10)).foregroundStyle(.secondary)
+                .font(.caption2).foregroundStyle(.secondary)
         case .dir:
             Image(systemName: "folder.fill")
-                .font(.system(size: 10)).foregroundStyle(Color(nsColor: .systemBlue).opacity(0.7))
+                .font(.caption2).foregroundStyle(Color(nsColor: .systemBlue).opacity(0.7))
         case .file:
             Circle()
                 .fill(LangDot.color(node.lang))
                 .frame(width: 7, height: 7)
         case .sym:
             Text(KindBadge.letter(node.symKind))
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .font(.caption2.weight(.bold).monospaced())
                 .foregroundStyle(.secondary)
                 .frame(width: 14, height: 14)
                 .background(.quaternary.opacity(0.6), in: DSRect.shape(DSRadius.chip))
