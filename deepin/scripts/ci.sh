@@ -301,13 +301,29 @@ arch_need "$SRC/src/ui/PanelWindow.cpp" 'DocsDialog' 'PanelWindow 用的是文�
 arch_need "$SRC/src/ui/PanelWindow.cpp" 'addAction\(QStringLiteral\("关于 deepDolphin"\)\)' '面板菜单有「关于」入口'
 arch_need "$SRC/src/ui/PanelWindow.cpp" 'addAction\(QStringLiteral\("帮助"\)\)' '面板菜单有「帮助」入口'
 arch_need "$SRC/src/app/SelfCheck.cpp" 'DocPages::content' 'SelfCheck 覆盖文档正文'
+
+# 语法高亮链路：判定（SyntaxHighlight 纯函数，九语言与引擎 detectLang 对齐）→
+#   涂色（CodeHighlighter，颜色取自 DS 令牌）→ 接线（代码图谱页源码页签）
+arch_need "$SRC/src/logic/SyntaxHighlight.cpp" 'languages' '判定层有语言清单'
+arch_need "$SRC/src/logic/SyntaxHighlight.cpp" 'keywords' '判定层有关键词表'
+arch_need "$SRC/src/logic/SyntaxHighlight.cpp" 'highlight' '判定层有逐行分类'
+arch_need "$SRC/src/ui/CodeHighlighter.cpp" 'SyntaxHighlight::highlight' '涂色层经判定层分类'
+arch_need "$SRC/src/ui/CodeHighlighter.cpp" 'DS::semColor' '颜色取自 DS 令牌（不是契约色）'
+# ⚠ 盯**构造点**（`new CodeHighlighter`）而不是「CodeHighlighter 这个词出现过」——
+#   负控实测：只删掉构造那一行、留着 include 与另一个调用点时，后者照样全绿
+#   （用户看到的源码页签还是一片纯色）。这已是第三回「门盯名字不盯接线点」。
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'new CodeHighlighter' '代码图谱源码页签真的 new 了一个高亮器'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_highlighter->setLanguage' '高亮语言跟着选中项走'
+arch_need "$SRC/src/main.cpp" 'syntax-languages' '无头 flag 暴露语言清单（契约门第 16 组用）'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'SyntaxHighlight::highlight' 'SelfCheck 覆盖高亮分类'
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \
          src/logic/CodeGraphBuild.cpp src/ui/ArchCanvasWidget.cpp \
          src/ui/dialogs/ArchDialog.cpp src/ui/dialogs/CodeGraphDialog.cpp \
          src/logic/HeatLayout.cpp src/ui/HeatmapWidget.cpp \
          src/logic/PatchCheck.cpp src/ui/dialogs/PatchCheckDialog.cpp \
-         src/logic/DocPages.cpp src/ui/dialogs/DocsDialog.cpp; do
+         src/logic/DocPages.cpp src/ui/dialogs/DocsDialog.cpp \
+         src/logic/SyntaxHighlight.cpp src/ui/CodeHighlighter.cpp; do
     if ! grep -qF "$f" "$SRC/CMakeLists.txt"; then
         echo "  ✗ 构建未登记：$f" >&2
         ARCH_FAIL=1

@@ -18,6 +18,7 @@
 #include "platform/CrashHandler.h"
 #include "logic/AgentToolPlan.h"
 #include "logic/CodeGraphBuild.h"
+#include "logic/SyntaxHighlight.h"
 #include "logic/Liveness.h"
 #include "logic/Route.h"
 #include "tray/TrayController.h"
@@ -282,6 +283,16 @@ int main(int argc, char *argv[])
         // 但这里是运行时真清单，不靠源码解析 —— 解析 switch 会在改写法时静默空转）。
         for (const QString &tool : AgentToolPlan::knownToolNames())
             fprintf(stdout, "%s\n", qPrintable(tool));
+        fflush(stdout);
+        return 0;
+    }
+    if (rawArgs.contains(QStringLiteral("--syntax-languages"))) {
+        // 客户端语法高亮支持的语言清单（单一真相源在 logic/SyntaxHighlight）。
+        // 契约检查拿它与**真引擎**的 detectLang 产物对位：引擎报什么语言，
+        // 客户端就得能高亮什么语言 —— 对不上时那些文件的源码是一片纯色，
+        // 而「一片纯色」在界面上看不出是缺能力还是代码本来就长这样。
+        for (const QString &lang : SyntaxHighlight::languages())
+            fprintf(stdout, "%s\n", qPrintable(lang));
         fflush(stdout);
         return 0;
     }

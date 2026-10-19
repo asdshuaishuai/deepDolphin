@@ -428,5 +428,49 @@ PY
     fi
 fi
 
+# 16. 语法高亮的语言集合 ⇄ 引擎 detectLang 的产物。
+#     引擎的 `graph/extract.cj:detectLang` 恰好产出九种语言；客户端的语法高亮
+#     必须覆盖**同样这九种** —— 少一种，那种语言的源码就是一片纯色，而
+#     「一片纯色」在界面上看不出是缺能力还是代码本来就长这样。
+#     用**独立项目**（langfix）跑：往主夹具里加 9 个不同扩展名的文件会改掉
+#     主夹具的 tree/arch 断言前提。
+LANGFIX="$SANDBOX/fixture/langfix"
+mkdir -p "$LANGFIX"
+git -C "$LANGFIX" init -q -b main . 2>/dev/null
+printf 'func greet() {}\n' > "$LANGFIX/a.swift"
+printf 'func main() {}\n' > "$LANGFIX/a.cj"
+printf 'export const x = 1;\n' > "$LANGFIX/a.ts"
+printf 'def f():\n    return 1\n' > "$LANGFIX/a.py"
+printf 'package main\nfunc main() {}\n' > "$LANGFIX/a.go"
+printf 'fn main() {}\n' > "$LANGFIX/a.rs"
+printf 'class A {}\n' > "$LANGFIX/a.java"
+printf 'fun main() {}\n' > "$LANGFIX/a.kt"
+printf 'int main(void) { return 0; }\n' > "$LANGFIX/a.c"
+git -C "$LANGFIX" add . 2>/dev/null
+GIT_AUTHOR_DATE='2026-10-03T09:00:00' GIT_COMMITTER_DATE='2026-10-03T09:00:00' \
+    git -C "$LANGFIX" commit -qm 'feat: 九种语言' 2>/dev/null
+"$BIN" add "$LANGFIX" --json >/dev/null 2>&1
+LANG_TREE="$("$BIN" graph tree langfix --depth 8 --json 2>/dev/null)"
+CLIENT_LANGS="$("$CLIENT_BIN" --syntax-languages 2>/dev/null)"
+if [ -z "$LANG_TREE" ] || [ -z "$CLIENT_LANGS" ]; then
+    echo "  ✗ 第 16 组前提：没取到引擎语言清单或客户端语言清单" >&2
+    fail=$((fail+1))
+else
+    LANG_JSON="$(printf '%s\n%s' "$LANG_TREE" "$CLIENT_LANGS" | python3 -c "
+import json, sys
+raw = sys.stdin.read()
+dec = json.JSONDecoder()
+t, idx = dec.raw_decode(raw.lstrip())
+rest = raw.lstrip()[idx:].strip()
+print(json.dumps({'tree': t, 'client': [x for x in rest.splitlines() if x.strip()]}, ensure_ascii=False))
+" 2>/dev/null)"
+    check "语法高亮语言集合：客户端清单与引擎 detectLang 的产物**逐条相等**" \
+        "sorted({f.get('lang') for f in d['tree'].get('files',[]) if f.get('lang')}) == sorted(set(d['client']))" \
+        "$LANG_JSON"
+    check "语法高亮语言集合：九种语言一个不少（少一种 = 那种语言的源码是纯色）" \
+        "len(set(d['client'])) == 9" \
+        "$LANG_JSON"
+fi
+
 echo "──── contract-check: $pass passed, $fail failed ────"
 [ "$fail" -eq 0 ]

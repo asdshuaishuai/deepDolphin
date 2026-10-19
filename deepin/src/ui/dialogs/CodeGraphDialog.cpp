@@ -6,6 +6,7 @@
 #include "../../logic/HeatLayout.h"
 #include "../../models/CodeGraph.h"
 #include "../DesignTokens.h"
+#include "../CodeHighlighter.h"
 #include "../HeatmapWidget.h"
 #include "../common/FlatButton.h"
 #include "../common/LegendRow.h"
@@ -266,6 +267,9 @@ CodeGraphDialog::CodeGraphDialog(const QString &projectName, AppModel *model, QW
     m_source = new QPlainTextEdit(right);
     m_source->setReadOnly(true);
     m_source->setLineWrapMode(QPlainTextEdit::NoWrap);
+    // 语法高亮：判定在 logic/SyntaxHighlight（纯函数），涂色在 ui/CodeHighlighter
+    m_highlighter = new CodeHighlighter(m_source);
+    m_highlighter->setGutterEnabled(true); // 行首是「行号 + 制表符」，不是代码
     m_source->setFont(QFont(DS::font(DS::FontT::body).family(),
         DS::font(DS::FontT::body).pointSize(), QFont::Monospace));
     rv->addWidget(m_source, 1);
@@ -601,6 +605,9 @@ void CodeGraphDialog::showSource()
     QStringList out;
     for (int i = 0; i < lines.size(); ++i)
         out << QStringLiteral("%1\t%2").arg(n.declLine + i, 5).arg(lines.at(i));
+    // 高亮语言取引擎 detectLang 的值（引擎报什么语言就高亮什么语言）
+    if (m_highlighter)
+        m_highlighter->setLanguage(n.lang);
     m_source->setPlainText(out.join(QLatin1Char('\n')));
 }
 

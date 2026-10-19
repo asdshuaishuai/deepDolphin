@@ -10,6 +10,7 @@
 #include "../logic/GraphToken.h"
 #include "../logic/HeatLayout.h"
 #include "../logic/PatchCheck.h"
+#include "../logic/SyntaxHighlight.h"
 #include "../logic/ArchViewport.h"
 #include "../logic/SceneRender.h"
 #include "../logic/Route.h"
@@ -1859,6 +1860,153 @@ int SelfCheck::run(QStringList &log)
                 static_cast<DocPages::Language>(99))
                                    .isEmpty();
             check(log, "文档页：认不出的语言返回空串（不回落成中文冒充）", empty);
+        }
+    }
+
+    // ── 语法高亮（9 语言，与引擎 detectLang 对齐）──
+    // 判据盯的是「分类对不对」：颜色在界面上只是「怪了点」，分类错了没人会发现。
+    //   ① 九种语言齐全且顺序与引擎 detectLang 一致（少一种 = 那种语言的源码是纯色）
+    //   ② 每种语言的关键词表都真能用（拿表里的词去扫，必须扫出 keyword）
+    //   ③ 四类 token：整行注释 / 字符串（含闭合引号）/ 关键字 / 数字
+    //   ④ 字符串里的 # 不是注释（python）
+    //   ⑤ 段不重叠、不越界、按 start 升序
+    {
+        const QVector<QString> langs = SyntaxHighlight::languages();
+        check(log, "语法高亮：九种语言齐全且顺序与引擎 detectLang 一致",
+            langs.size() == 9 && langs.at(0) == QStringLiteral("swift")
+                && langs.at(1) == QStringLiteral("cangjie") && langs.at(2) == QStringLiteral("ts")
+                && langs.at(3) == QStringLiteral("python") && langs.at(4) == QStringLiteral("go")
+                && langs.at(5) == QStringLiteral("rust") && langs.at(6) == QStringLiteral("java")
+                && langs.at(7) == QStringLiteral("kotlin") && langs.at(8) == QStringLiteral("c"));
+
+        {
+            // ② 每种语言的关键词表都能用：拿表里的词去扫，必须扫出 keyword
+            bool allWork = !langs.isEmpty();
+            for (const QString &lang : langs) {
+                const QSet<QString> kws = SyntaxHighlight::keywords(lang);
+                if (kws.isEmpty()) {
+                    allWork = false;
+                    break;
+                }
+                const QString word = *kws.constBegin();
+                const QVector<SyntaxHighlight::Span> sp
+                    = SyntaxHighlight::highlight(word, lang);
+                if (sp.size() != 1 || sp.at(0).kind != SyntaxHighlight::Kind::keyword
+                    || sp.at(0).start != 0 || sp.at(0).len != word.size()) {
+                    allWork = false;
+                    break;
+                }
+            }
+            check(log, "语法高亮：九种语言的关键词表都真能扫出 keyword", allWork);
+        }
+        {
+            // 不认识的语言 → 回落仓颉（mac 同款），且明确说不支持
+            check(log, "语法高亮：不认识的语言回落仓颉且被标为不支持",
+                !SyntaxHighlight::supportsLanguage(QStringLiteral("brainfuck"))
+                    && SyntaxHighlight::supportsLanguage(QStringLiteral("cangjie"))
+                    && SyntaxHighlight::keywords(QStringLiteral("brainfuck"))
+                        == SyntaxHighlight::keywords(QStringLiteral("cangjie")));
+        }
+        {
+            // 整行注释 → 一整段 comment
+            // ⚠ 期望值从字符串**算**出来，不手数长度 —— 手数的那版判据自己数错了，
+            //   实现是对的、判据是红的（判据写错比实现写错更难查）。
+            const QString line = QStringLiteral("   // 这是注释");
+            const QVector<SyntaxHighlight::Span> sp
+                = SyntaxHighlight::highlight(line, QStringLiteral("c"));
+            check(log, "语法高亮：整行注释扫成一整段",
+                sp.size() == 1 && sp.at(0).kind == SyntaxHighlight::Kind::comment
+                    && sp.at(0).start == 0 && sp.at(0).len == line.size());
+        }
+        {
+            // 行尾注释 → 从 // 到行尾
+            const QString line = QStringLiteral("int x = 1; // 尾注");
+            const QVector<SyntaxHighlight::Span> sp
+                = SyntaxHighlight::highlight(line, QStringLiteral("c"));
+            const int at = line.indexOf(QStringLiteral("//"));
+            bool ok = at > 0 && !sp.isEmpty();
+            if (ok) {
+                const SyntaxHighlight::Span &last = sp.last();
+                ok = last.kind == SyntaxHighlight::Kind::comment && last.start == at
+                    && last.start + last.len == line.size();
+            }
+            check(log, "语法高亮：行尾注释从 // 吃到行尾", ok);
+        }
+        {
+            // ③ 字符串吃到**闭合引号**（半截着色的字符串最难看）
+            const QVector<SyntaxHighlight::Span> sp
+                = SyntaxHighlight::highlight(QStringLiteral("x = \"hi\""), QStringLiteral("c"));
+            check(log, "语法高亮：字符串吃到闭合引号",
+                sp.size() == 1 && sp.at(0).kind == SyntaxHighlight::Kind::string
+                    && sp.at(0).start == 4 && sp.at(0).len == 4);
+        }
+        {
+            // ④ python：字符串里的 # 不是注释
+            const QVector<SyntaxHighlight::Span> sp
+                = SyntaxHighlight::highlight(QStringLiteral("s = \"# not comment\""),
+                    QStringLiteral("python"));
+            bool ok = sp.size() == 1 && sp.at(0).kind == SyntaxHighlight::Kind::string;
+            if (ok) {
+                // 整行不是注释（否则会是一整段 comment）
+                ok = sp.at(0).start == 4;
+            }
+            check(log, "语法高亮：字符串里的 # 不当注释（python）", ok);
+        }
+        {
+            // ④ python：**字符串外**的 # 才是注释（行尾 #）
+            //    上一条只验了「字符串里的 #」，碰不到行尾 # 那条分支 —— 夹具得覆盖它。
+            const QString line = QStringLiteral("x = 1  # 尾注");
+            const QVector<SyntaxHighlight::Span> sp
+                = SyntaxHighlight::highlight(line, QStringLiteral("python"));
+            const int at = line.indexOf(QLatin1Char('#'));
+            bool ok = at > 0 && !sp.isEmpty();
+            if (ok) {
+                const SyntaxHighlight::Span &last = sp.last();
+                ok = last.kind == SyntaxHighlight::Kind::comment && last.start == at
+                    && last.start + last.len == line.size();
+            }
+            check(log, "语法高亮：python 行尾 # 是注释（字符串外才生效）", ok);
+        }
+        {
+            // ③ 关键字 / 数字分类
+            const QVector<SyntaxHighlight::Span> sp
+                = SyntaxHighlight::highlight(QStringLiteral("return 0xFF;"), QStringLiteral("go"));
+            check(log, "语法高亮：关键字与十六进制数字分得开",
+                sp.size() == 2 && sp.at(0).kind == SyntaxHighlight::Kind::keyword
+                    && sp.at(0).len == 6 && sp.at(1).kind == SyntaxHighlight::Kind::number
+                    && sp.at(1).len == 4);
+        }
+        {
+            // ⑤ 段不重叠 / 不越界 / 按 start 升序（乱了就涂花）
+            const QString line = QStringLiteral("func main() { let x = 1; /* c */ } // 尾");
+            const QVector<SyntaxHighlight::Span> sp
+                = SyntaxHighlight::highlight(line, QStringLiteral("cangjie"));
+            bool ordered = true, inRange = true, noOverlap = true;
+            int prevEnd = 0;
+            for (const SyntaxHighlight::Span &s : sp) {
+                ordered = ordered && s.start >= prevEnd;
+                inRange = inRange && s.start >= 0 && s.len > 0
+                    && s.start + s.len <= line.size();
+                prevEnd = s.start + s.len;
+            }
+            for (int i = 1; i < sp.size(); ++i)
+                noOverlap = noOverlap && sp.at(i).start >= sp.at(i - 1).start + sp.at(i - 1).len;
+            check(log, "语法高亮：段按 start 升序、不重叠、不越界", ordered && inRange && noOverlap);
+        }
+        {
+            // 行注释前缀：python 用 #，其余 //
+            check(log, "语法高亮：行注释前缀（python # / 其余 //）",
+                SyntaxHighlight::lineCommentPrefix(QStringLiteral("python"))
+                        == QStringLiteral("#")
+                    && SyntaxHighlight::lineCommentPrefix(QStringLiteral("go"))
+                        == QStringLiteral("//"));
+        }
+        {
+            // 空行 → 空段（不产出垃圾）
+            check(log, "语法高亮：空行不产出段",
+                SyntaxHighlight::highlight(QString(), QStringLiteral("c")).isEmpty()
+                    && SyntaxHighlight::highlight(QStringLiteral("   "), QStringLiteral("c"))
+                           .isEmpty());
         }
     }
 

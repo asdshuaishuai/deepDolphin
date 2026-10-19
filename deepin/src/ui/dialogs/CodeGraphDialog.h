@@ -25,6 +25,7 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QTextEdit;
 class QPlainTextEdit;
+class CodeHighlighter;
 class QStackedWidget;
 class FlatButton;
 class SegmentedButton;
@@ -80,6 +81,8 @@ private:
     FlatButton *m_heatBack = nullptr;
     QLabel *m_detailTitle = nullptr;
     QPlainTextEdit *m_source = nullptr;
+    /// 源码页签的语法高亮（判定在 logic/SyntaxHighlight，涂色在 ui/CodeHighlighter）
+    CodeHighlighter *m_highlighter = nullptr;
     QTreeWidget *m_findings = nullptr;
     QTreeWidget *m_relations = nullptr;
     FlatButton *m_tabSource = nullptr;
