@@ -12,6 +12,7 @@
 #include "../logic/GraphToken.h"
 #include "../logic/GraphInsight.h"
 #include "../logic/HeatLayout.h"
+#include "../logic/IndexStatus.h"
 #include "../logic/PatchCheck.h"
 #include "../logic/SyntaxHighlight.h"
 #include "../logic/ArchViewport.h"
@@ -2287,6 +2288,108 @@ int SelfCheck::run(QStringList &log)
                 && EngineConfig::isWritable(QStringLiteral("roots"))
                 && !EngineConfig::isWritable(QStringLiteral("update.docs"))
                 && !EngineConfig::isWritable(QStringLiteral("ai")));
+    }
+
+    // ── 持久化代码索引的状态（index overview / index update）──
+    // 判据盯三处「错得毫无声响」：
+    //   ① **「已最新」≠「已更新」**：源文件没动时引擎回 fresh: true，
+    //      这次**什么都没重建** —— 界面若说成「更新好了」就是骗人。
+    //   ② **`rebuilt` 在 fresh 时引擎不发这个键** —— 按 false 读会把
+    //      「这次没重建」说成「从来没重建过」（后者是历史事实）。
+    //   ③ **缺字段不回落成 0**：`nodes: 0`（空索引）与「引擎没发 nodes」
+    //      （契约漂移）是两件事。
+    {
+        const IndexStatus::Overview ov = IndexStatus::parseOverview(JO(R"JSON({
+  "project": "atlas",
+  "updateCount": 1,
+  "generatedAt": "2026-10-19T23:38:51.268173877+08:00",
+  "selfHealed": false,
+  "nodes": 3,
+  "edges": 1,
+  "files": 1,
+  "byKind": {"func": 3},
+  "probe": {"files": 1, "bytes": 103, "maxMtime": 1792424331000}
+})JSON"));
+        check(log, "索引状态：概览解析（代数 / 节点 / 边 / 文件 / 按种类 / 探针）",
+            ov.ok && ov.project == QStringLiteral("atlas") && ov.hasUpdateCount()
+                && ov.updateCount == 1 && ov.hasNodes() && ov.nodes == 3
+                && ov.hasEdges() && ov.edges == 1 && ov.hasFiles() && ov.files == 1
+                && ov.byKind.value(QStringLiteral("func")) == 3
+                && ov.probeFiles == 1 && ov.probeBytes == 103
+                && ov.probeMaxMtime == 1792424331000
+                && ov.generatedAt.startsWith(QStringLiteral("2026-10-19T23:38:51")));
+        check(log, "索引状态：概览摘要（缺项不占位）",
+            IndexStatus::summary(ov)
+                == QStringLiteral("索引：3 符号 · 1 边 · 1 文件 · 第 1 代"));
+        {
+            // 缺 nodes 键 → 契约漂移 → 报错，不当空索引放行
+            const IndexStatus::Overview bad = IndexStatus::parseOverview(
+                JO(R"JSON({"project":"atlas","updateCount":0,"edges":0,"files":0})JSON"));
+            check(log, "索引状态：缺 nodes 键时报错（不当成「0 符号的空索引」）",
+                !bad.ok && !bad.error.isEmpty());
+        }
+        {
+            // ⚠ 缺键 → -1（未知），不回落成 0
+            const IndexStatus::Overview partial = IndexStatus::parseOverview(
+                JO(R"JSON({"project":"atlas","nodes":0,"edges":0,"files":0})JSON"));
+            check(log, "索引状态：缺 updateCount 记为「未知」而不是 0",
+                partial.ok && !partial.hasUpdateCount() && partial.updateCount == -1
+                    && !partial.selfHealedPresent);
+        }
+        {
+            // ⚠ edges / files 缺失 → -1（未知），不回落成 0
+            const IndexStatus::Overview noCounts = IndexStatus::parseOverview(
+                JO(R"JSON({"project":"atlas","nodes":1})JSON"));
+            check(log, "索引状态：缺 edges/files 键记为「未知」而不是 0",
+                noCounts.ok && noCounts.hasNodes() && noCounts.nodes == 1
+                    && !noCounts.hasEdges() && noCounts.edges == -1
+                    && !noCounts.hasFiles() && noCounts.files == -1);
+        }
+        {
+            // ⚠ 探针字段缺失 → -1（未知），不回落成 0
+            const IndexStatus::Overview noProbe = IndexStatus::parseOverview(
+                JO(R"JSON({"project":"atlas","updateCount":0,"nodes":1,"edges":0,"files":1,
+  "probe":{"files":1}})JSON"));
+            check(log, "索引状态：缺探针字段记为「未知」而不是 0",
+                noProbe.ok && noProbe.probeFiles == 1 && noProbe.probeBytes == -1
+                    && noProbe.probeMaxMtime == -1);
+        }
+        {
+            // ⚠ 0 是合法值（空索引），不被当成「没发」
+            const IndexStatus::Overview empty = IndexStatus::parseOverview(
+                JO(R"JSON({"project":"atlas","updateCount":0,"nodes":0,"edges":0,"files":0})JSON"));
+            check(log, "索引状态：0 是合法值（空索引不被当成「没发」）",
+                empty.ok && empty.hasNodes() && empty.nodes == 0
+                    && empty.hasUpdateCount() && empty.updateCount == 0);
+        }
+        {
+            // 增量更新：源文件没动 → fresh: true，**引擎不发 rebuilt 键**
+            const IndexStatus::UpdateResult fresh = IndexStatus::parseUpdate(
+                JO(R"JSON({"project":"atlas","fresh":true,"updateCount":1,
+  "probe":{"files":1,"bytes":103,"maxMtime":1792424331000}})JSON"));
+            check(log, "索引更新：fresh 时引擎不发 rebuilt 键（有 present 标志）",
+                fresh.ok && fresh.fresh && !fresh.rebuiltPresent && fresh.hasUpdateCount()
+                    && fresh.updateCount == 1 && fresh.indexJsonPath.isEmpty());
+        }
+        {
+            // 增量更新：源文件变了 → fresh: false + rebuilt: true + 落盘路径
+            const IndexStatus::UpdateResult rebuilt = IndexStatus::parseUpdate(
+                JO(R"JSON({"project":"atlas","fresh":false,"rebuilt":true,"updateCount":1,
+  "generatedAt":"2026-10-19T23:38:51.268173877+08:00",
+  "probe":{"files":1,"bytes":103,"maxMtime":1792424331000},
+  "indexJson":"/tmp/x/store/p_1/index.json"})JSON"));
+            check(log, "索引更新：源文件变了 → fresh 假 / rebuilt 真 / 有落盘路径",
+                rebuilt.ok && !rebuilt.fresh && rebuilt.rebuilt && rebuilt.rebuiltPresent
+                    && rebuilt.indexJsonPath
+                        == QStringLiteral("/tmp/x/store/p_1/index.json"));
+        }
+        {
+            // 缺 fresh 键 → 契约漂移 → 报错
+            const IndexStatus::UpdateResult bad = IndexStatus::parseUpdate(
+                JO(R"JSON({"project":"atlas","updateCount":1})JSON"));
+            check(log, "索引更新：缺 fresh 键时报错（契约漂移不放过）",
+                !bad.ok && !bad.error.isEmpty());
+        }
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

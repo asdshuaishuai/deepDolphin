@@ -884,6 +884,77 @@ void AppModel::exportReport(const QString &name)
         });
 }
 
+// ── 持久化代码索引的状态（index overview / index update）──
+
+void AppModel::loadIndexOverview(const QString &name)
+{
+    m_indexStates[name] = { LoadState::loading, QString() };
+    emit indexStatusChanged(name);
+    m_cli->callJson({ QStringLiteral("index"), QStringLiteral("overview"), name,
+                        QStringLiteral("--json") },
+        EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                m_indexStates[name] = { LoadState::failed,
+                    res.ok() ? QStringLiteral("索引状态输出不是 JSON 对象")
+                             : res.error.userMessage() };
+                emit indexStatusChanged(name);
+                return;
+            }
+            const IndexStatus::Overview ov = IndexStatus::parseOverview(res.payload->object());
+            if (!ov.ok) {
+                m_indexStates[name] = { LoadState::failed, ov.error };
+                emit indexStatusChanged(name);
+                return;
+            }
+            m_indexOverviews[name] = ov;
+            m_indexStates[name] = { LoadState::loaded, QString() };
+            emit indexStatusChanged(name);
+        });
+}
+
+void AppModel::updateIndex(const QString &name)
+{
+    // 走 **Json 契约**：`index update --json` 给的是结构化结果
+    // （fresh / rebuilt / updateCount / indexJson 落盘路径），
+    // 人话形态只有一句「已最新——首版（第 0 版）」，拿不到这些。
+    m_cli->callJson({ QStringLiteral("index"), QStringLiteral("update"), name,
+                        QStringLiteral("--json") },
+        EngineTimeouts::Deep, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                emit indexUpdated(name, false,
+                    res.ok() ? QStringLiteral("索引更新输出不是 JSON 对象")
+                             : res.error.userMessage());
+                return;
+            }
+            const IndexStatus::UpdateResult u = IndexStatus::parseUpdate(res.payload->object());
+            if (!u.ok) {
+                emit indexUpdated(name, false, u.error);
+                return;
+            }
+            // ⚠ 「已最新」≠「已更新」：源文件没动时引擎回 fresh: true，
+            //   这次**什么都没重建** —— 界面要说清，不能说成「更新好了」。
+            QString text;
+            if (u.fresh)
+                text = QStringLiteral("源文件没动，索引已是最新（第 %1 代）")
+                           .arg(u.updateCount >= 0 ? QString::number(u.updateCount)
+                                                   : QStringLiteral("?"));
+            else if (u.rebuilt)
+                text = QStringLiteral("索引已重建（第 %1 代）%2")
+                           .arg(u.updateCount >= 0 ? QString::number(u.updateCount)
+                                                   : QStringLiteral("?"),
+                               u.indexJsonPath);
+            else
+                text = QStringLiteral("索引已更新（第 %1 代）")
+                           .arg(u.updateCount >= 0 ? QString::number(u.updateCount)
+                                                   : QStringLiteral("?"));
+            // 索引内容变了 → 重新读索引状态，并重载代码图谱（数据换了）
+            loadIndexOverview(name);
+            if (!u.fresh)
+                loadCodeGraph(name);
+            emit indexUpdated(name, true, text);
+        });
+}
+
 // ── 引擎配置（config list / config set）──
 
 void AppModel::loadEngineConfig()

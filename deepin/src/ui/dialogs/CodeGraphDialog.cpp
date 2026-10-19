@@ -102,6 +102,26 @@ CodeGraphDialog::CodeGraphDialog(const QString &projectName, AppModel *model, QW
     top->addWidget(m_score);
     v->addLayout(top);
 
+    // 增量更新：引擎 index update（源状态探针一致时只更新变动的那部分）。
+    // 与「生成」的区别：生成是全量重建，索引已存在时这里只跑探针增量。
+    m_indexUpdate = new FlatButton(content);
+    m_indexUpdate->setText(QStringLiteral("增量更新"));
+    m_indexUpdate->setToolTip(QStringLiteral("按源状态探针增量更新符号索引（引擎 index update）"));
+    connect(m_indexUpdate, &QPushButton::clicked, this, [this] {
+        m_errorBar->hide();
+        m_model->updateIndex(m_project);
+    });
+    auto *indexBar = new QHBoxLayout;
+    indexBar->setSpacing(DS::Spacing::xs);
+    indexBar->addWidget(m_indexUpdate);
+    // 索引状态行：代数 / 节点数 / 探针时间。
+    // ⚠ 与页头概览**不是一回事** —— 概览读实时扫描，这里读持久化索引。
+    //   「生成」写的就是后者，不显示它的话点完「生成」看不到任何变化。
+    m_indexStatus = new SecondaryLabel(QString(), content);
+    m_indexStatus->setWordWrap(true);
+    indexBar->addWidget(m_indexStatus, 1);
+    v->addLayout(indexBar);
+
     // ── 错误条 ──
     m_errorBar = new QLabel(content);
     m_errorBar->setWordWrap(true);
@@ -343,12 +363,64 @@ CodeGraphDialog::CodeGraphDialog(const QString &projectName, AppModel *model, QW
                 }
                 showReceipt(receipt);
             });
+        // 持久化索引的状态（引擎 index overview）—— 按项目路由：
+        // 两个项目的图谱窗可以同时开着，串台就会显示别人的索引状态。
+        connect(m_model, &AppModel::indexStatusChanged, this,
+            [this](const QString &name) {
+                if (name == m_project)
+                    updateIndexStatus();
+            });
+        connect(m_model, &AppModel::indexUpdated, this,
+            [this](const QString &name, bool ok, const QString &text) {
+                if (name != m_project)
+                    return;
+                if (!ok) {
+                    showError(text);
+                    return;
+                }
+                showReceipt(text);
+            });
     }
 
     reload();
     // 项目级概览（引擎 graph overview）—— 与三源一起取，页头显示文件/符号/语言数
-    if (m_model)
+    if (m_model) {
         m_model->loadOverview(m_project);
+        // 持久化索引的状态（引擎 index overview）—— 与概览是**两套数据源**：
+        // 概览读实时扫描，这里读索引。「生成」写的就是索引，不读它就看不到变化。
+        m_model->loadIndexOverview(m_project);
+    }
+}
+
+void CodeGraphDialog::updateIndexStatus()
+{
+    if (!m_model)
+        return;
+    const LoadStateBox &st = m_model->indexState(m_project);
+    if (st.state == LoadState::loading) {
+        m_indexStatus->setText(QStringLiteral("正在读取引擎索引状态…"));
+        return;
+    }
+    if (st.state == LoadState::failed) {
+        m_indexStatus->setText(QStringLiteral("索引状态读不出来：%1").arg(st.message));
+        return;
+    }
+    const IndexStatus::Overview *ov = m_model->indexOverview(m_project);
+    if (!ov || !ov->ok) {
+        m_indexStatus->setText(QStringLiteral("索引状态读不出来。"));
+        return;
+    }
+    QString text = IndexStatus::summary(*ov);
+    if (!ov->generatedAt.isEmpty()) {
+        // 引擎给的是 ISO8601 原文（含纳秒与时区偏移）—— 取前 16 字符
+        // 转成「yyyy-MM-dd HH:mm」够用，且不必处理时区换算。
+        QString at = ov->generatedAt.left(16);
+        at.replace(QLatin1Char('T'), QLatin1Char(' '));
+        text += QStringLiteral(" · 探针 %1").arg(at);
+    }
+    if (ov->selfHealedPresent && ov->selfHealed)
+        text += QStringLiteral(" · 引擎自愈过索引");
+    m_indexStatus->setText(text);
 }
 
 void CodeGraphDialog::reload()

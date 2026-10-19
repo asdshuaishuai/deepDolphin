@@ -49,6 +49,7 @@ moonGit（仓颉引擎，仓内别名 deepgit）项目群进度客户端的 Linu
 | **引擎自检（引擎 `doctor`）——mac 端暂无对位** | 设置·通用页「环境自检」卡：按引擎口径的 `problems` 判档（**退出码 1 也是有效报告**；`result` 是自由文本不按 `=="OK"` 判健康；缺 `problems` 键记「未知」） | `logic/EngineDoctor.{h,cpp}`；`AppModel::runDoctor`；`panes/GeneralPane` |
 | **进度报告导出（引擎 `report`）——mac 端暂无对位** | 详情页页头「导出报告」入口 + 「进度报告」卡：回执 + 落盘 .md 路径 + 「打开报告」（抽不到路径就不给坏按钮） | `logic/ArchReceipt`（`filePath` / `plain`）；`AppModel::exportReport`；`pages/ProjectDetailPage` |
 | **引擎配置（引擎 `config`）——mac 端暂无对位** | 设置·通用页「引擎配置」卡：浅更新分支上限 / 文档备份份数 / 受管文档 / 扫描根；前两项可改（经引擎 `config set`） | `logic/EngineConfig.{h,cpp}`；`AppModel::loadEngineConfig` / `setEngineConfig`；`panes/GeneralPane` |
+| **持久化索引状态**（引擎 `index overview` / `index update`）——mac 端暂无对位 | 代码图谱页「增量更新」钮 + 索引状态行（代数 / 节点 / 边 / 文件 / 探针时间）—— 与页头概览**不是一回事**（概览读实时扫描，这里读索引） | `logic/IndexStatus.{h,cpp}`；`AppModel::loadIndexOverview` / `updateIndex`；`dialogs/CodeGraphDialog` |
 
 ## 快捷键映射表
 
@@ -879,6 +880,11 @@ deepin 接进 GUI 属**领先 mac**。
 | 156 | **改动在下次更新/备份时生效**，界面明说 | 引擎配置是引擎读配置时生效的，改完当前行为不变。界面若不说清，用户会以为「改了没用」而反复点 | 无 |
 | 157 | **`config set` 走 Text 契约**（回执在 stderr，与 `report` 同款） | 拿 callJson 去收，exit==0 也会被判成「引擎输出不是合法 JSON」—— 成功被报成失败。批 J 修的 `EngineCli::receiptText`（stdout 优先、空则 stderr）正好覆盖 | 无 |
 | 158 | **判定不接 GUI 的引擎能力**：`confidence query` / `graph db` / `confidence db` / `arch query|update` / `track` / `hook` / `mcp` / `skill` | ① `confidence query` 是 `graph confidence` 的**子集**（少了 `findings[]` 逐条疑点，多了 `indexUpdateCount`/`generatedAt`）—— 接了反而丢信息；② `graph db` / `confidence db` 是给 agent 用 SQL 查的单文件 SQLite，GUI 无对应物；③ `arch query` 与架构图页的 scene 数据重叠，会造出第二个真相源；④ `track`/`hook`/`mcp`/`skill` 是钩子/宿主/教学包，无 GUI 对位物 | 这些能力**仍可经 agent 工具面使用**（28 个工具里已含 `arch query` / `index query` / `confidence query`）—— 判定不接 GUI ≠ 判定不接能力 |
+| 159 | **代码图谱页显性化「持久化索引」的状态**（`index overview`）：代数 / 节点 / 边 / 文件 / 探针时间 | 页头概览读的是**实时扫描**（`graph overview`），而「生成」按钮写的是**持久化索引**（`index gen`）—— 两套数据源。用户点完「生成」**看不到任何变化**（索引写进去了，界面没读它），按钮形同虚设，用户只会以为坏了 | 无 |
+| 160 | **新增「增量更新」钮**（`index update`） | 引擎有源状态探针：源文件没动时只跑探针、不重建。改了代码不必全量 `index gen` | 无 |
+| 161 | **「已最新」≠「已更新」**：源文件没动（`fresh: true`）时界面明说「索引已是最新」，不说「更新好了」 | `fresh: true` 时引擎**什么都没重建**。说成「更新好了」就是骗人 | 无 |
+| 162 | **`rebuilt` 是条件键**（fresh 时引擎不发）→ 加 present 标志 | 按 `false` 读会把「这次没重建」说成「从来没重建过」（后者是历史事实） | 无 |
+| 163 | **判定不接 GUI：`index query`** | 与已接的 `graph functions`（关系页签在用）**高度重叠** —— `tier` / `findings` / `weight` 两边都有，`index query` 的 `defs[]` 只是 `functions[]` 的重排。接它会造出**第二个真相源**（同一份调用关系两个来源） | 该能力**仍可经 agent 工具面使用**（28 个工具里含 `index query`）—— 判定不接 GUI ≠ 判定不接能力 |
 
 **本批验证**（全部实跑）：`--selfcheck` **205 通过 0 失败**（198 → 205，+7 例：id 取名字 / 概览解析 /
 概览契约不对时报错 / 符号详情解析 / 符号不存在是「没找到」不是错误 / 影响面解析 / 影响面契约不对时报错）；
@@ -963,6 +969,48 @@ selfcheck 红；⑤ 检查项行文留悬空「·」 → selfcheck 红；⑥ **�
 手改未写回时重读不回填。
 **视觉变化**：设置·通用页多一张「引擎配置」卡（读取引擎配置钮 + 只读行 + 两个数字输入 + 应用钮）。
 该页不在四页快照矩阵内，基线未动。
+
+### 批 L：持久化代码索引的状态接进代码图谱页
+
+决策见上表 **159–163**（索引状态显性化 / 增量更新钮 / 「已最新」≠「已更新」 /
+`rebuilt` 条件键 / 判定不接 `index query`）。
+
+**本批验证**（全部实跑）：`--selfcheck` **236 通过 0 失败**（226 → 236，+10 例：概览解析 /
+摘要 / 缺 nodes 键报错 / 缺 updateCount 记「未知」 / **缺 edges/files 记「未知」** /
+**0 是合法值** / **缺探针字段记「未知」** / fresh 时不发 rebuilt 键 /
+源文件变了 fresh 假 rebuilt 真 / 缺 fresh 键报错）；
+`contract-check.sh` **96/96**（真引擎沙箱，87 → 96，+9 条 = **契约门第 20 组**：
+概览键齐全 / 三个计数是数字 / 探针三字段齐全 / **fresh 时引擎不发 rebuilt 键** /
+源文件没动 fresh 为真 / 源文件变了 fresh 假 rebuilt 真 / 代数递增 /
+**重建后的 indexJson 落盘路径真实存在** / 客户端端到端解析真概览）；
+`ci.sh` **10/10 门全绿**（第 9 门扩到 **172 项**接线点，+18 项）。
+**十六处负控真红**：判定层 7 处 —— ① 缺 nodes 键不当空索引放行 → selfcheck 红；
+② **updateCount 缺键回落成 0** → selfcheck 红；③ **edges/files 缺键回落成 0** → selfcheck 红；
+④ **0 被当成「引擎没发」** → selfcheck 红；⑤ **rebuilt 的 present 标志被抹掉** →
+selfcheck 红；⑥ 缺 fresh 键不当契约漂移报错 → selfcheck 红；⑦ **探针字段缺失回落成 0**
+→ selfcheck 红；
+接线 9 处 + 构建登记 1 处 —— ⑦ 摘掉「增量更新」按钮构造点 → 接线门红；⑧ 摘掉
+`updateIndex` 调用 → 接线门红；⑨ 摘掉 `loadIndexOverview` 调用 → 接线门红；
+⑩ 摘掉 `indexStatusChanged` 接线 → 接线门红；⑪ 摘掉 `indexUpdated` 接线 → 接线门红；
+⑫ **不再区分「已最新」与「已重建」** → 接线门红；⑬ 改掉 `index overview` 调用 → 接线门红；
+⑭ 改掉 `index update` 调用 → 接线门红；⑮ **`IndexStatus.cpp` 没进构建** → 接线门红。
+**负控抓出并已修的四处「判据不够分叉」**：① 变异落在 `nodes` 的 `contains` 守卫上 ——
+但**那是死代码**（缺 `nodes` 早已退报错），变异根本不生效；已把变异改指 `updateCount`，
+并**删掉那个死守卫**（写个 `if` 反而让人以为「缺了会回落成 0」）。② 「fresh 时 rebuilt 键
+不发出」那条判据只断言 `!rebuiltPresent` —— 变异把 present 标志抹掉照样 PASS；已补上
+「rebuilt 键存在时 present 必须为真」。③ 探针 `maxMtime` 的变异落在**有该键的夹具**上；
+已补一条「缺探针字段记为「未知」而不是 0」的判据。④ `edges` 缺键的变异同样落在**有该键的
+夹具**上；已补一条「缺 edges/files 键记为「未知」而不是 0」的判据。
+**修掉一个真缺陷**：代码图谱页的「生成」写的是**持久化索引**（`index gen`），而页头概览
+读的是**实时扫描**（`graph overview`）—— 两套数据源，用户点完「生成」**看不到任何变化**
+（索引写进去了，界面没读它），按钮形同虚设。批 L 把索引状态显性化，两者界面分开摆。
+**判定不接 GUI**：`index query` 与已接的 `graph functions`（关系页签在用）高度重叠
+（`tier`/`findings`/`weight` 两边都有），接它会造出第二个真相源；仍可经 agent 工具面使用。
+**实测补充**：引擎在索引缺失/过期时会**自愈**（`selfHealed: true`，实测 2026-10-19：
+从没点过「生成」的项目，`index overview` 照样返回完整载荷且 `selfHealed: true`）——
+所以索引状态行在用户点「生成」之前就有内容，且会明说「引擎自愈过索引」。
+**视觉变化**：代码图谱页顶栏下多一行「增量更新」钮 + 索引状态行。该页是独立窗，
+不进四页快照矩阵，基线未动。
 
 ## 分层纪律（后续阶段必须延续）
 

@@ -261,6 +261,30 @@ arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'if \(!m_configInputsDirty
 arch_need "$SRC/src/app/SelfCheck.cpp" 'EngineConfig::parse' 'SelfCheck 覆盖配置解析'
 arch_need "$SRC/src/app/SelfCheck.cpp" 'EngineConfig::writableKeys' 'SelfCheck 覆盖可写键清单'
 
+# 持久化代码索引的状态（index overview / index update）链路：
+#   判定（IndexStatus 纯函数）→ 取数（引擎 index overview / index update）
+#   → 接线（代码图谱页「增量更新」钮 + 索引状态行）。
+arch_need "$SRC/src/logic/IndexStatus.cpp" 'Overview parseOverview' '判定层有索引概览解析'
+arch_need "$SRC/src/logic/IndexStatus.cpp" 'UpdateResult parseUpdate' '判定层有索引更新解析'
+arch_need "$SRC/src/logic/IndexStatus.cpp" 'QString summary' '判定层有索引摘要'
+arch_need "$SRC/src/app/AppModel.h" 'loadIndexOverview' 'AppModel 暴露 loadIndexOverview'
+arch_need "$SRC/src/app/AppModel.h" 'updateIndex' 'AppModel 暴露 updateIndex'
+arch_need "$SRC/src/app/AppModel.h" 'indexStatusChanged' 'AppModel 有索引状态信号'
+arch_need "$SRC/src/app/AppModel.h" 'indexUpdated' 'AppModel 有索引更新结果信号'
+arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("index"\), *QStringLiteral\("overview"\)' 'AppModel 调引擎 index overview'
+arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("index"\), *QStringLiteral\("update"\)' 'AppModel 调引擎 index update'
+# ⚠ 「已最新」≠「已更新」：fresh 时引擎**什么都没重建**，界面不能说成「更新好了」。
+arch_need "$SRC/src/app/AppModel.cpp" 'if \(u\.fresh\)' '索引更新区分「已最新」与「已重建」'
+# 接线：代码图谱页的「增量更新」钮 + 索引状态行。盯构造点与调用点。
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'QStringLiteral\("增量更新"\)' '代码图谱页真的造了「增量更新」按钮'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_model->updateIndex\(' '「增量更新」真的调了引擎 index update'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_model->loadIndexOverview\(' '代码图谱页真的读了索引状态'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '&AppModel::indexStatusChanged' '代码图谱页接了索引状态信号'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '&AppModel::indexUpdated' '代码图谱页接了索引更新结果'
+arch_need "$SRC/src/main.cpp" '--index-status-parse' '无头 flag 能把索引概览判成值（契约门用）'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'IndexStatus::parseOverview' 'SelfCheck 覆盖索引概览解析'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'IndexStatus::parseUpdate' 'SelfCheck 覆盖索引更新解析'
+
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \
          src/logic/CodeGraphBuild.cpp src/ui/ArchCanvasWidget.cpp \
@@ -270,7 +294,7 @@ for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToo
          src/logic/DocPages.cpp src/ui/dialogs/DocsDialog.cpp \
          src/logic/SyntaxHighlight.cpp src/ui/CodeHighlighter.cpp \
          src/logic/GraphInsight.cpp src/logic/EngineDoctor.cpp \
-         src/logic/EngineConfig.cpp; do
+         src/logic/EngineConfig.cpp src/logic/IndexStatus.cpp; do
     # ⚠ 必须**整词**匹配：`grep -qF "$f"` 是子串匹配，把登记项改成
     #   `src/logic/EngineDoctor.cpp.disabled` 照样命中 —— 门绿着，文件却没编进去。
     #   负控实测过这一条（假阴性）。故用「前后是行首/行尾或空白」的精确匹配。

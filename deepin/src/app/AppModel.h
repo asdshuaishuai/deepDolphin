@@ -22,6 +22,7 @@
 #include "../logic/EngineConfig.h"
 #include "../logic/EngineDoctor.h"
 #include "../logic/GraphInsight.h"
+#include "../logic/IndexStatus.h"
 #include "../models/GraphScene.h"
 #include "../models/Milestone.h"
 #include "../models/PatchReport.h"
@@ -242,6 +243,19 @@ public:
     /// 影响面（引擎 graph impact）。⚠ 同上，只认符号名。
     void loadImpact(const QString &name, const QString &symbolName);
 
+    // ── 持久化代码索引的状态（index overview / index update）──
+    // 按项目存（与代码图谱/场景同理：两个项目的图谱窗可以同时开着）。
+    LoadStateBox indexState(const QString &name) const { return m_indexStates.value(name); }
+    const IndexStatus::Overview *indexOverview(const QString &name) const
+    {
+        auto it = m_indexOverviews.constFind(name);
+        return it == m_indexOverviews.constEnd() ? nullptr : &it.value();
+    }
+    /// 读索引状态（引擎 `index overview --json`）。
+    void loadIndexOverview(const QString &name);
+    /// 增量更新索引（引擎 `index update --json`；源状态没动时引擎回 `fresh: true`）。
+    void updateIndex(const QString &name);
+
     // ── 引擎自检（doctor）与进度报告（report）──
     const EngineDoctor::Report *doctorReport() const { return &m_doctor; }
     /// 运行引擎自检。
@@ -289,6 +303,10 @@ signals:
     void reportExported(bool ok, const QString &project, const QString &receipt);
     /// 引擎配置变化（读或写完都发）。
     void engineConfigChanged();
+    /// 索引状态变化（按项目路由；两个项目的图谱窗可以同时开着）。
+    void indexStatusChanged(const QString &name);
+    /// 索引增量更新的结果（ok=true 时 text 是引擎给的一句话）。
+    void indexUpdated(const QString &name, bool ok, const QString &text);
     /// 引擎配置写入的回执（ok=false 时 text 是引擎给的原因原文）。
     void engineConfigSaved(bool ok, const QString &text);
     /// 图谱三件套的结果就绪（都带项目名；符号级的额外带符号名）。
@@ -363,6 +381,8 @@ private:
     EngineDoctor::Report m_doctor;
     EngineConfig::Config m_engineConfig;
     LoadStateBox m_engineConfigState;
+    QMap<QString, LoadStateBox> m_indexStates;
+    QMap<QString, IndexStatus::Overview> m_indexOverviews;
     QMap<QString, QString> m_projectLoadErrors;
 
     QString m_lastError;

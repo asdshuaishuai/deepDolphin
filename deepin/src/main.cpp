@@ -21,6 +21,7 @@
 #include "logic/CodeGraphBuild.h"
 #include "logic/EngineConfig.h"
 #include "logic/EngineDoctor.h"
+#include "logic/IndexStatus.h"
 #include "logic/SyntaxHighlight.h"
 #include "logic/Liveness.h"
 #include "logic/Route.h"
@@ -405,6 +406,38 @@ int main(int argc, char *argv[])
         fprintf(stdout, "%s\n", qPrintable(plainText));
         fflush(stdout);
         return plainText.isEmpty() ? 1 : 0;
+    }
+    if (rawArgs.contains(QStringLiteral("--index-status-parse"))) {
+        // 客户端对 `index overview --json` 载荷的判定结果（判定层在 logic/IndexStatus）。
+        // 契约检查拿**真引擎**的载荷喂它 —— 引擎形状变了、客户端没跟上时，
+        // 自造夹具照样全绿。
+        // 用法：deepDolphin --index-status-parse < overview.json
+        QFile in;
+        in.open(stdin, QIODevice::ReadOnly);
+        const QByteArray raw = in.readAll();
+        QJsonParseError perr{};
+        const QJsonDocument doc = QJsonDocument::fromJson(raw, &perr);
+        IndexStatus::Overview rep;
+        if (perr.error != QJsonParseError::NoError || !doc.isObject()) {
+            rep.ok = false;
+            rep.error = QStringLiteral("索引概览载荷不是 JSON 对象");
+        } else {
+            rep = IndexStatus::parseOverview(doc.object());
+        }
+        QJsonObject out;
+        out.insert(QStringLiteral("ok"), rep.ok);
+        out.insert(QStringLiteral("project"), rep.project);
+        out.insert(QStringLiteral("updateCount"), rep.updateCount);
+        out.insert(QStringLiteral("nodes"), rep.nodes);
+        out.insert(QStringLiteral("edges"), rep.edges);
+        out.insert(QStringLiteral("files"), rep.files);
+        out.insert(QStringLiteral("selfHealedPresent"), rep.selfHealedPresent);
+        out.insert(QStringLiteral("probeFiles"), rep.probeFiles);
+        out.insert(QStringLiteral("summary"), IndexStatus::summary(rep));
+        fprintf(stdout, "%s\n",
+            qPrintable(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact))));
+        fflush(stdout);
+        return rep.ok ? 0 : 1;
     }
     if (rawArgs.contains(QStringLiteral("--platform-probe"))) {
         // 必须留在无头分支：否则未知 flag 落进 GUI 主路径单实例常驻，ci.sh 步骤 4 挂死

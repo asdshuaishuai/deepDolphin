@@ -100,6 +100,7 @@ add_executable(deepDolphin
     src/logic/SyntaxHighlight.cpp
     src/logic/GraphInsight.cpp
     src/logic/EngineConfig.cpp
+    src/logic/IndexStatus.cpp
     src/logic/EngineDoctor.cpp
     # ── platform/ ──
     src/platform/AppService.cpp

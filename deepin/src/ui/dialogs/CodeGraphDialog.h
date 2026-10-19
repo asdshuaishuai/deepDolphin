@@ -65,6 +65,11 @@ private:
     void showError(const QString &text);
     void showReceipt(const QString &text);
     void updateScore();
+    /// 索引状态行（持久化索引的代数/节点数/探针时间）。
+    /// ⚠ 与页头概览**不是一回事**：概览读的是实时扫描（graph overview），
+    ///   这里读的是**持久化索引**（index overview）—— 代码图谱页的「生成」
+    ///   写的就是后者，不显示它的话点完「生成」看不到任何变化。
+    void updateIndexStatus();
 
     int nodeIndexOf(QTreeWidgetItem *item) const;
     QTreeWidgetItem *itemFor(int nodeIdx) const;
@@ -94,6 +99,8 @@ private:
     QTreeWidget *m_impact = nullptr;
     QLabel *m_impactNote = nullptr;
     QLabel *m_overview = nullptr;
+    QLabel *m_indexStatus = nullptr; ///< 持久化索引的状态行
+    FlatButton *m_indexUpdate = nullptr; ///< 「增量更新」钮（引擎 index update）
     FlatButton *m_tabSource = nullptr;
     FlatButton *m_tabConfidence = nullptr;
     FlatButton *m_tabRelation = nullptr;

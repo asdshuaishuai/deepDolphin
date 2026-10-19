@@ -738,5 +738,92 @@ print(json.dumps({'out': out, 'err': err}, ensure_ascii=False))
     fi
 fi
 
+# 20. 持久化代码索引的状态（index overview / index update）。
+#     ① **「已最新」≠「已更新」**：源文件没动时引擎回 fresh: true 且**不发 rebuilt 键**，
+#        这次什么都没重建 —— 界面若说成「更新好了」就是骗人。
+#     ② **`rebuilt` 是条件键**（fresh 时没有）—— 按 false 读会把「这次没重建」
+#        说成「从来没重建过」（后者是历史事实）。
+#     ③ 增量更新后 `indexJson` 落盘路径**必须真的存在**（否则「打开索引」是坏入口）。
+IDXFIX="$SANDBOX/fixture/idxfix"
+mkdir -p "$IDXFIX/src"
+git -C "$IDXFIX" init -q -b main . 2>/dev/null
+printf 'int compute(int n) {\n    return n * 2;\n}\nint main(void) { return compute(1); }\n' > "$IDXFIX/src/util.c"
+git -C "$IDXFIX" add . 2>/dev/null
+GIT_AUTHOR_DATE='2026-10-03T09:00:00' GIT_COMMITTER_DATE='2026-10-03T09:00:00' \
+    git -C "$IDXFIX" commit -qm 'feat: 初始提交' 2>/dev/null
+"$BIN" add "$IDXFIX" --json >/dev/null 2>&1
+"$BIN" index gen idxfix --stats >/dev/null 2>&1
+
+IDX_OVERVIEW="$("$BIN" index overview idxfix --json 2>/dev/null)"
+if [ -z "$IDX_OVERVIEW" ]; then
+    echo "  ✗ 第 20 组前提：引擎没吐出 index overview 载荷" >&2
+    fail=$((fail+1))
+else
+    check "索引状态：概览键齐全（project/updateCount/generatedAt/selfHealed/nodes/edges/files/byKind/probe）" \
+        "all(k in d for k in ['project','updateCount','generatedAt','selfHealed','nodes','edges','files','byKind','probe'])" \
+        "$IDX_OVERVIEW"
+    check "索引状态：nodes/edges/files 是**数字**（0 是合法值：空索引）" \
+        "all(isinstance(d.get(k), int) for k in ['nodes','edges','files'])" \
+        "$IDX_OVERVIEW"
+    check "索引状态：探针三字段齐全（files/bytes/maxMtime）" \
+        "all(k in d.get('probe',{}) for k in ['files','bytes','maxMtime'])" \
+        "$IDX_OVERVIEW"
+fi
+
+# 已最新：fresh: true，且**引擎不发 rebuilt 键**
+IDX_FRESH="$("$BIN" index update idxfix --json 2>/dev/null)"
+if [ -z "$IDX_FRESH" ]; then
+    echo "  ✗ 第 20 组前提：引擎没吐出 index update 载荷" >&2
+    fail=$((fail+1))
+else
+    check "索引更新：源文件没动时 fresh 为真" \
+        "d.get('fresh') is True" \
+        "$IDX_FRESH"
+    check "索引更新：**fresh 时引擎不发 rebuilt 键**（条件键，不是恒发的 false）" \
+        "'rebuilt' not in d" \
+        "$IDX_FRESH"
+fi
+
+# 改了文件 → fresh: false + rebuilt: true + indexJson 落盘路径
+printf 'int compute(int n) {\n    return n * 3;\n}\nint extra(void) { return 7; }\nint main(void) { return compute(1); }\n' > "$IDXFIX/src/util.c"
+IDX_REBUILT="$("$BIN" index update idxfix --json 2>/dev/null)"
+if [ -z "$IDX_REBUILT" ]; then
+    echo "  ✗ 第 20 组前提：引擎没吐出重建后的 index update 载荷" >&2
+    fail=$((fail+1))
+else
+    check "索引更新：源文件变了 → fresh 假 / rebuilt 真" \
+        "d.get('fresh') is False and d.get('rebuilt') is True" \
+        "$IDX_REBUILT"
+    check "索引更新：代数递增（updateCount ≥ 1）" \
+        "d.get('updateCount', 0) >= 1" \
+        "$IDX_REBUILT"
+    if [ -n "$IDX_REBUILT" ]; then
+        IDX_JSON_PATH="$(printf '%s' "$IDX_REBUILT" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print(d.get('indexJson', ''))
+" 2>/dev/null)"
+        if [ -z "$IDX_JSON_PATH" ]; then
+            echo "  ✗ 索引更新：重建后没给 indexJson 落盘路径" >&2; fail=$((fail+1))
+        elif [ -f "$IDX_JSON_PATH" ]; then
+            echo "  ✓ 索引更新：重建后的 indexJson 落盘路径真实存在"
+            pass=$((pass+1))
+        else
+            echo "  ✗ 索引更新：重建后的 indexJson 落盘路径不存在（$IDX_JSON_PATH）" >&2
+            fail=$((fail+1))
+        fi
+    fi
+    # 端到端：客户端解析真概览
+    if [ ! -x "$CLIENT_BIN" ]; then
+        echo "  ‣ SKIP 第 20 组端到端：找不到客户端二进制 $CLIENT_BIN"
+        echo "    ‣ 本条**未验证**，不算通过"
+    else
+        IDX_VERDICT="$(printf '%s' "$IDX_OVERVIEW" | "$CLIENT_BIN" --index-status-parse 2>/dev/null)"
+        check "索引状态端到端：客户端对真概览解析出同一组值（代数/节点/边/文件/探针）" \
+            "d.get('ok') is True and d.get('project') == 'idxfix' and d.get('updateCount') >= 0 and d.get('nodes') >= 0 and d.get('edges') >= 0 and d.get('files') >= 0 and d.get('probeFiles') >= 0" \
+            "$IDX_VERDICT"
+    fi
+fi
+
 echo "──── contract-check: $pass passed, $fail failed ────"
 [ "$fail" -eq 0 ]
