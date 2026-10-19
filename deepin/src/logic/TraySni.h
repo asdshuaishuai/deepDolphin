@@ -2,7 +2,11 @@
 //
 // 【为什么要有它 —— 批 X 照出来的实情】
 //   DDE 的系统托盘**只认 SNI**（`org.kde.StatusNotifierWatcher`），**不认** Qt 的旧托盘协议：
-//   · `_NET_SYSTEM_TRAY_S0` 选区**不存在**（X11 上没有 XEmbed 宿主）；
+//   · ⚠⚠ **批 Y 更正**：批 X 当时写「`_NET_SYSTEM_TRAY_S0` 选区**不存在**」——
+//     **量错了**：`xprop -root` 查的是窗口**属性**，选区要用 `XGetSelectionOwner()` 查。
+//     实测 `_NET_SYSTEM_TRAY_S0` **有持有者**（daemon 建的 1×1 InputOnly 窗口），
+//     dock 插件正是靠它把图标窗口 reparent 进去 ⇒ **XEmbed 宿主是存在的**
+//     （只是它画的是「应用自绘的窗口」，不画 SNI 图标 ⇒ SNI 这条路仍然不通）。
 //   · `QSystemTrayIcon::isSystemTrayAvailable()` 为 true，但 `geometry()` 恒为 (0,0,0×0)；
 //   · **全屏差分实测：我们的托盘图标在 DDE 上一个像素都没出现** ——
 //     旧协议没有宿主 ⇒ 图标**根本不会显示**（不是「显示成灰的」，是**不显示**）。

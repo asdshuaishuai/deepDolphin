@@ -81,7 +81,7 @@ private:
     /// 桌面走 SNI 托盘（DDE）吗？
     ///
     /// ⚠ **DDE 上必须走 SNI**：`QSystemTrayIcon` 在那儿**一个像素都不显示**
-    ///   （实测：`_NET_SYSTEM_TRAY_S0` 选区不存在 ⇒ 没有 XEmbed 宿主；
+    ///   （⚠ 批 Y 更正：选区**是存在的**，但它托管的是应用自绘的 X11 窗口、不画 SNI 图标；
     ///   全屏差分 0 像素）。两套并存会变成「一个看不见的旧图标 + 一个 SNI 图标」。
     bool m_sniMode = false;
     platform::TraySniStatus m_sniStatus;

@@ -277,8 +277,10 @@ static int headlessPlatformProbe(int argc, char *argv[])
         }
 
         // SNI 托盘（批 X · M1-3）：这台机器的托盘认 SNI 吗？我们的项登记上了吗？
-        // ⚠ DDE 上 `QSystemTrayIcon` **一个像素都不显示**（实测：`_NET_SYSTEM_TRAY_S0`
-        //   选区不存在 ⇒ 没有 XEmbed 宿主）⇒ 托盘能不能出现，全看 SNI 这条路通不通。
+        // ⚠ DDE 上 `QSystemTrayIcon` **一个像素都不显示**（实测：全屏差分 0 像素；
+        //   ⚠ 批 Y 更正：`_NET_SYSTEM_TRAY_S0` 选区**是存在的**（`xprop` 查属性查错了），
+        //   但它托管的是**应用自绘的 X11 窗口**、不画 SNI 图标）⇒ 托盘能不能出现，
+        //   全看 SNI 这条路通不通。
         {
             const platform::TraySniStatus sni = platform::probeTraySni();
             fprintf(stdout, "sniWatcher=%d\n", sni.watcherPresent ? 1 : 0);

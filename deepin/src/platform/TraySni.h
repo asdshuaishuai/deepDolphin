@@ -2,7 +2,9 @@
 //
 // 【为什么需要这一层 —— 批 X 照出来的实情】
 //   DDE 的托盘**只认 SNI**，不认 Qt 的旧托盘协议：
-//   · `_NET_SYSTEM_TRAY_S0` 选区**不存在** ⇒ X11 上没有 XEmbed 宿主；
+//   · ⚠⚠ **批 Y 更正**：批 X 写「`_NET_SYSTEM_TRAY_S0` 选区**不存在**」是**量错了**
+//     （`xprop -root` 查属性、选区要用 `XGetSelectionOwner()` 查）⇒ 选区**有**持有者，
+//     但它托管的是**应用自绘的 X11 窗口**，不画 SNI 图标 ⇒ SNI 这条路仍然不通；
 //   · `QSystemTrayIcon::isSystemTrayAvailable()` 为 true，但 `geometry()` 恒 (0,0,0×0)；
 //   · **全屏差分实测：旧协议下我们的托盘图标一个像素都没出现**（不是变灰，是**不显示**）。
 //   ⇒ 在 DDE 上必须自己实现一个最小的 `org.kde.StatusNotifierItem`。

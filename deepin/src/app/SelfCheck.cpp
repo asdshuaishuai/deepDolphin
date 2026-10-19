@@ -3118,8 +3118,9 @@ int SelfCheck::run(QStringList &log)
     }
 
     // ── 12e. SNI 托盘（批 X · M1-3）────────────────────────────────
-    // DDE 的托盘**只认 SNI**（实测：`_NET_SYSTEM_TRAY_S0` 选区不存在 ⇒ 没有
-    // XEmbed 宿主 ⇒ `QSystemTrayIcon` 在 DDE 上**一个像素都不显示**）。
+    // DDE 的托盘**只认 SNI**（⚠ 批 Y 更正：`_NET_SYSTEM_TRAY_S0` 选区**是存在的**，
+    //   但它只托管**应用自绘的 X11 窗口**、不画 SNI 图标 ⇒ 对 SNI 项来说等于没有宿主
+    //   ⇒ `QSystemTrayIcon` 在 DDE 上**一个像素都不显示**）。
     // 这一段锁的是判定层（纯函数）：host 分档、注册方式、必填属性、像素编码。
     {
         // ① 没有 watcher ⇒ 只能判「没有」，**不能猜是哪一变体**
