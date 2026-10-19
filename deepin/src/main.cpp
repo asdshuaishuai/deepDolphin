@@ -493,6 +493,27 @@ int main(int argc, char *argv[])
         //（M1a 期实测）。M1-9 起返回探针事实，不再快速失败。
         return headlessPlatformProbe(argc, argv);
     }
+    if (rawArgs.contains(QStringLiteral("--hook-status-parse"))) {
+        // 客户端对引擎 `hook status <项目> --json` 载荷的判定结果
+        // （判定层在 logic/EngineHook）。契约检查拿**真引擎**的载荷喂它 ——
+        // 引擎改了 installed 的形状（数组 → 对象）时，自造夹具照样全绿。
+        // 用法：deepDolphin --hook-status-parse < status.json
+        QFile in;
+        in.open(stdin, QIODevice::ReadOnly);
+        const EngineHook::Status st = EngineHook::parseStatus(in.readAll());
+        QJsonObject out;
+        out.insert(QStringLiteral("parsed"), st.parsed);
+        out.insert(QStringLiteral("project"), st.project);
+        out.insert(QStringLiteral("installedPresent"), st.installedPresent);
+        out.insert(QStringLiteral("postCommit"), st.postCommit);
+        out.insert(QStringLiteral("postMerge"), st.postMerge);
+        out.insert(QStringLiteral("count"), EngineHook::installedCount(st));
+        out.insert(QStringLiteral("summary"), EngineHook::summary(st));
+        fprintf(stdout, "%s\n",
+            qPrintable(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact))));
+        fflush(stdout);
+        return st.parsed ? 0 : 1;
+    }
     if (rawArgs.contains(QStringLiteral("--engine-release-parse"))) {
         // 客户端对 GitHub Releases「latest」载荷的判定结果（判定层在 logic/EngineDownload）。
         // 契约检查拿**真 API** 的载荷喂它 —— 真 release 的资产名/字段形状变了，

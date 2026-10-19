@@ -105,8 +105,15 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 
 ### C.1 引擎命令逐条判定（2026-10-19 实测后全表覆盖）
 
-**接了 = deepin 端有 GUI 入口；判定不接 = 明确记了理由**（判定不接 GUI ≠ 判定不接能力 ——
-多数仍可经 agent 工具面用）。
+**接了 = deepin 端有 GUI 入口；判定不接 = 明确记了理由**。
+⚠ **但「判定不接 GUI」≠「判定不接能力」这句话要分情况**（2026-10-19 实测引擎的 28 个
+agent 工具清单后修正，README 决策 199）：
+- **在 agent 工具面里**（客户端能经模型调）：`arch query` / `arch update` / `index query` /
+  `confidence query` —— 引擎的 `tools --json` 里确实有这四个。
+- **也不在 agent 工具面里**（只能走命令行/宿主）：`graph db` / `confidence db` / `track` /
+  `mcp` / `skill` —— 引擎的 28 个工具里**没有**它们。`graph db` / `confidence db` 本来就是
+  「给 agent 用 SQL 查的单文件 SQLite」，但那是指**让 agent 自己写 SQL 查库**，不是
+  引擎把命令暴露成工具。台账原话「多数仍可经 agent 工具面使用」对这几条**不成立**。
 
 | 命令 | 判定 | 落点 / 理由 |
 |---|---|---|
@@ -146,8 +153,8 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | `render arch` | ✅ | 批 D2：架构图导出 HTML（引擎层交付物） |
 | `render index` | ✅ | 批 E2：代码图谱导出（交互 HTML） |
 | `config` 的 `ai` 段 | ⬜ **刻意不接** | 引擎自报「AI 由客户端层负责」，`config.ai` 恒为 `{}` —— 客户端的 AI 设置在 `app/Settings`，两处各有一份会形成**两个真相源** |
-| `track` | ⬜ **判定不接 GUI** | 进度快照（钩子用），无 GUI 对位物 |
-| `hook` | ⬜ **判定不接 GUI** | post-commit 钩子安装，交给 agent / 命令行 |
+| `track` | ⬜ **判定不接 GUI** | 进度快照（**钩子的内部实现**：批 Q 装的钩子跑的就是 `moongit track --quiet --source hook`），无 GUI 对位物；**不在 agent 工具面里** |
+| `hook` | 🟢 **批 Q 已接** | 设置·自动化页「提交后自动记录进度」卡（装/卸 + 逐项目状态）。**mac 侧未接**（`macos/Sources/` 一处 `hook` 调用都没有）→ 两端都缺，接了是 deepin 领先。⚠ 实测确认引擎的托管块机制**不吞用户内容**：install 追加在用户钩子之后、uninstall 只删托管块（契约门第 22 组钉成断言） |
 | `mcp` | ⬜ **判定不接 GUI** | 以 MCP 服务器运行（供 Claude 等**宿主**接入）—— 客户端是 GUI，不是宿主 |
 | `skill` | ⬜ **判定不接 GUI** | agent Skill 教学包，给 agent 用 |
 

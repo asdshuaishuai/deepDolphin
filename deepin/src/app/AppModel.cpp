@@ -6,6 +6,7 @@
 #include "../ai/SecretStore.h"
 #include "../logic/Derived.h"
 #include "../logic/EngineDownload.h"
+#include "../logic/EngineHook.h"
 #include "../logic/PatchCheck.h"
 #include "../logic/ScanCoverage.h"
 #include "../logic/StopDecision.h"
@@ -1680,6 +1681,104 @@ void AppModel::setEngineResult(const EngineLocator::Result &engine)
         m_cli->setEngineBin(engine.found ? engine.bin : QString());
     if (foundChanged)
         emit engineFoundChanged();
+}
+
+// ── 钩子（引擎 hook：post-commit / post-merge 托管块）──
+
+void AppModel::loadHookStatus()
+{
+    m_hookStatus.clear();
+    m_hookState = LoadStateBox{LoadState::loading, QString()};
+    m_hookIndex = 0;
+    fetchNextHookStatus();
+}
+
+void AppModel::fetchNextHookStatus()
+{
+    if (m_hookIndex >= static_cast<int>(m_projects.size())) {
+        m_hookState = LoadStateBox{LoadState::loaded, QString()};
+        emit hookStatusChanged();
+        return;
+    }
+    const ProjectStatus p = m_projects.at(m_hookIndex++);
+    // ⚠ **串行**：一次只查一个项目。并发会让「谁先回来」的顺序不确定，
+    //   而状态是按项目顺序展示的。
+    m_cli->callJson({ QStringLiteral("hook"), QStringLiteral("status"), p.name,
+                        QStringLiteral("--json") },
+        EngineTimeouts::Hook, [this, p](const EngineCli::EngineResult &r) {
+            EngineHook::Status st;
+            if (r.payload) {
+                st = EngineHook::parseStatus(
+                    r.payload->toJson(QJsonDocument::Compact));
+            }
+            if (st.project.isEmpty())
+                st.project = p.name;
+            // ⚠ 查询失败**不等于**「没装」—— 载荷读不出来就如实记「读不出来」。
+            m_hookStatus.push_back(st);
+            fetchNextHookStatus();
+        });
+}
+
+void AppModel::installHooksAll()
+{
+    m_hookActionInstall = true;
+    startHookBatch();
+}
+
+void AppModel::uninstallHooksAll()
+{
+    m_hookActionInstall = false;
+    startHookBatch();
+}
+
+void AppModel::startHookBatch()
+{
+    if (m_hookBusy)
+        return; // 已在批量动作中：再点一次只会并发两轮
+    if (m_projects.empty()) {
+        m_hookItems.clear();
+        m_hookBusy = false;
+        emit hookBusyChanged();
+        emit hookActionFinished(false, QStringLiteral("没有已注册的项目可操作。"));
+        return;
+    }
+    m_hookBusy = true;
+    emit hookBusyChanged();
+    m_hookItems.clear();
+    m_hookIndex = 0;
+    runNextHookAction();
+}
+
+void AppModel::runNextHookAction()
+{
+    if (m_hookIndex >= static_cast<int>(m_projects.size())) {
+        m_hookBusy = false;
+        emit hookBusyChanged();
+        const QString text = EngineHook::batchSummary(m_hookItems);
+        const bool allOk = !m_hookItems.isEmpty()
+            && std::all_of(m_hookItems.begin(), m_hookItems.end(),
+                [](const EngineHook::Item &i) { return i.ok; });
+        emit hookActionFinished(allOk, text);
+        // 动作完刷新状态（装完/卸完都该看到最新状态）
+        loadHookStatus();
+        return;
+    }
+    const ProjectStatus p = m_projects.at(m_hookIndex++);
+    const QString verb = m_hookActionInstall ? QStringLiteral("install")
+                                             : QStringLiteral("uninstall");
+    // ⚠ `hook install/uninstall` 是**回执型**命令（stdout 是人话，不是 JSON）——
+    //   拿 JSON 契约去收，会把「成功」判成「引擎输出不是合法 JSON」。
+    m_cli->callText({ QStringLiteral("hook"), verb, p.name },
+        EngineTimeouts::Hook, [this, p](const EngineCli::EngineResult &r) {
+            EngineHook::Item item;
+            item.project = p.name;
+            item.ok = r.ok();
+            item.detail = r.ok()
+                ? r.receipt.left(120)
+                : (r.error.message.isEmpty() ? QStringLiteral("引擎调用失败") : r.error.message);
+            m_hookItems.push_back(item);
+            runNextHookAction();
+        });
 }
 
 void AppModel::downloadEngine()

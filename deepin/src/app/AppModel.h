@@ -20,6 +20,7 @@
 #include "../models/GitOpResponse.h"
 #include "../logic/CodeGraphBuild.h"
 #include "../logic/EngineConfig.h"
+#include "../logic/EngineHook.h"
 #include "../logic/EngineDoctor.h"
 #include "../logic/GraphInsight.h"
 #include "../logic/IndexStatus.h"
@@ -276,15 +277,27 @@ public:
     /// 读取引擎配置（引擎 `config list --json`）。
     /// 展示的是**引擎实际在用的策略**（浅更新分支上限 / 文档备份份数 / 受管文档 /
     /// 扫描根），不是客户端自己的设置 —— 两边刻意分开，避免两个真相源。
+    void loadEngineConfig();
     /// 下载并安装引擎（GitHub Releases）。⚠ 全程异步，GUI 不冻结。
     /// 安装完成后自动重跑发现链 —— 装好的引擎要**立刻**被认出来。
     void downloadEngine();
-    void loadEngineConfig();
     /// 改一个引擎配置键（引擎 `config set <键> <值>`；**回执型命令，回执在 stderr**）。
     /// ⚠ 键必须在 EngineConfig::writableKeys() 里 —— 引擎对未知键直接报错。
     void setEngineConfig(const QString &key, const QString &value);
     LoadStateBox engineConfigState() const { return m_engineConfigState; }
     const EngineConfig::Config *engineConfig() const { return &m_engineConfig; }
+
+    // ── 引擎钩子（hook install / uninstall / status）──
+    /// 查所有已注册项目的钩子状态（逐项目串行查，不并发也不卡 UI）。
+    void loadHookStatus();
+    /// 给所有已注册项目安装 post-commit / post-merge 钩子（引擎 hook install）。
+    void installHooksAll();
+    /// 从所有已注册项目卸载钩子（引擎 hook uninstall；**只删托管块**，用户自己的钩子逻辑留着）。
+    void uninstallHooksAll();
+    const QVector<EngineHook::Status> &hookStatus() const { return m_hookStatus; }
+    LoadStateBox hookState() const { return m_hookState; }
+    /// 钩子批量动作进行中（UI 走忙态）。
+    bool hookBusy() const { return m_hookBusy; }
 
 signals:
     void projectsChanged();
@@ -346,7 +359,21 @@ signals:
     /// 引擎下载收尾：ok=装好了；text=给用户看的结论（失败时说清是哪一种）。
     void engineDownloadFinished(bool ok, const QString &text);
 
+    /// 钩子状态变化（查询完成 / 批量装卸后刷新）。
+    void hookStatusChanged();
+    /// 钩子批量动作收尾：ok=全部成功；text=逐项目结论（失败的项目**点名**）。
+    void hookActionFinished(bool ok, const QString &text);
+    /// 钩子批量动作的忙态变化（UI 据此禁用按钮）。
+    void hookBusyChanged();
+
 private:
+    /// 钩子：串行查下一个项目的状态（查完最后一个发 hookStatusChanged）。
+    void fetchNextHookStatus();
+    /// 钩子：开始一轮批量装/卸。
+    void startHookBatch();
+    /// 钩子：串行执行下一个项目的装/卸（全部跑完发 hookActionFinished + 刷新状态）。
+    void runNextHookAction();
+
     // ── 合并闸门：撞上不丢弃、排队补跑一次不叠加 ──
     bool tryEnterRefresh();
     void leaveRefresh();
@@ -393,6 +420,12 @@ private:
     QMap<QString, GraphInsight::Impact> m_impacts;
     EngineDoctor::Report m_doctor;
     EngineConfig::Config m_engineConfig;
+    QVector<EngineHook::Status> m_hookStatus; ///< 逐项目的钩子状态
+    LoadStateBox m_hookState;
+    bool m_hookBusy = false;
+    int m_hookIndex = 0;                ///< 串行推进（逐项目查/装/卸）
+    QVector<EngineHook::Item> m_hookItems; ///< 批量动作的逐项目结果
+    bool m_hookActionInstall = true;     ///< 本轮批量动作是「装」还是「卸」
     LoadStateBox m_engineConfigState;
     QMap<QString, LoadStateBox> m_indexStates;
     QMap<QString, IndexStatus::Overview> m_indexOverviews;

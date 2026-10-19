@@ -52,7 +52,7 @@ AiSettingsDialog::AiSettingsDialog(AppModel *model, QWidget *parent)
     auto *wrapAutomation = new DScrollArea(content);
     wrapAutomation->setWidgetResizable(true);
     wrapAutomation->setFrameShape(QFrame::NoFrame);
-    m_automationWidget = new AutomationPane(wrapAutomation);
+    m_automationWidget = new AutomationPane(model, wrapAutomation);
     wrapAutomation->setWidget(m_automationWidget);
 
     auto *aiPane = new AiSettingsPane(content);

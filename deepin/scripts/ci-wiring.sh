@@ -437,6 +437,23 @@ arch_forbid "$SRC/src/app/EngineInstaller.cpp" 'api\.github\.com' '执行层不�
 arch_forbid "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'EngineInstaller' '界面不绕过 AppModel 直接用执行层'
 arch_forbid "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'EngineDownload::' '界面不自己读判定层（结论经 AppModel 传上来）'
 
+# 批 Q · 引擎钩子（post-commit / post-merge 托管块）：判定层出结论，
+#   执行层只管跑，界面只读结论。⚠ 卸载**只删托管块**（用户的钩子逻辑留着）——
+#   这条一旦不成立，界面的「卸载」按钮就是删用户数据。
+arch_need "$SRC/src/logic/EngineHook.h" 'namespace EngineHook [{]' '引擎钩子有判定层（结论一处）'
+arch_need "$SRC/src/logic/EngineHook.cpp" 'parseStatus\(const QByteArray &json\)' '判定层解析 hook status 载荷'
+arch_need_count "$SRC/src/logic/EngineHook.cpp" 'arr\.at\(0\)\.toBool\(\)' 1 '钩子位置约定：installed[0] = post-commit（恰好一处）'
+arch_need_count "$SRC/src/logic/EngineHook.cpp" 'arr\.at\(1\)\.toBool\(\)' 1 '钩子位置约定：installed[1] = post-merge（恰好一处）'
+arch_need "$SRC/src/app/AppModel.cpp" 'EngineHook::parseStatus' '执行层走判定层解析钩子状态'
+arch_need "$SRC/src/app/AppModel.cpp" 'void AppModel::loadHookStatus\(\)' 'AppModel 暴露查钩子状态'
+arch_need "$SRC/src/app/AppModel.cpp" 'void AppModel::installHooksAll\(\)' 'AppModel 暴露装钩子'
+arch_need "$SRC/src/app/AppModel.cpp" 'void AppModel::uninstallHooksAll\(\)' 'AppModel 暴露卸钩子'
+arch_need "$SRC/src/ui/dialogs/panes/AutomationPane.cpp" 'm_model->installHooksAll' '自动化页有装钩子入口'
+arch_need "$SRC/src/ui/dialogs/panes/AutomationPane.cpp" 'm_model->uninstallHooksAll' '自动化页有卸钩子入口'
+arch_need "$SRC/src/main.cpp" '--hook-status-parse"' '无头入口可验钩子判定层'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'EngineHook::parseStatus' 'SelfCheck 覆盖钩子判定层'
+arch_forbid "$SRC/src/ui/dialogs/panes/AutomationPane.cpp" 'EngineCli' '界面不自己调引擎（经 AppModel）'
+
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \
          src/logic/CodeGraphBuild.cpp src/ui/ArchCanvasWidget.cpp \

@@ -10,6 +10,7 @@
 #include "../logic/DashFilter.h"
 #include "../logic/Derived.h"
 #include "../logic/EngineDownload.h"
+#include "../logic/EngineHook.h"
 #include "../logic/Liveness.h"
 #include "../logic/SemColors.h"
 #include "../logic/DocPages.h"
@@ -2563,6 +2564,62 @@ int SelfCheck::run(QStringList &log)
         const QSet<QString> uniq(msgs.begin(), msgs.end());
         check(log, "引擎下载：七种失败各说各的（不许都叫「下载失败」）",
             msgs.size() == 7 && uniq.size() == 7 && !msgs.isEmpty());
+    }
+
+    // ── 引擎钩子（post-commit / post-merge 托管块）判定层 ──
+    {
+        // ⚠ 夹具里 **post-commit=true、post-merge=false**（不对称）——
+        //   这样「位置约定搞反」的实现会立刻红（两个值相同时分叉不出来）。
+        const QByteArray both = R"JSON({"project":"demo","installed":[true,true],"log":"/tmp/h.log"})JSON";
+        const QByteArray one = R"JSON({"project":"demo","installed":[true,false],"log":"/tmp/h.log"})JSON";
+        const QByteArray none = R"JSON({"project":"demo","installed":[false,false],"log":"/tmp/h.log"})JSON";
+        const EngineHook::Status b = EngineHook::parseStatus(both);
+        const EngineHook::Status o = EngineHook::parseStatus(one);
+        const EngineHook::Status n = EngineHook::parseStatus(none);
+        check(log, "引擎钩子：能读出 post-commit / post-merge 的安装状态",
+            b.parsed && b.installedPresent && b.postCommit && b.postMerge
+                && b.project == QLatin1String("demo") && b.log == QLatin1String("/tmp/h.log")
+                && EngineHook::installedCount(b) == 2);
+        // ⚠ **位置约定**：[0]=post-commit、[1]=post-merge。搞反了这里就红。
+        check(log, "引擎钩子：installed 数组的位置约定（[0]=post-commit，[1]=post-merge）",
+            o.parsed && o.installedPresent && o.postCommit && !o.postMerge
+                && EngineHook::installedCount(o) == 1);
+        // 缺 installed 键 = **契约漂移**，不是「没装」—— 混了会让人去重装一个已装的钩子
+        const EngineHook::Status missing = EngineHook::parseStatus(
+            R"JSON({"project":"demo","log":"/tmp/h.log"})JSON");
+        check(log, "引擎钩子：缺 installed 键记「读不出来」而不是「没装」",
+            missing.parsed && !missing.installedPresent && !missing.postCommit
+                && !missing.postMerge);
+        // 数组不够长 = 契约漂移（不是「那一项没装」）
+        const EngineHook::Status shortArr = EngineHook::parseStatus(
+            R"JSON({"project":"demo","installed":[true]})JSON");
+        check(log, "引擎钩子：installed 数组不够长记「读不出来」",
+            shortArr.parsed && !shortArr.installedPresent);
+        const EngineHook::Status garbage = EngineHook::parseStatus("<html>404</html>");
+        check(log, "引擎钩子：载荷读不懂报「读不懂」而不是「没装」",
+            !garbage.parsed && !garbage.installedPresent);
+        // 四种情形要四种说法
+        const QStringList hookMsgs = {
+            EngineHook::summary(b),
+            EngineHook::summary(o),
+            EngineHook::summary(n),
+            EngineHook::summary(missing),
+        };
+        const QSet<QString> hookUniq(hookMsgs.begin(), hookMsgs.end());
+        check(log, "引擎钩子：四种状态各说各的（都装/装一半/没装/读不出来）",
+            hookMsgs.size() == 4 && hookUniq.size() == 4);
+        // 批量汇总必须**点名失败的项目**（「N 个成功」不等于「全成功」）
+        QVector<EngineHook::Item> items;
+        items.push_back({ QStringLiteral("ok1"), true, QString() });
+        items.push_back({ QStringLiteral("bad1"), false, QStringLiteral("引擎退出码 1") });
+        const QString batch = EngineHook::batchSummary(items);
+        // ⚠ **中文匹配串必须用 QStringLiteral，不能用 QLatin1String** ——
+        //   Latin-1 每字符 1 字节，装不下中文（会被截断 → 匹配恒假 → 判据看着在、
+        //   实际抓不住任何东西）。纯 ASCII 才用 QLatin1String。
+        check(log, "引擎钩子：批量汇总点名失败的项目（不只报成功数）",
+            batch.contains(QStringLiteral("1 个项目成功"))
+                && batch.contains(QStringLiteral("bad1"))
+                && batch.contains(QStringLiteral("引擎退出码 1")));
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

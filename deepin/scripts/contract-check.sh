@@ -901,5 +901,61 @@ EOF
     rm -rf "$ENG_TMP"
 fi
 
+# ── 第 22 组：引擎钩子（post-commit / post-merge 托管块）──
+# ⚠ 这组验的是**两件安全的事**（客户端敢提供「装/卸」按钮的前提）：
+#   ① 装上后，用户**原有的钩子内容不被覆盖**（托管块在前，用户内容追加在后）；
+#   ② 卸载时**只删托管块**，用户自己的逻辑原样留着。
+#   这两条一旦不成立，客户端的「卸载」按钮就是**删用户数据**。
+if [ ! -x "$CLIENT_BIN" ]; then
+    echo "  ‣ SKIP 第 22 组：找不到客户端二进制 $CLIENT_BIN"
+    echo "    ‣ 本组**未验证**，不算通过"
+else
+    HOOK_REPO="$SANDBOX/hooked"
+    mkdir -p "$HOOK_REPO/src"
+    git -C "$HOOK_REPO" init -q -b main . 2>/dev/null
+    printf 'int main(void){return 0;}\n' > "$HOOK_REPO/src/main.c"
+    git -C "$HOOK_REPO" add . 2>/dev/null
+    GIT_AUTHOR_DATE='2026-10-03T09:00:00' GIT_COMMITTER_DATE='2026-10-03T09:00:00' \
+        git -C "$HOOK_REPO" commit -qm 'feat: 初始提交' 2>/dev/null
+    "$BIN" add "$HOOK_REPO" --name hooked >/dev/null 2>&1
+    # 用户自己的钩子逻辑（必须在装/卸全程存活）
+    printf '#!/bin/sh\n# 用户自己的逻辑\ntrue\n' > "$HOOK_REPO/.git/hooks/post-commit"
+    chmod +x "$HOOK_REPO/.git/hooks/post-commit"
+    "$BIN" hook install hooked >/dev/null 2>&1
+    HOOK_STATUS_JSON="$("$BIN" hook status hooked --json 2>/dev/null)"
+    check "引擎钩子：装上后 post-commit / post-merge 都报已安装（installed 数组前两位）" \
+        "d.get('project') == 'hooked' and len(d.get('installed', [])) >= 2 and d.get('installed')[0] is True and d.get('installed')[1] is True" \
+        "$HOOK_STATUS_JSON"
+    check "引擎钩子：状态载荷带钩子日志路径" \
+        "d.get('log', '') != ''" \
+        "$HOOK_STATUS_JSON"
+    # 客户端判定层对**真载荷**的解读
+    HOOK_VERDICT="$(printf '%s' "$HOOK_STATUS_JSON" | "$CLIENT_BIN" --hook-status-parse 2>/dev/null)"
+    check "引擎钩子端到端：客户端把真载荷读成「两个都装了」" \
+        "d.get('parsed') is True and d.get('installedPresent') is True and d.get('postCommit') is True and d.get('postMerge') is True and d.get('count') == 2" \
+        "$HOOK_VERDICT"
+    # ⚠ 安全断言 ①：用户原有的钩子内容**没被覆盖**
+    if grep -q "用户自己的逻辑" "$HOOK_REPO/.git/hooks/post-commit" 2>/dev/null; then
+        echo "  ✓ 引擎钩子：装上后用户原有的钩子逻辑仍在（托管块追加而非覆盖）"
+        pass=$((pass+1))
+    else
+        echo "  ✗ 引擎钩子：装上后用户原有的钩子逻辑被覆盖了" >&2
+        fail=$((fail+1))
+    fi
+    "$BIN" hook uninstall hooked >/dev/null 2>&1
+    HOOK_STATUS_JSON2="$("$BIN" hook status hooked --json 2>/dev/null)"
+    check "引擎钩子：卸载后两个钩子都报未安装" \
+        "len(d.get('installed', [])) >= 2 and d.get('installed')[0] is False and d.get('installed')[1] is False" \
+        "$HOOK_STATUS_JSON2"
+    # ⚠ 安全断言 ②：卸载**只删托管块**，用户逻辑原样留着
+    if grep -q "用户自己的逻辑" "$HOOK_REPO/.git/hooks/post-commit" 2>/dev/null; then
+        echo "  ✓ 引擎钩子：卸载后用户原有的钩子逻辑仍在（只删托管块）"
+        pass=$((pass+1))
+    else
+        echo "  ✗ 引擎钩子：卸载把用户自己的钩子逻辑也删了" >&2
+        fail=$((fail+1))
+    fi
+fi
+
 echo "──── contract-check: $pass passed, $fail failed ────"
 [ "$fail" -eq 0 ]

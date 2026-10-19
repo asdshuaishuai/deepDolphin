@@ -26,5 +26,6 @@ constexpr int Git = 120'000;
 constexpr int Add = 30'000;
 constexpr int Scan = 300'000;
 constexpr int Tools = 30'000;
+constexpr int Hook = 30'000;    // hook status/install/uninstall（装/卸钩子，秒级）
 constexpr int Context = 60'000;
 } // namespace EngineTimeouts
