@@ -99,7 +99,8 @@ QRect trayPopupTarget(const QRect &trayIconGeometry, const QSize &popupSize,
                        const Backend::PopupGeometry &geo)
 {
     // ① 托盘图标所在屏（托盘几何可用时）
-    // ② 托盘几何不可用 ⇒ **光标所在屏**（DDE 上托盘是 SNI，拿不到坐标；
+    // ② 托盘几何不可用 ⇒ **光标所在屏**（DDE 上 `QSystemTrayIcon` 没有宿主
+    //    —— DDE 托盘画的是应用自绘的 X11 窗口，批 Y 查明 ⇒ 拿不到坐标；
     //    用户点了托盘，光标就在那块屏上 ⇒ 用光标比用主屏准）
     // ③ 都没有 ⇒ 主屏（availableGeometryAt 内部兜底）
     const bool haveTray = Backend::trayGeometryUsable(trayIconGeometry);

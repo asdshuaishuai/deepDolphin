@@ -298,9 +298,9 @@ deepin 用 **tailwind 固定色值**（`#10B981` / `#F59E0B` / `#9CA3AF` …）�
 | 任务 | 内容 | 状态 |
 |---|---|---|
 | M1-2 | 统一 `platform::icon()`（fallback 链 + 缺失告警 + DDciIcon 优先） | ✅ **批 U 已做**：判定层 `logic/IconNames`（`enum class Id` 27 个逻辑图标 → **候选名链**，唯一出处）+ 平台层 `platform/IconResolver`（**DDci → 主题 → qrc 染色 → 缺失告警 + 占位**）；**11 处**散落的 `QIcon::fromTheme` 全改走统一入口；**删掉零调用点的 `IconLoader`（170 行死代码）**。探针实测：27 个逻辑图标 **8 个走 DDci / 19 个走主题 / 0 个解析不到**（bloom 主题）；离屏（无图标主题）27 个全 `none`、0 告警。**视觉零变化**（基线逐字节未变） |
-| M1-3 | 托盘迁移 SNI | 🟡 **风险由「高」下调为「中」**（批 W 实测重估，详见 E.1e）：DDE 走**旧托盘协议**（我们没注册成 SNI 项；`geometry()` 恒无效）⇒ 迁 SNI **解决不了弹窗定位**（SNI 也没位置字段）；真实价值只剩**保住图标颜色**（`IconName` 指绝对路径 ⇒ 五态彩色图标渲成缓存文件指过去），有明确解法，但要真机 DDE 上验 |
+| M1-3 | 托盘迁移 SNI | 🟡 **解法已查明并落地；剩真机/容器的像素级验收**（批 Y，详见 E.1h）：⚠⚠ **正解不是「迁 SNI」**，而是 **deepin 的托盘窗口协议** —— 自绘 X11 窗口 → 向 `_NET_SYSTEM_TRAY_S0` 选区持有者发 `REQUEST_DOCK`（⚠ 字段**比经典 XEmbed 偏移一位**：`l[1]`=opcode、`l[2]`=窗口 id）→ daemon 登记进 `TrayIcons` → dock reparent 并画。批 X 那句「迁 SNI 解决不了弹窗定位、真实价值只剩保住图标颜色」**成立**（SNI 确实没位置字段），但**方向**错了。**已落地**：判定层 `logic/DeepinTray` + 平台层 `platform/DeepinTray`（xcb、32 位 ARGB 窗口）+ 三态后端（deepin 窗口 / SNI / 旧协议，互斥）+ 后端强制开关（测试钩子）；**实测**：窗口进了 `TrayIcons`、`GetName` → `'deepDolphin'`、dock 真的 reparent 了它 ⇒ **daemon 侧与 dock 侧都通**；**托盘区仍 0 像素** —— dock 侧 `getX11WindowImageNonComposite` 抓不到窗口图像（本机连 `cc-switch`/`clash-verge` 也只显示空占位圆）⇒ **dock 侧缺陷，客户端改不了** ⇒ 像素级验收待真机/容器 |
 | M1-7 | `platform/Backend` 平台层 | ✅ **批 V 已做**：判定层 `logic/Backend`（纯结论：`enum class Kind {X11,Wayland,Other}` + `classify()` **带 token 边界** / `activationFor()` / `reservedInsets()` / `placePopup()` / `trayGeometryUsable()`）+ 平台层 `platform/Backend`（`activate()` / `availableGeometryAt()` / `taskbarInsetsAt()` / `trayIconGeometry()` / `trayPopupTarget()`）；**8 处**散落的 `show/raise/activateWindow` 收编成**一个入口**；**修掉真缺陷**：`show()` 不恢复最小化窗口（实测）⇒ 最小化态从托盘叫不醒面板；托盘弹窗**右/上两边**旧实现不夹紧 ⇒ 右上角托盘时溢出屏幕 |
-| M1-8 | Wayland 分支 | ✅ **批 W 已做**（本机无 Wayland 会话 ⇒ Wayland 侧未实跑）：判定层 `logic/PanelGeometry` + 取数层 `platform/DdePanel`（D-Bus 读 `org.deepin.ds.Dock` 的 `geometry`/`position`）；`placePopup()` 加面板参数（面板在下 ⇒ 弹窗落面板上方右对齐）；托盘坐标不可用时按**光标所在屏**；失焦收起加 `applicationStateChanged` 兜底。**修掉真缺陷**：DDE 托盘是 SNI ⇒ 坐标恒无效 ⇒ 弹窗飞到离托盘很远的屏幕右上（实测 (1523,32) → (1524,731)） |
+| M1-8 | Wayland 分支 | ✅ **批 W 已做**（本机无 Wayland 会话 ⇒ Wayland 侧未实跑）：判定层 `logic/PanelGeometry` + 取数层 `platform/DdePanel`（D-Bus 读 `org.deepin.ds.Dock` 的 `geometry`/`position`）；`placePopup()` 加面板参数（面板在下 ⇒ 弹窗落面板上方右对齐）；托盘坐标不可用时按**光标所在屏**；失焦收起加 `applicationStateChanged` 兜底。**修掉真缺陷**：DDE 上 `QSystemTrayIcon::geometry()` 恒无效 ⇒ 弹窗飞到离托盘很远的屏幕右上（实测 (1523,32) → (1524,731)）。⚠ **批 Y 更正这里的因**：批 W 写「DDE 托盘是 SNI ⇒ 坐标恒无效」，**说反了**——DDE 托盘画的是**应用自绘的 X11 窗口**（批 Y 查明，见 E.1h），`QSystemTrayIcon` 在 DDE 上**根本没有宿主**；坐标取不到不是因为「SNI 没位置字段」，而是**压根没有旧协议托盘可问** |
 | M2-5 | i18n | ⬜（与 B8 合并做更省） |
 | M2-7 | deb 打包 | 🟡 **批 S 已做**（`scripts/build-deb.sh` + 依赖清单 `scripts/deb-deps.txt` + **依赖清单↔二进制实际 DT_NEEDED 双向校验** + CI 第 11 门）；⚠ **真机 clean deepin 25 容器验收未跑**（本机无 docker/podman）—— D7 的最终验收仍待真机 |
 | M2-8 | 安装后零环境变量 | ✅ **批 S 实测达标**：二进制**无 RPATH/RUNPATH**、`DT_NEEDED` 全是 soname；宿主自带 Qt6/DTK6 ⇒ 裸环境 `--selfcheck` 269/0、**deb 解包后的二进制**裸环境同样 269/0 且能拍快照。⚠ README 原写「运行库在 sysroot 里，环境变量缺一不可」是**失真描述**，已改 |
@@ -513,10 +513,25 @@ dock 侧显示一个图标的门是 `handler->enabled()`，而 `enabled` 由
 **这不是我们客户端能修的**，是本机 deepin 25 托盘渲染的缺陷。
 
 ⇒ **对 M1-3 的影响**：
-- **路径已查明**（不再是「路径要重做」）：自绘 X11 窗口 + `_NET_SYSTEM_TRAY_S0` +
+- **路径已查明并已实现**（不再是「路径要重做」）：自绘 X11 窗口 + `_NET_SYSTEM_TRAY_S0` +
   `REQUEST_DOCK`（偏移一位）⇒ daemon 登记 ⇒ dock 嵌入。
+  **批 Y 实现后的实测**：窗口进了 `TrayIcons`、`GetName` → `'deepDolphin'`、
+  **dock 把它 reparent 进了托盘容器**（22×40、IsViewable、不在 root 的子窗口里）
+  ⇒ **daemon 侧与 dock 侧都通了**；**只剩像素没画出来**（dock 抓不到窗口图像，
+  本机所有托盘应用都只显示空占位圆 ⇒ 缺陷在 dock 侧，不在客户端）⇒
+  **像素级验收待真机/容器**。
 - **可自动化的判据**（不等图标显示）：**「我们的窗口 id 出现在 `TrayIcons` 里」
   且 `GetName(我们的窗口) == 我们的名字」** —— 这两条在 daemon 侧，可脚本化、可在真机跑。
+- ⚠ **改后端优先级的副作用（批 Y 一并修掉）**：DDE 上改走窗口协议 ⇒ 批 X 的 SNI 字节级
+  判据 `scripts/probe-sni-icon.sh` 在 DDE 上**永远假红**（应用压根不注册 SNI 项
+  ⇒「服务没上线」）⇒ 这不是判据坏了，是**判据的前提被改掉了**。
+  ⇒ 加**后端强制开关** `DEEPDOLPHIN_TRAY_BACKEND`（**测试钩子**、默认不强制 ⇒ 生产行为零变化；
+  解析规则在判定层 `logic/DeepinTray`（`parseBackendOverride`，纯函数）、
+  平台层 `platform/TrayBackend` 只读环境变量 ⇒ 单一真相源）
+  ⇒ 探针强制走要验的那条路，**并核对应用自报的后端**（`托盘后端 = deepin-window|sni`）
+  ⇒ 强制没生效 ⇒ 判据必须红。
+  ⇒ ⚠ **认不出的值一律判成「没指定」**（按平台能力自动选）：把「打错字」变成「换了一条路」
+  会让判据在**没测到想测的东西**的情况下变绿（假绿）。
 - **仍然受阻的**：图标**像素**在本机显示不出来（dock 侧缺陷）⇒ 端到端视觉验收
   与 D7 一样**要等真机/容器**；本机只能验到「注册成功 + 被 dock 接管」。
 - **另一条备选路（本机不可用）**：deepin 私有 indicator 协议

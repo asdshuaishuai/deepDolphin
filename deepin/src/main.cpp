@@ -19,6 +19,7 @@
 #include "platform/Backend.h"
 #include "platform/CrashHandler.h"
 #include "platform/IconResolver.h"
+#include "platform/DeepinTray.h"
 #include "logic/AgentToolPlan.h"
 #include "logic/ArchReceipt.h"
 #include "logic/Backend.h"
@@ -290,6 +291,15 @@ static int headlessPlatformProbe(int argc, char *argv[])
                 fprintf(stdout, "sniError=%s\n", qPrintable(sni.error));
         }
 
+        // deepin 托盘**窗口协议**（批 Y · M1-3）：`_NET_SYSTEM_TRAY_S0` 选区在不在、
+        // 我们自绘的图标窗口有没有被 daemon 认领（认领了 ⇒ 它进了 `TrayIcons`）。
+        {
+            const platform::DeepinTrayStatus dt = platform::probeDeepinTray();
+            fprintf(stdout, "deepinTraySelection=%d\n", dt.selectionPresent ? 1 : 0);
+            if (!dt.error.isEmpty())
+                fprintf(stdout, "deepinTrayError=%s\n", qPrintable(dt.error));
+        }
+
         // DDE 面板真几何（批 W · M1-8）：面板**自己**报的几何（D-Bus），
         // 以及由此算出的可用区与**托盘弹窗落点**。
         // ⚠ 探针是「一次性、无交互」的无头工具 ⇒ 这里**同步读**是安全的
@@ -310,7 +320,8 @@ static int headlessPlatformProbe(int argc, char *argv[])
                 platform::availableGeometryAt(QPoint(0, 0)), screen, panel);
             fprintf(stdout, "usableRect=%d,%d,%d,%d\n", avail.x(), avail.y(), avail.width(),
                 avail.height());
-            // 托盘弹窗落点：**托盘几何不可用**（DDE 常态：托盘是 SNI，拿不到坐标）
+            // 托盘弹窗落点：**托盘几何不可用**（DDE 常态：`QSystemTrayIcon` 在 DDE 上
+            // **没有宿主** —— DDE 托盘画的是应用自绘的 X11 窗口，批 Y 查明 ⇒ 拿不到坐标）
             // ⇒ 走面板/兜底落点。尺寸用 380×300 代替真实高度（探针里没有真实弹窗）。
             const QRect target = Backend::placePopup(QRect(), QSize(380, 300), avail,
                 TrayGeometry::popupGeometry(), panel)
@@ -764,7 +775,9 @@ int main(int argc, char *argv[])
     PanelWindow panel(route, engine, &model);
 
     // ── DDE 面板真几何（批 W · M1-8）：托盘弹窗要落在**面板旁边**，
-    //    而 DDE 的托盘是 SNI（`QSystemTrayIcon::geometry()` 恒无效）⇒
+    //    而 DDE 上 `QSystemTrayIcon::geometry()` 恒无效（DDE 托盘画的是**应用自绘的
+    //    X11 窗口**，`QSystemTrayIcon` 压根没有宿主；⚠ 批 Y 实测更正，早先写的是
+    //    「DDE 的托盘是 SNI」——**说反了**）⇒
     //    拿不到托盘坐标时，弹窗的落点只能靠面板几何推。
     //    读面板是 D-Bus 同步往返 ⇒ 放 worker 线程，结果回 GUI 线程存缓存。
     platform::DdePanel::refreshAsync();

@@ -104,7 +104,8 @@ PopupPlacement placePopup(const QRect &trayIconGeometry, const QSize &popupSize,
         proposed.setLeft(trayIconGeometry.right() - w + geo.dockGap);
         proposed.setTop(trayIconGeometry.bottom() + geo.dockGap);
     } else if (!available.isEmpty()) {
-        // 托盘几何不可用（DDE 上的常态：托盘是 SNI，拿不到坐标）⇒ 按**面板位置**落。
+        // 托盘几何不可用（DDE 上的常态：`QSystemTrayIcon` 没有宿主，DDE 托盘画的是
+        // 应用自绘的 X11 窗口 ⇒ 拿不到坐标）⇒ 按**面板位置**落。
         const PanelGeometry::Edge edge = panel.isEmpty() ? PanelGeometry::Edge::Unknown
                                                           : panel.edge;
         if (edge != PanelGeometry::Edge::Unknown && !panel.rect.isEmpty()) {

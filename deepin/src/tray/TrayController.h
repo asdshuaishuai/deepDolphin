@@ -9,7 +9,9 @@
 // 数据对接：PLAN 签名是 refreshFrom(AppModel*)；AppModel 属 PLAN 里程碑 3。
 // 本阶段以 TraySnapshot 纯数据承接，AppModel 落地后由它填 snapshot（见 README「偏差」）。
 #pragma once
+#include "../logic/DeepinTray.h"
 #include "../logic/Liveness.h"
+#include "../platform/DeepinTray.h"
 #include "../platform/TraySni.h"
 #include <QColor>
 #include <QIcon>
@@ -72,17 +74,23 @@ private:
     void buildMenu();
     /// SNI 模式：把当前图标发布/更新到宿主（写缓存文件 + 更新像素属性）。
     void publishSniIcon(const QString &menuTitle);
+    /// deepin 窗口协议：把当前图标画进我们的 X11 窗口（首次还要发 REQUEST_DOCK）。
+    void publishDeepinIcon(const QString &menuTitle);
 
     QSystemTrayIcon *m_icon = nullptr;
     QMenu *m_menu = nullptr;
     TrayPopupWindow *m_popup = nullptr;
     QColor m_tint;
     QIcon m_currentIcon;
-    /// 桌面走 SNI 托盘（DDE）吗？
+    /// 桌面托盘走**哪条路**（三选一，不并存）。
     ///
-    /// ⚠ **DDE 上必须走 SNI**：`QSystemTrayIcon` 在那儿**一个像素都不显示**
-    ///   （⚠ 批 Y 更正：选区**是存在的**，但它托管的是应用自绘的 X11 窗口、不画 SNI 图标；
-    ///   全屏差分 0 像素）。两套并存会变成「一个看不见的旧图标 + 一个 SNI 图标」。
+    /// ⚠ **DDE 25 必须走 deepin 私有窗口协议**（自绘 X11 窗口 + REQUEST_DOCK）：
+    ///   `QSystemTrayIcon` 在那儿**一个像素都不显示**（没有旧协议宿主）；
+    ///   标准 SNI 虽能注册（宿主会读属性、订信号）但**不画图标** ⇒ 也不通。
+    ///   ⇒ 三条路必须**二选一**，并存只会多出「看不见的图标」。
+    TraySni::Backend m_backend = TraySni::Backend::None;
+    /// 后端是 SNI 时为 true（判定层已把优先级定死：deepin 选区在场 ⇒ 走窗口协议）。
     bool m_sniMode = false;
     platform::TraySniStatus m_sniStatus;
+    platform::DeepinTrayStatus m_deepinStatus;
 };

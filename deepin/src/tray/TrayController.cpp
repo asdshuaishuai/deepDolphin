@@ -2,8 +2,12 @@
 #include "TrayGeometry.h"
 #include "TrayPopupWindow.h"
 #include "../logic/SemColors.h"
+#include "../logic/DeepinTray.h"
 #include "../platform/Backend.h"
+#include "../platform/DeepinTray.h"
+#include "../platform/TrayBackend.h"
 #include <QApplication>
+#include <QDebug>
 #include <QCursor>
 #include <QDir>
 #include <QFileInfo>
@@ -82,12 +86,39 @@ TrayController::TrayController(QObject *parent)
     connect(m_popup, &TrayPopupWindow::refreshClicked, this, &TrayController::refreshLightRequested);
     connect(m_popup, &TrayPopupWindow::quitClicked, this, &TrayController::quitRequested);
 
-    // 桌面托盘是 SNI 吗？（DDE 是；别的桌面多数不是）
+    // 桌面托盘走**哪条路**？（三选一，不并存）
+    //   · deepin 私有窗口协议（DDE 25）：自绘 X11 窗口 + REQUEST_DOCK；
+    //   · 标准 SNI（KDE 系桌面）；
+    //   · 旧协议（其余桌面：QSystemTrayIcon）。
+    // ⚠ **顺序有讲究**：DDE 25 上 SNI watcher 也在（ayatana 变体）但**不画** SNI 图标
+    //   ⇒ 若「有 watcher 就走 SNI」，图标永远不出现（批 X 踩的就是这个坑）。
     m_sniStatus = platform::probeTraySni();
-    m_sniMode = m_sniStatus.watcherPresent;
+    m_deepinStatus = platform::probeDeepinTray();
+    const TraySni::BackendOverride forced = platform::trayBackendOverride();
+    m_backend = TraySni::chooseBackend(m_deepinStatus.selectionPresent,
+                                        m_sniStatus.watcherPresent, forced);
+    m_sniMode = m_backend == TraySni::Backend::Sni;
+
+    // ⚠ **报出实际走的后端** —— 真机探针要盯这一段：
+    //   「探针强制了某条路」≠「应用真走了那条路」⇒ 判据必须核对应用自己报的。
+    // ⚠ 打**单条**格式化字符串（不是多个参数）：`qInfo` 逐参数打印时会给
+    //   QString **加引号**（`托盘后端 = "deepin-window"`）⇒ 探针按空格切字段就会切错。
+    qInfo() << QStringLiteral("托盘后端 = %1（%2）")
+                   .arg(TraySni::backendName(m_backend),
+                        forced.has_value() ? QStringLiteral("强制") : QStringLiteral("自动"));
+
+    if (m_backend == TraySni::Backend::DeepinWindow) {
+        // ⚠ deepin 走窗口协议：**不建** QSystemTrayIcon（它在这儿没有宿主，
+        //   一个像素都不显示）⇒ 托盘图标 = 我们自己画进一个 X11 窗口。
+        buildMenu();
+        m_currentIcon = tintedIcon(tintColor(Liveness::unknown), false);
+        publishDeepinIcon(QStringLiteral("deepDolphin"));
+        return;
+    }
 
     if (m_sniMode) {
-        // ⚠ DDE 走 SNI：**不建** QSystemTrayIcon —— 旧协议在 DDE 上没有宿主，
+        // ⚠ SNI 模式：**不建** QSystemTrayIcon —— 旧协议在 DDE 上没有宿主
+        //   （DDE 托盘画的是应用自绘的 X11 窗口，批 Y 查明），
         //   图标根本不会显示（实测全屏差分 0 像素），留着只是白占一个对象。
         buildMenu();
         connect(platform::TraySniNotifier::instance(), &platform::TraySniNotifier::activated,
@@ -161,6 +192,27 @@ void TrayController::publishSniIcon(const QString &menuTitle)
         m_sniStatus.error = QStringLiteral("SNI 发布未完成");
 }
 
+void TrayController::publishDeepinIcon(const QString &menuTitle)
+{
+    if (m_backend != TraySni::Backend::DeepinWindow)
+        return;
+    const QPixmap pm = m_currentIcon.pixmap(32, 32);
+    if (pm.isNull())
+        return;
+    // ⚠ 窗口名 = 托盘里显示的名字（实测 daemon 的 `GetName` 读窗口名；
+    //   cc-switch / clash-verge 也是「窗口名 = 应用名」）。
+    m_deepinStatus = platform::publishDeepinTray(pm.toImage(), menuTitle);
+    if (!m_deepinStatus.published) {
+        if (m_deepinStatus.error.isEmpty())
+            m_deepinStatus.error = QStringLiteral("deepin 托盘窗口协议发布未完成");
+        // ⚠ 失败要**看得见**（静默失败 ⇒ 托盘里没图标却没人知道为什么）
+        qWarning() << "deepin 托盘窗口协议：发布失败 ——" << m_deepinStatus.error;
+    } else {
+        qInfo() << "deepin 托盘窗口协议：已认领，窗口 id ="
+                << QStringLiteral("0x%1").arg(m_deepinStatus.windowId, 0, 16);
+    }
+}
+
 void TrayController::onSniActivated(const QString &action)
 {
     if (action == QLatin1String("ContextMenu")) {
@@ -185,6 +237,14 @@ void TrayController::refreshIcon(const QString &menuTitle, Liveness tint)
     m_tint = tintColor(tint);
     m_currentIcon = tintedIcon(m_tint, tint == Liveness::engineStale
                 || tint == Liveness::needsAction);
+    if (m_backend == TraySni::Backend::DeepinWindow) {
+        // 窗口已经在 ⇒ 直接重画（daemon 盯 damage ⇒ 会发 `Changed`，dock 重新抓图）
+        if (m_deepinStatus.published)
+            platform::updateDeepinTrayIcon(m_currentIcon.pixmap(32, 32).toImage());
+        else
+            publishDeepinIcon(menuTitle);
+        return;
+    }
     if (m_sniMode) {
         publishSniIcon(menuTitle);
         return;
@@ -203,7 +263,9 @@ void TrayController::refreshFrom(const TraySnapshot &snapshot)
 
 bool TrayController::isVisible() const
 {
-    // SNI 模式下「可见」= 已登记进宿主；旧协议下看 QSystemTrayIcon。
+    // 「可见」= 已登记进宿主（deepin 窗口协议 / SNI）；旧协议下看 QSystemTrayIcon。
+    if (m_backend == TraySni::Backend::DeepinWindow)
+        return m_deepinStatus.published;
     if (m_sniMode)
         return m_sniStatus.published;
     return m_icon && m_icon->isVisible();

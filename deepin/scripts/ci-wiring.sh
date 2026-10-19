@@ -838,9 +838,12 @@ arch_forbid "$SRC/src/tray/TrayController.cpp" 'drawEllipse\(TrayGeometry::icon'
 
 # SNI 与旧协议**二选一**：DDE 上旧的画不出来，两套并存等于多一个空图标。
 arch_need "$SRC/src/tray/TrayController.cpp" 'platform::probeTraySni\(\)' '托盘控制器先探桌面是不是 SNI 托盘'
-# ⚠ 「是不是 SNI 托盘」必须**由探针结果决定** —— 写死 true/false 都等于没探
+# ⚠ 「走哪条托盘路」必须**由判定层结论决定** —— 写死 true/false 都等于没探
 #   （负控实测：把探针调用留着、但把判定写死，门照样绿 ⇒ 门被骗过）。
-arch_need "$SRC/src/tray/TrayController.cpp" 'm_sniMode = m_sniStatus\.watcherPresent' 'SNI 模式由探针结果决定（不写死）'
+#   ⚠ 批 Y 起这层判定搬到 logic/DeepinTray 的 chooseBackend（deepin 选区优先于 watcher）
+#   ⇒ 门项跟着改盯新入口（写死后端照样骗得过门）。
+arch_need "$SRC/src/tray/TrayController.cpp" 'm_backend = TraySni::chooseBackend\(' '托盘后端由判定层结论决定（不写死）'
+arch_forbid "$SRC/src/tray/TrayController.cpp" 'm_backend = TraySni::Backend::(Sni|DeepinWindow)' '托盘后端不许在控制器里写死（必须走判定层）'
 arch_need "$SRC/src/tray/TrayController.cpp" 'platform::publishTraySni\(' 'SNI 模式经平台层发布'
 arch_need "$SRC/src/platform/TraySni.h" 'TraySniStatus publishTraySni\(' 'SNI 发布有唯一入口'
 
@@ -871,4 +874,93 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 X 段门项全绿（SNI 托盘）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 Y · M1-3 deepin 托盘**窗口协议**（DDE 25 真正的解法）──────────
+# 实测事实（批 Y 查明，写进门项的依据）：
+#   ① DDE 25 的托盘区画的是**应用自绘的 X11 窗口**，不是 SNI 图标；
+#   ② 注册方式：向 `_NET_SYSTEM_TRAY_S0` 选区持有者发 ClientMessage
+#      `_NET_SYSTEM_TRAY_OPCODE`，**`l[1]`=opcode(0)、`l[2]`=窗口 id**
+#      —— **比经典 XEmbed 偏移一位**（照抄经典布局 ⇒ daemon 静默忽略）；
+#   ③ 托管方是 dde-session-daemon（`org.deepin.dde.TrayManager1`），
+#      它持有选区并维护 `TrayIcons` 属性；dock 插件读它并 reparent 图标窗口。
+arch_need "$SRC/src/logic/DeepinTray.h" 'namespace TraySni [{]' 'deepin 托盘判定层有自己的命名空间'
+arch_need "$SRC/src/logic/DeepinTray.h" 'enum class DockField [{]' 'dock 报文字段有独立枚举（不许散落数字）'
+arch_need "$SRC/src/logic/DeepinTray.h" 'enum class Backend [{]' '托盘后端有独立枚举（三态）'
+# ⚠⚠ **字段偏移是本协议最大的坑** ⇒ 门项必须盯死「opcode 在 1、窗口 id 在 2」。
+arch_need "$SRC/src/logic/DeepinTray.h" 'return field == DockField::Opcode \? 1 : 2;' 'dock 字段偏移固定为 l[1]/l[2]（比经典 XEmbed 偏移一位）'
+arch_need "$SRC/src/logic/DeepinTray.h" '_NET_SYSTEM_TRAY_S0' '选区名是 S0 变体（无后缀那个没有持有者）'
+arch_need "$SRC/src/logic/DeepinTray.h" 'return 0;' 'dock 操作码是 0（REQUEST_DOCK）'
+arch_need "$SRC/src/logic/DeepinTray.h" 'Backend chooseBackend\(' '后端选择有唯一入口'
+# ⚠⚠ **后端选择的优先级**：deepin 选区在场 ⇒ 必须走窗口协议，**哪怕 watcher 也在**
+#   （DDE 25 上 watcher 在但不画 SNI 图标 ⇒ 反着选 ⇒ 图标永远不出现；批 X 踩过）。
+arch_need "$SRC/src/logic/DeepinTray.cpp" 'if \(deepinSelectionPresent\)' 'deepin 选区优先于 SNI watcher（选后端时先看选区）'
+arch_forbid "$SRC/src/logic/DeepinTray.cpp" 'if \(watcherPresent\) \{\s*return Backend::Sni;' '后端选择不许「先看 watcher」（那会让 DDE 走错路）'
+
+# 平台层：窗口 + 报文
+arch_need "$SRC/src/platform/DeepinTray.h" 'DeepinTrayStatus publishDeepinTray\(' 'deepin 托盘发布有唯一入口'
+arch_need "$SRC/src/platform/DeepinTray.cpp" 'xcb_get_selection_owner' '用 XGetSelectionOwner 查选区持有者（xprop 查不到选区）'
+arch_need "$SRC/src/platform/DeepinTray.cpp" '_NET_SYSTEM_TRAY_OPCODE' '用 _NET_SYSTEM_TRAY_OPCODE 发 dock 请求'
+arch_need "$SRC/src/platform/DeepinTray.cpp" 'dockFieldIndex\(TraySni::DockField::Opcode\)' 'opcode 的下标取自判定层（平台层不许写死数字）'
+arch_need "$SRC/src/platform/DeepinTray.cpp" 'dockFieldIndex\(TraySni::DockField::WindowId\)' '窗口 id 的下标取自判定层（平台层不许写死数字）'
+arch_forbid "$SRC/src/platform/DeepinTray.cpp" 'data\.l\[0\] = [^0]' 'ClientMessage 的 l[0] 不用（deepin 从 l[1] 读）'
+# ⚠⚠ **`values[]` 的顺序必须按 mask 位升序** —— 写反了 ⇒ 32 位 ARGB 窗口
+#   「建了却不存在」（GetWindowAttributes 报 BadWindow）⇒ daemon 认不出它。
+arch_need "$SRC/src/platform/DeepinTray.cpp" 'XCB_CW_BORDER_PIXEL \| XCB_CW_EVENT_MASK \| XCB_CW_COLORMAP' '建窗的 value_mask 按位升序（values 顺序错 ⇒ 窗口建不出来）'
+arch_need "$SRC/src/platform/DeepinTray.cpp" 'advertisedVisual' '用 daemon 广告的 _NET_SYSTEM_TRAY_VISUAL（协议要求）'
+arch_need "$SRC/src/platform/DeepinTray.cpp" 'xcb_send_event' '发 dock 请求（ClientMessage）'
+# 已建过就只重画 ⇒ 不许每次刷新都新建窗口（会攒一堆野窗口 + 反复 dock 请求）
+# ⚠⚠ **第十次「同名多处互相顶替」**：`if (g_x11.window)` 在本文件里**出现两次**
+#   （`closeX11` 的清理 + `publishDeepinTray` 的「已建过就只重画」）
+#   ⇒ 全文匹配的话，把**清理那处**改坏门照样绿（负控实测）⇒ 必须钉到函数体。
+#   ⚠ 而且本文件里**有两个同名 publishDeepinTray**（`#ifndef DD_HAVE_XCB` 的桩 +
+#   真实现）⇒ 签名要**带参数名**才切得中真实现那处（否则先撞上桩）。
+arch_need_count_in_fn "$SRC/src/platform/DeepinTray.cpp" '^DeepinTrayStatus publishDeepinTray\(const QImage &icon' 'if \(g_x11\.window\)' 1 '图标窗口只建一次（publishDeepinTray 里先判已存在）'
+
+# 接线：托盘控制器按后端二选一
+arch_need "$SRC/src/tray/TrayController.cpp" 'TraySni::chooseBackend\(' '托盘控制器按判定层结论选后端'
+arch_need "$SRC/src/tray/TrayController.cpp" 'platform::publishDeepinTray\(' 'deepin 后端经平台层发布'
+arch_need "$SRC/src/tray/TrayController.cpp" 'platform::updateDeepinTrayIcon\(' 'deepin 后端支持换图标'
+# ⚠ **SNI 与窗口协议二选一**：DDE 上绝不能同时建 QSystemTrayIcon（旧协议一个像素都不显示）
+arch_need "$SRC/src/tray/TrayController.cpp" 'm_backend == TraySni::Backend::DeepinWindow' 'deepin 后端单独一个分支（不与 SNI 并存）'
+
+# 判据/探针可见面
+arch_need "$SRC/src/app/SelfCheck.cpp" 'dockFieldIndex' 'SelfCheck 覆盖 dock 字段偏移'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'chooseBackend' 'SelfCheck 覆盖后端选择'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'dockSelectionName' 'SelfCheck 覆盖选区名'
+arch_need "$SRC/src/main.cpp" 'deepinTraySelection=' '无头探针报出 deepin 托盘选区状态'
+arch_need "$SRC/scripts/probe-deepin-tray.sh" 'TrayIcons' '端到端探针在（判据放在真机探针）'
+arch_need "$SRC/scripts/probe-deepin-tray.sh" 'WM_NAME' '端到端探针核 X 侧窗口名（不靠 daemon 侧那张表）'
+arch_need "$SRC/scripts/probe-deepin-tray.sh" 'GetName' '端到端探针核 daemon 侧 GetName'
+
+# ── 批 Y 补 · 托盘后端的**强制指定**（测试钩子）────────────────────────
+# ⚠ 背景：DDE 25 上自动选的是 deepin 窗口协议 ⇒ **SNI 那条路走不到**
+#   ⇒ 批 X 的「IconPixmap 字节级」端到端判据在 DDE 上**永远假红**（服务不上线）
+#   ⇒ 必须有个显式强制的口子，探针才能在本机上仍然验 SNI 路径。
+#   ⚠ 纪律：解析规则在**判定层**（纯函数）；平台层只读环境变量，不自己判值。
+arch_need "$SRC/src/logic/DeepinTray.h" 'using BackendOverride = std::optional<Backend>;' '后端强制开关用 optional（None 是合法取值，不能拿它当哨兵）'
+arch_need "$SRC/src/logic/DeepinTray.h" 'BackendOverride parseBackendOverride\(' '强制开关的解析在判定层（纯函数、可离线测）'
+arch_need "$SRC/src/logic/DeepinTray.cpp" 'if \(forced\.has_value\(\)\)' '强制**优先于**自动选择（否则探针走不到要验的那条路）'
+arch_need "$SRC/src/platform/TrayBackend.cpp" 'DEEPDOLPHIN_TRAY_BACKEND' '环境变量名只写一处（平台层）'
+arch_need "$SRC/src/platform/TrayBackend.cpp" 'parseBackendOverride' '平台层不自己判值（解析在判定层）'
+arch_need "$SRC/src/tray/TrayController.cpp" 'platform::trayBackendOverride\(' '控制器经平台层取强制开关'
+# ⚠ **应用要自报走的后端** —— 探针的「强制生效了吗」只能靠这一行判
+arch_need "$SRC/src/tray/TrayController.cpp" '托盘后端 =' '应用自报走的后端（探针盯这一段）'
+arch_need "$SRC/scripts/probe-sni-icon.sh" 'DEEPDOLPHIN_TRAY_BACKEND=sni' 'SNI 探针强制走 SNI 那条路'
+arch_need "$SRC/scripts/probe-sni-icon.sh" '托盘后端 = ' 'SNI 探针核对应用自报的后端（强制没生效 ⇒ 判据红）'
+arch_need "$SRC/scripts/probe-deepin-tray.sh" 'deepin-window' 'deepin 探针核对自动选路的结果'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'parseBackendOverride' 'SelfCheck 覆盖强制开关的解析'
+# 构建登记：新文件必须编进去（漏登记 = 代码在仓里但没编）
+for f in src/logic/DeepinTray.cpp src/logic/DeepinTray.h src/platform/DeepinTray.cpp src/platform/DeepinTray.h src/platform/TrayBackend.cpp src/platform/TrayBackend.h; do
+    if ! grep -qE "(^|[[:space:]])$f([[:space:]]|$)" "$SRC/CMakeLists.txt"; then
+        echo "  ✗ 构建未登记：$f" >&2
+        ARCH_FAIL=1
+    fi
+done
+arch_need "$SRC/CMakeLists.txt" 'find_path\(XCB_INCLUDE_DIR' 'xcb 用 find_path 找（pkg-config 解不开 Requires.private 链）'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 Y 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 Y 段门项全绿（deepin 托盘窗口协议）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0

@@ -11,11 +11,12 @@
 # 【每条的来源】——soname 与插件路径都是**实测**（`readelf -d` + `dpkg -S`），
 #   不是照着文档抄的；包名可能随发行版版本变，脚本每次构建都会重新核对。
 #
-# —— 库依赖（DT_NEEDED，15 个 soname → 13 个包）——
+# —— 库依赖（DT_NEEDED，16 个 soname → 15 个包）——
 libc6                 # libc.so.6 / libm.so.6
 libgcc-s1             # libgcc_s.so.1
 libstdc++6            # libstdc++.so.6
 libglib2.0-0          # libglib-2.0.so.0
+libxcb1               # libxcb.so.1 —— **批 Y 新增**（deepin 托盘窗口协议直接用 xcb）
 libdtk6core           # libdtk6core.so.6
 libdtk6gui            # libdtk6gui.so.6
 libdtk6log            # libdtk6log.so.0

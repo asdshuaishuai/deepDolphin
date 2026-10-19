@@ -34,6 +34,7 @@
 #include "../logic/Router.h"
 #include "../logic/ShortcutMap.h"
 #include "../logic/Thresholds.h"
+#include "../logic/DeepinTray.h"
 #include "../logic/TraySni.h"
 #include "../platform/TraySni.h"
 #include "../tray/TrayGeometry.h"
@@ -914,7 +915,8 @@ int SelfCheck::run(QStringList &log)
             corner.clamped && !normal.clamped);
 
         // ── 面板感知落点（批 W · M1-8）───────────────────────────
-        // ⚠ 这条是本批的**主修复**：DDE 的托盘是 SNI ⇒ 托盘坐标**恒拿不到**
+        // ⚠ 这条是本批的**主修复**：DDE 上 `QSystemTrayIcon` 没有宿主
+        //   （DDE 托盘画的是应用自绘的 X11 窗口，批 Y 查明）⇒ 托盘坐标**恒拿不到**
         //   ⇒ 旧实现只能瞎猜「屏幕右上」，而托盘在**底部**任务栏里（DDE 默认）
         //   ⇒ 弹窗落在离托盘图标很远的地方。
         {
@@ -3281,6 +3283,89 @@ int SelfCheck::run(QStringList &log)
                 pixSig == QByteArrayLiteral("(iiay)")
                     && listSig == QByteArrayLiteral("a(iiay)"));
         }
+    }
+
+    // ── 12f. deepin 托盘**窗口协议**（批 Y · M1-3 的正解）──────────────
+    // 这一段锁的是判定层（纯函数、零 X11）：报文格式、选区名、后端选择。
+    {
+        // ① ⚠⚠ **字段偏移比经典 XEmbed 差一位** —— 放错位置 ⇒ daemon 静默忽略
+        //   （实测：按经典布局发 ⇒ daemon 读到的 opcode 是我们的窗口 id ≠ 0
+        //   ⇒ 图标永远不出现、且**没有任何报错**）。
+        check(log, "deepin 托盘：opcode 放在 l[1]、窗口 id 放在 l[2]（比经典 XEmbed 偏移一位）",
+            TraySni::dockFieldIndex(TraySni::DockField::Opcode) == 1
+                && TraySni::dockFieldIndex(TraySni::DockField::WindowId) == 2);
+
+        // ② 选区名是 **S0** 变体（无后缀的那个本机没有持有者 ⇒ 发过去 daemon 收不到）
+        check(log, "deepin 托盘：选区是 _NET_SYSTEM_TRAY_S0（无后缀那个没有持有者）",
+            QByteArray(TraySni::dockSelectionName()) == QByteArrayLiteral("_NET_SYSTEM_TRAY_S0"));
+
+        // ③ 操作码 = 0（REQUEST_DOCK）
+        check(log, "deepin 托盘：dock 操作码是 0（REQUEST_DOCK）",
+            TraySni::dockOpcodeRequestDock() == 0);
+
+        // ④ 请求组装：opcode 与窗口 id 各就各位
+        const TraySni::DockRequest req = TraySni::buildDockRequest(0x6e00001);
+        check(log, "deepin 托盘：dock 请求带对了操作码与窗口 id",
+            req.opcode == TraySni::dockOpcodeRequestDock() && req.windowId == 0x6e00001);
+
+        // ⑤ ⚠⚠ **后端选择：deepin 选区在场时必须走窗口协议**，
+        //   即使 SNI watcher 也在（DDE 25 上 watcher 在，但它**不画** SNI 图标
+        //   ⇒ 按「有 watcher 就走 SNI」选 ⇒ 图标永远不出现；批 X 踩的就是这个坑）。
+        check(log, "deepin 托盘：选区在场时走窗口协议（哪怕 SNI watcher 也在）",
+            TraySni::chooseBackend(true, true) == TraySni::Backend::DeepinWindow);
+
+        // ⑥ 没有 deepin 选区、但有 watcher ⇒ 走 SNI（KDE 系桌面）
+        check(log, "deepin 托盘：没有选区但有 watcher 时走 SNI",
+            TraySni::chooseBackend(false, true) == TraySni::Backend::Sni);
+
+        // ⑦ 两样都没有 ⇒ 没有后端（不假装成功）
+        check(log, "deepin 托盘：既无选区也无 watcher 时判成「没有后端」",
+            TraySni::chooseBackend(false, false) == TraySni::Backend::None);
+
+        // ⑧ 后端名字可读（探针/日志用）
+        check(log, "deepin 托盘：后端名字分别是 deepin-window / sni / none",
+            TraySni::backendName(TraySni::Backend::DeepinWindow) == QStringLiteral("deepin-window")
+                && TraySni::backendName(TraySni::Backend::Sni) == QStringLiteral("sni")
+                && TraySni::backendName(TraySni::Backend::None) == QStringLiteral("none"));
+    }
+
+    // ── 12g. 托盘后端的**强制指定**（测试钩子；批 Y 实测逼出来的）──────
+    // ⚠ 背景：DDE 25 上自动选的是 **deepin 窗口协议** ⇒ SNI 那条路走不到
+    //   ⇒ 批 X 的「IconPixmap 字节级」端到端判据在 DDE 上永远假红
+    //   ⇒ 需要一个显式强制的口子，才能在本机上仍然验 SNI 路径。
+    {
+        // ① 认得的值
+        check(log, "托盘后端强制开关：sni / deepin / none 认得出",
+            TraySni::parseBackendOverride(QStringLiteral("sni"))
+                == TraySni::BackendOverride(TraySni::Backend::Sni)
+                && TraySni::parseBackendOverride(QStringLiteral("deepin"))
+                    == TraySni::BackendOverride(TraySni::Backend::DeepinWindow)
+                && TraySni::parseBackendOverride(QStringLiteral("none"))
+                    == TraySni::BackendOverride(TraySni::Backend::None));
+
+        // ② 没指定 ⇒ 不强制（= 按平台能力自动选）
+        check(log, "托盘后端强制开关：空串判成「没指定」",
+            !TraySni::parseBackendOverride(QString()).has_value());
+
+        // ③ "auto" 也是「没指定」
+        check(log, "托盘后端强制开关：auto 判成「没指定」",
+            !TraySni::parseBackendOverride(QStringLiteral("auto")).has_value());
+
+        // ④ ⚠ **认不出 ⇒ 当作没指定**（不静默改道）：
+        //   把「打错字」变成「换了一条路」会让判据在**没测到想测的东西**时变绿。
+        check(log, "托盘后端强制开关：认不出的字样判成「没指定」（不静默改道）",
+            !TraySni::parseBackendOverride(QStringLiteral("瞎写的")).has_value());
+
+        // ⑤ ⚠ 强制**优先于**自动选择：否则探针在本机上想验的那条路根本走不到
+        check(log, "托盘后端强制开关：强制 SNI 压过「选区在场 ⇒ 窗口协议」",
+            TraySni::chooseBackend(true, true,
+                TraySni::BackendOverride(TraySni::Backend::Sni)) == TraySni::Backend::Sni);
+
+        // ⑥ 强制也压过「两样都没有 ⇒ 没有后端」
+        check(log, "托盘后端强制开关：强制 deepin 压过「没有后端」",
+            TraySni::chooseBackend(false, false,
+                TraySni::BackendOverride(TraySni::Backend::DeepinWindow))
+                == TraySni::Backend::DeepinWindow);
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

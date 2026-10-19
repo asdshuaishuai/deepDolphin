@@ -470,7 +470,7 @@ key 只进 libsecret（service=cn.deepdolphin.app.ai / account=api-key），不�
 | `--agent-selftest` 在引擎缺席且无 AI 配置时：`[selftest] WARN: 引擎未找到…` + `[selftest] ERROR: 找不到 moonGit 引擎。请运行 moonGit/scripts/install.sh 安装，或设置环境变量 DEEPGIT_BIN 指向引擎二进制，然后重新检测。`，退出码 1 | 通过（响亮失败） | **边界**：无头自测走完整 AI 链路的前提是引擎在位——决策 27 的 FINAL 路径是带桩引擎实测的；引擎缺席时它如实报 ERROR 而不是假装跑通 |
 | `dtkwidget/qt/qtbase/deepDolphin can not find qm files for locales zh_CN` 四条告警 | 环境限制 | sysroot 未装翻译包；不影响功能，真机安装后由系统翻译文件补齐。如后续要消音，需把 Qt/DTK 翻译 .qm 纳入 sysroot |
 | `dtk.core.dsg: AppId is fetched from AM, and value is "zcode"` | 环境限制 | 容器会话无应用商店注册项，DSG AppId 回退到宿主进程名；真机经 .desktop 安装后取 `cn.deepdolphin.app` |
-| `QObject::connect: No such signal QPlatformNativeInterface::systemTrayWindowChanged(QScreen*)` | 环境限制 | offscreen 无系统托盘；真 DDE 走 SNI 协议（与「运行期事实」一致）。托盘真实表现仍**待真机验证** |
+| `QObject::connect: No such signal QPlatformNativeInterface::systemTrayWindowChanged(QScreen*)` | 环境限制 | offscreen 无系统托盘；真 DDE 走 **deepin 托盘窗口协议**（批 Y 实测，与「运行期事实」一致）。托盘真实表现仍**待真机验证** |
 | `desktop-file-validate` 未跑 | 工具缺席 | 容器内无该工具（`command -v` 为空）。`.desktop` 内容已人工核对（Exec/Icon/StartupWMClass/X-Deepin-Vendor），装真机后建议补跑 |
 | `ctest`：无目标可跑 | 设计如此 | CMakeLists.txt:134 注释：`enable_testing()+tests/` 缓建，模型层冒烟判据由 `--selfcheck`（148 例）承担 |
 | Ctrl+Shift+U 与输入法的潜在冲突 | 待真机验证 | 决策 19 预案：保持绑定、菜单显示实际序列；容器内无真实 IME，无法在本阶段闭环 |
@@ -1752,10 +1752,18 @@ marshaller（改完对照实测**没有区别**）。⇒ 判据必须统计**整
 渲染出来）⇒ **本机 deepin 25 的托盘图标渲染本身也是坏的** ⇒ 「图标有没有出现」这个
 判据在本机**不能单独采信**，必须与 `TrayManager1.TrayIcons` 列表 / `Added` 信号一起看。
 
-### 批 Y · 托盘窗口协议勘察 —— **路径已查明**（把「路径未知」变成「逐步可测」）
+### 批 Y · M1-3 改走 deepin 托盘**窗口协议** —— 端到端**达成到 daemon 侧**（像素仍受本机缺陷阻塞）
 
-批 X 结束时 M1-3 卡在「正确路径要重做」。批 Y 把这条路径**逐段测通**了。
-**本节只记录已实测的事实与方案，代码在下一批落**（本批不提交实现，避免没写完的东西进仓）。
+批 X 结束时 M1-3 卡在「正确路径要重做」。批 Y 先把路径**逐段测通**，再按它实现。
+
+**做了什么**：新增判定层 `src/logic/DeepinTray.{h,cpp}`（纯结论、零 X11）—— dock 报文的
+**字段偏移**、选区名、操作码、**后端选择**（deepin 选区优先于 SNI watcher）、**后端强制指定**的解析；
+新增平台层 `src/platform/DeepinTray.{h,cpp}`（xcb：查选区持有者 → 用 daemon 广告的
+`_NET_SYSTEM_TRAY_VISUAL` 建 **32 位 ARGB** 图标窗口 → 画图标 → 发 `REQUEST_DOCK` →
+用 daemon 的 `GetName` 验证是否真被认领）与 `src/platform/TrayBackend.{h,cpp}`（读后端强制开关）；
+`TrayController` 改成**三态后端**（deepin 窗口 / SNI / 旧协议，**互斥**）；
+新增真机端到端探针 `scripts/probe-deepin-tray.sh`；
+`--platform-probe` 增报 `deepinTraySelection`；selfcheck +14 例；接线门 +43 项。
 
 **三方分工（批 Y 实测厘清，批 X 弄错了其中一环）**：
 
@@ -1791,19 +1799,67 @@ marshaller（改完对照实测**没有区别**）。⇒ 判据必须统计**整
 本机托盘区那 3 个圆**本来就是空的深灰占位圆** ⇒ **dock 抓图标图像这条路整体是坏的**
 （`cc-switch` / `clash-verge` 这两个正经托盘应用也只显示占位圆）⇒ **不是客户端能修的**。
 
-**⇒ 对 M1-3 的结论**：路径**已查明**（不再是「路径要重做」）⇒ 风险由「高」回落为
-「**中（路径已查明；剩客户端实现 + 真机/容器端到端验收）**」。
-**下一批（批 Y 实现）要做的事**：
+**⇒ 对 M1-3 的结论**：路径**已查明并已实现** ⇒ 风险由「高（路径要重做）」回落为
+「**中（实现完成；剩真机/容器的像素级验收）**」。
+**实现后的实测（批 Y 代码落地）**：
 
-1. 判定层新增「deepin 托盘窗口协议」结论（纯函数、零 X11）：选区名、消息字段偏移、
-   请求构造（opcode/窗口 id 放哪）—— 可单测；
-2. 平台层：X11 窗口（用 daemon 广告的 `_NET_SYSTEM_TRAY_VISUAL`，实测 `0x6c` 是
-   **TrueColor/32 planes** 的 ARGB visual）+ 发 `REQUEST_DOCK`；
-3. 判据：真机探针断言「**我们的窗口 id 出现在 `TrayIcons` 里**」且
-   「`GetName(我们的窗口)` == 我们的名字」—— 这两条在 daemon 侧，**可脚本化**，
-   不依赖「图标是否显示出来」（本机显示不出来）；
-4. **SNI 与托盘窗口协议二选一还是并存** —— 待定：KDE 系桌面走 SNI、DDE 走窗口协议，
-   倾向**按 host 变体二选一**（判定层已有 `Host` 枚举，扩展即可）。
+- ✅ **窗口被 daemon 认领**：`TrayIcons` 里出现我们的窗口 id，
+  `GetName(我们的窗口)` → `'deepDolphin'`（应用自己的校验也是这一条）；
+- ✅ **窗口被 dock 接管**：窗口从 22×22 被改成 **22×40**、状态 `IsViewable`、
+  **不在 root 的子窗口里** ⇒ dock 把它 reparent 进了自己的托盘容器；
+- ❌ **托盘区仍 0 像素**：dock 侧 `getX11WindowImageNonComposite()` 抓不到窗口图像
+  ⇒ `enabled=false` ⇒ 干脆不显示（连占位圆都没有）。
+  ⇒ **这不是我们客户端能修的**：本机连 `cc-switch` / `clash-verge` 这两个正经托盘应用
+  也只显示**空的深灰占位圆** ⇒ 是**本机 dock 的渲染缺陷**。
+  ⇒ 端到端**像素**验收要等真机/容器（与 D7 同批做）。
+
+**本批实现中踩到并修掉的坑**（都是实测撞出来的）：
+
+1. ⚠⚠ **`xcb_create_window` 的 `values[]` 必须按 mask 位升序** ——
+   `XCB_CW_BORDER_PIXEL`(bit3) → `values[0]`、`XCB_CW_EVENT_MASK`(bit11) → `values[1]`、
+   `XCB_CW_COLORMAP`(bit13) → `values[2]`。写反了 ⇒ 边界像素被当成 colormap、
+   colormap 传成 None ⇒ **32 位 ARGB 窗口「建了却不存在」**
+   （`GetWindowAttributes` 报 **BadWindow(3)**、窗口不在 root 的子窗口里）
+   ⇒ daemon 认不出它。⚠ **24 位那条当时「能用」纯属侥幸**：传错的字段恰好无害。
+2. ⚠ **X 错误码别记反**：**3 = BadWindow**、**2 = BadValue**（我一度记成反的，
+   差点把「窗口没建成」误判成「参数不合法」）。
+3. ⚠ **xcb 的 void 请求没法逐个查错**：`xcb_request_check` 对**成功**的 void 请求
+   会**阻塞等下一个错误** ⇒ 前一个检查会把**后一个请求的错误吃掉**
+   ⇒ 「建窗没报错」是**假阴性**。⇒ 要么一次只发一个请求，要么用 `XSetErrorHandler`。
+4. ⚠ **每次刷新都新建窗口**：刷新图标时又建一个 ⇒ 窗口 id 一路涨
+   （0x7000000 → 0x7000002 → …）且反复发 dock 请求 ⇒ 改成「已建过就只重画」。
+5. ⚠ **xcb 走不通 pkg-config**：本机构建环境的 pkg-config（2.5.1）解不开
+   `xcb → xau → xproto` 的 `Requires.private` 链（新的 pkgconf 正常）
+   ⇒ 改用 `find_path`/`find_library` 直接找（与 Qt 的查找方式一致）。
+6. ⚠⚠ **改了后端优先级 ⇒ 旧的端到端判据会「永远假红」** —— 本批把 DDE 的后端从 SNI
+   改成 deepin 窗口协议 ⇒ `scripts/probe-sni-icon.sh`（批 X 的 IconPixmap 字节级判据）
+   在 DDE 上**再也跑不起来**了：应用压根不注册 SNI 项 ⇒ 「服务没上线」。
+   ⇒ 这不是「判据坏了」，是**判据的前提被改掉了**；两条路都得留着可验。
+   ⇒ 解法：加**后端强制开关**（`DEEPDOLPHIN_TRAY_BACKEND`，测试钩子、默认不强制），
+   探针强制走要验的那条路，**并核对应用自报的后端**（见下条）。
+7. ⚠ **`qInfo` 逐参数打印会给 QString 加引号** —— `qInfo() << QStringLiteral("托盘后端 = %1（%2）")`
+   出来是 `"托盘后端 = deepin-window（自动）"`（**整条带引号**）；
+   逐参数打更糟：`托盘后端 = "deepin-window" "（自动）"`（每个参数各带一对引号）
+   ⇒ 探针按空格切字段会切错 ⇒ 判据**假红**。
+   ⇒ 结论：**给机器读的日志行**要打成**单条**字符串（不要多参数拼接），
+   探针再按固定前缀正则取（`托盘后端 = \([a-z-]*\)`）。
+
+**判据分层（批 Y 继续沿用批 X 的结论）**：
+
+- `--selfcheck`（判定层纯函数，+14 例）：字段偏移 / 选区名 / 操作码 / 请求组装 /
+  **后端优先级**（选区在场 ⇒ 走窗口协议，**哪怕 watcher 也在**）/
+  **后端强制开关**（认得的值、认不出 ⇒ 判成「没指定」、强制**优先于**自动选择）。
+- 真机端到端探针 `scripts/probe-deepin-tray.sh`（**不强制后端** ⇒ 验的是「自动选路对不对」）：
+  ⓪ 应用自报后端 = `deepin-window` → ① 应用自报「已认领」（它自己先验过 `GetName`）→
+  ② 窗口 id 在 `TrayIcons` 里 → ③ X 侧 `WM_NAME` 是我们的名字。
+  ⚠ **不看「图标有没有画出来」**（本机 dock 渲染坏的）。
+  ⚠ 探针自己也踩过坑：gdbus 的数组输出**只有第一个元素带 `uint32 ` 前缀**
+  ⇒ 只按 `uint32 (\d+)` 抓会漏掉排在后面的我们的窗口（负控实测）。
+- 真机端到端探针 `scripts/probe-sni-icon.sh`（批 X 那个，**现在强制走 SNI**）：
+  ① 应用自报后端 = `sni`（**强制开关生效了吗**）→ ② 服务上线 → ③ `IconPixmap` 32×32 /
+  4096 字节 / 非零字节 > 0。⚠ 强制开关是**测试钩子**（默认不强制 ⇒ 生产行为零变化），
+  解析规则在判定层、平台层只读环境变量（单一真相源）。
+- **负控 14 条全红**（含「强制开关被忽略」「应用不报后端」「平台层自己硬判环境变量」）。
 
 ## 分层纪律（后续阶段必须延续）
 
@@ -1819,7 +1875,8 @@ marshaller（改完对照实测**没有区别**）。⇒ 判据必须统计**整
 - 引擎 moongit/deepgit 未安装 → 首启即「引擎未找到」安装指引路径（本阶段 offscreen 复测：
   告警与文案正确，退出码 124 存活）；`DEEPGIT_BIN` 指向探活通过的桩时不再报错（AI 层阶段
   实测；agent 工具循环全链路亦以桩引擎验证，见决策 27）。
-- 托盘在无系统托盘的环境（offscreen）只有 Qt 告警，不影响运行；真实 DDE 上走 SNI 协议。
+- 托盘在无系统托盘的环境（offscreen）只有 Qt 告警，不影响运行；真实 DDE 上走 **deepin 托盘窗口协议**
+  （自绘 X11 窗口 + `REQUEST_DOCK`，批 Y 实测查明的正解；SNI 那条路 DDE 上不画图标）。
 - 会话总线（共享宿主总线）上 `com.deepin.copilot` 在线 → SystemAiEngine probe=Present：
   AI 入口的降级文案为「不支持程序化补全」而非「未检测到服务」；两者都如实区分（已按
   busctl 实测口径实现，真机 DDE 上行为与容器一致）。
