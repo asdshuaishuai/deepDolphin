@@ -4,8 +4,13 @@
 #include "../logic/SemColors.h"
 #include "../platform/Backend.h"
 #include <QApplication>
+#include <QCursor>
+#include <QDir>
+#include <QFileInfo>
 #include <QMenu>
 #include <QPainter>
+#include <QPixmap>
+#include <QSaveFile>
 #include <QSystemTrayIcon>
 
 namespace {
@@ -32,9 +37,16 @@ QIcon tintedIcon(const QColor &tint, bool alert)
         p.drawRect(14.5, 11, 3, 8);
         p.drawEllipse(QPointF(16, 23), 1.6, 1.6);
     } else {
-        p.drawEllipse(TrayGeometry::iconRingInset, TrayGeometry::iconRingInset, ringD, ringD);
+        // ⚠⚠⚡ **必须用 QRect 重载**：`QPainter::drawEllipse(qreal, qreal, qreal, qreal)`
+        //   的前两个参数是**圆心**（rx, ry），**不是**左上角！
+        //   写成 `drawEllipse(inset, inset, d, d)` ⇒ 实际画在 (-8,-8)-(16,16)
+        //   ⇒ 整个圆几乎在画布外 ⇒ **图标是全透明的**（实测：中心像素 0x00000000），
+        //   而且这跟平台无关 —— **所有桌面上的托盘图标都是空白的**。
+        p.drawEllipse(QRect(TrayGeometry::iconRingInset, TrayGeometry::iconRingInset,
+                             ringD, ringD));
         p.setBrush(Qt::white);
-        p.drawEllipse(TrayGeometry::iconCoreInset, TrayGeometry::iconCoreInset, coreD, coreD);
+        p.drawEllipse(QRect(TrayGeometry::iconCoreInset, TrayGeometry::iconCoreInset,
+                             coreD, coreD));
     }
     return QIcon(pm);
 }
@@ -63,16 +75,34 @@ QColor tintColor(Liveness l)
 TrayController::TrayController(QObject *parent)
     : QObject(parent)
 {
-    m_icon = new QSystemTrayIcon(this);
     m_popup = new TrayPopupWindow;
-    buildMenu();
-    connect(m_icon, &QSystemTrayIcon::activated, this, &TrayController::onActivated);
-
     connect(m_popup, &TrayPopupWindow::openPanelRequested, this, &TrayController::openPanelRequested);
     connect(m_popup, &TrayPopupWindow::updateAllClicked, this, &TrayController::updateAllRequested);
     connect(m_popup, &TrayPopupWindow::openProject, this, &TrayController::openProjectRequested);
     connect(m_popup, &TrayPopupWindow::refreshClicked, this, &TrayController::refreshLightRequested);
     connect(m_popup, &TrayPopupWindow::quitClicked, this, &TrayController::quitRequested);
+
+    // 桌面托盘是 SNI 吗？（DDE 是；别的桌面多数不是）
+    m_sniStatus = platform::probeTraySni();
+    m_sniMode = m_sniStatus.watcherPresent;
+
+    if (m_sniMode) {
+        // ⚠ DDE 走 SNI：**不建** QSystemTrayIcon —— 旧协议在 DDE 上没有宿主，
+        //   图标根本不会显示（实测全屏差分 0 像素），留着只是白占一个对象。
+        buildMenu();
+        connect(platform::TraySniNotifier::instance(), &platform::TraySniNotifier::activated,
+                this, &TrayController::onSniActivated);
+        // ⚠ **先给图标再发布** —— 首次发布时 `m_currentIcon` 是空的 ⇒
+        //   编码出来的 IconPixmap 会是**全 0 的透明图** ⇒ 宿主拿到一张空图
+        //   ⇒ 托盘里不画它（实测：项在 watcher 列表里，但托盘区一个像素没多）。
+        m_currentIcon = tintedIcon(tintColor(Liveness::unknown), false);
+        publishSniIcon(QStringLiteral("deepDolphin"));
+        return;
+    }
+
+    m_icon = new QSystemTrayIcon(this);
+    buildMenu();
+    connect(m_icon, &QSystemTrayIcon::activated, this, &TrayController::onActivated);
 
     m_icon->setIcon(tintedIcon(tintColor(Liveness::unknown), false));
     m_icon->setToolTip(QStringLiteral("deepDolphin"));
@@ -92,17 +122,77 @@ void TrayController::buildMenu()
     connect(open, &QAction::triggered, this, &TrayController::openPanelRequested);
     connect(updateAll, &QAction::triggered, this, &TrayController::updateAllRequested);
     connect(quit, &QAction::triggered, this, &TrayController::quitRequested);
-    m_icon->setContextMenu(m_menu);
+    // ⚠ SNI 模式下没有 QSystemTrayIcon ⇒ 菜单不能挂它（宿主点右键时我们自己弹）。
+    if (m_icon)
+        m_icon->setContextMenu(m_menu);
+}
+
+void TrayController::publishSniIcon(const QString &menuTitle)
+{
+    if (!m_sniMode)
+        return;
+    const QPixmap pm = m_currentIcon.pixmap(32, 32);
+    if (pm.isNull())
+        return;
+
+
+    // IconName 指**绝对路径**（宿主支持：ayatana 那个能显示的项就是这么用的）⇒
+    // 得真有个文件在那儿 ⇒ 写缓存目录（属「程序自身依赖」，不是业务数据）。
+    const QString file = platform::trayIconCacheFile();
+    QDir().mkpath(QFileInfo(file).absolutePath());
+    QSaveFile f(file);
+    if (f.open(QIODevice::WriteOnly) && pm.save(&f, "PNG"))
+        f.commit();
+
+    TraySni::ItemSpec spec;
+    spec.serviceName = QStringLiteral("org.deepin.deepDolphin");
+    spec.objectPath = QStringLiteral("/StatusNotifierItem");
+    spec.id = QStringLiteral("deepDolphin");
+    spec.title = menuTitle;
+    spec.category = QStringLiteral("ApplicationStatus");
+    spec.status = QStringLiteral("Active");
+    spec.iconName = file;
+    spec.iconThemePath = QFileInfo(file).absolutePath();
+    spec.itemIsMenu = false;
+
+    const QList<QImage> icons{pm.toImage()};
+    m_sniStatus = platform::publishTraySni(spec, icons);
+    if (!m_sniStatus.published && m_sniStatus.error.isEmpty())
+        m_sniStatus.error = QStringLiteral("SNI 发布未完成");
+}
+
+void TrayController::onSniActivated(const QString &action)
+{
+    if (action == QLatin1String("ContextMenu")) {
+        if (m_menu)
+            m_menu->popup(QCursor::pos());
+        return;
+    }
+    if (action == QLatin1String("Activate")) {
+        if (m_popup) {
+            emit refreshLightRequested();
+            // SNI **没有位置字段**（实测：ItemPixmap/IconName 都不带几何）⇒
+            // 落点只能按**面板几何**算（批 W 的 platform::trayPopupTarget）。
+            m_popup->popupNear(QRect());
+        }
+        return;
+    }
+    emit openPanelRequested();
 }
 
 void TrayController::refreshIcon(const QString &menuTitle, Liveness tint)
 {
+    m_tint = tintColor(tint);
+    m_currentIcon = tintedIcon(m_tint, tint == Liveness::engineStale
+                || tint == Liveness::needsAction);
+    if (m_sniMode) {
+        publishSniIcon(menuTitle);
+        return;
+    }
     if (!m_icon)
         return;
     m_icon->setToolTip(menuTitle);
-    m_tint = tintColor(tint);
-    m_icon->setIcon(tintedIcon(m_tint, tint == Liveness::engineStale
-                || tint == Liveness::needsAction));
+    m_icon->setIcon(m_currentIcon);
 }
 
 void TrayController::refreshFrom(const TraySnapshot &snapshot)
@@ -113,6 +203,9 @@ void TrayController::refreshFrom(const TraySnapshot &snapshot)
 
 bool TrayController::isVisible() const
 {
+    // SNI 模式下「可见」= 已登记进宿主；旧协议下看 QSystemTrayIcon。
+    if (m_sniMode)
+        return m_sniStatus.published;
     return m_icon && m_icon->isVisible();
 }
 

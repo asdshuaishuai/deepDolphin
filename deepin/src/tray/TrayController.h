@@ -10,7 +10,9 @@
 // 本阶段以 TraySnapshot 纯数据承接，AppModel 落地后由它填 snapshot（见 README「偏差」）。
 #pragma once
 #include "../logic/Liveness.h"
+#include "../platform/TraySni.h"
 #include <QColor>
+#include <QIcon>
 #include <QObject>
 #include <QPointer>
 #include <QString>
@@ -63,12 +65,24 @@ signals:
 
 private slots:
     void onActivated(QSystemTrayIcon::ActivationReason reason);
+    /// SNI 宿主回调（点图标 / 右键）。
+    void onSniActivated(const QString &action);
 
 private:
     void buildMenu();
+    /// SNI 模式：把当前图标发布/更新到宿主（写缓存文件 + 更新像素属性）。
+    void publishSniIcon(const QString &menuTitle);
 
     QSystemTrayIcon *m_icon = nullptr;
     QMenu *m_menu = nullptr;
     TrayPopupWindow *m_popup = nullptr;
     QColor m_tint;
+    QIcon m_currentIcon;
+    /// 桌面走 SNI 托盘（DDE）吗？
+    ///
+    /// ⚠ **DDE 上必须走 SNI**：`QSystemTrayIcon` 在那儿**一个像素都不显示**
+    ///   （实测：`_NET_SYSTEM_TRAY_S0` 选区不存在 ⇒ 没有 XEmbed 宿主；
+    ///   全屏差分 0 像素）。两套并存会变成「一个看不见的旧图标 + 一个 SNI 图标」。
+    bool m_sniMode = false;
+    platform::TraySniStatus m_sniStatus;
 };

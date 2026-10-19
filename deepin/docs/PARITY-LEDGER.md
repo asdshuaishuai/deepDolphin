@@ -401,7 +401,7 @@ PLAN §9 M1-8 写的是「`org.deepin.dde.Panel` 位置/光标位置定位」。
 |---|---|
 | 托盘**可用** | `QSystemTrayIcon::isSystemTrayAvailable()` = **true**（平台插件认到系统托盘） |
 | 但**位置永远不报** | `QSystemTrayIcon::geometry()` = (0,0,0×0)，等 2s 也不变 ⇒ **托盘几何恒为无效** |
-| 我们**没有**注册成 SNI 项 | 我们的测试程序跑着时，`org.kde.StatusNotifierWatcher` 的已注册项里**只有 3 个 ayatana 项**，没有我们 ⇒ DDE 走的是**旧托盘协议**（XEmbed/Qt），不是 SNI |
+| 我们**当时没有**注册成 SNI 项 | 我们的测试程序跑着时，`org.kde.StatusNotifierWatcher` 的已注册项里**只有 3 个 ayatana 项**，没有我们 ⇒ 当时只能看到旧托盘协议。⚠ **批 X 照实修正**：注册进 SNI 是**做得到的**（批 X 做成了，宿主也确实读了我们的属性）⇒ 「DDE 走旧托盘协议」这个**结论**不成立；真正的原因是 DDE 25 托盘区画的是**另一种东西**（见 E.1g） |
 
 ⇒ **两条结论**：
 
@@ -414,6 +414,50 @@ PLAN §9 M1-8 写的是「`org.deepin.dde.Panel` 位置/光标位置定位」。
    ⇒ M1-3 的风险等级应从「高风险」下调为「中等：有明确解法，但要在真机 DDE 上验」。
 
 ⇒ 弹窗定位的正确解法**不是** SNI，而是**面板几何**（批 W 已做）。
+
+---
+
+### E.1g DDE 25 的托盘到底认什么（批 X 照出 —— **推翻了批 W 的「DDE 走旧托盘协议」**）
+
+批 X 把「托盘图标为什么不出来」查到底。**先纠正一次自己的误判**：中途曾盯着
+`dbus-monitor` 输出的**开头几行**看到一片 `00` 就断言「IconPixmap 被编成全 0」——
+**错**。圆形图标的**边缘像素本来就是透明的**；把**整张图**的非零字节数统计出来是
+**1948/4096**（真图）。⇒ 「字节全 0」这个结论作废，下列均为逐条实测。
+（⚠ 1948 是**取样值**，不是定值：抗锯齿边缘像素会让它在十几个字节内浮动，另一轮实测 1936
+⇒ 判据只能写「非零 **> 0**」，不能写「= 某个数」。）
+
+| 事实 | 实测 |
+|---|---|
+| 我们**能**注册成 SNI 项 | watcher 的 `RegisteredStatusNotifierItems` 出现 `org.deepin.deepDolphin/StatusNotifierItem` |
+| watcher 是 **ayatana 变体** | 单参数 `RegisterStatusNotifierItem(serviceOrPath)`、已注册项是**属性**、`ProtocolVersion=0`；源码在 `linuxdeepin/dde-daemon/trayicon1` |
+| 宿主会**主动读**我们的 8 个属性 | Id → Menu → IconPixmap → AttentionIconPixmap → OverlayIconPixmap → ToolTip → IconName → IconThemePath（`dbus-monitor` 全量抓包） |
+| 缺 pixmap 属性**当场被注销** | 读不到 `IconPixmap` ⇒ host 立刻发 `StatusNotifierItemUnregistered`（实测） |
+| 宿主会订阅我们的变化信号 | `NewIcon` / `NewOverlayIcon` / `NewAttentionIcon` / `NewTitle` / `NewStatus` / `NewToolTip` + `PropertiesChanged`（AddMatch 规则实测） |
+| **但宿主不画我们** | 全屏差分 **0 像素**（已排除鼠标光标位移：把光标移开重测仍是 0） |
+| 托盘区里显示的是**另一种东西** | `org.deepin.dde.TrayManager1.TrayIcons` = 2 个 **X11 窗口 id**：`0x8000032 "clash-verge"`、`0x7c0001e "cc-switch"`（各 16×16，**窗口名 = 应用名**） |
+| 画托盘的不是 watcher 宿主 | 读我们属性的是 `trayplugin-load`（`:1.151`），加载 `libapplication-tray.so`（**dde-dock 的托盘插件**）；watcher 由 `dde-session-daemon`（`:1.20`）提供 |
+| 该插件同时实现**三套**协议 | `SniTrayProtocol` / `XembedProtocol` / `DDEindicatorProtocol`（deepin 私有接口 `dde.shell.tray.indicator`，配置目录 `/etc/dde-dock/indicator/`） |
+| 旧协议选区**根本不存在** | `_NET_SYSTEM_TRAY_S0` 与 `_NET_SYSTEM_TRAY` 都是 "not found" ⇒ X11 上**没有** XEmbed 选区（插件另有 `FdoSelectionManager`，只在非 X11 时用） |
+| 标准 SNI 项**也不进**托盘区 | fcitx5 的 SNI 项注册在 watcher 里；杀掉重启后托盘区**全屏差分 0 像素** |
+| 已排除的变量 | IconPixmap 空/非空、IconName 指绝对路径/指主题图标名、注册传服务名/传对象路径、Menu 指向不存在的对象 —— **都不是根因** |
+
+⇒ **三条结论（改写 M1-3 的定性）**：
+
+1. **批 W 的「DDE 走旧托盘协议」不成立** —— 我们注册进 SNI 是做得到的，宿主也确实
+   按标准 SNI 读了属性、订了信号。
+2. **但「迁 SNI」在 DDE 25 上仍不达成端到端**：托盘区画出来的是**应用自绘的 X11 窗口**
+   （经 `org.deepin.dde.TrayManager1` 注册 → dock 嵌入），**不是**宿主按 SNI 替你画图标。
+   ⇒ M1-3 的正确解法**不是**「迁 SNI」，而是**按 deepin 的托盘窗口协议注册**
+   （自绘一个 16×16 的 X11 窗口当图标，交给 `TrayManager1.Manage`）。
+3. ⚠ **本机还有一个独立问题，限制了判据的可信度**：托盘区那 3 个圆是**空的深灰占位圆**
+   （图标内容没渲染出来）⇒ **本机 deepin 25 的托盘图标渲染本身也是坏的** ⇒
+   「图标有没有出现」这个判据在本机**不能单独采信**，必须与
+   `TrayManager1.TrayIcons` 列表 / `Added` 信号一起看。
+
+⇒ 批 X 据此交付的**可复用**部分：SNI 实现本身是**跨平台正确**的（KDE 系桌面可用），
+并顺带修掉两个**与桌面无关**的真缺陷（见 README 变更日志 238/239）——
+`drawEllipse` 的圆心语义让**所有平台**的托盘图标一直是空白；像素编码按非预乘读预乘数据
+会让半透明图标**读错颜色**。这两条与 DDE 无关，**各平台都受益**。
 
 ---
 

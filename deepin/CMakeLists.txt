@@ -110,6 +110,7 @@ add_executable(deepDolphin
     src/logic/EngineHook.cpp
     src/logic/IconNames.cpp
     src/logic/SnapshotFixture.cpp
+    src/logic/TraySni.cpp
     # ── platform/ ──
     src/platform/AppService.cpp
     src/platform/AutostartManager.cpp
@@ -119,6 +120,8 @@ add_executable(deepDolphin
     src/platform/CrashHandler.cpp
     src/platform/IconResolver.cpp
     src/platform/SysOpen.cpp
+    src/platform/TraySni.cpp
+    src/platform/TraySni.h
     # ── tray/ ──
     src/tray/TrayController.cpp
     src/tray/TrayPopupWindow.cpp

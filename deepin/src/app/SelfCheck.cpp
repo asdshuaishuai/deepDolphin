@@ -34,6 +34,8 @@
 #include "../logic/Router.h"
 #include "../logic/ShortcutMap.h"
 #include "../logic/Thresholds.h"
+#include "../logic/TraySni.h"
+#include "../platform/TraySni.h"
 #include "../tray/TrayGeometry.h"
 #include "../models/ContextEnvelope.h"
 #include "../models/DashboardData.h"
@@ -67,6 +69,8 @@
 #include <QMargins>
 #include <QRegularExpression>
 #include <QPainter>
+#include <QDBusArgument>
+#include <QDBusMetaType>
 
 namespace {
 int g_pass = 0;
@@ -3111,6 +3115,171 @@ int SelfCheck::run(QStringList &log)
             batch.contains(QStringLiteral("1 个项目成功"))
                 && batch.contains(QStringLiteral("bad1"))
                 && batch.contains(QStringLiteral("引擎退出码 1")));
+    }
+
+    // ── 12e. SNI 托盘（批 X · M1-3）────────────────────────────────
+    // DDE 的托盘**只认 SNI**（实测：`_NET_SYSTEM_TRAY_S0` 选区不存在 ⇒ 没有
+    // XEmbed 宿主 ⇒ `QSystemTrayIcon` 在 DDE 上**一个像素都不显示**）。
+    // 这一段锁的是判定层（纯函数）：host 分档、注册方式、必填属性、像素编码。
+    {
+        // ① 没有 watcher ⇒ 只能判「没有」，**不能猜是哪一变体**
+        //    （把「读不到」误当成「形状不同」会把接口用错）。
+        TraySni::HostCaps none;
+        check(log, "SNI：没有 watcher 时判成「没有」（不猜是哪一变体）",
+            TraySni::classifyHost(none) == TraySni::Host::None);
+
+        // ② ayatana 变体（本机 DDE 实测：单参数注册 + 已注册项是属性 + ProtocolVersion 0）
+        TraySni::HostCaps ayatana;
+        ayatana.watcherPresent = true;
+        ayatana.singleArgRegister = true;
+        ayatana.itemsAsProperty = true;
+        ayatana.protocolVersion = 0;
+        check(log, "SNI：ayatana 变体识别得出（单参数 + 属性 + ProtocolVersion 0）",
+            TraySni::classifyHost(ayatana) == TraySni::Host::Ayatana);
+
+        // ③ KDE 变体（双参数注册）
+        TraySni::HostCaps kde = ayatana;
+        kde.singleArgRegister = false;
+        kde.protocolVersion = 1;
+        check(log, "SNI：KDE 变体识别得出（双参数注册）",
+            TraySni::classifyHost(kde) == TraySni::Host::Kde);
+
+        // ④ 形状对不上时**不硬套** ayatana（宁可判成「另一种已知形状」也别猜错接口）
+        TraySni::HostCaps other = ayatana;
+        other.protocolVersion = 7;
+        check(log, "SNI：形状对不上时不硬套 ayatana",
+            TraySni::classifyHost(other) == TraySni::Host::Kde);
+
+        // ⑤ 注册方式：传**服务名**（项 id 里能一眼认出是自己）
+        TraySni::ItemSpec spec;
+        spec.serviceName = QStringLiteral("org.deepin.deepDolphin");
+        spec.objectPath = QStringLiteral("/StatusNotifierItem");
+        check(log, "SNI：注册方式取服务名（项 id 里能认出是自己）",
+            TraySni::registrationFor(TraySni::Host::Ayatana) == TraySni::Registration::ServiceName
+                && TraySni::registrationArgument(TraySni::Registration::ServiceName, spec)
+                       == QStringLiteral("org.deepin.deepDolphin")
+                && TraySni::registrationArgument(TraySni::Registration::ObjectPath, spec)
+                       == QStringLiteral("/StatusNotifierItem"));
+
+        // ⑥ 必填属性是**入场券**（缺一个当场被注销，实测）
+        const QStringList req = TraySni::requiredProperties();
+        check(log, "SNI：必填属性是三个 pixmap（缺一个当场被注销）",
+            req.size() == 3 && req.contains(QStringLiteral("IconPixmap"))
+                && req.contains(QStringLiteral("AttentionIconPixmap"))
+                && req.contains(QStringLiteral("OverlayIconPixmap")));
+
+        // ⑦ 诊断要**点名**缺哪个（不只说「不完整」）
+        const QStringList missing = TraySni::missingRequired(
+            {QStringLiteral("IconPixmap"), QStringLiteral("OverlayIconPixmap")});
+        check(log, "SNI：缺哪个能点名（不说「不完整」）",
+            missing.size() == 1 && missing.first() == QStringLiteral("AttentionIconPixmap"));
+
+        // ⑧ ⚠ **必填表必须被「宿主会读的属性表」完全覆盖** ——
+        //   两张表若各写一份，改了必填表忘了改读表 ⇒ 宿主读到一个我们没暴露的属性
+        //   ⇒ 当场被注销（真缺陷）。现在读表直接复用必填表，这条断言是它的护栏。
+        const QStringList read = TraySni::hostReadProperties();
+        bool covered = true;
+        for (const QString &name : req) {
+            if (!read.contains(name))
+                covered = false;
+        }
+        check(log, "SNI：宿主会读的属性表覆盖全部必填属性（改一张表不会漏另一张）", covered);
+
+        // ⑨ 主图标属性名与必填表**同源**（平台层不另写一份属性名 ⇒ 不会走偏）
+        check(log, "SNI：主图标属性名取自必填表（平台层不另写一份）",
+            req.contains(TraySni::primaryPixmapProperty())
+                && TraySni::primaryPixmapProperty() == req.value(0));
+
+        // ⑩ 属性都齐了就不该报缺（诊断不能误报）
+        check(log, "SNI：必填属性都齐时不报缺（诊断不误报）",
+            TraySni::missingRequired(req).isEmpty());
+
+        // ⑪ ★ 像素编码：ARGB32、**网络字节序**（A,R,G,B 依次，每像素 4 字节）
+        //   ⚠ 夹具用**非对称**颜色（四个通道互不相等）⇒ 字节序写反必红；
+        //   只用「等值颜色」的话，BGRA/RGBA/ARGB 三种错法会互相顶替（历次教训）。
+        //   ⚠⚡ **两种源格式都要测**：真实输入是 `QIcon::pixmap().toImage()`
+        //   ⇒ **预乘**（Format_ARGB32_Premultiplied）；只测非预乘的话，
+        //   「按非预乘去读预乘数据」这种错法**分叉不出来**（实测：整张图编成全 0
+        //   的透明图 ⇒ 宿主拿到空图 ⇒ 托盘里不画它，而判据还全绿）。
+        {
+            QImage nonPremul(2, 1, QImage::Format_ARGB32);
+            nonPremul.setPixel(0, 0, qRgba(0x22, 0x33, 0x44, 0x11));
+            nonPremul.setPixel(1, 0, qRgba(0x66, 0x77, 0x88, 0x55));
+            // 预乘夹具**必须用 QPainter 造**：`QImage::setPixel` 往预乘图里写的是
+            // **未预乘的数值**（Qt 直接存，不做预乘）⇒ 拿它当「预乘输入」会造出
+            // 一张语义错乱的图。QPainter 画出来的才是**真预乘**（= 真实输入形态）。
+            QImage premul(2, 1, QImage::Format_ARGB32_Premultiplied);
+            premul.fill(Qt::transparent);
+            {
+                QPainter p(&premul);
+                p.setPen(Qt::NoPen);
+                p.setBrush(QColor(0x22, 0x33, 0x44));
+                p.drawRect(0, 0, 1, 1);
+                p.setBrush(QColor(0x66, 0x77, 0x88));
+                p.drawRect(1, 0, 1, 1);
+            }
+            const QByteArray expect = QByteArray::fromHex("1122334455667788");
+            const QByteArray expectOpaque = QByteArray::fromHex("ff223344ff667788");
+            check(log, "SNI：像素编码是 ARGB32 网络字节序（源图非预乘）",
+                TraySni::encodeArgb32NetworkOrder(nonPremul) == expect);
+            check(log, "SNI：像素编码是 ARGB32 网络字节序（源图**预乘**，真实输入形态）",
+                TraySni::encodeArgb32NetworkOrder(premul) == expectOpaque);
+            // 半透明源图：反预乘有**舍入** ⇒ 按容差比（±2/通道），不按精确字节。
+            // ⚠ 期望的通道顺序是 **A,R,G,B**（网络字节序），不是 R,G,B,A。
+            QImage half(1, 1, QImage::Format_ARGB32_Premultiplied);
+            half.fill(Qt::transparent);
+            {
+                QPainter p(&half);
+                p.setPen(Qt::NoPen);
+                p.setBrush(QColor(0x20, 0x40, 0x60, 0x80));
+                p.drawRect(0, 0, 1, 1);
+            }
+            const QByteArray halfBytes = TraySni::encodeArgb32NetworkOrder(half);
+            bool halfOk = halfBytes.size() == 4;
+            if (halfOk) {
+                const int want[4] = {0x80, 0x20, 0x40, 0x60}; // A,R,G,B
+                for (int i = 0; i < 4; ++i) {
+                    const int got = static_cast<quint8>(halfBytes.at(i));
+                    if (qAbs(got - want[i]) > 2)
+                        halfOk = false;
+                }
+            }
+            check(log, "SNI：半透明源图反预乘后能还原原色（容差 2/通道）", halfOk);
+            const QByteArray bytes = TraySni::encodeArgb32NetworkOrder(nonPremul);
+            check(log, "SNI：像素字节数 = 宽×高×4（不补行对齐）",
+                bytes.size() == 2 * 1 * 4);
+            const QList<TraySni::Pixmap> pms = TraySni::encodePixmap(nonPremul);
+            check(log, "SNI：pixmap 元素带对宽高与字节",
+                pms.size() == 1 && pms.first().width == 2 && pms.first().height == 1
+                    && pms.first().bytes == expect);
+        }
+
+        // ⑫ ★★ 像素数组必须能**原样穿过 Qt 真实的 D-Bus 序列化路径**。
+        //   ⚠⚠ **这里测的是「Qt 怎么把一个 QVariant 写上线」**，不是我们自己手写的那段：
+        //   曾经的错法是给 `QList<Pixmap>` 注册 marshall operators ⇒ Qt 走
+        //   「demarshal → marshal」转换，撞上**写模式**的 QDBusArgument
+        //   （Qt 会打印 “read from a write-only object”）⇒ 像素被编成**全 0**。
+        //   实测后果：总线上的 IconPixmap 是 32×32 但**每字节都是 0**（透明图）
+        //   ⇒ 宿主拿到空图 ⇒ 托盘里不画它。**而我们的内部值完全正确** ⇒ 极难查。
+        //   ⇒ 判据必须走**同一条路**（QVariant → QDBusMetaType::marshall），
+        //     否则这个错法在自检里分叉不出来（判据与错误实现不分叉 = 白测）。
+        {
+            // ⑫ ★ D-Bus 签名必须**显式声明**：结构体签名推不出来
+            //   ⇒ 不声明的话宿主会按 `av` 解，拿到一堆 variant 而不是像素数组
+            //   ⇒ 表现为「读到了 IconPixmap，但没有像素」。
+            //   ⚠⚠ **这里测不了「字节有没有被编坏」**：`QDBusArgument` 写完就是
+            //   **只写**的（「read from a write-only object」）⇒ 同一份数据读不回来。
+            //   ⇒ 字节级的端到端判据只能放**真机探针**（外部进程读总线），
+            //     放这里只会得到一个「永远红/永远绿」的假判据。
+            platform::registerTraySniDBusTypes();
+            const QByteArray pixSig =
+                QDBusMetaType::typeToSignature(QMetaType::fromType<TraySni::Pixmap>());
+            const QByteArray listSig =
+                QDBusMetaType::typeToSignature(QMetaType::fromType<QList<TraySni::Pixmap>>());
+            check(log, "SNI：pixmap 的 D-Bus 签名是 (iiay) / 数组是 a(iiay)（宿主按这个解）",
+                pixSig == QByteArrayLiteral("(iiay)")
+                    && listSig == QByteArrayLiteral("a(iiay)"));
+        }
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

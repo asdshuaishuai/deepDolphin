@@ -276,6 +276,18 @@ static int headlessPlatformProbe(int argc, char *argv[])
                 ins.bottom);
         }
 
+        // SNI 托盘（批 X · M1-3）：这台机器的托盘认 SNI 吗？我们的项登记上了吗？
+        // ⚠ DDE 上 `QSystemTrayIcon` **一个像素都不显示**（实测：`_NET_SYSTEM_TRAY_S0`
+        //   选区不存在 ⇒ 没有 XEmbed 宿主）⇒ 托盘能不能出现，全看 SNI 这条路通不通。
+        {
+            const platform::TraySniStatus sni = platform::probeTraySni();
+            fprintf(stdout, "sniWatcher=%d\n", sni.watcherPresent ? 1 : 0);
+            fprintf(stdout, "sniHost=%d\n", int(sni.host));
+            fprintf(stdout, "sniHostItems=%d\n", int(sni.hostItems.size()));
+            if (!sni.error.isEmpty())
+                fprintf(stdout, "sniError=%s\n", qPrintable(sni.error));
+        }
+
         // DDE 面板真几何（批 W · M1-8）：面板**自己**报的几何（D-Bus），
         // 以及由此算出的可用区与**托盘弹窗落点**。
         // ⚠ 探针是「一次性、无交互」的无头工具 ⇒ 这里**同步读**是安全的

@@ -84,6 +84,51 @@ arch_need_count() { # arch_need_count <文件> <正则> <期望次数> <说明>
         ARCH_FAIL=1
     fi
 }
+# arch_need_count_in_fn：盯「**某个函数体内**恰好出现 N 次」。
+# ⚠ 为什么还需要它（批 X 踩到，第九次「同名/子串互相顶替」）：
+#   同一批属性名在一个文件里**合法地出现多处** ——
+#   `requiredProperties()`（必填表）里列 IconPixmap/AttentionIconPixmap/OverlayIconPixmap，
+#   `hostReadProperties()`（宿主会读的属性表）里**也**列这三个（实测宿主确实读它们），
+#   平台层 `propertyValue()` 里三处 + PropertiesChanged 通知里两处。
+#   ⇒ 全文计数（arch_need_count）必然 > 期望值 ⇒ 门恒红；
+#   而如果把期望值调大到「全文次数」，变异掉「必填表里少一个」就**照样绿** —— 门被骗过。
+#   ⇒ 必须把计数范围收窄到**具体那个函数体**：范围用「签名行（行首锚定）+ 花括号配平」切，
+#   避免匹配到调用处（`g_item->propertyValue(...)`）而算错范围。
+arch_need_count_in_fn() { # arch_need_count_in_fn <文件> <签名正则> <正则> <期望次数> <说明>
+    local f="$1" sig="$2" re="$3" want="$4" label="$5"
+    ARCH_N=$((ARCH_N + 1))
+    if [ ! -f "$f" ]; then
+        echo "  ✗ $label：文件不存在 $f" >&2
+        ARCH_FAIL=1
+        return
+    fi
+    local body got
+    body="$(strip_comments "$f" | awk -v sig="$sig" '
+        !started && $0 ~ sig { started = 1; depth = 0; seenb = 0 }
+        started {
+            t = $0
+            ob = gsub(/\{/, "", t)
+            cb = gsub(/\}/, "", t)
+            depth += ob - cb
+            print
+            if (depth > 0) seenb = 1
+            if (seenb && depth <= 0) exit
+        }
+    ')"
+    if [ -z "$body" ]; then
+        echo "  ✗ $label：$f 里找不到函数 $sig" >&2
+        ARCH_FAIL=1
+        return
+    fi
+    got="$(printf "%s\n" "$body" | grep -oE -- "$re" | grep -c . || true)"
+    got="${got:-0}"
+    if [ "$got" = "$want" ]; then
+        echo "  ✓ $label"
+    else
+        echo "  ✗ $label：$f 的 $sig 函数体里 $re 出现 $got 次（期望 $want 次）" >&2
+        ARCH_FAIL=1
+    fi
+}
 # arch_forbid：盯「**不该有的东西没了**」—— 收敛类改动光靠 arch_need（查「在」）
 # 看不出来：把写死的色值又写回去，「它还在」这件事没有正向条目能抓。
 arch_forbid() { # arch_forbid <文件> <正则> <说明>
@@ -722,4 +767,108 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：取数/判定/渲染/接线任一段被摘掉" >&2
     exit 1
 fi
-echo "✓ 接线完整（取数 → 判定 → 渲染 → 接线，${ARCH_N} 项）"
+# ⚠ 这里报的是**本段**的项数（批 X 段还没跑）⇒ 末尾那行才报**总项数**。
+#   批 X 照出：文档里写的「N 项」原先**没法自证** —— 脚本自己报的那个数
+#   是中途的计数，批 X 段又加了项却没报总账 ⇒ 「371 项」这种说法不可核。
+#   ⇒ 末尾统一报总项数（见文件末尾）。
+echo "✓ 接线完整（取数 → 判定 → 渲染 → 接线，前段 ${ARCH_N} 项）"
+
+# ── 批 X · M1-3 SNI 托盘（DDE 只认 SNI；旧协议一个像素都不显示）──────
+# 实测事实（批 X 照出来的，写进门项的依据）：
+#   ① DDE 的 `_NET_SYSTEM_TRAY_S0` 选区**不存在** ⇒ 没有 XEmbed 宿主
+#      ⇒ `QSystemTrayIcon` 在 DDE 上**一个像素都不显示**（全屏差分 0 像素）；
+#   ② DDE 的 watcher 是 **ayatana 变体**（单参数注册 + 已注册项是属性 + ProtocolVersion 0）；
+#   ③ 宿主注册后主动读 IconPixmap/AttentionIconPixmap/OverlayIconPixmap
+#      —— **缺一个当场被注销**（实测：发 Unregistered）；
+#   ④ Qt 6.8 的 `Q_PROPERTY` 导出在处理**外来进程**的 `Properties.Get` 时会**静默退出**
+#      ⇒ 必须用 `QDBusVirtualObject`（`registerVirtualObject`）。
+arch_need "$SRC/src/logic/TraySni.h" 'namespace TraySni [{]' 'SNI 判定层有自己的命名空间'
+# ⚠ token 边界：`enum class Host` 后面必须跟 `{`（少了它 `enum class HostX` 照样匹配）
+arch_need "$SRC/src/logic/TraySni.h" 'enum class Host [{]' 'SNI 判定层有 host 变体枚举'
+arch_need "$SRC/src/logic/TraySni.h" 'enum class Registration [{]' 'SNI 判定层有注册方式枚举'
+arch_need "$SRC/src/logic/TraySni.cpp" 'Host classifyHost\(const HostCaps &caps\)' 'host 变体判定有唯一入口'
+arch_need "$SRC/src/logic/TraySni.h" 'Registration registrationFor\(Host host\)' '注册方式判定有唯一入口'
+arch_need "$SRC/src/logic/TraySni.h" 'QString registrationArgument\(' '注册参数取值有唯一入口'
+arch_need "$SRC/src/logic/TraySni.h" 'QStringList requiredProperties\(\)' '必填属性表有唯一入口'
+arch_need "$SRC/src/logic/TraySni.h" 'QStringList missingRequired\(' '缺属性诊断有唯一入口'
+arch_need "$SRC/src/logic/TraySni.h" 'QByteArray encodeArgb32NetworkOrder\(' '像素编码有唯一入口'
+
+# ⚠⚠ **像素编码不许直接读原始字节**：`QIcon::pixmap().toImage()` 是**预乘**格式，
+#   按非预乘去解释会读出一堆错值 ⇒ 整张图编成全 0 的透明图 ⇒ 宿主拿到空图就不画它
+#   （实测踩过）。必须先 convertToFormat 再按 0xAARRGGBB 取值。
+arch_forbid "$SRC/src/logic/TraySni.cpp" 'constScanLine' '像素编码不直接读原始字节（预乘图会读错）'
+arch_need "$SRC/src/logic/TraySni.cpp" 'convertToFormat\(QImage::Format_ARGB32\)' '像素编码先转成非预乘 ARGB32'
+arch_need "$SRC/src/logic/TraySni.cpp" 'argb\.pixel\(x, y\)' '像素编码按 0xAARRGGBB 取值（不依赖平台字节序）'
+
+# ⚠⚠ **必须用 registerVirtualObject**：`registerObject` + `Q_PROPERTY` 那条路，
+#   在处理**外来进程**的 Properties.Get 时会让进程静默退出（名字失去 owner ⇒ 被注销）。
+arch_need "$SRC/src/platform/TraySni.cpp" 'registerVirtualObject' 'SNI 对象用 registerVirtualObject 导出'
+arch_forbid "$SRC/src/platform/TraySni.cpp" 'registerObject' 'SNI 对象不用 registerObject（外来调用会静默退出）'
+# 宿主注册后主动读这三个 pixmap 属性 ⇒ 缺一个当场被注销 ⇒ 三个都得暴露。
+# ⚠ 计数范围**只取 requiredProperties() 函数体**：hostReadProperties() 里复用同一份表，
+#   平台层也有同名字面量 ⇒ 全文计数必然对不上（第九次「同名互相顶替」）。
+arch_need_count_in_fn "$SRC/src/logic/TraySni.cpp" '^[[:space:]]*QStringList requiredProperties\(\)' 'QStringLiteral\("IconPixmap"\)|QStringLiteral\("AttentionIconPixmap"\)|QStringLiteral\("OverlayIconPixmap"\)' 3 '判定层必填表里三个 pixmap 属性都在（缺一个当场被注销）'
+arch_need "$SRC/src/logic/TraySni.h" 'QString primaryPixmapProperty\(\)' '主图标 pixmap 属性名有唯一入口'
+# ⚠ 「宿主会读的属性表」必须**复用**必填表 —— 两张表各写一份时，
+#   改了必填表忘了改读表 ⇒ 宿主读到一个我们没暴露的属性 ⇒ 当场被注销。
+arch_need_count_in_fn "$SRC/src/logic/TraySni.cpp" '^[[:space:]]*QStringList hostReadProperties\(\)' 'requiredProperties\(\)' 1 '宿主会读的属性表复用必填表（改一张表不会漏另一张）'
+# ⚠⚠ **pixmap 属性名只能有一处真相源**（判定层的必填表）：
+#   平台层若自己再写一份「IconPixmap」字面量，两处迟早走偏 ——
+#   改了一处忘了另一处 ⇒ 宿主按 introspect XML 找不到属性 ⇒ 当场注销我们
+#   （真缺陷，且肉眼看代码极难发现：两个字符串长得一样）。
+arch_need "$SRC/src/platform/TraySni.cpp" 'TraySni::requiredProperties\(\)' '平台层用判定层的必填属性表'
+arch_forbid "$SRC/src/platform/TraySni.cpp" 'QStringLiteral\("IconPixmap"\)|QStringLiteral\("AttentionIconPixmap"\)|QStringLiteral\("OverlayIconPixmap"\)' '平台层不硬写 pixmap 属性名（真相源唯一）'
+# ⚠ 平台层必须**逐个**暴露这三个属性（宿主读不到就注销）⇒ propertyValue() 里按必填表分发。
+arch_need_count_in_fn "$SRC/src/platform/TraySni.cpp" '^[[:space:]]*bool propertyValue\(' 'pixProps\.contains\(prop\)' 1 '平台层按必填表逐个暴露三个 pixmap 属性（宿主读不到就注销）'
+# introspect XML 必须**按必填表生成**三个 pixmap 声明（宿主按 XML 找属性，缺了直接不读）。
+arch_need_count_in_fn "$SRC/src/platform/TraySni.cpp" '^[[:space:]]*QString introspect\(' 'TraySni::requiredProperties\(\)' 1 '平台层 introspect 按必填表生成三个 pixmap 声明'
+# D-Bus 读必须带超时：`QDBusInterface::property()` 没有超时参数 ⇒ 禁用。
+arch_need "$SRC/src/platform/TraySni.cpp" 'QDBus::Block, 2000' 'watcher 读带 2s 超时（不卡 GUI 线程）'
+arch_forbid "$SRC/src/platform/TraySni.cpp" 'QDBusInterface::property|\.property\(' 'watcher 读不用无超时的 property()'
+# 结构体签名推不出来 ⇒ 必须显式注册（否则 D-Bus 侧签名是空的）。
+arch_need "$SRC/src/platform/TraySni.cpp" 'registerCustomType' '自定义结构体显式注册 D-Bus 签名'
+
+# ⚠⚠ **托盘图标绘制必须用 QRect 重载**：`drawEllipse(qreal,qreal,qreal,qreal)` 的
+#   前两个参数是**圆心**不是左上角 ⇒ 旧写法把圆画到画布外 ⇒ **图标一直是空白的**
+#   （实测：中心像素 0x00000000；这跟平台无关，所有桌面都是空白图标）。
+# ⚠ 门项盯「**两处**都是 QRect 重载」：只盯「至少有一处」的话，
+#   把**其中一处**改回圆心语义（负控实测）门照样绿 ⇒ 门被骗过。
+arch_need_count "$SRC/src/tray/TrayController.cpp" 'drawEllipse\(QRect\(' 2 '托盘图标用 QRect 重载画圆（int 重载是圆心语义）·两处都是'
+arch_forbid "$SRC/src/tray/TrayController.cpp" 'drawEllipse\(TrayGeometry::icon' '托盘图标不按圆心语义画圆（会画到画布外）'
+
+# SNI 与旧协议**二选一**：DDE 上旧的画不出来，两套并存等于多一个空图标。
+arch_need "$SRC/src/tray/TrayController.cpp" 'platform::probeTraySni\(\)' '托盘控制器先探桌面是不是 SNI 托盘'
+# ⚠ 「是不是 SNI 托盘」必须**由探针结果决定** —— 写死 true/false 都等于没探
+#   （负控实测：把探针调用留着、但把判定写死，门照样绿 ⇒ 门被骗过）。
+arch_need "$SRC/src/tray/TrayController.cpp" 'm_sniMode = m_sniStatus\.watcherPresent' 'SNI 模式由探针结果决定（不写死）'
+arch_need "$SRC/src/tray/TrayController.cpp" 'platform::publishTraySni\(' 'SNI 模式经平台层发布'
+arch_need "$SRC/src/platform/TraySni.h" 'TraySniStatus publishTraySni\(' 'SNI 发布有唯一入口'
+
+# 判据/探针可见面
+arch_need "$SRC/src/app/SelfCheck.cpp" 'TraySni::classifyHost\(' 'SelfCheck 覆盖 host 变体判定'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'TraySni::encodeArgb32NetworkOrder\(' 'SelfCheck 覆盖像素编码'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'TraySni::requiredProperties\(' 'SelfCheck 覆盖必填属性表'
+arch_need "$SRC/src/main.cpp" 'sniWatcher=' '无头探针报出 SNI watcher 状态'
+arch_need "$SRC/src/main.cpp" 'sniHost=' '无头探针报出 host 变体'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'typeToSignature' 'SelfCheck 覆盖 D-Bus 签名声明（不声明宿主会按 av 解）'
+
+# ⚠⚠ **字节级判据只能放真机端到端探针**：`--selfcheck` 跑在 QApplication 构造之前
+#   ⇒ 没有总线；且 `QDBusArgument` 一旦写入就是**只写**的 ⇒ 同一份数据读不回来
+#   ⇒ 放 selfcheck 里只会得到一个「永远红/永远绿」的假判据。
+#   ⇒ 探针必须**从总线另一端**（外部进程 gdbus）读 IconPixmap。
+arch_need "$SRC/scripts/probe-sni-icon.sh" 'IconPixmap' '端到端探针脚本在（字节级判据放真机探针）'
+# ⚠ 探针必须统计**整张图**的非零字节 —— 只看开头几行会误判：
+#   圆形图标的**边缘像素本来就是透明的**（实测踩过：据此误判成「整张全 0」）。
+arch_need "$SRC/scripts/probe-sni-icon.sh" '非零字节' '探针统计整张图非零字节（不靠肉眼看开头几行）'
+
+# ⚠⚠⚠ **脚本必须以门的结果退出**（批 X 照出）：
+#   批 X 的门项在「接线完整（…）」那段**之后**，而那段自己 `exit 1` ——
+#   于是**批 X 的门项红了，脚本退出码仍是 0** ⇒ CI 里这一门**形同虚设**
+#   （负控实测：门项明明打 ✗，判定却读成「没红」）。
+#   ⇒ 末尾必须显式 `exit $ARCH_FAIL`。
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 X 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 X 段门项全绿（SNI 托盘）；门项合计 ${ARCH_N} 项（含前段）"
+exit 0

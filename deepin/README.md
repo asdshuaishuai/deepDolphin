@@ -970,6 +970,9 @@ deepin 接进 GUI 属**领先 mac**。
 | 235 | **面板读放 worker 线程 + 缓存**（交互路径不阻塞 GUI） | D-Bus 的属性读是**同步往返**。放在「用户点托盘」那一刻读，面板服务卡住就卡 GUI（最深 2s 冻结）。⇒ 启动时异步读一次，结果回 GUI 线程存缓存 | 弹窗用的是**上一次**读到的值 ⇒ 面板挪边后**第一次**弹可能偏（低频动作，可接受）；缓存只写在 GUI 线程 ⇒ 无需加锁 |
 | 236 | **托盘弹窗落点按面板位置定**：面板在下 ⇒ 弹窗在面板**上方**、右对齐 | DDE 的系统托盘是 **SNI**（宿主是 `org.deepin.dde.TrayManager1`）⇒ `QSystemTrayIcon::geometry()` **恒为无效矩形** ⇒ 托盘坐标**一直**拿不到（不是边角情况，是常态）⇒ 旧实现只能瞎猜「屏幕右上」。而托盘在**底部**任务栏里（DDE 默认布局，position=2）⇒ 弹窗落在**离托盘图标很远**的屏幕右上角。实测：旧落点 (1523,32) ⇒ 新落点 (1524,731)（面板正上方） | 多一个面板分支；**读不到面板时退回旧行为（一字未改）** |
 | 237 | **弹窗失焦收起加应用级兜底**（`applicationStateChanged`），且**只在转成 Inactive 时**收起 | Wayland 上失焦事件可能**不送达**（合成器不给 focus 变化）⇒ 弹窗赖在屏幕上不走。应用级失焦是一定会来的信号 ⇒ 用它兜底。⚠ 判据：只在**转成 Inactive** 时收起 ⇒ 弹窗刚弹出、应用还没被激活时**不会**被误收起 | ⚠ **已知局限**：若应用从未被激活（Wayland 下 `requestActivate` 失败），应用级状态**没有变化** ⇒ 兜底不触发（仍靠 `WindowDeactivate` 或用户点到别处） |
+| 238 | **托盘图标画圆必须用 `QRect` 重载**：`drawEllipse(qreal,qreal,qreal,qreal)` 的**前两参是圆心**不是左上角 ⇒ 旧写法把圆画到画布外 ⇒ **托盘图标一直是空白** | 测**中心与环上两个像素**（不是眼睛看图：圆心语义与画到画布外，肉眼分不出）；实测旧写法中心 `0x00000000`、改后中心 `ffffffff`、环上 `f3959ba7` | ⚠ **与桌面无关** ⇒ mac/Linux 托盘图标此前**一直是空白**；门项盯「**两处**都是 QRect」（只盯「至少一处」的话，改坏其中一处门照样绿） |
+| 239 | **像素编码必须先转非预乘 ARGB32 再按 `pixel()` 取 0xAARRGGBB** | `QIcon::pixmap().toImage()` 是**预乘**格式（`Format_ARGB32_Premultiplied`），按非预乘去解释**读出来的不是那个颜色** ⇒ 半透明图标**颜色全错**（而长度不变 ⇒ 肉眼看图只觉得「颜色怪」，发现不了是协议层错了）⇒ 先 `convertToFormat(Format_ARGB32)` 再取值，**不依赖平台字节序** | 判据用**非对称**夹具（四通道互不相等）且**预乘/非预乘两种源格式都测**（只测非预乘的话，这个错法分叉不出来）；⚠ 夹具必须用 `QPainter` 造 —— `QImage::setPixel` 往预乘图里写的是**未预乘**数值 |
+| 240 | **判据分层：字节级判据只能放真机端到端探针**（`scripts/probe-sni-icon.sh`） | `--selfcheck` 跑在 QApplication 构造**之前** ⇒ 没有总线；且 `QDBusArgument` 一旦写入就是**只写**的（「read from a write-only object」）⇒ 同一份数据在进程内**读不回来** ⇒ 放 selfcheck 里只会得到一个「永远红/永远绿」的假判据 ⇒ 判据必须**从总线另一端**（外部进程 `gdbus`）读 `IconPixmap` | 探针统计**整张图**的非零字节（只看开头几行会误判：圆形图标**边缘像素本来就是透明的** —— 批 X 据此误判过一次「整张全 0」）；另外**接线门脚本必须以门的结果退出**（批 X 照出：门项打 ✗ 但脚本退出码仍是 0 ⇒ 这一门在 CI 里形同虚设） |
 
 **本批验证**（全部实跑）：`--selfcheck` **205 通过 0 失败**（198 → 205，+7 例：id 取名字 / 概览解析 /
 概览契约不对时报错 / 符号详情解析 / 符号不存在是「没找到」不是错误 / 影响面解析 / 影响面契约不对时报错）；
@@ -1656,6 +1659,94 @@ libdbus 的「type struct 114 not a basic type」并 **abort**（探针直接 SI
 失焦事件是否真的不送达）**无法实跑验证**；真机 DDE 桌面上的弹窗观感未复核
 （本批全部离屏/探针验证）。已知局限：若应用从未被激活（Wayland 下激活可能失败），
 应用级状态**没有变化** ⇒ 失焦兜底不触发（仍靠 `WindowDeactivate` 或用户点到别处）。
+
+### 批 X：M1-3 迁 SNI —— 实现做成了，**但端到端没达成**（并照实推翻批 W 的一个结论）
+
+决策见上表 **238–240**（托盘图标画圆要用 `QRect` 重载 / 像素编码要先转非预乘 /
+判据分层：字节级判据只能放真机端到端探针）。
+
+**做了什么**：新增判定层 `src/logic/TraySni.{h,cpp}`（纯结论、零 QWidget、零 QDBus）——
+`enum class Host { None, Ayatana, Kde }` + `classifyHost()`（ayatana 变体的判据是
+「单参数注册 + 已注册项是属性 + ProtocolVersion 0」）+ 注册方式判定 + **必填属性表**
+（三个 pixmap 是**入场券**，缺一个当场被注销）+ 像素编码（ARGB32、**网络字节序**）；
+新增平台层 `src/platform/TraySni.{h,cpp}` —— `QDBusVirtualObject` 导出的最小
+`org.kde.StatusNotifierItem`（手写 introspect XML + `Properties.Get/GetAll` +
+`Activate/ContextMenu`）、注册到 watcher、补发 `NewIcon`/`PropertiesChanged`；
+`TrayController` 改成**探到 SNI 就走 SNI、不建 `QSystemTrayIcon`**（二选一，不并存）；
+`--platform-probe` 增报 `sniWatcher` / `sniHost` / `sniHostItems` / `sniError`；
+新增真机端到端探针 `scripts/probe-sni-icon.sh`。
+
+**照实推翻批 W 的一个结论**：批 W 记的是「DDE 走**旧托盘协议**，我们**没有**注册成
+SNI 项」⇒ 据此把 M1-3 判成「迁 SNI 只剩保住图标颜色」。批 X 实测：
+**我们能注册成 SNI 项**（watcher 的 `RegisteredStatusNotifierItems` 里有
+`org.deepin.deepDolphin/StatusNotifierItem`），宿主也**确实**按标准 SNI 读了 8 个属性
+（Id → Menu → IconPixmap → AttentionIconPixmap → OverlayIconPixmap → ToolTip →
+IconName → IconThemePath，`dbus-monitor` 全量抓包）并订阅了变化信号 ⇒ 批 W 那条观察
+**只对当时的测试程序成立**。但**端到端仍未达成**：DDE 25 托盘区画出来的是**应用自绘的
+X11 窗口**（`org.deepin.dde.TrayManager1.TrayIcons` 里是两个 16×16 的窗口 id，
+窗口名 = 应用名）⇒ 我们的项注册成功却**不显示**（全屏差分 0 像素，已排除鼠标光标位移）。
+⇒ M1-3 的正确解法**不是**「迁 SNI」，而是**按 deepin 的托盘窗口协议注册**
+（自绘 16×16 X11 窗口 + `TrayManager1.Manage`）⇒ 风险由「中」**回升为「高（路径要重做）」**。
+详见 `docs/PARITY-LEDGER.md` E.1g。
+
+**修掉两个真缺陷**（都与桌面无关 ⇒ 各平台都受益）：① `drawEllipse(qreal,qreal,qreal,qreal)`
+的**前两参是圆心** ⇒ 旧写法把圆画到画布外 ⇒ **托盘图标一直是空白**（实测中心像素
+`0x00000000`，改后 `ffffffff`）；② 像素编码按非预乘去读**预乘**数据（`QIcon::pixmap().toImage()`
+就是 `Format_ARGB32_Premultiplied`）⇒ 半透明图标**颜色全错**（长度不变 ⇒ 肉眼看图只觉得
+「颜色怪」，发现不了是协议层错了）。
+
+**本批验证**（全部实跑）：`--selfcheck` **338 通过 0 失败**（322 → 338，+16 例）；
+`ci-wiring.sh` **375 项**（337 → 375，+38 项）；`ci.sh` **11/11 门全绿**
+（`contract-check` 109/109、deb 打包通过）；真机端到端探针
+`scripts/probe-sni-icon.sh` 通过（总线 `IconPixmap` 32×32 / 4096 字节 / **非零 1936**）；
+**负控 13 处真红**（接线门 8 + selfcheck 2 + 端到端探针 3）。
+**视觉零变化**（`docs/snapshots` 逐张未动 ⇒ 本批只加托盘接线与判据，不动面板像素）。
+
+**本批踩到并修掉的坑**（实测撞出来的，含**我自己的误判**）：
+① **我自己的期望串写错了** —— 盯着 `dbus-monitor` 输出的**开头几行**看到一片 `00` 就断言
+「`IconPixmap` 被编成全 0」；**错**：圆形图标的**边缘像素本来就是透明的**，把**整张图**的
+非零字节数统计出来是 **1948/4096**（真图）⇒ 「全 0」结论作废，还差点照着它去改
+marshaller（改完对照实测**没有区别**）。⇒ 判据必须统计**整张**，不能看开头几行；
+⚠ 顺带记一笔：这个数是**取样值**，不是定值 —— 抗锯齿的边缘像素会让它在**十几个字节**范围内
+浮动（另一轮实测是 1936）⇒ 探针判的是「非零 **> 0**」而不是「= 某个数」，
+这才是该写的判据（把取样值写死成期望值 ⇒ 换个环境必假红）；
+② **接线门脚本红了却不报失败** —— 批 X 的门项在「接线完整（…）」那段**之后**，而那段自己
+`exit 1` ⇒ 门项打 ✗ 但**脚本退出码仍是 0** ⇒ 这一门在 CI 里形同虚设（负控判定读成
+「没红」才暴露）⇒ 末尾补 `exit $ARCH_FAIL`；
+③ **同名多处互相顶替**（累计第九次）—— 三个 pixmap 属性名在判定层/平台层**各有多处**，
+全文计数门必然对不上 ⇒ 新增 `arch_need_count_in_fn`（按「签名行 + 花括号配平」切出
+**具体函数体**再数）；
+④ **门项盯「至少一处」不够** —— `drawEllipse(QRect(` 只盯「出现过」的话，把**其中一处**改回
+圆心语义门照样绿 ⇒ 改成「**两处**都是」；
+⑤ **`QDBusArgument` 写完就是只写的**（「read from a write-only object」）⇒ 同一份数据在
+进程内**读不回来** ⇒ 字节级判据**放 selfcheck 里只会得到假判据** ⇒ 只能做**真机端到端探针**
+（外部进程 `gdbus` 从总线另一端读）；
+⑥ **`QDBusMetaType::registerCustomType` 的签名必须显式声明** —— 结构体签名推不出来，
+不声明宿主会按 `av` 解，拿到一堆 variant 而不是像素数组；
+⑦ **负控的变异点也必须命中「真代码」那一行** —— `registerVirtualObject` 在
+`src/platform/TraySni.cpp` 里出现 **2 次**：第 1 次在**注释**（「见头文件约束①」）、
+第 2 次才是 `bus.registerVirtualObject(...)` 真调用。负控原先写
+`replace('registerVirtualObject', 'registerObject')` ⇒ **只换第一处** ⇒ 动的是注释、
+真代码**没动** ⇒ 接线门照样全绿（门会 `strip_comments`）⇒ 差点把「门被骗过」误判成
+「门没问题」（**门是对的，是负控自己没打到点上**）⇒ 变异必须用**精确代码串**定位；
+⚠ 而且**不能**直接换名：`registerObject(path, obj, SingleNode)` **编不过**
+（`SingleNode` 是 `VirtualObjectRegisterOption`，而 `registerObject` 收的是
+`RegisterOptions`）⇒ 那不是「真的错误实现」而是编译错误，负控无效
+⇒ 改成**编得过但真的错**的 `registerObject(path, obj)`：走普通 QObject 导出
+（我们的 `SniItemObject` 没有 `Q_PROPERTY` ⇒ 导出的是**空接口**）
+⇒ 宿主读不到任何属性 ⇒ 注册了也白注册（正是门项要防的那条路）；
+⑧ **门自己报的项数不可信 ⇒ 文档里的「N 项」就不可核** —— `ci-wiring.sh` 的
+「接线完整（…，N 项）」那行打在**中途**，报的是**批 X 段之前**的计数；批 X 段又加了
+38 项却没报总账 ⇒ 我先前写进文档的「371 项」**实测是 375 项**（差 4），
+而**光看门输出永远发现不了这个差**（中途那行和末尾那行都"看着像"总数）
+⇒ 末尾改成报**总项数**（`门项合计 ${ARCH_N} 项（含前段）`），文档改成 375。
+⚠ 这条是**自己写文档时核出来的**：门全绿、负控全红，**都不能保证文档里的数对**。
+
+**未完成（照实记录）**：**M1-3 端到端未达成**（本批交付的是**跨平台正确**的 SNI 实现 +
+两个真缺陷修复；DDE 侧下一步是改走 `TrayManager1` 窗口注册）。
+⚠ 另有一个**独立于本批**的环境事实：托盘区那 3 个圆是**空的深灰占位圆**（图标内容没
+渲染出来）⇒ **本机 deepin 25 的托盘图标渲染本身也是坏的** ⇒ 「图标有没有出现」这个
+判据在本机**不能单独采信**，必须与 `TrayManager1.TrayIcons` 列表 / `Added` 信号一起看。
 
 ## 分层纪律（后续阶段必须延续）
 
