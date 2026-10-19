@@ -7,6 +7,7 @@
 #include "../logic/Derived.h"
 #include "../logic/DocPages.h"
 #include "../logic/DocumentIntegrity.h"
+#include "../logic/EngineDoctor.h"
 #include "../logic/GraphToken.h"
 #include "../logic/GraphInsight.h"
 #include "../logic/HeatLayout.h"
@@ -1003,6 +1004,19 @@ int SelfCheck::run(QStringList &log)
                 && EngineCli::stdoutSatisfies(EngineCli::OutputMode::Json, QStringLiteral("{\"v\":1}")));
         check(log, "输出契约：Json 模式空 stdout = 契约破坏（不是合法空态）",
             !EngineCli::stdoutSatisfies(EngineCli::OutputMode::Json, QString()));
+        // ── 回执通道：stdout 优先，stdout 空时取 stderr ──
+        // ⚠ 引擎的 `report` 把「报告已生成：<路径>」写在 **stderr**
+        //   （`arch gen` / `render arch` 才在 stdout —— 实测 2026-10-19）。
+        //   只认 stdout 的话，report 会被判成「引擎没有回执（退出码 0）」：
+        //   **明明成功却说失败**，报告其实已经落盘了。
+        check(log, "输出契约：回执通道 stdout 优先（stdout 非空时不看 stderr）",
+            EngineCli::receiptText(QStringLiteral("架构已生成：首版"), QStringLiteral("报告已生成：/x.md"))
+                == QStringLiteral("架构已生成：首版"));
+        check(log, "输出契约：stdout 空时回执取 stderr（引擎 report 把回执写 stderr）",
+            EngineCli::receiptText(QString(), QStringLiteral("报告已生成：/x/report-1.md"))
+                == QStringLiteral("报告已生成：/x/report-1.md"));
+        check(log, "输出契约：两路都空 = 没有回执（不回落成成功）",
+            EngineCli::receiptText(QStringLiteral("  \n "), QString()).isEmpty());
 
         // ── agent 工具表（纯函数，无头可判）──
         // 引擎 tools --json 声明 28 个工具；客户端必须**能执行全部 28 个**。
@@ -2097,6 +2111,113 @@ int SelfCheck::run(QStringList &log)
             const GraphInsight::Impact bad = GraphInsight::parseImpact(QJsonObject());
             check(log, "图谱三件套：影响面契约形状不对时报错", !bad.ok && !bad.error.isEmpty());
         }
+    }
+
+    // ── 引擎自检（doctor）与进度报告（report）──
+    // 判据盯三处「错得毫无声响」的口径：
+    //   ① 「发现问题」≠「命令失败」：引擎 doctor 有问题时**退出码是 1**，
+    //      但 stdout 仍是合法 JSON —— 报告有效 ≠ 一切正常。
+    //   ② `result` 是**自由文本**（"OK"/"1 个失效"/"无"/"项目外"/"未创建"），
+    //      按 `result == "OK"` 判健康会把「注册项目 1 个」误报成故障。
+    //   ③ 引擎没发 `problems` 键时**不回落成 0**（那会把「没说」说成「没事」）。
+    {
+        // 正常载荷（真引擎 2026-10-19 实测形态）
+        const EngineDoctor::Report clean = EngineDoctor::parse(JO(R"JSON({
+  "checks": [
+    {"check": "git", "result": "OK", "detail": "git version 2.39.5"},
+    {"check": "数据目录", "result": "OK", "detail": "/home/u/.deepgit"},
+    {"check": "注册项目", "result": "0", "detail": "用 `moongit scan` 添加"},
+    {"check": "路径有效", "result": "OK", "detail": ""},
+    {"check": "当前目录", "result": "项目外", "detail": "/home/u/code"},
+    {"check": "临时残留", "result": "无", "detail": "无"}
+  ],
+  "problems": 0
+})JSON"));
+        check(log, "引擎自检：载荷解析（检查项逐条 + 引擎口径的问题数）",
+            clean.ok && clean.checks.size() == 6 && clean.problems == 0
+                && clean.checks.at(0).name == QStringLiteral("git")
+                && clean.checks.at(0).result == QStringLiteral("OK")
+                && clean.checks.at(0).detail == QStringLiteral("git version 2.39.5")
+                && clean.checks.at(2).result == QStringLiteral("0"));
+        // ② 自由文本：「注册项目 0」「临时残留 无」「当前目录 项目外」都不是 "OK"，
+        //    但引擎的问题数是 0 —— 客户端若自己数「非 OK 的项」就会误报故障。
+        check(log, "引擎自检：result 是自由文本（result != \"OK\" 不等于有问题）",
+            !clean.hasProblems() && EngineDoctor::toneOf(clean) == EngineDoctor::Tone::ok);
+        check(log, "引擎自检：摘要按引擎口径（不是按「非 OK 的项数」）",
+            EngineDoctor::summary(clean) == QStringLiteral("6 项检查 · 0 个问题"));
+
+        // 真有问题的一档：引擎 problems=1，**退出码是 1**（自检必须能失败）
+        const EngineDoctor::Report bad = EngineDoctor::parse(JO(R"JSON({
+  "checks": [
+    {"check": "git", "result": "OK", "detail": "git version 2.39.5"},
+    {"check": "路径有效", "result": "1 个失效", "detail": "atlas"}
+  ],
+  "problems": 1
+})JSON"));
+        check(log, "引擎自检：有问题时仍是一份**有效报告**（退出码 1 ≠ 报告读不出来）",
+            bad.ok && bad.hasProblems() && bad.problems == 1
+                && EngineDoctor::toneOf(bad) == EngineDoctor::Tone::problem
+                && EngineDoctor::summary(bad) == QStringLiteral("2 项检查 · 1 个问题"));
+
+        // ③ 缺 problems 键 → **不回落成 0**（回落会把「引擎没说」说成「没问题」）
+        const EngineDoctor::Report noCount = EngineDoctor::parse(JO(R"JSON({
+  "checks": [{"check": "git", "result": "OK", "detail": "git version 2.39.5"}]
+})JSON"));
+        check(log, "引擎自检：缺 problems 键 → 记为「未知」而不是 0（缺字段不回落成 0）",
+            noCount.ok && noCount.problemsUnknown() && noCount.problems == -1
+                && !noCount.hasProblems()
+                && EngineDoctor::toneOf(noCount) == EngineDoctor::Tone::unknown
+                && EngineDoctor::summary(noCount).contains(QStringLiteral("问题数未知")));
+
+        // 契约形状不对（缺 checks 键）→ 报错，不当空报告放行
+        const EngineDoctor::Report broken = EngineDoctor::parse(JO(R"JSON({"problems": 0})JSON"));
+        check(log, "引擎自检：缺 checks 键 → 报错（不当成「0 项检查 · 没问题」）",
+            !broken.ok && !broken.error.isEmpty()
+                && EngineDoctor::toneOf(broken) == EngineDoctor::Tone::unreadable);
+
+        // 检查项行文：详情为空时不留悬空的「·」
+        const EngineDoctor::Check noDetail { QStringLiteral("路径有效"), QStringLiteral("OK"),
+            QString() };
+        const EngineDoctor::Check withDetail { QStringLiteral("git"), QStringLiteral("OK"),
+            QStringLiteral("git version 2.39.5") };
+        check(log, "引擎自检：检查项行文（空详情不留悬空分隔符）",
+            EngineDoctor::checkLine(noDetail) == QStringLiteral("路径有效 · OK")
+                && EngineDoctor::checkLine(withDetail)
+                    == QStringLiteral("git · OK · git version 2.39.5"));
+
+        // ── 进度报告回执（引擎 report 是**回执型命令**：stdout 是人话）──
+        // 引擎真实回执：「✓ 报告已生成：/abs/path/report-2026-10-19-1792422583649.md（1 个项目）」
+        // ⚠ 引擎**不认 NO_COLOR**（实测设了照样带色码）→ 显示前必须剥 ANSI。
+        const QString receiptText
+            = QStringLiteral("\x1b[32m✓\x1b[0m 报告已生成：/home/u/.deepgit/reports/report-1.md（1 个项目）");
+        const QString plainText = ArchReceipt::plain(receiptText);
+        check(log, "报告回执：剥掉 ANSI 颜色码（引擎不认 NO_COLOR，裸塞会显示成「[32m✓[0m」）",
+            !plainText.contains(QStringLiteral("\x1b")) && !plainText.contains(QStringLiteral("[32m"))
+                && plainText.startsWith(QStringLiteral("✓ 报告已生成：")));
+        check(log, "报告回执：抽出 .md 落盘绝对路径（「打开报告」入口全靠它）",
+            ArchReceipt::filePath(plainText, QStringLiteral(".md"))
+                == QStringLiteral("/home/u/.deepgit/reports/report-1.md"));
+        // 相对路径不认：打不开的路径等于坏按钮
+        check(log, "报告回执：相对路径不抽（打不开的路径等于坏按钮）",
+            ArchReceipt::filePath(QStringLiteral("报告已生成：reports/report-1.md"),
+                QStringLiteral(".md"))
+                .isEmpty());
+        // 后缀不匹配不抽：.html 的路径不能当成报告路径
+        check(log, "报告回执：后缀不对不抽（.html 不能当报告路径）",
+            ArchReceipt::filePath(QStringLiteral("已重绘：/tmp/x/arch.html"), QStringLiteral(".md"))
+                .isEmpty());
+        // ⚠ 后缀不同的两次抽取**互不污染**。这条钉的是一类「只有第一次对」的错误：
+        //   正则若被函数级 static 焊死成第一次的后缀，之后传 .md 也按 .html 找 ——
+        //   调用点与参数看着全对，只有行为不对（报告路径永远抽不到）。
+        //   所以两个后缀都抽一遍，且**顺序换过来也成立**。
+        check(log, "报告回执：后缀不同的两次抽取互不污染（.html 与 .md 各抽各的）",
+            ArchReceipt::filePath(QStringLiteral("已重绘：/tmp/x/arch.html"), QStringLiteral(".html"))
+                    == QStringLiteral("/tmp/x/arch.html")
+                && ArchReceipt::filePath(
+                       QStringLiteral("报告已生成：/tmp/x/report-1.md"), QStringLiteral(".md"))
+                    == QStringLiteral("/tmp/x/report-1.md")
+                && ArchReceipt::filePath(QStringLiteral("已重绘：/tmp/x/arch.html"), QStringLiteral(".md"))
+                    .isEmpty());
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

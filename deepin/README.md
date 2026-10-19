@@ -38,7 +38,7 @@ moonGit（仓颉引擎，仓内别名 deepgit）项目群进度客户端的 Linu
 | Dock 菜单（打开面板 / 全部浅更新） | 托盘菜单：打开面板 / 全部浅更新 + **退出**（Linux 托盘必须有退出项） | `tray/TrayController` |
 | 添加 / 扫描项目（`ScanSheet`） | ScanDialog + ScanCoverage 覆盖度披露接回主窗口说明条 | `ui/dialogs/ScanDialog`；`logic/ScanCoverage`、`PathInput` |
 | 深链启动参数（`Route.swift`） | `--project <名>`、`--section board\|milestones\|dashboard`、`--open-settings`、`--agent-selftest`；pendingRoute 消费一次即置闩 | `logic/Route`、`Router`；`PanelWindow::maybeApplyPendingRoute` |
-| 纯函数判定层（`client-check.sh` 单独编译断言） | `models/`、`logic/` 零 QWidget 头，判定收敛为二进制内置 `--selfcheck`（148 例） | `src/models/`、`src/logic/`、`app/SelfCheck` |
+| 纯函数判定层（`client-check.sh` 单独编译断言） | `models/`、`logic/` 零 QWidget 头，判定收敛为二进制内置 `--selfcheck`（220 例） | `src/models/`、`src/logic/`、`app/SelfCheck` |
 | 设置窗口（自动化 + AI） | 设置三页签（DTabBar+QStackedWidget）：通用 / 自动化（分段改完立即生效）/ AI | `ui/dialogs/panes/*` |
 | 快捷键（CommandMenu + ShortcutMap.swift） | QShortcut 全量真绑（含深更新——mac 曾「声明未绑」的缺陷不重犯） | `ui/PanelWindow.cpp:516`；`logic/ShortcutMap.h`（唯一声明处） |
 | 定时更新 + AI 简报 | autoHours 周期 + 首轮 600s；简报经通知；silent 场景不偷弹结果面板 | `app/AppModel.cpp:202`；`ai/AiDigests`（scheduledDigest） |
@@ -46,6 +46,8 @@ moonGit（仓颉引擎，仓内别名 deepgit）项目群进度客户端的 Linu
 | 双轨更新 + AI 变体（`UpdateActionMenu`） | WorkBar 双轨按钮（唯一入口）+ 详情页更新菜单「浅更新 + AI 摘要 / 深更新 + AI 报告」 | `ui/DualTrackButtons`；`AppModel::runUpdateDigest`（AppModel.h:110）、`AiResultDialog` |
 | 引擎未装 → 安装引导 | SetupGuidePage + 「重新检测引擎」 | `ui/pages/SetupGuidePage` |
 | **文档完整性校验（引擎 `verify`）——mac 端暂无对位** | 详情页「文档完整性」卡：四态（通过 / 不一致 / **无法判定** / 缺失）+ 引擎 note 原样转述（缺失档带备份路径） | `models/VerifyEnvelope.h`；`logic/DocumentIntegrity.{h,cpp}`；`AppModel::loadVerify` |
+| **引擎自检（引擎 `doctor`）——mac 端暂无对位** | 设置·通用页「环境自检」卡：按引擎口径的 `problems` 判档（**退出码 1 也是有效报告**；`result` 是自由文本不按 `=="OK"` 判健康；缺 `problems` 键记「未知」） | `logic/EngineDoctor.{h,cpp}`；`AppModel::runDoctor`；`panes/GeneralPane` |
+| **进度报告导出（引擎 `report`）——mac 端暂无对位** | 详情页页头「导出报告」入口 + 「进度报告」卡：回执 + 落盘 .md 路径 + 「打开报告」（抽不到路径就不给坏按钮） | `logic/ArchReceipt`（`filePath` / `plain`）；`AppModel::exportReport`；`pages/ProjectDetailPage` |
 
 ## 快捷键映射表
 
@@ -856,6 +858,18 @@ deepin 接进 GUI 属**领先 mac**。
 | 136 | **`graph overview` 接到代码图谱页头**（文件数 · 符号数 · 语言分布 + 截断披露） | mac 把 overview 取了却**没显示**（ArchPage 里 `overview` 变量没被用到）；deepin 显示出来才算真接上 | 无 |
 | 137 | 判据与契约门**两边都钉「只认名字」**：selfcheck 判 `symbolNameFromId`；契约门第 17 组用真引擎跑「传名字有结果 / 传 id 是空结果」 | 只在客户端侧判是不够的 —— 引擎哪天改了口径，客户端的取名逻辑就悄悄失配。契约门用真引擎对比，才是真口径 | 无 |
 | 138 | 接线门盯**调用点**（`^[[:space:]]*showImpact\(\);[[:space:]]*$`）而不是方法名 | 方法定义还在时 grep 照样命中 —— 这是**第四次**同类漏洞（前面三次：构造点、菜单入口、菜单入口） | 无 |
+| 139 | **引擎 doctor 的「发现问题」不是「命令失败」**：客户端读**载荷**判成败，**不看退出码** | 引擎 doctor 在 `problems>0` 时**退出码是 1**（引擎自己注释写了「自检命令必须能失败」—— 两条路径原来都恒返回 0，脚本/CI 判断不了环境可用性），但 stdout 仍是**合法 JSON**。按退出码判 → 用户看到「引擎调用失败」而不是「环境有 N 个问题」—— 自检工具最该说清的事反而没说 | 无 |
+| 140 | **`result` 是自由文本**：按引擎口径的 `problems` 判健康，**不自己数「非 OK 的项」** | 引擎的检查项结果有「OK」「1 个失效」「0」「无」「项目外」「未创建」多种取值，后几种都是**正常**的。按 `result == "OK"` 判会把「注册项目 0 个」误报成故障；引擎的「临时残留」也**不计入** problems | 无 |
+| 141 | **缺 `problems` 键记为「未知」（-1）而不是回落成 0** | 回落成 0 会把「引擎没发」说成「没问题」—— 缺字段不回落成 0 是全项目纪律 | 契约过旧时摘要显示「问题数未知（契约可能过旧）」而不是「0 个问题」 |
+| 142 | **回执通道 = stdout 优先，stdout 空时取 stderr**（`EngineCli::receiptText`） | 引擎的 `report` 把「报告已生成：<路径>（N 个项目）」写在 **stderr**（`arch gen` / `render arch` / `index gen` / `confidence gen` / `render index` 才在 stdout —— 实测 2026-10-19）。只认 stdout 的话 `report` 会被判成「引擎没有回执（退出码 0）」——**明明成功却说失败**，而报告其实已经落盘了 | exit==0 时 stderr 不是错误通道（引擎的失败文案走 stdout，CONTRACT §4）；引擎若把 report 改回 stdout，行为不变 |
+| 143 | **回执显示前剥 ANSI**（`ArchReceipt::plain`） | 引擎的 report 回执带颜色码（`\x1b[32m✓\x1b[0m`），而引擎**不认 NO_COLOR**（实测设了照样带码 —— 客户端注入了 `NO_COLOR=1` 也没用）。裸塞进 QLabel，用户看到的是「[32m✓[0m 报告已生成：…」—— 回执里的关键信息被乱码埋了 | 无 |
+| 144 | **报告回执走独立信号 `reportExported`**，不与 `archActionFinished` 合流 | 架构图窗按项目路由地收 `archActionFinished`（还会在「架构已生成」时重载画布）。合流会让架构图窗显示报告的回执，甚至把「报告已生成」当成「架构已生成」而重载画布；两个项目的窗还会串台 | 多一个信号（无） |
+| 145 | **「导出报告」入口放项目详情页页头**，报告卡给回执 + 落盘路径 + 「打开报告」 | 报告是**可交付物**（要能给人看/存档），路径必须露出来 —— 只给一句「已导出」用户找不到文件。抽不到路径就**不给**「打开」入口（坏按钮比没按钮更糟） | 无 |
+| 146 | **「环境自检」放设置·通用页** | 「环境坏了」是最难自查的一类问题：界面看着好好的，引擎在后台早就跑不动了。设置页是用户找配置的地方，自检是环境配置的一部分 | 设置窗必须把 `AppModel` 传下去（通用页经它调引擎） |
+| 147 | **回执路径抽取按后缀分桶缓存**（`ArchReceipt::filePath(text, suffix)`） | 泛化那一步把正则放进了函数级 `static` 里 —— **第一次调用用哪个后缀就把模式焊死**，之后传 `.md` 也按 `.html` 找，报告路径永远抽不到（「打开报告」入口永不出现）；反向还会在 `.html` 文本里抽出别的路径。症状极隐蔽：调用点与参数看着全对，只有行为不对 | 无 |
+| 148 | **新增两个无头 flag**（`--doctor-parse` / `--receipt-file-path`） | 契约门第 18 组要拿**真引擎**的载荷/回执喂客户端逐条对判定结果 —— 自造夹具验的是另一回事（引擎形状变了、客户端没跟上，自造夹具照样全绿）。与 `--agent-tool-names` / `--syntax-languages` 同款理由 | 无 |
+| 149 | **接线门抽成独立脚本 `scripts/ci-wiring.sh`**（ci.sh 第 9 门调它） | 改接线时要能秒级验（不用跑完整个 ci.sh —— 截图矩阵最慢）；更要紧的是**负控能精确打这一门**（门内嵌在 ci.sh 里时，负控得跑整条 CI 才看得到红） | 多一个脚本（无） |
+| 150 | **构建登记检查改整词匹配**（`grep -qE "(^|\s)$f(\s|$)"` 而不是 `grep -qF "$f"`） | `grep -qF` 是**子串**匹配：把登记项改成 `src/logic/EngineDoctor.cpp.disabled` 照样命中 —— 门绿着，文件却没编进去。负控实测出的假阴性 | 无 |
 
 **本批验证**（全部实跑）：`--selfcheck` **205 通过 0 失败**（198 → 205，+7 例：id 取名字 / 概览解析 /
 概览契约不对时报错 / 符号详情解析 / 符号不存在是「没找到」不是错误 / 影响面解析 / 影响面契约不对时报错）；
@@ -871,6 +885,40 @@ selfcheck 红；⑤ 影响面不读截断标志 → selfcheck 红；⑥ 影响�
 门照样全绿（影响面永远不会被加载）。已改成盯**调用点**的正则（`^[[:space:]]*showImpact\(\);$`）。
 **视觉变化**：代码图谱页页头多一行项目级概览；关系页签多「引用来源」「影响面」两段
 （该页是独立窗，不进四页快照矩阵，基线未动）。
+
+### 批 J：引擎自检（doctor）+ 进度报告导出（report）
+
+决策见上表 **139–150**（自检口径三处 + 回执通道 + 承载形态 + 两个无头 flag + 接线门抽离 + 构建登记检查改整词匹配）。
+
+**本批验证**（全部实跑）：`--selfcheck` **220 通过 0 失败**（205 → 220，+15 例：自检载荷解析 /
+**result 是自由文本** / 摘要按引擎口径 / **有问题时仍是一份有效报告** / **缺 problems 键记「未知」** /
+缺 checks 键报错 / 检查项行文 / 剥 ANSI / 抽 .md 路径 / 相对路径不抽 / 后缀不对不抽 /
+**后缀不同的两次抽取互不污染** / 回执通道 stdout 优先 / **stdout 空时取 stderr** / 两路都空=没有回执）；
+`contract-check.sh` **76/76**（真引擎沙箱，65 → 76，+11 条 = **契约门第 18 组**：doctor 载荷键齐全 /
+**result 是自由文本** / **临时残留不计入 problems** / 客户端端到端判成 ok 档 / report 回执给 .md 路径 /
+**引擎把 report 回执写在 stderr** / 客户端抽出的路径真实存在 / 注册路径失效 → problems>0 /
+**有问题时退出码非 0** / **有问题时 stdout 仍是合法 JSON** / 客户端端到端判成 problem 档）；
+`ci.sh` **10/10 门全绿**（第 9 门扩到 **129 项**接线点，+33 项：自检链路 13 项 + 报告链路 20 项）。
+**二十处负控真红**：判定层 8 处 —— ① problems 缺键回落成 0 → selfcheck 红；② 把「result != OK」
+当成有问题 → selfcheck 红；③ 缺 checks 键不当空报告放行 → selfcheck 红；④ 问题数未知判成「没问题」→
+selfcheck 红；⑤ 检查项行文留悬空「·」 → selfcheck 红；⑥ **回执路径正则被第一个后缀焊死**
+→ selfcheck 红；⑦ 回执不剥 ANSI → selfcheck 红；⑧ **回执通道只认 stdout** → selfcheck 红；
+接线 12 处 —— ⑨ 摘掉「运行自检」按钮构造点 → 接线门红；⑩ 摘掉 `m_model->runDoctor()` 调用 →
+接线门红；⑪ 摘掉设置页的 `doctorFinished` 接线 → 接线门红；⑫ 设置窗不再把模型传给通用页 →
+接线门红；⑬ 面板不再把模型传给设置窗 → 接线门红；⑭ 摘掉详情页「导出报告」入口 → 接线门红；
+⑮ 摘掉详情页的 `reportExportRequested` 发信号 → 接线门红；⑯ 摘掉面板的入口接线 → 接线门红；
+⑰ 摘掉面板调 `exportReport` → 接线门红；⑱ 摘掉面板的报告回执接线 → 接线门红；
+⑲ 自检改成按退出码判成败 → 接线门红；⑳ **`EngineDoctor.cpp` 没进构建** → 接线门红。
+**负控抓出的三个真问题**：
+① **`filePath` 的正则被函数级 `static` 焊死**（泛化那一步引入的静默缺陷）—— 第一次调用用哪个后缀，
+之后传 `.md` 也按 `.html` 找，报告路径永远抽不到；已改成按后缀分桶缓存，并加判据钉死。
+② **引擎的 `report` 把回执写在 stderr**（`arch gen` / `render arch` 才在 stdout）—— 客户端只认 stdout
+会把「报告已生成」判成「引擎没有回执」；已改成 `EngineCli::receiptText`（stdout 优先、空则 stderr）。
+③ **构建登记检查是子串匹配**（`grep -qF`）—— 把登记项改成 `.disabled` 照样命中，门绿着文件却没编进去；
+已改成整词匹配（门 8 与门 9 两处都改了）。
+**视觉变化**：设置·通用页多一张「环境自检」卡（按钮 + 摘要 + 逐项检查行）；项目详情页页头多
+「导出报告」钮、页头下多一张「进度报告」卡（回执 + 落盘路径 + 「打开报告」）。**两处都不在
+四页快照矩阵里**（设置窗与详情页都不进矩阵），基线未动。
 
 ## 分层纪律（后续阶段必须延续）
 

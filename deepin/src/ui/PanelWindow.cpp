@@ -274,6 +274,14 @@ void PanelWindow::wirePages()
     // 补丁体检：独立窗承载（项目名在入口锁定，同架构图/代码图谱窗）
     connect(m_detail, &ProjectDetailPage::patchCheckRequested, this,
         [this](const QString &p) { showPatchCheck(p); });
+    // 导出进度报告（引擎 report）：回执型命令，stdout 是人话 → 落盘路径从回执里抽。
+    connect(m_detail, &ProjectDetailPage::reportExportRequested, this,
+        [this](const QString &p) { m_model->exportReport(p); });
+    // 回执回灌详情页（按项目路由：回执不带项目名会串台）。
+    connect(m_model, &AppModel::reportExported, this,
+        [this](bool ok, const QString &project, const QString &receipt) {
+            m_detail->setReportReceipt(ok, project, receipt);
+        });
     connect(m_detail, &ProjectDetailPage::updateMenuRequested, this, [this] {
         const UpdateScope scope = scopeFromSelection(m_model->selection());
         QMenu menu(this);
@@ -875,7 +883,8 @@ void PanelWindow::showBrief(const QString &project, const QString &titleOverride
 void PanelWindow::showSettings()
 {
     if (!m_settings) {
-        m_settings = new AiSettingsDialog(this);
+        // ⚠ 模型必传：设置·通用页的「环境自检」要经 AppModel 调引擎 doctor。
+        m_settings = new AiSettingsDialog(m_model, this);
         connect(m_settings->automationPane(), &AutomationPane::autoHoursChanged, m_model,
             &AppModel::restartAutoTimer); // 改完立即生效（不经过保存按钮）
     }

@@ -1,5 +1,7 @@
 #include "GeneralPane.h"
+#include "../../../app/AppModel.h"
 #include "../../../logic/ClientDecisions.h"
+#include "../../../logic/EngineDoctor.h"
 #include "../../../platform/AutostartManager.h"
 #include "../../../platform/SysOpen.h"
 #include "../../DesignTokens.h"
@@ -14,8 +16,9 @@
 DCORE_USE_NAMESPACE
 DWIDGET_USE_NAMESPACE
 
-GeneralPane::GeneralPane(QWidget *parent)
+GeneralPane::GeneralPane(AppModel *model, QWidget *parent)
     : QWidget(parent)
+    , m_model(model)
 {
     auto *v = new QVBoxLayout(this);
     v->setContentsMargins(DS::Spacing::xxl, DS::Spacing::lg, DS::Spacing::xxl, DS::Spacing::lg);
@@ -62,6 +65,45 @@ GeneralPane::GeneralPane(QWidget *parent)
     logRow->addWidget(m_logButton);
     v->addWidget(logCard);
 
+    // ── 环境自检卡（引擎 doctor）──
+    // 「环境坏了」是最难自查的一类问题：界面看着好好的，引擎在后台早就跑不动了。
+    // 这里给一个**用户自己就能按**的入口，并把引擎的逐项检查原样摊开。
+    auto *doctorCard = new QWidget(this);
+    auto *doctorRow = new QHBoxLayout(doctorCard);
+    doctorRow->setSpacing(DS::Spacing::md);
+    auto *doctorCol = new QVBoxLayout;
+    auto *doctorTitle = new QLabel(QStringLiteral("环境自检"), doctorCard);
+    doctorTitle->setFont(DS::font(DS::FontT::cardTitle));
+    doctorCol->addWidget(doctorTitle);
+    auto *doctorSub = new SecondaryLabel(
+        QStringLiteral("检查引擎与本地环境是否可用（引擎 doctor）。"), doctorCard);
+    doctorSub->setFont(DS::font(DS::FontT::label));
+    doctorCol->addWidget(doctorSub);
+    m_doctorSummary = new QLabel(doctorCard);
+    m_doctorSummary->setFont(DS::font(DS::FontT::label));
+    m_doctorSummary->setWordWrap(true);
+    m_doctorSummary->hide();
+    doctorCol->addWidget(m_doctorSummary);
+    m_doctorBody = new QWidget(doctorCard);
+    auto *doctorBodyLayout = new QVBoxLayout(m_doctorBody);
+    doctorBodyLayout->setContentsMargins(0, 0, 0, 0);
+    doctorBodyLayout->setSpacing(DS::Spacing::xs);
+    m_doctorBody->hide();
+    doctorCol->addWidget(m_doctorBody);
+    doctorRow->addLayout(doctorCol, 1);
+    m_doctorButton = new DPushButton(QStringLiteral("运行自检"), doctorCard);
+    m_doctorButton->setToolTip(QStringLiteral("运行引擎自检（moongit doctor）"));
+    connect(m_doctorButton, &DPushButton::clicked, this, [this] {
+        if (!m_model)
+            return;
+        m_doctorButton->setEnabled(false);
+        m_doctorSummary->setText(QStringLiteral("正在自检…"));
+        m_doctorSummary->show();
+        m_model->runDoctor();
+    });
+    doctorRow->addWidget(m_doctorButton);
+    v->addWidget(doctorCard);
+
     v->addStretch(1);
 
     reflectSystemState(AutostartManager::isEnabled());
@@ -86,12 +128,88 @@ GeneralPane::GeneralPane(QWidget *parent)
         }
         emit autostartToggled(m_switch->isChecked());
     });
+
+    // 自检回执：引擎 doctor 有问题时**退出码是 1**但 stdout 仍是合法 JSON，
+    // AppModel 读的是载荷 —— 这里收到的报告「有效」不等于「环境没问题」。
+    if (m_model) {
+        connect(m_model, &AppModel::doctorFinished, this, [this](const EngineDoctor::Report &r) {
+            m_doctorButton->setEnabled(true);
+            applyDoctorReport(r);
+        });
+    } else {
+        // 没有模型就**禁用按钮**：给个点了没反应的入口比不给更糟
+        m_doctorButton->setEnabled(false);
+    }
 }
 
 void GeneralPane::reflectSystemState(bool enabled)
 {
     QSignalBlocker block(m_switch);
     m_switch->setChecked(enabled);
+}
+
+void GeneralPane::applyDoctorReport(const EngineDoctor::Report &r)
+{
+    // 逐行重建（旧行全部清掉）：报告条数每次都可能不同。
+    if (m_doctorBody->layout()) {
+        auto *lay = m_doctorBody->layout();
+        while (lay->count() > 0) {
+            QLayoutItem *it = lay->takeAt(0);
+            if (it->widget())
+                it->widget()->deleteLater();
+            delete it;
+        }
+    }
+    auto *bodyLayout = qobject_cast<QVBoxLayout *>(m_doctorBody->layout());
+    if (!bodyLayout)
+        bodyLayout = new QVBoxLayout(m_doctorBody);
+
+    // 视图层只上色，档由判定层给（EngineDoctor::toneOf）。
+    DS::SemColor tone = DS::SemColor::gray;
+    QString headline;
+    switch (EngineDoctor::toneOf(r)) {
+    case EngineDoctor::Tone::ok:
+        tone = DS::SemColor::shallow;
+        headline = QStringLiteral("环境自检：一切正常");
+        break;
+    case EngineDoctor::Tone::problem:
+        tone = DS::SemColor::red;
+        headline = QStringLiteral("环境自检：发现 %1 个问题").arg(r.problems);
+        break;
+    case EngineDoctor::Tone::unknown:
+        // 问题数未知 ≠ 没问题：不能按「0 个问题」显示。
+        tone = DS::SemColor::orange;
+        headline = QStringLiteral("环境自检：问题数未知（引擎契约可能过旧）");
+        break;
+    case EngineDoctor::Tone::unreadable:
+        tone = DS::SemColor::orange;
+        headline = QStringLiteral("环境自检：报告读不出来");
+        break;
+    }
+    m_doctorSummary->setText(headline + QStringLiteral(" · ") + EngineDoctor::summary(r));
+    m_doctorSummary->setStyleSheet(QStringLiteral("color: %1;").arg(DS::semColor(tone).name()));
+    m_doctorSummary->show();
+
+    if (!r.ok) {
+        auto *err = new SecondaryLabel(r.error.isEmpty() ? QStringLiteral("自检报告读不出来。") : r.error,
+            m_doctorBody);
+        err->setFont(DS::font(DS::FontT::label));
+        err->setWordWrap(true);
+        bodyLayout->addWidget(err);
+        m_doctorBody->show();
+        return;
+    }
+
+    for (const EngineDoctor::Check &c : r.checks) {
+        const QString line = EngineDoctor::checkLine(c);
+        if (line.isEmpty())
+            continue;
+        auto *l = new SecondaryLabel(line, m_doctorBody);
+        l->setFont(DS::font(DS::FontT::label));
+        l->setWordWrap(true);
+        bodyLayout->addWidget(l);
+    }
+    m_doctorBody->setVisible(!r.checks.isEmpty());
 }
 
 void GeneralPane::showEvent(QShowEvent *event)

@@ -1,4 +1,5 @@
 #include "ProjectDetailPage.h"
+#include "../../logic/ArchReceipt.h"
 #include "../../logic/CommitTypeComposition.h"
 #include "../../logic/Derived.h"
 #include "../../logic/DestructiveGuard.h"
@@ -124,6 +125,16 @@ void ProjectDetailPage::setBusy(bool busy)
     rebuild();
 }
 
+void ProjectDetailPage::setReportReceipt(bool ok, const QString &project, const QString &receipt)
+{
+    // 按项目存：回执不带项目名就会串台（切到别的项目时显示上一个项目的回执）。
+    m_reportOk[project] = ok;
+    m_reportReceipts[project] = receipt;
+    if (!m_name.isEmpty() && project != m_name)
+        return; // 不是当前项目：存着但不刷新界面
+    rebuild();
+}
+
 void ProjectDetailPage::rebuild()
 {
     while (m_contentLayout->count() > 0) {
@@ -166,6 +177,8 @@ void ProjectDetailPage::rebuild()
 
     const ProjectStatus &p = *m_project;
     m_contentLayout->addWidget(buildHeader(p));
+    if (m_reportReceipts.contains(m_name))
+        m_contentLayout->addWidget(buildReportCard());
     if (p.isGit())
         m_contentLayout->addWidget(buildCommitCard());
 
@@ -284,6 +297,13 @@ QWidget *ProjectDetailPage::buildHeader(const ProjectStatus &p)
         QStringLiteral("AI 项目说明（未配置 AI 时会给出配置指引）"), header);
     connect(brief, &QPushButton::clicked, this, [this] { emit briefRequested(m_name); });
     actions->addWidget(brief);
+
+    // 导出进度报告：引擎 `report`（回执型命令，落盘 Markdown）。
+    // 报告是**可交付物**（要能给人看/存档），所以回执里必须把落盘路径露出来。
+    auto *report = iconButton(QStringLiteral("document-save"), QStringLiteral("导出报告"),
+        QStringLiteral("导出 Markdown 进度报告（引擎 report）"), header);
+    connect(report, &QPushButton::clicked, this, [this] { emit reportExportRequested(m_name); });
+    actions->addWidget(report);
 
     // gitOpButtons 唯一构造点：pull/push/fetch + stash/unstash（busy 禁用+转圈）
     const auto addGit = [&actions, this, header](const QString &op, const QString &icon,
@@ -957,5 +977,49 @@ QWidget *ProjectDetailPage::buildDocsArea()
         cv->addWidget(md);
         v->addWidget(card);
     }
+    return host;
+}
+
+QWidget *ProjectDetailPage::buildReportCard()
+{
+    auto *host = new QWidget(m_content);
+    auto *v = new QVBoxLayout(host);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->setSpacing(DS::Spacing::sm);
+
+    const bool ok = m_reportOk.value(m_name, false);
+    // 回执原文带 ANSI 颜色码（引擎不认 NO_COLOR），直接显示会是「[32m✓[0m …」
+    const QString receipt = ArchReceipt::plain(m_reportReceipts.value(m_name));
+
+    auto *card = new Card(host);
+    auto *cv = new QVBoxLayout(card);
+    cv->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
+    cv->setSpacing(DS::Spacing::sm);
+
+    auto *title = new QLabel(QStringLiteral("进度报告"), card);
+    title->setFont(DS::font(DS::FontT::cardTitle));
+    cv->addWidget(title);
+
+    // 失败 → 橙字（原因原样给引擎的，不自己编）
+    cv->addWidget(smallLabel(ok ? QStringLiteral("已导出。") : QStringLiteral("导出失败："),
+        card, DS::semColor(ok ? DS::SemColor::shallow : DS::SemColor::orange)));
+    if (!receipt.isEmpty())
+        cv->addWidget(smallLabel(receipt, card, DS::textSecondary()));
+
+    // 落盘路径：抽得到才给「打开」入口（抽不到就是坏按钮，不给）。
+    const QString path = ArchReceipt::filePath(receipt, QStringLiteral(".md"));
+    if (ok && !path.isEmpty()) {
+        auto *row = new QHBoxLayout;
+        row->setSpacing(DS::Spacing::xs);
+        auto *open = new FlatButton(QStringLiteral("打开报告"), card);
+        open->setToolTip(path);
+        connect(open, &QPushButton::clicked, this, [path] {
+            SysOpen::openUrl(QUrl::fromLocalFile(path));
+        });
+        row->addWidget(open);
+        row->addStretch(1);
+        cv->addLayout(row);
+    }
+    v->addWidget(card);
     return host;
 }

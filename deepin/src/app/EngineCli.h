@@ -61,6 +61,10 @@ public:
         bool cancelled = false;
         std::optional<QJsonDocument> payload; // exit==0 或 failedWithPayload 时尽量有
         EngineError error;                    // isNull() = 成功
+        /// **Text 契约的回执正文**（stdout 优先，stdout 空时取 stderr）。
+        /// Text 模式的消费方一律读这个字段，别直接读 stdOut ——
+        /// 引擎的 `report` 把回执写在 stderr（见 receiptText 的说明）。
+        QString receipt;
 
         bool ok() const { return error.isNull(); }
     };
@@ -78,7 +82,7 @@ public:
     void callJson(const QStringList &args, int timeoutMs,
                   std::function<void(const EngineResult &)> onDone);
 
-    // 同上，但按 Text 契约判 stdout（回执型命令专用；回执在 res.stdOut）。
+    // 同上，但按 Text 契约判 stdout（回执型命令专用；回执在 res.receipt）。
     void callText(const QStringList &args, int timeoutMs,
                   std::function<void(const EngineResult &)> onDone);
 
@@ -86,6 +90,18 @@ public:
     // · Json：必须能解析成一个 JSON 对象（空 stdout = 契约破坏）；
     // · Text：必须非空（引擎说成功了却没给回执 = 契约破坏）。
     static bool stdoutSatisfies(OutputMode mode, const QString &stdoutText);
+
+    /// **回执通道**：stdout 优先，stdout 空时取 stderr。
+    ///
+    /// ⚠ 引擎不是所有回执型命令都写 stdout。实测 2026-10-19（moongit dev d363b6a）：
+    ///   `arch gen` / `render arch` / `index gen --stats` / `confidence gen` /
+    ///   `render index` 的回执在 **stdout**；而 `report` 的
+    ///   「报告已生成：<路径>（N 个项目）」在 **stderr**。
+    ///   只认 stdout 的话，`report` 会被判成「引擎没有回执（命令 report，退出码 0）」——
+    ///   **明明成功却说失败**，用户点「导出报告」只看到一句报错，而报告其实已经落盘了。
+    ///   exit==0 时 stderr 不是错误通道（引擎的失败文案走 stdout，见 CONTRACT §4），
+    ///   拿它当回执兜底是安全的。
+    static QString receiptText(const QString &stdoutText, const QString &stderrText);
 
     // 同步调用：引擎探活/自检与 agent worker 使用，不得在 UI 热路径使用。
     // cancelled 非空时切片等待（M0-5）：旗标置位 → terminate（2s 后 kill）+ cancelled 结果，

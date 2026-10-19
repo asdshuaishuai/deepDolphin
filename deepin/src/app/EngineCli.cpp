@@ -61,26 +61,31 @@ EngineCli::EngineResult classifyResult(QProcess *proc, const QStringList &args, 
     }
 
     if (r.exitCode == 0) {
-        if (!EngineCli::stdoutSatisfies(mode, r.stdOut)) {
-            if (mode == EngineCli::OutputMode::Text) {
-                // Text 契约：stdout 必须是非空回执文本。空 stdout 同样是契约破坏
-                //（引擎说成功了却什么都没说 —— 客户端拿不到回执就该报出来）。
+        if (mode == EngineCli::OutputMode::Text) {
+            // Text 契约：回执 = stdout；**stdout 空时取 stderr**（引擎的 `report`
+            // 把回执写在 stderr —— 只认 stdout 会把成功说成「引擎没有回执」，
+            // 详见 EngineCli.h::receiptText）。
+            r.receipt = EngineCli::receiptText(r.stdOut, r.stdErr);
+            if (r.receipt.isEmpty()) {
+                // stdout 与 stderr 都空：引擎说成功了却什么都没说 —— 契约破坏
                 r.error = EngineError::makeFailed(
                     QStringLiteral("引擎没有回执（命令 %1，退出码 0）。"
                                    "引擎版本可能与客户端契约不匹配，请升级引擎。")
                         .arg(cmdLabel));
-            } else {
-                // 空 stdout 是契约破坏，不是合法空态（CONTRACT §0）
-                r.error = EngineError::makeFailed(
-                    QStringLiteral("引擎输出不是合法 JSON（命令 %1，退出码 0）。"
-                                   "可能引擎版本与客户端契约不匹配，请升级引擎。")
-                        .arg(cmdLabel));
+                return r;
             }
+            return r; // 成功：回执在 r.receipt
+        }
+        if (!EngineCli::stdoutSatisfies(mode, r.stdOut)) {
+            // 空 stdout 是契约破坏，不是合法空态（CONTRACT §0）
+            r.error = EngineError::makeFailed(
+                QStringLiteral("引擎输出不是合法 JSON（命令 %1，退出码 0）。"
+                               "可能引擎版本与客户端契约不匹配，请升级引擎。")
+                    .arg(cmdLabel));
             return r;
         }
-        if (mode == EngineCli::OutputMode::Json)
-            r.payload = payload; // Json 模式：载荷带上（Text 模式没有载荷）
-        return r; // 成功：回执在 r.stdOut
+        r.payload = payload; // Json 模式：载荷带上（Text 模式没有载荷）
+        return r; // 成功：载荷在 r.payload
     }
 
     // exit≠0：stdout 可解析 → failedWithPayload，载荷保留（CONTRACT §4.3）
@@ -128,6 +133,14 @@ bool EngineCli::stdoutSatisfies(OutputMode mode, const QString &stdoutText)
         return !stdoutText.trimmed().isEmpty(); // 回执型：非空即算
     QJsonDocument doc;
     return parseObject(stdoutText.toUtf8(), &doc); // JSON 型：必须是 JSON 对象
+}
+
+QString EngineCli::receiptText(const QString &stdoutText, const QString &stderrText)
+{
+    const QString out = stdoutText.trimmed();
+    if (!out.isEmpty())
+        return out;
+    return stderrText.trimmed();
 }
 
 void EngineCli::callJson(const QStringList &args, int timeoutMs,

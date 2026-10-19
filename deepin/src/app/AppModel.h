@@ -19,6 +19,7 @@
 #include "../models/DocsEnvelope.h"
 #include "../models/GitOpResponse.h"
 #include "../logic/CodeGraphBuild.h"
+#include "../logic/EngineDoctor.h"
 #include "../logic/GraphInsight.h"
 #include "../models/GraphScene.h"
 #include "../models/Milestone.h"
@@ -240,6 +241,16 @@ public:
     /// 影响面（引擎 graph impact）。⚠ 同上，只认符号名。
     void loadImpact(const QString &name, const QString &symbolName);
 
+    // ── 引擎自检（doctor）与进度报告（report）──
+    const EngineDoctor::Report *doctorReport() const { return &m_doctor; }
+    /// 运行引擎自检。
+    /// ⚠ 引擎 doctor 在**发现问题时退出码是 1**（自检必须能失败），但 stdout
+    ///   仍是合法 JSON —— 那不是「命令崩了」，是「环境有问题」。故这里读载荷，
+    ///   不按退出码判成败。
+    void runDoctor();
+    /// 导出 Markdown 进度报告（引擎 report <项目>；回执型命令，stdout 是人话）。
+    void exportReport(const QString &name);
+
 signals:
     void projectsChanged();
     void dashboardChanged();
@@ -257,6 +268,13 @@ signals:
     void patchCheckChanged(const QString &name);
     void patchMerged(const QString &name);
     void patchSkillReady(const QString &name, const QString &text);
+    /// 引擎自检完成（无论有没有发现问题，都带报告）。
+    void doctorFinished(const EngineDoctor::Report &report);
+    /// 进度报告导出的回执（引擎 `report` 是**回执型命令**，stdout 是人话）。
+    /// ⚠ **不与 archActionFinished 合流**：那个信号是架构图窗在收的（按项目路由后
+    ///   还会触发画布重载），报告回执混进去会让架构图窗显示报告的回执、
+    ///   甚至把它当成「架构已生成」而重载画布 —— 两个项目的窗还会串台。
+    void reportExported(bool ok, const QString &project, const QString &receipt);
     /// 图谱三件套的结果就绪（都带项目名；符号级的额外带符号名）。
     void overviewChanged(const QString &name);
     void symbolDetailChanged(const QString &name, const QString &symbolName);
@@ -326,6 +344,7 @@ private:
     /// 符号级结果按「项目\n符号名」存（同一项目不同符号各自一份）。
     QMap<QString, GraphInsight::SymbolDetail> m_symbolDetails;
     QMap<QString, GraphInsight::Impact> m_impacts;
+    EngineDoctor::Report m_doctor;
     QMap<QString, QString> m_projectLoadErrors;
 
     QString m_lastError;

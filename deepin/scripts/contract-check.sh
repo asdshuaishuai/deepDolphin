@@ -522,5 +522,139 @@ else
     fi
 fi
 
+# 18. 引擎自检（doctor）与进度报告（report）。
+#     两处最容易「错得毫无声响」：
+#     ① **doctor 发现问题时退出码是 1**（引擎自己注释写了「自检命令必须能失败」），
+#        但 stdout 仍是**合法 JSON**。客户端若把非零退出当「命令崩了」，
+#        用户看到的是「引擎调用失败」而不是「环境有 N 个问题」—— 自检工具
+#        最该说清的事反而没说。这条用**真场景**（注册路径失效）造出来验。
+#     ② **report 是回执型命令**：stdout 是人话（「报告已生成：<路径>（N 个项目）」），
+#        不是 JSON。拿 JSON 解析器去收会把成功报成失败。
+#     另附端到端：把真载荷/真回执喂给**客户端二进制**，逐条对判定结果 ——
+#     自造夹具验的是另一回事（引擎形状变了、客户端没跟上，自造夹具照样全绿）。
+DOCFIX="$SANDBOX/fixture/docfix"
+mkdir -p "$DOCFIX/src"
+git -C "$DOCFIX" init -q -b main . 2>/dev/null
+printf 'int main(void) {\n    return 0;\n}\n' > "$DOCFIX/src/main.c"
+git -C "$DOCFIX" add . 2>/dev/null
+GIT_AUTHOR_DATE='2026-10-03T09:00:00' GIT_COMMITTER_DATE='2026-10-03T09:00:00' \
+    git -C "$DOCFIX" commit -qm 'feat: 初始提交' 2>/dev/null
+"$BIN" add "$DOCFIX" --json >/dev/null 2>&1
+
+DOCTOR_JSON="$("$BIN" doctor --json 2>/dev/null)"
+DOCTOR_RC=0
+"$BIN" doctor --json >/dev/null 2>&1 || DOCTOR_RC=$?
+if [ -z "$DOCTOR_JSON" ]; then
+    echo "  ✗ 第 18 组前提：引擎没吐出 doctor 载荷" >&2
+    fail=$((fail+1))
+else
+    check "引擎自检：载荷含 checks/problems，checks 每项带 check/result/detail" \
+        "isinstance(d.get('checks'), list) and isinstance(d.get('problems'), int) and \
+all(set(['check','result','detail']) <= set(c.keys()) for c in d['checks'])" \
+        "$DOCTOR_JSON"
+    check "引擎自检：result 是**自由文本**（有 OK 以外的值，客户端不许按 ==\"OK\" 判健康）" \
+        "any(c.get('result') != 'OK' for c in d.get('checks', []))" \
+        "$DOCTOR_JSON"
+    check "引擎自检：临时残留**不计入** problems（客户端不许自己数「非 OK 的项」）" \
+        "d.get('problems') == 0" \
+        "$DOCTOR_JSON"
+
+    # ⚠ 端到端：把真载荷喂给客户端二进制，看它判成哪一档。
+    if [ ! -x "$CLIENT_BIN" ]; then
+        echo "  ‣ SKIP 第 18 组端到端：找不到客户端二进制 $CLIENT_BIN"
+        echo "    ‣ 本条**未验证**，不算通过"
+    else
+        DOCTOR_VERDICT="$(printf '%s' "$DOCTOR_JSON" | "$CLIENT_BIN" --doctor-parse 2>/dev/null)"
+        check "引擎自检端到端：客户端对真载荷判成 ok 档、问题数与引擎一致" \
+            "d.get('ok') is True and d.get('tone') == 'ok' and d.get('problems') == 0 and d.get('checks') > 0" \
+            "$DOCTOR_VERDICT"
+    fi
+fi
+
+# report：回执型命令（stdout 是人话），落盘 .md。
+# ⚠ 放在「删掉 docfix」**之前**：注册路径没了，report 可能整条跑不通，
+#   那时红的是 report 不是 doctor，两条断言会互相掩盖。
+# ⚠ 引擎的 report 把回执写在 **stderr**（arch gen / render arch 才在 stdout，
+#   实测 2026-10-19）。这里两路都收，客户端侧则按「stdout 优先、空则 stderr」
+#   取回执（EngineCli::receiptText）—— 只认 stdout 的客户端会把成功说成失败。
+"$BIN" report >"$SANDBOX/report.out" 2>"$SANDBOX/report.err"
+REPORT_OUT="$(cat "$SANDBOX/report.out")"
+REPORT_ERR="$(cat "$SANDBOX/report.err")"
+REPORT_TXT="$REPORT_OUT
+$REPORT_ERR"
+if [ -z "$REPORT_TXT" ]; then
+    echo "  ✗ 第 18 组前提：引擎没吐出 report 回执" >&2
+    fail=$((fail+1))
+else
+    check_text "进度报告回执：给出 .md 落盘路径（Text 契约：回执型命令不是 JSON）" \
+        '\.md' "$REPORT_TXT"
+    REPORT_JSON="$(python3 -c "
+import json, sys
+out = open(sys.argv[1], encoding='utf-8', errors='replace').read()
+err = open(sys.argv[2], encoding='utf-8', errors='replace').read()
+print(json.dumps({'out': out, 'err': err}, ensure_ascii=False))
+" "$SANDBOX/report.out" "$SANDBOX/report.err" 2>/dev/null)"
+    check "进度报告回执：引擎把回执写在 **stderr**（客户端只认 stdout 会把成功说成失败）" \
+        "not d['out'].strip() and '.md' in d['err']" "$REPORT_JSON"
+    # 端到端：客户端从真回执里抽路径（剥 ANSI 后），且该文件**真的存在**。
+    if [ ! -x "$CLIENT_BIN" ]; then
+        echo "  ‣ SKIP 第 18 组报告路径端到端：找不到客户端二进制 $CLIENT_BIN"
+        echo "    ‣ 本条**未验证**，不算通过"
+    else
+        REPORT_PATH="$(printf '%s' "$REPORT_TXT" | "$CLIENT_BIN" --receipt-file-path .md 2>/dev/null)"
+        if [ -z "$REPORT_PATH" ]; then
+            echo "  ✗ 进度报告端到端：客户端从真回执里抽不出 .md 路径（「打开报告」入口永远是坏的）" >&2
+            fail=$((fail+1))
+        elif [ -f "$REPORT_PATH" ]; then
+            echo "  ✓ 进度报告端到端：客户端抽出的路径存在且是绝对路径（$REPORT_PATH）"
+            pass=$((pass+1))
+        else
+            echo "  ✗ 进度报告端到端：客户端抽出的路径不存在（$REPORT_PATH）" >&2
+            fail=$((fail+1))
+        fi
+    fi
+fi
+
+# 真问题档：把注册路径删掉 → 引擎报「1 个失效」，problems>0，**退出码 1**。
+# 夹具独立（docfix）：删的是它自己的目录，不动主夹具 atlas。
+rm -rf "$DOCFIX"
+DOCTOR_BAD_JSON="$("$BIN" doctor --json 2>/dev/null)"
+DOCTOR_BAD_RC=0
+"$BIN" doctor --json >/dev/null 2>&1 || DOCTOR_BAD_RC=$?
+if [ -z "$DOCTOR_BAD_JSON" ]; then
+    echo "  ✗ 第 18 组前提：引擎没吐出有问题时的 doctor 载荷" >&2
+    fail=$((fail+1))
+else
+    check "引擎自检：注册路径失效 → problems>0（引擎口径的问题数确实动了）" \
+        "d.get('problems', 0) > 0" \
+        "$DOCTOR_BAD_JSON"
+    if [ "$DOCTOR_BAD_RC" -ne 0 ]; then
+        echo "  ✓ 引擎自检：有问题时**退出码非 0**（自检必须能失败，否则脚本/CI 判断不了环境可用性）"
+        pass=$((pass+1))
+    else
+        echo "  ✗ 引擎自检：有问题时退出码是 0（自检必须能失败）" >&2; fail=$((fail+1))
+    fi
+    # ⚠ 退出码非 0 但 stdout 仍是**合法 JSON** —— 客户端必须读载荷，不按退出码判成败。
+    if printf '%s' "$DOCTOR_BAD_JSON" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+sys.exit(0 if isinstance(d, dict) and 'checks' in d else 1)
+" 2>/dev/null; then
+        echo "  ✓ 引擎自检：有问题时 stdout 仍是**合法 JSON**（客户端按退出码判成败会把「环境有问题」说成「命令崩了」）"
+        pass=$((pass+1))
+    else
+        echo "  ✗ 引擎自检：有问题时 stdout 不是合法 JSON（客户端读不到载荷）" >&2; fail=$((fail+1))
+    fi
+    if [ ! -x "$CLIENT_BIN" ]; then
+        echo "  ‣ SKIP 第 18 组端到端（问题档）：找不到客户端二进制 $CLIENT_BIN"
+        echo "    ‣ 本条**未验证**，不算通过"
+    else
+        DOCTOR_BAD_VERDICT="$(printf '%s' "$DOCTOR_BAD_JSON" | "$CLIENT_BIN" --doctor-parse 2>/dev/null)"
+        check "引擎自检端到端：有问题时客户端仍判为**有效报告**、档是 problem（不是 unreadable）" \
+            "d.get('ok') is True and d.get('tone') == 'problem' and d.get('problems', 0) > 0" \
+            "$DOCTOR_BAD_VERDICT"
+    fi
+fi
+
 echo "──── contract-check: $pass passed, $fail failed ────"
 [ "$fail" -eq 0 ]

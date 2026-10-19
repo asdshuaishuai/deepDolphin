@@ -552,7 +552,7 @@ void AppModel::genArch(const QString &name)
     m_cli->callText({ QStringLiteral("arch"), QStringLiteral("gen"), name },
         EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
             emit archActionFinished(res.ok(), name,
-                res.ok() ? res.stdOut.trimmed() : res.error.userMessage());
+                res.ok() ? res.receipt : res.error.userMessage());
         });
 }
 
@@ -563,7 +563,7 @@ void AppModel::exportArch(const QString &name)
     m_cli->callText({ QStringLiteral("render"), QStringLiteral("arch"), name },
         EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
             emit archActionFinished(res.ok(), name,
-                res.ok() ? res.stdOut.trimmed() : res.error.userMessage());
+                res.ok() ? res.receipt : res.error.userMessage());
         });
 }
 
@@ -643,7 +643,7 @@ void AppModel::genIndex(const QString &name)
                 emit archActionFinished(false, name, res.error.userMessage());
                 return;
             }
-            const QString first = res.stdOut.trimmed();
+            const QString first = res.receipt;
             // 索引生成完还要算置信度（`confidence gen` 才是最终结论，回执取它）
             m_cli->callText({ QStringLiteral("confidence"), QStringLiteral("gen"), name },
                 EngineTimeouts::Deep, [this, name, first](const EngineCli::EngineResult &r2) {
@@ -651,8 +651,8 @@ void AppModel::genIndex(const QString &name)
                         emit archActionFinished(false, name, r2.error.userMessage());
                         return;
                     }
-                    emit archActionFinished(true, name, r2.stdOut.trimmed().isEmpty()
-                        ? first : r2.stdOut.trimmed());
+                    emit archActionFinished(true, name, r2.receipt.isEmpty()
+                        ? first : r2.receipt);
                     loadCodeGraph(name); // 数据全换了 → 重载
                 });
         });
@@ -664,7 +664,7 @@ void AppModel::exportIndex(const QString &name)
     m_cli->callText({ QStringLiteral("render"), QStringLiteral("index"), name,
                         QStringLiteral("--confidence") },
         EngineTimeouts::Deep, [this, name](const EngineCli::EngineResult &res) {
-            emit archActionFinished(res.ok(), name, res.ok() ? res.stdOut.trimmed()
+            emit archActionFinished(res.ok(), name, res.ok() ? res.receipt
                                                              : res.error.userMessage());
         });
 }
@@ -842,6 +842,48 @@ void AppModel::mergePatchCheck(const QString &name, const QJsonObject &agentPayl
         });
 }
 
+// ── 引擎自检（doctor）与进度报告（report）──
+
+void AppModel::runDoctor()
+{
+    m_cli->callJson({ QStringLiteral("doctor"), QStringLiteral("--json") },
+        EngineTimeouts::Status, [this](const EngineCli::EngineResult &res) {
+            // ⚠ 引擎 doctor 在**发现问题时退出码是 1**，但 stdout 仍是合法 JSON。
+            //   那是「环境有问题」，不是「命令崩了」—— 所以先看载荷有没有解析出来，
+            //   解析出来了就是一份**有效报告**（问题数由报告自己说）。
+            if (res.payload.has_value() && res.payload->isObject()) {
+                const EngineDoctor::Report r = EngineDoctor::parse(res.payload->object());
+                if (r.ok) {
+                    m_doctor = r;
+                    emit doctorFinished(r);
+                    return;
+                }
+                m_doctor = r;
+                emit doctorFinished(r);
+                return;
+            }
+            EngineDoctor::Report bad;
+            bad.ok = false;
+            bad.error = res.ok() ? QStringLiteral("引擎自检输出不是 JSON 对象")
+                                  : res.error.userMessage();
+            m_doctor = bad;
+            emit doctorFinished(bad);
+        });
+}
+
+void AppModel::exportReport(const QString &name)
+{
+    // 回执型命令：stdout 是人话（"报告已生成：<路径>（N 个项目）"），
+    // 走 Text 契约；路径从回执里抽（ArchReceipt::filePath 的 .md 特例）。
+    // ⚠ 回执走**独立信号**：archActionFinished 是架构图窗在收的，混流会让
+    //   架构图窗显示报告的回执，还可能被当成「架构已生成」而重载画布。
+    m_cli->callText({ QStringLiteral("report"), name },
+        EngineTimeouts::Deep, [this, name](const EngineCli::EngineResult &res) {
+            emit reportExported(res.ok(), name, res.ok() ? res.receipt
+                                                         : res.error.userMessage());
+        });
+}
+
 // ── 图谱三件套（引擎 graph overview / symbol / impact）──
 
 void AppModel::loadOverview(const QString &name)
@@ -954,7 +996,7 @@ void AppModel::loadPatchSkill(const QString &name)
                 emit patchCheckChanged(name);
                 return;
             }
-            emit patchSkillReady(name, res.stdOut);
+            emit patchSkillReady(name, res.receipt);
         });
 }
 

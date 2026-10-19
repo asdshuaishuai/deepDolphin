@@ -99,6 +99,7 @@ add_executable(deepDolphin
     src/logic/DocPages.cpp
     src/logic/SyntaxHighlight.cpp
     src/logic/GraphInsight.cpp
+    src/logic/EngineDoctor.cpp
     # ── platform/ ──
     src/platform/AppService.cpp
     src/platform/AutostartManager.cpp

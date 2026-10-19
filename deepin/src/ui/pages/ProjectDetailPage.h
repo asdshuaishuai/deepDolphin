@@ -15,6 +15,7 @@
 #include <DScrollArea>
 #include <DLineEdit>
 #include <DTextEdit>
+#include <QMap>
 #include <QWidget>
 
 DWIDGET_USE_NAMESPACE
@@ -46,6 +47,9 @@ public:
     void setMilestones(const QVector<Milestone> &items); // 详情页里程碑卡（该项目范围）
     void setGitOutput(const QString &name, const GitOpResponse &resp);
     void setBusy(bool busy);
+    /// 进度报告导出的回执（引擎 `report` 是回执型命令，stdout 是人话）。
+    /// 按项目路由 —— 回执不带项目名，切换项目后会显示到别的项目名下。
+    void setReportReceipt(bool ok, const QString &project, const QString &receipt);
 
 signals:
     void gitOpRequested(const QString &op, const QString &project, const QString &message);
@@ -57,6 +61,8 @@ signals:
     void codeGraphRequested(const QString &project);
     /// 补丁体检（引擎 graph patchconf 三层）：独立窗承载，项目名在入口锁定。
     void patchCheckRequested(const QString &project);
+    /// 导出进度报告（引擎 `report`）：回执型命令，落盘 Markdown。
+    void reportExportRequested(const QString &project);
     void retryRequested();          // 「读不出来」空态的重试（→ loadProject）
     // 里程碑行内动作（详情页里程碑卡；UI 词已转 CLI 词）
     void milestoneDone(const QString &project, const QString &name);
@@ -75,6 +81,7 @@ private:
     QWidget *buildJournalCard(const ProjectStatus &p);
     QWidget *buildDocsArea();
     QWidget *buildIntegrityCard();
+    QWidget *buildReportCard();
 
     QString m_name;
     std::optional<ProjectStatus> m_project;
@@ -87,6 +94,9 @@ private:
     GitOpResponse m_gitOutput;
     bool m_hasGitOutput = false;
     bool m_busy = false;
+    /// 进度报告回执（导出后才有；按项目存 —— 切项目时不串台）。
+    QMap<QString, QString> m_reportReceipts; ///< 项目名 → 回执原文
+    QMap<QString, bool> m_reportOk;          ///< 项目名 → 导出是否成功
 
     DScrollArea *m_scroll = nullptr;
     QWidget *m_content = nullptr;

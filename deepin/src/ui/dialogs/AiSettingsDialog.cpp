@@ -1,5 +1,6 @@
 #include "AiSettingsDialog.h"
 #include "../../ai/SecretStore.h"
+#include "../../app/AppModel.h"
 #include "../../app/Settings.h"
 #include "../DesignTokens.h"
 #include "panes/AutomationPane.h"
@@ -16,7 +17,7 @@
 #include <QThreadPool>
 #include <QVBoxLayout>
 
-AiSettingsDialog::AiSettingsDialog(QWidget *parent)
+AiSettingsDialog::AiSettingsDialog(AppModel *model, QWidget *parent)
     : DDialog(parent)
     , m_store(new SecretStore)
 {
@@ -45,7 +46,7 @@ AiSettingsDialog::AiSettingsDialog(QWidget *parent)
     auto *wrapGeneral = new DScrollArea(content);
     wrapGeneral->setWidgetResizable(true);
     wrapGeneral->setFrameShape(QFrame::NoFrame);
-    wrapGeneral->setWidget(new GeneralPane(wrapGeneral));
+    wrapGeneral->setWidget(new GeneralPane(model, wrapGeneral));
     m_generalPane = wrapGeneral->widget();
 
     auto *wrapAutomation = new DScrollArea(content);

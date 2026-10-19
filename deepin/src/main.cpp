@@ -17,7 +17,9 @@
 #include "platform/AppService.h"
 #include "platform/CrashHandler.h"
 #include "logic/AgentToolPlan.h"
+#include "logic/ArchReceipt.h"
 #include "logic/CodeGraphBuild.h"
+#include "logic/EngineDoctor.h"
 #include "logic/SyntaxHighlight.h"
 #include "logic/Liveness.h"
 #include "logic/Route.h"
@@ -295,6 +297,69 @@ int main(int argc, char *argv[])
             fprintf(stdout, "%s\n", qPrintable(lang));
         fflush(stdout);
         return 0;
+    }
+    if (rawArgs.contains(QStringLiteral("--doctor-parse"))) {
+        // 客户端对 `doctor --json` 载荷的判定结果（单一真相源在 logic/EngineDoctor）。
+        // 契约检查拿**真引擎**的载荷喂它，逐条对「问题数 / 档 / 摘要」——
+        // 引擎 doctor 有问题时退出码是 1，但 stdout 仍是合法 JSON，这条口径
+        // 只有把真载荷喂进客户端才验得到（自造夹具验的是另一回事）。
+        // 用法：deepDolphin --doctor-parse < payload.json
+        QFile in;
+        in.open(stdin, QIODevice::ReadOnly);
+        const QByteArray raw = in.readAll();
+        QJsonParseError perr{};
+        const QJsonDocument doc = QJsonDocument::fromJson(raw, &perr);
+        EngineDoctor::Report rep;
+        if (perr.error != QJsonParseError::NoError || !doc.isObject()) {
+            rep.ok = false;
+            rep.error = QStringLiteral("自检载荷不是 JSON 对象");
+        } else {
+            rep = EngineDoctor::parse(doc.object());
+        }
+        const char *tone = "ok";
+        switch (EngineDoctor::toneOf(rep)) {
+        case EngineDoctor::Tone::ok:
+            tone = "ok";
+            break;
+        case EngineDoctor::Tone::problem:
+            tone = "problem";
+            break;
+        case EngineDoctor::Tone::unknown:
+            tone = "unknown";
+            break;
+        case EngineDoctor::Tone::unreadable:
+            tone = "unreadable";
+            break;
+        }
+        QJsonObject out;
+        out.insert(QStringLiteral("ok"), rep.ok);
+        out.insert(QStringLiteral("problems"), rep.problems);
+        out.insert(QStringLiteral("tone"), QString::fromLatin1(tone));
+        out.insert(QStringLiteral("summary"), EngineDoctor::summary(rep));
+        out.insert(QStringLiteral("checks"), rep.checks.size());
+        fprintf(stdout, "%s\n",
+            qPrintable(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact))));
+        fflush(stdout);
+        return rep.ok ? 0 : 1;
+    }
+    if (rawArgs.contains(QStringLiteral("--receipt-file-path"))) {
+        // 从回执型命令的 stdout 里抽出落盘文件的绝对路径（判定层在
+        // logic/ArchReceipt）。契约检查拿**真引擎**的回执喂它 —— 「打开导出
+        // 文件 / 打开报告」入口全靠这一步，抽不到就永远是坏按钮。
+        // 用法：deepDolphin --receipt-file-path .md < receipt.txt
+        const int at = rawArgs.indexOf(QStringLiteral("--receipt-file-path"));
+        const QString suffix = (at + 1 < rawArgs.size()) ? rawArgs.at(at + 1) : QString();
+        if (suffix.isEmpty()) {
+            fprintf(stderr, "用法：deepDolphin --receipt-file-path <后缀> < 回执.txt\n");
+            return 2;
+        }
+        QFile in;
+        in.open(stdin, QIODevice::ReadOnly);
+        const QString text = QString::fromUtf8(in.readAll());
+        const QString path = ArchReceipt::filePath(ArchReceipt::plain(text), suffix);
+        fprintf(stdout, "%s\n", qPrintable(path));
+        fflush(stdout);
+        return path.isEmpty() ? 1 : 0;
     }
     if (rawArgs.contains(QStringLiteral("--platform-probe"))) {
         // 必须留在无头分支：否则未知 flag 落进 GUI 主路径单实例常驻，ci.sh 步骤 4 挂死
