@@ -11,6 +11,7 @@
 #    （存量 4 处为 M3-3 已登记的字号项，README 决策 72；只减不增）
 # 6. --agent-selftest（恒走 mock 渠道）
 # 7. verify 接线源扫描门：引擎 verify 的判定层与接线点必须都在（判定不许藏回视图）
+# 8. 图谱 Canvas 契约门：Canvas2D 覆盖契约清单 24 个方法 + logic/models 零 QWidget 头
 #
 # 用法：scripts/ci.sh [build目录]（默认 build/）
 set -euo pipefail
@@ -26,7 +27,7 @@ export LD_LIBRARY_PATH="$HOME/.local/dd-sysroot/usr/lib/x86_64-linux-gnu${LD_LIB
 export QT_PLUGIN_PATH="$HOME/.local/dd-sysroot/usr/lib/x86_64-linux-gnu/qt6/plugins${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 
-echo "› 1/7 selfcheck（断言 0 failed 且 ≥58 passed）"
+echo "› 1/8 selfcheck（断言 0 failed 且 ≥58 passed）"
 SELFCHECK_OUT="$("$BIN" --selfcheck || true)"
 printf '%s\n' "$SELFCHECK_OUT" | tail -1
 SC_PASSED="$(printf '%s\n' "$SELFCHECK_OUT" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+' || true)"
@@ -41,7 +42,7 @@ if [ "$SC_FAILED" -ne 0 ] || [ "$SC_PASSED" -lt 58 ]; then
 fi
 echo "✓ selfcheck ${SC_PASSED} passed, ${SC_FAILED} failed"
 
-echo "› 2/7 截图矩阵（离屏）"
+echo "› 2/8 截图矩阵（离屏）"
 # ⚠ 这一步**强制** offscreen，不继承环境里的 QT_QPA_PLATFORM。
 #   理由（决策 86）：基线是离屏拍的；若宿主已设 QT_QPA_PLATFORM=dxcb;xcb，
 #   快照会带 DTK 原生窗口装饰与 chameleon 样式 —— 同一份代码拍出另一张脸，
@@ -56,7 +57,7 @@ for theme in light dark; do
     done
 done
 
-echo "› 3/7 desktop / metainfo 校验（缺工具显式 SKIP）"
+echo "› 3/8 desktop / metainfo 校验（缺工具显式 SKIP）"
 if command -v desktop-file-validate >/dev/null 2>&1; then
     desktop-file-validate "$SRC/data/cn.deepdolphin.app.desktop" && echo "✓ desktop 合法"
 else
@@ -69,7 +70,7 @@ else
     echo "SKIP: appstream-util 未安装（README 决策 69 的硬门随工具到位生效）"
 fi
 
-echo "› 4/7 平台探针（正式断言：exit 0 且输出含 backend=）"
+echo "› 4/8 平台探针（正式断言：exit 0 且输出含 backend=）"
 PROBE_RC=0
 PROBE_OUT="$("$BIN" --platform-probe)" || PROBE_RC=$?
 printf '%s\n' "$PROBE_OUT"
@@ -83,7 +84,7 @@ if ! printf '%s\n' "$PROBE_OUT" | grep -q '^backend='; then
 fi
 echo "✓ 平台探针通过（backend=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^backend=//p')，托盘/主题/字号档位见上，offscreen 下托盘无效属预期）"
 
-echo "› 5/7 D2 grep 门（DS::* 单点真相源；排除白名单后命中 >4 判失败）"
+echo "› 5/8 D2 grep 门（DS::* 单点真相源；排除白名单后命中 >4 判失败）"
 if [ ! -d "$SRC/src" ]; then
     echo "✗ 源码目录不存在：$SRC/src（脚本位置/参数错了——门失效比门失败更糟）" >&2
     exit 1
@@ -99,10 +100,10 @@ if [ "$D2_COUNT" -gt 4 ]; then
 fi
 echo "✓ D2 命中 ${D2_COUNT}/4（余量仅限已登记字号项，README 决策 72）"
 
-echo "› 6/7 agent 自测（mock 渠道）"
+echo "› 6/8 agent 自测（mock 渠道）"
 "$BIN" --agent-selftest | tail -2
 
-echo "› 7/7 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
+echo "› 7/8 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
 # 剥注释再匹配：注释里出现的字样不算接线（否则加一行注释就能骗过门）。
 strip_comments() {
     if command -v perl >/dev/null 2>&1; then
@@ -141,5 +142,41 @@ if [ "$WIRING_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ verify 接线完整（$WIRING_HITS 项）"
+
+echo "› 8/8 图谱 Canvas 契约清单齐（章程 §3.5：方法清单就是移植验收清单）"
+# 契约清单（引擎 docs/graph-scene-schema.md 的渲染契约层）：26 个标准 Canvas2D 方法。
+# 「少实现一项，渲染器就跑不完」——本门逐个核 Canvas2D 是否声明为 override。
+CANVAS_METHODS="setTransform fillRect strokeRect rect beginPath moveTo lineTo arcTo closePath arc bezierCurveTo fill stroke fillText createLinearGradient addColorStop setLineDash setLineDashOffset setShadowBlur setShadowColor setGlobalAlpha setLineWidth setStrokeStyle setFillStyle setFont setTextAlign"
+CANVAS_FAIL=0
+CANVAS_N=0
+for m in $CANVAS_METHODS; do
+    CANVAS_N=$((CANVAS_N + 1))
+    # 匹配「<空白或指针星号>方法名( … override」—— 返回类型随方法而变
+    # （void / QLinearGradient *），方法名前可能是空格也可能是紧贴的 '*'。
+    if ! grep -qE "[[:space:]\*]$m\(.*override" "$SRC/src/platform/Canvas2D.h"; then
+        echo "  ✗ Canvas2D 缺契约方法：$m" >&2
+        CANVAS_FAIL=1
+    fi
+done
+# 判定层（logic/）零 QWidget 头 —— 分层纪律不能因为新加了图谱层而破。
+GW_HITS="$(grep -rlE '#include[[:space:]]*<[Qq]Widget|#include[[:space:]]*<[A-Za-z]*Widget' \
+    "$SRC/src/logic" "$SRC/src/models" 2>/dev/null || true)"
+if [ -n "$GW_HITS" ]; then
+    echo "✗ logic/ 或 models/ 出现了 QWidget 头（分层纪律）：" >&2
+    printf '%s\n' "$GW_HITS" >&2
+    CANVAS_FAIL=1
+fi
+# 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
+for f in src/logic/GraphToken.cpp src/logic/SceneRender.cpp src/models/GraphScene.cpp src/platform/Canvas2D.cpp; do
+    if ! grep -qF "$f" "$SRC/CMakeLists.txt"; then
+        echo "  ✗ 构建未登记：$f" >&2
+        CANVAS_FAIL=1
+    fi
+done
+if [ "$CANVAS_FAIL" -ne 0 ]; then
+    echo "✗ 图谱 Canvas 契约门失败" >&2
+    exit 1
+fi
+echo "✓ Canvas2D 覆盖契约清单 ${CANVAS_N}/26 个方法；logic/ 与 models/ 零 QWidget 头；新文件均已登记构建"
 
 echo "✓ CI 门通过：请 git diff docs/snapshots 人工确认视觉变化符合预期"

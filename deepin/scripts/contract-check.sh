@@ -14,6 +14,9 @@
 #   8. 文档托管承诺        托管标记写入、用户哨兵行逐字节保留、docs --json 可回读
 #   9. verify 四态契约     六键齐全；刚 update 完 verified=true；删文档 → missing=1
 #                          且 verified=false、note 带备份路径（缺失 ≠ 通过）
+#  10. graph scene 契约   moongit-graph-scene v1：五键齐全、v==1、themes 两套、
+#                          edgesDropped/warnings 恒发、chips[].count 是数字、
+#                          shape 类型只五种、hits 带 id/x/y/w
 #
 # 引擎缺席：SKIP 且不算通过（如实报告，不伪造契约验证）。
 set -uo pipefail
@@ -125,6 +128,26 @@ check "verify 缺失档：missing==1 且 verified 为假（缺失 ≠ 通过）"
     "d.get('missing')==1 and d.get('verified') is False" "$VERIFY_MISSING"
 check "verify 缺失档：note 带备份路径（用户下一步要的东西不许被吞）" \
     "'备份' in json.dumps(d, ensure_ascii=False) and 'backups' in json.dumps(d, ensure_ascii=False)" "$VERIFY_MISSING"
+
+# 10. graph arch --format scene 契约（moongit-graph-scene v1）：客户端 GraphScene 模型层
+#     消费的键名与口径，逐字对真引擎输出。
+SCENE="$("$BIN" graph arch atlas --format scene 2>/dev/null)"
+check "scene 顶层：v/gen/themes/views/panels 五键齐全" \
+    "all(k in d for k in ('v','gen','themes','views','panels'))" "$SCENE"
+check "scene 版本：v==1 且 gen=='moongit-graph'（契约版本不认识就明说，不静默兼容）" \
+    "d.get('v')==1 and d.get('gen')=='moongit-graph'" "$SCENE"
+check "scene 主题：dark/light 两套，且含 cols/fills/langs 与 simple token" \
+    "all(t in d.get('themes',{}) for t in ('dark','light')) and all(k in d['themes']['dark'] for k in ('text','muted','bg0','cols','fills','langs'))" "$SCENE"
+check "scene 视图：含 arch，且每个 view 都发 edgesDropped（恒发，0 也发）" \
+    "'arch' in d.get('views',{}) and all('edgesDropped' in v for v in d['views'].values())" "$SCENE"
+check "scene 告警：meta.warnings 四字段恒发（空也发）" \
+    "all(k in d.get('meta',{}).get('warnings',{}) for k in ('violations','cycleEdges','violationPairs','cycleModules'))" "$SCENE"
+check "scene 分层：chips 是数组（空也发）且每个 count 是**数字**字段（布局读它，不许从 label 抠数字）" \
+    "isinstance(d.get('meta',{}).get('chips'), list) and all(isinstance(c.get('count'), int) for c in d['meta']['chips'])" "$SCENE"
+check "scene 形状：t 只在已知的五种里（frame/rrect/rect/text/edge）" \
+    "all(s.get('t') in ('frame','rrect','rect','text','edge') for v in d.get('views',{}).values() for s in v.get('shapes',[]))" "$SCENE"
+check "scene 命中区：hits 带 id/x/y/w（下钻靠它）" \
+    "all(all(k in h for k in ('id','x','y','w')) for v in d.get('views',{}).values() for h in v.get('hits',[]))" "$SCENE"
 
 echo "──── contract-check: $pass passed, $fail failed ────"
 [ "$fail" -eq 0 ]

@@ -54,6 +54,7 @@ add_executable(deepDolphin
     src/models/EngineError.cpp
     src/models/EngineFailure.cpp
     src/models/EngineJson.cpp
+    src/models/GraphScene.cpp
     src/models/ProjectStatus.cpp
     src/models/StatusEnvelope.cpp
     src/models/UpdateResult.cpp
@@ -86,9 +87,13 @@ add_executable(deepDolphin
     src/logic/Router.cpp
     src/logic/Scope.cpp
     src/logic/UpdateOutcome.cpp
+    # ── 图谱/架构图（章程 §3.5 平台 Canvas 分派：deepin = Qt QPainter Canvas）──
+    src/logic/GraphToken.cpp
+    src/logic/SceneRender.cpp
     # ── platform/ ──
     src/platform/AppService.cpp
     src/platform/AutostartManager.cpp
+    src/platform/Canvas2D.cpp
     src/platform/CrashHandler.cpp
     src/platform/IconLoader.cpp
     src/platform/SysOpen.cpp

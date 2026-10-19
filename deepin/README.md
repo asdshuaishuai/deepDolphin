@@ -38,7 +38,7 @@ moonGit（仓颉引擎，仓内别名 deepgit）项目群进度客户端的 Linu
 | Dock 菜单（打开面板 / 全部浅更新） | 托盘菜单：打开面板 / 全部浅更新 + **退出**（Linux 托盘必须有退出项） | `tray/TrayController` |
 | 添加 / 扫描项目（`ScanSheet`） | ScanDialog + ScanCoverage 覆盖度披露接回主窗口说明条 | `ui/dialogs/ScanDialog`；`logic/ScanCoverage`、`PathInput` |
 | 深链启动参数（`Route.swift`） | `--project <名>`、`--section board\|milestones\|dashboard`、`--open-settings`、`--agent-selftest`；pendingRoute 消费一次即置闩 | `logic/Route`、`Router`；`PanelWindow::maybeApplyPendingRoute` |
-| 纯函数判定层（`client-check.sh` 单独编译断言） | `models/`、`logic/` 零 QWidget 头，判定收敛为二进制内置 `--selfcheck`（77 例） | `src/models/`、`src/logic/`、`app/SelfCheck` |
+| 纯函数判定层（`client-check.sh` 单独编译断言） | `models/`、`logic/` 零 QWidget 头，判定收敛为二进制内置 `--selfcheck`（103 例） | `src/models/`、`src/logic/`、`app/SelfCheck` |
 | 设置窗口（自动化 + AI） | 设置三页签（DTabBar+QStackedWidget）：通用 / 自动化（分段改完立即生效）/ AI | `ui/dialogs/panes/*` |
 | 快捷键（CommandMenu + ShortcutMap.swift） | QShortcut 全量真绑（含深更新——mac 曾「声明未绑」的缺陷不重犯） | `ui/PanelWindow.cpp:516`；`logic/ShortcutMap.h`（唯一声明处） |
 | 定时更新 + AI 简报 | autoHours 周期 + 首轮 600s；简报经通知；silent 场景不偷弹结果面板 | `app/AppModel.cpp:202`；`ai/AiDigests`（scheduledDigest） |
@@ -101,7 +101,7 @@ cmake --build build --parallel 4
 冒烟脚本按此硬路径断言）。
 
 ```sh
-./build/deepDolphin --selfcheck   # 模型层 fixtures 自检（无 GUI、无引擎依赖；当前 77 例）
+./build/deepDolphin --selfcheck   # 模型层 fixtures 自检（无 GUI、无引擎依赖；当前 103 例）
 ./build/deepDolphin --version
 ./build/deepDolphin --project <名>   # 深链（--section board|milestones|dashboard 同理）
 ./build/deepDolphin --agent-selftest [问题]   # 无头 agent 自测（默认「总结一下项目群现状」）
@@ -125,7 +125,7 @@ export QT_QPA_PLATFORM=offscreen        # 无显示环境时；共享 X11 会话
 share/applications/cn.deepdolphin.app.desktop，图标 → share/icons/hicolor/scalable/apps）。
 安装后由系统 Qt6/DTK6 运行库满足链接，无需上述环境变量。
 
-本阶段实测记录：`--selfcheck` 77 通过 0 失败；`--version` 输出 `deepDolphin 0.1.0`；
+本阶段实测记录：`--selfcheck` 103 通过 0 失败；`--version` 输出 `deepDolphin 0.1.0`；
 offscreen 启动探测 `timeout 8` 退出码 124（进程存活满 8 秒）；`ldd` 裸环境报 Qt6/DTK6 not found、
 带上 `LD_LIBRARY_PATH` 后 0 个 not found。**运行期环境变量**（sysroot 方案的代价，打包后消失）：
 `LD_LIBRARY_PATH=~/.local/dd-sysroot/usr/lib/x86_64-linux-gnu`（Qt/DTK 运行库）+
@@ -238,7 +238,7 @@ key 只进 libsecret（service=cn.deepdolphin.app.ai / account=api-key），不�
    的文件（models/app 逻辑/tray 壳/ui 壳），页面、AI、AppModel、Notifier、AutostartManager、
    SysOpen、DesignTokens 等随其实现阶段同步加入（CMakeLists 有显式提醒注释）。
    `tests/` 子目录随 PLAN 里程碑 2 加入；当前模型层冒烟判据由二进制内置 `--selfcheck`
-   承担（77 例，含缺键拒绝/契约过旧判据/双形态 update/shallow-deep 分派等 CONTRACT 红线）。
+   承担（103 例，含缺键拒绝/契约过旧判据/双形态 update/shallow-deep 分派等 CONTRACT 红线）。
    代价：CMakeLists 与 PLAN 清单阶段性地不一致，靠注释锚点防丢失。
 2. **托盘数据对接用 `TraySnapshot` 纯结构体**，而非 PLAN 签名里的 `AppModel*`：
    AppModel 属里程碑 3，提前引入会迫使托盘壳依赖一个不存在的类型。AppModel 落地后由它
@@ -457,7 +457,7 @@ key 只进 libsecret（service=cn.deepdolphin.app.ai / account=api-key），不�
 | `dtk.core.dsg: AppId is fetched from AM, and value is "zcode"` | 环境限制 | 容器会话无应用商店注册项，DSG AppId 回退到宿主进程名；真机经 .desktop 安装后取 `cn.deepdolphin.app` |
 | `QObject::connect: No such signal QPlatformNativeInterface::systemTrayWindowChanged(QScreen*)` | 环境限制 | offscreen 无系统托盘；真 DDE 走 SNI 协议（与「运行期事实」一致）。托盘真实表现仍**待真机验证** |
 | `desktop-file-validate` 未跑 | 工具缺席 | 容器内无该工具（`command -v` 为空）。`.desktop` 内容已人工核对（Exec/Icon/StartupWMClass/X-Deepin-Vendor），装真机后建议补跑 |
-| `ctest`：无目标可跑 | 设计如此 | CMakeLists.txt:134 注释：`enable_testing()+tests/` 缓建，模型层冒烟判据由 `--selfcheck`（77 例）承担 |
+| `ctest`：无目标可跑 | 设计如此 | CMakeLists.txt:134 注释：`enable_testing()+tests/` 缓建，模型层冒烟判据由 `--selfcheck`（103 例）承担 |
 | Ctrl+Shift+U 与输入法的潜在冲突 | 待真机验证 | 决策 19 预案：保持绑定、菜单显示实际序列；容器内无真实 IME，无法在本阶段闭环 |
 
 ### 真机联调阶段（2026-10-03 收尾，决策 36–44）
@@ -596,6 +596,26 @@ C11「文档完整性承诺」当时只靠一条反向 grep（客户端没有业
 ② `VerifyEnvelope::fromJson` 缺键回落成 0 → 「缺键 → 解不出」红；③ 摘掉 `loadVerify` 调用 → 接线门红（退出码 1）。
 **视觉零变化**（离屏同机位像素级比对：HEAD 与本批 6 张快照的差异恒定落在状态条 y 699–708 的
 32×9 区域 —— 即「上次刷新 HH:MM」时间戳，其余逐像素相同，故基线未随本批改动）。
+
+### 图谱 Canvas 阶段（2026-10-19，决策 87–89）
+
+引擎 10-13 起了整族「代码图谱 / 交互架构图 / 符号热力图 / 补丁体检」能力，
+mac 端 30 个提交（`d467a4f..d62e429`，7919 行）已具现化；章程同时新增
+**§3.5 平台 Canvas 分派**：运行时渲染一律走平台 Canvas，**DDE = Qt QPainter Canvas**（指定实现）。
+本批落 deepin 被指派的那一半：**契约层 + 渲染内核**（页面接线是下一批）。
+
+| # | 决策 | 为什么 | 已知代价 |
+|---|---|---|---|
+| 87 | **场景契约层 + Qt QPainter Canvas2D 内核落地（章程 §3.5 指派的 DDE 实现）**：`models/GraphScene.h` 收 `moongit-graph-scene v1`（`v` 必须为 1，**版本不认识就明说不兼容**，不静默兼容；`arch` 恒排第一；三个恒发字段 `edgesDropped`/`meta.warnings`/`chips[].count` 都读得出）；`logic/GraphToken` 落 token 四形态 + **`node:<id>` 二跳**，未知 token **洋红兜底**（引擎违约的显式信号，不静默当黑）；`logic/SceneRender` 把场景翻成一帧 Canvas2D 调用（纯函数层）；`platform/Canvas2D` 用 QPainter 实现契约清单**全部 26 个**标准方法；`logic/CanvasSink` 是渲染契约的**接缝端口**（判定层挂记录式接收端逐条断言调用序列，平台层只管翻译成 QPainter） | 章程把「平台 Canvas 必须实现同一子集，方法清单就是移植验收清单」写成了硬门，本批按门施工而不是按观感施工；判定层与平台层之间留端口，换栈（仓颉 Canvas / CoreGraphics）时判定层与契约层零改动 | **文字基线与 mac 差一档**：本端按 Canvas2D 语义（`fillText` 的 y 是**基线**，与引擎 Web 驱动 `y+22` 一致），mac 的 SwiftUI 驱动用的是**顶对齐** —— 引擎的 scene 数据是按基线设计的，故 deepin 跟契约、mac 是偏差方（差约一个字高，待真机目检）；`shadowBlur`/`shadowColor` QPainter **无原生阴影**，本批用「离屏绘制 + alpha 盒式模糊三遍≈高斯 + 着色合成」模拟（显式等价实现，不是糊弄）；Qt6 移除了 `QPainterPath::arcTo(点,点,半径)` 与 `strokePath`，圆角语义按 Canvas 规范**自己实现**（切线圆弧 + 半径夹取），不许拿直线凑；本批只到内核，**没有页面**（架构图页/下钻/命中测试是下一批） |
+| 88 | **判据补强：圆角用「差分像素」判，不用「数调用次数」判**：原先只断言 `arcTo` 被调了 4 次 —— 负控把 arcTo 换成直线时判据**照样全绿**（灵敏度不足，等于没判）；补一条差分判据：同尺寸方块「圆角(r=8) vs 直角」的四角实心像素数差（实测直角 64 / 圆角 12），圆角实现才过 | 「判据全绿」不构成证据 —— 负控没红说明判据抓不住，不是实现没问题 | 像素判据对渲染后端敏感（当前 QPainter 离屏稳定）；未来换 Canvas 实现需复测阈值 |
+| 89 | **`ci.sh` 新增第 8 道门：图谱 Canvas 契约门**（Canvas2D 逐个核契约清单 26 个方法是否声明为 override；`logic/` 与 `models/` 零 QWidget 头；四个新文件必须已登记进 CMake —— 漏登记 = 代码在仓里但没编进去）；`contract-check.sh` 加第 10 组真引擎断言（8 条：五键齐全 / `v==1` / themes 两套 / `edgesDropped` 恒发 / `warnings` 恒发 / `chips[].count` 是数字 / shape 类型只五种 / hits 带 id·x·y·w） | 移植验收清单是契约给的，不该靠人肉记得；「漏登记进构建」是源扫描能抓而编译抓不到的缺陷 | 门按**方法名**匹配声明行（返回类型随方法而变，`void` 写死会漏 `createLinearGradient`；方法名前可能是紧贴的指针星号 `QLinearGradient *foo`）—— 挪动声明格式会误报 |
+
+**本批验证**（全部实跑）：`--selfcheck` **103 通过 0 失败**（77 → 103，+26 例：scene 契约四则 /
+恒发字段 / token 四形态 + 二跳 + 洋红 / 渲染指令序列 / 阴影与圆角差分像素）；
+`contract-check.sh` **23/23**（真引擎沙箱，15 → 23，+8 条 scene 契约断言）；
+`ci.sh` **8/8 门全绿**；**三处负控真红**：① 未知 token 回落成黑 → 洋红判据红；
+② 阴影模拟短路 → 阴影像素判据红；③ `arcTo` 换成直线 → **补强后**的圆角差分判据红。
+**视觉零变化**（本批只加内核不加页面，快照基线未动）。
 
 ## 分层纪律（后续阶段必须延续）
 

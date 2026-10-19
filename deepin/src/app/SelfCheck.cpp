@@ -2,6 +2,8 @@
 #include "../logic/DashFilter.h"
 #include "../logic/Derived.h"
 #include "../logic/DocumentIntegrity.h"
+#include "../logic/GraphToken.h"
+#include "../logic/SceneRender.h"
 #include "../logic/Route.h"
 #include "../logic/Router.h"
 #include "../logic/ShortcutMap.h"
@@ -22,15 +24,19 @@
 #include "../models/StatusEnvelope.h"
 #include "../models/ToolsEnvelope.h"
 #include "../models/UpdateResult.h"
+#include "../models/GraphScene.h"
 #include "../models/VerifyEnvelope.h"
 #include "../ui/common/EmptyState.h"
 #include "../ui/common/FlatButton.h"
 #include "../ui/common/SegmentedButton.h"
+#include "../platform/Canvas2D.h"
 #include <QColor>
 #include <QDateTime>
+#include <QImage>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMargins>
+#include <QPainter>
 
 namespace {
 int g_pass = 0;
@@ -656,6 +662,216 @@ int SelfCheck::run(QStringList &log)
         check(log, "verify 文档行：文件名 + 引擎 note（不一致档不装没事）",
             line.contains(QStringLiteral("README.md")) && line.contains(QStringLiteral("不一致"))
                 && line.contains(QStringLiteral("backups/README.md")));
+    }
+
+    // ── 15. 图谱/架构图：场景契约 + token 解析 + 渲染指令 + Canvas2D 像素（章程 §3.5）──
+    {
+        const QString kSceneJson = QStringLiteral(R"JSON({
+            "v":1,"gen":"moongit-graph",
+            "meta":{"title":"架构图","truncated":false,
+                    "warnings":{"violations":0,"cycleEdges":0,"violationPairs":[],"cycleModules":[]},
+                    "chips":[{"layer":0,"count":1,"label":"基础层 1"}]},
+            "themes":{
+              "dark":{"text":"#e8eef8","muted":"#94a3b8","bg0":"#0b1220","border":"#1e293b",
+                      "cols":["#38bdf8","#a78bfa"],"fills":["rgba(10,20,30,0.5)"],"langs":{"swift":"#f05138"}},
+              "light":{"text":"#0f172a","muted":"#64748b","bg0":"#f8fafc","border":"#e2e8f0",
+                      "cols":["#38bdf8"],"fills":[],"langs":{}}},
+            "views":{
+              "module:b":{"label":"B","nodeTheme":{"b":"cols.0"},"shapes":[],"particles":[],"hits":[],"edgesDropped":0},
+              "arch":{"label":"架构","nodeTheme":{"a":"cols.1"},
+                      "shapes":[
+                        {"t":"frame","x":10,"y":20,"w":300,"h":120,"color":"cols.0","label":"L4 其他"},
+                        {"t":"rrect","x":30,"y":40,"w":120,"h":60,"r":11,"fill":"panel","stroke":"node:a","sw":1.2},
+                        {"t":"rect","x":34,"y":49,"w":3.2,"h":42,"fill":"node:a"},
+                        {"t":"text","x":42,"y":62,"text":"cli","size":13,"weight":600,"color":"text","align":"left"},
+                        {"t":"edge","p":[10,20,30,30,40,40,50,50],"c0":"node:a","c1":"node:b","sw":3.5,"alpha":0.9,"arrow":9,"delay":0},
+                        {"t":"edge","p":[10,20,30,30,40,40,50,50],"c0":"node:a","c1":"node:b","delay":999999},
+                        {"t":"weird","x":1}
+                      ],
+                      "particles":[{"p":[0,0,1,1,2,2,3,3],"n":3,"sp":0.001,"color":"accent"}],
+                      "hits":[{"id":"a","x":30,"y":40,"w":120,"h":60,"drill":"module:a"}],
+                      "edgesDropped":3}},
+            "panels":{"arch:a":{"title":"a","sub":"s","stats":"t"}}
+        })JSON");
+        const auto scene = GraphScene::fromJson(JO(kSceneJson));
+        check(log, "scene 契约：v=1 解出；arch 恒排第一（引擎导出顺序）",
+            scene.has_value() && scene->views.size() == 2 && scene->views.at(0).id == QLatin1String("arch")
+                && scene->views.at(1).id == QLatin1String("module:b"));
+
+        // 契约版本不认识 → 明说不兼容，不静默兼容。
+        QJsonObject badV = JO(kSceneJson);
+        badV.insert(QStringLiteral("v"), 2);
+        check(log, "scene 契约：v≠1 → 解不出（不静默兼容）",
+            !GraphScene::fromJson(badV).has_value());
+
+        // 必发键缺 → 契约过旧。
+        QJsonObject noViews = JO(kSceneJson);
+        noViews.remove(QStringLiteral("views"));
+        check(log, "scene 契约：缺 views → 解不出（不许回落成空图）",
+            !GraphScene::fromJson(noViews).has_value());
+
+        // 恒发字段：edgesDropped=3（不是「没有丢弃」）；warnings 恒发；chips[].count 是数字。
+        check(log, "scene 恒发字段：edgesDropped / meta.warnings / chips[].count 都读得出",
+            scene.has_value() && scene->views.at(0).edgesDropped == 3
+                && scene->warnings.violations == 0 && scene->warnings.cycleEdges == 0
+                && scene->chips.size() == 1 && scene->chips.at(0).count == 1
+                && scene->chips.at(0).label == QStringLiteral("基础层 1"));
+
+        if (!scene.has_value()) {
+            log << QStringLiteral("FAIL  scene 后续判据（场景没解出，后续用例无法跑）");
+            ++g_fail;
+        } else {
+            const GraphView &v = scene->views.at(0);
+            const GraphThemeTokens &th = scene->dark;
+
+            // ── token 四形态 + 二跳 ──
+            check(log, "token 直取：text/muted/bg0 走 themes 直取",
+                GraphToken::resolve(th, QStringLiteral("text"), &v).value
+                        == QStringLiteral("#e8eef8")
+                    && GraphToken::resolve(th, QStringLiteral("muted"), &v).value
+                        == QStringLiteral("#94a3b8"));
+            check(log, "token 下标：cols.N / fills.N 走数组",
+                GraphToken::resolve(th, QStringLiteral("cols.1"), &v).value
+                        == QStringLiteral("#a78bfa")
+                    && GraphToken::resolve(th, QStringLiteral("fills.0"), &v).value
+                        == QStringLiteral("rgba(10,20,30,0.5)"));
+            check(log, "token 字典：langs.<lang> 走 langs",
+                GraphToken::resolve(th, QStringLiteral("langs.swift"), &v).value
+                    == QStringLiteral("#f05138"));
+            // 二跳：node:a → view.nodeTheme[a] = cols.1 → #a78bfa
+            check(log, "token 二跳：node:<id> → 视图 nodeTheme → 基础 token",
+                GraphToken::resolve(th, QStringLiteral("node:a"), &v).value
+                    == QStringLiteral("#a78bfa"));
+            // 查不到节点 → 回落 text（不是洋红：图上没有这个节点 ≠ 引擎违约）
+            check(log, "token 二跳落空 → 回落 text（不是洋红）",
+                GraphToken::resolve(th, QStringLiteral("node:zzz"), &v).value
+                        == QStringLiteral("#e8eef8")
+                    && !GraphToken::resolve(th, QStringLiteral("node:zzz"), &v).violation);
+            // 未知 token → 洋红 + violation 标记（引擎违约的显式信号）
+            const GraphToken::Resolved bad = GraphToken::resolve(th, QStringLiteral("nope"), &v);
+            check(log, "token 未知 → 洋红兜底 + violation 标记（不静默当黑）",
+                bad.violation && GraphToken::toColor(bad.value) == QColor(255, 0, 204));
+            // 下标越界 → 也是未知 token → 洋红
+            check(log, "token 下标越界 → 洋红兜底（不回落成第 0 项）",
+                GraphToken::resolve(th, QStringLiteral("cols.99"), &v).violation);
+            // 语言色查不到 → 回落 text
+            check(log, "token 语言色查不到 → 回落 text（不是洋红）",
+                !GraphToken::resolve(th, QStringLiteral("langs.rust"), &v).violation);
+
+            // 颜色解析：#hex / #hex8 / #rgb / rgba()
+            check(log, "颜色解析：#hex / #hexAA / #RGB / rgba() 四形态",
+                GraphToken::toColor(QStringLiteral("#ff0000")).name() == QStringLiteral("#ff0000")
+                    && GraphToken::toColor(QStringLiteral("#00ff0080")).alpha() == 128
+                    && GraphToken::toColor(QStringLiteral("#abc")).name() == QStringLiteral("#aabbcc")
+                    && GraphToken::toColor(QStringLiteral("rgba(10,20,30,0.5)")).alpha() > 100);
+
+            // ── 渲染指令序列（记录式接收端）──
+            RecordingSink sink;
+            const SceneRender::Stats st = SceneRender::render(
+                *scene, v, true, SceneRender::Viewport { 1.0, 0.0, 0.0 }, 800, 600, 1000.0, sink);
+            check(log, "渲染：背景先铺满画布（fillRect 用 bg0）",
+                sink.ops.size() >= 2 && sink.ops.at(0).contains(QStringLiteral("#0b1220"))
+                    && sink.ops.at(1) == QStringLiteral("fillRect(0,0,800,600)"));
+            check(log, "渲染：frame → strokeRect + 层框标题",
+                sink.ops.contains(QStringLiteral("strokeRect(10,20,300,120)"))
+                    && sink.texts.contains(QStringLiteral("L4 其他")));
+            check(log, "渲染：rrect → 圆角路径（arcTo×4）+ fill + stroke",
+                sink.arcToCount >= 4);
+            check(log, "渲染：text → fillText 且字体/对齐按契约",
+                sink.texts.contains(QStringLiteral("cli")) && sink.lastFont.contains(QStringLiteral("600"))
+                    && sink.lastAlign == QStringLiteral("left"));
+            check(log, "渲染：edge → 贝塞尔 + 渐变 + 虚线 + 箭头（渐变 1 个、虚线 2 次）",
+                sink.bezierCount >= 1 && sink.gradientCount == 1 && sink.dashCount >= 2);
+            check(log, "渲染：入场未到的边不画（delay 999999 → edgesPending=1）",
+                st.edgesPending == 1 && st.edges == 1);
+            check(log, "渲染：不认识的 shape 类型计数披露（unknown=1，不静默跳）",
+                st.unknown == 1);
+            check(log, "渲染：粒子按 n 画 3 个（相位循环，不随机）",
+                st.particles == 3);
+            check(log, "渲染：统计里 drawn 与 unknown 分开（画了什么 vs 不认得什么）",
+                st.shapes == 7 && st.drawn == 5 && st.unknown == 1);
+
+            // 同一时刻重画 → 指令序列逐条相同（引擎保证两次导出逐字节一致）
+            RecordingSink sink2;
+            SceneRender::render(*scene, v, true, SceneRender::Viewport { 1.0, 0.0, 0.0 }, 800, 600,
+                1000.0, sink2);
+            check(log, "渲染：同一时刻重画 → 指令序列逐条相同（可复现）",
+                sink.ops == sink2.ops);
+        }
+
+        // ── Canvas2D 像素级（QPainter 背书）──
+        // 差分法：同形状「有阴影 vs 无阴影」比形状外的着色像素数 —— 比绝对值稳。
+        auto countOutside = [](bool withShadow) {
+            QImage img(60, 60, QImage::Format_ARGB32_Premultiplied);
+            img.fill(Qt::transparent);
+            {
+                QPainter p(&img);
+                Canvas2D c(&p);
+                c.setFillStyle(CanvasPaint(QColor(0, 0, 255)));
+                if (withShadow) {
+                    c.setShadowColor(QColor(0, 0, 0));
+                    c.setShadowBlur(8);
+                }
+                c.fillRect(25, 25, 10, 10);
+            }
+            int n = 0;
+            for (int y = 0; y < 60; ++y) {
+                for (int x = 0; x < 60; ++x) {
+                    if (x >= 25 && x < 35 && y >= 25 && y < 35)
+                        continue;
+                    if (qAlpha(img.pixel(x, y)) > 0)
+                        ++n;
+                }
+            }
+            return n;
+        };
+        const int noShadow = countOutside(false);
+        const int withShadow = countOutside(true);
+        check(log, "Canvas2D 像素：fillRect 真的填上了（形状内为实色）",
+            noShadow == 0); // 无阴影时形状外一个像素都不该着色
+        check(log, "Canvas2D 阴影：shadowBlur>0 时形状外出现淡出像素（阴影真的产生了）",
+            withShadow > 0 && withShadow > noShadow);
+
+        // 圆角语义的差分判据：同一个 20×20 方块，圆角(r=8) 的**四角**实心像素
+        // 远少于直角 —— 只数 arcTo 调用次数是抓不到「圆角画成了直角」的。
+        auto cornerFilled = [](bool rounded) {
+            QImage img(40, 40, QImage::Format_ARGB32_Premultiplied);
+            img.fill(Qt::transparent);
+            {
+                QPainter p(&img);
+                Canvas2D c(&p);
+                c.setFillStyle(CanvasPaint(QColor(0, 0, 255)));
+                c.beginPath();
+                if (rounded) {
+                    const double x = 10, y = 10, w = 20, h = 20, r = 8;
+                    c.moveTo(x + r, y);
+                    c.arcTo(x + w, y, x + w, y + h, r);
+                    c.arcTo(x + w, y + h, x, y + h, r);
+                    c.arcTo(x, y + h, x, y, r);
+                    c.arcTo(x, y, x + w, y, r);
+                    c.closePath();
+                } else {
+                    c.rect(10, 10, 20, 20);
+                }
+                c.fill();
+            }
+            int n = 0;
+            for (int cy : { 10, 26 }) {
+                for (int cx : { 10, 26 }) {
+                    for (int y = cy; y < cy + 4; ++y) {
+                        for (int x = cx; x < cx + 4; ++x) {
+                            if (qAlpha(img.pixel(x, y)) > 128)
+                                ++n;
+                        }
+                    }
+                }
+            }
+            return n;
+        };
+        const int sharpCorners = cornerFilled(false);
+        const int roundCorners = cornerFilled(true);
+        check(log, "Canvas2D 圆角：arcTo 真切出圆角（直角方块的四角实心像素远多于圆角）",
+            sharpCorners >= 60 && roundCorners < 20 && roundCorners < sharpCorners);
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

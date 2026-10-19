@@ -3,79 +3,112 @@
 **用途**：把「mac 端有什么 / 引擎有什么 / deepin 还差什么」摊成一张可勾选的账，
 免得每批都靠记忆重新比一遍。**每落一项就改本表**（状态 + 落点 + 判据）。
 
-- 审计日期：2026-10-19
-- 审计基准：引擎仓 `../moongit`（`8b77627`）、mac 端 `macos/`（`dadca02`，功能基准）、deepin 端 `deepin/`
-- 审计方法：① mac 53 个源文件 → deepin 88 个源文件逐个对位；② 判定层逐条比对
-  （`Derived` / `DashboardScope` / `Scope` / `DashFilter` / `Thresholds` / `UpdateOutcome` / `StopDecision`）；
-  ③ 引擎命令面枚举（`moongit --help` 24 条 / `tools --json` 10 条 / MCP `tools/list` 15 条）反查客户端消费点。
+- 最近审计：2026-10-19（第二次，**基线已更新**）
+- 审计基准：引擎仓 `../moongit` **`dev` 分支**（`d363b6a`）、mac 端 `macos/`（`d62e429`）、deepin 端 `deepin/`
+- 审计方法：① mac 源文件 → deepin 源文件逐个对位 + 判定层逐条比对；
+  ② 引擎命令面枚举（CLI 24 命令 / `tools --json` 28 工具 / MCP `tools/list` 33 工具）反查客户端消费点；
+  ③ 引擎 `docs/graph-scene-schema.md` 契约清单逐条对 deepin 实现。
+
+> ⚠ **第一次审计（2026-10-19 上午）作废**：当时误判「网络不通」，没拉远端，
+> 漏掉了 mac 端 10-07→10-13 的 **30 个提交 / 7919 行**与引擎 `dev` 分支的 **49 个提交**。
+> 本表是拉齐后重做的版本。
 
 ---
 
 ## A. mac → deepin：**已对位，无需动作**
 
-文件级对位后逐条核对源码，以下能力两端**行为口径一致**（不是「有同名文件」，
-是判定口径逐字对齐）：
+判定层逐条比对（不是「有同名文件」，是**口径逐字对齐**）：
 
 | 能力 | mac 落点 | deepin 落点 | 核对结论 |
 |---|---|---|---|
 | 刷新合并门闩 | `ClientDecisions.swift` | `logic/ClientDecisions` | 一致 |
-| 提交构成 12 色（不取模） | `CommitTypeComposition.swift` | `logic/CommitTypeComposition` | 一致 |
-| 仪表盘 KPI 口径 | `DashboardScope.swift` | `logic/DashboardScope` | 一致：**项目总数用 `listed`（注册表条数）不是 `total`**；里程碑分母不含 `unknown`；分支数用 `repoBranchCount` |
-| 「等我动手」判定顺序 | `Model.swift`（`needsAction` 先于 `engineStale`） | `logic/Derived.cpp:56` | 一致：**`needsAction` 必须在 `engineStale` 之前** |
-| 可合入分支判据 | 引擎 `aheadOfDefault` | `logic/Derived.cpp:32` | 一致：`aheadOfDefault > 0 && !isDefault && !merged` |
-| 状态词档位 | `Models.swift` | `logic/Derived.cpp:74` | 一致：`activeDays30` 线，说「N 天没更新」不说「停滞」 |
-| 里程碑未知态 | `MilestoneCard.swift` | `logic/Derived.cpp:217` | 一致：`unknown` 不进徽标、不进达成率分母 |
+| 提交构成 12 色 | `CommitTypeComposition.swift` | `logic/CommitTypeComposition` | 一致 |
+| 仪表盘 KPI 口径 | `DashboardScope.swift` | `logic/DashboardScope` | 一致：**项目总数用 `listed` 不是 `total`**；里程碑分母不含 `unknown`；分支数用 `repoBranchCount` |
+| 「等我动手」判定顺序 | `Model.swift` | `logic/Derived.cpp:56` | 一致：**`needsAction` 必须在 `engineStale` 之前** |
+| 可合入分支判据 | 引擎 `aheadOfDefault` | `logic/Derived.cpp:32` | 一致 |
+| 状态词档位 | `Models.swift` | `logic/Derived.cpp:74` | 一致（`activeDays30` 线） |
+| 里程碑未知态 | `MilestoneCard.swift` | `logic/Derived.cpp:217` | 一致（`unknown` 不进徽标/分母） |
 | 引擎错误五类文案 | `EngineFailure.swift` | `models/EngineFailure` | 一致 |
-| URL 错误脱敏 + host:port | `AIErrorMessage.swift` | `ai/AIChannel.cpp:25/34/44` | 一致（deepin 把三者并进 AIChannel） |
-| 提交数分母口径 | `CommitCountScope.swift` | `models/StatusTypes.h:103` | 一致（deepin 并进 StatusTypes） |
+| URL 错误脱敏 + host:port | `AIErrorMessage.swift` | `ai/AIChannel.cpp` | 一致（deepin 把三者并进 AIChannel） |
+| 提交数分母口径 | `CommitCountScope.swift` | `models/StatusTypes.h:103` | 一致 |
 | 侧栏「视图 / 仓库」两组 + 计数 | `SidebarView` | `ui/SidebarNav` | 一致 |
-| 设置三页签（通用/自动化/AI） | `AISettingsView.swift` | `ui/dialogs/panes/*` | 一致 |
-| 快捷键（13 个，撞键内置判定） | `ShortcutMap.swift` | `logic/ShortcutMap.h`（唯一声明处）+ PanelWindow 全量真绑 | 一致（deepin 用 Ctrl 代替 ⌘，与 `ShortcutMap.h` 映射表同款） |
-| 文档平铺 / Markdown 渲染 | `MarkdownView.swift` | `ui/common/MarkdownView` | 一致 |
-| 一键全量（刷新注册表→冻结名单→逐仓显式传名→一个失败不中断） | `AgentBulkUpdate.swift` | `AppModel::updateAll` | 一致 |
-| 双轨更新 + AI 变体 | `UpdateActionMenu` | `ui/DualTrackButtons` + `AppModel::runUpdateDigest` | 一致 |
+| 设置三页签 | `AISettingsView.swift` | `ui/dialogs/panes/*` | 一致 |
+| 快捷键（13 个，撞键内置判定） | `ShortcutMap.swift` | `logic/ShortcutMap.h` + PanelWindow 全量真绑 | 一致（Ctrl 代替 ⌘） |
+| 文档平铺 / Markdown | `MarkdownView.swift` | `ui/common/MarkdownView` | 一致 |
+| 一键全量 | `AgentBulkUpdate.swift` | `AppModel::updateAll` | 一致 |
+| 双轨更新 + AI 变体 | `UpdateActionMenu` | `ui/DualTrackButtons` + `runUpdateDigest` | 一致 |
 | 引擎未装 → 安装引导 | `DeepDolphinApp.swift` | `ui/pages/SetupGuidePage` | 一致 |
-| 托盘 / 通知 / 开机自启 | `BarView` / `AppDelegate` / `SMAppService` | `tray/` / `app/Notifier` / `platform/AutostartManager` | 一致（平台 API 不同，能力口径同） |
+| 托盘 / 通知 / 开机自启 | `BarView` / `AppDelegate` | `tray/` / `app/Notifier` / `platform/AutostartManager` | 一致（平台 API 不同，能力口径同） |
 | 外部打开（git remote → 浏览器） | `SysOpen.swift` | `platform/SysOpen` | 一致 |
+| **文档完整性校验**（引擎 verify 四态） | ⬜ 未接 | ✅ 2026-10-19 | **deepin 领先**（见 D 节债） |
 
 ---
 
-## B. 引擎能力 → 客户端：**接了几条，还差几条**
+## B. 新 mac 基线（`d467a4f..d62e429`，30 提交）带来的能力 —— **本轮主战场**
 
-引擎命令面 24 条，客户端实际消费点如下。
+mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deepin/` 与 `linux/` 一行未动。
+逐项拆开：
 
-### B1. 已接
+| # | 新能力 | mac 落点 | deepin 现状 | 优先级 |
+|---|---|---|---|---|
+| B1 | **交互架构图（scene 契约 + 平台 Canvas）** | `GraphScene.swift` + `ArchCanvasView.swift` + `ArchPage.swift` | 🟡 **内核已落（批 D1）**：契约层 + Qt QPainter Canvas2D 26 方法 + 渲染指令层；**页面未做** | **P0** |
+| B2 | **代码图谱页（三列：图树主轴 + 详情 + 热力图）** | `GraphPages.swift`（494 行） | ⬜ 未开始 | **P0** |
+| B3 | **符号热力图（treemap → 力导向气泡，Canvas 驱动）** | `GraphPages.swift` + `ArchCanvasView` | ⬜ 未开始（依赖 B1 的 Canvas 内核） | P1 |
+| B4 | **补丁体检（diff → 置信度 → 人工标注）** | `GraphPages.swift` 补丁段 | ⬜ 未开始 | P1 |
+| B5 | **关系树（`graph tree`）** | `GraphService.loadTree` | ⬜ 未开始 | P1 |
+| B6 | **函数级图谱 + 置信度**（`graph functions` / `graph confidence`） | `GraphService.loadFunctions` | ⬜ 未开始 | P1 |
+| B7 | **固定文档页** | `DocsPages.swift`（321 行） | ⬜ 未开始 | P2 |
+| B8 | **四语言本地化（全应用接入）** | `L10n.swift`（2108 行） | ⬜ 未开始（deepin 现无 i18n；引擎侧 CLI 已双语） | P2（量大） |
+| B9 | **原生菜单栏三件套（关于/帮助/设置）+ 设置统一为系统原生窗口** | `DeepDolphinApp.swift` | 🟡 deepin 有托盘菜单与设置页签，但非「原生独立设置窗口」 | P2 |
+| B10 | **仪表盘项目卡片整卡可点** | `DashboardParts.swift` | ⬜ 未开始 | P3（小） |
+| B11 | **Agent 补齐 18 个图能力工具**（契约检查第 12 组抓到的清单漂移） | `AgentCheck` | ⬜ deepin agent 仍只接 10 个老工具 | **P0**（引擎工具清单已 28） |
+| B12 | **9 语言语法高亮** | mac 原生 `AttributedString` | ⬜ 未开始（引擎侧 `graph confidence` 已给语义层检测） | P2 |
+| B13 | **性能审计**：动画时钟可见性暂停 + formatter 静态化 | `21c7082` | ⬜ 未开始（deepin 有 HasAnimations 纪律但无可见性暂停） | P3 |
+| B14 | **设计系统存量清零**（字号/散值收进 token，基线 87→95） | `e9d6074` | ⬜ deepin 侧 D2 门仍有 4 处存量 | P3 |
+| B15 | **引擎获取链新增 GitHub Releases 自动下载** | `macos/build.sh` | ⬜ deepin `EngineLocator` 无此链 | P2 |
+| B16 | **关系树 / 图谱的导出动作**（查 + 生成 + 导出三件套） | `d62e429` | ⬜ 未开始（依赖 B1/B2） | P1 |
 
-| 引擎命令 | 消费方 | 落点 |
+**引擎侧对应的新能力**（deepin 消费点）：
+
+| 引擎命令 / 工具 | 用途 | deepin 现状 |
 |---|---|---|
-| `status` / `dashboard` / `milestone *` / `docs` / `update` / `deep` / `git` / `add` / `scan` | UI 主流程 | `app/AppModel.cpp` |
-| `context` / `tools` / `journal` / `milestone list` | agent 工具循环（10 个工具，与 `tools --json` 声明集严格相等） | `ai/AgentCore.cpp` |
-| **`verify`（2026-10-19 新接）** | 文档完整性卡（四态判定） | `AppModel::loadVerify` → `logic/DocumentIntegrity` |
-
-### B2. 未接 —— 候选（**每条都要先答「用户为什么需要它」，答不出就不接**）
-
-| 引擎命令 | 能力 | 客户端为什么可能需要 | 状态 |
-|---|---|---|---|
-| `verify` | 文档完整性校验 | 引擎已有严谨四态；C11 承诺当时只靠反向 grep 撑着，用户看不见 | ✅ **已接**（决策 84） |
-| `doctor` | 环境自检（git 版本 / 数据目录 / 注册项目 / 路径有效 / 临时残留） | `SetupGuidePage` 只在「引擎没装」时出现；**引擎装了但环境有病**（git 缺失、路径失效、残留）当前无处可看 | ⬜ 待定 |
-| `report` | 导出 Markdown 进度报告 | 引擎侧有报告生成器；客户端目前只读不导出 | ⬜ 待定（导出=写文件，客户端零业务写入红线要先想清楚） |
-| `config` | 配置（AI 预设等） | 客户端已有 `settings.conf` 自管配置；引擎 config 与之的关系未查清 | ⬜ 待查 |
-| `list` | 列出已注册项目 | `status` 已含项目清单，可能冗余 | ⬜ 待查 |
-| `remove` | 取消注册项目 | **用户诉求明确**（注册错了要能删）—— 但当前无「移除项目」入口 | ⬜ **待定（优先级高）** |
-| `track` | 进度快照 | `journal` 已覆盖其产物 | ⬜ 待查 |
-| `hook` | post-commit 钩子管理 | 装钩子=写用户仓库文件，撞 C11 红线 | ⬜ **不接**（除非用户显式要求） |
-| `mcp` | MCP stdio 服务 | 客户端是 MCP **宿主**（消费 tools），不是服务端 | ⬜ 不接 |
-| `skill` | agent 技能教学包 | 客户端 agent 工具循环是自研的，不是引擎 skill 机制 | ⬜ 不接 |
-
-> MCP 侧另有 5 个工具（`list_projects` / `get_project_status` / `get_dashboard` / `run_track` /
-> `git_op` / `milestone_add` / `milestone_action` / `add_project`）不在 `tools --json` 的 10 条声明集里 ——
-> 那 5 条是 **MCP 传输面**的补充，CLI 侧没有对应命令，客户端走 CLI，不需要补。
+| `graph arch --format scene` | 场景 JSON（B1 的数据源） | ✅ 批 D1 已接（内核） |
+| `graph overview` / `symbol` / `impact` / `tree` / `functions` | 图谱五件套（B2/B5/B6） | ⬜ |
+| `graph confidence` / `patchconf` | 置信度与补丁体检（B4/B6） | ⬜ |
+| `graph gen` / `arch gen` / `index gen` | 生成（B16） | ⬜ |
+| `codegraph_*`（CLI 清单 18 个新工具） | agent 工具循环（B11） | ⬜ |
+| `render` 工具 | 渲染交付物 | ⬜ |
+| `index_*` 家族 | 代码索引（`graph` 的新家） | ⬜ |
 
 ---
 
-## C. deepin 自身计划文档的剩余项（`docs/DDE-INTEGRATION-PLAN.md` §9 看板）
+## C. 引擎能力面（`dev` 分支，2026-10-19 实测）
 
-不属于「同步 mac」，是 deepin 客户端自身的 DDE/DTK 化收尾：
+| 面 | 数量 | 说明 |
+|---|---|---|
+| CLI 命令 | 24 | 另有 `graph`/`index` 子命令族（`dev` 分支新增，main 上没有） |
+| `tools --json`（agent 工具清单） | **28** | 原 10 + 18 个图/置信度工具（mac 的 B11 就是补这 18 个） |
+| MCP `tools/list` | **33** | 进度 14 + 图谱 6 + 补丁置信度 3 + 其他 |
+| 契约文档 | `docs/graph-scene-schema.md` | 两层契约：Canvas2D 子集（26 方法）+ scene JSON v1 |
+
+> ⚠ 章程 §4 写的「23 工具」也已过期（dev 分支实测 33）—— 属引擎仓的账，本仓只记事实。
+
+---
+
+## D. 跨端一致性债（**deepin 领先 mac / linux 的部分**）
+
+章程 `PLATFORM-CHARTER.md`：「交互 UI 各平台自由，**能力必须一致**」。
+
+| 能力 | deepin | mac | linux | 补齐批次 |
+|---|---|---|---|---|
+| 文档完整性校验（引擎 `verify` 四态） | ✅ 2026-10-19 | ⬜ 未接 | ⬜ 未接 | 后续批次 |
+| 图谱 Canvas 内核（26 方法 + scene 契约） | ✅ 批 D1 | ✅（SwiftUI 版） | ⬜ 未接 | 后续批次（仓颉 Canvas 移植） |
+
+---
+
+## E. deepin 自身 DDE/DTK 化剩余项（`docs/DDE-INTEGRATION-PLAN.md` §9 看板）
+
+不属于「同步 mac」，是 deepin 客户端自身的收尾：
 
 | 任务 | 内容 | 状态 |
 |---|---|---|
@@ -83,30 +116,17 @@
 | M1-3 | 托盘迁移 SNI | ⬜ |
 | M1-7 | `platform/Backend` 平台层 | ⬜ |
 | M1-8 | Wayland 分支 | ⬜ |
-| M2-5 | i18n | ⬜ |
+| M2-5 | i18n | ⬜（与 B8 合并做更省） |
 | M2-7 | deb 打包 | ⬜（D7 达标必经） |
 | M2-8 | 安装后零环境变量 | ⬜（D7 达标必经） |
-| M3c | 清第二套色板 + 一致性 / HiDPI / 动效收尾 | ⬜（观感质变收尾） |
-| M1a | 容器 / 视图批（部分） | ◐ 部分落地 |
-| M0-8 | 干净容器未实跑 | ◐ |
-| M3b | KPI 骨架屏 | ◐ |
-| M4a | 拆分 | ◐ |
-| M4b | deb 构建与系统矩阵 | ◐ |
+| M3c | 清第二套色板 + 一致性 / HiDPI / 动效收尾 | ⬜（与 B13/B14 同批更省） |
+| M1a / M0-8 / M3b / M4a / M4b | 容器批 / 干净容器 / KPI 骨架屏 / 拆分 / deb 矩阵 | ◐ 部分落地 |
 
 ---
 
-## D. 跨端一致性债（**deepin 领先 mac 的部分**）
-
-章程 `PLATFORM-CHARTER.md`：「交互 UI 各平台自由，**能力必须一致**」。
-
-| 能力 | deepin | mac | linux | 补齐批次 |
-|---|---|---|---|---|
-| 文档完整性校验（引擎 `verify` 四态） | ✅ 2026-10-19 | ⬜ 未接 | ⬜ 未接 | 后续批次（本次按「先搞定 dde」次序落地，债已记） |
-
----
-
-## E. linux 端
+## F. linux 端
 
 **本轮明确暂缓**（用户 2026-10-19 定：「linux 通用再说」）。
-linux 侧已知的独立缺口（快捷键零覆盖、AI 面板非独立窗、libsecret 降级等）
-记在 `linux/README.md` 的「与 macOS 端的已知差异」与 `linux/VERIFY-ON-LINUX.md`，不在本账内推进。
+linux 侧已知独立缺口记在 `linux/README.md` 的「与 macOS 端的已知差异」与 `linux/VERIFY-ON-LINUX.md`。
+注意：章程 §3.5 把 linux 的实现指定为**仓颉 Canvas 移植** —— 与 deepin 的 Qt QPainter 同款内核需求，
+将来做 linux 时**可复用本批的契约层与判据思路**（端口式 CanvasSink 是为这一步留的）。
