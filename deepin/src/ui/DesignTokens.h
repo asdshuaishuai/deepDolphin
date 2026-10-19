@@ -77,13 +77,36 @@ QColor surfaceBorder();
 QColor textPrimary();
 QColor textSecondary();
 
+/// 底轨遮罩（分段条无数据时仍可见的浅灰轨道）—— 通用组件色，不属语义色。
+QColor trackMask();
+
 // ── 字体层级（px 常量，一处可调）──
 enum class FontT { metric, cardTitle, sectionTitle, body, label, badge };
 QFont font(FontT t);
 
-// Markdown 标题字号（h1/h2/h3 = 22/18/15，其余 14）——改由 DFontManager 档位派生：
+// Markdown 标题字号（h1/h2/h3 = 22/18/14，其余同 h3）——改由 DFontManager 档位派生：
 // MD_H1=T3(22)、MD_H2=T4(18)、MD_H3=T5(14)，与正文字号档位同一根系。
 enum { MD_H1 = 22, MD_H2 = 18, MD_H3 = 14, MD_BODY = 11 };
+
+// ── QSS 用的字号（px，一处可调）──
+// ⚠ **与 FontT 的区别要说清楚**：FontT 走 DFontManager 档位，**会随系统放大字号变**；
+//   而 QSS 里的 `font-size` 只能写字面量（没法走 DFontManager 档位）—— 所以这里
+//   不是「档位」，只是把散落的字面量**收口成一处可调的常量**。
+//   （想要「随系统字号缩放」就别用 QSS 写字号，走 DS::font(FontT) 设 QFont。）
+namespace FontPx {
+constexpr int badge = 11; ///< 胶囊徽章 / 小标签
+constexpr int code = 13;  ///< 等宽代码 / 项目名
+}
+
+// ── 透明度（色值的 alpha 维，同属「一处可调」）──
+// ⚠ 以前 `rgba(%1,%2,%3, 0.18)` 的 0.18 是**裸字面量**散在调用点 —— 色值进了
+//   DS 但透明度没进，同一个「18% 强调底」就散成 N 个真相源。alpha 与 RGB 同权。
+namespace Alpha {
+constexpr double accentTint = 0.18; ///< 强调色淡底（用户气泡 / 选中态底）
+}
+
+/// 强调色淡底的 rgba 字符串（alpha 走 token，调用方不再自己拼 rgba 字面量）。
+QString accentTintRgba(const QColor &c);
 
 // ── 动效（全项目唯一动效是 agent 新消息自动滚动，0.20s easeInOut）──
 constexpr int MotionStandardMs = 200;

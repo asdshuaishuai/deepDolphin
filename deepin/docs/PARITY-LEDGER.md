@@ -65,7 +65,7 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | B11 | **Agent 补齐 18 个图能力工具**（契约检查第 12 组抓到的清单漂移） | `AgentCheck` | 🟢 **已对位（批 E1）**：28 个工具全接（命令形态抽成纯函数表 `logic/AgentToolPlan`，可无头判）；`deepDolphin --agent-tool-names` 出客户端权威清单，contract-check 第 12 组与真引擎 `tools --json` 严格对位（**CI 第 10 门**） | ~~P0~~ 已完成 |
 | B12 | **9 语言语法高亮** | mac 原生 `AttributedString` | 🟢 **已对位（批 H）**：判定层 `logic/SyntaxHighlight`（九语言关键词表 + 单遍扫描 → 关键字/字符串/注释/数字四类 token 段）、涂色层 `ui/CodeHighlighter`（QSyntaxHighlighter，颜色取自 DS 令牌）、接到代码图谱页源码页签（高亮语言跟着选中符号的 `lang` 走）；**九种语言与引擎 `detectLang` 逐条对齐**（契约门第 16 组用真引擎跑九种扩展名比对） | ~~P2~~ 已完成 |
 | B13 | **性能审计**：动画时钟可见性暂停 + formatter 静态化 | `21c7082` | 🟢 **批 M 已对位**（且补上 mac 侧没有的项）：**可见性暂停**deepin **本来就有** —— 实测（2026-10-19，Qt 6）**父窗口隐藏会给子控件发 `hideEvent`**，所以架构图与热力图的 `hideEvent → m_anim->stop()` 真的停得住，两处都是 33ms（≈30fps），与 mac 修完后的口径一致；**formatter 静态化**已做（日期格式化走 `Qt::ISODate` 枚举，不建格式串）；**另补 mac 没做的三项**：Canvas font 简写按 CSS 口径解析（`pt` 也不再被吞）、Canvas2D 的 QFont 按串静态缓存 + 同串跳过、热力图三处每帧分配收掉 | ~~P3~~ 已完成 |
-| B14 | **设计系统存量清零**（字号/散值收进 token，基线 87→95） | `e9d6074` | ⬜ deepin 侧 D2 门仍有 4 处存量 | P3 |
+| B14 | **设计系统存量清零**（字号/散值收进 token，基线 87→95） | `e9d6074` | 🟢 **批 N 已对位**：M3-3 登记的 **4 处字号散值**全收进 `DS::FontPx`（徽章 11 / 等宽 13），D2 门上限 **4 → 0**；另收口 3 处门形式不全才照出的真散值（alpha `0.18` → `DS::Alpha`、底轨遮罩 → `DS::trackMask()`、热力图深色画布五档 → `HeatLayout::Canvas`）。**门从「只盯 `#RRGGBB`」补成全形式检测**（3/6/8 位 hex、`QColor(r,g,b)`、`QColor(0x..)`、`rgb()`、带裸 alpha 的 `rgba()`、`setPixelSize`/`setPointSizeF` 数字参数、QSS `font-size` 字面量、含 `font-size:` 文件里的裸数字 `.arg(N)`）—— 旧门的「4 处存量」其实只是「4 处**写成 hex 形态**的存量」。**豁免改为显式登记**（`D2_EXEMPT` 清单：`keep` 永久 / `fix` 待收敛且**归零即红**，白名单不许腐化） | ~~P3~~ 已完成（**状态语义色第二份定义**另立批 O，见下） |
 | B15 | **引擎获取链新增 GitHub Releases 自动下载** | `macos/build.sh` | ⬜ deepin `EngineLocator` 无此链 | P2 |
 | B16 | **关系树 / 图谱的导出动作**（查 + 生成 + 导出三件套） | `d62e429` | 🟢 **已对位（台账原记「未开始」有误，批 G 复核时更正）**：架构图页 = 查（`graph arch --format scene`）+ 生成（`arch gen`）+ 导出（`render arch`）；代码图谱页 = 查（`graph tree`/`confidence`/`functions`）+ 生成（`index gen --stats` + `confidence gen`）+ 导出（`render index --confidence`） | ~~P1~~ 已完成 |
 
@@ -196,6 +196,25 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | M2-8 | 安装后零环境变量 | ⬜（D7 达标必经） |
 | M3c | 清第二套色板 + 一致性 / HiDPI / 动效收尾 | ⬜（与 B13/B14 同批更省） |
 | M1a / M0-8 / M3b / M4a / M4b | 容器批 / 干净容器 / KPI 骨架屏 / 拆分 / deb 矩阵 | ◐ 部分落地 |
+
+### E.1 状态语义色第二份定义（批 N 照出，**待批 O 收敛**）
+
+批 N 把 D2 散值门的**检测形式补全**后（不再只盯 `#RRGGBB`），照出状态语义色在**两处**定义：
+
+| 位置 | 色值 | 与 `DS::semColor` 的关系 |
+| --- | --- | --- |
+| `logic/Derived.cpp`（`livenessColor` / `branchStatusColor` / `statTint`） | 绿 `0x10B981` / 紫 `0x8B5CF6` / 橙 `0xF59E0B` / 灰 `0x9CA3AF` | **同值** → 同一个语义的第二份定义 |
+| `tray/TrayController.cpp`（`tintColor`） | 同上一批 | **同值** → 同上 |
+| `tray/TrayPopupWindow.cpp` | 灰 `0x9CA3AF` | **同值** → 同上 |
+| `platform/IconLoader.cpp` | 灰 `0x888888` / 蓝 `0x1E6FEB` | 图标 tint 兜底 + 托盘强调蓝（**独立语义**，DS 里没有） |
+| `logic/Derived.cpp` 另有一档红 `0xEF4444` | `engineStale` / `quiet` / `stale` | **DS 没有这一档**（DS 的 `red` 是 `0xDC2626`）—— 需跟 mac 逐档核对谁对 |
+
+**批 N 的处置**：不吞。四条记进 D2 门的 `fix` 豁免项（**命中数归零即门红**，逼着收敛），
+另在 README 决策 176–178 记明。**批 O 要定的两件事**：
+① `0xEF4444` 与 `0xDC2626` 两档红哪个跟 mac 逐值对齐（`Models.swift:877-887`）；
+② 状态语义色的**归属层** —— 判定层（`logic/`，纯数据、零 UI 依赖）还是 DS（`ui/`，依赖
+DTK 调色板）？判定层若要取色，就得有一份**不依赖 DGuiApplicationHelper** 的纯色定义
+（`accent` 例外：它接 DTK 主题强调色，天然属于 `ui/` 层）。
 
 ---
 

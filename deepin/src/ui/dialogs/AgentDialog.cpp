@@ -324,12 +324,11 @@ void AgentDialog::rebuildTranscript()
             lab->setTextInteractionFlags(Qt::TextSelectableByMouse);
             // 用户气泡 = accent 蓝 18% 透明底（对位 mac tinted accentColor.opacity(0.18)）；
             // 圆角归 card 档（M3-5，原 10 硬编码同值入 token）
+            // ⚠ alpha 与 RGB 同权：18% 也走 token，调用点不拼 rgba 字面量
             const QColor accent = DS::semColor(DS::SemColor::accent);
             lab->setStyleSheet(QStringLiteral(
-                "background: rgba(%1, %2, %3, 0.18); border-radius: %4px; padding: 10px;")
-                .arg(accent.red())
-                .arg(accent.green())
-                .arg(accent.blue())
+                "background: %1; border-radius: %2px; padding: 10px;")
+                .arg(DS::accentTintRgba(accent))
                 .arg(DS::Radius::card));
             lay->addStretch(40);
             lay->addWidget(lab, 160);

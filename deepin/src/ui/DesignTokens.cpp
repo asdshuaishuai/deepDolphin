@@ -114,6 +114,16 @@ QColor semColor(SemColor c)
     return QColor(0x9C, 0xA3, 0xAF);
 }
 
+// 强调色淡底：alpha 走 token，调用方不再自己拼 rgba 字面量。
+QString accentTintRgba(const QColor &c)
+{
+    return QStringLiteral("rgba(%1, %2, %3, %4)")
+        .arg(c.red())
+        .arg(c.green())
+        .arg(c.blue())
+        .arg(QString::number(Alpha::accentTint, 'f', 2));
+}
+
 bool isDarkTheme()
 {
     return effectiveTheme() == DGuiApplicationHelper::DarkType;
@@ -201,6 +211,13 @@ QColor textSecondary()
 {
     // 次级文字 = DTK 的 PlaceholderText（提示性文本专用角色）
     return paletteRole(DPalette::PlaceholderText, "#808080", "#a6a6a6");
+}
+
+// 底轨遮罩：中性灰 40/255 —— 通用「无数据也可见」的轨道底色。
+// 放 DS 是因为它服务多个分段条类控件（各写各的 = 多个真相源）。
+QColor trackMask()
+{
+    return QColor(128, 128, 128, 40);
 }
 
 QFont font(FontT t){

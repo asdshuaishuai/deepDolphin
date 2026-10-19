@@ -38,7 +38,7 @@ protected:
         clip.addRoundedRect(rect(), m_radius, m_radius);
         p.setClipPath(clip);
         // 底轨（无数据时也可见，不画成消失）
-        p.fillRect(rect(), QColor(128, 128, 128, 40));
+        p.fillRect(rect(), DS::trackMask());
         qreal x = 0;
         for (const auto &row : m_rows) {
             if (row.second <= 0)

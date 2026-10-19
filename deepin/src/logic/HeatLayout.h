@@ -15,8 +15,9 @@
 //   所以不进 DesignTokens，也不许被主题改写。
 //
 // 【颜色为什么用 rgb() 三元组而不是 #hex】
-// 仓内 D2 grep 门盯的是 `#RRGGBB` 字面量（见 scripts/ci.sh 第 5 门）。
-// 契约色不是设计令牌，走 rgb(r,g,b) 与既有写法（洋红兜底）一致，且不触发门。
+// 契约色**不是设计令牌**，不该走 DS 那条路；D2 散值门现在盯所有色值形式
+// （#hex / QColor 三元组 / rgb() 全都抓），故本文件在 scripts/ci-d2.sh 的
+// **显式豁免清单**里逐条登记 —— 豁免是登记出来的，不是「换个写法碰巧躲过」。
 #pragma once
 #include <QColor>
 #include <QHash>
@@ -74,6 +75,20 @@ QColor heatColor(int score);
 
 /// 身份色（黄金角色相 + 明暗交替）。
 QColor idColor(int hue);
+
+/// ── 热力图画布配色（深色画布专属：这一套色只服务热力图）──
+/// ⚠ **为什么不在 DS**：DS 是通用设计令牌（表面/文字/语义色），而这套是
+///   「热力图这个组件的一套配色」——把它塞进 DS 会让 DS 变成杂物袋。
+///   ⚠ **为什么在判定层**：热力图本来就有色职责（heatColor/idColor），
+///   画布色跟着住这儿 = 这个组件的色**只有一个出处**（原来散在
+///   HeatmapWidget 的 7 处，改一处配色要翻 7 个地方）。
+namespace Canvas {
+QColor cardBase();  ///< 卡底（深蓝底）
+QColor cardText();  ///< 卡片主文字
+QColor cardLabel(); ///< 卡片次级标签（文件/符号）
+QColor cardNote();  ///< 卡片注释（跨作用域引用）
+QColor stroke();    ///< 描边 / 节点头点
+} // namespace Canvas
 
 /// 身份色相分配（黄金角 137.508°，按节点 id 字典序）——与 HTML 的 HUE_OF 同口径。
 QHash<QString, int> huesFor(const CodeGraph &g);

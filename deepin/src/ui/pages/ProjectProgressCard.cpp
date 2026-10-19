@@ -56,7 +56,7 @@ void ProjectProgressCard::setProject(const ProjectStatus &p, const DashFilter &f
     QFont mono(QStringLiteral("monospace"));
     mono.setStyleHint(QFont::Monospace);
     mono.setWeight(QFont::DemiBold);
-    mono.setPixelSize(13);
+    mono.setPixelSize(DS::FontPx::code);
     name->setFont(mono);
     name->setMaximumWidth(220);
     name->setTextInteractionFlags(Qt::NoTextInteraction);

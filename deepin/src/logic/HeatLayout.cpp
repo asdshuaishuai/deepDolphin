@@ -224,13 +224,39 @@ int confScore(int penalty, int files)
 QColor heatColor(int score)
 {
     // 契约色（与 HTML 交付物的 confidenceColor 逐字同色）：绿 / 琥珀 / 粉三档。
-    // 写成 rgb 三元组而不是 #hex —— D2 grep 门盯的就是 #RRGGBB 字面量
-    //（见 scripts/ci.sh 第 5 门），契约色不是设计令牌，不该走那条路。
+    // ⚠ 契约色**不是设计令牌**，所以不走 DS；而 D2 散值门现在盯所有色值形式
+    //   （含 QColor 三元组），故本文件在 scripts/ci-d2.sh 的**显式豁免清单**里
+    //   逐条登记 —— 豁免是登记出来的，不是「换个写法碰巧躲过」。
     if (score >= 80)
         return QColor(89, 240, 184);
     if (score >= 60)
         return QColor(255, 200, 87);
     return QColor(255, 107, 138);
+}
+
+QColor Canvas::cardBase()
+{
+    return QColor(19, 31, 48);
+}
+
+QColor Canvas::cardText()
+{
+    return QColor(235, 240, 248);
+}
+
+QColor Canvas::cardLabel()
+{
+    return QColor(190, 200, 215);
+}
+
+QColor Canvas::cardNote()
+{
+    return QColor(200, 210, 225);
+}
+
+QColor Canvas::stroke()
+{
+    return QColor(255, 255, 255);
 }
 
 QColor idColor(int hue)

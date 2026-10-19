@@ -40,6 +40,7 @@
 #include "../models/UpdateResult.h"
 #include "../models/GraphScene.h"
 #include "../models/VerifyEnvelope.h"
+#include "../ui/DesignTokens.h"
 #include "../ui/common/EmptyState.h"
 #include "../ui/common/FlatButton.h"
 #include "../ui/common/SegmentedButton.h"
@@ -2439,6 +2440,32 @@ int SelfCheck::run(QStringList &log)
         check(log, "Canvas 字体：空串不崩（不设字号、不设字重）",
             empty.pixelSize == 0 && empty.pointSize == 0 && !empty.hasWeight
                 && empty.families.isEmpty());
+    }
+
+    // ── 设计系统散值（批 N：存量清零，上限降到 0）──
+    // 散值「清零」本身由 D2 门（scripts/ci-d2.sh，源扫描）保证；
+    // 这里钉的是**收口后的 token 值** —— 改 token 必须同步改这里的期望值，
+    // 而「期望值随手改」是 token 纪律最常见的破口。
+    {
+        check(log, "设计系统：QSS 字号常量（徽章 11px / 等宽 13px）",
+            DS::FontPx::badge == 11 && DS::FontPx::code == 13);
+        check(log, "设计系统：Markdown 标题档位（h1/h2/h3 = 22/18/14，正文 11）",
+            DS::MD_H1 == 22 && DS::MD_H2 == 18 && DS::MD_H3 == 14 && DS::MD_BODY == 11);
+        // alpha 与 RGB 同权：0.18 以前是裸字面量散在 AgentDialog，色进了 DS 而
+        // 透明度没进 = 同一个「18% 强调底」散成 N 个真相源。
+        check(log, "设计系统：强调底透明度（18%）且 rgba 由 token 拼出",
+            DS::Alpha::accentTint == 0.18
+                && DS::accentTintRgba(QColor(0, 0, 255)) == QStringLiteral("rgba(0, 0, 255, 0.18)"));
+        check(log, "设计系统：底轨遮罩（中性灰 40/255）",
+            DS::trackMask() == QColor(128, 128, 128, 40));
+        // 热力图画布色：原来散在 HeatmapWidget 的 7 处，收进 HeatLayout 后
+        // 「改一处配色」不用翻 7 个地方。
+        check(log, "设计系统：热力图画布配色（卡底/文字/标签/注释/描边五档）",
+            HeatLayout::Canvas::cardBase() == QColor(19, 31, 48)
+                && HeatLayout::Canvas::cardText() == QColor(235, 240, 248)
+                && HeatLayout::Canvas::cardLabel() == QColor(190, 200, 215)
+                && HeatLayout::Canvas::cardNote() == QColor(200, 210, 225)
+                && HeatLayout::Canvas::stroke() == QColor(255, 255, 255));
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

@@ -6,9 +6,9 @@
 # 3. desktop / metainfo 校验：desktop-file-validate / appstream-util 缺工具显式 SKIP
 #    （SKIP 不算失败——工具随 deepin 打包环境到位，硬门随之生效）
 # 4. --platform-probe 正式断言：exit 0 且输出含 backend= 行
-# 5. D2 grep 门：DS::*（DesignTokens）之外出现色值/px 字号即缺陷——排除
-#    DesignTokens/CommitTypeComposition/src/platform/ 后命中 >4 判失败
-#    （存量 4 处为 M3-3 已登记的字号项，README 决策 72；只减不增）
+# 5. D2 grep 门：DS::*（DesignTokens）之外出现色值/px 字号即缺陷 —— 独立成
+#    scripts/ci-d2.sh（可单独跑，负控能精确打）。批 N 已把 M3-3 登记的 4 处存量
+#    全收进 token，上限降到 0（只减不增）
 # 6. --agent-selftest（恒走 mock 渠道）
 # 7. verify 接线源扫描门：引擎 verify 的判定层与接线点必须都在（判定不许藏回视图）
 # 8. 图谱 Canvas 契约门：Canvas2D 覆盖契约清单 24 个方法 + logic/models 零 QWidget 头
@@ -95,33 +95,12 @@ strip_comments() {
     fi
 }
 
-echo "› 5/10 D2 grep 门（DS::* 单点真相源；排除白名单后命中 >4 判失败）"
-if [ ! -d "$SRC/src" ]; then
-    echo "✗ 源码目录不存在：$SRC/src（脚本位置/参数错了——门失效比门失败更糟）" >&2
+echo "› 5/10 D2 grep 门（DS::* 单点真相源；散值上限 0，存量已清零）"
+# 散值门独立成 scripts/ci-d2.sh：可单独跑，负控也能精确打它。
+if ! sh "$SRC/scripts/ci-d2.sh" "$SRC"; then
+    echo "✗ 设计系统散值门失败：src/ 下出现色值/硬编码 px 字号" >&2
     exit 1
 fi
-# ⚠ **先剥注释再扫**（与门 7 同一份 strip_comments）：注释里提到 API 名
-#   （如 setPixelSize）不是「散值」—— 把它算进命中只会逼人改措辞而不是改代码。
-#   存量 4 处都在**真实代码**里，剥注释不减少它们。
-D2_PATTERN='#[0-9A-Fa-f]{6}|setPixelSize|font-size: *[0-9]+px'
-D2_HITS=""
-for _f in $(grep -rlE "$D2_PATTERN" "$SRC/src" 2>/dev/null \
-        | grep -vE 'DesignTokens|CommitTypeComposition|src/platform/|app/SelfCheck.cpp'); do
-    # 输出格式与 grep -rn 一致（file:line:content），计数才按「命中处数」算
-    _h="$(strip_comments "$_f" | grep -nE "$D2_PATTERN" | sed "s|^|${_f}:|" || true)"
-    if [ -n "$_h" ]; then
-        D2_HITS="${D2_HITS}${_h}
-"
-    fi
-done
-D2_COUNT=0
-[ -n "$D2_HITS" ] && D2_COUNT="$(printf '%s\n' "$D2_HITS" | grep -c . || true)"
-if [ "$D2_COUNT" -gt 4 ]; then
-    echo "✗ D2 命中 ${D2_COUNT} 处（上限 4，存量只减不增），命中清单：" >&2
-    printf '%s\n' "$D2_HITS" >&2
-    exit 1
-fi
-echo "✓ D2 命中 ${D2_COUNT}/4（余量仅限已登记字号项，README 决策 72）"
 
 echo "› 6/10 agent 自测（mock 渠道）"
 "$BIN" --agent-selftest | tail -2

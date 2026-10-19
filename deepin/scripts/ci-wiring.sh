@@ -12,12 +12,23 @@ set -uo pipefail
 SRC="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 
 # 剥注释再匹配：注释里出现的字样不算接线（否则加一行注释就能骗过门）。
+# ⚠ **按文件类型分派**：C++ 源文件是 `//`，shell 脚本是 `#`。
+#   以前只有 C++ 版 → 扫 ci.sh 时**整份脚本的 `#` 注释都留着**，
+#   于是「注释里提过 ci-d2.sh」被当成「ci.sh 调了 ci-d2.sh」→ 门被骗过（负控实测）。
 strip_comments() {
-    if command -v perl >/dev/null 2>&1; then
-        perl -pe 's{//(?!:).*$}{}' "$1"
-    else
-        sed -e 's|//[^/].*$||' "$1"
-    fi
+    case "$1" in
+    *.sh)
+        # shell 注释：行首（可含空白）的 # 到行尾。shell 脚本里没有 #include，
+        # 所以整段剥掉是安全的。
+        sed -e 's/^[[:space:]]*#.*$//' "$1" ;;
+    *)
+        if command -v perl >/dev/null 2>&1; then
+            perl -pe 's{//(?!:).*$}{}' "$1"
+        else
+            sed -e 's|//[^/].*$||' "$1"
+        fi
+        ;;
+    esac
 }
 
 echo "› 接线门：架构图 / agent 工具表 / 代码图谱+热力图 / 补丁体检 / 固定文档页 / 引擎自检+进度报告接线在（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
@@ -310,6 +321,33 @@ arch_need "$SRC/src/ui/HeatmapWidget.cpp" 'm_cacheW != width\(\)' '热力图缓�
 # formatter 静态化（mac 性能审计 21c7082 同款）
 arch_need "$SRC/src/ui/dialogs/AddMilestoneDialog.cpp" 'toString\(Qt::ISODate\)' '日期格式化走 ISODate 枚举（不建格式串）'
 arch_need "$SRC/src/app/SelfCheck.cpp" 'CanvasFont::parse' 'SelfCheck 覆盖字体解析'
+
+# 批 N · 设计系统存量清零（DS 单一真相源）：四处散值收进 token，
+#   D2 门上限降到 0，且门独立成 scripts/ci-d2.sh（负控能精确打）。
+arch_need "$SRC/src/ui/DesignTokens.h" 'namespace FontPx\b' 'DS 有 QSS 字号 token（QSS 只能写字面量）'
+arch_need "$SRC/src/ui/DualTrackButtons.cpp" 'DS::FontPx::badge' '胶囊徽章字号走 token'
+arch_need "$SRC/src/ui/common/Chip.h" 'DS::FontPx::badge' '小标签字号走 token'
+arch_need "$SRC/src/ui/common/MarkdownView.h" '\.arg\(DS::MD_H3\);' 'Markdown h4-h6 与 h3 同档（走 token）'
+arch_need "$SRC/src/ui/pages/ProjectProgressCard.cpp" 'DS::FontPx::code' '等宽项目名字号走 token'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'DS::FontPx::badge' 'SelfCheck 钉住 token 值'
+
+# 批 N · 透明度入 token（色进了 DS 而 alpha 没进 = 同一语义散成 N 个真相源）
+arch_need "$SRC/src/ui/DesignTokens.h" 'namespace Alpha\b' 'DS 有透明度 token'
+arch_need "$SRC/src/ui/DesignTokens.h" 'accentTintRgba' 'DS 提供 rgba 拼装（调用方不拼字面量）'
+arch_need "$SRC/src/ui/dialogs/AgentDialog.cpp" 'DS::accentTintRgba' '用户气泡底色走 token 拼装'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'DS::Alpha::accentTint' 'SelfCheck 钉住透明度 token'
+
+# 批 N · 底轨遮罩 + 热力图画布色收口（原散在 HeatmapWidget 的 7 处）
+arch_need "$SRC/src/ui/DesignTokens.h" 'trackMask' 'DS 有底轨遮罩色'
+arch_need "$SRC/src/ui/common/SegmentedBar.h" 'DS::trackMask' '分段条底轨走 token'
+arch_need "$SRC/src/logic/HeatLayout.h" 'namespace Canvas' '热力图画布配色有唯一出处'
+arch_need "$SRC/src/ui/HeatmapWidget.cpp" 'HeatLayout::Canvas::cardBase' '热力图卡底色走 HeatLayout'
+arch_need "$SRC/src/ui/HeatmapWidget.cpp" 'HeatLayout::Canvas::cardText' '热力图卡片文字色走 HeatLayout'
+
+# 批 N · 散值门必须真在 CI 流程里（门写好不接 = 没有门）
+arch_need "$SRC/scripts/ci.sh" 'sh "\$SRC/scripts/ci-d2\.sh"' 'CI 流程调用独立散值门'
+arch_need "$SRC/scripts/ci-d2.sh" "D2_EXEMPT='src/ui/DesignTokens\.h" '散值门有显式豁免清单（豁免是登记的）'
+arch_need "$SRC/scripts/ci-d2.sh" '豁免已失效：\$_p' '散值门自检豁免不腐化（归零即红）'
 
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \

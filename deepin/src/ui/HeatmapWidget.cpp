@@ -244,7 +244,7 @@ void HeatmapWidget::paintRoutes(QPainter &p, double now)
         canvas.beginPath();
         canvas.arc(head.x(), head.y(), 2.2, 0, 2 * M_PI, false);
         canvas.fill();
-        canvas.setFillStyle(CanvasPaint(QColor(255, 255, 255)));
+        canvas.setFillStyle(CanvasPaint(HeatLayout::Canvas::stroke()));
         canvas.setGlobalAlpha(fade * 0.8);
         canvas.beginPath();
         canvas.arc(head.x(), head.y(), 0.9, 0, 2 * M_PI, false);
@@ -290,7 +290,7 @@ void HeatmapWidget::paintCards(QPainter &p)
         const double heatAlpha = (score < 60 ? 0.20 : (score < 80 ? 0.16 : 0.12)) + pulse * 0.05;
 
         // 卡底 + 热色沉积
-        canvas.setFillStyle(CanvasPaint(QColor(19, 31, 48)));
+        canvas.setFillStyle(CanvasPaint(HeatLayout::Canvas::cardBase()));
         canvas.setGlobalAlpha(alpha);
         canvas.beginPath();
         canvas.arcTo(c.x, c.y, c.x + c.w, c.y, 10);
@@ -305,7 +305,7 @@ void HeatmapWidget::paintCards(QPainter &p)
         canvas.setGlobalAlpha(1.0);
 
         // 边框
-        canvas.setStrokeStyle(CanvasPaint(hasFindings || isSelected ? col : QColor(255, 255, 255)));
+        canvas.setStrokeStyle(CanvasPaint(hasFindings || isSelected ? col : HeatLayout::Canvas::stroke()));
         canvas.setGlobalAlpha(alpha * (hasFindings ? 0.45 + pulse * 0.2 : 0.14 + pulse * 0.06));
         canvas.setLineWidth(isSelected ? 2 : (hasFindings ? 1.3 : 1.15));
         canvas.stroke();
@@ -320,27 +320,27 @@ void HeatmapWidget::paintCards(QPainter &p)
         canvas.setGlobalAlpha(1.0);
 
         // 名称 + 序号
-        canvas.setFillStyle(CanvasPaint(QColor(235, 240, 248)));
+        canvas.setFillStyle(CanvasPaint(HeatLayout::Canvas::cardText()));
         canvas.setFont(kFontCard);
         canvas.setTextAlign(QStringLiteral("left"));
         canvas.fillText(QStringLiteral("%1. %2").arg(c.rank).arg(c.name), c.x + 14,
             c.y + 22);
         if (c.boundary) {
-            canvas.setFillStyle(CanvasPaint(QColor(200, 210, 225)));
+            canvas.setFillStyle(CanvasPaint(HeatLayout::Canvas::cardNote()));
             canvas.setFont(kFontSub);
             canvas.fillText(QStringLiteral("跨作用域引用"), c.x + 14, c.y + 38);
         } else if (c.kind == GraphNodeKind::file) {
-            canvas.setFillStyle(CanvasPaint(QColor(190, 200, 215)));
+            canvas.setFillStyle(CanvasPaint(HeatLayout::Canvas::cardLabel()));
             canvas.setFont(kFontSub);
             canvas.fillText(QStringLiteral("文件"), c.x + 14, c.y + 38);
         } else {
-            canvas.setFillStyle(CanvasPaint(QColor(190, 200, 215)));
+            canvas.setFillStyle(CanvasPaint(HeatLayout::Canvas::cardLabel()));
             canvas.setFont(kFontSub);
             canvas.fillText(QStringLiteral("符号"), c.x + 14, c.y + 38);
         }
 
         // 底部置信度米条
-        canvas.setFillStyle(CanvasPaint(QColor(255, 255, 255)));
+        canvas.setFillStyle(CanvasPaint(HeatLayout::Canvas::stroke()));
         canvas.setGlobalAlpha(alpha * 0.10);
         canvas.beginPath();
         canvas.rect(c.x + 13, c.y + c.h - 10, c.w - 26, 3);
