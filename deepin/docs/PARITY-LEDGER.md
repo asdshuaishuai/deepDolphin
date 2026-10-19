@@ -437,7 +437,7 @@ PLAN §9 M1-8 写的是「`org.deepin.dde.Panel` 位置/光标位置定位」。
 | 托盘区里显示的是**另一种东西** | `org.deepin.dde.TrayManager1.TrayIcons` = 2 个 **X11 窗口 id**：`0x8000032 "clash-verge"`、`0x7c0001e "cc-switch"`（各 16×16，**窗口名 = 应用名**） |
 | 画托盘的不是 watcher 宿主 | 读我们属性的是 `trayplugin-load`（`:1.151`），加载 `libapplication-tray.so`（**dde-dock 的托盘插件**）；watcher 由 `dde-session-daemon`（`:1.20`）提供 |
 | 该插件同时实现**三套**协议 | `SniTrayProtocol` / `XembedProtocol` / `DDEindicatorProtocol`（deepin 私有接口 `dde.shell.tray.indicator`，配置目录 `/etc/dde-dock/indicator/`） |
-| 旧协议选区**根本不存在** | `_NET_SYSTEM_TRAY_S0` 与 `_NET_SYSTEM_TRAY` 都是 "not found" ⇒ X11 上**没有** XEmbed 选区（插件另有 `FdoSelectionManager`，只在非 X11 时用） |
+| ⚠ **旧协议选区「不存在」是量错了**（批 Y 更正） | 批 X 用 `xprop -root _NET_SYSTEM_TRAY_S0` 查到 "not found" ⇒ 判「没有 XEmbed 选区」。**错**：`xprop` 查的是**窗口属性**，而选区要用 `XGetSelectionOwner` 查。**批 Y 实测：`_NET_SYSTEM_TRAY_S0` 有持有者**（`0xe00000` = 1×1 未映射的 InputOnly 窗口，root 的子窗口）⇒ X11 上**有** XEmbed 选区，dock 插件就是靠它接图标的 |
 | 标准 SNI 项**也不进**托盘区 | fcitx5 的 SNI 项注册在 watcher 里；杀掉重启后托盘区**全屏差分 0 像素** |
 | 已排除的变量 | IconPixmap 空/非空、IconName 指绝对路径/指主题图标名、注册传服务名/传对象路径、Menu 指向不存在的对象 —— **都不是根因** |
 
@@ -448,7 +448,11 @@ PLAN §9 M1-8 写的是「`org.deepin.dde.Panel` 位置/光标位置定位」。
 2. **但「迁 SNI」在 DDE 25 上仍不达成端到端**：托盘区画出来的是**应用自绘的 X11 窗口**
    （经 `org.deepin.dde.TrayManager1` 注册 → dock 嵌入），**不是**宿主按 SNI 替你画图标。
    ⇒ M1-3 的正确解法**不是**「迁 SNI」，而是**按 deepin 的托盘窗口协议注册**
-   （自绘一个 16×16 的 X11 窗口当图标，交给 `TrayManager1.Manage`）。
+   （自绘一个 X11 窗口当图标 → 向选区持有者发 `REQUEST_DOCK`）。
+   ⚠⚠ **批 Y 更正**：这里写的「交给 `TrayManager1.Manage`」**是错的** ——
+   `Manage()` 只是让 daemon **重新 claim 选区**，**它不注册任何图标**；
+   实测调了 `Manage()` 我们的窗口**照样没进** `TrayIcons`。
+   真正的注册动作见 E.1h。
 3. ⚠ **本机还有一个独立问题，限制了判据的可信度**：托盘区那 3 个圆是**空的深灰占位圆**
    （图标内容没渲染出来）⇒ **本机 deepin 25 的托盘图标渲染本身也是坏的** ⇒
    「图标有没有出现」这个判据在本机**不能单独采信**，必须与
@@ -458,6 +462,68 @@ PLAN §9 M1-8 写的是「`org.deepin.dde.Panel` 位置/光标位置定位」。
 并顺带修掉两个**与桌面无关**的真缺陷（见 README 变更日志 238/239）——
 `drawEllipse` 的圆心语义让**所有平台**的托盘图标一直是空白；像素编码按非预乘读预乘数据
 会让半透明图标**读错颜色**。这两条与 DDE 无关，**各平台都受益**。
+
+---
+
+### E.1h DDE 25 托盘窗口协议**到底怎么走**（批 Y 查明 —— 把「路径未知」变成「逐步可测」）
+
+批 X 结束时 M1-3 的状态是「正确路径要重做」。批 Y 把这条路径**逐段测通**，
+结论是**协议本身就是经典 XEmbed + deepin 一处偏移**，不需要私有 SDK。
+
+**参与方（三方，批 Y 实测厘清）**：
+
+| 方 | 是什么 | 干什么 |
+|---|---|---|
+| **注册/托管方** | `org.deepin.dde.TrayManager1` 的 owner 是 **`:1.20` = `dde-session-daemon`**（**不是** dock 插件） | 持有 `_NET_SYSTEM_TRAY_S0` 选区、登记图标窗口、盯 damage、发 `Added/Removed/Changed`、维护 `TrayIcons` 属性 |
+| **嵌入/绘制方** | dde-dock 的托盘插件（`trayplugin-load` PID 2964，加载 `/usr/lib/dde-dock/plugins/libapplication-tray.so`） | 读 `TrayIcons` → 为每个窗口建 32 位 ARGB 容器 → **reparent 图标窗口进去** → 抓窗口图像当图标 |
+| **应用（我们）** | 自己 | 造一个 X11 窗口画图标 → 向选区持有者发 `REQUEST_DOCK` |
+
+**注册协议（实测可复现）**：
+
+1. 查选区持有者：**`XGetSelectionOwner(dpy, "_NET_SYSTEM_TRAY_S0")`** ⇒ 实测 `0xe00000`
+   （1×1 未映射的 InputOnly 窗口，root 的子窗口 —— daemon 自己建的占位窗口）。
+   ⚠ `_NET_SYSTEM_TRAY`（无后缀那个）**没有**持有者；用错选区发请求 ⇒ daemon 收不到。
+2. 向该持有者窗口发 `ClientMessage`：`type = _NET_SYSTEM_TRAY_OPCODE`，
+   **`data.l[1] = 0`（`SYSTEM_TRAY_REQUEST_DOCK`）、`data.l[2] = 我们的窗口 id`**。
+   ⚠⚠ **比经典 XEmbed 偏移一位**：经典布局是 `l[0]=opcode, l[1]=窗口, l[2]=版本`；
+   deepin 的 daemon 读的是 `opcode := data32[1]`、`win := data32[2]`
+   （权威来源 `linuxdeepin/dde-daemon` → `trayicon1/traymanager.go`）。
+   ⇒ **实测**：按经典布局发 ⇒ daemon 读到的 opcode 是窗口 id ≠ 0 ⇒ **静默忽略**
+   （`TrayIcons` 不变）；按 deepin 布局发 ⇒ **注册成功**。
+3. daemon 收到后：`addIcon` ⇒ 建 damage 监听 + `composite.RedirectWindow` +
+   发 `Added` + 把窗口 id 写进 `TrayIcons` 属性。
+
+**批 Y 的实测结果**（造一个 22×22 窗口，照 `cc-switch` 的 `WM_CLASS` 抄
+`"tray-icon tray app <名>"`，画洋红底白点）：
+
+- ✅ **`TrayIcons` 从 2 个变成 3 个**（`130023454, 134217778, 115343361`）——
+  第三个 `0x6E00001` 就是我们的窗口 ⇒ **注册协议已跑通**；
+- ✅ **`GetName(0x6E00001)` 返回 `'deepDolphin'`** ⇒ daemon 认得这是谁；
+- ✅ **dock 侧真的 reparent 了它**（窗口被改成 22×40、状态 `IsViewable`）⇒
+  dock 的 `XembedProtocolHandler::initX11resources()` 走完了（建容器 → reparent →
+  composite redirect → 发 XEmbed 握手）；
+- ❌ **托盘区 0 像素变化，图标没显示**。
+
+**为什么没显示（机制层面的解释，批 X 只知道「渲染是坏的」，批 Y 知道了为什么）**：
+dock 侧显示一个图标的门是 `handler->enabled()`，而 `enabled` 由
+`getX11WindowImageNonComposite(窗口)` 决定 —— **抓不到窗口图像 ⇒ `enabled=false`
+⇒ `itemRemoved` ⇒ 干脆不显示**（连占位圆都没有）。而本机托盘区那 3 个圆**本来就是
+空的深灰占位圆**，说明 **dock 抓图标图像这条路整体是坏的**
+（`cc-switch` / `clash-verge` 这两个正经托盘应用也只显示占位圆）⇒
+**这不是我们客户端能修的**，是本机 deepin 25 托盘渲染的缺陷。
+
+⇒ **对 M1-3 的影响**：
+- **路径已查明**（不再是「路径要重做」）：自绘 X11 窗口 + `_NET_SYSTEM_TRAY_S0` +
+  `REQUEST_DOCK`（偏移一位）⇒ daemon 登记 ⇒ dock 嵌入。
+- **可自动化的判据**（不等图标显示）：**「我们的窗口 id 出现在 `TrayIcons` 里」
+  且 `GetName(我们的窗口) == 我们的名字」** —— 这两条在 daemon 侧，可脚本化、可在真机跑。
+- **仍然受阻的**：图标**像素**在本机显示不出来（dock 侧缺陷）⇒ 端到端视觉验收
+  与 D7 一样**要等真机/容器**；本机只能验到「注册成功 + 被 dock 接管」。
+- **另一条备选路（本机不可用）**：deepin 私有 indicator 协议
+  （`dde.shell.tray.indicator` + `/etc/dde-dock/indicator/*.json`，配置项
+  `dbus_service/dbus_path/dbus_interface/system_dbus/dbus_method/dbus_properties`）
+  —— 本机**没有** `/etc/dde-dock/indicator/` 目录 ⇒ 要新建 `/etc` 下的文件（需 root），
+  不适合普通用户应用 ⇒ **不走这条**。
 
 ---
 

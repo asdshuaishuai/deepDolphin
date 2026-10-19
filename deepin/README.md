@@ -1741,12 +1741,69 @@ marshaller（改完对照实测**没有区别**）。⇒ 判据必须统计**整
 而**光看门输出永远发现不了这个差**（中途那行和末尾那行都"看着像"总数）
 ⇒ 末尾改成报**总项数**（`门项合计 ${ARCH_N} 项（含前段）`），文档改成 375。
 ⚠ 这条是**自己写文档时核出来的**：门全绿、负控全红，**都不能保证文档里的数对**。
+⑨ **量「X11 选区」不能用 `xprop -root`** —— 批 X 写「`_NET_SYSTEM_TRAY_S0` 与 `_NET_SYSTEM_TRAY` 选区**都不存在** ⇒ X11 上没有 XEmbed 选区」，据此把 M1-3 判成「路径要重做」。
+**错**：`xprop -root <名字>` 查的是**窗口属性**，而**选区**要用 `XGetSelectionOwner()` 查 ⇒ 「not found」只说明「没有哪个窗口**有这个名字的属性**」，跟选区有没有主毫无关系。
+批 Y 用 `XGetSelectionOwner` 实测：`_NET_SYSTEM_TRAY_S0` **有持有者**（`0xe00000`，daemon 建的 1×1 未映射 InputOnly 窗口）⇒ X11 上**有** XEmbed 选区，dock 插件就是靠它接图标的。
+⇒ **同一个量具用错一次，整条结论就歪**（这次歪的是「路径未知」这件事本身）。
 
 **未完成（照实记录）**：**M1-3 端到端未达成**（本批交付的是**跨平台正确**的 SNI 实现 +
 两个真缺陷修复；DDE 侧下一步是改走 `TrayManager1` 窗口注册）。
 ⚠ 另有一个**独立于本批**的环境事实：托盘区那 3 个圆是**空的深灰占位圆**（图标内容没
 渲染出来）⇒ **本机 deepin 25 的托盘图标渲染本身也是坏的** ⇒ 「图标有没有出现」这个
 判据在本机**不能单独采信**，必须与 `TrayManager1.TrayIcons` 列表 / `Added` 信号一起看。
+
+### 批 Y · 托盘窗口协议勘察 —— **路径已查明**（把「路径未知」变成「逐步可测」）
+
+批 X 结束时 M1-3 卡在「正确路径要重做」。批 Y 把这条路径**逐段测通**了。
+**本节只记录已实测的事实与方案，代码在下一批落**（本批不提交实现，避免没写完的东西进仓）。
+
+**三方分工（批 Y 实测厘清，批 X 弄错了其中一环）**：
+
+| 方 | 是谁 | 干什么 |
+|---|---|---|
+| 托管方 | `org.deepin.dde.TrayManager1` 的 owner = **`:1.20` = `dde-session-daemon`**（**不是** dock 插件） | 持有 `_NET_SYSTEM_TRAY_S0`、登记图标窗口、盯 damage、发 `Added/Removed/Changed`、维护 `TrayIcons` |
+| 绘制方 | dde-dock 托盘插件（`trayplugin-load` + `libapplication-tray.so`） | 读 `TrayIcons` → 为每个窗口建 32 位 ARGB 容器 → **reparent 图标窗口进去** → 抓窗口图像当图标 |
+| 我们 | 客户端 | 造 X11 窗口画图标 → 向选区持有者发 `REQUEST_DOCK` |
+
+**注册协议（实测可复现，权威来源 `linuxdeepin/dde-daemon` → `trayicon1/traymanager.go`）**：
+
+1. 查持有者：**`XGetSelectionOwner(dpy, "_NET_SYSTEM_TRAY_S0")`** ⇒ 实测 `0xe00000`
+   （daemon 自建的 1×1 未映射 InputOnly 窗口）。
+   ⚠ `_NET_SYSTEM_TRAY`（无后缀）**没有**持有者；选错选区 ⇒ daemon 收不到。
+2. 发 `ClientMessage`：`type=_NET_SYSTEM_TRAY_OPCODE`，
+   **`data.l[1]=0`（REQUEST_DOCK）、`data.l[2]=窗口 id`**。
+   ⚠⚠ **比经典 XEmbed 偏移一位**（经典是 `l[0]`=opcode、`l[1]`=窗口、`l[2]`=版本）。
+   ⇒ **实测**：按经典布局发 ⇒ daemon 读到的 opcode 是窗口 id ≠ 0 ⇒ **静默忽略**
+   （`TrayIcons` 不变、也不报错）；按 deepin 布局发 ⇒ **注册成功**。
+   ⇒ 顺带说明批 X 结论「交给 `TrayManager1.Manage`」**是错的**：`Manage()` 只是让 daemon
+   **重新 claim 选区**，**不注册任何图标**（实测调了它，我们的窗口照样没进 `TrayIcons`）。
+
+**批 Y 实测结果**（造 22×22 窗口，`WM_CLASS` 照 `cc-switch` 抄 `"tray-icon tray app <名>"`）：
+
+- ✅ `TrayIcons` 从 2 个变 3 个（多出我们的 `0x6E00001`）⇒ **注册协议跑通**；
+- ✅ `GetName(0x6E00001)` → `'deepDolphin'` ⇒ daemon 认得我们；
+- ✅ **dock 真的 reparent 了它**（窗口被改成 22×40、状态 `IsViewable`）；
+- ❌ **托盘区 0 像素变化**。
+
+**为什么没显示（批 X 只知道「渲染是坏的」，批 Y 知道了机制）**：dock 显示图标的门是
+`handler->enabled()`，而 `enabled` 由 `getX11WindowImageNonComposite(窗口)` 决定 ——
+**抓不到窗口图像 ⇒ `enabled=false` ⇒ `itemRemoved` ⇒ 干脆不显示**（连占位圆都没有）。
+本机托盘区那 3 个圆**本来就是空的深灰占位圆** ⇒ **dock 抓图标图像这条路整体是坏的**
+（`cc-switch` / `clash-verge` 这两个正经托盘应用也只显示占位圆）⇒ **不是客户端能修的**。
+
+**⇒ 对 M1-3 的结论**：路径**已查明**（不再是「路径要重做」）⇒ 风险由「高」回落为
+「**中（路径已查明；剩客户端实现 + 真机/容器端到端验收）**」。
+**下一批（批 Y 实现）要做的事**：
+
+1. 判定层新增「deepin 托盘窗口协议」结论（纯函数、零 X11）：选区名、消息字段偏移、
+   请求构造（opcode/窗口 id 放哪）—— 可单测；
+2. 平台层：X11 窗口（用 daemon 广告的 `_NET_SYSTEM_TRAY_VISUAL`，实测 `0x6c` 是
+   **TrueColor/32 planes** 的 ARGB visual）+ 发 `REQUEST_DOCK`；
+3. 判据：真机探针断言「**我们的窗口 id 出现在 `TrayIcons` 里**」且
+   「`GetName(我们的窗口)` == 我们的名字」—— 这两条在 daemon 侧，**可脚本化**，
+   不依赖「图标是否显示出来」（本机显示不出来）；
+4. **SNI 与托盘窗口协议二选一还是并存** —— 待定：KDE 系桌面走 SNI、DDE 走窗口协议，
+   倾向**按 host 变体二选一**（判定层已有 `Host` 枚举，扩展即可）。
 
 ## 分层纪律（后续阶段必须延续）
 
