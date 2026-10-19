@@ -80,7 +80,7 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | `render arch` | 导出交互 HTML（B16） | 🟡 批 D2 已接（架构图页「导出」钮；落盘 HTML 是引擎层交付物，**不是**本平台的渲染路径） |
 | `codegraph_*`（CLI 清单 18 个新工具） | agent 工具循环（B11） | 🟢 批 E1 已接 |
 | `render` 工具 | 渲染交付物 | 🟢 批 D2 已接 `render arch`、批 E2 已接 `render index --confidence`（回执型命令走 Text 契约） |
-| `index_*` 家族 | 代码索引（`graph` 的新家） | 🟡 批 E2 已接 `index gen --stats`（代码图谱页「生成」钮）；**批 L 已接 `index overview`（索引状态行）+ `index update`（增量更新钮）**；`index query` ⬜ **判定不接 GUI**（与已接的 `graph functions` 高度重叠 —— `tier`/`findings`/`weight` 两边都有，接它会造出第二个真相源；仍可经 agent 工具面用） |
+| `index_*` 家族 | 代码索引（`graph` 的新家） | 🟡 批 E2 已接 `index gen --stats`（代码图谱页「生成」钮）；**批 L 已接 `index overview`（索引状态行）+ `index update`（增量更新钮）**；`index query` ⬜ **未接 GUI，但「判定不接 GUI」是错的**（批 Z 实测更正，见 E.1i）：它给的是**函数级调用边 + 边的确信度档位 `tier`**（`callers[]`/`callees[]`），而已接的 `graph symbol` 只给**文件级** `referencedBy`、`graph impact` 自报 `granularity: "lexical-file-level"`（**词法级文件粒度**，列出来的其实是同文件的其它函数）⇒ **不是重排，是新维度** ⇒ 列为下一批候选 |
 | `doctor --json` | 环境自检（**退出码 1 但 stdout 是合法 JSON**） | 🟢 **批 J 已接**（设置·通用页「环境自检」卡；`result` 是自由文本；`problems` 缺键记「未知」） |
 | `report <项目>` | 进度报告导出（**回执型命令，回执在 stderr**） | 🟢 **批 J 已接**（详情页「导出报告」入口 + 报告卡 + 「打开报告」） |
 | `config list` / `config get` / `config set` | 引擎配置（**策略面**：浅更新分支上限 / 文档备份份数 / 受管文档 / 扫描根） | 🟢 **批 K 已接**（设置·通用页「引擎配置」卡；`config set` 回执也在 stderr） |
@@ -147,7 +147,7 @@ agent 工具清单后修正，README 决策 199）：
 | `index gen` | ✅ | 批 E2：代码图谱页「生成」 |
 | `index overview` | ✅ | **批 L**：代码图谱页索引状态行 |
 | `index update` | ✅ | **批 L**：代码图谱页「增量更新」钮 |
-| `index query` | ⬜ **判定不接 GUI** | 与已接的 `graph functions`（关系页签在用）**高度重叠**（`tier`/`findings`/`weight` 两边都有，`defs[]` 只是 `functions[]` 的重排）→ 接它会造出第二个真相源；仍可经 agent 工具面用 |
+| `index query` | ⬜ **未接 GUI（候选）** | ⚠ **批 Z 实测推翻了原先「判定不接 GUI」的结论**（见 E.1i）：原判据说「与已接的 `graph functions` 高度重叠（`tier`/`findings`/`weight` 两边都有，`defs[]` 只是 `functions[]` 的重排）」—— **三处都不成立**：① `tier` 在 `index query` 里挂在**边**上（`callers[]`/`callees[]` 每条带 `tier`），`graph functions` **根本没有 tier**；② `defs[]` 是**按符号查**（单符号），`functions[]` 是**全项目列表**，不是重排；③ `findings` 在 `index query` 是**计数**（int），在 `graph functions` 是**数组**。实测 `index query chooseBackend` ⇒ `callers[]` 给出 3 个**函数级**调用方（带 `tier: resolved`），而已接的 `graph symbol` 只给**文件级** `referencedBy`、`graph impact` 自报 `granularity: "lexical-file-level"` ⇒ **是真正的新维度**。⚠ 且它**刚被批 Z 的引擎修复解锁**（修前 C++ 符号压根不在索引里 ⇒ 「符号不在索引中」） |
 | `confidence gen` | ✅ | 批 E2：置信度生成 |
 | `confidence query` | ⬜ **判定不接 GUI** | 是 `graph confidence` 的**子集**（少了 `findings[]` 逐条疑点，多了 `indexUpdateCount`/`generatedAt`）→ 接了反而丢信息；仍可经 agent 工具面用 |
 | `render arch` | ✅ | 批 D2：架构图导出 HTML（引擎层交付物） |
@@ -539,6 +539,73 @@ dock 侧显示一个图标的门是 `handler->enabled()`，而 `enabled` 由
   `dbus_service/dbus_path/dbus_interface/system_dbus/dbus_method/dbus_properties`）
   —— 本机**没有** `/etc/dde-dock/indicator/` 目录 ⇒ 要新建 `/etc` 下的文件（需 root），
   不适合普通用户应用 ⇒ **不走这条**。
+
+### E.1i C++ 项目的图谱/置信度**长期是残的**（批 Z 查明并已修引擎侧 —— **deepin 是 C++ 项目，吃亏最大**）
+
+批 Z 去查「`index query` 到底该不该接 GUI」，顺手量了一次引擎在 **deepin 自己身上**
+的表现 ⇒ 照出**两个一直没人注意的引擎侧缺口**。
+
+**缺口 ①：C++ 自由函数几乎全扫不出来。**
+图谱扫描器是**关键字 + 形态**驱动的（`func`/`def`/`class`/`struct`/…）。
+C++ **没有函数声明关键字**，只有 C 系的形态兜底（`返回类型 name(` + 行内含 `{`）。
+而 deepin 用的是 **Allman 风格**（`{` 另起一行）⇒ 签名行里没有 `{` ⇒ 判否。
+实测：`deepin/src/**/*.cpp` 顶层自由函数 **364 个，引擎只认出 1 个**（漏 99.7%）。
+`class` 也不在 C 系的声明词表里 ⇒ C++ 的类**一个都不认**
+（`TrayController` / `PanelWindow` / `AppModel` 在图谱里根本不存在）。
+
+**缺口 ②：未解析调用的「接收者豁免」差一位。**
+代码注释承诺「接收者调用（`a.b()`）豁免」，实现却是读**前一个 token** 的标记
+（`dotBuf[ti - 1]`）⇒ 对最常见的一层成员调用**不生效**（只有链式 `a.b.c(` 恰好命中，
+把 bug 掩盖了）；`->` 与 `::` 两种隔断**根本没有豁免规则**。
+
+**后果链（为什么这不只是「少几个符号」）**：
+
+1. 符号漏扫 ⇒ 置信度的 `unresolved-call` 判据是「调用了全仓没有定义的名字」
+   ⇒ **对真实自由函数的调用被误报成「幻觉 API」**。实测 deepin 客户端
+   **295 条「幻觉调用」**里，`clipNote`（`ai/AgentCore.cpp`）、
+   `runOne`（`ai/AiDigests.cpp`）、`defaultToolName`（`ai/MockEngine.cpp`）
+   这些**确实存在**的函数被逐条点名。
+2. 符号漏扫 ⇒ **函数体边界**（= 本符号行 → 下一个符号行）算错 ⇒ 中间那些没被
+   认出的定义不占边界 ⇒ 前一个函数的「函数体」把中间函数的 if/for 全吞进去
+   ⇒ **凭空多出高复杂度告警**（`clipNote`（2 行）被判「圈复杂度 13」）。
+3. 接收者豁免失效 ⇒ `QDateTime::currentMSecsSinceEpoch()` 这类标准库静态调用
+   被逐条指控。
+
+**已修（引擎仓 `fix/cpp-graph-symbols`，提交 `64decd1`）**：
+C 系函数名**统一**按「紧跟参数列表 `(` 的那个标识符」取（修掉限定返回类型
+`EngineCli::EngineResult classifyResult(…)`、const/指针限定
+`const EngineDoctor::Report *doctorReport() const`、限定名成员函数定义
+`bool AgentCore::runEngineRaw(…)` 三种形态）⇒ 两种写法（`{` 同行 / 另起一行）
+口径一致；新增 Allman 风格签名识别 + `pendingCSig` 待定状态（区分**原型声明**）；
+`tables["c"]` 补 `class`；接收者豁免修 off-by-one 并补 `->` / `::`。
+
+**实测效果（deepin 客户端 369 文件）**：
+
+| 指标 | 修前 | 修后 |
+|---|---|---|
+| 符号总数 | 2180 | **3232**（+1052） |
+| deepin 模块符号 | 489 | **1541**（3.2 倍） |
+| unresolved-call（幻觉调用） | 295 | **159**（-46%） |
+| 其中「成员/限定调用」类误报 | 106 | **0** |
+| high-complexity | 49 | 179（**都是此前压根没被扫到、因而没被检查的真实函数**） |
+| 置信度得分 | 68 | 68（幻觉调用减掉的罚分与复杂度增多的罚分抵消） |
+
+⇒ **分数没动，但内容从「一半是假的」变成「基本可信」**。抽查 `executeTool`（21）/
+`fromScript`（12）/`run`（23），与源码分支数相符 ⇒ 新增告警成立。
+
+**⚠ 仍然存在的结构性局限（诚实记录，本次不修）**：
+C++ **没有 import 机制** ⇒ 标准库/第三方库的名字永远不会出现在仓里 ⇒
+「全仓无定义 ⇒ 幻觉 API」这条判据在 C/C++ 上**天然有误报**。
+实测剩下的 91 条里，**glib / Qt 的外部自由函数**（`secret_password_*`、
+`g_error_free`）与**局部变量声明形态**（`QFile tar(path);`）占大头。
+这两类要靠「库白名单」或「声明形态」判定才能消：白名单追不上所有库，
+声明形态判定有放过真幻觉的风险 ⇒ **交给使用方在展示层说明**，不在引擎里堆启发式。
+
+**⇒ 对 deepin 的影响**：**不需要改客户端一行代码** —— 客户端的置信度页签/热力图
+直接受益（已把新引擎装到 `~/.local/libexec/deepdolphin/moongit.bin`，
+旧版备份 `moongit.bin.bak-20261020`）。
+⚠ 但**引擎仓与客户端仓是两个仓**：引擎修复要**先合进引擎再发版**，否则客户端
+拿到的还是旧引擎 ⇒ 批 P 那条「引擎 release 带 Linux x64 资产」的需求因此更紧迫。
 
 ---
 
