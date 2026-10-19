@@ -43,6 +43,7 @@ add_executable(deepDolphin
     # ── app/：进程级编排 ──
     src/app/AppModel.cpp
     src/app/EngineCli.cpp
+    src/app/EngineInstaller.cpp
     src/app/EngineLocator.cpp
     src/app/Notifier.cpp
     src/app/ProcessRegistry.cpp
@@ -103,6 +104,7 @@ add_executable(deepDolphin
     src/logic/EngineConfig.cpp
     src/logic/IndexStatus.cpp
     src/logic/EngineDoctor.cpp
+    src/logic/EngineDownload.cpp
     # ── platform/ ──
     src/platform/AppService.cpp
     src/platform/AutostartManager.cpp

@@ -1,11 +1,15 @@
 #include "SelfCheck.h"
 #include "EngineCli.h"
+#include <QCryptographicHash>
+#include <QDir>
+#include <QSet>
 #include "../logic/AgentToolPlan.h"
 #include "../logic/ArchReceipt.h"
 #include "../logic/CanvasFont.h"
 #include "../logic/CodeGraphBuild.h"
 #include "../logic/DashFilter.h"
 #include "../logic/Derived.h"
+#include "../logic/EngineDownload.h"
 #include "../logic/Liveness.h"
 #include "../logic/SemColors.h"
 #include "../logic/DocPages.h"
@@ -2497,6 +2501,68 @@ int SelfCheck::run(QStringList &log)
                 && Derived::branchStatusColor(QStringLiteral("active")) == SemColors::shallow()
                 && Derived::branchStatusColor(QStringLiteral("stale")) == SemColors::stale()
                 && Derived::statTint(5) == SemColors::orange());
+    }
+
+    // ── 引擎获取（GitHub Releases 下载）判定层 ──
+    {
+        const QByteArray withLinux = R"JSON({"tag_name":"v0.2.0","assets":[
+          {"name":"moongit-v0.2.0-darwin-arm64.tar.gz","browser_download_url":"https://example.invalid/d.tar.gz","digest":"sha256:6d6e7982068b09521d3f294bd622e07effe93ac586e0ddcbdb5d1f52441cdcb3","size":6463656},
+          {"name":"moongit-v0.2.0-linux-x64.tar.gz","browser_download_url":"https://example.invalid/l.tar.gz","digest":"sha256:aaaa0000bbbb1111cccc2222dddd3333eeee4444ffff5555aaaa6666bbbb7777","size":7000000}]})JSON";
+        const EngineDownload::Release r = EngineDownload::parseRelease(withLinux);
+        check(log, "引擎下载：能从 release 载荷挑出本平台资产（linux-x64）",
+            r.parsed && r.tag == QLatin1String("v0.2.0") && r.asset.present
+                && r.asset.name == QLatin1String("moongit-v0.2.0-linux-x64.tar.gz")
+                && r.asset.url == QLatin1String("https://example.invalid/l.tar.gz")
+                && r.asset.size == 7000000 && r.available.size() == 2);
+        // ⚠ **「本平台没有资产」不是错误** —— 要能说清「到底有什么」，而不是笼统报失败
+        const QByteArray darwinOnly = R"JSON({"tag_name":"v0.1.0","assets":[
+          {"name":"moongit-v0.1.0-darwin-arm64.tar.gz","browser_download_url":"https://example.invalid/d.tar.gz","digest":"sha256:6d6e7982068b09521d3f294bd622e07effe93ac586e0ddcbdb5d1f52441cdcb3","size":6463656}]})JSON";
+        const EngineDownload::Release r2 = EngineDownload::parseRelease(darwinOnly);
+        check(log, "引擎下载：本 release 没有 Linux 资产时能说清「有什么」",
+            r2.parsed && !r2.asset.present && r2.available.size() == 1
+                && r2.available.first() == QLatin1String("moongit-v0.1.0-darwin-arm64.tar.gz"));
+        // 载荷读不懂 ≠ 没有资产：两者要说清的是不同的话
+        const EngineDownload::Release r3 = EngineDownload::parseRelease("<html>404</html>");
+        check(log, "引擎下载：载荷读不懂时报「读不懂」而不是「没有资产」",
+            !r3.parsed && !r3.asset.present && r3.available.isEmpty());
+        check(log, "引擎下载：资产名匹配（平台后缀 + 必须是 tar.gz 包）",
+            EngineDownload::assetMatches(QStringLiteral("moongit-v0.2.0-linux-x64.tar.gz"),
+                QStringLiteral("linux-x64"))
+                && !EngineDownload::assetMatches(QStringLiteral("moongit-v0.2.0-darwin-arm64.tar.gz"),
+                    QStringLiteral("linux-x64"))
+                && !EngineDownload::assetMatches(QStringLiteral("moongit-v0.2.0-linux-x64.zip"),
+                    QStringLiteral("linux-x64")));
+        // sha256 三态：对 / 错 / **无校验和**（无校验和 ≠ 校验通过，上层要说「未校验」）
+        const QByteArray payload("hello");
+        const QString sha = QString::fromLatin1(
+            QCryptographicHash::hash(payload, QCryptographicHash::Sha256).toHex());
+        check(log, "引擎下载：sha256 校验（对/错/无校验和三态）",
+            EngineDownload::digestMatches(QStringLiteral("sha256:") + sha, payload)
+                && !EngineDownload::digestMatches(QStringLiteral("sha256:") + sha, QByteArray("hellp"))
+                && EngineDownload::digestMatches(QString(), payload)
+                && !EngineDownload::digestMatches(QStringLiteral("sha256:abc"), payload));
+        check(log, "引擎下载：落盘在用户目录（不碰系统目录、不要 sudo）",
+            // ⚠ 判据要盯「**在用户目录下**」，不是「不以 / 开头」——
+            //   用户目录路径本身就是绝对路径（/home/xxx/...），盯「相对路径」是盯错了。
+            EngineDownload::installDir().startsWith(QDir::homePath())
+                && !EngineDownload::installDir().startsWith(QLatin1String("/usr"))
+                && !EngineDownload::installDir().startsWith(QLatin1String("/opt"))
+                && !EngineDownload::installDir().startsWith(QLatin1String("/etc"))
+                && EngineDownload::installedBin().endsWith(QLatin1String("/moongit"))
+                && EngineDownload::packagedBinName() == QLatin1String("moongit-cli"));
+        // 「失败要说清是哪一种」的可验证形式：七种失败各说各的，不许都叫「下载失败」
+        const QStringList msgs = {
+            EngineDownload::stageMessage(EngineDownload::Stage::networkUnreachable, QStringLiteral("x")),
+            EngineDownload::stageMessage(EngineDownload::Stage::releaseUnreadable, QStringLiteral("x")),
+            EngineDownload::stageMessage(EngineDownload::Stage::noPlatformAsset, QStringLiteral("x")),
+            EngineDownload::stageMessage(EngineDownload::Stage::downloadFailed, QStringLiteral("x")),
+            EngineDownload::stageMessage(EngineDownload::Stage::digestMismatch, QStringLiteral("x")),
+            EngineDownload::stageMessage(EngineDownload::Stage::extractFailed, QStringLiteral("x")),
+            EngineDownload::stageMessage(EngineDownload::Stage::probeFailed, QStringLiteral("x")),
+        };
+        const QSet<QString> uniq(msgs.begin(), msgs.end());
+        check(log, "引擎下载：七种失败各说各的（不许都叫「下载失败」）",
+            msgs.size() == 7 && uniq.size() == 7 && !msgs.isEmpty());
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

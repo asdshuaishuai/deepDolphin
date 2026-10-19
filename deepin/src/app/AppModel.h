@@ -68,6 +68,8 @@ struct AgentBulkReport {
     QString outcomeTable() const;
 };
 
+class EngineInstaller;
+
 class AppModel : public QObject {
     Q_OBJECT
 public:
@@ -80,6 +82,10 @@ public:
     bool engineFound() const { return m_engineFound; }
     bool enginePending() const { return m_enginePending; } // 发现链在跑：UI 走忙态，别说"未找到"
     QString engineProblem() const { return m_engineProblem; }
+    /// 引擎下载安装中（UI 走忙态，别说「没反应」）。
+    bool engineDownloading() const { return m_engineDownloading; }
+    /// 最近一次引擎下载的结论（成功/失败的具体说法）。
+    QString engineDownloadMessage() const { return m_engineDownloadMessage; }
     const std::vector<ProjectStatus> &projects() const { return m_projects; }
     const std::optional<ProjectStatus> project(const QString &name) const;
     const std::optional<EngineSummary> &summary() const { return m_summary; }
@@ -270,6 +276,9 @@ public:
     /// 读取引擎配置（引擎 `config list --json`）。
     /// 展示的是**引擎实际在用的策略**（浅更新分支上限 / 文档备份份数 / 受管文档 /
     /// 扫描根），不是客户端自己的设置 —— 两边刻意分开，避免两个真相源。
+    /// 下载并安装引擎（GitHub Releases）。⚠ 全程异步，GUI 不冻结。
+    /// 安装完成后自动重跑发现链 —— 装好的引擎要**立刻**被认出来。
+    void downloadEngine();
     void loadEngineConfig();
     /// 改一个引擎配置键（引擎 `config set <键> <值>`；**回执型命令，回执在 stderr**）。
     /// ⚠ 键必须在 EngineConfig::writableKeys() 里 —— 引擎对未知键直接报错。
@@ -332,6 +341,10 @@ signals:
 
     // 引擎发现结果变化（含「重新检测引擎」后的回灌）：UI 重新读 engineFound/engineProblem
     void engineFoundChanged();
+    /// 引擎下载开始/结束（UI 据此切忙态）。
+    void engineDownloadingChanged();
+    /// 引擎下载收尾：ok=装好了；text=给用户看的结论（失败时说清是哪一种）。
+    void engineDownloadFinished(bool ok, const QString &text);
 
 private:
     // ── 合并闸门：撞上不丢弃、排队补跑一次不叠加 ──
@@ -401,6 +414,9 @@ private:
     bool m_engineFound = false;
     bool m_enginePending = false; // 发现链在跑（locateAsync 未收尾）；期间引擎未找到不算"连接失败"
     QString m_engineProblem;
+    EngineInstaller *m_installer = nullptr; ///< 引擎下载执行器（网络/解压全异步）
+    bool m_engineDownloading = false;
+    QString m_engineDownloadMessage;
 
     QTimer *m_lightTimer = nullptr;  // 300s 轻刷新
     QTimer *m_autoTimer = nullptr;   // 定时更新（autoHours 周期）

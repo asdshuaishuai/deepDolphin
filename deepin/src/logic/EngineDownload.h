@@ -1,0 +1,87 @@
+// EngineDownload.h — 引擎获取（GitHub Releases 下载）的**判定层**（纯函数，零 QWidget 头）。
+//
+// 【为什么判定不接 GUI】—— 其实**接**：这是引擎缺失时用户唯一的出路。
+//   判据先行：所有「挑哪个资产 / 校验 / 落哪 / 失败是哪一种」都在这里，
+//   网络与解压在 app 层，界面只读结论。
+//
+// 【为什么必须走 API 而不是固定 URL】⚠ **实测（2026-10-19）**：
+//   引擎 release 的资产名带版本号（`moongit-v0.1.0-linux-x64.tar.gz`），
+//   而 GitHub 的 `releases/latest/download/<name>` 要求**资产名精确匹配** ——
+//   mac 侧用的固定 URL `releases/latest/download/moongit-darwin-arm64.tar.gz`
+//   **实测 404**（不带版本号），带版本号的才 200。
+//   ⇒ 固定 URL 是脆的（引擎改打包命名就断）；查 API 拿资产列表再挑，才跟得上。
+//
+// 【失败要说清是哪一种】—— 见 Stage 枚举。绝不「下载失败」四个字打发了事。
+#pragma once
+#include <QByteArray>
+#include <QString>
+#include <QStringList>
+
+namespace EngineDownload {
+
+/// 本平台资产后缀（deepin = linux x86_64）。
+QString platformSuffix();
+
+/// GitHub Releases「最新版本」API（返回 JSON：tag_name + assets[]）。
+QString releaseApiUrl(const QString &repo = QStringLiteral("asdshuaishuai/moongit"));
+
+/// 一个 release 资产。
+struct Asset {
+    QString name;   ///< 如 moongit-v0.1.0-linux-x64.tar.gz
+    QString url;    ///< browser_download_url
+    QString digest; ///< "sha256:…"（GitHub 提供；旧 release 可能为空）
+    qint64 size = -1;
+    bool present = false; ///< 字段真的存在（size=-1 是「没这个键」不是「0 字节」）
+};
+
+/// release 解析结果。
+struct Release {
+    bool parsed = false;  ///< JSON 本身读懂了
+    QString tag;          ///< tag_name（如 v0.1.0）
+    Asset asset;          ///< 挑中的本平台资产（present=false = 没挑到）
+    QStringList available; ///< 该 release 的全部资产名（失败要说清「到底有什么」）
+};
+
+/// 从 release JSON 里挑本平台的 tar.gz 资产。
+/// 挑不到**不是错误**：asset.present=false + available 列出全部资产名，
+/// 由上层报「该版本没有 Linux x64 安装包（现有：…）」。
+Release parseRelease(const QByteArray &json);
+
+/// 资产名是否匹配本平台（且是 .tar.gz 包）。
+bool assetMatches(const QString &assetName, const QString &suffix);
+
+/// sha256 校验：expected 形如 "sha256:abc…" 或纯 hex；空 = 未提供校验和。
+/// ⚠ **空值返回 true** —— 不是「校验通过」，是「无校验和可比」。
+///   上层必须据此把「未校验」如实说给用户（不能冒充已校验）。
+bool digestMatches(const QString &expected, const QByteArray &data);
+
+/// 落盘位置：用户目录，**不碰系统目录**（不要 sudo，不要往 /usr/local/bin 写）。
+QString installDir();
+
+/// 落盘后的引擎路径（落盘名是 `moongit` —— 引擎发现链认这个名字）。
+QString installedBin();
+
+/// 引擎 release 包**内**的可执行文件名。
+/// ⚠ 引擎的打包脚本把二进制改名成 `moongit-cli`（与 `moongit` 发布名区分），
+///   解压后必须改名落盘，否则引擎发现链找不到它。
+QString packagedBinName();
+
+/// 失败分类 —— 「失败要说清是哪一种」。
+enum class Stage {
+    ok,
+    networkUnreachable, ///< 网络不可达（连不上 GitHub）
+    releaseUnreadable,  ///< release 载荷读不懂（契约过旧 / 被限流 / 404 HTML）
+    noPlatformAsset,    ///< 该 release 没有本平台的资产
+    downloadFailed,     ///< 下载中断
+    digestMismatch,     ///< 校验和不匹配（资产被换过 / 下载损坏）
+    extractFailed,      ///< 解压失败
+    probeFailed,        ///< 落盘后探活失败（引擎跑不起来）
+};
+
+/// 面向用户的失败说明（detail 放具体上下文，如 URL / 期望与实际校验和）。
+QString stageMessage(Stage s, const QString &detail = QString());
+
+/// 失败分类的**机器可读名**（契约门断言用；别拿它当界面文案）。
+QString stageName(Stage s);
+
+} // namespace EngineDownload

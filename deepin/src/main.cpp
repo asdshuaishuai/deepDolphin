@@ -9,6 +9,7 @@
 #include "ai/SecretStore.h"
 #include "app/AppModel.h"
 #include "app/EngineCli.h"
+#include "app/EngineInstaller.h"
 #include "app/EngineLocator.h"
 #include "app/Notifier.h"
 #include "app/SelfCheck.h"
@@ -21,6 +22,7 @@
 #include "logic/CodeGraphBuild.h"
 #include "logic/EngineConfig.h"
 #include "logic/EngineDoctor.h"
+#include "logic/EngineDownload.h"
 #include "logic/IndexStatus.h"
 #include "logic/SyntaxHighlight.h"
 #include "logic/Liveness.h"
@@ -238,6 +240,53 @@ static int headlessPlatformProbe(int argc, char *argv[])
     ::_exit(rc);
 }
 
+static int headlessEngineDownload(int argc, char *argv[], const QString &apiUrl, const QString &dest)
+{
+    // 无头跑一遍「查发布信息 → 下载 → 校验 → 解压 → 落盘 → 探活」全链，
+    // 把结论打成 JSON 打到 stdout（契约门拿它断言）。
+    // ⚠ 必须留在无头分支：否则未知 flag 落进 GUI 主路径单实例常驻，ci.sh 挂死。
+    QCoreApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("deepin"));
+    QCoreApplication::setApplicationName(QStringLiteral("deepDolphin"));
+
+    EngineInstaller installer;
+    QEventLoop loop;
+    bool got = false;
+    EngineInstaller::Result last;
+    QObject::connect(&installer, &EngineInstaller::progress, &app,
+        [](const QString &text) {
+            fprintf(stderr, "› %s\n", qPrintable(text));
+            fflush(stderr);
+        });
+    QObject::connect(&installer, &EngineInstaller::finished, &app,
+        [&](const EngineInstaller::Result &r) {
+            last = r;
+            got = true;
+            loop.quit();
+        });
+
+    installer.start(apiUrl, dest);
+    // 兜底超时：网络卡死不能让 CI 永久挂着（引擎链自己也有 30s/步超时）
+    QTimer::singleShot(180000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QJsonObject out;
+    out.insert(QStringLiteral("ok"), got && last.ok);
+    out.insert(QStringLiteral("stage"), EngineDownload::stageName(last.stage));
+    out.insert(QStringLiteral("message"), last.message);
+    out.insert(QStringLiteral("bin"), last.bin);
+    out.insert(QStringLiteral("tag"), last.tag);
+    out.insert(QStringLiteral("verified"), last.verified);
+    fprintf(stdout, "%s\n",
+        qPrintable(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact))));
+    fflush(stdout);
+    if (!got) {
+        fprintf(stderr, "✗ 引擎下载无头跑超时（没拿到结论）\n");
+        return 2;
+    }
+    return last.ok ? 0 : 1;
+}
+
 int main(int argc, char *argv[])
 {
     // 崩溃可观测（M4c）：装在无头分支分派之前——GUI 路径必装；无头路径
@@ -443,6 +492,43 @@ int main(int argc, char *argv[])
         // 必须留在无头分支：否则未知 flag 落进 GUI 主路径单实例常驻，ci.sh 步骤 4 挂死
         //（M1a 期实测）。M1-9 起返回探针事实，不再快速失败。
         return headlessPlatformProbe(argc, argv);
+    }
+    if (rawArgs.contains(QStringLiteral("--engine-release-parse"))) {
+        // 客户端对 GitHub Releases「latest」载荷的判定结果（判定层在 logic/EngineDownload）。
+        // 契约检查拿**真 API** 的载荷喂它 —— 真 release 的资产名/字段形状变了，
+        // 自造夹具照样全绿。
+        // 用法：deepDolphin --engine-release-parse < release.json
+        QFile in;
+        in.open(stdin, QIODevice::ReadOnly);
+        const EngineDownload::Release rel = EngineDownload::parseRelease(in.readAll());
+        QJsonObject out;
+        out.insert(QStringLiteral("parsed"), rel.parsed);
+        out.insert(QStringLiteral("tag"), rel.tag);
+        out.insert(QStringLiteral("hasAsset"), rel.asset.present);
+        out.insert(QStringLiteral("assetName"), rel.asset.name);
+        out.insert(QStringLiteral("assetUrl"), rel.asset.url);
+        out.insert(QStringLiteral("hasDigest"), !rel.asset.digest.trimmed().isEmpty());
+        out.insert(QStringLiteral("available"), QJsonArray::fromStringList(rel.available));
+        fprintf(stdout, "%s\n",
+            qPrintable(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact))));
+        fflush(stdout);
+        return rel.parsed ? 0 : 1;
+    }
+    if (rawArgs.contains(QStringLiteral("--engine-download"))) {
+        // 引擎获取链（GitHub Releases 下载安装）的**无头全链**：
+        // 查发布信息 → 下载 → 校验和 → 解压 → 落盘 → 探活，结论打成 JSON 打 stdout。
+        // ⚠ 必须留在无头分支：否则未知 flag 落进 GUI 主路径单实例常驻，ci.sh 挂死。
+        const int at = rawArgs.indexOf(QStringLiteral("--engine-download"));
+        if (at + 1 >= rawArgs.size()) {
+            fprintf(stderr, "用法：deepDolphin --engine-download <release-api-url> "
+                            "[--engine-download-dest <dir>]\n");
+            return 2;
+        }
+        QString dest;
+        const int d = rawArgs.indexOf(QStringLiteral("--engine-download-dest"));
+        if (d >= 0 && d + 1 < rawArgs.size())
+            dest = rawArgs.at(d + 1);
+        return headlessEngineDownload(argc, argv, rawArgs.at(at + 1), dest);
     }
     const LaunchRoute preRoute = Route::parseArgs(rawArgs);
     if (preRoute.agentSelftest)

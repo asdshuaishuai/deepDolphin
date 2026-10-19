@@ -46,6 +46,36 @@ GeneralPane::GeneralPane(AppModel *model, QWidget *parent)
     row->addWidget(m_switch);
     v->addWidget(card);
 
+    // ── 引擎卡（引擎缺失时**唯一的出路**：下载并安装）──
+    // ⚠ 为什么放第一张：引擎没装，客户端其他一切都是空的 —— 用户先看到的应该是这件事。
+    auto *engineCard = new QWidget(this);
+    auto *engineRow = new QHBoxLayout(engineCard);
+    engineRow->setSpacing(DS::Spacing::md);
+    auto *engineCol = new QVBoxLayout;
+    auto *engineTitle = new QLabel(QStringLiteral("引擎"), engineCard);
+    engineTitle->setFont(DS::font(DS::FontT::cardTitle));
+    engineCol->addWidget(engineTitle);
+    m_engineStatus = new SecondaryLabel(engineCard);
+    m_engineStatus->setFont(DS::font(DS::FontT::label));
+    m_engineStatus->setWordWrap(true);
+    engineCol->addWidget(m_engineStatus);
+    m_engineDownloadMsg = new QLabel(engineCard);
+    m_engineDownloadMsg->setFont(DS::font(DS::FontT::label));
+    m_engineDownloadMsg->setWordWrap(true);
+    m_engineDownloadMsg->hide();
+    engineCol->addWidget(m_engineDownloadMsg);
+    engineRow->addLayout(engineCol, 1);
+    m_engineDownloadButton = new DPushButton(QStringLiteral("下载并安装引擎"), engineCard);
+    m_engineDownloadButton->setToolTip(
+        QStringLiteral("从 GitHub Releases 下载并安装引擎（moongit）到用户目录"));
+    connect(m_engineDownloadButton, &DPushButton::clicked, this, [this] {
+        if (!m_model)
+            return;
+        m_model->downloadEngine();
+    });
+    engineRow->addWidget(m_engineDownloadButton);
+    v->addWidget(engineCard);
+
     // 日志卡片（M0-9）：报障时要能自己拿到日志——日志目录一键定位，不再让用户去猜
     auto *logCard = new QWidget(this);
     auto *logRow = new QHBoxLayout(logCard);
@@ -231,6 +261,16 @@ GeneralPane::GeneralPane(AppModel *model, QWidget *parent)
             m_doctorButton->setEnabled(true);
             applyDoctorReport(r);
         });
+        connect(m_model, &AppModel::engineDownloadingChanged, this, [this] { applyEngineState(); });
+        connect(m_model, &AppModel::engineDownloadFinished, this,
+            [this](bool ok, const QString &text) {
+                m_engineDownloadMsg->setText(text);
+                m_engineDownloadMsg->setStyleSheet(
+                    QStringLiteral("color: %1;").arg(DS::semColor(
+                        ok ? DS::SemColor::shallow : DS::SemColor::red).name()));
+                m_engineDownloadMsg->show();
+                applyEngineState();
+            });
         connect(m_model, &AppModel::engineConfigChanged, this, [this] { applyEngineConfig(); });
         connect(m_model, &AppModel::engineConfigSaved, this, [this](bool ok, const QString &text) {
             if (ok) {
@@ -398,6 +438,28 @@ void GeneralPane::showEvent(QShowEvent *event)
     // 引擎配置是**引擎当前在用的策略**（别的进程/命令行也可能改过它）——
     // 每次打开这一页都重读一次，别让用户看着一份过期的值做决定。
     reloadEngineConfig();
+    applyEngineState();
+}
+
+void GeneralPane::applyEngineState()
+{
+    if (!m_model)
+        return;
+    const bool downloading = m_model->engineDownloading();
+    m_engineDownloadButton->setEnabled(!downloading);
+    m_engineDownloadButton->setText(downloading ? QStringLiteral("正在下载…")
+                                                : QStringLiteral("下载并安装引擎"));
+    QString status;
+    if (m_model->engineFound())
+        status = QStringLiteral("已找到引擎，可正常使用。");
+    else if (m_model->enginePending())
+        status = QStringLiteral("正在查找引擎…");
+    else
+        status = QStringLiteral("没有找到引擎。点右侧按钮可从 GitHub Releases 下载并安装"
+                                "（装到用户目录，不需要管理员权限）。");
+    if (downloading)
+        status = QStringLiteral("正在下载并安装引擎，请稍候…");
+    m_engineStatus->setText(status);
 }
 
 void GeneralPane::reloadEngineConfig()

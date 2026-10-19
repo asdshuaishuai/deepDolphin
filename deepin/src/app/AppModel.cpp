@@ -5,10 +5,12 @@
 #include "../ai/AiDigests.h"
 #include "../ai/SecretStore.h"
 #include "../logic/Derived.h"
+#include "../logic/EngineDownload.h"
 #include "../logic/PatchCheck.h"
 #include "../logic/ScanCoverage.h"
 #include "../logic/StopDecision.h"
 #include "../logic/UpdateOutcome.h"
+#include "EngineInstaller.h"
 #include "Notifier.h"
 #include "Settings.h"
 #include <QDateTime>
@@ -122,7 +124,34 @@ AppModel::AppModel(const EngineLocator::Result &engine, EngineCli *cli, QObject 
     , m_engineFound(engine.found)
     , m_enginePending(engine.pending)
     , m_engineProblem(engine.problems.join(QStringLiteral("；")))
+    , m_installer(new EngineInstaller(this))
 {
+    connect(m_installer, &EngineInstaller::finished, this,
+        [this](const EngineInstaller::Result &r) {
+            m_engineDownloading = false;
+            m_engineDownloadMessage = r.message;
+            emit engineDownloadingChanged();
+            if (!r.ok) {
+                emit engineDownloadFinished(false, r.message);
+                return;
+            }
+            // 装好了 → **立刻**重跑发现链：装到 ~/.local/libexec/deepdolphin/moongit 的引擎
+            // 是发现链的候选之一，不重跑的话用户还得自己重启应用才认得出引擎。
+            EngineLocator::Result pending;
+            pending.pending = true;
+            setEngineResult(pending);
+            EngineLocator::locateAsync([this, r](const EngineLocator::Result &found) {
+                setEngineResult(found);
+                QString msg = r.message;
+                if (found.found)
+                    msg += QStringLiteral("；已可使用");
+                else
+                    msg += QStringLiteral("；⚠ 装好了，但发现链仍没找到它 —— 请检查安装位置与权限");
+                m_engineDownloadMessage = msg;
+                // ⚠ 只发**一次**收尾信号（下载完成 + 复检合并成一条结论）。
+                emit engineDownloadFinished(true, msg);
+            });
+        });
     connect(m_cli, &EngineCli::engineMissing, this, [this] {
         // 引擎在运行中消失（被删/权限变化）：如实转故障态，不静默。
         // 但「从来没设过 bin」不是"引擎消失"——那是从未发现过引擎（SetupGuidePage 的口径），
@@ -1651,6 +1680,17 @@ void AppModel::setEngineResult(const EngineLocator::Result &engine)
         m_cli->setEngineBin(engine.found ? engine.bin : QString());
     if (foundChanged)
         emit engineFoundChanged();
+}
+
+void AppModel::downloadEngine()
+{
+    if (m_engineDownloading)
+        return; // 已经在下载：再点一次只会并发两个下载器
+    m_engineDownloading = true;
+    m_engineDownloadMessage.clear();
+    emit engineDownloadingChanged();
+    // ⚠ API URL 与落盘目录都走判定层/执行层的默认（口径一处，不在界面里写死）。
+    m_installer->start(EngineDownload::releaseApiUrl(), QString());
 }
 
 // ── 派生查询 ──

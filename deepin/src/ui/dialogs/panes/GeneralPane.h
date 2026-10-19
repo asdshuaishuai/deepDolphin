@@ -46,6 +46,8 @@ private:
     ///   「打开本页会自动读」两个调用点 —— 若两处都直接写
     ///   `m_model->loadEngineConfig()`，摘掉其中一处门照样绿（同名调用点互相顶替）。
     void reloadEngineConfig();
+    /// 引擎卡状态（已找到 / 未找到 / 下载中）—— 下载钮的启用与文案。
+    void applyEngineState();
 
     AppModel *m_model = nullptr;
     Dtk::Widget::DSwitchButton *m_switch = nullptr;
@@ -55,6 +57,9 @@ private:
     Dtk::Widget::DPushButton *m_doctorButton = nullptr;
     QLabel *m_doctorSummary = nullptr;
     QWidget *m_doctorBody = nullptr; ///< 检查项逐行容器（由 applyDoctorReport 重建）
+    Dtk::Widget::DPushButton *m_engineDownloadButton = nullptr;
+    QLabel *m_engineStatus = nullptr;
+    QLabel *m_engineDownloadMsg = nullptr;
     Dtk::Widget::DPushButton *m_configButton = nullptr;
     QLabel *m_configError = nullptr;
     QWidget *m_configBody = nullptr;    ///< 只读项逐行容器（由 applyEngineConfig 重建）

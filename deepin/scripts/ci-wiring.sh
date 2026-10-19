@@ -23,7 +23,9 @@ strip_comments() {
         sed -e 's/^[[:space:]]*#.*$//' "$1" ;;
     *)
         if command -v perl >/dev/null 2>&1; then
-            perl -pe 's{//(?!:).*$}{}' "$1"
+        # ⚠ `(?<!:)` 排除 `://` —— 否则字符串里的 URL（https://…）
+        #   会被当成行注释整段剥掉，门就看不见它了（负控实测）。
+            perl -pe 's{(?<!:)(//)(?!:).*$}{}' "$1"
         else
             sed -e 's|//[^/].*$||' "$1"
         fi
@@ -409,6 +411,31 @@ arch_forbid "$SRC/src/tray/TrayController.cpp" 'QColor\(0x' '托盘不再自己�
 arch_forbid "$SRC/src/tray/TrayPopupWindow.cpp" 'QColor\(0x' '托盘弹层不再自己写字面色值'
 arch_forbid "$SRC/src/platform/IconLoader.cpp" 'QColor\(0x' '平台层不再自己写字面色值'
 arch_forbid "$SRC/src/ui/DesignTokens.cpp" 'QColor\(0x' 'DS 不再自己写语义色字面量'
+
+# 批 P · 引擎获取链（GitHub Releases 下载安装）：判定层出结论，执行层只管跑，
+#   界面只读结论。⚠ URL / 资产名 / 校验和 / 落盘位置**一处**说了算。
+arch_need "$SRC/src/logic/EngineDownload.h" 'namespace EngineDownload [{]' '引擎下载有判定层（结论一处）'
+arch_need "$SRC/src/logic/EngineDownload.cpp" 'parseRelease\(const QByteArray &json\)' '判定层从 release 载荷挑本平台资产'
+arch_need "$SRC/src/logic/EngineDownload.cpp" 'digestMatches\(const QString &expected' '判定层做 sha256 校验'
+arch_need "$SRC/src/app/EngineInstaller.cpp" 'EngineDownload::parseRelease' '执行层走判定层挑资产'
+arch_need "$SRC/src/app/EngineInstaller.cpp" 'EngineDownload::digestMatches' '执行层走判定层校验'
+arch_need "$SRC/src/app/EngineInstaller.cpp" 'EngineDownload::packagedBinName' '包内文件名走判定层'
+arch_need "$SRC/src/app/AppModel.cpp" 'EngineDownload::releaseApiUrl' 'AppModel 走判定层取发布信息 URL'
+arch_need "$SRC/src/app/AppModel.cpp" 'void AppModel::downloadEngine\(\)' 'AppModel 暴露下载引擎'
+arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'm_model->downloadEngine' '设置页有下载引擎入口'
+arch_need "$SRC/src/app/EngineLocator.cpp" 'libexec/deepdolphin/moongit' '发现链认得下载链装的位置'
+# ⚠ 用**精确计数**（两个调用点都要在）：`--engine-download` 在 main.cpp 出现两次
+#   （contains 与 indexOf），只盯「出现过」时变异改掉其中一处门照样绿
+#   （负控实测，第九次「同名/子串互相顶替」）。
+arch_need_count "$SRC/src/main.cpp" 'QStringLiteral\("--engine-download"\)' 2 '无头入口可端到端验下载链（两个调用点都在）'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'EngineDownload::parseRelease' 'SelfCheck 覆盖下载判定层'
+# 「同一件事只许一个出处」：发布信息 URL 只在判定层写一次。
+# ⚠ 曾经给「界面」和「发现链」也加了同款 forbid —— 那是**空门**：
+#   这两处根本没有写 URL 的机会（界面拿不到执行层、发现链不碰下载），
+#   空门比没门更糟（给人虚假的安全感）。改成盯**真会发生的违规**。
+arch_forbid "$SRC/src/app/EngineInstaller.cpp" 'api\.github\.com' '执行层不自己写发布信息 URL'
+arch_forbid "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'EngineInstaller' '界面不绕过 AppModel 直接用执行层'
+arch_forbid "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'EngineDownload::' '界面不自己读判定层（结论经 AppModel 传上来）'
 
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \

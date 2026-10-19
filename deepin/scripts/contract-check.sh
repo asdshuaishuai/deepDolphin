@@ -825,5 +825,81 @@ print(d.get('indexJson', ''))
     fi
 fi
 
+# ── 第 21 组：引擎获取链（GitHub Releases 下载安装）──
+# ⚠ 这组**不依赖引擎**（引擎在不在都该验）：验的是「引擎没装时用户唯一的出路」。
+#   ① 本地端到端：file:// 打桩跑完整链（查发布信息→下载→校验→解压→落盘→探活）
+#   ② 校验和不匹配 → **拒绝安装**（不落盘）
+#   ③ 真 GitHub API：latest release 载荷能被判定层读懂（网络不通 → 显式 SKIP，不算通过）
+if [ ! -x "$CLIENT_BIN" ]; then
+    echo "  ‣ SKIP 第 21 组：找不到客户端二进制 $CLIENT_BIN"
+    echo "    ‣ 本组**未验证**，不算通过"
+else
+    ENG_TMP="$(mktemp -d)"
+    mkdir -p "$ENG_TMP/pkg"
+    # 假引擎：只认 `version`（探活就跑这一条）
+    printf '#!/bin/sh\ncase "$1" in\n  version) echo "moongit 0.0.0-contract";;\n  *) echo "unknown";;\nesac\n' > "$ENG_TMP/pkg/moongit-cli"
+    chmod +x "$ENG_TMP/pkg/moongit-cli"
+    tar czf "$ENG_TMP/engine.tar.gz" -C "$ENG_TMP/pkg" moongit-cli
+    ENG_SHA="$(sha256sum "$ENG_TMP/engine.tar.gz" | cut -d' ' -f1)"
+    ENG_SZ="$(wc -c < "$ENG_TMP/engine.tar.gz" | tr -d ' ')"
+    cat > "$ENG_TMP/release.json" <<EOF
+{"tag_name":"v0.0.0-contract","assets":[{"name":"moongit-v0.0.0-contract-linux-x64.tar.gz","browser_download_url":"file://$ENG_TMP/engine.tar.gz","digest":"sha256:$ENG_SHA","size":$ENG_SZ}]}
+EOF
+    ENG_OUT="$("$CLIENT_BIN" --engine-download "file://$ENG_TMP/release.json" --engine-download-dest "$ENG_TMP/dest" 2>/dev/null)"
+    check "引擎获取：端到端跑通（下载→校验→解压→落盘→探活）" \
+        "d.get('ok') is True and d.get('stage') == 'ok' and d.get('verified') is True and d.get('tag') == 'v0.0.0-contract'" \
+        "$ENG_OUT"
+    if [ -x "$ENG_TMP/dest/moongit" ]; then
+        echo "  ✓ 引擎获取：落盘的引擎可执行且改名成 moongit"
+        pass=$((pass+1))
+    else
+        echo "  ✗ 引擎获取：落盘的引擎不存在或不可执行（$ENG_TMP/dest/moongit）" >&2
+        fail=$((fail+1))
+    fi
+    # 校验和不匹配 → 必须拒绝，且**不落盘**（落了就是半个坏引擎在跑）
+    sed 's/sha256:[0-9a-f]*/sha256:0000000000000000000000000000000000000000000000000000000000000000/' \
+        "$ENG_TMP/release.json" > "$ENG_TMP/bad-digest.json"
+    ENG_BAD="$("$CLIENT_BIN" --engine-download "file://$ENG_TMP/bad-digest.json" --engine-download-dest "$ENG_TMP/dest-bad" 2>/dev/null)"
+    check "引擎获取：校验和不匹配 → 拒绝安装（stage=digestMismatch）" \
+        "d.get('ok') is False and d.get('stage') == 'digestMismatch'" \
+        "$ENG_BAD"
+    if [ -e "$ENG_TMP/dest-bad/moongit" ]; then
+        echo "  ✗ 引擎获取：校验和不匹配却落了盘（坏引擎会被当好的用）" >&2
+        fail=$((fail+1))
+    else
+        echo "  ✓ 引擎获取：校验和不匹配时没有落盘"
+        pass=$((pass+1))
+    fi
+    # 本平台没有资产 → 必须说清「有什么」，而不是笼统失败
+    cat > "$ENG_TMP/darwin-only.json" <<EOF
+{"tag_name":"v0.1.0","assets":[{"name":"moongit-v0.1.0-darwin-arm64.tar.gz","browser_download_url":"file://$ENG_TMP/engine.tar.gz","digest":"sha256:$ENG_SHA","size":$ENG_SZ}]}
+EOF
+    ENG_NOASSET="$("$CLIENT_BIN" --engine-download "file://$ENG_TMP/darwin-only.json" --engine-download-dest "$ENG_TMP/dest-na" 2>/dev/null)"
+    check "引擎获取：本平台没资产 → 说清是哪一种（stage=noPlatformAsset）" \
+        "d.get('ok') is False and d.get('stage') == 'noPlatformAsset' and 'darwin' in d.get('message','')" \
+        "$ENG_NOASSET"
+    # 真 GitHub API：latest release 载荷能被判定层读懂
+    if command -v curl >/dev/null 2>&1; then
+        ENG_API="$(curl -fsSL --max-time 25 https://api.github.com/repos/asdshuaishuai/moongit/releases/latest 2>/dev/null)"
+        if [ -z "$ENG_API" ]; then
+            echo "  ‣ SKIP 第 21 组真 API 那条：GitHub API 不可达（网络问题）"
+            echo "    ‣ 本条**未验证**，不算通过"
+        else
+            ENG_PARSED="$(printf '%s' "$ENG_API" | "$CLIENT_BIN" --engine-release-parse 2>/dev/null)"
+            check "引擎获取：真 GitHub API 的 latest release 能被判定层读懂（tag + 资产清单）" \
+                "d.get('parsed') is True and d.get('tag') != '' and len(d.get('available', [])) > 0" \
+                "$ENG_PARSED"
+            # 若本次 release 恰好有 Linux 资产 → 它的下载地址与校验和必须合法
+            check "引擎获取：真 API 的资产条目字段合法（有则 url 是 https、digest 非空）" \
+                "d.get('hasAsset') is False or (d.get('assetUrl','').startswith('https://') and d.get('hasDigest') is True)" \
+                "$ENG_PARSED"
+        fi
+    else
+        echo "  ‣ SKIP 第 21 组真 API 那条：没有 curl"
+        echo "    ‣ 本条**未验证**，不算通过"
+    fi
+    rm -rf "$ENG_TMP"
+fi
+
 echo "──── contract-check: $pass passed, $fail failed ────"
 [ "$fail" -eq 0 ]
