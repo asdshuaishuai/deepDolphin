@@ -7,6 +7,7 @@
 #include "../logic/Derived.h"
 #include "../logic/EngineDownload.h"
 #include "../logic/EngineHook.h"
+#include "../logic/SnapshotFixture.h"
 #include "../logic/PatchCheck.h"
 #include "../logic/ScanCoverage.h"
 #include "../logic/StopDecision.h"
@@ -334,30 +335,89 @@ void AppModel::fetchStatus(std::function<void(bool ok)> onDone)
                 onDone(false);
                 return;
             }
-            const auto env = res.payload.has_value()
-                ? StatusEnvelope::decodeEnvelopeOrBare(*res.payload)
-                : std::nullopt;
-            if (!env.has_value()) {
-                m_lastError = QStringLiteral("引擎输出不是合法的项目状态（契约可能过旧）");
-                emit lastErrorChanged(m_lastError);
+            if (!res.payload.has_value() || !applyStatusPayload(*res.payload, true)) {
                 onDone(false);
                 return;
             }
-            // TCC 预检的 Linux 等价物（PLAN §8 T6）：首个项目路径可读性预检
-            for (const ProjectStatus &p : env->projects) {
-                if (!p.isUnreadable() && !p.path.isEmpty() && !QFileInfo::exists(p.path)) {
-                    m_lastError = QStringLiteral("%1：路径不存在或卷未挂载（%2）")
-                                      .arg(p.name, p.path);
-                    emit lastErrorChanged(m_lastError);
-                    break;
-                }
-            }
-            m_projects = env->projects;
-            sortProjects(m_projects);
-            m_summary = env->summary;
-            m_hasLoadedProjectsOnce = true; // 成功才置位（pendingRoute 在此处补判）
             onDone(true);
         });
+}
+
+// ── 载荷应用（批 T：取数与判定分层）────────────────────────────
+//   引擎取数与夹具注入**共用**这三个函数 —— 夹具走的就是真实解析路径，
+//   所以面板快照顺带覆盖契约解析，而不只是「摆一堆好看的字」。
+bool AppModel::applyStatusPayload(const QJsonDocument &doc, bool checkPaths)
+{
+    const auto env = StatusEnvelope::decodeEnvelopeOrBare(doc);
+    if (!env.has_value()) {
+        m_lastError = QStringLiteral("引擎输出不是合法的项目状态（契约可能过旧）");
+        emit lastErrorChanged(m_lastError);
+        return false;
+    }
+    // TCC 预检的 Linux 等价物（PLAN §8 T6）：首个项目路径可读性预检
+    // ⚠ 夹具模式跳过（checkPaths=false）—— 夹具项目是假的，路径本就不存在；
+    //   预检是「真实项目路径不可读」的事，夹具没有这个语义。
+    if (checkPaths) {
+        for (const ProjectStatus &p : env->projects) {
+            if (!p.isUnreadable() && !p.path.isEmpty() && !QFileInfo::exists(p.path)) {
+                m_lastError = QStringLiteral("%1：路径不存在或卷未挂载（%2）")
+                                  .arg(p.name, p.path);
+                emit lastErrorChanged(m_lastError);
+                break;
+            }
+        }
+    }
+    m_projects = env->projects;
+    sortProjects(m_projects);
+    m_summary = env->summary;
+    m_hasLoadedProjectsOnce = true; // 成功才置位（pendingRoute 在此处补判）
+    emit projectsChanged();
+    return true;
+}
+
+bool AppModel::applyDashboardPayload(const QJsonDocument &doc)
+{
+    const auto d = DashboardData::fromJson(doc.object());
+    if (!d.has_value()) {
+        m_dashboardState = { LoadState::failed,
+            QStringLiteral("仪表盘载荷缺键（契约可能过旧）") };
+        emit dashboardChanged();
+        return false;
+    }
+    m_dashboard = d;
+    m_dashboardState = { LoadState::loaded, QString() };
+    emit dashboardChanged();
+    return true;
+}
+
+bool AppModel::applyMilestonesPayload(const QJsonDocument &doc)
+{
+    const auto e = MilestonesEnvelope::fromJson(doc.object());
+    if (!e.has_value()) {
+        m_milestonesState = { LoadState::failed,
+            QStringLiteral("里程碑载荷缺键（契约可能过旧）") };
+        emit milestonesChanged();
+        return false;
+    }
+    applyMilestoneLoadRules(*e);
+    return true;
+}
+
+void AppModel::useSnapshotFixture()
+{
+    // 夹具 = 判定层产出的固定 JSON。
+    // ⚠ 走**同一段解析路径**（applyStatusPayload / applyDashboardPayload /
+    //   applyMilestonesPayload）⇒ 顺带覆盖契约解析。
+    // ⚠ 夹具的时间戳**分两类**：会被算天数的 `lastCommitAt` 跟真实 now 走（天数恒定），
+    //   只会被显示成绝对字符串的锚定基准日（绝对日期不随日子变）—— 详见 SnapshotFixture.h。
+    applyStatusPayload(QJsonDocument::fromJson(SnapshotFixture::statusJson()), false);
+    applyDashboardPayload(QJsonDocument::fromJson(SnapshotFixture::dashboardJson()));
+    applyMilestonesPayload(QJsonDocument::fromJson(SnapshotFixture::milestonesJson()));
+    // ⚠ **不许用墙钟**（批 T）：侧栏渲染「空闲 · 上次刷新 HH:mm」，用墙钟就意味着
+    //   基线每分钟变一次、换台机器（时区不同）也变 ⇒ CI 天天有 diff ⇒ 人就学会
+    //   忽略 diff ⇒ 基线又变成空门。固定时刻 + 快照进程固定 TZ=UTC ⇒ 逐字节可重现。
+    m_lastRefreshedMs = SnapshotFixture::fixedRefreshedMs();
+    emit refreshCycleFinished(true);
 }
 
 void AppModel::fetchDashboard()
@@ -374,21 +434,14 @@ void AppModel::fetchDashboard()
                 fetchMilestones();
                 return;
             }
-            const auto d = DashboardData::fromJson(res.payload->object());
-            if (!d.has_value()) {
-                m_dashboardState = { LoadState::failed,
-                    QStringLiteral("仪表盘载荷缺键（契约可能过旧）") };
-                emit dashboardChanged();
+            // 解析与应用走**同一段**（批 T：夹具与引擎共用，避免两份解析逻辑）
+            if (!applyDashboardPayload(*res.payload)) {
                 fetchMilestones();
                 return;
             }
-            m_dashboard = d;
-            m_dashboardState = { LoadState::loaded, QString() };
-            emit dashboardChanged();
             fetchMilestones();
         });
 }
-
 void AppModel::fetchMilestones()
 {
     m_cli->callJson({ QStringLiteral("milestone"), QStringLiteral("list"), QStringLiteral("--json") },
@@ -405,11 +458,7 @@ void AppModel::fetchMilestones()
                 emit refreshAllFinished(false);
                 return;
             }
-            const auto e = MilestonesEnvelope::fromJson(res.payload->object());
-            if (!e.has_value()) {
-                m_milestonesState = { LoadState::failed,
-                    QStringLiteral("里程碑载荷缺键（契约可能过旧）") };
-                emit milestonesChanged();
+            if (!applyMilestonesPayload(*res.payload)) {
                 m_lastRefreshedMs = QDateTime::currentMSecsSinceEpoch();
                 postNotificationsIfNeeded();
                 leaveRefresh();
@@ -417,7 +466,6 @@ void AppModel::fetchMilestones()
                 emit refreshAllFinished(false);
                 return;
             }
-            applyMilestoneLoadRules(*e);
             m_lastRefreshedMs = QDateTime::currentMSecsSinceEpoch();
             postNotificationsIfNeeded();
             leaveRefresh();

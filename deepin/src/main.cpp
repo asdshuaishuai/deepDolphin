@@ -37,6 +37,7 @@
 #include <QCoreApplication>
 #include <unistd.h>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QEventLoop>
 #include <QSystemTrayIcon>
 #include <QThread>
@@ -135,9 +136,12 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
         cli.setEngineBin(engine.bin);
     AppModel model(engine, &cli);
     PanelWindow panel(route, engine, &model);
-    model.start(); // 快照要真实数据：首轮 CLI --json 落地后再抓
-
+    // ⚠ 快照**走夹具**（批 T），不走真引擎 —— 真引擎取数会让基线取决于
+    //   「本机注册了什么项目」，**不可重现**（此前 4 页快照拍的是空态，
+    //   对状态色/布局全是空门：改界面它不红）。夹具走**同一段解析路径**。
+    //   夹具是同步喂的 ⇒ 放在 show() 之后，让 UI 一定收到信号再拍。
     panel.show();
+    model.useSnapshotFixture();
     int rc = 1;
     // 等 UI 稳定再抓（M0-7）：以前写死 2500ms，引擎慢时拍到 loading 态且退出码仍 0。
     // 现在轮询"数据到位 / 状态已定（引擎未找到 → setup guide 就是终态）"，上限 15s，
@@ -168,6 +172,14 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
         }
         const QPixmap shot = panel.grab();
         rc = (shot.isNull() || !shot.save(outPath)) ? 1 : 0;
+        // ⚠ **拍到空态 = 响亮失败**（批 T）：夹具没生效 / 夹具被改坏 ⇒ 画面是空的
+        //   ⇒ 提交进去的基线又变成「空门」（改界面它不红，说「视觉已评审」是假的）。
+        //   宁可构建失败，也不能把空图固化成基线。
+        if (rc == 0 && model.projects().empty()) {
+            fprintf(stderr, "[snapshot] 夹具没有项目 —— 拍出来是空态，基线会变成空门\n");
+            QFile::remove(outPath); // 别把那张空图留在盘上（会被当成基线改动）
+            rc = 1;
+        }
         if (rc == 0)
             fprintf(stdout, "[snapshot] 已写入 %s（%dx%d）\n", qPrintable(outPath),
                 shot.width(), shot.height());
@@ -323,6 +335,20 @@ static int headlessEngineDownload(int argc, char *argv[], const QString &apiUrl,
 
 int main(int argc, char *argv[])
 {
+    // ⚠ **快照必须逐字节可重现**（批 T）⇒ 快照进程内固定时区为 UTC。
+    //   侧栏状态条渲染「空闲 · 上次刷新 HH:mm」，那是 epoch 的**本地时区**渲染：
+    //   时区不固定 ⇒ 同一份代码在 UTC 机与 UTC+8 机上拍出两张不同的基线
+    //   ⇒ 视觉 diff 门被环境牵着走（与「离屏才同机位」同一个道理）。
+    //   只对 --snapshot 生效：正常桌面会话仍用用户本地时区。
+    //   ⚠ 必须在**任何 QDateTime 构造之前**设置：Qt 的本地时区是首次使用时缓存的，
+    //   之后再改 TZ 不生效。
+    for (int i = 1; i < argc; ++i) {
+        if (qstrcmp(argv[i], "--snapshot") == 0) {
+            qputenv("TZ", "UTC");
+            break;
+        }
+    }
+
     // 崩溃可观测（M4c）：装在无头分支分派之前——GUI 路径必装；无头路径
     //（--selfcheck/--version/--platform-probe/--agent-selftest/--snapshot）也装：
     // CI 里崩了若只留一行 "Segmentation fault" 无从排障。取舍：崩溃时 stderr

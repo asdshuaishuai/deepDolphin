@@ -3,6 +3,7 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QSet>
+#include <QHash>
 #include "../logic/AgentToolPlan.h"
 #include "../logic/ArchReceipt.h"
 #include "../logic/CanvasFont.h"
@@ -13,6 +14,7 @@
 #include "../logic/EngineHook.h"
 #include "../logic/Liveness.h"
 #include "../logic/SemColors.h"
+#include "../logic/SnapshotFixture.h"
 #include "../logic/DocPages.h"
 #include "../logic/DocumentIntegrity.h"
 #include "../logic/EngineConfig.h"
@@ -57,6 +59,7 @@
 #include <QImage>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QMargins>
 #include <QRegularExpression>
 #include <QPainter>
@@ -142,6 +145,172 @@ QString statusSummaryJson()
 int SelfCheck::run(QStringList &log)
 {
     g_pass = g_fail = 0;
+
+    // ── 0. 面板快照夹具（批 T）────────────────────────────────
+    //   面板快照基线必须**可重现** ⇒ 走固定夹具，不走真引擎。
+    //   夹具若少覆盖一档状态，基线就少覆盖一档 —— 那是又一种空门。
+    {
+        const auto env = StatusEnvelope::decodeEnvelopeOrBare(
+            QJsonDocument::fromJson(SnapshotFixture::statusJson()));
+        check(log, "快照夹具：status 载荷能解析（走真实解析路径）", env.has_value());
+        if (env) {
+            QSet<int> seen;
+            for (const ProjectStatus &p : env->projects)
+                seen.insert(static_cast<int>(Derived::liveness(p)));
+            check(log, "快照夹具：覆盖 liveness 全部 7 档（少一档 = 基线少一档 = 空门）",
+                seen.size() == 7
+                    && seen.contains(static_cast<int>(Liveness::recent))
+                    && seen.contains(static_cast<int>(Liveness::needsAction))
+                    && seen.contains(static_cast<int>(Liveness::engineStale))
+                    && seen.contains(static_cast<int>(Liveness::quiet))
+                    && seen.contains(static_cast<int>(Liveness::notGit))
+                    && seen.contains(static_cast<int>(Liveness::unreadable))
+                    && seen.contains(static_cast<int>(Liveness::unknown)));
+
+            QSet<QString> kinds;
+            for (const ProjectStatus &p : env->projects)
+                for (const BranchStatus &b : p.branches)
+                    kinds.insert(b.status);
+            check(log, "快照夹具：覆盖分支状态全部 5 档",
+                kinds.size() == 5
+                    && kinds.contains(QStringLiteral("active"))
+                    && kinds.contains(QStringLiteral("idle"))
+                    && kinds.contains(QStringLiteral("stale"))
+                    && kinds.contains(QStringLiteral("merged"))
+                    && kinds.contains(QStringLiteral("unknown")));
+        }
+        // ⚠ 夹具的时间戳是**相对 now** 生成的 ⇒ 天数恒定。
+        //   若哪天改成写死日期，「40 天没更新」会每天变 ⇒ 快照基线天天漂。
+        {
+            const auto env2 = StatusEnvelope::decodeEnvelopeOrBare(
+                QJsonDocument::fromJson(SnapshotFixture::statusJson()));
+            int quietDays = -1;
+            if (env2) {
+                for (const ProjectStatus &p : env2->projects) {
+                    if (Derived::liveness(p) == Liveness::quiet) {
+                        const auto age = Derived::daysSinceLastCommit(p);
+                        quietDays = age.has_value() ? *age : -1;
+                    }
+                }
+            }
+            check(log, "快照夹具：天数恒定（相对 now 生成，quiet 档恒为 40 天）",
+                quietDays == 40);
+        }
+        // ⚠ 夹具的时间戳**逐个项目**钉死（不是只看「第一个 quiet 项目」）。
+        //   只看一个的话，改了**别的**项目的天数它不红 ⇒ 判据有盲区（负控实测：
+        //   把 cygnus 的 40 天改成 41 天，原判据照样绿 —— 而界面上「41 天前提交」
+        //   已经变了 ⇒ 基线漂了却没人管）。
+        //   规则：**会被算天数的 lastCommitAt 跟真实 now 走**（天数恒定），
+        //   **读不出提交时间的项目必须读不出**（不许回落成 0 天）。
+        {
+            const auto env3 = StatusEnvelope::decodeEnvelopeOrBare(
+                QJsonDocument::fromJson(SnapshotFixture::statusJson()));
+            static const QHash<QString, int> kExpectedDays = {
+                { QStringLiteral("atlas"), 0 },
+                { QStringLiteral("borealis"), 0 },
+                { QStringLiteral("cygnus"), 40 },
+                { QStringLiteral("fennec"), 40 },
+            };
+            bool ok = env3.has_value();
+            int matched = 0;
+            if (ok) {
+                for (const ProjectStatus &p : env3->projects) {
+                    const auto age = Derived::daysSinceLastCommit(p);
+                    const auto it = kExpectedDays.constFind(p.name);
+                    if (it == kExpectedDays.constEnd()) {
+                        // draco-notes / eris / gemini：提交时间**读不出来** ⇒ 不许有天数
+                        if (age.has_value())
+                            ok = false;
+                        continue;
+                    }
+                    if (!age.has_value() || *age != it.value())
+                        ok = false;
+                    else
+                        ++matched;
+                }
+                if (matched != kExpectedDays.size())
+                    ok = false;
+            }
+            check(log, "快照夹具：每个项目的「N 天前提交」被钉死（0/0/40/40，其余读不出来）", ok);
+        }
+
+        // 里程碑与仪表盘载荷也要能解析（走真实 fromJson）
+        check(log, "快照夹具：dashboard 载荷能解析",
+            DashboardData::fromJson(
+                QJsonDocument::fromJson(SnapshotFixture::dashboardJson()).object()).has_value());
+        check(log, "快照夹具：milestone 载荷能解析",
+            MilestonesEnvelope::fromJson(
+                QJsonDocument::fromJson(SnapshotFixture::milestonesJson()).object()).has_value());
+
+        // ⚠ **基线必须逐字节可重现**（批 T）—— 否则 CI 天天有 diff，
+        //   人就学会忽略 diff ⇒ 基线又变成空门（比没门更糟）。
+        //   墙钟有两处出口：① 侧栏「上次刷新 HH:mm」② 里程碑「目标 YYYY-MM-DD」。
+        //   ① 用固定 epoch（配快照进程固定 TZ=UTC）② 用固定基准日。
+        //   这里把两个都钉住 —— 期望值**写死**（不从夹具反推，否则是同义反复）。
+        check(log, "快照夹具：刷新时刻固定（不许用墙钟）",
+            SnapshotFixture::fixedRefreshedMs() == 1768478400000LL);
+        {
+            const QJsonObject ms = QJsonDocument::fromJson(SnapshotFixture::milestonesJson()).object();
+            const QJsonArray items = ms.value(QStringLiteral("milestones")).toArray();
+            const QJsonObject first = items.isEmpty() ? QJsonObject() : items.at(0).toObject();
+            check(log, "快照夹具：绝对日期锚定基准日（不随「今天」变）",
+                first.value(QStringLiteral("targetDate")).toString() == QStringLiteral("2026-02-14")
+                    && first.value(QStringLiteral("createdAt")).toString() == QStringLiteral("2025-12-16"));
+        }
+        {
+            const QJsonObject env = QJsonDocument::fromJson(SnapshotFixture::statusJson()).object();
+            const QJsonArray projects = env.value(QStringLiteral("projects")).toArray();
+            const QJsonArray branches = projects.isEmpty()
+                ? QJsonArray()
+                : projects.at(0).toObject().value(QStringLiteral("branches")).toArray();
+            const QJsonObject b0 = branches.isEmpty() ? QJsonObject() : branches.at(0).toObject();
+            check(log, "快照夹具：分支提交日锚定基准日",
+                b0.value(QStringLiteral("headDate")).toString() == QStringLiteral("2026-01-15"));
+        }
+        // ⚠ 里程碑在 **dashboard 与 milestone list 两处载荷**里各出现一次
+        //   —— 它们说的是同一批对象 ⇒ 文本必须逐字相同。
+        //   （之前两处各写一份，cygnus 的 targetDate 一边有日期一边空 ⇒ 同一件事两套说法。）
+        {
+            const QJsonObject dash = QJsonDocument::fromJson(SnapshotFixture::dashboardJson()).object();
+            const QJsonObject ms = QJsonDocument::fromJson(SnapshotFixture::milestonesJson()).object();
+            const QJsonArray inDash = dash.value(QStringLiteral("milestones")).toObject()
+                .value(QStringLiteral("items")).toArray();
+            const QJsonArray inList = ms.value(QStringLiteral("milestones")).toArray();
+            check(log, "快照夹具：里程碑两处载荷同源（逐字相同）",
+                !inDash.isEmpty() && inDash == inList);
+
+            // ⚠ **计数必须与条目对得上**（open+done+dropped+unknown+other = readCount = 条数）。
+            //   之前 counts 写 open:2 / readCount:5，而条目只有 4 条、open 只有 1 条
+            //   ⇒ 侧栏「里程碑 ●3」与列表里的「2 个未完成」自相矛盾 ⇒ 基线把矛盾固化了。
+            const QJsonObject counts = dash.value(QStringLiteral("milestones")).toObject()
+                .value(QStringLiteral("counts")).toObject();
+            int nOpen = 0, nDone = 0, nDropped = 0, nUnknown = 0, nOther = 0;
+            for (const QJsonValue &v : inList) {
+                const QString st = v.toObject().value(QStringLiteral("status")).toString();
+                if (st == QStringLiteral("open")) ++nOpen;
+                else if (st == QStringLiteral("done")) ++nDone;
+                else if (st == QStringLiteral("dropped")) ++nDropped;
+                else if (st == QStringLiteral("unknown")) ++nUnknown;
+                else ++nOther;
+            }
+            check(log, "快照夹具：里程碑计数与条目自洽（侧栏徽标不许和列表打架）",
+                counts.value(QStringLiteral("open")).toInt(-1) == nOpen
+                    && counts.value(QStringLiteral("done")).toInt(-1) == nDone
+                    && counts.value(QStringLiteral("dropped")).toInt(-1) == nDropped
+                    && counts.value(QStringLiteral("unknown")).toInt(-1) == nUnknown
+                    && counts.value(QStringLiteral("other")).toInt(-1) == nOther
+                    && counts.value(QStringLiteral("readCount")).toInt(-1) == inList.size());
+        }
+    }
+
+    // ⚠ **Qt 的 arg 重载陷阱**（批 T 实测踩到）：`QStringLiteral("%1 ×%2").arg(QString, int)`
+    //   命中的是 **arg(a1, fieldWidth) 重载**（int → qsizetype 是标准转换，比
+    //   int → QString 更匹配）⇒ 第二个占位符**原样留在界面上**。
+    //   提交构成的图例曾一直显示「feat ×%2」，从来没显示过数量。
+    //   这里把「正确写法」与「错误写法」都钉住 —— 免得有人再写回那个形态。
+    check(log, "Qt arg 重载：链式单参数才正确（arg(QString,int) 会命中 fieldWidth 重载）",
+        QStringLiteral("%1 ×%2").arg(QStringLiteral("feat")).arg(12) == QStringLiteral("feat ×12")
+            && QStringLiteral("%1 ×%2").arg(QStringLiteral("feat"), 12) != QStringLiteral("feat ×12"));
 
     // ── 1. status envelope：成功条目 32 键逐键 ──
     {

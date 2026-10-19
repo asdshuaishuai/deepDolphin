@@ -454,6 +454,53 @@ arch_need "$SRC/scripts/build-deb.sh" 'grep -c .not found\b' 'deb 构建校验�
 arch_need "$SRC/scripts/build-deb.sh" 'rpath|runpath' 'deb 构建检查包内二进制无 RPATH'
 arch_need "$SRC/scripts/ci.sh" 'build-deb\.sh\b' 'CI 流程构建 deb（D7 达标必经）'
 
+# 批 T · 面板快照夹具：基线要**可重现** ⇒ 快照走固定夹具，不走真引擎
+#   （真引擎取数让基线取决于「本机注册了什么项目」——此前拍的是空态，
+#     对状态色/布局全是空门）。
+arch_need "$SRC/src/logic/SnapshotFixture.h" 'namespace SnapshotFixture [{]' '快照夹具有判定层（纯数据）'
+arch_need "$SRC/src/app/AppModel.cpp" 'useSnapshotFixture' 'AppModel 提供夹具注入'
+arch_need "$SRC/src/main.cpp" 'useSnapshotFixture\(\)' '快照走夹具（不走真引擎）'
+# 取数与判定分层：夹具与引擎必须共用**同一段解析**，否则夹具测不到真路径
+arch_need "$SRC/src/app/AppModel.cpp" 'applyStatusPayload' '载荷应用抽成一层（夹具与引擎共用）'
+arch_need "$SRC/src/app/AppModel.cpp" 'applyDashboardPayload' '载荷应用抽成一层（夹具与引擎共用）'
+arch_need "$SRC/src/app/AppModel.cpp" 'applyMilestonesPayload' '载荷应用抽成一层（夹具与引擎共用）'
+# 拍到空态必须响亮失败（否则空图被固化成基线 = 又一个空门）
+arch_need "$SRC/src/main.cpp" '夹具没有项目' '快照拍到空态要响亮失败（别固化空基线）'
+# ⚠ Qt 的 arg 重载陷阱：`arg(QString, int)` 命中 **arg(a1, fieldWidth) 重载**
+#   ⇒ 第二个占位符原样留在界面上（提交构成图例曾一直显示「feat ×%2」）。
+#   正则要求**同一个 arg(...) 内部**有逗号 —— 链式 `.arg(a).arg(b)` 不该被误伤。
+arch_forbid "$SRC/src/ui/pages/ProjectProgressCard.cpp" '\.arg\([^;]*?,\s*entries\.at\(i\)\.second' '提交构成图例不许用 arg(QString,int)（会命中 fieldWidth 重载）'
+
+# 批 T 续 · **基线必须逐字节可重现** —— 基线带墙钟就等于没有基线：
+#   CI 每次都出 diff ⇒ 人就学会忽略 diff ⇒ 基线退化成空门（比没门更糟）。
+#   墙钟有两处出口，各钉一处：
+#   ① 侧栏「上次刷新 HH:mm」= epoch 的**本地时区**渲染 ⇒ 固定 epoch + 固定 TZ；
+#   ② 里程碑「目标 YYYY-MM-DD」= 绝对日期 ⇒ 锚定固定基准日。
+# ⚠ 正则盯**具体那一句**（不是「出现过 fixedRefreshedMs」）——
+#   拿掉赋值只留声明时，「出现过」照样绿（负控实测，第十四次「同名/子串互相顶替」）。
+arch_need "$SRC/src/app/AppModel.cpp" 'm_lastRefreshedMs = SnapshotFixture::fixedRefreshedMs\(\)' '快照刷新时刻用固定值（不用墙钟）'
+# ⚠ 精确计数：AppModel 里**只有生产取数路径**那 3 处可以用墙钟。
+#   夹具路径多一处 ⇒ 计数变 4 ⇒ 红。
+arch_need_count "$SRC/src/app/AppModel.cpp" 'm_lastRefreshedMs = QDateTime::currentMSecsSinceEpoch\(\)' 3 '墙钟刷新时刻只许出现在生产取数路径（夹具路径不许有）'
+arch_need "$SRC/src/main.cpp" 'qputenv\("TZ", "UTC"\)' '快照进程固定时区（换台机器拍出同一张）'
+arch_need "$SRC/src/logic/SnapshotFixture.cpp" 'kAnchorDate\[\] = "2026-01-15"' '夹具有固定基准日（绝对日期的唯一起点）'
+# ⚠ 精确计数：夹具里**只有 lastCommitAt 那两条**能碰真实 now
+#   （天数组要拿它跟真实现在比 epoch，写死就天天漂）。
+#   多一处 currentDateTimeUtc() ⇒ 说明又有人引入了「今天」⇒ 红。
+arch_need_count "$SRC/src/logic/SnapshotFixture.cpp" 'currentDateTimeUtc\(\)' 2 '夹具里只有 lastCommitAt 跟真实 now 走（绝对日期不许跟今天走）'
+# 里程碑是「同一个对象」⇒ 两处载荷只许有一份文本（之前各写一份，cygnus 的
+#   targetDate 一边有日期一边空 ⇒ 同一件事两套说法）。
+arch_need_count "$SRC/src/logic/SnapshotFixture.cpp" '"projectId":"p_atlas"' 1 '里程碑条目只写一份（dashboard 与 milestone list 共用）'
+arch_need "$SRC/src/app/SelfCheck.cpp" '绝对日期锚定基准日' 'SelfCheck 钉住绝对日期锚定（跨天也抓得住）'
+arch_need "$SRC/src/app/SelfCheck.cpp" '刷新时刻固定' 'SelfCheck 钉住刷新时刻固定'
+# 「重拍比字节」这道门盯的是**行为**（两次拍出同一张图），不是文件里的字样。
+# ⚠ 精确计数：ci.sh 里 `cmp -s` 出现**两处**（比基线 / 比换时区那张）——
+#   只拿掉一处时「出现过」照样绿 ⇒ 门被骗过（负控实测，第十五次「同名互相顶替」）。
+arch_need_count "$SRC/scripts/ci.sh" 'cmp -s' 2 'CI 有「重拍比字节」门（基线必须可重现）'
+# ⚠ 换时区那张必须挑**两个互相不同**的时区：拿「宿主时区」当其中一个时，
+#   宿主恰好就是那个时区 ⇒ 两张必然相同 ⇒ 门永远绿（负控实测：宿主就是 Asia/Shanghai）。
+arch_need "$SRC/scripts/ci.sh" 'America/New_York' 'CI 的跨时区对比用两个互不相同的时区'
+
 # 批 P · 引擎获取链（GitHub Releases 下载安装）：判定层出结论，执行层只管跑，
 #   界面只读结论。⚠ URL / 资产名 / 校验和 / 落盘位置**一处**说了算。
 arch_need "$SRC/src/logic/EngineDownload.h" 'namespace EngineDownload [{]' '引擎下载有判定层（结论一处）'

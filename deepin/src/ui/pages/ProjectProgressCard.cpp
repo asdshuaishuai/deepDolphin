@@ -137,8 +137,14 @@ void ProjectProgressCard::setProject(const ProjectStatus &p, const DashFilter &f
         for (int i = 0; i < capped; ++i) {
             const QColor c = CommitTypes::sequenceColor(i);
             barData.append({ c, entries.at(i).second });
-            legend.append({ c, QStringLiteral("%1 ×%2").arg(entries.at(i).first,
-                entries.at(i).second) });
+            // ⚠ **必须用链式单参数 `.arg(a).arg(b)`** ——
+            //   `QStringLiteral("%1 ×%2").arg(QString, int)` 会命中 Qt 的
+            //   **arg(a1, fieldWidth) 重载**（int → qsizetype 是标准转换，比
+            //   int → QString 更匹配）⇒ 第二个占位符**原样留在界面上**：
+            //   图例曾一直显示成「feat ×%2」，从来没显示过数量。
+            //   链式 `.arg(QString).arg(int)` 走的是单参数重载（arg(qlonglong)），
+            //   替换最小编号占位符 ⇒ 正确。
+            legend.append({ c, QStringLiteral("%1 ×%2").arg(entries.at(i).first).arg(entries.at(i).second) });
         }
         bar->setData(barData);
         v->addWidget(bar);

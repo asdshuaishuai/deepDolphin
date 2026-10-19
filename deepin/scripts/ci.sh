@@ -58,13 +58,65 @@ for theme in light dark; do
             "$SRC/docs/snapshots/${theme}-${sec}.png" --section "$sec" \
             | tail -1
     done
-    # 状态色样张（批 R）：**面板快照拍的是空态**（本机引擎注册项目数 0，
-    # 快照里只有「仪表盘还没有数据」）—— 状态点一个都没画进去。
-    # ⇒ 面板快照对状态色是**空门**：改色它不红，说「视觉已评审」是假的。
-    #   这张色卡把**每一档**都画出来，改色 ⇒ 色卡 diff 红。
+    # 状态色样张（批 R）：把**每一档状态色**都画出来，改色 ⇒ 色卡 diff 红。
+    #   （批 T 之前，面板快照拍的是空态 ⇒ 状态点一个都没画进去，对状态色是**空门**；
+    #     批 T 起用夹具后面板快照已有真实内容，但这张色卡仍留着 ——
+    #     它是**逐档**的，面板快照只覆盖夹具里恰好出现的那几档。）
     QT_QPA_PLATFORM=offscreen DEEPDOLPHIN_THEME="$theme" "$BIN" --color-sample \
         "$SRC/docs/snapshots/${theme}-colors.png" | tail -1
 done
+
+# ⚠ **重拍比字节**（批 T）—— 基线必须**逐字节可重现**。
+#   为什么这道门是硬的：基线一旦带墙钟（侧栏「上次刷新 HH:mm」是本地时区渲染），
+#   CI **每次**都出 diff ⇒ 人就学会忽略 diff ⇒ 基线退化成空门（比没门更糟）。
+#   这道门盯的是**行为**（同一份代码两次拍出同一张图），不是「我改的这两个文件看着对」——
+#   将来谁往渲染路径里塞了墙钟，它就红。
+#   夹具 + 固定刷新时刻 + 快照进程固定 TZ=UTC（见 main.cpp）⇒ 6 张面板快照逐字节恒定。
+#
+# ⚠ **再拍一份「换了时区的」**：这一拍专门抓「渲染跟着宿主时区走」。
+#   应用内部固定 TZ=UTC ⇒ 外层 TZ 传什么都一样 ⇒ 字节必须相同。
+#   哪天有人把 main.cpp 里那句 qputenv("TZ","UTC") 删了 ⇒ 宿主时区渗进来
+#   ⇒ 这两张立刻不同 ⇒ 门红（而只靠接线门盯那一行是不够的：门要能**行为**地抓住）。
+# ⚠ 对比的必须是**两个互相不同**的时区（UTC 与 America/New_York）——
+#   若拿「宿主时区」当其中一个，宿主恰好就是那个时区时（实测本机就是 Asia/Shanghai）
+#   ⇒ 两张必然相同 ⇒ 门永远绿 ⇒ 又一个空门（负控实测，第十五次「同名/同形互相顶替」）。
+REPRO_DIR="$(mktemp -d)"
+repro_fail=0
+repro_shoot() { # repro_shoot <主题> <区块> <输出路径> <TZ>
+    TZ="$4" QT_QPA_PLATFORM=offscreen DEEPDOLPHIN_THEME="$1" "$BIN" --snapshot \
+        "$3" --section "$2" >/dev/null 2>&1
+}
+for theme in light dark; do
+    for sec in dashboard board milestones; do
+        again="$REPRO_DIR/${theme}-${sec}.png"
+        if ! repro_shoot "$theme" "$sec" "$again" "UTC"; then
+            echo "✗ 重拍失败：${theme}-${sec}" >&2
+            repro_fail=1
+            continue
+        fi
+        if ! cmp -s "$SRC/docs/snapshots/${theme}-${sec}.png" "$again"; then
+            echo "✗ 快照不可重现：${theme}-${sec}.png 两次拍出不同字节（基线会天天漂）" >&2
+            repro_fail=1
+        fi
+        # 换**另一个**时区再拍一张：字节必须一模一样
+        other="$REPRO_DIR/${theme}-${sec}-tz.png"
+        if ! repro_shoot "$theme" "$sec" "$other" "America/New_York"; then
+            echo "✗ 换时区重拍失败：${theme}-${sec}" >&2
+            repro_fail=1
+            continue
+        fi
+        if ! cmp -s "$again" "$other"; then
+            echo "✗ 快照跟着宿主时区走：${theme}-${sec}.png 换 TZ 后字节不同（基线不可跨机重现）" >&2
+            repro_fail=1
+        fi
+    done
+done
+rm -rf "$REPRO_DIR"
+if [ "$repro_fail" -ne 0 ]; then
+    echo "✗ 基线不可重现 —— 基线带墙钟就等于没有基线" >&2
+    exit 1
+fi
+echo "✓ 6 张面板快照两次重拍逐字节一致，且换宿主时区后仍一致（基线可重现）"
 
 echo "› 3/11 desktop / metainfo 校验（缺工具显式 SKIP）"
 if command -v desktop-file-validate >/dev/null 2>&1; then

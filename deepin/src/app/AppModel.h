@@ -299,6 +299,14 @@ public:
     /// 钩子批量动作进行中（UI 走忙态）。
     bool hookBusy() const { return m_hookBusy; }
 
+    // ── 快照夹具模式（批 T）──
+    /// **不调引擎**，用固定夹具喂数据。
+    /// 面板快照基线用 —— 真引擎取数会让基线取决于「本机注册了什么项目」，**不可重现**
+    /// （此前 4 页快照拍的是空态 ⇒ 对状态色/布局全是空门）。
+    /// ⚠ 走的是**同一段解析路径**（StatusEnvelope / DashboardData / MilestonesEnvelope
+    ///   的 fromJson）⇒ 它顺带覆盖契约解析，不只是「摆一堆好看的字」。
+    void useSnapshotFixture();
+
 signals:
     void projectsChanged();
     void dashboardChanged();
@@ -367,6 +375,14 @@ signals:
     void hookBusyChanged();
 
 private:
+    // ── 载荷应用（取数与判定分层，批 T）──
+    // 引擎取数与夹具注入**共用**这一段 ⇒ 夹具走的就是真实解析路径。
+    /// 应用 status 载荷。`checkPaths=false` 时跳过真机路径预检（夹具项目是假的，
+    /// 路径本就不存在；预检是「真实项目路径不可读」的事，夹具没有这个语义）。
+    bool applyStatusPayload(const QJsonDocument &doc, bool checkPaths);
+    bool applyDashboardPayload(const QJsonDocument &doc);
+    bool applyMilestonesPayload(const QJsonDocument &doc);
+
     /// 钩子：串行查下一个项目的状态（查完最后一个发 hookStatusChanged）。
     void fetchNextHookStatus();
     /// 钩子：开始一轮批量装/卸。
