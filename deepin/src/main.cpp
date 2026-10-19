@@ -17,12 +17,14 @@
 #include "app/Version.h"
 #include "platform/AppService.h"
 #include "platform/CrashHandler.h"
+#include "platform/IconResolver.h"
 #include "logic/AgentToolPlan.h"
 #include "logic/ArchReceipt.h"
 #include "logic/CodeGraphBuild.h"
 #include "logic/EngineConfig.h"
 #include "logic/EngineDoctor.h"
 #include "logic/EngineDownload.h"
+#include "logic/IconNames.h"
 #include "logic/IndexStatus.h"
 #include "logic/SyntaxHighlight.h"
 #include "logic/Liveness.h"
@@ -275,6 +277,27 @@ static int headlessPlatformProbe(int argc, char *argv[])
         fprintf(stdout, "fontSizeCardTitlePx=%d\n", DS::font(DS::FontT::cardTitle).pixelSize());
         fprintf(stdout, "fontSizeBodyPx=%d\n", DS::font(DS::FontT::body).pixelSize());
         fprintf(stdout, "fontSizeBadgePx=%d\n", DS::font(DS::FontT::badge).pixelSize());
+
+        // 图标解析（批 U · M1-2）：每个逻辑图标名报**解析来源**
+        // （dci / theme / qrc / missing）—— 主题缺名是**环境事实**，
+        // 只有报出来才知道「界面上那个图标为什么是空的」。
+        // ⚠ 这里只**报告**不断言（PLAN §4 注意事项 7 同款：offscreen 下图标主题可能不在位）。
+        {
+            // 图标主题名：空 = 这台机器**没有**图标主题（offscreen 就是这样）
+            // ⇒ 那时「解析不到」不是图标名错了，不该逐个告警、也不该画占位圆点
+            //   （圆点会把基线污染成「到处都是圆点」，反而看不出真问题）。
+            fprintf(stdout, "iconTheme=%s\n", qPrintable(QIcon::themeName()));
+            const QList<IconNames::Id> ids = IconNames::all();
+            int missing = 0;
+            for (const IconNames::Id id : ids) {
+                const QString source = platform::resolveSource(id);
+                if (source == QStringLiteral("missing"))
+                    ++missing;
+                fprintf(stdout, "icon.%s=%s\n", qPrintable(IconNames::name(id)), qPrintable(source));
+            }
+            fprintf(stdout, "iconCount=%d\n", ids.size());
+            fprintf(stdout, "iconMissing=%d\n", missing);
+        }
         fflush(stdout);
     } // app/tray 在此正常析构：真机上托盘图标被正确摘除，不留残影
 

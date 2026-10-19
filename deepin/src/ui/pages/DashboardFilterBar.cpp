@@ -1,4 +1,6 @@
 #include "DashboardFilterBar.h"
+#include "../../logic/IconNames.h"
+#include "../../platform/IconResolver.h"
 #include "../DesignTokens.h"
 #include "../common/BusyRow.h"
 #include "../common/FlatButton.h"
@@ -47,7 +49,7 @@ DashboardFilterBar::DashboardFilterBar(QWidget *parent)
     });
 
     m_reindex = new FlatButton(QStringLiteral("重新索引"), this);
-    m_reindex->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
+    m_reindex->setIcon(platform::icon(IconNames::Id::refresh));
     m_reindex->setToolTip(QStringLiteral("真跑一次浅更新，然后重新拉取仪表盘"));
     h->addWidget(m_reindex);
     connect(m_reindex, &QPushButton::clicked, this, &DashboardFilterBar::reindexClicked);

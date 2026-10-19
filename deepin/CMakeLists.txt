@@ -106,13 +106,14 @@ add_executable(deepDolphin
     src/logic/EngineDoctor.cpp
     src/logic/EngineDownload.cpp
     src/logic/EngineHook.cpp
+    src/logic/IconNames.cpp
     src/logic/SnapshotFixture.cpp
     # ── platform/ ──
     src/platform/AppService.cpp
     src/platform/AutostartManager.cpp
     src/platform/Canvas2D.cpp
     src/platform/CrashHandler.cpp
-    src/platform/IconLoader.cpp
+    src/platform/IconResolver.cpp
     src/platform/SysOpen.cpp
     # ── tray/ ──
     src/tray/TrayController.cpp

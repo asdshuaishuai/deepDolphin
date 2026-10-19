@@ -143,7 +143,21 @@ if ! printf '%s\n' "$PROBE_OUT" | grep -q '^backend='; then
     echo "✗ platform-probe 输出缺 backend= 行" >&2
     exit 1
 fi
-echo "✓ 平台探针通过（backend=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^backend=//p')，托盘/主题/字号档位见上，offscreen 下托盘无效属预期）"
+# ⚠ 图标解析（批 U · M1-2）：**有图标主题时**，每个逻辑图标都必须解析得到。
+#   解析不到 = 候选链没覆盖该主题的名字 ⇒ 界面上那个位置是占位圆点 ⇒ 得加候选。
+#   没有图标主题时（offscreen / 极简环境）一律报 `none` 不报 `missing`，
+#   那不是我们的问题（环境事实），故此时不断言。
+ICON_THEME="$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^iconTheme=//p')"
+ICON_MISSING="$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^iconMissing=//p')"
+if [ -z "$ICON_MISSING" ]; then
+    echo "✗ platform-probe 输出缺 iconMissing= 行（图标解析不可见 ⇒ 缺失没人知道）" >&2
+    exit 1
+fi
+if [ -n "$ICON_THEME" ] && [ "$ICON_MISSING" != "0" ]; then
+    echo "✗ 有图标主题（$ICON_THEME）但 $ICON_MISSING 个逻辑图标解析不到 ⇒ 候选链要补" >&2
+    exit 1
+fi
+echo "✓ 平台探针通过（backend=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^backend=//p')，图标主题=${ICON_THEME:-无} 缺失 ${ICON_MISSING} 个，托盘/主题/字号档位见上，offscreen 下托盘无效属预期）"
 
 strip_comments() {
     if command -v perl >/dev/null 2>&1; then

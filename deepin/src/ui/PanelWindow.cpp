@@ -3,7 +3,9 @@
 #include "../ai/AIEngineFactory.h"
 #include "../ai/AiDigests.h"
 #include "../ai/SecretStore.h"
+#include "../logic/IconNames.h"
 #include "../logic/DashboardScope.h"
+#include "../platform/IconResolver.h"
 #include "../logic/Derived.h"
 #include "../logic/Router.h"
 #include "../logic/ShortcutMap.h"
@@ -62,10 +64,10 @@ namespace {
 //（无图标主题的环境）→ FlatButton 文字平钮（M3b-FlatButton 收编，原 DPushButton+setFlat）。
 // 空按钮比非原生按钮更糟（R2 诚实降级）；真机 DDE 必有图标主题，恒走图标分支。
 // DIconButton 不开放 setText，回退必须换类。
-QAbstractButton *makeToolButton(const QString &iconName, const QString &fallbackText,
+QAbstractButton *makeToolButton(IconNames::Id iconId, const QString &fallbackText,
     const QString &tooltip)
 {
-    const QIcon icon = QIcon::fromTheme(iconName);
+    const QIcon icon = platform::icon(iconId);
     if (icon.isNull()) {
         auto *btn = new FlatButton;
         btn->setText(fallbackText);
@@ -140,7 +142,7 @@ void PanelWindow::buildUi()
         .arg(DS::Radius::control));
     m_errorBar->setWordWrap(true);
     eh->addWidget(m_errorBar, 1);
-    QAbstractButton *errClose = makeToolButton(QStringLiteral("window-close"),
+    QAbstractButton *errClose = makeToolButton(IconNames::Id::close,
         QStringLiteral("✕"), QStringLiteral("关闭提示"));
     errClose->setParent(errorRow);
     errClose->setFixedSize(28, 28);
@@ -587,7 +589,7 @@ void PanelWindow::buildMenu()
         // 标准动作 = DIconButton（图标走 freedesktop 主题名；尺寸 DStyle::PM_IconButtonIconSize
         // 由 DTK 样式接管）。图标名解析不到（无图标主题的环境）退回文字平钮——空按钮
         // 比非原生按钮更糟（R2 诚实降级）。「AI 助手」无 freedesktop 标准图标名，恒文字钮。
-        QAbstractButton *refresh = makeToolButton(QStringLiteral("view-refresh"),
+        QAbstractButton *refresh = makeToolButton(IconNames::Id::refresh,
             QStringLiteral("刷新"), QStringLiteral("刷新（Ctrl+R）"));
         connect(refresh, &QAbstractButton::clicked, this, [this] { m_model->refreshAll(); });
         m_refreshBtn = refresh; // busy 时让位转圈（refreshChrome 拨），收尾换回
@@ -600,10 +602,10 @@ void PanelWindow::buildMenu()
         agentBtn->setText(QStringLiteral("AI 助手"));
         agentBtn->setToolTip(QStringLiteral("AI 助手对话"));
         connect(agentBtn, &QPushButton::clicked, this, &PanelWindow::showAgentDialog);
-        QAbstractButton *settingsBtn = makeToolButton(QStringLiteral("preferences-system"),
+        QAbstractButton *settingsBtn = makeToolButton(IconNames::Id::settings,
             QStringLiteral("设置"), QStringLiteral("设置（Ctrl+,）"));
         connect(settingsBtn, &QAbstractButton::clicked, this, &PanelWindow::showSettings);
-        QAbstractButton *searchBtn = makeToolButton(QStringLiteral("system-search"),
+        QAbstractButton *searchBtn = makeToolButton(IconNames::Id::codegraph,
             QStringLiteral("搜索"), QStringLiteral("搜索（Ctrl+F，焦点送进侧栏搜索框）"));
         connect(searchBtn, &QAbstractButton::clicked, this, [this] { m_sidebar->focusSearch(); });
         tb->addWidget(agentBtn);

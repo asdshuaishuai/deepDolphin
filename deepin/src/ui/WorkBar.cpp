@@ -1,7 +1,9 @@
 #include "WorkBar.h"
 #include "DualTrackButtons.h"
 #include "../app/AppModel.h"
+#include "../logic/IconNames.h"
 #include "../logic/Derived.h"
+#include "../platform/IconResolver.h"
 #include "DesignTokens.h"
 #include <DComboBox>
 #include <QHBoxLayout>
@@ -23,7 +25,7 @@ WorkBar::WorkBar(QWidget *parent)
     h->setSpacing(DS::Spacing::sm);
 
     auto *globe = new QLabel(this);
-    globe->setPixmap(QIcon::fromTheme(QStringLiteral("globe")).pixmap(16, 16));
+    globe->setPixmap(platform::icon(IconNames::Id::globe).pixmap(16, 16));
     h->addWidget(globe);
 
     m_range = new Dtk::Widget::DComboBox(this);

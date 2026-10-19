@@ -1,5 +1,7 @@
 #include "ProjectDetailPage.h"
+#include "../../logic/IconNames.h"
 #include "../../logic/ArchReceipt.h"
+#include "../../platform/IconResolver.h"
 #include "../../logic/CommitTypeComposition.h"
 #include "../../logic/Derived.h"
 #include "../../logic/DestructiveGuard.h"
@@ -39,12 +41,12 @@ namespace {
 // 页头小图标按钮（borderless；图标优先主题，文字兜底）。
 // M3b-FlatButton 收编：原先「new QPushButton + setFlat + 各写各的几何」就地散装，
 // 平钮观感/字号/hover 压语义全部归 FlatButton 单点（本助手即 plan §3b 的对位原型）。
-QPushButton *iconButton(const QString &iconName, const QString &text, const QString &tooltip,
+QPushButton *iconButton(IconNames::Id iconId, const QString &text, const QString &tooltip,
     QWidget *parent)
 {
     auto *b = new FlatButton(text, parent);
     b->setToolTip(tooltip);
-    b->setIcon(QIcon::fromTheme(iconName));
+    b->setIcon(platform::icon(iconId));
     return b;
 }
 
@@ -165,7 +167,7 @@ void ProjectDetailPage::rebuild()
         // 不随 FlatButton 收编（同「主操作不降平钮」口径）
         auto *retry = new QPushButton(QStringLiteral("重试"), m_content);
         connect(retry, &QPushButton::clicked, this, &ProjectDetailPage::retryRequested);
-        m_contentLayout->addWidget(new EmptyState(QStringLiteral("data-warning"),
+        m_contentLayout->addWidget(new EmptyState(IconNames::Id::dataWarning,
             QStringLiteral("读不出来：%1").arg(m_name), reason, retry));
         return;
     }
@@ -245,7 +247,7 @@ QWidget *ProjectDetailPage::buildHeader(const ProjectStatus &p)
     auto *path = new SecondaryLabel(p.path, header);
     path->setFont(DS::font(DS::FontT::label));
     pathRow->addWidget(path, 1);
-    auto *copy = iconButton(QStringLiteral("edit-copy"), QString(),
+    auto *copy = iconButton(IconNames::Id::copy, QString(),
         QStringLiteral("复制路径"), header);
     connect(copy, &QPushButton::clicked, this, [p] {
         QGuiApplication::clipboard()->setText(p.path);
@@ -276,62 +278,62 @@ QWidget *ProjectDetailPage::buildHeader(const ProjectStatus &p)
     actions->setSpacing(DS::Spacing::xs);
 
     // 架构图：独立窗口承载（画布要空间，mac 用 sheet —— DDE 无 sheet 对位物）。
-    auto *arch = iconButton(QStringLiteral("view-tree"), QStringLiteral("架构图"),
+    auto *arch = iconButton(IconNames::Id::arch, QStringLiteral("架构图"),
         QStringLiteral("查看模块分层与依赖治理"), header);
     connect(arch, &QPushButton::clicked, this, [this] { emit archRequested(m_name); });
     actions->addWidget(arch);
 
     // 代码图谱：符号级树 + 置信度疑点 + 调用关系（引擎 graph 三源）。
-    auto *cgraph = iconButton(QStringLiteral("system-search"), QStringLiteral("代码图谱"),
+    auto *cgraph = iconButton(IconNames::Id::codegraph, QStringLiteral("代码图谱"),
         QStringLiteral("查看符号树、置信度疑点与调用关系"), header);
     connect(cgraph, &QPushButton::clicked, this, [this] { emit codeGraphRequested(m_name); });
     actions->addWidget(cgraph);
 
     // 补丁体检：三层体检（算法 → 人工裁决 → 合并终稿），独立窗承载。
-    auto *patch = iconButton(QStringLiteral("utilities-diagnose"), QStringLiteral("补丁体检"),
+    auto *patch = iconButton(IconNames::Id::patch, QStringLiteral("补丁体检"),
         QStringLiteral("对工作区未提交改动做置信度三层体检"), header);
     connect(patch, &QPushButton::clicked, this, [this] { emit patchCheckRequested(m_name); });
     actions->addWidget(patch);
 
-    auto *brief = iconButton(QStringLiteral("applications-utilities"), QStringLiteral("项目说明"),
+    auto *brief = iconButton(IconNames::Id::brief, QStringLiteral("项目说明"),
         QStringLiteral("AI 项目说明（未配置 AI 时会给出配置指引）"), header);
     connect(brief, &QPushButton::clicked, this, [this] { emit briefRequested(m_name); });
     actions->addWidget(brief);
 
     // 导出进度报告：引擎 `report`（回执型命令，落盘 Markdown）。
     // 报告是**可交付物**（要能给人看/存档），所以回执里必须把落盘路径露出来。
-    auto *report = iconButton(QStringLiteral("document-save"), QStringLiteral("导出报告"),
+    auto *report = iconButton(IconNames::Id::report, QStringLiteral("导出报告"),
         QStringLiteral("导出 Markdown 进度报告（引擎 report）"), header);
     connect(report, &QPushButton::clicked, this, [this] { emit reportExportRequested(m_name); });
     actions->addWidget(report);
 
     // gitOpButtons 唯一构造点：pull/push/fetch + stash/unstash（busy 禁用+转圈）
-    const auto addGit = [&actions, this, header](const QString &op, const QString &icon,
+    const auto addGit = [&actions, this, header](const QString &op, IconNames::Id iconId,
                             const QString &tip) {
-        auto *b = iconButton(icon, QString(), tip, header);
+        auto *b = iconButton(iconId, QString(), tip, header);
         b->setEnabled(!m_busy);
         connect(b, &QPushButton::clicked, this,
             [this, op] { emit gitOpRequested(op, m_name, QString()); });
         actions->addWidget(b);
         return b;
     };
-    addGit(QStringLiteral("pull"), QStringLiteral("arrow-down"),
+    addGit(QStringLiteral("pull"), IconNames::Id::gitPull,
         QStringLiteral("拉取（git pull）"));
-    addGit(QStringLiteral("push"), QStringLiteral("arrow-up"), QStringLiteral("推送（git push）"));
-    addGit(QStringLiteral("fetch"), QStringLiteral("view-refresh"),
+    addGit(QStringLiteral("push"), IconNames::Id::gitPush, QStringLiteral("推送（git push）"));
+    addGit(QStringLiteral("fetch"), IconNames::Id::refresh,
         QStringLiteral("抓取（git fetch）"));
     auto *div1 = new QLabel(QStringLiteral("|"), header);
     div1->setStyleSheet(QStringLiteral("color: %1;").arg(DS::surfaceBorder().name()));
     actions->addWidget(div1);
-    addGit(QStringLiteral("stash"), QStringLiteral("archive-insert"),
+    addGit(QStringLiteral("stash"), IconNames::Id::gitStash,
         QStringLiteral("暂存（git stash）"));
-    addGit(QStringLiteral("unstash"), QStringLiteral("archive-insert-axis"),
+    addGit(QStringLiteral("unstash"), IconNames::Id::gitUnstash,
         QStringLiteral("恢复（git stash pop）"));
 
     auto *div2 = new QLabel(QStringLiteral("|"), header);
     div2->setStyleSheet(QStringLiteral("color: %1;").arg(DS::surfaceBorder().name()));
     actions->addWidget(div2);
-    auto *update = iconButton(QStringLiteral("view-refresh"), QStringLiteral("更新"),
+    auto *update = iconButton(IconNames::Id::refresh, QStringLiteral("更新"),
         QStringLiteral("浅更新 / 深更新（会改写托管文档）"), header);
     connect(update, &QPushButton::clicked, this, &ProjectDetailPage::updateMenuRequested);
     actions->addWidget(update);
@@ -340,16 +342,16 @@ QWidget *ProjectDetailPage::buildHeader(const ProjectStatus &p)
     // 再下一行：Finder（文件管理器）/ 终端 / 远端（remote 为空时不显示远端）
     auto *sysRow = new QHBoxLayout;
     sysRow->setSpacing(DS::Spacing::xs);
-    auto *finder = iconButton(QStringLiteral("folder"), QString(),
+    auto *finder = iconButton(IconNames::Id::folder, QString(),
         QStringLiteral("在文件管理器中显示"), header);
     connect(finder, &QPushButton::clicked, this, [p] { SysOpen::revealInFileManager(p.path); });
     sysRow->addWidget(finder);
-    auto *term = iconButton(QStringLiteral("utilities-terminal"), QString(),
+    auto *term = iconButton(IconNames::Id::terminal, QString(),
         QStringLiteral("在终端中打开"), header);
     connect(term, &QPushButton::clicked, this, [p] { SysOpen::openTerminal(p.path); });
     sysRow->addWidget(term);
     if (!p.remote.isEmpty()) {
-        auto *remote = iconButton(QStringLiteral("web-browser"), QString(),
+        auto *remote = iconButton(IconNames::Id::remote, QString(),
             QStringLiteral("打开远端仓库"), header);
         connect(remote, &QPushButton::clicked, this, [p] {
             QString url = p.remote;

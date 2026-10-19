@@ -2,7 +2,6 @@
 #include "TrayGeometry.h"
 #include "TrayPopupWindow.h"
 #include "../logic/SemColors.h"
-#include "../platform/IconLoader.h"
 #include <QApplication>
 #include <QMenu>
 #include <QPainter>

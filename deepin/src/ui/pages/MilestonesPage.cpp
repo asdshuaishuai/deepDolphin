@@ -1,6 +1,8 @@
 #include "MilestonesPage.h"
 #include "MilestoneRowWidget.h"
+#include "../../logic/IconNames.h"
 #include "../../logic/DashboardScope.h"
+#include "../../platform/IconResolver.h"
 #include "../../logic/Derived.h"
 #include "../../logic/SearchFilter.h"
 #include "../DesignTokens.h"
@@ -40,7 +42,7 @@ MilestonesPage::MilestonesPage(QWidget *parent)
     tools->addStretch(1);
     auto *create = new FlatButton(this);
     create->setText(QStringLiteral("新建里程碑"));
-    create->setIcon(QIcon::fromTheme(QStringLiteral("list-add")));
+    create->setIcon(platform::icon(IconNames::Id::add));
     connect(create, &QPushButton::clicked, this, [this] { emit createRequested(m_projectFilter); });
     tools->addWidget(create);
     root->addLayout(tools);
@@ -149,7 +151,7 @@ void MilestonesPage::rebuild()
     if (shown.isEmpty()) {
         const auto empty = SearchFilter::emptyText(scoped.size(), shown.size(), m_query,
             QStringLiteral("里程碑"));
-        m_bodyLayout->addWidget(new EmptyState(QStringLiteral("flag"),
+        m_bodyLayout->addWidget(new EmptyState(IconNames::Id::milestone,
             empty.text,
             empty.reason == SearchFilter::EmptyText::noMatch
                 ? QStringLiteral("换个关键词，或清空搜索框看全部。")

@@ -297,7 +297,7 @@ deepin 用 **tailwind 固定色值**（`#10B981` / `#F59E0B` / `#9CA3AF` …）�
 
 | 任务 | 内容 | 状态 |
 |---|---|---|
-| M1-2 | 统一 `platform::icon()`（fallback 链 + 缺失告警 + DDciIcon 优先） | ⬜ |
+| M1-2 | 统一 `platform::icon()`（fallback 链 + 缺失告警 + DDciIcon 优先） | ✅ **批 U 已做**：判定层 `logic/IconNames`（`enum class Id` 27 个逻辑图标 → **候选名链**，唯一出处）+ 平台层 `platform/IconResolver`（**DDci → 主题 → qrc 染色 → 缺失告警 + 占位**）；**11 处**散落的 `QIcon::fromTheme` 全改走统一入口；**删掉零调用点的 `IconLoader`（170 行死代码）**。探针实测：27 个逻辑图标 **8 个走 DDci / 19 个走主题 / 0 个解析不到**（bloom 主题）；离屏（无图标主题）27 个全 `none`、0 告警。**视觉零变化**（基线逐字节未变） |
 | M1-3 | 托盘迁移 SNI | ⬜ |
 | M1-7 | `platform/Backend` 平台层 | ⬜ |
 | M1-8 | Wayland 分支 | ⬜ |
@@ -306,6 +306,22 @@ deepin 用 **tailwind 固定色值**（`#10B981` / `#F59E0B` / `#9CA3AF` …）�
 | M2-8 | 安装后零环境变量 | ✅ **批 S 实测达标**：二进制**无 RPATH/RUNPATH**、`DT_NEEDED` 全是 soname；宿主自带 Qt6/DTK6 ⇒ 裸环境 `--selfcheck` 269/0、**deb 解包后的二进制**裸环境同样 269/0 且能拍快照。⚠ README 原写「运行库在 sysroot 里，环境变量缺一不可」是**失真描述**，已改 |
 | M3c | 清第二套色板 + 一致性 / HiDPI / 动效收尾 | ⬜（与 B13/B14 同批更省） |
 | M1a / M0-8 / M3b / M4a / M4b | 容器批 / 干净容器 / KPI 骨架屏 / 拆分 / deb 矩阵 | ◐ 部分落地 |
+
+### E.1b 图标资源的真实使用情况（批 U 照出 —— **PLAN M2-6 的描述是失真的**）
+
+PLAN §10 里 M2-6 的日志写「托盘/菜单『不再手绘占位方块』」——
+实测**托盘至今仍是手绘**（`tray/TrayController.cpp` 用 QPainter 画三态符号：
+感叹三角 / 双圆 / 感叹点），**菜单图标也还没用上 `dd-*`**。
+
+更关键的是：`platform/IconLoader.{h,cpp}`（170 行，负责「主题图标 + qrc `dd-*` 染色兜底」）
+**零调用点** —— 托盘只 `#include` 了它的头文件，从没调用过任何函数。
+⇒ qrc 里登记的 `dd-git.svg` / `dd-milestone.svg` / `dd-warning.svg` / `dd-circle-double.svg` /
+`dd-ai.svg` 与 `deepdolphin.svg` **其实从来没被消费过**
+（`deepdolphin.svg` 另有 hicolor 安装路径，图标本身没丢）。
+
+⇒ **批 U 已收编**：删除死代码 `IconLoader`，其职责并入 `platform::icon()`
+（`dd-*` 仍是候选名之一，qrc 染色作免安装兜底；本构建环境无 Qt6Svg ⇒ 染色通道编译不进）。
+⇒ 托盘图标改为手绘仍是**遗留项**（真机观感项，见 M1-3 / M3c）。
 
 ### E.1 状态语义色第二份定义（批 N 照出 → **批 O 已收敛**）
 

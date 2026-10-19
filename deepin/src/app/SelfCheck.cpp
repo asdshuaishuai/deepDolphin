@@ -12,6 +12,7 @@
 #include "../logic/Derived.h"
 #include "../logic/EngineDownload.h"
 #include "../logic/EngineHook.h"
+#include "../logic/IconNames.h"
 #include "../logic/Liveness.h"
 #include "../logic/SemColors.h"
 #include "../logic/SnapshotFixture.h"
@@ -747,14 +748,49 @@ int SelfCheck::run(QStringList &log)
 
     // ── 12. EmptyState iconTone（M3b 组件二）：「空」与「读不出来」图标分档锁死 ──
     {
-        // 纯字符串层（QGuiApplication 构造前可跑，不实例化控件）：tone→图标名契约——
-        // 空态=dialog-information / 读不出来=dialog-warning，两档必须互异（plan §3b
-        // 「"空"与"读不出来"在图标上区分」）。DS 取色不在其中（取色无 app 即段错误）。
-        check(log, "EmptyState iconTone：空=dialog-information / 读不出来=dialog-warning 且互异",
-            EmptyState::toneIconName(EmptyState::Tone::Empty)
-                    == QStringLiteral("dialog-information")
-                && EmptyState::toneIconName(EmptyState::Tone::Warning)
-                    == QStringLiteral("dialog-warning"));
+        // 纯字符串层（QGuiApplication 构造前可跑，不实例化控件）：tone→**逻辑图标名**契约——
+        // 空态=info / 读不出来=warning，两档必须互异（plan §3b
+        // 「"空"与"读不出来"在图标上区分」）。⚠ 批 U 起返回的是**逻辑名**而不是主题名
+        //   （真正取图标走 `platform::icon()`，候选链在 `logic/IconNames`）——
+        //   主题缺名时才有路可走，且缺失会被告警而不是静默空图。
+        //   逻辑名必须在清单里（否则取不到 → 空图标 ⇒ 空门）。
+        check(log, "EmptyState iconTone：空=info / 读不出来=warning 且互异且都在图标清单里",
+            EmptyState::toneIcon(EmptyState::Tone::Empty) == IconNames::Id::info
+                && EmptyState::toneIcon(EmptyState::Tone::Warning) == IconNames::Id::warning
+                && IconNames::name(IconNames::Id::info) == QStringLiteral("info")
+                && IconNames::name(IconNames::Id::warning) == QStringLiteral("warning"));
+    }
+
+    // ── 12b. 图标候选链（批 U · M1-2）─────────────────────────────
+    {
+        // 判定层纯数据（QGuiApplication 构造前可跑）：候选链是「多几条路」，
+        // 每条链**至少两个候选** —— 只写一个名字的链在缺那个名字的主题上就是空图标，
+        // 而「哪个图标没解析到」是说不出来的（空门）。
+        const QList<IconNames::Id> ids = IconNames::all();
+        bool allChainsOk = !ids.isEmpty();
+        bool allDistinct = true;
+        bool allNamed = true;
+        bool allListed = true;
+        for (const IconNames::Id id : ids) {
+            const QStringList chain = IconNames::fallbacks(id);
+            if (chain.size() < 2)
+                allChainsOk = false;
+            if (QSet<QString>(chain.begin(), chain.end()).size() != chain.size())
+                allDistinct = false; // 同一条链里出现重复候选 = 白写一遍
+            if (IconNames::name(id).isEmpty())
+                allNamed = false;
+            // 清单与枚举必须**严格一一对应**：枚举多一项而表里没登记 ⇒ 上面已红；
+            // 表里多一项而清单没列 ⇒ 这里红（漏列 = 那个图标永远不会被枚举到）。
+            if (chain.isEmpty())
+                allListed = false;
+        }
+        check(log, "图标候选链：清单非空且每条链至少两个候选（缺名时才有路可走）", allChainsOk);
+        check(log, "图标候选链：同一条链里不重复", allDistinct);
+        check(log, "图标候选链：每个逻辑图标都有名字（探针按名字报告）", allNamed);
+        check(log, "图标候选链：枚举项全部登记了候选链（漏登记 = 取不到图标）", allListed);
+        // 未知逻辑名必须**认出来**（而不是静默给个空图标）。
+        check(log, "图标候选链：未知逻辑名不被当成已知（会报缺失）",
+            !IconNames::isKnown(QStringLiteral("__不存在的逻辑名__")));
     }
 
     // ── 13. FlatButton 契约（M3b 组件三）：padding 一档与双态叠加（纯函数层）──

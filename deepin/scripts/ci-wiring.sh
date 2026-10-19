@@ -401,19 +401,19 @@ arch_need "$SRC/scripts/ci-d2.sh" '豁免已失效：\$_p\b' '散值门自检豁
 arch_need "$SRC/src/logic/SemColors.h" 'namespace SemColors [{]' '固定色有唯一出处（判定层纯色）'
 arch_need "$SRC/src/logic/SemColors.h" 'namespace FixedColors [{]' '固定非语义色有唯一出处'
 # ⚠ 下面这五条用**精确计数**而不是「出现过」：同名 token 在文件里有多处
-#   （Derived 的 shallow ×2、IconLoader 的 iconFallback ×2），
+#   （Derived 的 shallow ×2、IconResolver 的 iconFallback ×2），
 #   变异只摘掉其中一处时「出现过」照样绿（负控实测，第八次同类问题）。
 arch_need_count "$SRC/src/ui/DesignTokens.cpp" 'SemColors::shallow\(\)' 1 'DS::semColor 转发唯一出处（恰好 1 处）'
 arch_need_count "$SRC/src/logic/Derived.cpp" 'SemColors::shallow\(\)' 2 '判定层状态色走唯一出处（恰好 2 处）'
 arch_need_count "$SRC/src/tray/TrayController.cpp" 'SemColors::stale\(\)' 1 '托盘状态色走唯一出处（恰好 1 处）'
 arch_need_count "$SRC/src/tray/TrayPopupWindow.cpp" 'FixedColors::trayAccent\(\)' 1 '托盘强调色走唯一出处（恰好 1 处）'
-arch_need_count "$SRC/src/platform/IconLoader.cpp" 'FixedColors::iconFallback\(\)' 2 '图标兜底色走唯一出处（恰好 2 处）'
+arch_need_count "$SRC/src/platform/IconResolver.cpp" 'FixedColors::iconFallback\(\)' 2 '图标兜底色走唯一出处（恰好 2 处）'
 arch_need "$SRC/src/app/SelfCheck.cpp" 'SemColors::stale\(\)' 'SelfCheck 钉住唯一出处的值'
 # 「不该有的东西没了」：写死的色值又写回去 → 必须红（正向条目抓不到这种回退）
 arch_forbid "$SRC/src/logic/Derived.cpp" 'QColor\(0[xX][0-9A-Fa-f]' '判定层不再自己写字面色值'
 arch_forbid "$SRC/src/tray/TrayController.cpp" 'QColor\(0[xX][0-9A-Fa-f]' '托盘不再自己写字面色值'
 arch_forbid "$SRC/src/tray/TrayPopupWindow.cpp" 'QColor\(0[xX][0-9A-Fa-f]' '托盘弹层不再自己写字面色值'
-arch_forbid "$SRC/src/platform/IconLoader.cpp" 'QColor\(0[xX][0-9A-Fa-f]' '平台层不再自己写字面色值'
+arch_forbid "$SRC/src/platform/IconResolver.cpp" 'QColor\(0[xX][0-9A-Fa-f]' '平台层不再自己写字面色值'
 arch_forbid "$SRC/src/ui/DesignTokens.cpp" 'QColor\(0[xX][0-9A-Fa-f]' 'DS 不再自己写语义色字面量'
 
 # 批 R · 跨端状态色取值对齐：UI 层（有状态词，颜色只做辅助）按 mac 活代码的口径，
@@ -500,6 +500,51 @@ arch_need_count "$SRC/scripts/ci.sh" 'cmp -s' 2 'CI 有「重拍比字节」门�
 # ⚠ 换时区那张必须挑**两个互相不同**的时区：拿「宿主时区」当其中一个时，
 #   宿主恰好就是那个时区 ⇒ 两张必然相同 ⇒ 门永远绿（负控实测：宿主就是 Asia/Shanghai）。
 arch_need "$SRC/scripts/ci.sh" 'America/New_York' 'CI 的跨时区对比用两个互不相同的时区'
+
+# 批 U · M1-2 图标统一入口：图标名**只许**在判定层 `logic/IconNames` 里出现一次。
+# ⚠ 这两道门是**多文件**扫描（UI 下有十几个文件）—— 单文件的 arch_forbid 覆盖不到。
+#   ① UI 里不许再直接 `QIcon::fromTheme(...)`（那会绕过候选链与缺失告警）；
+#   ② 统一入口的入参必须是**枚举** `IconNames::Id`（字符串拼错编译期发现不了）。
+ICON_RAW=0
+ICON_STR=0
+for f in "$SRC"/src/ui/*.cpp "$SRC"/src/ui/*.h "$SRC"/src/ui/pages/*.cpp "$SRC"/src/ui/pages/*.h \
+         "$SRC"/src/ui/common/*.cpp "$SRC"/src/ui/common/*.h "$SRC"/src/ui/dialogs/*.cpp \
+         "$SRC"/src/ui/dialogs/*.h "$SRC"/src/ui/dialogs/panes/*.cpp; do
+    [ -f "$f" ] || continue
+    if strip_comments "$f" | grep -qE 'QIcon::fromTheme'; then
+        echo "  ✗ UI 里还有裸 QIcon::fromTheme（图标必须走 platform::icon）：$f" >&2
+        ICON_RAW=1
+    fi
+    if strip_comments "$f" | grep -qE 'platform::icon\(QStringLiteral'; then
+        echo "  ✗ 统一入口入参用了字符串（拼错编译期发现不了）：$f" >&2
+        ICON_STR=1
+    fi
+done
+ARCH_N=$((ARCH_N + 1))
+if [ "$ICON_RAW" -eq 0 ]; then
+    echo "  ✓ 图标取用统一走 platform::icon（UI 里无裸 QIcon::fromTheme）"
+else
+    ARCH_FAIL=1
+fi
+ARCH_N=$((ARCH_N + 1))
+if [ "$ICON_STR" -eq 0 ]; then
+    echo "  ✓ 统一入口入参是枚举（拼错编译不过）"
+else
+    ARCH_FAIL=1
+fi
+# ⚠ 必须带 **token 边界**（`[{]`）：裸 `enum class Id` 会被 `enum class IdX` 顶替
+#   （负控实测，**第十六次**「子串互相顶替」）—— 改名后门照样绿。
+arch_need "$SRC/src/logic/IconNames.h" 'enum class Id [{]' '图标逻辑名是枚举（拼错编译不过）'
+arch_need "$SRC/src/logic/IconNames.cpp" 'QStringList fallbacks\(Id id\)' '候选链按枚举取（单一出处）'
+arch_need "$SRC/src/platform/IconResolver.h" 'QIcon icon\(IconNames::Id id' '统一入口收枚举'
+arch_need "$SRC/src/platform/IconResolver.cpp" 'DDciIcon::fromTheme' '图标解析 DDci 优先（deepin 自己的图标集）'
+# ⚠ 「这台机器没有图标主题」是**环境事实**，不是图标名错 ⇒ 不算缺失、不画占位圆点
+#   （圆点会把离屏基线污染成「到处都是圆点」，反而看不出真问题）。
+arch_need "$SRC/src/platform/IconResolver.cpp" 'QIcon::themeName\(\)\.isEmpty\(\)' '无图标主题时不算缺失（环境事实 ≠ 图标名错）'
+arch_need "$SRC/src/platform/IconResolver.cpp" '图标解析不到' '解析不到必须告警（缺失可见，不是静默空图标）'
+arch_need "$SRC/src/main.cpp" 'iconMissing=' '探针报图标缺失数（缺失可见）'
+# 死代码 IconLoader 已删（零调用点）—— 不许复活。
+arch_forbid "$SRC/CMakeLists.txt" 'IconLoader' '死代码 IconLoader 不许复活'
 
 # 批 P · 引擎获取链（GitHub Releases 下载安装）：判定层出结论，执行层只管跑，
 #   界面只读结论。⚠ URL / 资产名 / 校验和 / 落盘位置**一处**说了算。

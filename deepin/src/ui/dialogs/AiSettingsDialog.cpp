@@ -2,6 +2,8 @@
 #include "../../ai/SecretStore.h"
 #include "../../app/AppModel.h"
 #include "../../app/Settings.h"
+#include "../../logic/IconNames.h"
+#include "../../platform/IconResolver.h"
 #include "../DesignTokens.h"
 #include "panes/AutomationPane.h"
 #include "panes/GeneralPane.h"
@@ -33,11 +35,9 @@ AiSettingsDialog::AiSettingsDialog(AppModel *model, QWidget *parent)
 
     // header：分段三页签（DTabBar + QStackedWidget——实测无 DTabWidget）
     m_tabs = new DTabBar(content);
-    m_tabs->addTab(QIcon::fromTheme(QStringLiteral("preferences-system")), QStringLiteral("通用"));
-    m_tabs->addTab(QIcon::fromTheme(QStringLiteral("preferences-system-time")),
-        QStringLiteral("自动化"));
-    m_tabs->addTab(QIcon::fromTheme(QStringLiteral("applications-engineering")),
-        QStringLiteral("AI"));
+    m_tabs->addTab(platform::icon(IconNames::Id::settings), QStringLiteral("通用"));
+    m_tabs->addTab(platform::icon(IconNames::Id::automation), QStringLiteral("自动化"));
+    m_tabs->addTab(platform::icon(IconNames::Id::ai), QStringLiteral("AI"));
     m_tabs->setExpanding(false);
     v->addWidget(m_tabs);
 

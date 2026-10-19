@@ -8,6 +8,8 @@
 // ProjectDetailPage 的 data-warning 是刻意保留的主题意象）。
 // 无 Q_OBJECT：纯呈现。
 #pragma once
+#include "../../logic/IconNames.h"
+#include "../../platform/IconResolver.h"
 #include "../DesignTokens.h"
 #include "SecondaryLabel.h"
 #include <QHBoxLayout>
@@ -18,29 +20,30 @@
 class EmptyState : public QWidget {
 public:
     // iconTone（plan §3b）：空与读不出来必须长得不同——
-    // Empty = dialog-information（中性：还没有）；Warning = dialog-warning（告警：读不出来）。
+    // Empty = info（中性：还没有）；Warning = warning（告警：读不出来）。
     enum class Tone { Empty, Warning };
 
-    // tone→图标名单点（SelfCheck 无头锁这条契约：--selfcheck 跑在 QGuiApplication
-    // 构造前，不实例化控件，纯字符串映射可跑）。
-    static QString toneIconName(Tone tone)
+    // tone→**逻辑图标名**单点（SelfCheck 无头锁这条契约：--selfcheck 跑在
+    // QGuiApplication 构造前，不实例化控件，纯字符串映射可跑）。
+    // ⚠ 返回的是**逻辑名**不是主题名：真正取图标走 `platform::icon()`
+    //   （候选链在 `logic/IconNames`）—— 主题缺名时才有路可走。
+    static IconNames::Id toneIcon(Tone tone)
     {
-        return tone == Tone::Warning ? QStringLiteral("dialog-warning")
-                                     : QStringLiteral("dialog-information");
+        return tone == Tone::Warning ? IconNames::Id::warning : IconNames::Id::info;
     }
 
     // 页级版：竖排居中（stretch + 图标 + 标题 + 副题 + 主 CTA + stretch）。
-    EmptyState(const QString &iconName, const QString &title, const QString &subtitle,
+    EmptyState(IconNames::Id logicalIcon, const QString &title, const QString &subtitle,
         QWidget *cta = nullptr, QWidget *parent = nullptr)
         : QWidget(parent)
     {
-        init(iconName, title, subtitle, cta);
+        init(logicalIcon, title, subtitle, cta);
     }
     EmptyState(Tone tone, const QString &title, const QString &subtitle = QString(),
         QWidget *cta = nullptr, QWidget *parent = nullptr)
         : QWidget(parent)
     {
-        init(toneIconName(tone), title, subtitle, cta);
+        init(toneIcon(tone), title, subtitle, cta);
     }
 
     // 卡内紧凑版：小图标 + 一句话（不带 stretch 不带标题——那是页级版的事）。
@@ -51,9 +54,7 @@ public:
         h->setContentsMargins(0, 0, 0, 0);
         h->setSpacing(DS::Spacing::sm);
         auto *icon = new QLabel(w);
-        icon->setPixmap(QIcon::fromTheme(toneIconName(tone),
-                            QIcon::fromTheme(QStringLiteral("dialog-information")))
-                            .pixmap(16, 16));
+        icon->setPixmap(platform::icon(toneIcon(tone)).pixmap(16, 16));
         h->addWidget(icon, 0, Qt::AlignTop);
         auto *t = new SecondaryLabel(text, w);
         t->setWordWrap(true);
@@ -67,7 +68,7 @@ private:
     {
     }
 
-    void init(const QString &iconName, const QString &title, const QString &subtitle,
+    void init(IconNames::Id logicalIcon, const QString &title, const QString &subtitle,
         QWidget *cta)
     {
         auto *v = new QVBoxLayout(this);
@@ -76,9 +77,8 @@ private:
         v->addStretch(1);
 
         auto *icon = new QLabel(this);
-        icon->setPixmap(QIcon::fromTheme(iconName,
-                            QIcon::fromTheme(QStringLiteral("dialog-information")))
-                            .pixmap(36, 36));
+        // 走统一入口：主题缺名时**不静默空图**（缺失会被告警并占位显形）。
+        icon->setPixmap(platform::icon(logicalIcon).pixmap(36, 36));
         icon->setAlignment(Qt::AlignCenter);
         v->addWidget(icon);
 

@@ -1,6 +1,8 @@
 #include "SidebarNav.h"
+#include "../logic/IconNames.h"
 #include "../logic/DashFilter.h"
 #include "../logic/Derived.h"
+#include "../platform/IconResolver.h"
 #include "DesignTokens.h"
 #include "common/BusyRow.h"
 #include "common/CountLabel.h"
@@ -83,7 +85,7 @@ SidebarNav::SidebarNav(QWidget *parent)
     // ── 底部动作区（列表外）：添加 / 扫描项目（侧栏唯一主操作，带图标实底钮——
     // 不随 FlatButton 收编，同「主操作不降平钮」口径）──
     m_addOrScan = new QPushButton(QStringLiteral("添加 / 扫描项目"), this);
-    m_addOrScan->setIcon(QIcon::fromTheme(QStringLiteral("list-add")));
+    m_addOrScan->setIcon(platform::icon(IconNames::Id::add));
     layout->addWidget(m_addOrScan);
     connect(m_addOrScan, &QPushButton::clicked, this, &SidebarNav::addOrScanClicked);
 
@@ -121,12 +123,13 @@ SidebarNav::SidebarNav(QWidget *parent)
         auto *item = new QListWidgetItem(m_list);
         item->setData(kRoleSelection, static_cast<int>(v.second));
         item->setData(kRoleIsView, true);
-        const QString themeIcon = v.second == Selection::Kind::dashboard
-            ? QStringLiteral("preferences-desktop-wallpaper")
-            : (v.second == Selection::Kind::board ? QStringLiteral("view-list-details")
-                                                  : QStringLiteral("flag"));
+        // 视图行的图标走**统一入口**（逻辑名 → 候选链）：主题缺名时静默空图是最难查的故障
+        const IconNames::Id logicalIcon = v.second == Selection::Kind::dashboard
+            ? IconNames::Id::dashboard
+            : (v.second == Selection::Kind::board ? IconNames::Id::board
+                                                  : IconNames::Id::milestone);
         // 行尾计数语义：看板=attention 数（不受时间窗筛选）；里程碑=open+done
-        auto *row = countedRow(QIcon::fromTheme(themeIcon), v.first, this);
+        auto *row = countedRow(platform::icon(logicalIcon), v.first, this);
         row->setProperty("viewKind", static_cast<int>(v.second));
         m_list->setItemWidget(item, row);
         item->setSizeHint(row->sizeHint());

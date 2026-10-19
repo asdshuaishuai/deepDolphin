@@ -1,4 +1,6 @@
 #include "SetupGuidePage.h"
+#include "../../logic/IconNames.h"
+#include "../../platform/IconResolver.h"
 #include "../DesignTokens.h"
 #include "../common/FlatButton.h"
 #include "../common/SecondaryLabel.h"
@@ -20,7 +22,7 @@ SetupGuidePage::SetupGuidePage(const QString &problem, QWidget *parent)
     v->addStretch(1);
 
     m_icon = new QLabel(this);
-    m_icon->setPixmap(QIcon::fromTheme(QStringLiteral("dialog-warning")).pixmap(42, 42));
+    m_icon->setPixmap(platform::icon(IconNames::Id::warning).pixmap(42, 42));
     m_icon->setAlignment(Qt::AlignCenter);
     v->addWidget(m_icon);
 

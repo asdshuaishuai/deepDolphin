@@ -94,7 +94,7 @@ void DashboardPage::rebuild()
         auto *addBtn = new DPushButton(QStringLiteral("添加 / 扫描项目"), m_content);
         addBtn->setToolTip(QStringLiteral("注册项目后运行一次浅更新，仪表盘开始出数"));
         connect(addBtn, &QPushButton::clicked, this, &DashboardPage::addScanRequested);
-        m_contentLayout->addWidget(new EmptyState(QStringLiteral("folder-new"),
+        m_contentLayout->addWidget(new EmptyState(IconNames::Id::folderNew,
             QStringLiteral("仪表盘还没有数据"),
             QStringLiteral("注册项目后运行一次浅更新，这里会出现项目群脉搏。"), addBtn));
         return;
