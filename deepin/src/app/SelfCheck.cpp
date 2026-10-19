@@ -2,6 +2,7 @@
 #include "EngineCli.h"
 #include "../logic/AgentToolPlan.h"
 #include "../logic/ArchReceipt.h"
+#include "../logic/CodeGraphBuild.h"
 #include "../logic/DashFilter.h"
 #include "../logic/Derived.h"
 #include "../logic/DocumentIntegrity.h"
@@ -1096,6 +1097,155 @@ int SelfCheck::run(QStringList &log)
                     && !confText.argv.contains(QStringLiteral("--llm"))
                     && !confText.argv.contains(QStringLiteral("--json"))
                     && confDefault.argv.contains(QStringLiteral("--json")));
+        }
+
+        // ── 代码图谱数据层（三源 → 一棵树，纯函数）──
+        // 合成规则里藏着三处最容易悄悄错的地方：符号 id 的构造式、疑点归属
+        // （函数级那份已归属，置信度侧那份要去重）、汇总卷积。
+        {
+            const QJsonObject tree = QJsonDocument::fromJson(QByteArray(R"JSON({
+              "root": "/tmp/atlas",
+              "files": [
+                {"path": "src/core/util.c", "lang": "c", "lines": 20,
+                 "symbols": [{"kind": "func", "name": "worker", "line": 3},
+                             {"kind": "func", "name": "helper", "line": 9}]},
+                {"path": "src/main.c", "lang": "c", "lines": 5,
+                 "symbols": [{"kind": "func", "name": "main", "line": 1}]}
+              ],
+              "referenceEdges": [["src/main.c", "src/core/util.c", 2]],
+              "depth": 6, "truncated": false, "skipped": 0, "oversizeSkipped": 0,
+              "unreadableDirs": [], "unreadableDirsTruncated": false
+            })JSON")).object();
+            const QJsonObject conf = QJsonDocument::fromJson(QByteArray(R"JSON({
+              "root": "/tmp/atlas", "score": 76, "astUsed": false,
+              "astNote": "语法树不可用：未安装 ast-grep",
+              "dimensions": [{"id": "structure", "label": "结构级", "penalty": 12, "findings": 1, "score": 76}],
+              "findings": [
+                {"kind": "orphan", "file": "src/core/util.c", "line": 3, "symbol": "helper", "weight": 12, "evidence": "定义后无引用"},
+                {"kind": "magic-number", "file": "src/main.c", "line": 1, "symbol": "main", "weight": 5, "evidence": "魔法数"}
+              ]
+            })JSON")).object();
+            const QJsonObject fns = QJsonDocument::fromJson(QByteArray(R"JSON({
+              "functions": [
+                {"id": "f:src/core/util.c:3:worker", "file": "src/core/util.c", "name": "worker",
+                 "kind": "func", "line": 3, "lang": "c", "weight": 12, "trunc": false,
+                 "findings": [{"line": 3, "weight": 12, "kind": "orphan", "dim": "structure", "label": "孤儿符号", "evidence": "定义后无引用"}]},
+                {"id": "f:src/main.c:1:main", "file": "src/main.c", "name": "main",
+                 "kind": "func", "line": 1, "lang": "c", "weight": 0, "trunc": false, "findings": []}
+              ],
+              "functionEdges": [{"from": "f:src/main.c:1:main", "to": "f:src/core/util.c:3:worker", "w": 2, "tier": "resolved"}],
+              "codeSnippets": {"f:src/core/util.c:3:worker": "void worker(void){}\nint x = 1;"}
+            })JSON")).object();
+
+            CodeGraphBuild::Source src;
+            src.tree = tree;
+            src.confidence = conf;
+            src.functions = fns;
+            const CodeGraphBuild::Result g = CodeGraphBuild::build(src, QStringLiteral("atlas"));
+
+            check(log, "代码图谱：三源齐 → 合成成功（骨架：根+2 层目录+2 文件+3 符号 = 8 节点）",
+                g.ok && g.graph.nodes.size() == 8 && g.graph.root >= 0);
+            // 符号 id 构造式：tree 的 symbols 不带 id，客户端按引擎同形造
+            check(log, "代码图谱：符号 id 按引擎同形构造（f:路径:行号:名字）",
+                g.ok && g.graph.indexOf(QStringLiteral("f:src/core/util.c:3:worker")) >= 0
+                    && CodeGraphBuild::symbolId(QStringLiteral("src/core/util.c"), 3,
+                          QStringLiteral("worker"))
+                        == QStringLiteral("f:src/core/util.c:3:worker"));
+            // 疑点归属：函数级疑点挂符号；置信度侧同一条不再重复挂文件
+            const int workerIdx = g.graph.indexOf(QStringLiteral("f:src/core/util.c:3:worker"));
+            const int utilFileIdx = g.graph.indexOf(QStringLiteral("f:src/core/util.c"));
+            const int mainFileIdx = g.graph.indexOf(QStringLiteral("f:src/main.c"));
+            check(log, "代码图谱：函数级疑点挂到符号（不是文件）",
+                g.ok && workerIdx >= 0 && g.graph.nodes.at(workerIdx).ownFindings.size() == 1);
+            check(log, "代码图谱：已归属的疑点不重复挂文件（去重，疑点不被数两遍）",
+                g.ok && utilFileIdx >= 0 && g.graph.nodes.at(utilFileIdx).ownFindings.isEmpty());
+            check(log, "代码图谱：置信度侧的孤儿疑点挂到文件（没被任何符号领走的那些）",
+                g.ok && mainFileIdx >= 0 && g.graph.nodes.at(mainFileIdx).ownFindings.size() == 1
+                    && g.graph.nodes.at(mainFileIdx).ownFindings.first().kind
+                        == QStringLiteral("magic-number"));
+            // 汇总卷积：子树疑点数与最高权重
+            check(log, "代码图谱：汇总卷积（子树疑点数 2 / 最高权重 12）",
+                g.ok && g.graph.nodes.at(g.graph.root).rollN == 2
+                    && g.graph.nodes.at(g.graph.root).rollW == 12
+                    && g.graph.nodes.at(g.graph.root).fileCount == 2);
+            // 排序：目录在前、文件按名、符号按声明行
+            // 树形：root → src(目录) → { core(目录) → util.c(文件), main.c(文件) }
+            const GraphNode *rootNode = g.ok ? g.graph.node(g.graph.root) : nullptr;
+            bool orderOk = rootNode && rootNode->kids.size() == 1
+                && g.graph.node(rootNode->kids.first())->kind == GraphNodeKind::dir;
+            if (orderOk) {
+                const GraphNode *srcDir = g.graph.node(rootNode->kids.first());
+                orderOk = srcDir->kids.size() == 2
+                    && g.graph.node(srcDir->kids.at(0))->kind == GraphNodeKind::dir
+                    && g.graph.node(srcDir->kids.at(0))->name == QStringLiteral("core")
+                    && g.graph.node(srcDir->kids.at(1))->kind == GraphNodeKind::file
+                    && g.graph.node(srcDir->kids.at(1))->name == QStringLiteral("main.c");
+                if (orderOk) {
+                    const GraphNode *coreDir = g.graph.node(srcDir->kids.at(0));
+                    orderOk = coreDir->kids.size() == 1
+                        && g.graph.node(coreDir->kids.first())->name
+                            == QStringLiteral("util.c");
+                    if (orderOk) {
+                        // 同一文件的符号按**声明行**排（不是按名字）
+                        const GraphNode *utilFile = g.graph.node(coreDir->kids.first());
+                        // ⚠ 夹具刻意让两种排序**分叉**：worker@3（名字在后）
+                        //   排前、helper@9 排后 —— 若实现改成按名字排，这条会红。
+                        orderOk = utilFile->kids.size() == 2
+                            && g.graph.node(utilFile->kids.at(0))->name
+                                == QStringLiteral("worker")
+                            && g.graph.node(utilFile->kids.at(0))->declLine == 3
+                            && g.graph.node(utilFile->kids.at(1))->name
+                                == QStringLiteral("helper")
+                            && g.graph.node(utilFile->kids.at(1))->declLine == 9;
+                    }
+                }
+            }
+            check(log, "代码图谱：排序（目录在前、文件按名、符号按声明行）", orderOk);
+            // 符号级调用边 + 源码片段
+            check(log, "代码图谱：符号级调用边与源码片段都读得出",
+                g.ok && g.symEdges.size() == 1
+                    && g.symEdges.first().from == QStringLiteral("f:src/main.c:1:main")
+                    && g.symEdges.first().to == QStringLiteral("f:src/core/util.c:3:worker")
+                    && g.snippets.contains(QStringLiteral("f:src/core/util.c:3:worker"))
+                    && g.fileEdges.size() == 1);
+            // 截断披露：0 与「没发」可区分
+            check(log, "代码图谱：截断披露（缺键不得当作「没有」）",
+                g.ok && g.truncatedPresent && g.skippedPresent
+                    && g.oversizeSkippedPresent && g.depth == 6);
+            // 置信度总分与降级说明
+            check(log, "代码图谱：置信度总分与语法树降级说明都带出来",
+                g.ok && g.score == 76 && !g.astNote.isEmpty() && !g.astUsed);
+            // 缺源：说清是哪一种
+            {
+                CodeGraphBuild::Source s2;
+                s2.confidence = conf;
+                s2.functions = fns;
+                const CodeGraphBuild::Result r2 = CodeGraphBuild::build(s2, QStringLiteral("atlas"));
+                CodeGraphBuild::Source s3;
+                s3.tree = tree;
+                s3.functions = fns;
+                const CodeGraphBuild::Result r3 = CodeGraphBuild::build(s3, QStringLiteral("atlas"));
+                CodeGraphBuild::Source s4;
+                s4.tree = tree;
+                s4.confidence = conf;
+                const CodeGraphBuild::Result r4 = CodeGraphBuild::build(s4, QStringLiteral("atlas"));
+                check(log, "代码图谱：缺源明说是哪一种（不回落成空图）",
+                    !r2.ok && r2.error.contains(QStringLiteral("图树"))
+                        && !r3.ok && r3.error.contains(QStringLiteral("置信度"))
+                        && !r4.ok && r4.error.contains(QStringLiteral("函数级")));
+            }
+            // 可见行：展开与搜索
+            {
+                QStringList expanded { QStringLiteral("root"), QStringLiteral("d:src") };
+                const auto rows = CodeGraphBuild::visibleRows(g.graph, expanded, QString());
+                check(log, "代码图谱：可见行随展开态算（根+目录 → 根+目录+2 文件）",
+                    rows.size() == 4);
+                const auto filtered
+                    = CodeGraphBuild::visibleRows(g.graph, QStringList(), QStringLiteral("worker"));
+                check(log, "代码图谱：搜索过滤只留命中的路径（含祖先）",
+                    !filtered.isEmpty()
+                        && filtered.last().node == workerIdx);
+            }
         }
     }
 

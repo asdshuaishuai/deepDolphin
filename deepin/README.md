@@ -38,7 +38,7 @@ moonGit（仓颉引擎，仓内别名 deepgit）项目群进度客户端的 Linu
 | Dock 菜单（打开面板 / 全部浅更新） | 托盘菜单：打开面板 / 全部浅更新 + **退出**（Linux 托盘必须有退出项） | `tray/TrayController` |
 | 添加 / 扫描项目（`ScanSheet`） | ScanDialog + ScanCoverage 覆盖度披露接回主窗口说明条 | `ui/dialogs/ScanDialog`；`logic/ScanCoverage`、`PathInput` |
 | 深链启动参数（`Route.swift`） | `--project <名>`、`--section board\|milestones\|dashboard`、`--open-settings`、`--agent-selftest`；pendingRoute 消费一次即置闩 | `logic/Route`、`Router`；`PanelWindow::maybeApplyPendingRoute` |
-| 纯函数判定层（`client-check.sh` 单独编译断言） | `models/`、`logic/` 零 QWidget 头，判定收敛为二进制内置 `--selfcheck`（135 例） | `src/models/`、`src/logic/`、`app/SelfCheck` |
+| 纯函数判定层（`client-check.sh` 单独编译断言） | `models/`、`logic/` 零 QWidget 头，判定收敛为二进制内置 `--selfcheck`（148 例） | `src/models/`、`src/logic/`、`app/SelfCheck` |
 | 设置窗口（自动化 + AI） | 设置三页签（DTabBar+QStackedWidget）：通用 / 自动化（分段改完立即生效）/ AI | `ui/dialogs/panes/*` |
 | 快捷键（CommandMenu + ShortcutMap.swift） | QShortcut 全量真绑（含深更新——mac 曾「声明未绑」的缺陷不重犯） | `ui/PanelWindow.cpp:516`；`logic/ShortcutMap.h`（唯一声明处） |
 | 定时更新 + AI 简报 | autoHours 周期 + 首轮 600s；简报经通知；silent 场景不偷弹结果面板 | `app/AppModel.cpp:202`；`ai/AiDigests`（scheduledDigest） |
@@ -101,7 +101,7 @@ cmake --build build --parallel 4
 冒烟脚本按此硬路径断言）。
 
 ```sh
-./build/deepDolphin --selfcheck   # 模型层 fixtures 自检（无 GUI、无引擎依赖；当前 135 例）
+./build/deepDolphin --selfcheck   # 模型层 fixtures 自检（无 GUI、无引擎依赖；当前 148 例）
 ./build/deepDolphin --version
 ./build/deepDolphin --project <名>   # 深链（--section board|milestones|dashboard 同理）
 ./build/deepDolphin --agent-selftest [问题]   # 无头 agent 自测（默认「总结一下项目群现状」）
@@ -125,7 +125,7 @@ export QT_QPA_PLATFORM=offscreen        # 无显示环境时；共享 X11 会话
 share/applications/cn.deepdolphin.app.desktop，图标 → share/icons/hicolor/scalable/apps）。
 安装后由系统 Qt6/DTK6 运行库满足链接，无需上述环境变量。
 
-本阶段实测记录：`--selfcheck` 135 通过 0 失败；`--version` 输出 `deepDolphin 0.1.0`；
+本阶段实测记录：`--selfcheck` 148 通过 0 失败；`--version` 输出 `deepDolphin 0.1.0`；
 offscreen 启动探测 `timeout 8` 退出码 124（进程存活满 8 秒）；`ldd` 裸环境报 Qt6/DTK6 not found、
 带上 `LD_LIBRARY_PATH` 后 0 个 not found。**运行期环境变量**（sysroot 方案的代价，打包后消失）：
 `LD_LIBRARY_PATH=~/.local/dd-sysroot/usr/lib/x86_64-linux-gnu`（Qt/DTK 运行库）+
@@ -238,7 +238,7 @@ key 只进 libsecret（service=cn.deepdolphin.app.ai / account=api-key），不�
    的文件（models/app 逻辑/tray 壳/ui 壳），页面、AI、AppModel、Notifier、AutostartManager、
    SysOpen、DesignTokens 等随其实现阶段同步加入（CMakeLists 有显式提醒注释）。
    `tests/` 子目录随 PLAN 里程碑 2 加入；当前模型层冒烟判据由二进制内置 `--selfcheck`
-   承担（135 例，含缺键拒绝/契约过旧判据/双形态 update/shallow-deep 分派等 CONTRACT 红线）。
+   承担（148 例，含缺键拒绝/契约过旧判据/双形态 update/shallow-deep 分派等 CONTRACT 红线）。
    代价：CMakeLists 与 PLAN 清单阶段性地不一致，靠注释锚点防丢失。
 2. **托盘数据对接用 `TraySnapshot` 纯结构体**，而非 PLAN 签名里的 `AppModel*`：
    AppModel 属里程碑 3，提前引入会迫使托盘壳依赖一个不存在的类型。AppModel 落地后由它
@@ -457,7 +457,7 @@ key 只进 libsecret（service=cn.deepdolphin.app.ai / account=api-key），不�
 | `dtk.core.dsg: AppId is fetched from AM, and value is "zcode"` | 环境限制 | 容器会话无应用商店注册项，DSG AppId 回退到宿主进程名；真机经 .desktop 安装后取 `cn.deepdolphin.app` |
 | `QObject::connect: No such signal QPlatformNativeInterface::systemTrayWindowChanged(QScreen*)` | 环境限制 | offscreen 无系统托盘；真 DDE 走 SNI 协议（与「运行期事实」一致）。托盘真实表现仍**待真机验证** |
 | `desktop-file-validate` 未跑 | 工具缺席 | 容器内无该工具（`command -v` 为空）。`.desktop` 内容已人工核对（Exec/Icon/StartupWMClass/X-Deepin-Vendor），装真机后建议补跑 |
-| `ctest`：无目标可跑 | 设计如此 | CMakeLists.txt:134 注释：`enable_testing()+tests/` 缓建，模型层冒烟判据由 `--selfcheck`（135 例）承担 |
+| `ctest`：无目标可跑 | 设计如此 | CMakeLists.txt:134 注释：`enable_testing()+tests/` 缓建，模型层冒烟判据由 `--selfcheck`（148 例）承担 |
 | Ctrl+Shift+U 与输入法的潜在冲突 | 待真机验证 | 决策 19 预案：保持绑定、菜单显示实际序列；容器内无真实 IME，无法在本阶段闭环 |
 
 ### 真机联调阶段（2026-10-03 收尾，决策 36–44）
@@ -670,6 +670,30 @@ codegraph_patch_merge`）+ ci.sh 第 10 门红；② 摘掉 AgentCore 的工具�
 （且 agent 自测同时变红）；③ flag 只认布尔 → selfcheck 红；④ op 白名单去掉 → selfcheck 红；
 ⑤ 数值参数不校验 → selfcheck 红；⑥ 临时文件声明去掉 → selfcheck 红。
 **视觉零变化**（agent 面板无 UI 改动，快照基线未动）。
+
+### 批 E2：代码图谱页（引擎 `graph` 三源接成符号树 + 置信度 + 调用关系）
+
+批 D2 把架构图画出来，批 E1 把 agent 的图能力接上；本批补上 mac 的**代码图谱页** ——
+符号级树、置信度疑点、调用关系。
+
+| # | 决策 | 为什么 | 已知代价 |
+|---|---|---|---|
+| 99 | **三份引擎输出合成一棵树，规则抽成纯函数**（`logic/CodeGraphBuild`）：`graph tree`（文件骨架 + 符号清单 + 引用边）/ `graph confidence`（总分 + 维度 + 疑点）/ `graph functions`（函数级归属 + 源码片段 + 符号级调用边）；树用**扁平 arena + 索引**表达（父子关系用索引，不用裸指针 —— 嵌套 `QVector` 扩容会让指针失效） | 合成规则里藏着三处最容易悄悄错的地方：① `tree` 的 symbols **不带 id**，客户端要按 `f:<路径>:<行号>:<名字>` 构造，而 `functions` 的 id **带** —— 两者要对上靠的就是这个构造式；② 疑点归属：函数级那份已按符号体归属好，置信度侧那份是全仓疑点，要按「文件+行号+kind」去重，剩下才是孤儿挂到文件；③ 汇总卷积（子树疑点数 / 最高权重）自底向上算，算错会让徽标与详情页对不上 | 树规模大时合成是一次性 O(n)（引擎已经截断过，`truncated`/`skipped`/`oversizeSkipped` 都带披露） |
+| 100 | **符号 id 构造式用「端到端」契约钉住**：新增无头 flag `deepDolphin --code-graph-symbol-id <路径> <行号> <名字>`，契约检查拿**引擎给的真实符号**去问客户端「同样三个输入你造什么 id」，逐条比对 | 原先只在契约里断言「引擎侧的 id 形如 f:路径:行号:名字」—— 那是**引擎自己跟自己比**，客户端改了构造式它照样全绿。症状极隐蔽：树能画、关系页签永远空 | 契约检查多一次子进程调用（每次 3 个符号，可忽略） |
+| 101 | **代码图谱页用独立 `DDialog` 承载，两栏**（顶栏 + 左栏列表树 + 右栏详情三页签）：顶栏 = 项目名 + 刷新/生成/导出 + 置信度总分；左栏 = 搜索框 + 列表树（可见性以判定层 `visibleRows` 为准）；右栏 = 详情头 + 页签（源码 / 置信度 / 关系）+ 详情体；项目名在详情页入口锁定 | mac 的代码图谱页是**两栏**（`HSplitView`：treePane + detailPane），热力图是**左栏的另一种模式**（不是第三栏）—— 与其按台账旧措辞做三栏，不如按 mac 的实际形状做；画布类页面独立窗是本平台既有承载（架构图窗同款） | **热力图模式未做**（mac 的 `CodeGraphHeatmap.swift` 核心算法 ~380 行）—— 留批 E3，本批左栏只交列表树；`drill`/`jump` 下钻未接（mac 同款未接） |
+
+**本批验证**（全部实跑）：`--selfcheck` **148 通过 0 失败**（135 → 148，+13 例：骨架合成 / 符号 id
+构造式 / 疑点挂符号 / 去重不重复数 / 孤儿挂文件 / 汇总卷积 / 排序 / 边与片段 / 截断披露 /
+总分与降级说明 / 缺源点名 / 可见行 / 搜索过滤）；
+`contract-check.sh` **40/40**（真引擎沙箱，32 → 40，+8 条：代码图谱三源契约 + 符号 id 端到端）；
+`ci.sh` **10/10 门全绿**（第 9 门扩到 **36 项**接线点）；
+**五处负控真红**：① 符号 id 构造式改成不同形 → 契约端到端红（exit 1）+ selfcheck 4 例红；
+② 疑点去重去掉 → selfcheck 2 例红；③ 符号排序改成按名字 → selfcheck 红；
+④ 搜索过滤去掉 → selfcheck 红；⑤ 摘掉代码图谱入口接线 → 接线门红（exit 1）。
+**判据灵敏度补强（决策 99）**：排序断言原先**抓不住** —— 夹具里「按声明行」与「按名字」
+恰好同序，实现改成按名字排时判据照样全绿。已把夹具改成两种排序**分叉**
+（worker@3 排前、helper@9 排后），补强后负控 ③ 才真红。
+**视觉零变化**（代码图谱是独立窗口，不进四页快照矩阵，快照基线未动）。
 
 ## 分层纪律（后续阶段必须延续）
 

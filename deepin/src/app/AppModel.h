@@ -18,6 +18,7 @@
 #include "../models/LoadState.h"
 #include "../models/DocsEnvelope.h"
 #include "../models/GitOpResponse.h"
+#include "../logic/CodeGraphBuild.h"
 #include "../models/GraphScene.h"
 #include "../models/Milestone.h"
 #include "../models/ProjectStatus.h"
@@ -163,6 +164,24 @@ public:
     };
     TrayState trayState() const;
 
+    // ── 代码图谱（引擎 graph tree / confidence / functions 三源）──
+    // 按项目存（与场景同理：代码图谱窗也按项目各开一个）。
+    LoadStateBox codeGraphState(const QString &name) const
+    {
+        return m_codeGraphStates.value(name);
+    }
+    const CodeGraphBuild::Result *codeGraphFor(const QString &name) const
+    {
+        auto it = m_codeGraphs.constFind(name);
+        return it == m_codeGraphs.constEnd() ? nullptr : &it.value();
+    }
+    /// 取数据（引擎三源 → 一棵树）。三源缺一即失败，且**说清是哪一种**。
+    void loadCodeGraph(const QString &name);
+    /// 生成索引 + 置信度（引擎 index gen / confidence gen；写库/落盘）。
+    void genIndex(const QString &name);
+    /// 导出交互 HTML（引擎 render index --confidence；引擎层交付物）。
+    void exportIndex(const QString &name);
+
 signals:
     void projectsChanged();
     void dashboardChanged();
@@ -174,6 +193,7 @@ signals:
     /// 架构图生成/导出的回执（引擎末行非空行；失败时 ok=false）。
     /// 带项目名 —— 两个项目的架构图窗可以同时开着，回执不许串台。
     void archActionFinished(bool ok, const QString &project, const QString &receipt);
+    void codeGraphChanged(const QString &name);
     void gitOutputReady(const QString &name, const GitOpResponse &resp);
     void scanFinished(bool ok, const QString &message, const QString &coverageNote);
     void addFinished(bool ok, const QString &message);
@@ -228,6 +248,8 @@ private:
     QMap<QString, VerifyEnvelope> m_verifies;
     QMap<QString, LoadStateBox> m_sceneStates;
     QMap<QString, GraphScene> m_scenes;
+    QMap<QString, LoadStateBox> m_codeGraphStates;
+    QMap<QString, CodeGraphBuild::Result> m_codeGraphs;
     QMap<QString, QString> m_projectLoadErrors;
 
     QString m_lastError;

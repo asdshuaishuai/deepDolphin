@@ -244,5 +244,80 @@ print('\n'.join(sorted(t.get('name','') for t in d.get('tools',[]) if t.get('nam
     fi
 fi
 
+# 13. 代码图谱三源契约（graph tree / confidence / functions）。
+#     客户端的树骨架、疑点归属、调用关系全靠这三份合成。
+#     ⚠ 最要紧的是**符号 id 构造式**：tree 的 symbols 不带 id，客户端按
+#       `f:<路径>:<行号>:<名字>` 造一个；这个构造式必须与引擎 functions 侧的
+#       id 同形 —— 不同形就永远对不上「调用方/被调方」，且症状极隐蔽
+#       （树能画、关系页签永远空）。
+TREE_JSON="$("$BIN" graph tree atlas --depth 8 --json 2>/dev/null)"
+CONF_JSON="$("$BIN" graph confidence atlas --json 2>/dev/null)"
+FNS_JSON="$("$BIN" graph functions atlas --json 2>/dev/null)"
+
+check "代码图谱 tree：root/files 齐全，且 files[].symbols[] 带 name/line/kind" \
+    "isinstance(d.get('root'), str) and isinstance(d.get('files'), list) and all(all(k in s for k in ('name','line','kind')) for f in d.get('files',[]) for s in f.get('symbols',[]))" \
+    "$TREE_JSON"
+check "代码图谱 tree：symbols **不带 id**（客户端按构造式造；引擎若开始发 id，两边要对上）" \
+    "all('id' not in s for f in d.get('files',[]) for s in f.get('symbols',[]))" \
+    "$TREE_JSON"
+check "代码图谱 tree：truncated/skipped/oversizeSkipped 恒发（截断披露不能缺键）" \
+    "all(k in d for k in ('truncated','skipped','oversizeSkipped'))" \
+    "$TREE_JSON"
+check "代码图谱 confidence：score/astNote/dimensions/findings 齐全" \
+    "isinstance(d.get('score'), int) and 'astNote' in d and isinstance(d.get('dimensions'), list) and isinstance(d.get('findings'), list)" \
+    "$CONF_JSON"
+check "代码图谱 confidence：findings[] 带 kind/file/line/weight（归属键的来源）" \
+    "all(all(k in f for k in ('kind','file','line','weight')) for f in d.get('findings',[]))" \
+    "$CONF_JSON"
+check "代码图谱 functions：functions/functionEdges/codeSnippets 齐全" \
+    "isinstance(d.get('functions'), list) and isinstance(d.get('functionEdges'), list) and isinstance(d.get('codeSnippets'), dict)" \
+    "$FNS_JSON"
+# 符号 id 构造式必须与引擎同形（f:<路径>:<行号>:<名字>）
+check "代码图谱 functions：符号 id 与客户端构造式同形 f:路径:行号:名字（关系页签全靠它对上）" \
+    "all(f['id'] == 'f:' + f['file'] + ':' + str(f['line']) + ':' + f['name'] for f in d.get('functions',[]))" \
+    "$FNS_JSON"
+# ⚠ 上一条验的是**引擎侧**的形状；客户端的构造函数也得真的与之同形 ——
+#   否则树能画、关系页签永远空（症状极隐蔽）。这里**端到端**比：
+#   拿引擎给的一个真实符号，问客户端二进制「同样三个输入你会造出什么 id」。
+if [ ! -x "$CLIENT_BIN" ]; then
+    echo "  ‣ SKIP 符号 id 端到端比对：找不到客户端二进制 $CLIENT_BIN"
+    echo "    ‣ 本条**未验证**，不算通过"
+else
+    # 用 python 做比对（别在 sh 里切 tab：dash 的 read 不认 $'\t'）
+    E2E_OUT="$(printf '%s' "$FNS_JSON" | python3 -c "
+import json, subprocess, sys
+client = sys.argv[1]
+d = json.load(sys.stdin)
+fns = d.get('functions', [])[:3]
+if not fns:
+    print('EMPTY'); sys.exit(0)
+bad = []
+for f in fns:
+    out = subprocess.run([client, '--code-graph-symbol-id', f.get('file',''),
+                          str(f.get('line',0)), f.get('name','')],
+                         capture_output=True, text=True).stdout.strip()
+    if out != f.get('id',''):
+        bad.append((f.get('file'), f.get('line'), f.get('name'), out, f.get('id')))
+for b in bad:
+    print('MISMATCH\t' + '\t'.join(str(x) for x in b))
+print('COUNT\t%d' % len(fns))
+" "$CLIENT_BIN" 2>/dev/null)"
+    E2E_N="$(printf '%s\n' "$E2E_OUT" | grep -c '^COUNT' || true)"
+    E2E_BAD="$(printf '%s\n' "$E2E_OUT" | grep -c '^MISMATCH' || true)"
+    if [ "$E2E_N" -eq 0 ]; then
+        echo "  ✗ 符号 id 端到端：没取到可比对的符号（断言空转，必须先修取数）" >&2
+        fail=$((fail+1))
+    elif [ "$E2E_BAD" -ne 0 ]; then
+        echo "  ✗ 符号 id 端到端：客户端造的 id 与引擎给的不一致 ——" >&2
+        printf '%s\n' "$E2E_OUT" | grep '^MISMATCH' | cut -f2- | while read -r line; do
+            echo "      $line" >&2
+        done
+        fail=$((fail+1))
+    else
+        echo "  ✓ 符号 id 端到端：客户端对 ${E2E_N} 个真实符号造出的 id 与引擎完全一致"
+        pass=$((pass+1))
+    fi
+fi
+
 echo "──── contract-check: $pass passed, $fail failed ────"
 [ "$fail" -eq 0 ]

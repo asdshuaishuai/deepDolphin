@@ -268,6 +268,12 @@ QWidget *ProjectDetailPage::buildHeader(const ProjectStatus &p)
     connect(arch, &QPushButton::clicked, this, [this] { emit archRequested(m_name); });
     actions->addWidget(arch);
 
+    // 代码图谱：符号级树 + 置信度疑点 + 调用关系（引擎 graph 三源）。
+    auto *cgraph = iconButton(QStringLiteral("system-search"), QStringLiteral("代码图谱"),
+        QStringLiteral("查看符号树、置信度疑点与调用关系"), header);
+    connect(cgraph, &QPushButton::clicked, this, [this] { emit codeGraphRequested(m_name); });
+    actions->addWidget(cgraph);
+
     auto *brief = iconButton(QStringLiteral("applications-utilities"), QStringLiteral("项目说明"),
         QStringLiteral("AI 项目说明（未配置 AI 时会给出配置指引）"), header);
     connect(brief, &QPushButton::clicked, this, [this] { emit briefRequested(m_name); });

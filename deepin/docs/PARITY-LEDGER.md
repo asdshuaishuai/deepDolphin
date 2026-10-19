@@ -53,11 +53,11 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | # | 新能力 | mac 落点 | deepin 现状 | 优先级 |
 |---|---|---|---|---|
 | B1 | **交互架构图（scene 契约 + 平台 Canvas）** | `GraphScene.swift` + `ArchCanvasView.swift` + `ArchPage.swift` | 🟢 **已对位（批 D1 内核 + 批 D2 页面）**：契约层 + Qt QPainter Canvas2D 26 方法 + 渲染指令层 + 视口/命中判定 + 架构图窗（页头/回执/画布/披露行）+ 详情页入口 + 生成/导出动作 | **P0** |
-| B2 | **代码图谱页（三列：图树主轴 + 详情 + 热力图）** | `GraphPages.swift`（494 行） | ⬜ 未开始 | **P0** |
-| B3 | **符号热力图（treemap → 力导向气泡，Canvas 驱动）** | `GraphPages.swift` + `ArchCanvasView` | ⬜ 未开始（依赖 B1 的 Canvas 内核） | P1 |
+| B2 | **代码图谱页** | `CodeGraphPage.swift`（1156 行）+ `CodeGraphHeatmap.swift`（693 行） | 🟡 **批 E2 已接两栏（顶栏 + 列表树 + 详情三页签 源码/置信度/关系）+ 搜索 + 生成/导出 + 分数 + 截断披露**；**热力图模式留批 E3**（mac 的热力图是左栏的另一种模式，不是第三栏） | **P0** → 剩 E3 |
+| B3 | **符号热力图（treemap → 力导向气泡，Canvas 驱动）** | `CodeGraphHeatmap.swift`（693 行，核心算法 ~380 行） | ⬜ 未开始（B1 的 Canvas 内核已就位，批 E3 做） | P1 |
 | B4 | **补丁体检（diff → 置信度 → 人工标注）** | `GraphPages.swift` 补丁段 | ⬜ 未开始 | P1 |
-| B5 | **关系树（`graph tree`）** | `GraphService.loadTree` | ⬜ 未开始 | P1 |
-| B6 | **函数级图谱 + 置信度**（`graph functions` / `graph confidence`） | `GraphService.loadFunctions` | ⬜ 未开始 | P1 |
+| B5 | **关系树（`graph tree`）** | `GraphService.loadTree` | 🟢 批 E2 已接（三源之一 → 文件/目录/符号树骨架，排序/汇总/可见行都在 `logic/CodeGraphBuild`） | ~~P1~~ 已完成 |
+| B6 | **函数级图谱 + 置信度**（`graph functions` / `graph confidence`） | `GraphService.loadFunctions` | 🟢 批 E2 已接（函数级疑点归属到符号、置信度孤儿疑点归属到文件、置信度总分与语法树降级说明、详情页「置信度」页签） | ~~P1~~ 已完成 |
 | B7 | **固定文档页** | `DocsPages.swift`（321 行） | ⬜ 未开始 | P2 |
 | B8 | **四语言本地化（全应用接入）** | `L10n.swift`（2108 行） | ⬜ 未开始（deepin 现无 i18n；引擎侧 CLI 已双语） | P2（量大） |
 | B9 | **原生菜单栏三件套（关于/帮助/设置）+ 设置统一为系统原生窗口** | `DeepDolphinApp.swift` | 🟡 deepin 有托盘菜单与设置页签，但非「原生独立设置窗口」 | P2 |

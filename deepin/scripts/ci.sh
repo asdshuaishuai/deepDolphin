@@ -233,9 +233,26 @@ arch_need "$SRC/src/ui/dialogs/ArchDialog.cpp" 'project != m_project' '架构图
 arch_need "$SRC/src/ai/AgentCore.cpp" 'AgentToolPlan::planFor' 'AgentCore 经工具表执行'
 arch_need "$SRC/src/logic/AgentToolPlan.cpp" 'knownToolNames' '工具表有权威清单出口'
 arch_need "$SRC/src/main.cpp" '--agent-tool-names' '客户端能无头打印工具清单（契约对位用）'
+
+# 代码图谱链路：取数（三源）→ 判定（合成 + 可见行）→ 接线（详情页入口 → 面板 → 窗）
+arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("graph"\), *QStringLiteral\("tree"\)' 'AppModel 调引擎 graph tree 取文件骨架'
+arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("graph"\), *QStringLiteral\("confidence"\)' 'AppModel 调引擎 graph confidence 取置信度'
+arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("graph"\), *QStringLiteral\("functions"\)' 'AppModel 调引擎 graph functions 取函数级图谱'
+arch_need "$SRC/src/app/AppModel.h" 'loadCodeGraph' 'AppModel 暴露 loadCodeGraph'
+arch_need "$SRC/src/app/AppModel.h" 'genIndex' 'AppModel 暴露 genIndex（生成）'
+arch_need "$SRC/src/app/AppModel.h" 'exportIndex' 'AppModel 暴露 exportIndex（导出）'
+arch_need "$SRC/src/logic/CodeGraphBuild.cpp" 'symbolId' '判定层有符号 id 构造式（与引擎同形）'
+arch_need "$SRC/src/logic/CodeGraphBuild.cpp" 'visibleRows' '判定层有可见行算法（搜索 + 展开态）'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'CodeGraphBuild::visibleRows' '代码图谱窗的可见性以判定层为准'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'ArchCanvasWidget|CodeGraphBuild' '代码图谱窗用代码图谱数据层'
+arch_need "$SRC/src/ui/pages/ProjectDetailPage.cpp" 'codeGraphRequested' '详情页发 codeGraphRequested'
+arch_need "$SRC/src/ui/PanelWindow.cpp" '&ProjectDetailPage::codeGraphRequested' 'PanelWindow 接了代码图谱入口'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'showCodeGraph' 'PanelWindow 有开代码图谱窗的动作'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'CodeGraphDialog' 'PanelWindow 用的是代码图谱窗'
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \
-         src/ui/ArchCanvasWidget.cpp src/ui/dialogs/ArchDialog.cpp; do
+         src/logic/CodeGraphBuild.cpp src/ui/ArchCanvasWidget.cpp \
+         src/ui/dialogs/ArchDialog.cpp src/ui/dialogs/CodeGraphDialog.cpp; do
     if ! grep -qF "$f" "$SRC/CMakeLists.txt"; then
         echo "  ✗ 构建未登记：$f" >&2
         ARCH_FAIL=1

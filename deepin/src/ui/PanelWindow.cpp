@@ -22,6 +22,7 @@
 #include "dialogs/AiResultDialog.h"
 #include "dialogs/AiSettingsDialog.h"
 #include "dialogs/ArchDialog.h"
+#include "dialogs/CodeGraphDialog.h"
 #include "../app/Settings.h"
 #include "dialogs/ScanDialog.h"
 #include "dialogs/panes/AutomationPane.h"
@@ -265,6 +266,9 @@ void PanelWindow::wirePages()
     // 架构图：独立窗承载（项目名在入口锁定）
     connect(m_detail, &ProjectDetailPage::archRequested, this,
         [this](const QString &p) { showArch(p); });
+    // 代码图谱：独立窗承载（项目名在入口锁定）
+    connect(m_detail, &ProjectDetailPage::codeGraphRequested, this,
+        [this](const QString &p) { showCodeGraph(p); });
     connect(m_detail, &ProjectDetailPage::updateMenuRequested, this, [this] {
         const UpdateScope scope = scopeFromSelection(m_model->selection());
         QMenu menu(this);
@@ -728,6 +732,24 @@ void PanelWindow::showArch(const QString &project)
     if (!dlg) {
         dlg = new ArchDialog(project, m_model, this);
         connect(dlg, &ArchDialog::openExportedFile, this, [](const QString &path) {
+            SysOpen::openUrl(QUrl::fromLocalFile(path));
+        });
+    }
+    dlg->show();
+    dlg->raise();
+    dlg->activateWindow();
+}
+
+void PanelWindow::showCodeGraph(const QString &project)
+{
+    if (project.isEmpty())
+        return;
+    // 按项目各一个窗（与架构图窗同理）：重复点入口叫醒已有窗口，
+    // 不叠第二个（两个窗抢同一份图谱状态会让人搞不清谁在显示什么）。
+    QPointer<CodeGraphDialog> &dlg = m_codeGraphDialogs[project];
+    if (!dlg) {
+        dlg = new CodeGraphDialog(project, m_model, this);
+        connect(dlg, &CodeGraphDialog::openExportedFile, this, [](const QString &path) {
             SysOpen::openUrl(QUrl::fromLocalFile(path));
         });
     }

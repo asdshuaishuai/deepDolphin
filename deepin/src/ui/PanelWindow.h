@@ -31,6 +31,7 @@ class AiResultDialog;
 class AiSettingsDialog;
 class AgentDialog;
 class ArchDialog;
+class CodeGraphDialog;
 class TrayController;
 
 DWIDGET_USE_NAMESPACE
@@ -69,6 +70,7 @@ private:
     void showSettings();
     void showAgentDialog();  // AI 助手（范围跟随 selection；成员复用防 worker 悬垂）
     void showArch(const QString &project); // 架构图窗（按项目各一个；单仓库在入口锁定）
+    void showCodeGraph(const QString &project); // 代码图谱窗（按项目各一个）
     void showBrief(const QString &project, const QString &titleOverride = QString()); // AI 说明（worker 生成；未配置 → 诚实降级）
     void confirmBulkUpdate(bool deep);
     void runUpdateForScope(bool deep);
@@ -98,6 +100,8 @@ private:
     AgentDialog *m_agent = nullptr; // AI 助手（成员复用：worker 回调不悬垂）
     // 架构图窗：按项目各一个（mac 同款单仓库锁定 —— 仓库在入口定，窗内不切）。
     QHash<QString, QPointer<ArchDialog>> m_archDialogs;
+    // 代码图谱窗：按项目各一个（与架构图窗同理）。
+    QHash<QString, QPointer<CodeGraphDialog>> m_codeGraphDialogs;
     QPointer<AiResultDialog> m_digestDialog; // 「更新 + AI 摘要」结果窗（busy → 正文/错误）
 
     Selection m_selection;

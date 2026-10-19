@@ -561,6 +561,110 @@ void AppModel::exportArch(const QString &name)
         });
 }
 
+// 代码图谱：引擎三源（graph tree / confidence / functions）→ 一棵树。
+// 三个命令**并行**取（互不依赖），合成的规则在 logic/CodeGraphBuild（纯函数层）。
+void AppModel::loadCodeGraph(const QString &name)
+{
+    m_codeGraphStates[name] = { LoadState::loading, QString() };
+    emit codeGraphChanged(name);
+
+    auto tree = std::make_shared<QJsonObject>();
+    auto conf = std::make_shared<QJsonObject>();
+    auto fns = std::make_shared<QJsonObject>();
+    auto errs = std::make_shared<QStringList>();
+    auto done = std::make_shared<int>(0);
+
+    // 三源齐了才合成 —— 少一源就说清缺哪一源（合成器会点名）。
+    const auto finish = [this, name, tree, conf, fns, errs, done]() {
+        if (*done < 3)
+            return;
+        if (!errs->isEmpty()) {
+            m_codeGraphStates[name] = { LoadState::failed, errs->join(QStringLiteral("；")) };
+            emit codeGraphChanged(name);
+            return;
+        }
+        CodeGraphBuild::Source src;
+        src.tree = *tree;
+        src.confidence = *conf;
+        src.functions = *fns;
+        const CodeGraphBuild::Result r = CodeGraphBuild::build(src, name);
+        if (!r.ok) {
+            m_codeGraphStates[name] = { LoadState::failed, r.error };
+            emit codeGraphChanged(name);
+            return;
+        }
+        m_codeGraphs[name] = r;
+        m_codeGraphStates[name] = { LoadState::loaded, QString() };
+        emit codeGraphChanged(name);
+    };
+
+    const auto grab = [this, name, done, errs, finish](const QString &label,
+                        std::shared_ptr<QJsonObject> slot, const QStringList &args) {
+        m_cli->callJson(args, EngineTimeouts::Graph,
+            [name, label, done, errs, finish, slot](const EngineCli::EngineResult &res) {
+                if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                    errs->append(QStringLiteral("%1：%2")
+                                     .arg(label,
+                                         res.ok() ? QStringLiteral("输出不是 JSON 对象")
+                                                  : res.error.userMessage()));
+                } else {
+                    *slot = res.payload->object();
+                }
+                *done += 1;
+                finish();
+            });
+    };
+
+    grab(QStringLiteral("图树"), tree,
+        { QStringLiteral("graph"), QStringLiteral("tree"), name, QStringLiteral("--depth"),
+            QStringLiteral("8"), QStringLiteral("--json") });
+    grab(QStringLiteral("置信度"), conf,
+        { QStringLiteral("graph"), QStringLiteral("confidence"), name,
+            QStringLiteral("--json") });
+    grab(QStringLiteral("函数级图谱"), fns,
+        { QStringLiteral("graph"), QStringLiteral("functions"), name,
+            QStringLiteral("--json") });
+}
+
+// 生成索引 + 置信度：引擎 index gen --stats + confidence gen（写库/落盘）。
+// 两个都是**回执型**命令（stdout 是人话）→ 走 Text 契约。
+void AppModel::genIndex(const QString &name)
+{
+    m_cli->callText({ QStringLiteral("index"), QStringLiteral("gen"), name,
+                        QStringLiteral("--stats") },
+        EngineTimeouts::Deep, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok()) {
+                emit archActionFinished(false, name, res.error.userMessage());
+                return;
+            }
+            const QString first = res.stdOut.trimmed();
+            // 索引生成完还要算置信度（`confidence gen` 才是最终结论，回执取它）
+            m_cli->callText({ QStringLiteral("confidence"), QStringLiteral("gen"), name },
+                EngineTimeouts::Deep, [this, name, first](const EngineCli::EngineResult &r2) {
+                    if (!r2.ok()) {
+                        emit archActionFinished(false, name, r2.error.userMessage());
+                        return;
+                    }
+                    emit archActionFinished(true, name, r2.stdOut.trimmed().isEmpty()
+                        ? first : r2.stdOut.trimmed());
+                    loadCodeGraph(name); // 数据全换了 → 重载
+                });
+        });
+}
+
+// 导出交互 HTML：引擎 render index --confidence（落盘单文件 HTML —— 引擎层交付物）。
+void AppModel::exportIndex(const QString &name)
+{
+    m_cli->callText({ QStringLiteral("render"), QStringLiteral("index"), name,
+                        QStringLiteral("--confidence") },
+        EngineTimeouts::Deep, [this, name](const EngineCli::EngineResult &res) {
+            emit archActionFinished(res.ok(), name, res.ok() ? res.stdOut.trimmed()
+                                                             : res.error.userMessage());
+        });
+}
+
+// 代码图谱页的回执与架构图页共用一个信号（都是「引擎跑完给一句话」）。
+
 // ── 更新动作 ──
 
 void AppModel::runUpdate(const QString &name, bool deep)

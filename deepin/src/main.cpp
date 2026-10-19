@@ -17,6 +17,7 @@
 #include "platform/AppService.h"
 #include "platform/CrashHandler.h"
 #include "logic/AgentToolPlan.h"
+#include "logic/CodeGraphBuild.h"
 #include "logic/Liveness.h"
 #include "logic/Route.h"
 #include "tray/TrayController.h"
@@ -257,6 +258,22 @@ int main(int argc, char *argv[])
     }
     if (rawArgs.contains(QStringLiteral("--version"))) {
         fprintf(stdout, "deepDolphin %s\n", DD_VERSION_STRING);
+        return 0;
+    }
+    if (rawArgs.contains(QStringLiteral("--code-graph-symbol-id"))) {
+        // 客户端的符号 id 构造式（与引擎 functions 侧同形）。
+        // 契约检查拿它与引擎实际给的 id 逐条比对 —— 构造式一改，关系页签就
+        // 永远对不上「调用方/被调方」，而症状极隐蔽（树能画、关系是空的）。
+        // 用法：--code-graph-symbol-id <路径> <行号> <名字>
+        const int at = rawArgs.indexOf(QStringLiteral("--code-graph-symbol-id"));
+        if (at + 3 >= rawArgs.size()) {
+            fprintf(stderr, "用法：deepDolphin --code-graph-symbol-id <路径> <行号> <名字>\n");
+            return 2;
+        }
+        const QString id = CodeGraphBuild::symbolId(rawArgs.at(at + 1),
+            rawArgs.at(at + 2).toInt(), rawArgs.at(at + 3));
+        fprintf(stdout, "%s\n", qPrintable(id));
+        fflush(stdout);
         return 0;
     }
     if (rawArgs.contains(QStringLiteral("--agent-tool-names"))) {
