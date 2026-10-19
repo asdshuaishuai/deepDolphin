@@ -19,6 +19,7 @@
 #include "../models/DocsEnvelope.h"
 #include "../models/GitOpResponse.h"
 #include "../logic/CodeGraphBuild.h"
+#include "../logic/GraphInsight.h"
 #include "../models/GraphScene.h"
 #include "../models/Milestone.h"
 #include "../models/PatchReport.h"
@@ -211,6 +212,34 @@ public:
     /// Layer 2 任务书（引擎 graph patchconf --skill）：给人/模型看的 markdown。
     void loadPatchSkill(const QString &name);
 
+    // ── 图谱三件套（引擎 graph overview / symbol / impact）──
+    LoadStateBox insightState(const QString &name) const
+    {
+        return m_insightStates.value(name);
+    }
+    const GraphInsight::Overview *overviewFor(const QString &name) const
+    {
+        auto it = m_overviews.constFind(name);
+        return it == m_overviews.constEnd() ? nullptr : &it.value();
+    }
+    const GraphInsight::SymbolDetail *symbolDetailFor(const QString &name,
+        const QString &symbolName) const
+    {
+        auto it = m_symbolDetails.constFind(name + QLatin1Char('\n') + symbolName);
+        return it == m_symbolDetails.constEnd() ? nullptr : &it.value();
+    }
+    const GraphInsight::Impact *impactFor(const QString &name, const QString &symbolName) const
+    {
+        auto it = m_impacts.constFind(name + QLatin1Char('\n') + symbolName);
+        return it == m_impacts.constEnd() ? nullptr : &it.value();
+    }
+    /// 项目级概览（引擎 graph overview）。
+    void loadOverview(const QString &name);
+    /// 符号详情（引擎 graph symbol）。⚠ 引擎**只认符号名**，不认符号 id。
+    void loadSymbolDetail(const QString &name, const QString &symbolName);
+    /// 影响面（引擎 graph impact）。⚠ 同上，只认符号名。
+    void loadImpact(const QString &name, const QString &symbolName);
+
 signals:
     void projectsChanged();
     void dashboardChanged();
@@ -228,6 +257,10 @@ signals:
     void patchCheckChanged(const QString &name);
     void patchMerged(const QString &name);
     void patchSkillReady(const QString &name, const QString &text);
+    /// 图谱三件套的结果就绪（都带项目名；符号级的额外带符号名）。
+    void overviewChanged(const QString &name);
+    void symbolDetailChanged(const QString &name, const QString &symbolName);
+    void impactChanged(const QString &name, const QString &symbolName);
     void gitOutputReady(const QString &name, const GitOpResponse &resp);
     void scanFinished(bool ok, const QString &message, const QString &coverageNote);
     void addFinished(bool ok, const QString &message);
@@ -288,6 +321,11 @@ private:
     QMap<QString, PatchLayer1> m_patchLayers;
     QMap<QString, PatchMerged> m_patchMerged;
     QMap<QString, QJsonObject> m_patchRawPayload; ///< 引擎给的原始载荷（合并终稿要原样回写）
+    QMap<QString, LoadStateBox> m_insightStates;
+    QMap<QString, GraphInsight::Overview> m_overviews;
+    /// 符号级结果按「项目\n符号名」存（同一项目不同符号各自一份）。
+    QMap<QString, GraphInsight::SymbolDetail> m_symbolDetails;
+    QMap<QString, GraphInsight::Impact> m_impacts;
     QMap<QString, QString> m_projectLoadErrors;
 
     QString m_lastError;

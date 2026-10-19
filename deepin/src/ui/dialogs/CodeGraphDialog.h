@@ -53,6 +53,10 @@ private:
     void onModeChanged(int id);
     void onHeatNodeSelected(int nodeIdx);
     void onHeatDrillChanged(int nodeIdx);
+    void onOverviewChanged(const QString &name);
+    void onSymbolDetail(const QString &name, const QString &symbolName);
+    void onImpact(const QString &name, const QString &symbolName);
+    void showImpact();
     void updateHeatBreadcrumb();
     void showDetail();
     void showSource();
@@ -85,6 +89,11 @@ private:
     CodeHighlighter *m_highlighter = nullptr;
     QTreeWidget *m_findings = nullptr;
     QTreeWidget *m_relations = nullptr;
+    /// 关系页签的另外两段：引用来源（graph symbol）与影响面（graph impact）
+    QTreeWidget *m_refs = nullptr;
+    QTreeWidget *m_impact = nullptr;
+    QLabel *m_impactNote = nullptr;
+    QLabel *m_overview = nullptr;
     FlatButton *m_tabSource = nullptr;
     FlatButton *m_tabConfidence = nullptr;
     FlatButton *m_tabRelation = nullptr;

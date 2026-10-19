@@ -8,6 +8,7 @@
 #include "../logic/DocPages.h"
 #include "../logic/DocumentIntegrity.h"
 #include "../logic/GraphToken.h"
+#include "../logic/GraphInsight.h"
 #include "../logic/HeatLayout.h"
 #include "../logic/PatchCheck.h"
 #include "../logic/SyntaxHighlight.h"
@@ -2007,6 +2008,94 @@ int SelfCheck::run(QStringList &log)
                 SyntaxHighlight::highlight(QString(), QStringLiteral("c")).isEmpty()
                     && SyntaxHighlight::highlight(QStringLiteral("   "), QStringLiteral("c"))
                            .isEmpty());
+        }
+    }
+
+    // ── 图谱三件套（overview / symbol / impact）──
+    // 判据盯三处「错得毫无声响」的口径：
+    //   ① 引擎**只认符号名** —— 传符号 id 进去它返回空结果，看着像「没有影响面」
+    //   ② 符号不存在**不是错误**（引擎返回空 defs 且退出码 0）
+    //   ③ 影响面是**词法近似**（引擎自己标 granularity）+ 可能被截断
+    {
+        check(log, "图谱三件套：符号 id 取名字（引擎只认名字，传 id 会返回空结果）",
+            GraphInsight::symbolNameFromId(QStringLiteral("f:src/util.c:1:compute"))
+                == QStringLiteral("compute")
+                && GraphInsight::symbolNameFromId(QStringLiteral("f:src/a:b.c:7:worker"))
+                    == QStringLiteral("worker")
+                && GraphInsight::symbolNameFromId(QStringLiteral("nosuchshape")).isEmpty());
+
+        {
+            const QString kOv = QStringLiteral(R"JSON({
+  "root": "/tmp/x", "files": 3, "symbols": 4,
+  "topFiles": [{"path": "src/util.c", "symbols": 3, "lines": 12},
+               {"path": "src/main.c", "symbols": 1, "lines": 5}],
+  "imports": 0, "referenceEdges": 1,
+  "truncated": true, "skipped": 2, "oversizeSkipped": 1,
+  "byLang": {"c": 3}, "byKind": {"func": 4},
+  "unreadableDirs": ["a/b"], "unreadableDirsTruncated": true
+})JSON");
+            const GraphInsight::Overview ov
+                = GraphInsight::parseOverview(QJsonDocument::fromJson(kOv.toUtf8()).object());
+            check(log, "图谱三件套：概览解析（计数 / Top 文件 / 语言 / 种类 / 截断披露）",
+                ov.ok && ov.files == 3 && ov.symbols == 4 && ov.referenceEdges == 1
+                    && ov.topFiles.size() == 2 && ov.topFiles.at(0).file == QStringLiteral("src/util.c")
+                    && ov.topFileSymbols.at(0) == 3 && ov.topFileLines.at(0) == 12
+                    && ov.byLang.value(QStringLiteral("c")) == 3
+                    && ov.byKind.value(QStringLiteral("func")) == 4
+                    && ov.truncated && ov.skipped == 2 && ov.oversizeSkipped == 1
+                    && ov.unreadableDirs.size() == 1 && ov.unreadableDirsTruncated);
+        }
+        {
+            // 契约形状不对 → 报错（不当空结果放行）
+            const GraphInsight::Overview bad
+                = GraphInsight::parseOverview(QJsonObject());
+            check(log, "图谱三件套：概览契约形状不对时报错", !bad.ok && !bad.error.isEmpty());
+        }
+        {
+            const QString kSym = QStringLiteral(R"JSON({
+  "name": "compute",
+  "defs": [{"file": "src/util.c", "line": 1, "kind": "func"}],
+  "referencedBy": [{"file": "src/main.c", "weight": 1}]
+})JSON");
+            const GraphInsight::SymbolDetail sd
+                = GraphInsight::parseSymbol(QJsonDocument::fromJson(kSym.toUtf8()).object());
+            check(log, "图谱三件套：符号详情解析（定义点 / 引用来源）",
+                sd.ok && sd.found() && sd.name == QStringLiteral("compute")
+                    && sd.defs.size() == 1 && sd.defs.at(0).file == QStringLiteral("src/util.c")
+                    && sd.defs.at(0).line == 1 && sd.referencedBy.size() == 1
+                    && sd.referencedBy.at(0).file == QStringLiteral("src/main.c")
+                    && sd.referencedBy.at(0).weight == 1);
+        }
+        {
+            // ② 符号不存在：引擎返回空 defs 且**退出码 0** —— 不是契约坏了，是「没找到」
+            const QString kMiss = QStringLiteral(R"JSON({"name": "nosuchsym", "defs": []})JSON");
+            const GraphInsight::SymbolDetail miss
+                = GraphInsight::parseSymbol(QJsonDocument::fromJson(kMiss.toUtf8()).object());
+            check(log, "图谱三件套：符号不存在是「没找到」不是错误（ok 仍为真、found 为假）",
+                miss.ok && !miss.found() && miss.name == QStringLiteral("nosuchsym"));
+        }
+        {
+            const QString kImp = QStringLiteral(R"JSON({
+  "name": "compute",
+  "defs": [{"file": "src/util.c", "line": 1, "kind": "func"}],
+  "refFiles": ["src/main.c"],
+  "impactedSymbols": [{"file": "src/main.c", "symbol": "main", "kind": "func"}],
+  "granularity": "lexical-file-level",
+  "refFilesCapped": true, "impactedCapped": false
+})JSON");
+            const GraphInsight::Impact im
+                = GraphInsight::parseImpact(QJsonDocument::fromJson(kImp.toUtf8()).object());
+            check(log, "图谱三件套：影响面解析（受影响符号 / 引用文件 / 粒度 / 截断）",
+                im.ok && im.impactedSymbols.size() == 1
+                    && im.impactedSymbols.at(0).symbol == QStringLiteral("main")
+                    && im.impactedSymbols.at(0).file == QStringLiteral("src/main.c")
+                    && im.refFiles.size() == 1 && im.refFiles.at(0) == QStringLiteral("src/main.c")
+                    && im.granularity == QStringLiteral("lexical-file-level")
+                    && im.capped() && im.refFilesCapped && !im.impactedCapped);
+        }
+        {
+            const GraphInsight::Impact bad = GraphInsight::parseImpact(QJsonObject());
+            check(log, "图谱三件套：影响面契约形状不对时报错", !bad.ok && !bad.error.isEmpty());
         }
     }
 

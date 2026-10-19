@@ -316,6 +316,22 @@ arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'new CodeHighlighter' '代�
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_highlighter->setLanguage' '高亮语言跟着选中项走'
 arch_need "$SRC/src/main.cpp" 'syntax-languages' '无头 flag 暴露语言清单（契约门第 16 组用）'
 arch_need "$SRC/src/app/SelfCheck.cpp" 'SyntaxHighlight::highlight' 'SelfCheck 覆盖高亮分类'
+
+# 图谱三件套链路：判定（GraphInsight：id→名字 / overview / symbol / impact）→
+#   取数（引擎 graph overview / symbol / impact）→ 接线（代码图谱页关系页签 + 页头概览）
+# ⚠ 引擎的 symbol / impact **只认符号名**：传 id 它返回空结果，看着像「没有影响面」。
+arch_need "$SRC/src/logic/GraphInsight.cpp" 'symbolNameFromId' '判定层有「id 取名字」（引擎只认名字）'
+arch_need "$SRC/src/logic/GraphInsight.cpp" 'parseOverview' '判定层有概览解析'
+arch_need "$SRC/src/logic/GraphInsight.cpp" 'parseSymbol' '判定层有符号详情解析'
+arch_need "$SRC/src/logic/GraphInsight.cpp" 'parseImpact' '判定层有影响面解析'
+arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("overview"\)' 'AppModel 调引擎 graph overview'
+arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("impact"\)' 'AppModel 调引擎 graph impact'
+arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("symbol"\)' 'AppModel 调引擎 graph symbol'
+# ⚠ 盯**调用点**而不是方法名：方法定义还在时 grep 照样命中（这是第四次同类漏洞）。
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '^[[:space:]]*showImpact\(\);[[:space:]]*$' '关系页签真的调用了影响面（不是只定义了方法）'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'GraphInsight::symbolNameFromId' '界面按名字问引擎（不传 id）'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'loadOverview' '页头接了项目级概览'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'GraphInsight::symbolNameFromId' 'SelfCheck 覆盖 id→名字'
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \
          src/logic/CodeGraphBuild.cpp src/ui/ArchCanvasWidget.cpp \
@@ -323,7 +339,8 @@ for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToo
          src/logic/HeatLayout.cpp src/ui/HeatmapWidget.cpp \
          src/logic/PatchCheck.cpp src/ui/dialogs/PatchCheckDialog.cpp \
          src/logic/DocPages.cpp src/ui/dialogs/DocsDialog.cpp \
-         src/logic/SyntaxHighlight.cpp src/ui/CodeHighlighter.cpp; do
+         src/logic/SyntaxHighlight.cpp src/ui/CodeHighlighter.cpp \
+         src/logic/GraphInsight.cpp; do
     if ! grep -qF "$f" "$SRC/CMakeLists.txt"; then
         echo "  ✗ 构建未登记：$f" >&2
         ARCH_FAIL=1

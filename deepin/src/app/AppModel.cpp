@@ -842,6 +842,83 @@ void AppModel::mergePatchCheck(const QString &name, const QJsonObject &agentPayl
         });
 }
 
+// ── 图谱三件套（引擎 graph overview / symbol / impact）──
+
+void AppModel::loadOverview(const QString &name)
+{
+    m_insightStates[name] = { LoadState::loading, QString() };
+    emit overviewChanged(name);
+    m_cli->callJson({ QStringLiteral("graph"), QStringLiteral("overview"), name,
+                        QStringLiteral("--json") },
+        EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                m_insightStates[name] = { LoadState::failed,
+                    res.ok() ? QStringLiteral("图谱概览输出不是 JSON 对象")
+                             : res.error.userMessage() };
+                emit overviewChanged(name);
+                return;
+            }
+            const GraphInsight::Overview ov = GraphInsight::parseOverview(res.payload->object());
+            if (!ov.ok) {
+                m_insightStates[name] = { LoadState::failed, ov.error };
+                emit overviewChanged(name);
+                return;
+            }
+            m_overviews[name] = ov;
+            m_insightStates[name] = { LoadState::loaded, QString() };
+            emit overviewChanged(name);
+        });
+}
+
+void AppModel::loadSymbolDetail(const QString &name, const QString &symbolName)
+{
+    const QString key = name + QLatin1Char('\n') + symbolName;
+    m_cli->callJson({ QStringLiteral("graph"), QStringLiteral("symbol"), name, symbolName,
+                        QStringLiteral("--json") },
+        EngineTimeouts::Graph, [this, name, symbolName, key](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                m_insightStates[name] = { LoadState::failed,
+                    res.ok() ? QStringLiteral("图谱符号输出不是 JSON 对象")
+                             : res.error.userMessage() };
+                emit symbolDetailChanged(name, symbolName);
+                return;
+            }
+            const GraphInsight::SymbolDetail sd
+                = GraphInsight::parseSymbol(res.payload->object());
+            if (!sd.ok) {
+                m_insightStates[name] = { LoadState::failed, sd.error };
+                emit symbolDetailChanged(name, symbolName);
+                return;
+            }
+            m_symbolDetails[key] = sd;
+            emit symbolDetailChanged(name, symbolName);
+        });
+}
+
+void AppModel::loadImpact(const QString &name, const QString &symbolName)
+{
+    const QString key = name + QLatin1Char('\n') + symbolName;
+    m_cli->callJson({ QStringLiteral("graph"), QStringLiteral("impact"), name, symbolName,
+                        QStringLiteral("--json") },
+        EngineTimeouts::Graph, [this, name, symbolName, key](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                m_insightStates[name] = { LoadState::failed,
+                    res.ok() ? QStringLiteral("图谱影响面输出不是 JSON 对象")
+                             : res.error.userMessage() };
+                emit impactChanged(name, symbolName);
+                return;
+            }
+            const GraphInsight::Impact im = GraphInsight::parseImpact(res.payload->object());
+            if (!im.ok) {
+                m_insightStates[name] = { LoadState::failed, im.error };
+                emit impactChanged(name, symbolName);
+                return;
+            }
+            m_impacts[key] = im;
+            emit impactChanged(name, symbolName);
+        });
+}
+
 void AppModel::loadPatchSkill(const QString &name)
 {
     // --skill 输出的**不是 JSON**，是给 agent/人看的 markdown 任务书 → 走 Text 契约。

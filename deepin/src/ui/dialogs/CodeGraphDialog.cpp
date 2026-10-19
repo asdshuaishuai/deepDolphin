@@ -3,6 +3,7 @@
 #include "../../app/AppModel.h"
 #include "../../logic/ArchReceipt.h"
 #include "../../logic/CodeGraphBuild.h"
+#include "../../logic/GraphInsight.h"
 #include "../../logic/HeatLayout.h"
 #include "../../models/CodeGraph.h"
 #include "../DesignTokens.h"
@@ -95,6 +96,8 @@ CodeGraphDialog::CodeGraphDialog(const QString &projectName, AppModel *model, QW
     });
     top->addWidget(exportBtn);
 
+    m_overview = new SecondaryLabel(QString(), content);
+    top->addWidget(m_overview);
     m_score = new SecondaryLabel(QString(), content);
     top->addWidget(m_score);
     v->addLayout(top);
@@ -288,6 +291,29 @@ CodeGraphDialog::CodeGraphDialog(const QString &projectName, AppModel *model, QW
     m_relations->header()->setSectionResizeMode(2, QHeaderView::Stretch);
     rv->addWidget(m_relations, 1);
 
+    // ── 引用来源（引擎 graph symbol：谁引用了它）──
+    auto *refTitle = new QLabel(QStringLiteral("引用来源（引擎 graph symbol）"), right);
+    refTitle->setFont(DS::font(DS::FontT::sectionTitle));
+    rv->addWidget(refTitle);
+    m_refs = new QTreeWidget(right);
+    m_refs->setColumnCount(2);
+    m_refs->setHeaderLabels({ QStringLiteral("文件"), QStringLiteral("权重") });
+    m_refs->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    rv->addWidget(m_refs);
+
+    // ── 影响面（引擎 graph impact：改它会波及谁）──
+    auto *impTitle = new QLabel(QStringLiteral("影响面（引擎 graph impact）"), right);
+    impTitle->setFont(DS::font(DS::FontT::sectionTitle));
+    rv->addWidget(impTitle);
+    m_impact = new QTreeWidget(right);
+    m_impact->setColumnCount(2);
+    m_impact->setHeaderLabels({ QStringLiteral("受影响的符号"), QStringLiteral("位置") });
+    m_impact->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+    rv->addWidget(m_impact);
+    m_impactNote = new SecondaryLabel(QString(), right);
+    m_impactNote->setWordWrap(true);
+    rv->addWidget(m_impactNote);
+
     split->addWidget(right);
     split->setStretchFactor(0, 2);
     split->setStretchFactor(1, 3);
@@ -301,6 +327,11 @@ CodeGraphDialog::CodeGraphDialog(const QString &projectName, AppModel *model, QW
             if (name == m_project)
                 refreshData();
         });
+        // 图谱三件套（overview / symbol / impact）
+        connect(m_model, &AppModel::overviewChanged, this, &CodeGraphDialog::onOverviewChanged);
+        connect(m_model, &AppModel::symbolDetailChanged, this,
+            &CodeGraphDialog::onSymbolDetail);
+        connect(m_model, &AppModel::impactChanged, this, &CodeGraphDialog::onImpact);
         // 生成/导出的回执与架构图页共用一个信号（都是「引擎跑完给一句话」）
         connect(m_model, &AppModel::archActionFinished, this,
             [this](bool ok, const QString &project, const QString &receipt) {
@@ -315,6 +346,9 @@ CodeGraphDialog::CodeGraphDialog(const QString &projectName, AppModel *model, QW
     }
 
     reload();
+    // 项目级概览（引擎 graph overview）—— 与三源一起取，页头显示文件/符号/语言数
+    if (m_model)
+        m_model->loadOverview(m_project);
 }
 
 void CodeGraphDialog::reload()
@@ -554,6 +588,9 @@ void CodeGraphDialog::showDetail()
     m_source->hide();
     m_findings->hide();
     m_relations->hide();
+    m_refs->hide();
+    m_impact->hide();
+    m_impactNote->hide();
     if (!g || m_selected < 0) {
         m_detailTitle->setText(QStringLiteral("未选中节点"));
         return;
@@ -581,7 +618,11 @@ void CodeGraphDialog::showDetail()
         break;
     case DetailTab::relation:
         m_relations->show();
+        m_refs->show();
+        m_impact->show();
+        m_impactNote->show();
         showRelation();
+        showImpact();
         break;
     }
 }
@@ -669,6 +710,120 @@ void CodeGraphDialog::showRelation()
         auto *it = new QTreeWidgetItem(m_relations);
         it->setText(0, QStringLiteral("（没有调用关系 —— 引擎的调用边是词法近似，可能漏）"));
     }
+}
+
+void CodeGraphDialog::onOverviewChanged(const QString &name)
+{
+    if (name != m_project || !m_overview)
+        return;
+    const GraphInsight::Overview *ov = m_model ? m_model->overviewFor(m_project) : nullptr;
+    if (!ov || !ov->ok) {
+        m_overview->setText(QString());
+        return;
+    }
+    QString text = QStringLiteral("文件 %1 · 符号 %2").arg(ov->files).arg(ov->symbols);
+    if (!ov->byLang.isEmpty()) {
+        QStringList langs;
+        for (auto it = ov->byLang.constBegin(); it != ov->byLang.constEnd(); ++it)
+            langs << QStringLiteral("%1 %2").arg(it.key()).arg(it.value());
+        langs.sort();
+        text += QStringLiteral(" · 语言 ") + langs.join(QStringLiteral("、"));
+    }
+    // 截断披露（概览被截断时不能装作完整）
+    if (ov->truncated)
+        text += QStringLiteral(" · 已截断");
+    if (ov->skipped > 0)
+        text += QStringLiteral(" · 跳过 %1").arg(ov->skipped);
+    if (ov->oversizeSkipped > 0)
+        text += QStringLiteral(" · 超限跳过 %1").arg(ov->oversizeSkipped);
+    if (!ov->unreadableDirs.isEmpty())
+        text += QStringLiteral(" · 读不到 %1 个目录").arg(ov->unreadableDirs.size());
+    m_overview->setText(text);
+}
+
+void CodeGraphDialog::onSymbolDetail(const QString &name, const QString &symbolName)
+{
+    if (name != m_project)
+        return;
+    const GraphInsight::SymbolDetail *sd
+        = m_model ? m_model->symbolDetailFor(m_project, symbolName) : nullptr;
+    if (!sd)
+        return;
+    m_refs->clear();
+    if (!sd->found()) {
+        // 引擎对不存在的符号返回空 defs 且退出码 0 —— 那不是契约坏了，是「没找到」。
+        auto *it = new QTreeWidgetItem(m_refs);
+        it->setText(0, QStringLiteral("（引擎没找到符号「%1」）").arg(sd->name));
+        return;
+    }
+    for (const GraphInsight::Ref &r : sd->referencedBy) {
+        auto *it = new QTreeWidgetItem(m_refs);
+        it->setText(0, r.file);
+        it->setText(1, QString::number(r.weight));
+    }
+    if (sd->referencedBy.isEmpty()) {
+        auto *it = new QTreeWidgetItem(m_refs);
+        it->setText(0, QStringLiteral("（没有引用来源）"));
+    }
+}
+
+void CodeGraphDialog::onImpact(const QString &name, const QString &symbolName)
+{
+    if (name != m_project)
+        return;
+    const GraphInsight::Impact *im = m_model ? m_model->impactFor(m_project, symbolName) : nullptr;
+    if (!im)
+        return;
+    m_impact->clear();
+    for (const GraphInsight::Impacted &i : im->impactedSymbols) {
+        auto *it = new QTreeWidgetItem(m_impact);
+        it->setText(0, i.symbol);
+        it->setText(1, QStringLiteral("%1（%2）").arg(i.file, i.kind));
+    }
+    if (im->impactedSymbols.isEmpty()) {
+        auto *it = new QTreeWidgetItem(m_impact);
+        it->setText(0, QStringLiteral("（引擎没算出受影响符号）"));
+    }
+    // 粒度与截断必须披露：影响面是**词法近似**，不是真正的调用图
+    QString note;
+    if (!im->granularity.isEmpty())
+        note = QStringLiteral("粒度：%1").arg(im->granularity);
+    if (im->capped())
+        note += QStringLiteral(" · 已截断");
+    if (!im->refFiles.isEmpty())
+        note += QStringLiteral(" · 引用文件 %1 个").arg(im->refFiles.size());
+    m_impactNote->setText(note);
+}
+
+void CodeGraphDialog::showImpact()
+{
+    m_refs->clear();
+    m_impact->clear();
+    m_impactNote->clear();
+    const CodeGraphBuild::Result *g = m_model ? m_model->codeGraphFor(m_project) : nullptr;
+    if (!g || m_selected < 0)
+        return;
+    const GraphNode &n = g->graph.nodes.at(m_selected);
+    if (n.kind != GraphNodeKind::sym) {
+        m_impactNote->setText(QStringLiteral("影响面只对符号有效"));
+        return;
+    }
+    // ⚠ 引擎的 graph symbol / graph impact **只认符号名**：传符号 id 进去它返回
+    //   空结果 —— 看着像「没有影响面」，其实是有影响面的（客户端明明持有 id）。
+    const QString symName = GraphInsight::symbolNameFromId(n.id);
+    if (symName.isEmpty()) {
+        m_impactNote->setText(QStringLiteral("这个符号的标识认不出，问不了引擎"));
+        return;
+    }
+    if (m_model) {
+        if (!m_model->symbolDetailFor(m_project, symName))
+            m_model->loadSymbolDetail(m_project, symName);
+        if (!m_model->impactFor(m_project, symName))
+            m_model->loadImpact(m_project, symName);
+    }
+    // 已有结果先渲染（切回来时不用等）
+    onSymbolDetail(m_project, symName);
+    onImpact(m_project, symName);
 }
 
 void CodeGraphDialog::showError(const QString &text)

@@ -472,5 +472,55 @@ print(json.dumps({'tree': t, 'client': [x for x in rest.splitlines() if x.strip(
         "$LANG_JSON"
 fi
 
+# 17. 图谱三件套（引擎 graph overview / symbol / impact）。
+#     关键一条：**引擎的 symbol / impact 只认「符号名」** —— 传符号 id
+#     （f:路径:行号:名字）进去，引擎返回空结果。那空结果看着像「这个符号没有
+#     影响面」，其实是有影响面的（客户端明明持有 id，却传错了形态）。
+#     这条陷阱钉在契约层，客户端那侧也有对应判据（logic/GraphInsight 的
+#     symbolNameFromId）。
+OV_JSON="$("$BIN" graph overview atlas --json 2>/dev/null)"
+SYM_JSON="$("$BIN" graph symbol atlas compute --json 2>/dev/null)"
+IMP_JSON="$("$BIN" graph impact atlas compute --json 2>/dev/null)"
+# 传**符号 id**（而不是名字）→ 引擎给空结果
+IMP_BY_ID_JSON="$("$BIN" graph impact atlas 'f:src/util.c:1:compute' --json 2>/dev/null)"
+# 符号不存在 → 引擎返回空 defs 且**退出码 0**（不是错误）
+SYM_MISS_JSON="$("$BIN" graph symbol atlas nosuchsym --json 2>/dev/null)"
+SYM_MISS_RC=0
+"$BIN" graph symbol atlas nosuchsym --json >/dev/null 2>&1 || SYM_MISS_RC=$?
+if [ -z "$OV_JSON" ] || [ -z "$SYM_JSON" ] || [ -z "$IMP_JSON" ]; then
+    echo "  ✗ 第 17 组前提：引擎没吐出三件套的载荷" >&2
+    fail=$((fail+1))
+else
+    check "图谱 overview：root/files/symbols/topFiles/byLang/byKind 齐全" \
+        "all(k in d for k in ['root','files','symbols','topFiles','byLang','byKind'])" \
+        "$OV_JSON"
+    check "图谱 overview：截断披露键恒发（truncated/skipped/oversizeSkipped/unreadableDirs）" \
+        "all(k in d for k in ['truncated','skipped','oversizeSkipped','unreadableDirs','unreadableDirsTruncated'])" \
+        "$OV_JSON"
+    check "图谱 symbol：defs 与 referencedBy 键在，且 defs 每项带 file/line/kind" \
+        "all(k in d for k in ['name','defs','referencedBy']) and all(set(['file','line','kind']) <= set(x.keys()) for x in d['defs'])" \
+        "$SYM_JSON"
+    check "图谱 impact：impactedSymbols/refFiles/granularity/两个 capped 键在" \
+        "all(k in d for k in ['name','defs','refFiles','impactedSymbols','granularity','refFilesCapped','impactedCapped'])" \
+        "$IMP_JSON"
+    check "图谱 impact：受影响符号每项带 file/symbol/kind" \
+        "all(set(['file','symbol','kind']) <= set(x.keys()) for x in d.get('impactedSymbols',[]))" \
+        "$IMP_JSON"
+    check "图谱 impact：**传符号名才有结果**（引擎只认名字）" \
+        "len(d.get('impactedSymbols',[])) > 0" \
+        "$IMP_JSON"
+    check "图谱 impact：传符号 id 返回**空结果**（客户端必须先取名字，否则看着像「无影响面」）" \
+        "len(d.get('impactedSymbols',[])) == 0 and len(d.get('defs',[])) == 0" \
+        "$IMP_BY_ID_JSON"
+    check "图谱 symbol：符号不存在时返回空 defs 且**退出码 0**（是「没找到」不是错误）" \
+        "d.get('defs') == [] and d.get('name') == 'nosuchsym'" \
+        "$SYM_MISS_JSON"
+    if [ "$SYM_MISS_RC" -eq 0 ]; then
+        echo "  ✓ 图谱 symbol：符号不存在的退出码是 0（不是错误退出）"; pass=$((pass+1))
+    else
+        echo "  ✗ 图谱 symbol：符号不存在的退出码是 $SYM_MISS_RC（应为 0）" >&2; fail=$((fail+1))
+    fi
+fi
+
 echo "──── contract-check: $pass passed, $fail failed ────"
 [ "$fail" -eq 0 ]
