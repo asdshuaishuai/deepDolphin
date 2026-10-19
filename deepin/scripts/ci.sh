@@ -143,6 +143,23 @@ if ! printf '%s\n' "$PROBE_OUT" | grep -q '^backend='; then
     echo "✗ platform-probe 输出缺 backend= 行" >&2
     exit 1
 fi
+# ⚠ 后端分档（批 V · M1-7）：探针必须报得出「X11 / Wayland / Other」。
+#   报不出来 = 平台差异没有可见面 ⇒ 真机回归时「这台机器跑的是哪套后端」没人知道。
+BACKEND_KIND="$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^backendKind=//p')"
+case "$BACKEND_KIND" in
+    x11|wayland|other) ;;
+    *)
+        echo "✗ platform-probe 的 backendKind= 缺失或不是 x11/wayland/other（得到 '$BACKEND_KIND'）" >&2
+        exit 1
+        ;;
+esac
+# ⚠ 任务栏几何（批 V · M1-7）：四边边距必须是四个整数（面板占位是平台事实，
+#   看不见就等于没有 —— Wayland 分支要靠它接 `org.deepin.dde.Panel`）。
+TASKBAR_INSETS="$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^taskbarInsets=//p')"
+if ! printf '%s' "$TASKBAR_INSETS" | grep -Eq '^[0-9]+,[0-9]+,[0-9]+,[0-9]+$'; then
+    echo "✗ platform-probe 的 taskbarInsets= 缺失或不是四个整数（得到 '$TASKBAR_INSETS'）" >&2
+    exit 1
+fi
 # ⚠ 图标解析（批 U · M1-2）：**有图标主题时**，每个逻辑图标都必须解析得到。
 #   解析不到 = 候选链没覆盖该主题的名字 ⇒ 界面上那个位置是占位圆点 ⇒ 得加候选。
 #   没有图标主题时（offscreen / 极简环境）一律报 `none` 不报 `missing`，

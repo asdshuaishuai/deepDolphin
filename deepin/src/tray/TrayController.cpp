@@ -2,6 +2,7 @@
 #include "TrayGeometry.h"
 #include "TrayPopupWindow.h"
 #include "../logic/SemColors.h"
+#include "../platform/Backend.h"
 #include <QApplication>
 #include <QMenu>
 #include <QPainter>
@@ -121,7 +122,9 @@ void TrayController::onActivated(QSystemTrayIcon::ActivationReason reason)
     case QSystemTrayIcon::Trigger: // 左键 → 弹速览
         if (m_popup) {
             emit refreshLightRequested(); // onShow 轻刷新
-            m_popup->popupNear(m_icon->geometry());
+            // 托盘几何经平台层取（**已判可用性**）：Wayland 上托盘由合成器托管，
+            // `QSystemTrayIcon::geometry()` 常是无效矩形 ⇒ 直接拿去定位会让弹窗飞到屏幕左上。
+            m_popup->popupNear(platform::trayIconGeometry(m_icon));
         }
         break;
     case QSystemTrayIcon::Context: // 右键 → 菜单（setContextMenu 已接管）

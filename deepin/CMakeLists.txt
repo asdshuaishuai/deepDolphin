@@ -78,6 +78,7 @@ add_executable(deepDolphin
     src/ai/ToolArgs.cpp
     # ── logic/：纯函数判定层（零 GUI 依赖）──
     src/logic/CommitTypeComposition.cpp
+    src/logic/Backend.cpp
     src/logic/DashboardScope.cpp
     src/logic/DashFilter.cpp
     src/logic/Derived.cpp
@@ -111,6 +112,7 @@ add_executable(deepDolphin
     # ── platform/ ──
     src/platform/AppService.cpp
     src/platform/AutostartManager.cpp
+    src/platform/Backend.cpp
     src/platform/Canvas2D.cpp
     src/platform/CrashHandler.cpp
     src/platform/IconResolver.cpp

@@ -6,6 +6,7 @@
 #include <QHash>
 #include "../logic/AgentToolPlan.h"
 #include "../logic/ArchReceipt.h"
+#include "../logic/Backend.h"
 #include "../logic/CanvasFont.h"
 #include "../logic/CodeGraphBuild.h"
 #include "../logic/DashFilter.h"
@@ -32,6 +33,7 @@
 #include "../logic/Router.h"
 #include "../logic/ShortcutMap.h"
 #include "../logic/Thresholds.h"
+#include "../tray/TrayGeometry.h"
 #include "../models/ContextEnvelope.h"
 #include "../models/DashboardData.h"
 #include "../models/DocsEnvelope.h"
@@ -791,6 +793,120 @@ int SelfCheck::run(QStringList &log)
         // 未知逻辑名必须**认出来**（而不是静默给个空图标）。
         check(log, "图标候选链：未知逻辑名不被当成已知（会报缺失）",
             !IconNames::isKnown(QStringLiteral("__不存在的逻辑名__")));
+    }
+
+    // ── 12c. 平台后端判定（批 V · M1-7）─────────────────────────────
+    // 判定层纯函数（QGuiApplication 构造前可跑）：后端分档 / 激活动作计划 /
+    // 任务栏边距 / 托盘弹窗落点。
+    // ⚠ 平台层（`platform/Backend`）那层要碰 QWidget/QScreen，判据落不到
+    //   ⇒ 由探针（backendKind）+ 接线门守；这里锁的是**结论**。
+    {
+        // ── 后端分档：token 边界是重点 ──
+        // ⚠ 朴素前缀比较会把 "mywayland" / "xwayland" 也判成 Wayland ⇒
+        //   走错激活动作分支（Wayland 分支不调 raise、只发 requestActivate）。
+        check(log, "平台后端：X11 认得 xcb（含 xcb- 变体）",
+            Backend::classify(QStringLiteral("xcb")) == Backend::Kind::X11
+                && Backend::classify(QStringLiteral("xcb-glx")) == Backend::Kind::X11);
+        check(log, "平台后端：Wayland 认得 wayland（含 wayland- 变体）",
+            Backend::classify(QStringLiteral("wayland")) == Backend::Kind::Wayland
+                && Backend::classify(QStringLiteral("wayland-egl")) == Backend::Kind::Wayland);
+        check(log, "平台后端：分档带 token 边界（名字后面不是连字符就不算命中）",
+            Backend::classify(QStringLiteral("mywayland")) == Backend::Kind::Other
+                && Backend::classify(QStringLiteral("xwayland")) == Backend::Kind::Other
+                && Backend::classify(QStringLiteral("myxcb")) == Backend::Kind::Other
+                // ⚠ 这两个是**分叉夹具**：朴素前缀比较会把它们误判成 Wayland / X11。
+                //   只测 mywayland 这类**朴素比较也判对**的名字 ⇒ 判据与错误实现
+                //   不分叉 ⇒ 去掉边界照样绿（负控实测，第十八次同类问题）。
+                && Backend::classify(QStringLiteral("waylandland")) == Backend::Kind::Other
+                && Backend::classify(QStringLiteral("xcbfoo")) == Backend::Kind::Other);
+        check(log, "平台后端：认不出的后端归 Other（不是硬套 X11）",
+            Backend::classify(QStringLiteral("offscreen")) == Backend::Kind::Other
+                && Backend::classify(QStringLiteral("minimal")) == Backend::Kind::Other
+                && Backend::classify(QString()) == Backend::Kind::Other);
+        check(log, "平台后端：分档名与枚举一一对应（探针按名字报告）",
+            Backend::kindName(Backend::Kind::X11) == QStringLiteral("x11")
+                && Backend::kindName(Backend::Kind::Wayland) == QStringLiteral("wayland")
+                && Backend::kindName(Backend::Kind::Other) == QStringLiteral("other"));
+
+        // ── 激活动作计划：三条分支必须真的不同 ──
+        const Backend::Activation planX11 = Backend::activationFor(Backend::Kind::X11);
+        const Backend::Activation planWl = Backend::activationFor(Backend::Kind::Wayland);
+        const Backend::Activation planOther = Backend::activationFor(Backend::Kind::Other);
+        // ⚠ 最小化恢复**三条分支都要**：`show()` 不会恢复最小化窗口（实测）⇒
+        //   不恢复 = 面板被最小化后从托盘叫醒「点了跟没点一样」。
+        check(log, "窗口激活：三种后端都要先恢复最小化态（show() 拉不回最小化窗口）",
+            planX11.restoreIfMinimized && planWl.restoreIfMinimized
+                && planOther.restoreIfMinimized);
+        check(log, "窗口激活：Wayland 走 requestActivate（activateWindow 在 Wayland 不可靠）",
+            !planX11.requestActivate && planWl.requestActivate);
+        check(log, "窗口激活：Wayland 不调 raise（合成器管叠放次序，raise 是空操作）",
+            planX11.raiseWindow && !planWl.raiseWindow);
+
+        // ── 托盘几何可用性 ──
+        check(log, "托盘几何：宽高为 0 或负即不可用（Wayland 常给无效矩形）",
+            !Backend::trayGeometryUsable(QRect())
+                && !Backend::trayGeometryUsable(QRect(0, 0, 0, 0))
+                && !Backend::trayGeometryUsable(QRect(0, 0, -1, 20))
+                && Backend::trayGeometryUsable(QRect(1880, 5, 20, 20)));
+
+        // ── 任务栏几何 ──
+        const Backend::Insets ins = Backend::reservedInsets(QRect(0, 0, 1920, 1080),
+                                                            QRect(0, 30, 1920, 970));
+        check(log, "任务栏几何：整屏与可用区的差就是被占掉的边（顶栏 30 + 任务栏 80）",
+            ins.left == 0 && ins.top == 30 && ins.right == 0 && ins.bottom == 80);
+        const Backend::Insets noPanel = Backend::reservedInsets(QRect(0, 0, 1920, 1080),
+                                                               QRect(0, 0, 1920, 1080));
+        check(log, "任务栏几何：没有面板时四边边距全为 0", noPanel.isEmpty());
+
+        // ── 托盘弹窗落点 ──
+        // ⚠ **参数从托盘域 token 取**（不在这儿另抄一份数）：判据要锁的是**算法**
+        //   （落点不越界、托盘几何不可用时落屏幕右上），不是某个具体数值；
+        //   数值另抄一份 = 两个出处 = 改一处忘另一处。
+        const Backend::PopupGeometry geo = popupGeometry();
+        const QRect avail(0, 30, 1920, 970); // 顶栏 30 + 任务栏 80
+
+        // ⚠ **右边缘溢出**（本批修的真缺陷）：托盘在屏幕右上角时，弹窗右边缘 =
+        //   图标右边缘 + dockGap ⇒ 旧实现会跑出屏幕右边。
+        // ⚠ 断言里带**边距**（不只「不越界」）：只断言不越界 ⇒ 去掉「留边距那一夹」
+        //   而留着「硬夹紧兜底」时照样绿（负控实测，第十八次同类问题）。
+        const Backend::PopupPlacement corner = Backend::placePopup(
+            QRect(1898, 5, 20, 20), QSize(380, 300), avail, geo);
+        check(log, "托盘弹窗：托盘在屏幕右上角时右边缘不溢出可用区",
+            corner.usedTrayGeometry && corner.rect.right() <= avail.right() - geo.edgeMargin);
+        // 弹窗与可用区**等高** ⇒ 上下两条边都得在可用区内。
+        //   ⚠ 夹紧顺序是 下 → 左 → 上：上边那一夹把弹窗推下去后，底边就出去了
+        //   ⇒ 还得再硬夹一次。只夹一边会漏（负控实测）。
+        const Backend::PopupPlacement flush = Backend::placePopup(
+            QRect(1898, 5, 20, 20), QSize(380, 970), avail, geo);
+        check(log, "托盘弹窗：弹窗与可用区等高时上下都还在可用区内",
+            flush.rect.top() >= avail.top() && flush.rect.bottom() <= avail.bottom());
+        // ⚠ **顶部溢出**：弹窗比可用区高时，顶部不能跑出屏幕（旧实现标题栏被切掉）。
+        const Backend::PopupPlacement tall = Backend::placePopup(
+            QRect(10, 5, 20, 20), QSize(380, 2000), avail, geo);
+        check(log, "托盘弹窗：弹窗比可用区高时顶部不溢出可用区",
+            tall.rect.top() >= avail.top());
+        // 通用不变量：放得下就整个落在可用区内。
+        const Backend::PopupPlacement normal = Backend::placePopup(
+            QRect(1000, 200, 20, 20), QSize(380, 300), avail, geo);
+        check(log, "托盘弹窗：落点四边都在可用区内",
+            normal.rect.left() >= avail.left() && normal.rect.right() <= avail.right()
+                && normal.rect.top() >= avail.top() && normal.rect.bottom() <= avail.bottom());
+        // 托盘在屏幕**最左边** ⇒ 弹窗左边缘要被推回可用区内。
+        // ⚠ 这条单独钉：左边那一夹在上面的用例里**根本没被触发**（图标在中间），
+        //   没触发的分支等于没测（改了也不会红）。
+        const Backend::PopupPlacement leftEdge = Backend::placePopup(
+            QRect(0, 200, 20, 20), QSize(380, 300), avail, geo);
+        check(log, "托盘弹窗：托盘在屏幕最左边时左边缘不溢出可用区",
+            leftEdge.rect.left() >= avail.left() && leftEdge.clamped);
+        // 托盘几何不可用 ⇒ 落屏幕右上（PLAN §8 T4），并**明说**没用托盘几何。
+        const Backend::PopupPlacement fallback = Backend::placePopup(
+            QRect(), QSize(380, 300), avail, geo);
+        check(log, "托盘弹窗：托盘几何不可用时落屏幕右上（并标记没用托盘几何）",
+            !fallback.usedTrayGeometry && fallback.rect.right() == avail.right() + geo.fallbackDx
+                && fallback.rect.top() == avail.top() + geo.fallbackDy);
+        // 夹紧是**可见事实**：越界时标记为真，不越界时为假。
+        check(log, "托盘弹窗：越界时标记被夹紧（夹紧不是静默修正）",
+            corner.clamped && !normal.clamped);
     }
 
     // ── 13. FlatButton 契约（M3b 组件三）：padding 一档与双态叠加（纯函数层）──

@@ -1,6 +1,7 @@
 #include "TrayPopupWindow.h"
 #include "TrayGeometry.h"
 #include "../logic/SemColors.h"
+#include "../platform/Backend.h"
 #include "../ui/DesignTokens.h"
 #include "../ui/common/BusyRow.h"
 #include "../ui/common/FlatButton.h"
@@ -10,7 +11,6 @@
 #include <QLabel>
 #include <QPainter>
 #include <QPainterPath>
-#include <QScreen>
 #include <QVBoxLayout>
 
 TrayPopupWindow::TrayPopupWindow(QWidget *parent)
@@ -112,31 +112,13 @@ void TrayPopupWindow::refreshFrom(const TraySnapshot &snapshot)
 void TrayPopupWindow::popupNear(const QRect &trayIconGeometry)
 {
     adjustSize();
-    QRect target;
-    QScreen *screen = QGuiApplication::screenAt(trayIconGeometry.center());
-    if (!screen && QGuiApplication::primaryScreen())
-        screen = QGuiApplication::primaryScreen();
-    const QRect avail = screen ? screen->availableGeometry()
-                               : QRect(0, 0, 1280, 720);
-    if (trayIconGeometry.isValid()) {
-        target.moveCenter(trayIconGeometry.center());
-        target.moveLeft(trayIconGeometry.right() - width() + TrayGeometry::dockGap);
-        target.moveTop(trayIconGeometry.bottom() + TrayGeometry::dockGap);
-    } else {
-        // 取不到托盘几何 → 屏幕右上（PLAN §8 T4）
-        target.moveTopRight(avail.topRight()
-            + QPoint(TrayGeometry::fallbackDx, TrayGeometry::fallbackDy));
-    }
-    target.setWidth(width());
-    target.setHeight(height());
-    if (target.bottom() > avail.bottom())
-        target.moveBottom(avail.bottom() - TrayGeometry::edgeMargin);
-    if (target.left() < avail.left())
-        target.moveLeft(avail.left() + TrayGeometry::dockGap);
+    // 落点收口到平台层（M1-7）：几何算法在判定层（`logic/Backend`），
+    // 屏幕可用区在这里取（平台层），定位参数出自托盘域 token（`TrayGeometry`）。
+    const QRect target = platform::trayPopupTarget(trayIconGeometry, size(), popupGeometry());
     move(target.topLeft());
-    show();
-    raise();
-    activateWindow();
+    // 激活动作也收口到平台层：**这里以前是 show/raise/activateWindow 三连**，
+    // 最小化态下 show() 拉不回来（点了跟没点一样）——平台层统一处理。
+    platform::activate(this);
 }
 
 void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)

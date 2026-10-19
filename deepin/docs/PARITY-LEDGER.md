@@ -299,7 +299,7 @@ deepin 用 **tailwind 固定色值**（`#10B981` / `#F59E0B` / `#9CA3AF` …）�
 |---|---|---|
 | M1-2 | 统一 `platform::icon()`（fallback 链 + 缺失告警 + DDciIcon 优先） | ✅ **批 U 已做**：判定层 `logic/IconNames`（`enum class Id` 27 个逻辑图标 → **候选名链**，唯一出处）+ 平台层 `platform/IconResolver`（**DDci → 主题 → qrc 染色 → 缺失告警 + 占位**）；**11 处**散落的 `QIcon::fromTheme` 全改走统一入口；**删掉零调用点的 `IconLoader`（170 行死代码）**。探针实测：27 个逻辑图标 **8 个走 DDci / 19 个走主题 / 0 个解析不到**（bloom 主题）；离屏（无图标主题）27 个全 `none`、0 告警。**视觉零变化**（基线逐字节未变） |
 | M1-3 | 托盘迁移 SNI | ⬜ |
-| M1-7 | `platform/Backend` 平台层 | ⬜ |
+| M1-7 | `platform/Backend` 平台层 | ✅ **批 V 已做**：判定层 `logic/Backend`（纯结论：`enum class Kind {X11,Wayland,Other}` + `classify()` **带 token 边界** / `activationFor()` / `reservedInsets()` / `placePopup()` / `trayGeometryUsable()`）+ 平台层 `platform/Backend`（`activate()` / `availableGeometryAt()` / `taskbarInsetsAt()` / `trayIconGeometry()` / `trayPopupTarget()`）；**8 处**散落的 `show/raise/activateWindow` 收编成**一个入口**；**修掉真缺陷**：`show()` 不恢复最小化窗口（实测）⇒ 最小化态从托盘叫不醒面板；托盘弹窗**右/上两边**旧实现不夹紧 ⇒ 右上角托盘时溢出屏幕 |
 | M1-8 | Wayland 分支 | ⬜ |
 | M2-5 | i18n | ⬜（与 B8 合并做更省） |
 | M2-7 | deb 打包 | 🟡 **批 S 已做**（`scripts/build-deb.sh` + 依赖清单 `scripts/deb-deps.txt` + **依赖清单↔二进制实际 DT_NEEDED 双向校验** + CI 第 11 门）；⚠ **真机 clean deepin 25 容器验收未跑**（本机无 docker/podman）—— D7 的最终验收仍待真机 |
@@ -341,6 +341,24 @@ D2 门里的四条 `fix` 豁免（`Derived` / `TrayController` / `TrayPopupWindo
 **因命中归零而删掉** —— 门本来就会红（`fix` 模式「归零即红」），是它在逼着收敛。
 **取值一字未改** → 视觉零变化。
 ⚠ **剩下的跨端取值差异不在本批**，见 D.1 节。
+
+### E.1c 平台后端差异（批 V 照出 —— **两处真缺陷 + 三个平台事实**）
+
+批 V（M1-7）把「后端分档 / 窗口激活 / 托盘弹窗定位 / 任务栏几何」收进平台层时，
+**实测**（不是推理）照出两处真缺陷：
+
+| 缺陷 | 实测结论 | 影响的用户动作 | 修法 |
+| --- | --- | --- | --- |
+| **最小化的窗口叫不醒** | `QWidget::show()` **不恢复**最小化窗口 —— 离屏与 xcb **两种后端实测**，`show()` 之后 `windowState()` 仍带 `WindowMinimized` | 面板被最小化后，从托盘点「打开面板」**点了跟没点一样** | 激活前**只摘最小化位**：`setWindowState(state & ~Qt::WindowMinimized)`。⚠ **不能用 `showNormal()`** —— 实测它**顺带清掉最大化位**（`WindowMaximized` → `WindowNoState`）⇒ 用户最大化着的面板会被打回普通大小 |
+| **托盘弹窗两处越界** | 旧实现只夹**下边与左边** | 托盘在屏幕**右上角**（DDE 顶栏的托盘就在那儿）⇒ 弹窗右边缘 = 图标右边缘 + `dockGap` ⇒ **溢出屏幕右边**；弹窗比可用区还高 ⇒ **顶部溢出**（标题栏被切掉） | 四边都夹；**边距只在越界时生效**（无条件留边距会把弹窗从托盘图标底下推下来十几像素） |
+
+三个平台事实（探针实测，写在这里备查）：
+
+- `QRect` 表达不出「宽 0 但有效」的矩形 ⇒ `isValid()` 与 `width()>0 && height()>0` **语义等价**。
+  （这条是负控的教训：拿 `isValid()` 替换 `w>0&&h>0` 的变异**抓不住任何东西**。）
+- **`raise()` 在 Wayland 上是空操作**（叠放次序由合成器决定）⇒ Wayland 分支不调它。
+- xcb 会话下**任务栏占 41px**（`taskbarInsets=0,0,0,41`）—— 这正是 M1-8 要用的那组数
+  （Wayland 侧 QPA 未必扣面板 ⇒ 要问 `org.deepin.dde.Panel`）。
 
 ---
 

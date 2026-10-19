@@ -16,10 +16,12 @@
 #include "app/Settings.h"
 #include "app/Version.h"
 #include "platform/AppService.h"
+#include "platform/Backend.h"
 #include "platform/CrashHandler.h"
 #include "platform/IconResolver.h"
 #include "logic/AgentToolPlan.h"
 #include "logic/ArchReceipt.h"
+#include "logic/Backend.h"
 #include "logic/CodeGraphBuild.h"
 #include "logic/EngineConfig.h"
 #include "logic/EngineDoctor.h"
@@ -41,6 +43,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QEventLoop>
+#include <QScreen>
 #include <QSystemTrayIcon>
 #include <QThread>
 #include <QTimer>
@@ -252,6 +255,23 @@ static int headlessPlatformProbe(int argc, char *argv[])
         app.setOrganizationName(QStringLiteral("deepin"));
 
         fprintf(stdout, "backend=%s\n", qPrintable(QGuiApplication::platformName()));
+
+        // 后端分档（批 V · M1-7）：平台名 → X11 / Wayland / Other。
+        // ⚠ 只报告不断言（离屏是 offscreen ⇒ other）：断言归 CI 门与 SelfCheck。
+        //   报出来的意义：真机回归时能一眼看出「这台机器跑的是哪套后端」，
+        //   激活动作与托盘弹窗定位的差异都挂在这个分档上。
+        fprintf(stdout, "backendKind=%s\n", qPrintable(Backend::kindName(platform::current())));
+
+        // 任务栏几何（批 V · M1-7）：屏幕被面板/任务栏占掉的四边边距。
+        // ⚠ 现在是**只读事实**（X11/DDE 下 availableGeometry 已扣掉面板）；
+        //   Wayland 下 QPA 未必扣 ⇒ 这行是 M1-8 接 `org.deepin.dde.Panel` 的输入口。
+        {
+            QScreen *prim = QGuiApplication::primaryScreen();
+            const QPoint anchor = prim ? prim->geometry().center() : QPoint(0, 0);
+            const Backend::Insets ins = platform::taskbarInsetsAt(anchor);
+            fprintf(stdout, "taskbarInsets=%d,%d,%d,%d\n", ins.left, ins.top, ins.right,
+                ins.bottom);
+        }
 
         // 托盘 geometry：先置可见才有平台集成可言；真机托盘嵌入是异步的（毫秒级），
         // 自旋泵事件等它变有效（上限 500ms）；offscreen 无系统托盘，等满 500ms 后

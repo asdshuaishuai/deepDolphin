@@ -9,6 +9,7 @@
 #include "../logic/Derived.h"
 #include "../logic/Router.h"
 #include "../logic/ShortcutMap.h"
+#include "../platform/Backend.h"
 #include "../platform/SysOpen.h"
 #include "../tray/TrayController.h"
 #include "DesignTokens.h"
@@ -738,9 +739,7 @@ void PanelWindow::showAgentDialog()
     } else {
         m_agent->retarget(target);
     }
-    m_agent->show();
-    m_agent->raise();
-    m_agent->activateWindow();
+    platform::activate(m_agent);
 }
 
 void PanelWindow::showArch(const QString &project)
@@ -756,9 +755,7 @@ void PanelWindow::showArch(const QString &project)
             SysOpen::openUrl(QUrl::fromLocalFile(path));
         });
     }
-    dlg->show();
-    dlg->raise();
-    dlg->activateWindow();
+    platform::activate(dlg);
 }
 
 void PanelWindow::showCodeGraph(const QString &project)
@@ -774,9 +771,7 @@ void PanelWindow::showCodeGraph(const QString &project)
             SysOpen::openUrl(QUrl::fromLocalFile(path));
         });
     }
-    dlg->show();
-    dlg->raise();
-    dlg->activateWindow();
+    platform::activate(dlg);
 }
 
 void PanelWindow::showPatchCheck(const QString &project)
@@ -789,9 +784,7 @@ void PanelWindow::showPatchCheck(const QString &project)
     if (!dlg) {
         dlg = new PatchCheckDialog(project, m_model, this);
     }
-    dlg->show();
-    dlg->raise();
-    dlg->activateWindow();
+    platform::activate(dlg);
 }
 
 void PanelWindow::showDocs(int kindIndex)
@@ -803,9 +796,7 @@ void PanelWindow::showDocs(int kindIndex)
             SysOpen::openUrl(QUrl(url));
         });
     }
-    m_docsDialog->show();
-    m_docsDialog->raise();
-    m_docsDialog->activateWindow();
+    platform::activate(m_docsDialog);
     Q_UNUSED(kindIndex); // 类别由窗内分段切换决定，入口只负责把窗叫醒
 }
 
@@ -890,9 +881,7 @@ void PanelWindow::showSettings()
         connect(m_settings->automationPane(), &AutomationPane::autoHoursChanged, m_model,
             &AppModel::restartAutoTimer); // 改完立即生效（不经过保存按钮）
     }
-    m_settings->show();
-    m_settings->raise();
-    m_settings->activateWindow();
+    platform::activate(m_settings);
 }
 
 void PanelWindow::showRouteNotice(const QString &text)
@@ -1015,9 +1004,7 @@ TraySnapshot PanelWindow::traySnapshot() const
 
 void PanelWindow::bringToFront()
 {
-    show();
-    raise();
-    activateWindow();
+    platform::activate(this);
 }
 
 void PanelWindow::closeEvent(QCloseEvent *event)

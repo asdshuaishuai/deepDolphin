@@ -10,6 +10,8 @@
 //   只添间接层；画布/外环/内芯这三个有「尺寸身份」的量才进 token。
 #pragma once
 
+#include "../logic/Backend.h"
+
 namespace TrayGeometry {
 
 // ── 速览弹窗（TrayPopupWindow）──
@@ -36,3 +38,18 @@ constexpr int iconRingInset = 4;  // 外环内缩（直径 = canvas − 2×inset
 constexpr int iconCoreInset = 11; // 内芯内缩（直径 = canvas − 2×inset = 10）
 
 } // namespace TrayGeometry
+
+/// 弹窗定位参数（把上面四个 token 打包成判定层的入参形状）。
+///
+/// ⚠ **这四个数只有这一处出处**：判定层（`logic/Backend`）只管「拿到这组数之后
+///   怎么落」，不拥有数值 —— 两处各写一份，改一处忘另一处就是「弹窗贴着屏幕边」
+///   这种没人说得清来源的毛病。
+constexpr Backend::PopupGeometry popupGeometry()
+{
+    Backend::PopupGeometry g;
+    g.dockGap = TrayGeometry::dockGap;
+    g.edgeMargin = TrayGeometry::edgeMargin;
+    g.fallbackDx = TrayGeometry::fallbackDx;
+    g.fallbackDy = TrayGeometry::fallbackDy;
+    return g;
+}

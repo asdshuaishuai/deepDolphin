@@ -101,6 +101,29 @@ arch_forbid() { # arch_forbid <文件> <正则> <说明>
         echo "  ✓ $label"
     fi
 }
+# arch_forbid_tree：盯「**整个源码树**里不该有的东西」。
+# ⚠ 为什么不能只用单文件版 arch_forbid：同一个散落模式会出现在**另一个文件**里
+#   （面板收编了、弹窗还留着）—— 单文件门全绿，毛病还在。
+# ⚠ 必须剥注释再匹配：注释里提一嘴就红 ⇒ 门被「说明文字」顶替
+#   （与「同名/子串互相顶替」同款，已累计 16 次）。
+arch_forbid_tree() { # arch_forbid_tree <正则> <说明> <允许存在的文件…>
+    local re="$1" label="$2"; shift 2
+    ARCH_N=$((ARCH_N + 1))
+    local allow=" $* "
+    local bad=""
+    for f in $(cd "$SRC" && find src \( -name '*.cpp' -o -name '*.h' \) | sort); do
+        case "$allow" in *" $f "*) continue ;; esac
+        if strip_comments "$SRC/$f" | grep -E -- "$re" >/dev/null; then
+            bad="$bad $f"
+        fi
+    done
+    if [ -n "$bad" ]; then
+        echo "  ✗ $label：这些文件里还有 $re ——$bad" >&2
+        ARCH_FAIL=1
+    else
+        echo "  ✓ $label"
+    fi
+}
 arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("graph"\).*QStringLiteral\("arch"\)' 'AppModel 调引擎 graph arch 取场景'
 arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("scene"\)' '场景按 scene 契约格式取（--format scene）'
 arch_need "$SRC/src/app/AppModel.h" '\bloadScene\b' 'AppModel 暴露 loadScene'
@@ -588,6 +611,57 @@ arch_need "$SRC/src/main.cpp" '--hook-status-parse"' '无头入口可验钩子�
 arch_need "$SRC/src/app/SelfCheck.cpp" '\bEngineHook::parseStatus\b' 'SelfCheck 覆盖钩子判定层'
 arch_forbid "$SRC/src/ui/dialogs/panes/AutomationPane.cpp" '\bEngineCli\b' '界面不自己调引擎（经 AppModel）'
 
+# ── 批 V · M1-7 平台层（后端分档 / 窗口激活 / 托盘弹窗定位 / 任务栏几何）─────
+# 这一段盯的是**收口**类改动：光有「统一入口在」不够，还得盯住
+#   ① 旧的散落写法**真的没了**（收敛类改动没有正向条目能抓）；
+#   ② 平台层**真的调判定层**（不是自己又算一遍）；
+#   ③ 判据/探针**真的接上了**（结论可离线测、动作有可见面）。
+arch_need "$SRC/src/logic/Backend.h" 'namespace Backend [{]' '平台判定层有自己的命名空间'
+# ⚠ token 边界：`enum class Kind` 后面必须跟 `{` —— 少了它，`enum class KindX`
+#   照样被匹配（第十六次「子串互相顶替」的同款形态）。
+arch_need "$SRC/src/logic/Backend.h" 'enum class Kind [{]' '平台判定层有后端分档枚举'
+arch_need "$SRC/src/logic/Backend.cpp" 'Kind classify\(const QString &platformName\)' '后端分档判定有唯一入口'
+arch_need "$SRC/src/logic/Backend.h" 'Activation activationFor\(Kind kind\)' '激活动作计划有唯一入口'
+arch_need "$SRC/src/logic/Backend.h" 'Insets reservedInsets\(const QRect &screen, const QRect &available\)' '任务栏边距有唯一入口'
+arch_need "$SRC/src/logic/Backend.h" 'PopupPlacement placePopup\(' '托盘弹窗落点有唯一入口'
+arch_need "$SRC/src/logic/Backend.cpp" 'bool trayGeometryUsable\(const QRect &trayIconGeometry\)' '托盘几何可用性有唯一入口'
+
+arch_need "$SRC/src/platform/Backend.h" 'using BackendKind = ::Backend::Kind;' '平台层用别名引用判定层分档（不重名遮蔽）'
+arch_need "$SRC/src/platform/Backend.cpp" 'void activate\(QWidget \*w\)' '平台层有窗口激活入口'
+# ⚠ **盯住具体那一行**：最小化恢复就靠这一行（`show()` 拉不回最小化窗口）。
+#   盯「函数在」不够 —— 函数在而这一行没了，缺陷照样复发。
+arch_need "$SRC/src/platform/Backend.cpp" '& ~Qt::WindowMinimized' '激活入口会先摘掉最小化位（show() 拉不回最小化窗口）'
+arch_need "$SRC/src/platform/Backend.cpp" 'requestActivate\(\)' 'Wayland 分支走 requestActivate'
+arch_need "$SRC/src/platform/Backend.cpp" 'QRect trayIconGeometry\(const QSystemTrayIcon \*icon\)' '托盘几何经平台层判可用性'
+# 平台层必须**调判定层**出结论，不自己再算一遍（两处算法 = 两处真相）。
+arch_need "$SRC/src/platform/Backend.cpp" 'Backend::placePopup\(' '平台层的弹窗落点走判定层'
+arch_need "$SRC/src/platform/Backend.cpp" 'Backend::reservedInsets\(' '平台层的任务栏边距走判定层'
+arch_need "$SRC/src/platform/Backend.cpp" 'Backend::classify\(' '平台层的后端分档走判定层'
+
+arch_need "$SRC/src/tray/TrayPopupWindow.cpp" 'platform::trayPopupTarget\(' '托盘弹窗定位走平台层'
+arch_forbid "$SRC/src/tray/TrayPopupWindow.cpp" 'QGuiApplication::screenAt' '托盘弹窗不再自己查屏幕（可用区由平台层给）'
+arch_need "$SRC/src/tray/TrayController.cpp" 'platform::trayIconGeometry\(' '托盘入口的托盘几何经平台层判可用性'
+arch_need "$SRC/src/tray/TrayGeometry.h" 'constexpr Backend::PopupGeometry popupGeometry\(\)' '弹窗定位参数由托盘域 token 打包（数值唯一出处）'
+# ⚠ **盯数值不盯名字**：判据层与平台层必然出现这些**成员名**（参数形状），
+#   盯名字会把「参数结构」也判成违规（第一版就踩了：门一上就红，红的是门自己）。
+#   真正要防的是**数值另抄一份** ⇒ 盯「非零字面量赋给这几个成员」。
+arch_forbid_tree '\b(dockGap|edgeMargin|fallbackDx|fallbackDy)\b[ ]*=[ ]*-?[1-9]' '弹窗定位 token 的数值只在托盘域出现（数值单一真相源）' src/tray/TrayGeometry.h
+arch_need_count "$SRC/src/tray/TrayGeometry.h" 'g\.(dockGap|edgeMargin|fallbackDx|fallbackDy) = TrayGeometry::' 4 '弹窗定位参数四个值都从托盘 token 取（不是另抄一份）'
+
+# ⚠ **激活只走统一入口**：整棵树里 `activateWindow()` 只许出现在平台层本身。
+#   收编类改动最典型的失败是「改了一个文件，另一个文件还散着一份」。
+arch_forbid_tree 'activateWindow\(\)' '窗口激活只走 platform::activate（散落的 activateWindow 已收口）' src/platform/Backend.cpp
+arch_need_count "$SRC/src/ui/PanelWindow.cpp" 'platform::activate\(' 7 '面板的 7 处激活动作都走统一入口'
+arch_need_count "$SRC/src/tray/TrayPopupWindow.cpp" 'platform::activate\(' 1 '托盘弹窗的激活动作走统一入口'
+arch_forbid_tree '[^_a-zA-Z]raise\(\);' 'raise 不再散落在界面代码里（叠放次序归平台层）' src/platform/Backend.cpp
+
+# 判据/探针可见面：结论可离线测、平台事实有可见面。
+arch_need "$SRC/src/app/SelfCheck.cpp" 'Backend::classify\(' 'SelfCheck 覆盖后端分档判定'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'Backend::activationFor\(' 'SelfCheck 覆盖激活动作计划'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'Backend::placePopup\(' 'SelfCheck 覆盖托盘弹窗落点'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'Backend::reservedInsets\(' 'SelfCheck 覆盖任务栏边距'
+arch_need "$SRC/src/main.cpp" 'backendKind=' '无头探针报出后端分档（平台事实可见）'
+
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \
          src/logic/CodeGraphBuild.cpp src/ui/ArchCanvasWidget.cpp \
@@ -598,7 +672,7 @@ for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToo
          src/logic/SyntaxHighlight.cpp src/ui/CodeHighlighter.cpp \
          src/logic/GraphInsight.cpp src/logic/EngineDoctor.cpp \
          src/logic/EngineConfig.cpp src/logic/IndexStatus.cpp \
-         src/logic/CanvasFont.cpp; do
+         src/logic/CanvasFont.cpp src/logic/Backend.cpp src/platform/Backend.cpp; do
     # ⚠ 必须**整词**匹配：`grep -qF "$f"` 是子串匹配，把登记项改成
     #   `src/logic/EngineDoctor.cpp.disabled` 照样命中 —— 门绿着，文件却没编进去。
     #   负控实测过这一条（假阴性）。故用「前后是行首/行尾或空白」的精确匹配。
