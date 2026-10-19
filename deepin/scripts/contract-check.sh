@@ -17,6 +17,9 @@
 #  10. graph scene 契约   moongit-graph-scene v1：五键齐全、v==1、themes 两套、
 #                          edgesDropped/warnings 恒发、chips[].count 是数字、
 #                          shape 类型只五种、hits 带 id/x/y/w
+#  11. 架构图回执契约     arch gen / render arch 是**回执型命令**（stdout 是人话，
+#                          不是 JSON）：回执非空、给出 arch.json / .html 落盘路径；
+#                          arch gen --format json 另给一份机器可读载荷
 #
 # 引擎缺席：SKIP 且不算通过（如实报告，不伪造契约验证）。
 set -uo pipefail
@@ -37,9 +40,12 @@ echo "› 引擎：$BIN"
 SANDBOX="$(mktemp -d /tmp/dd-contract.XXXXXX)"
 export DEEPGIT_HOME="$SANDBOX/home"
 FIX="$SANDBOX/fixture/atlas"
-mkdir -p "$FIX"
+mkdir -p "$FIX/src"
 git -C "$FIX" init -q -b main . 2>/dev/null
 printf '# atlas\n\nUSER-SENTINEL 用户手写内容不许动\n' > "$FIX/README.md"
+# ⚠ 夹具必须带**源码**：没有源码的项目，arch 视图是空的（0 shapes / 0 hits /
+#   包围盒退化）—— scene 那组断言会整组空转，看着全绿其实什么都没验到。
+printf 'int main(void) { return 0; }\n' > "$FIX/src/main.c"
 git -C "$FIX" add . 2>/dev/null
 GIT_AUTHOR_DATE='2026-10-03T09:00:00' GIT_COMMITTER_DATE='2026-10-03T09:00:00' \
     git -C "$FIX" commit -qm 'feat: 初始提交' 2>/dev/null
@@ -58,6 +64,18 @@ import json, sys
 d = json.load(sys.stdin)
 sys.exit(0 if ($expr) else 1)
 " 2>/dev/null; then
+        echo "  ✓ $name"; pass=$((pass+1))
+    else
+        echo "  ✗ $name"; fail=$((fail+1))
+    fi
+}
+
+# 文本断言器：给**回执型命令**用（arch gen / render arch 的 stdout 是人话，
+# 不是 JSON —— 拿 JSON 解析器去收它们会把成功报成失败，这正是客户端
+# EngineCli 分 Json/Text 两套输出契约的起因）。
+check_text() { # check_text <名称> <ERE> <文本>
+    local name="$1" ere="$2" text="${3:-}"
+    if printf '%s' "$text" | grep -qE "$ere"; then
         echo "  ✓ $name"; pass=$((pass+1))
     else
         echo "  ✗ $name"; fail=$((fail+1))
@@ -148,6 +166,30 @@ check "scene 形状：t 只在已知的五种里（frame/rrect/rect/text/edge）
     "all(s.get('t') in ('frame','rrect','rect','text','edge') for v in d.get('views',{}).values() for s in v.get('shapes',[]))" "$SCENE"
 check "scene 命中区：hits 带 id/x/y/w（下钻靠它）" \
     "all(all(k in h for k in ('id','x','y','w')) for v in d.get('views',{}).values() for h in v.get('hits',[]))" "$SCENE"
+# 包围盒（bounds）：客户端的视口自适应**只**靠它。缺了 → 包围盒恒 0 →
+# fit 退化成恒等视口 → 图不缩放、贴在左上角（且客户端看不出来）。
+check "scene 包围盒：每个 view 都发 bounds{x0,y0,x1,y1}（自适应视口全靠它）" \
+    "all(all(k in v.get('bounds',{}) for k in ('x0','y0','x1','y1')) for v in d.get('views',{}).values())" "$SCENE"
+check "scene 视图非空：夹具带源码 → arch 有 shapes 且有 hits（否则整组断言空转）" \
+    "d.get('views',{}).get('arch',{}).get('shapes') and d.get('views',{}).get('arch',{}).get('hits')" "$SCENE"
+check "scene 包围盒：有 shape 的 view 包围盒非退化（x1>x0 且 y1>y0，否则图无处可放）" \
+    "all((not v.get('shapes')) or (v['bounds']['x1'] > v['bounds']['x0'] and v['bounds']['y1'] > v['bounds']['y0']) for v in d.get('views',{}).values())" "$SCENE"
+
+# 11. 架构图生成/导出契约（**回执型命令**：stdout 是人话回执，不是 JSON）。
+#     客户端 AppModel::genArch/exportArch 走 EngineCli 的 Text 契约消费它们。
+ARCH_GEN="$("$BIN" arch gen atlas 2>/dev/null)"
+check_text "arch gen 回执：非空且说清生成了（Text 契约：非空即算成功）" \
+    '架构已生成' "$ARCH_GEN"
+check_text "arch gen 回执：给出 arch.json 落盘路径（经引擎写，客户端不碰项目文件）" \
+    'arch\.json' "$ARCH_GEN"
+
+ARCH_GEN_JSON="$("$BIN" arch gen atlas --format json 2>/dev/null)"
+check "arch gen --format json：载荷是合法 JSON 且含 modules 数组（模块分层数据）" \
+    "isinstance(d.get('modules'), list)" "$ARCH_GEN_JSON"
+
+RENDER="$("$BIN" render arch atlas 2>/dev/null)"
+check_text "render arch 回执：非空且给出 .html 落盘路径（引擎层交付物）" \
+    '\.html' "$RENDER"
 
 echo "──── contract-check: $pass passed, $fail failed ────"
 [ "$fail" -eq 0 ]

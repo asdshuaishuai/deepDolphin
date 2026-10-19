@@ -18,6 +18,7 @@
 #include "../models/LoadState.h"
 #include "../models/DocsEnvelope.h"
 #include "../models/GitOpResponse.h"
+#include "../models/GraphScene.h"
 #include "../models/Milestone.h"
 #include "../models/ProjectStatus.h"
 #include "../models/StatusEnvelope.h"
@@ -93,6 +94,15 @@ public:
                                          : std::nullopt;
     }
     QString projectLoadError(const QString &name) const { return m_projectLoadErrors.value(name); }
+    // 架构图场景（引擎 `graph arch --format scene`）：与 docs/verify 各自一份状态。
+    // **按项目分开存** —— 架构图窗可同时开着两个项目的，不能共用一个槽位串台。
+    LoadStateBox sceneState(const QString &name) const { return m_sceneStates.value(name); }
+    // 场景数据（几百 KB 的结构 → 返回指针，不按值复制一份）。
+    const GraphScene *sceneFor(const QString &name) const
+    {
+        auto it = m_scenes.constFind(name);
+        return it == m_scenes.constEnd() ? nullptr : &it.value();
+    }
     QString lastError() const { return m_lastError; }
     bool hasLoadedProjectsOnce() const { return m_hasLoadedProjectsOnce; }
     qint64 lastRefreshedMs() const { return m_lastRefreshedMs; }
@@ -114,6 +124,12 @@ public:
     void loadDocs(const QString &name);
     // 文档完整性校验：引擎 `verify <name> --json`（只读，不写用户数据）。
     void loadVerify(const QString &name);
+    // 架构图场景：引擎 `graph arch <name> --format scene`（只读；scene 契约 v1）。
+    void loadScene(const QString &name);
+    // 架构图生成：引擎 `arch gen <name>`（写 arch.json —— **经引擎写，不越权**）。
+    void genArch(const QString &name);
+    // 架构图导出：引擎 `render arch <name>`（落盘单文件 HTML —— 引擎层交付物）。
+    void exportArch(const QString &name);
 
     void runUpdate(const QString &name, bool deep);
     // C5「更新 + AI 摘要」（mac UpdateActionMenu 变体）：真更新走同一把 busy 锁，
@@ -154,6 +170,10 @@ signals:
     void projectChanged(const QString &name);
     void docsChanged(const QString &name);
     void verifyChanged(const QString &name);
+    void sceneChanged(const QString &name);
+    /// 架构图生成/导出的回执（引擎末行非空行；失败时 ok=false）。
+    /// 带项目名 —— 两个项目的架构图窗可以同时开着，回执不许串台。
+    void archActionFinished(bool ok, const QString &project, const QString &receipt);
     void gitOutputReady(const QString &name, const GitOpResponse &resp);
     void scanFinished(bool ok, const QString &message, const QString &coverageNote);
     void addFinished(bool ok, const QString &message);
@@ -206,6 +226,8 @@ private:
     QMap<QString, DocsEnvelope> m_docs;
     QMap<QString, LoadStateBox> m_verifyStates;
     QMap<QString, VerifyEnvelope> m_verifies;
+    QMap<QString, LoadStateBox> m_sceneStates;
+    QMap<QString, GraphScene> m_scenes;
     QMap<QString, QString> m_projectLoadErrors;
 
     QString m_lastError;

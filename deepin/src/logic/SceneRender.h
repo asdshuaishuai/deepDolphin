@@ -11,16 +11,10 @@
 #pragma once
 #include <QString>
 #include "../models/GraphScene.h"
+#include "ArchViewport.h"
 #include "CanvasSink.h"
 
 namespace SceneRender {
-
-/// 视口：screen = world · scale + offset。
-struct Viewport {
-    double scale = 1.0;
-    double offsetX = 0.0;
-    double offsetY = 0.0;
-};
 
 /// 一帧的统计（判据用；也是「未知 shape 类型不许静默跳过」的披露口）。
 struct Stats {
@@ -37,7 +31,10 @@ struct Stats {
 ///
 /// theme 取 scene.dark / scene.light；token 解析走 GraphToken（四形态 + 二跳）。
 /// view 传 &view 自身（node: 二跳要查它的 nodeTheme）。
-Stats render(const GraphScene &scene, const GraphView &view, bool dark, const Viewport &vp,
-    double width, double height, double nowMs, CanvasSink &sink);
+///
+/// 视口类型用 ArchViewport::Viewport（**唯一出处**）—— 渲染与命中必须共用同一个
+/// 换算式，两处各写一份 struct 迟早会各自漂移。
+Stats render(const GraphScene &scene, const GraphView &view, bool dark,
+    const ArchViewport::Viewport &vp, double width, double height, double nowMs, CanvasSink &sink);
 
 } // namespace SceneRender

@@ -258,9 +258,15 @@ QWidget *ProjectDetailPage::buildHeader(const ProjectStatus &p)
             v->addWidget(smallLabel(*p.overall.summary, header, DS::textSecondary()));
     }
 
-    // ── 右侧按钮排：项目说明 + 拉取/推送/抓取 + 分隔 + 暂存/恢复 + 分隔 + 更新菜单 ──
+    // ── 右侧按钮排：架构图 + 项目说明 + 拉取/推送/抓取 + 分隔 + 暂存/恢复 + 分隔 + 更新菜单 ──
     auto *actions = new QHBoxLayout;
     actions->setSpacing(DS::Spacing::xs);
+
+    // 架构图：独立窗口承载（画布要空间，mac 用 sheet —— DDE 无 sheet 对位物）。
+    auto *arch = iconButton(QStringLiteral("view-tree"), QStringLiteral("架构图"),
+        QStringLiteral("查看模块分层与依赖治理"), header);
+    connect(arch, &QPushButton::clicked, this, [this] { emit archRequested(m_name); });
+    actions->addWidget(arch);
 
     auto *brief = iconButton(QStringLiteral("applications-utilities"), QStringLiteral("项目说明"),
         QStringLiteral("AI 项目说明（未配置 AI 时会给出配置指引）"), header);

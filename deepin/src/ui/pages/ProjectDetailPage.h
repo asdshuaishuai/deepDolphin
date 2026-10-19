@@ -51,6 +51,8 @@ signals:
     void gitOpRequested(const QString &op, const QString &project, const QString &message);
     void updateMenuRequested();
     void briefRequested(const QString &project);
+    // 架构图：项目名在入口锁定（窗内不切仓库 —— mac 同款纪律）。
+    void archRequested(const QString &project);
     void retryRequested();          // 「读不出来」空态的重试（→ loadProject）
     // 里程碑行内动作（详情页里程碑卡；UI 词已转 CLI 词）
     void milestoneDone(const QString &project, const QString &name);

@@ -7,6 +7,7 @@
 #include "../logic/Derived.h"
 #include "../logic/Router.h"
 #include "../logic/ShortcutMap.h"
+#include "../platform/SysOpen.h"
 #include "../tray/TrayController.h"
 #include "DesignTokens.h"
 #include "DualTrackButtons.h"
@@ -20,6 +21,7 @@
 #include "dialogs/AgentDialog.h"
 #include "dialogs/AiResultDialog.h"
 #include "dialogs/AiSettingsDialog.h"
+#include "dialogs/ArchDialog.h"
 #include "../app/Settings.h"
 #include "dialogs/ScanDialog.h"
 #include "dialogs/panes/AutomationPane.h"
@@ -28,6 +30,8 @@
 #include "pages/MilestonesPage.h"
 #include "pages/ProjectDetailPage.h"
 #include "pages/SetupGuidePage.h"
+
+#include <QUrl>
 #include <DGuiApplicationHelper>
 #include <DIconButton>
 #include <QApplication>
@@ -258,6 +262,9 @@ void PanelWindow::wirePages()
         [this] { m_model->loadProject(m_detail->property("projectName").toString()); });
     connect(m_detail, &ProjectDetailPage::briefRequested, this,
         [this](const QString &p) { showBrief(p); });
+    // 架构图：独立窗承载（项目名在入口锁定）
+    connect(m_detail, &ProjectDetailPage::archRequested, this,
+        [this](const QString &p) { showArch(p); });
     connect(m_detail, &ProjectDetailPage::updateMenuRequested, this, [this] {
         const UpdateScope scope = scopeFromSelection(m_model->selection());
         QMenu menu(this);
@@ -709,6 +716,24 @@ void PanelWindow::showAgentDialog()
     m_agent->show();
     m_agent->raise();
     m_agent->activateWindow();
+}
+
+void PanelWindow::showArch(const QString &project)
+{
+    if (project.isEmpty())
+        return;
+    // 按项目各一个窗（mac 同款单仓库锁定）：同一项目重复点 → 叫醒已有窗口，
+    // 不叠第二个（两个窗抢同一份场景状态会让人搞不清谁在显示什么）。
+    QPointer<ArchDialog> &dlg = m_archDialogs[project];
+    if (!dlg) {
+        dlg = new ArchDialog(project, m_model, this);
+        connect(dlg, &ArchDialog::openExportedFile, this, [](const QString &path) {
+            SysOpen::openUrl(QUrl::fromLocalFile(path));
+        });
+    }
+    dlg->show();
+    dlg->raise();
+    dlg->activateWindow();
 }
 
 void PanelWindow::showBrief(const QString &project, const QString &titleOverride)

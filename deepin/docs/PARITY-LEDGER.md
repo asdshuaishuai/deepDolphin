@@ -41,6 +41,7 @@
 | 托盘 / 通知 / 开机自启 | `BarView` / `AppDelegate` | `tray/` / `app/Notifier` / `platform/AutostartManager` | 一致（平台 API 不同，能力口径同） |
 | 外部打开（git remote → 浏览器） | `SysOpen.swift` | `platform/SysOpen` | 一致 |
 | **文档完整性校验**（引擎 verify 四态） | ⬜ 未接 | ✅ 2026-10-19 | **deepin 领先**（见 D 节债） |
+| **交互架构图页**（scene 契约 + 平台 Canvas + 视口/命中 + 生成/导出） | ✅ sheet 版（`ArchPage` + `ArchCanvasView`） | ✅ 批 D1 内核 + 批 D2 页面（独立 `DDialog`） | **能力已对齐**；承载形态不同（DDE 无 sheet，且架构图要大画布 → 独立窗）；deepin 另有**回执路径提取更准**一处（见 D 节债） |
 
 ---
 
@@ -51,7 +52,7 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 
 | # | 新能力 | mac 落点 | deepin 现状 | 优先级 |
 |---|---|---|---|---|
-| B1 | **交互架构图（scene 契约 + 平台 Canvas）** | `GraphScene.swift` + `ArchCanvasView.swift` + `ArchPage.swift` | 🟡 **内核已落（批 D1）**：契约层 + Qt QPainter Canvas2D 26 方法 + 渲染指令层；**页面未做** | **P0** |
+| B1 | **交互架构图（scene 契约 + 平台 Canvas）** | `GraphScene.swift` + `ArchCanvasView.swift` + `ArchPage.swift` | 🟢 **已对位（批 D1 内核 + 批 D2 页面）**：契约层 + Qt QPainter Canvas2D 26 方法 + 渲染指令层 + 视口/命中判定 + 架构图窗（页头/回执/画布/披露行）+ 详情页入口 + 生成/导出动作 | **P0** |
 | B2 | **代码图谱页（三列：图树主轴 + 详情 + 热力图）** | `GraphPages.swift`（494 行） | ⬜ 未开始 | **P0** |
 | B3 | **符号热力图（treemap → 力导向气泡，Canvas 驱动）** | `GraphPages.swift` + `ArchCanvasView` | ⬜ 未开始（依赖 B1 的 Canvas 内核） | P1 |
 | B4 | **补丁体检（diff → 置信度 → 人工标注）** | `GraphPages.swift` 补丁段 | ⬜ 未开始 | P1 |
@@ -72,10 +73,11 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 
 | 引擎命令 / 工具 | 用途 | deepin 现状 |
 |---|---|---|
-| `graph arch --format scene` | 场景 JSON（B1 的数据源） | ✅ 批 D1 已接（内核） |
+| `graph arch --format scene` | 场景 JSON（B1 的数据源） | ✅ 批 D1 已接（内核）+ 批 D2 已接（页面） |
 | `graph overview` / `symbol` / `impact` / `tree` / `functions` | 图谱五件套（B2/B5/B6） | ⬜ |
 | `graph confidence` / `patchconf` | 置信度与补丁体检（B4/B6） | ⬜ |
-| `graph gen` / `arch gen` / `index gen` | 生成（B16） | ⬜ |
+| `arch gen` / `graph gen` / `index gen` | 生成（B16） | 🟡 批 D2 已接 `arch gen`（架构图页「生成」钮）；`graph gen`/`index gen` ⬜ |
+| `render arch` | 导出交互 HTML（B16） | 🟡 批 D2 已接（架构图页「导出」钮；落盘 HTML 是引擎层交付物，**不是**本平台的渲染路径） |
 | `codegraph_*`（CLI 清单 18 个新工具） | agent 工具循环（B11） | ⬜ |
 | `render` 工具 | 渲染交付物 | ⬜ |
 | `index_*` 家族 | 代码索引（`graph` 的新家） | ⬜ |
@@ -103,6 +105,8 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 |---|---|---|---|---|
 | 文档完整性校验（引擎 `verify` 四态） | ✅ 2026-10-19 | ⬜ 未接 | ⬜ 未接 | 后续批次 |
 | 图谱 Canvas 内核（26 方法 + scene 契约） | ✅ 批 D1 | ✅（SwiftUI 版） | ⬜ 未接 | 后续批次（仓颉 Canvas 移植） |
+| 交互架构图页（窗口 + 视口/命中 + 生成/导出） | ✅ 批 D2 | ✅（sheet 版） | ⬜ 未接 | 后续批次 |
+| 导出回执里的 HTML 路径提取 | ✅ 批 D2（按词边界 + 全角分隔符扫） | ⬜ **抽不到** —— `extractHTMLPath` 按空格切词，而引擎真实回执是「已重绘：`<路径>` · 第 N 版」（路径与文案用**全角冒号**粘连），切出来的 token 不以 `/` 开头 → 判定恒假 → 导出后「打开」入口**始终不出现** | ⬜ 未接 | mac 侧后续批次（**本轮次序是先搞定 dde**，未改 mac） |
 
 ---
 

@@ -1,8 +1,11 @@
 #include "SelfCheck.h"
+#include "EngineCli.h"
+#include "../logic/ArchReceipt.h"
 #include "../logic/DashFilter.h"
 #include "../logic/Derived.h"
 #include "../logic/DocumentIntegrity.h"
 #include "../logic/GraphToken.h"
+#include "../logic/ArchViewport.h"
 #include "../logic/SceneRender.h"
 #include "../logic/Route.h"
 #include "../logic/Router.h"
@@ -677,7 +680,8 @@ int SelfCheck::run(QStringList &log)
               "light":{"text":"#0f172a","muted":"#64748b","bg0":"#f8fafc","border":"#e2e8f0",
                       "cols":["#38bdf8"],"fills":[],"langs":{}}},
             "views":{
-              "module:b":{"label":"B","nodeTheme":{"b":"cols.0"},"shapes":[],"particles":[],"hits":[],"edgesDropped":0},
+              "module:b":{"label":"B","nodeTheme":{"b":"cols.0"},"shapes":[],"particles":[],"hits":[],"edgesDropped":0,
+                           "bounds":{"x0":-4,"y0":-34,"x1":324,"y1":162}},
               "arch":{"label":"架构","nodeTheme":{"a":"cols.1"},
                       "shapes":[
                         {"t":"frame","x":10,"y":20,"w":300,"h":120,"color":"cols.0","label":"L4 其他"},
@@ -690,7 +694,8 @@ int SelfCheck::run(QStringList &log)
                       ],
                       "particles":[{"p":[0,0,1,1,2,2,3,3],"n":3,"sp":0.001,"color":"accent"}],
                       "hits":[{"id":"a","x":30,"y":40,"w":120,"h":60,"drill":"module:a"}],
-                      "edgesDropped":3}},
+                      "edgesDropped":3,
+                      "bounds":{"x0":-24,"y0":-54,"x1":512,"y1":228}}},
             "panels":{"arch:a":{"title":"a","sub":"s","stats":"t"}}
         })JSON");
         const auto scene = GraphScene::fromJson(JO(kSceneJson));
@@ -716,6 +721,49 @@ int SelfCheck::run(QStringList &log)
                 && scene->warnings.violations == 0 && scene->warnings.cycleEdges == 0
                 && scene->chips.size() == 1 && scene->chips.at(0).count == 1
                 && scene->chips.at(0).label == QStringLiteral("基础层 1"));
+
+        // 恒发字段**在不在**：值是 0/空时，「确实没有」与「契约没发」不可区分
+        // → 必须另有标志把两者分开（缺字段不回落成 0 的同一条纪律）。
+        check(log, "scene 恒发字段：present 标志区分「确实 0」与「契约没发」",
+            scene.has_value() && scene->views.at(0).edgesDroppedPresent
+                && scene->warningsPresent && scene->chipsPresent
+                && scene->views.at(0).boundsPresent && scene->viewsMissingBounds == 0
+                && scene->views.at(0).bx0 == -24 && scene->views.at(0).by1 == 228);
+
+        // 缺键的场合：值全回落成 0/空，但 present 标志必须说「没有」
+        {
+            QJsonObject noBounds = JO(kSceneJson);
+            QJsonObject views = noBounds.value(QStringLiteral("views")).toObject();
+            QJsonObject arch = views.value(QStringLiteral("arch")).toObject();
+            arch.remove(QStringLiteral("bounds"));
+            views.insert(QStringLiteral("arch"), arch);
+            noBounds.insert(QStringLiteral("views"), views);
+            const auto s2 = GraphScene::fromJson(noBounds);
+            check(log, "scene 缺 bounds → 不回落成 0（标志说没有，计入待披露）",
+                s2.has_value() && !s2->views.at(0).boundsPresent
+                    && s2->viewsMissingBounds == 1);
+
+            QJsonObject noDropped = JO(kSceneJson);
+            QJsonObject v2 = noDropped.value(QStringLiteral("views")).toObject();
+            QJsonObject a2 = v2.value(QStringLiteral("arch")).toObject();
+            a2.remove(QStringLiteral("edgesDropped"));
+            v2.insert(QStringLiteral("arch"), a2);
+            noDropped.insert(QStringLiteral("views"), v2);
+            const auto s3 = GraphScene::fromJson(noDropped);
+            check(log, "scene 缺 edgesDropped → 不当成「没丢边」（标志说没有）",
+                s3.has_value() && !s3->views.at(0).edgesDroppedPresent
+                    && s3->views.at(0).edgesDropped == 0);
+
+            QJsonObject noMeta = JO(kSceneJson);
+            QJsonObject meta = noMeta.value(QStringLiteral("meta")).toObject();
+            meta.remove(QStringLiteral("warnings"));
+            meta.remove(QStringLiteral("chips"));
+            noMeta.insert(QStringLiteral("meta"), meta);
+            const auto s4 = GraphScene::fromJson(noMeta);
+            check(log, "scene 缺 warnings/chips → 不当成「没有违规/没有分层」",
+                s4.has_value() && !s4->warningsPresent && !s4->chipsPresent
+                    && s4->warnings.violations == 0 && s4->chips.isEmpty());
+        }
 
         if (!scene.has_value()) {
             log << QStringLiteral("FAIL  scene 后续判据（场景没解出，后续用例无法跑）");
@@ -768,7 +816,7 @@ int SelfCheck::run(QStringList &log)
             // ── 渲染指令序列（记录式接收端）──
             RecordingSink sink;
             const SceneRender::Stats st = SceneRender::render(
-                *scene, v, true, SceneRender::Viewport { 1.0, 0.0, 0.0 }, 800, 600, 1000.0, sink);
+                *scene, v, true, ArchViewport::Viewport { 1.0, 0.0, 0.0 }, 800, 600, 1000.0, sink);
             check(log, "渲染：背景先铺满画布（fillRect 用 bg0）",
                 sink.ops.size() >= 2 && sink.ops.at(0).contains(QStringLiteral("#0b1220"))
                     && sink.ops.at(1) == QStringLiteral("fillRect(0,0,800,600)"));
@@ -793,7 +841,7 @@ int SelfCheck::run(QStringList &log)
 
             // 同一时刻重画 → 指令序列逐条相同（引擎保证两次导出逐字节一致）
             RecordingSink sink2;
-            SceneRender::render(*scene, v, true, SceneRender::Viewport { 1.0, 0.0, 0.0 }, 800, 600,
+            SceneRender::render(*scene, v, true, ArchViewport::Viewport { 1.0, 0.0, 0.0 }, 800, 600,
                 1000.0, sink2);
             check(log, "渲染：同一时刻重画 → 指令序列逐条相同（可复现）",
                 sink.ops == sink2.ops);
@@ -872,6 +920,81 @@ int SelfCheck::run(QStringList &log)
         const int roundCorners = cornerFilled(true);
         check(log, "Canvas2D 圆角：arcTo 真切出圆角（直角方块的四角实心像素远多于圆角）",
             sharpCorners >= 60 && roundCorners < 20 && roundCorners < sharpCorners);
+
+        // ── 批 D2：架构图页的视口与命中（纯函数层，无头可判）──
+        // 视口是最容易悄悄错的一环：缩放没跟上下标就「点不中」，
+        // 命中区顺序错了就「选错节点」——两者都不该等到看图才发现。
+        GraphView vv;
+        vv.id = QStringLiteral("arch");
+        vv.bx0 = 0; vv.by0 = 0; vv.bx1 = 200; vv.by1 = 100;
+        const ArchViewport::Viewport vp = ArchViewport::fit(vv, 800, 600, 40);
+        // scale = min((800-2*40)/200, (600-2*40)/100) = min(3.6, 5.2) = 3.6
+        check(log, "视口 fit：缩放 = min((宽-2pad)/包围盒宽, (高-2pad)/包围盒高)",
+            qAbs(vp.scale - 3.6) < 1e-6);
+        check(log, "视口 fit：内容居中（包围盒中心 → 画布中心）",
+            qAbs(ArchViewport::toScreen(vp, 100, 50).x() - 400) < 1e-6
+                && qAbs(ArchViewport::toScreen(vp, 100, 50).y() - 300) < 1e-6);
+
+        GraphView tinyView;
+        tinyView.bx0 = 0; tinyView.by0 = 0; tinyView.bx1 = 10; tinyView.by1 = 10;
+        GraphView hugeView;
+        hugeView.bx0 = 0; hugeView.by0 = 0; hugeView.bx1 = 100000; hugeView.by1 = 100000;
+        GraphView emptyView;
+        check(log, "视口 fit：缩放夹在 [0.05, 4]（放大不越界）",
+            qAbs(ArchViewport::fit(tinyView, 800, 600, 40).scale - 4.0) < 1e-6);
+        check(log, "视口 fit：缩放夹在 [0.05, 4]（缩小不越界）",
+            qAbs(ArchViewport::fit(hugeView, 800, 600, 40).scale - 0.05) < 1e-6);
+        check(log, "视口 fit：包围盒非法（空视图）→ 恒等视口（不猜比例）",
+            qAbs(ArchViewport::fit(emptyView, 800, 600, 40).scale - 1.0) < 1e-6);
+
+        // 屏幕→世界→屏幕 往返一致（换算式自洽 = 点得中）
+        const QPointF back = ArchViewport::toWorld(vp, 123.0, 456.0);
+        const QPointF again = ArchViewport::toScreen(vp, back.x(), back.y());
+        check(log, "视口换算：屏幕→世界→屏幕 往返一致",
+            qAbs(again.x() - 123.0) < 1e-6 && qAbs(again.y() - 456.0) < 1e-6);
+
+        // 命中测试：命中区内命中、 区外不命中（不随便挑一个）
+        GraphHit hit;
+        hit.id = QStringLiteral("mod:src");
+        hit.x = 0; hit.y = 0; hit.w = 100; hit.h = 50;
+        vv.hits.append(hit);
+        const ArchViewport::Viewport identity { 1.0, 0.0, 0.0 };
+        check(log, "命中：点在命中区内 → 命中该节点",
+            ArchViewport::hitAt(vv, identity, 50, 25).value_or(QString())
+                == QStringLiteral("mod:src"));
+        check(log, "命中：点在命中区外 → 没命中（不随便挑一个）",
+            !ArchViewport::hitAt(vv, identity, 500, 500).has_value());
+        // 缩放后同一世界点仍命中 —— 命中与渲染必须共用同一个视口换算
+        const QPointF screenCenter = ArchViewport::toScreen(vp, 50, 25);
+        check(log, "命中：视口缩放后同一世界点仍命中（命中与渲染同源）",
+            ArchViewport::hitAt(vv, vp, screenCenter.x(), screenCenter.y()).value_or(QString())
+                == QStringLiteral("mod:src"));
+
+        // ── 引擎回执提取（回执型命令的 stdout 是人话，不是 JSON）──
+        check(log, "回执：取末个非空行（引擎回执最后一行是结论）",
+            ArchReceipt::receipt(QStringLiteral("架构已生成：首版（第 0 版）\n  探针：库中无旧记录\n下一步：moongit arch query\n"))
+                == QStringLiteral("下一步：moongit arch query"));
+        check(log, "回执：全空 → 空串（不把空白行当回执）",
+            ArchReceipt::receipt(QStringLiteral("  \n\n ")).isEmpty());
+        check(log, "回执：抽出 HTML 绝对路径",
+            ArchReceipt::htmlPath(QStringLiteral("已重绘：/tmp/x/store/p_1/arch.html · 第 1 版"))
+                == QStringLiteral("/tmp/x/store/p_1/arch.html"));
+        check(log, "回执：路径与文案用全角冒号粘连时也抽得出（引擎真实回执形态）",
+            ArchReceipt::htmlPath(QStringLiteral("已重绘：/tmp/x/store/p_1/render/arch.html · 第 1 版"))
+                == QStringLiteral("/tmp/x/store/p_1/render/arch.html"));
+        check(log, "回执：相对路径不认（宁可不给「打开」入口，也不给坏按钮）",
+            ArchReceipt::htmlPath(QStringLiteral("已重绘：render/arch.html")).isEmpty());
+
+        // ── 两套输出契约（用错模式 = 成功被报成失败）──
+        check(log, "输出契约：Text 模式收文本回执（非空即算成功）",
+            EngineCli::stdoutSatisfies(EngineCli::OutputMode::Text, QStringLiteral("架构已生成：首版")));
+        check(log, "输出契约：Text 模式空 stdout = 契约破坏（不回落成成功）",
+            !EngineCli::stdoutSatisfies(EngineCli::OutputMode::Text, QStringLiteral("  \n ")));
+        check(log, "输出契约：Json 模式不收文本（成功被误报成失败的根因）",
+            !EngineCli::stdoutSatisfies(EngineCli::OutputMode::Json, QStringLiteral("架构已生成：首版"))
+                && EngineCli::stdoutSatisfies(EngineCli::OutputMode::Json, QStringLiteral("{\"v\":1}")));
+        check(log, "输出契约：Json 模式空 stdout = 契约破坏（不是合法空态）",
+            !EngineCli::stdoutSatisfies(EngineCli::OutputMode::Json, QString()));
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

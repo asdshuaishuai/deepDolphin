@@ -38,7 +38,7 @@ moonGit（仓颉引擎，仓内别名 deepgit）项目群进度客户端的 Linu
 | Dock 菜单（打开面板 / 全部浅更新） | 托盘菜单：打开面板 / 全部浅更新 + **退出**（Linux 托盘必须有退出项） | `tray/TrayController` |
 | 添加 / 扫描项目（`ScanSheet`） | ScanDialog + ScanCoverage 覆盖度披露接回主窗口说明条 | `ui/dialogs/ScanDialog`；`logic/ScanCoverage`、`PathInput` |
 | 深链启动参数（`Route.swift`） | `--project <名>`、`--section board\|milestones\|dashboard`、`--open-settings`、`--agent-selftest`；pendingRoute 消费一次即置闩 | `logic/Route`、`Router`；`PanelWindow::maybeApplyPendingRoute` |
-| 纯函数判定层（`client-check.sh` 单独编译断言） | `models/`、`logic/` 零 QWidget 头，判定收敛为二进制内置 `--selfcheck`（103 例） | `src/models/`、`src/logic/`、`app/SelfCheck` |
+| 纯函数判定层（`client-check.sh` 单独编译断言） | `models/`、`logic/` 零 QWidget 头，判定收敛为二进制内置 `--selfcheck`（125 例） | `src/models/`、`src/logic/`、`app/SelfCheck` |
 | 设置窗口（自动化 + AI） | 设置三页签（DTabBar+QStackedWidget）：通用 / 自动化（分段改完立即生效）/ AI | `ui/dialogs/panes/*` |
 | 快捷键（CommandMenu + ShortcutMap.swift） | QShortcut 全量真绑（含深更新——mac 曾「声明未绑」的缺陷不重犯） | `ui/PanelWindow.cpp:516`；`logic/ShortcutMap.h`（唯一声明处） |
 | 定时更新 + AI 简报 | autoHours 周期 + 首轮 600s；简报经通知；silent 场景不偷弹结果面板 | `app/AppModel.cpp:202`；`ai/AiDigests`（scheduledDigest） |
@@ -101,7 +101,7 @@ cmake --build build --parallel 4
 冒烟脚本按此硬路径断言）。
 
 ```sh
-./build/deepDolphin --selfcheck   # 模型层 fixtures 自检（无 GUI、无引擎依赖；当前 103 例）
+./build/deepDolphin --selfcheck   # 模型层 fixtures 自检（无 GUI、无引擎依赖；当前 125 例）
 ./build/deepDolphin --version
 ./build/deepDolphin --project <名>   # 深链（--section board|milestones|dashboard 同理）
 ./build/deepDolphin --agent-selftest [问题]   # 无头 agent 自测（默认「总结一下项目群现状」）
@@ -125,7 +125,7 @@ export QT_QPA_PLATFORM=offscreen        # 无显示环境时；共享 X11 会话
 share/applications/cn.deepdolphin.app.desktop，图标 → share/icons/hicolor/scalable/apps）。
 安装后由系统 Qt6/DTK6 运行库满足链接，无需上述环境变量。
 
-本阶段实测记录：`--selfcheck` 103 通过 0 失败；`--version` 输出 `deepDolphin 0.1.0`；
+本阶段实测记录：`--selfcheck` 125 通过 0 失败；`--version` 输出 `deepDolphin 0.1.0`；
 offscreen 启动探测 `timeout 8` 退出码 124（进程存活满 8 秒）；`ldd` 裸环境报 Qt6/DTK6 not found、
 带上 `LD_LIBRARY_PATH` 后 0 个 not found。**运行期环境变量**（sysroot 方案的代价，打包后消失）：
 `LD_LIBRARY_PATH=~/.local/dd-sysroot/usr/lib/x86_64-linux-gnu`（Qt/DTK 运行库）+
@@ -238,7 +238,7 @@ key 只进 libsecret（service=cn.deepdolphin.app.ai / account=api-key），不�
    的文件（models/app 逻辑/tray 壳/ui 壳），页面、AI、AppModel、Notifier、AutostartManager、
    SysOpen、DesignTokens 等随其实现阶段同步加入（CMakeLists 有显式提醒注释）。
    `tests/` 子目录随 PLAN 里程碑 2 加入；当前模型层冒烟判据由二进制内置 `--selfcheck`
-   承担（103 例，含缺键拒绝/契约过旧判据/双形态 update/shallow-deep 分派等 CONTRACT 红线）。
+   承担（125 例，含缺键拒绝/契约过旧判据/双形态 update/shallow-deep 分派等 CONTRACT 红线）。
    代价：CMakeLists 与 PLAN 清单阶段性地不一致，靠注释锚点防丢失。
 2. **托盘数据对接用 `TraySnapshot` 纯结构体**，而非 PLAN 签名里的 `AppModel*`：
    AppModel 属里程碑 3，提前引入会迫使托盘壳依赖一个不存在的类型。AppModel 落地后由它
@@ -457,7 +457,7 @@ key 只进 libsecret（service=cn.deepdolphin.app.ai / account=api-key），不�
 | `dtk.core.dsg: AppId is fetched from AM, and value is "zcode"` | 环境限制 | 容器会话无应用商店注册项，DSG AppId 回退到宿主进程名；真机经 .desktop 安装后取 `cn.deepdolphin.app` |
 | `QObject::connect: No such signal QPlatformNativeInterface::systemTrayWindowChanged(QScreen*)` | 环境限制 | offscreen 无系统托盘；真 DDE 走 SNI 协议（与「运行期事实」一致）。托盘真实表现仍**待真机验证** |
 | `desktop-file-validate` 未跑 | 工具缺席 | 容器内无该工具（`command -v` 为空）。`.desktop` 内容已人工核对（Exec/Icon/StartupWMClass/X-Deepin-Vendor），装真机后建议补跑 |
-| `ctest`：无目标可跑 | 设计如此 | CMakeLists.txt:134 注释：`enable_testing()+tests/` 缓建，模型层冒烟判据由 `--selfcheck`（103 例）承担 |
+| `ctest`：无目标可跑 | 设计如此 | CMakeLists.txt:134 注释：`enable_testing()+tests/` 缓建，模型层冒烟判据由 `--selfcheck`（125 例）承担 |
 | Ctrl+Shift+U 与输入法的潜在冲突 | 待真机验证 | 决策 19 预案：保持绑定、菜单显示实际序列；容器内无真实 IME，无法在本阶段闭环 |
 
 ### 真机联调阶段（2026-10-03 收尾，决策 36–44）
@@ -616,6 +616,36 @@ mac 端 30 个提交（`d467a4f..d62e429`，7919 行）已具现化；章程同�
 `ci.sh` **8/8 门全绿**；**三处负控真红**：① 未知 token 回落成黑 → 洋红判据红；
 ② 阴影模拟短路 → 阴影像素判据红；③ `arcTo` 换成直线 → **补强后**的圆角差分判据红。
 **视觉零变化**（本批只加内核不加页面，快照基线未动）。
+
+### 批 D2：架构图页（引擎 `graph` 能力的 GUI 具现化）
+
+本批把批 D1 的内核接成**用户真能用的页面**：详情页入口 → 架构图窗 → 画布，
+并补上 mac 端「生成 / 导出」两个动作。
+
+| # | 决策 | 为什么 | 已知代价 |
+|---|---|---|---|
+| 90 | **架构图页用独立 `DDialog` 承载**（不是详情页里的一个 tab）：`ui/dialogs/ArchDialog` 走 `AiSettingsDialog` 同款范式；页头 = 项目名 + 刷新/生成/导出，下方 = 画布，最底 = 披露行（违规/环边、被丢弃的边、分层 chips）；**项目名在详情页入口锁定**，窗内没有切仓库的选择器 | mac 用 sheet 挂详情页，DDE 无 sheet 对位物；且架构图要的是**大画布**（真实场景 69 个 shape，塞进详情页宽度会缩成看不清的缩略图）；「仓库选择在面板入口定」是 mac 既有纪律（`ArchPage` 无 `GraphProjectPicker`），照搬 | 深链能力弱于 sheet（无「返回」上下文）；同一项目重复点入口是**叫醒已有窗**而不是新开一个（两个窗抢同一份场景状态会让人搞不清谁在显示什么） |
+| 91 | **视口与命中判定收进 `logic/ArchViewport`（纯函数层），场景按项目分开存**：`AppModel` 的场景状态改 `QMap<项目名, 状态/场景>`（原先是单一槽位，两个项目的窗会串台）；视口 `Viewport` 类型**只此一份**（`SceneRender` 原先自带的同构 struct 已删，改用 `ArchViewport::Viewport` —— 渲染与命中必须共用同一个换算式，两处各写一份迟早各自漂移）；场景几百 KB，故 `sceneFor()` 返回**指针**不按值复制 | 视口换算（屏幕↔世界）与命中是**最容易悄悄错**的两件事：缩放没跟上下标就「点不中」，命中区顺序错了就「选错节点」—— 都不该等到看图才发现，故抽成纯函数直接判；「单一真相源」在本仓是硬纪律，同一个概念不许两份定义 | 场景缓存在模型层（多项目各开一次窗会各留一份，几百 KB/份）；引擎侧重新生成后需重载才反映（本批「生成」动作已自动触发重载） |
+| 92 | **引擎输出分两套契约（`Json` / `Text`），回执型命令走 `Text`**：`EngineCli` 新增 `OutputMode` 与 `callText`；`arch gen` / `render arch` 的 stdout 是**人话回执**（如「架构已生成：首版（第 0 版）」「已重绘：<路径> · 第 1 版」），不是 JSON —— 拿 `callJson` 去收，**exit==0 也会被判成「引擎输出不是合法 JSON」**，成功被报成失败；判定逻辑收在唯一出处 `EngineCli::stdoutSatisfies`（可无头判） | 引擎的输出本来就分两类，判据不同就不能共用一条；「空 stdout = 契约破坏」在两类里都成立（回执型命令空 stdout 同样是契约破坏） | 引擎将来若给回执型命令加 `--json`，客户端要按新契约改（现契约由 `contract-check.sh` 第 11 组钉住） |
+| 93 | **回执里的导出路径按「词边界 + 全角分隔符」扫，不按空格切词**（`logic/ArchReceipt::htmlPath`）：引擎真实回执是「已重绘：`<绝对路径>` · 第 N 版」—— 路径与文案之间是**全角冒号**；按空格切词会切出「已重绘：/path/arch.html」这种粘连块，mac 的 `extractHTMLPath`（`hasPrefix("/")`）因此**抽不到路径、导出后「打开」入口始终不出现**；本端改为扫「以 / 开头、以 .html 结尾、中间不含空白与全角分隔符」的一段，并要求 `/` 前面是词边界（否则「render/arch.html」这种相对路径会被从中间的 `/` 截成「/arch.html」，给用户一个打不开的按钮） | 深色是「深于 mac」而非「同 mac」：功能对齐优先于逐字对齐（章程「能力必须一致」），且**相对路径打不开**，认了等于给坏按钮 | mac 端同一处仍抽不到路径 —— 属**跨端一致性债**，已记进 `docs/PARITY-LEDGER.md` D 节，本批未改 mac（当前次序是先搞定 dde） |
+| 94 | **恒发字段加「在不在」标志（`edgesDroppedPresent` / `warningsPresent` / `chipsPresent` / `boundsPresent`），缺键不再静默回落成 0**：契约 §恒发字段明写「缺键不得当作『没有』」，但 `edgesDropped=0`、`violations=0`、`chips=[]` 与「引擎没发这个键」**在值上不可区分**；现补四个 present 标志 + `viewsMissingBounds` 计数，披露行据此说「被丢弃的边数未知（契约可能过旧）」「告警未知」「分层未知」「N 个视图缺包围盒（无法自适应）」 | 缺字段不回落成 0 是仓内硬纪律；批 D1 只把字段读进来，**没区分「确实 0」与「没发」** —— 本批把字段真正显示到用户面前，这个洞才暴露出来（不显示就没人看得见） | 引擎当前**无条件**发这四样（已用真引擎实测钉进 `contract-check.sh`），所以 present 标志在实践中恒为真；标志是给契约演进留的 honest 出口 |
+| 95 | **顺手修批 D1 的两处真缺陷**：① `views` 排序的比较器不满足**严格弱序**（`comp(arch, arch)` 返回 true 违反自反性 → `std::sort` 是未定义行为），改为「先判谁是不是 arch，两者都是则按 id 字典序」；② `contract-check.sh` 的夹具项目**没有源码** → arch 视图是空的（0 shapes / 0 hits / 包围盒退化）→ scene 那 8 条断言整组**空转**（看着全绿其实什么都没验到）→ 夹件补一份 `src/main.c`，并补「arch 非空」「有 shape 的 view 包围盒非退化」两条断言 | 「判据全绿」不构成证据：判据跑在空数据上，等于没判；比较器违反严格弱序是 UB，哪天换个排序实现就会静默排错位置 | 夹具加源码后 `update`/`verify`/`dashboard` 那几组断言的输入也变了（多一个受管源文件），已复跑全绿 |
+
+**本批验证**（全部实跑）：`--selfcheck` **125 通过 0 失败**（103 → 125，+22 例：视口 fit 三则 +
+换算往返 + 命中三则 + 回执四则 + 输出契约四则 + 恒发字段 present 标志四则）；
+`contract-check.sh` **30/30**（真引擎沙箱，23 → 30，+7 条：架构图回执四条 + 包围盒两条 +
+「arch 非空」一条；夹具补源码后整组断言不再空转）；
+`ci.sh` **9/9 门全绿**（新增第 9 门「架构图接线门」，19 项接线点）；
+**七处负控真红**：① 摘掉详情页入口接线 → 第 9 门红（exit 1）；
+② `genArch`/`exportArch` 改走 `callJson` → 第 9 门红；
+③ 命中测试恒空 → selfcheck 红（2 例）；
+④ 视口缩放夹取去掉 → selfcheck 红；
+⑤ 回执改取首行 → selfcheck 红；
+⑥ 输出契约恒真 → selfcheck 红（3 例）；
+⑦ 摘掉「回执按项目路由」→ 第 9 门红。
+**视觉零变化**（架构图是独立窗口，不进四页快照矩阵，快照基线未动）。
+**本批还修了批 D1 的三处真缺陷**（决策 94/95）：排序比较器 UB、恒发字段缺键静默回落成 0、
+契约夹具无源码导致整组断言空转。
 
 ## 分层纪律（后续阶段必须延续）
 

@@ -509,6 +509,58 @@ void AppModel::loadVerify(const QString &name)
         });
 }
 
+// 架构图场景：引擎 `graph arch <name> --format scene`（moongit-graph-scene v1）。
+// 只读命令 —— 不写用户数据；场景数据由引擎确定性生成，客户端只负责画。
+void AppModel::loadScene(const QString &name)
+{
+    m_sceneStates[name] = { LoadState::loading, QString() };
+    emit sceneChanged(name);
+    m_cli->callJson({ QStringLiteral("graph"), QStringLiteral("arch"), name,
+                        QStringLiteral("--format"), QStringLiteral("scene") },
+        EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value()) {
+                m_sceneStates[name] = { LoadState::failed,
+                    res.ok() ? QStringLiteral("引擎输出不是合法 JSON（契约可能过旧）")
+                             : res.error.userMessage() };
+                emit sceneChanged(name);
+                return;
+            }
+            const auto s = GraphScene::fromJson(res.payload->object());
+            if (!s.has_value()) {
+                m_sceneStates[name] = { LoadState::failed,
+                    QStringLiteral("场景契约不认识（版本不对或缺键）") };
+                emit sceneChanged(name);
+                return;
+            }
+            m_scenes[name] = *s;
+            m_sceneStates[name] = { LoadState::loaded, QString() };
+            emit sceneChanged(name);
+        });
+}
+
+// 架构图生成：引擎 `arch gen <name>`。**经引擎写**（客户端不直接碰项目文件）——
+// 章程 C11「客户端永远只经引擎写文档」在这里同样成立。
+// 回执型命令 → 走 Text 契约（引擎 stdout 是人话回执，不是 JSON）。
+void AppModel::genArch(const QString &name)
+{
+    m_cli->callText({ QStringLiteral("arch"), QStringLiteral("gen"), name },
+        EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
+            emit archActionFinished(res.ok(), name,
+                res.ok() ? res.stdOut.trimmed() : res.error.userMessage());
+        });
+}
+
+// 架构图导出：引擎 `render arch <name>`（落盘单文件 HTML —— 引擎层交付物，
+// 不是本平台的渲染路径：章程 §3.5「平台渲染零外包」说的是运行时渲染）。
+void AppModel::exportArch(const QString &name)
+{
+    m_cli->callText({ QStringLiteral("render"), QStringLiteral("arch"), name },
+        EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
+            emit archActionFinished(res.ok(), name,
+                res.ok() ? res.stdOut.trimmed() : res.error.userMessage());
+        });
+}
+
 // ── 更新动作 ──
 
 void AppModel::runUpdate(const QString &name, bool deep)

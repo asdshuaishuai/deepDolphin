@@ -69,6 +69,12 @@ struct GraphView {
     QVector<GraphParticle> particles;
     QVector<GraphHit> hits;
     int edgesDropped = 0; // 恒发：被丢弃的边数（0 也发）
+    // 恒发字段**在不在**（契约 §恒发字段：缺键不得当作「没有」）。
+    // edgesDropped 缺失时 edgesDropped=0 与「确实没丢边」不可区分 —— 用它区分。
+    bool edgesDroppedPresent = false;
+    // 包围盒（内容自适应视口用）。bounds 缺失 → 退化成恒等视口，
+    // 但**必须能区分**「空视图」与「契约没给包围盒」→ 用它区分。
+    bool boundsPresent = false;
     double bx0 = 0, by0 = 0, bx1 = 0, by1 = 0; // 内容包围盒
 
     static GraphView fromJson(const QString &id, const QJsonObject &o);
@@ -92,7 +98,6 @@ struct GraphWarnings {
     QStringList cycleModules;
     static GraphWarnings fromJson(const QJsonObject &o);
 };
-
 // ── 分层条目（count 是数字字段）──
 struct GraphChip {
     int layer = 0;
@@ -109,6 +114,13 @@ struct GraphScene {
     bool truncated = false;
     GraphWarnings warnings;
     QVector<GraphChip> chips;
+    // 恒发字段**在不在**（契约 §恒发字段：缺键不得当作「没有」）。
+    // warnings 缺 → violations=0 与「确实没有违规」不可区分；chips 缺同理。
+    bool warningsPresent = false;
+    bool chipsPresent = false;
+    // 有几个视图没带 bounds（内容包围盒）—— 这些视图只能按恒等视口画，
+    // 必须**披露**（否则用户看到的是「图没缩放」，却不知道为什么）。
+    int viewsMissingBounds = 0;
     QJsonObject panelMeta; // meta.panel（侧栏文案）
     GraphThemeTokens dark, light;
     QVector<GraphView> views;             // arch 恒排第一，其余按引擎导出顺序

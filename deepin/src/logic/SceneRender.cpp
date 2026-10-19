@@ -42,8 +42,8 @@ QString fontString(int weight, double sizePx)
 
 } // namespace
 
-Stats render(const GraphScene &scene, const GraphView &view, bool dark, const Viewport &vp,
-    double width, double height, double nowMs, CanvasSink &sink)
+Stats render(const GraphScene &scene, const GraphView &view, bool dark,
+    const ArchViewport::Viewport &vp, double width, double height, double nowMs, CanvasSink &sink)
 {
     Stats st;
     const GraphThemeTokens &theme = dark ? scene.dark : scene.light;

@@ -90,6 +90,8 @@ add_executable(deepDolphin
     # ── 图谱/架构图（章程 §3.5 平台 Canvas 分派：deepin = Qt QPainter Canvas）──
     src/logic/GraphToken.cpp
     src/logic/SceneRender.cpp
+    src/logic/ArchViewport.cpp
+    src/logic/ArchReceipt.cpp
     # ── platform/ ──
     src/platform/AppService.cpp
     src/platform/AutostartManager.cpp
@@ -106,6 +108,7 @@ add_executable(deepDolphin
     src/ui/PanelWindow.cpp
     src/ui/SidebarNav.cpp
     src/ui/WorkBar.cpp
+    src/ui/ArchCanvasWidget.cpp
     src/ui/common/BusyRow.cpp
     src/ui/common/FlatButton.cpp
     src/ui/common/MarkdownView.cpp
@@ -123,6 +126,7 @@ add_executable(deepDolphin
     src/ui/dialogs/AgentDialog.cpp
     src/ui/dialogs/AiResultDialog.cpp
     src/ui/dialogs/AiSettingsDialog.cpp
+    src/ui/dialogs/ArchDialog.cpp
     src/ui/dialogs/ScanDialog.cpp
     src/ui/dialogs/panes/AutomationPane.cpp
     src/ui/dialogs/panes/GeneralPane.cpp

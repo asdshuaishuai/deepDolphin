@@ -30,7 +30,8 @@ bool parseObject(const QByteArray &raw, QJsonDocument *out)
     return true;
 }
 
-EngineCli::EngineResult classifyResult(QProcess *proc, const QStringList &args, bool timedOut, bool userStopped)
+EngineCli::EngineResult classifyResult(QProcess *proc, const QStringList &args, bool timedOut,
+    bool userStopped, EngineCli::OutputMode mode)
 {
     EngineCli::EngineResult r;
     const QString cmdLabel = args.value(0, QStringLiteral("引擎命令"));
@@ -60,16 +61,26 @@ EngineCli::EngineResult classifyResult(QProcess *proc, const QStringList &args, 
     }
 
     if (r.exitCode == 0) {
-        if (stdoutIsJson) {
-            r.payload = payload;
-            return r; // 成功
+        if (!EngineCli::stdoutSatisfies(mode, r.stdOut)) {
+            if (mode == EngineCli::OutputMode::Text) {
+                // Text 契约：stdout 必须是非空回执文本。空 stdout 同样是契约破坏
+                //（引擎说成功了却什么都没说 —— 客户端拿不到回执就该报出来）。
+                r.error = EngineError::makeFailed(
+                    QStringLiteral("引擎没有回执（命令 %1，退出码 0）。"
+                                   "引擎版本可能与客户端契约不匹配，请升级引擎。")
+                        .arg(cmdLabel));
+            } else {
+                // 空 stdout 是契约破坏，不是合法空态（CONTRACT §0）
+                r.error = EngineError::makeFailed(
+                    QStringLiteral("引擎输出不是合法 JSON（命令 %1，退出码 0）。"
+                                   "可能引擎版本与客户端契约不匹配，请升级引擎。")
+                        .arg(cmdLabel));
+            }
+            return r;
         }
-        // 空 stdout 是契约破坏，不是合法空态（CONTRACT §0）
-        r.error = EngineError::makeFailed(
-            QStringLiteral("引擎输出不是合法 JSON（命令 %1，退出码 0）。"
-                           "可能引擎版本与客户端契约不匹配，请升级引擎。")
-                .arg(cmdLabel));
-        return r;
+        if (mode == EngineCli::OutputMode::Json)
+            r.payload = payload; // Json 模式：载荷带上（Text 模式没有载荷）
+        return r; // 成功：回执在 r.stdOut
     }
 
     // exit≠0：stdout 可解析 → failedWithPayload，载荷保留（CONTRACT §4.3）
@@ -111,8 +122,30 @@ int EngineCli::stopUpdates()
     return m_registry.terminateRunning({ QStringLiteral("update"), QStringLiteral("deep") });
 }
 
+bool EngineCli::stdoutSatisfies(OutputMode mode, const QString &stdoutText)
+{
+    if (mode == OutputMode::Text)
+        return !stdoutText.trimmed().isEmpty(); // 回执型：非空即算
+    QJsonDocument doc;
+    return parseObject(stdoutText.toUtf8(), &doc); // JSON 型：必须是 JSON 对象
+}
+
 void EngineCli::callJson(const QStringList &args, int timeoutMs,
                          std::function<void(const EngineResult &)> onDone)
+{
+    callWithMode(args, timeoutMs, OutputMode::Json, std::move(onDone));
+}
+
+void EngineCli::callText(const QStringList &args, int timeoutMs,
+                         std::function<void(const EngineResult &)> onDone)
+{
+    callWithMode(args, timeoutMs, OutputMode::Text, std::move(onDone));
+}
+
+// 【两套输出契约的唯一实现处】callJson / callText 只差 mode，其余（进程、超时、
+// 取消、分类、收尾）全在这条路径上 —— 两套契约不许各写一份进程管理。
+void EngineCli::callWithMode(const QStringList &args, int timeoutMs, OutputMode mode,
+                             std::function<void(const EngineResult &)> onDone)
 {
     if (m_bin.isEmpty()) {
         emit engineMissing();
@@ -145,14 +178,14 @@ void EngineCli::callJson(const QStringList &args, int timeoutMs,
     // shared_ptr 让它在各 lambda 间共享可变状态，不借 mutable（mutable 使
     // operator() 非 const，被内层 lambda 按值捕获后将无法调用）。
     auto finishedOnce = std::make_shared<bool>(false);
-    auto finish = [this, proc, timer, onDone, finishedOnce, timeoutMs, cmdTag, startedAt](
+    auto finish = [this, proc, timer, onDone, finishedOnce, timeoutMs, cmdTag, startedAt, mode](
                       bool timedOut) {
         if (*finishedOnce)
             return;
         *finishedOnce = true;
         timer->stop();
         const bool userStopped = m_registry.wasUserStopped(proc) && !timedOut;
-        EngineCli::EngineResult r = classifyResult(proc, proc->arguments(), timedOut, userStopped);
+        EngineCli::EngineResult r = classifyResult(proc, proc->arguments(), timedOut, userStopped, mode);
         if (timedOut)
             r.error = EngineError::makeTimeout(qMax(1, timeoutMs / 1000));
         // 真机排障唯一可靠的现场（M0-9）：跑了什么、结果、耗时、是否超时/被停。
@@ -253,5 +286,5 @@ EngineCli::EngineResult EngineCli::runSync(const QStringList &args, int timeoutM
             return r;
         }
     }
-    return classifyResult(&proc, args, false, false);
+    return classifyResult(&proc, args, false, false, OutputMode::Json);
 }

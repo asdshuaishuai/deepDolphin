@@ -100,9 +100,13 @@ GraphView GraphView::fromJson(const QString &id, const QJsonObject &o)
         if (s.isObject())
             v.hits.push_back(GraphHit::fromJson(s.toObject()));
     }
-    // edgesDropped 恒发：0 也发。这里读不到就留 0，但**不把它当「没有丢弃」**
-    // ——调用方靠 edgesDroppedPresent() 判断引擎有没有发这个键。
+    // edgesDropped 恒发：0 也发。读不到就留 0，但**不把它当「没有丢弃」**
+    // —— 用 edgesDroppedPresent 区分「确实 0」与「契约没发这个键」。
+    v.edgesDroppedPresent = o.contains(QLatin1String("edgesDropped"));
     v.edgesDropped = static_cast<int>(numOf(o, "edgesDropped"));
+    // bounds（内容包围盒）：引擎无条件发；缺了就退化成恒等视口，
+    // 但**必须能区分**「空视图」与「契约没给包围盒」→ boundsPresent。
+    v.boundsPresent = o.contains(QLatin1String("bounds"));
     const QJsonObject b = o.value(QLatin1String("bounds")).toObject();
     v.bx0 = numOf(b, "x0");
     v.by0 = numOf(b, "y0");
@@ -177,7 +181,11 @@ std::optional<GraphScene> GraphScene::fromJson(const QJsonObject &o)
     s.fit = strOf(meta, "fit");
     s.themeBtn = strOf(meta, "themeBtn");
     s.truncated = meta.value(QLatin1String("truncated")).toBool(false);
+    // warnings / chips 恒发（空也发）：缺键时值全是 0/空，与「确实没有」
+    // 不可区分 —— 用 present 标志把两种情况分开，交给调用方披露。
+    s.warningsPresent = meta.contains(QLatin1String("warnings"));
     s.warnings = GraphWarnings::fromJson(meta.value(QLatin1String("warnings")).toObject());
+    s.chipsPresent = meta.contains(QLatin1String("chips"));
     for (const QJsonValue &v : meta.value(QLatin1String("chips")).toArray()) {
         if (v.isObject())
             s.chips.push_back(GraphChip::fromJson(v.toObject()));
@@ -190,15 +198,21 @@ std::optional<GraphScene> GraphScene::fromJson(const QJsonObject &o)
 
     const QJsonObject views = o.value(QLatin1String("views")).toObject();
     for (auto it = views.constBegin(); it != views.constEnd(); ++it) {
-        if (it.value().isObject())
+        if (it.value().isObject()) {
             s.views.push_back(GraphView::fromJson(it.key(), it.value().toObject()));
+            if (!s.views.last().boundsPresent)
+                ++s.viewsMissingBounds;
+        }
     }
     // arch 恒排第一；其余按引擎导出顺序（字典序，module:xxx）——mac 同款。
+    // ⚠ 比较器必须是**严格弱序**（std::sort 的前提）：arch 优先靠
+    //   「谁是不是 arch」判定，两者都是 arch 时不比较（不能 return true）。
+    //   原写法 comp(arch, arch)==true 违反自反性，是未定义行为。
     std::sort(s.views.begin(), s.views.end(), [](const GraphView &a, const GraphView &b) {
-        if (a.id == QLatin1String("arch"))
-            return true;
-        if (b.id == QLatin1String("arch"))
-            return false;
+        const bool aArch = (a.id == QLatin1String("arch"));
+        const bool bArch = (b.id == QLatin1String("arch"));
+        if (aArch != bArch)
+            return aArch; // arch 排第一
         return a.id < b.id;
     });
 
