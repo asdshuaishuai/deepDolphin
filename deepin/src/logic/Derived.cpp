@@ -1,4 +1,5 @@
 #include "Derived.h"
+#include "SemColors.h"
 #include "Thresholds.h"
 #include "../models/ProjectStatus.h"
 #include <QDateTime>
@@ -256,48 +257,48 @@ QColor livenessColor(Liveness l)
 {
     switch (l) {
     case Liveness::needsAction:
-        return QColor(0xF5, 0x9E, 0x0B); // 橙
+        return SemColors::orange(); // 橙
     case Liveness::engineStale:
     case Liveness::quiet:
-        return QColor(0xEF, 0x44, 0x44); // 红
+        return SemColors::stale(); // 陈旧红
     case Liveness::recent:
-        return QColor(0x10, 0xB9, 0x81); // 绿
+        return SemColors::shallow(); // 绿
     case Liveness::unreadable:
-        return QColor(0xDC, 0x26, 0x26);
+        return SemColors::red();
     case Liveness::notGit:
-        return QColor(0x8B, 0x5C, 0xF6); // 紫
+        return SemColors::deep(); // 紫
     case Liveness::unknown:
         break;
     }
-    return QColor(0x9C, 0xA3, 0xAF); // 灰
+    return SemColors::gray(); // 灰
 }
 
 QColor branchStatusColor(const QString &status)
 {
     // active绿 / idle黄 / stale红 / merged紫 / 未知灰（mac Models.swift:877-887）。
     if (status == QLatin1String("active"))
-        return QColor(0x10, 0xB9, 0x81);
+        return SemColors::shallow();
     if (status == QLatin1String("idle"))
-        return QColor(0xE8, 0xB0, 0x1C);
+        return SemColors::yellow();
     if (status == QLatin1String("stale"))
-        return QColor(0xEF, 0x44, 0x44);
+        return SemColors::stale();
     if (status == QLatin1String("merged"))
-        return QColor(0x8B, 0x5C, 0xF6);
-    return QColor(0x9C, 0xA3, 0xAF);
+        return SemColors::deep();
+    return SemColors::gray();
 }
 
 QColor statTint(int n)
 {
     // 量级分档（DSStat）：负数（读不出来）按红处理，不许当「干净」。
     if (n < 0)
-        return QColor(0xDC, 0x26, 0x26);
+        return SemColors::red();
     if (n == 0)
         return QColor(); // 无效 = 跟随文字色
     if (n <= 2)
-        return QColor(0xE8, 0xB0, 0x1C);
+        return SemColors::yellow();
     if (n <= 9)
-        return QColor(0xF5, 0x9E, 0x0B);
-    return QColor(0xDC, 0x26, 0x26);
+        return SemColors::orange();
+    return SemColors::red();
 }
 
 } // namespace Derived

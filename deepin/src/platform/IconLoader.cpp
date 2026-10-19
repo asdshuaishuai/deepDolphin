@@ -1,4 +1,5 @@
 #include "IconLoader.h"
+#include "../logic/SemColors.h"
 #include <QDir>
 #include <QFile>
 #include <QHash>
@@ -18,7 +19,7 @@ QIcon tintedSvg(const QString &qrcPath, const QColor &tint, const QSize &size)
     if (!f.open(QIODevice::ReadOnly))
         return QIcon();
     const QByteArray placeholder = f.readAll();
-    const QColor c = tint.isValid() ? tint : QColor(0x88, 0x88, 0x88);
+    const QColor c = tint.isValid() ? tint : FixedColors::iconFallback();
     QByteArray svg = placeholder;
     svg.replace("currentColor", c.name(QColor::HexRgb).toUtf8());
 
@@ -61,7 +62,7 @@ QIcon app()
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);
-    p.setBrush(QColor(0x1E, 0x6F, 0xEB)); // deepin accent 蓝（占位，仅无任何图标资源时）
+    p.setBrush(FixedColors::trayAccent()); // deepin accent 蓝（占位，仅无任何图标资源时）
     p.setPen(Qt::NoPen);
     p.drawRoundedRect(4, 4, 56, 56, 14, 14);
     p.setBrush(Qt::white);
@@ -89,7 +90,7 @@ QIcon symbol(const QString &name, const QColor &tint, QSize size)
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);
-    p.setBrush(tint.isValid() ? tint : QColor(0x88, 0x88, 0x88));
+    p.setBrush(tint.isValid() ? tint : FixedColors::iconFallback());
     p.setPen(Qt::NoPen);
     const int d = qMin(size.width(), size.height()) / 2;
     p.drawEllipse((size.width() - d) / 2, (size.height() - d) / 2, d, d);

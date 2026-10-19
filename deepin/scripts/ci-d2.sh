@@ -53,13 +53,10 @@ D2_EXEMPT='src/ui/DesignTokens.h|keep|令牌定义处：色值/字号的唯一�
 src/ui/DesignTokens.cpp|keep|令牌定义处：色值/字号的唯一出处
 src/app/SelfCheck.cpp|keep|判据夹具：必须写期望字面量（否则「期望值随手改」无从发现）
 src/platform/Canvas2D.cpp|keep|Canvas 契约层：12px 是契约层内部兜底，不是设计令牌
+src/logic/SemColors.h|keep|固定色唯一出处（判定层纯色：语义色 + 固定色，DS::semColor 也转发它）
 src/logic/GraphToken.cpp|keep|引擎契约色透传 + 洋红兜底（契约色不是 DS 令牌）
 src/logic/HeatLayout.cpp|keep|契约热色（与 HTML 交付物逐字同色，不随主题改写）
-src/logic/CommitTypeComposition.cpp|keep|12 色提交类型板（mac 同款，非 DS 令牌）
-src/logic/Derived.cpp|fix|状态语义色第二份定义 → 批 O 下沉收敛
-src/tray/TrayController.cpp|fix|状态语义色第二份定义 → 批 O 下沉收敛
-src/tray/TrayPopupWindow.cpp|fix|状态语义色第二份定义 → 批 O 下沉收敛
-src/platform/IconLoader.cpp|fix|图标 tint 兜底灰 + 托盘强调蓝 → 批 O 下沉收敛'
+src/logic/CommitTypeComposition.cpp|keep|12 色提交类型**序列色**（序号→颜色的映射，刻意与状态语义色区分 —— 与 mac 的 DSColor.sequence 同款）'
 
 # ⚠ `setPixelSize` 要**带数字参数**才算散值 —— 只写 API 名的话，
 #   `setPixelSize(DS::FontPx::code)`（已收口进 token）也会被拦，那拦的是

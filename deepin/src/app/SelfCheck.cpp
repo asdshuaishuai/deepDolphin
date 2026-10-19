@@ -6,6 +6,8 @@
 #include "../logic/CodeGraphBuild.h"
 #include "../logic/DashFilter.h"
 #include "../logic/Derived.h"
+#include "../logic/Liveness.h"
+#include "../logic/SemColors.h"
 #include "../logic/DocPages.h"
 #include "../logic/DocumentIntegrity.h"
 #include "../logic/EngineConfig.h"
@@ -2466,6 +2468,35 @@ int SelfCheck::run(QStringList &log)
                 && HeatLayout::Canvas::cardLabel() == QColor(190, 200, 215)
                 && HeatLayout::Canvas::cardNote() == QColor(200, 210, 225)
                 && HeatLayout::Canvas::stroke() == QColor(255, 255, 255));
+        // 批 O：状态语义色**单一真相源** —— DS::semColor 必须转发 logic/SemColors，
+        // 否则同一个语义色又会有两份定义（这正是批 N 照出来的问题）。
+        check(log, "设计系统：状态语义色单一真相源（DS::semColor 转发 SemColors）",
+            DS::semColor(DS::SemColor::shallow) == SemColors::shallow()
+                && DS::semColor(DS::SemColor::deep) == SemColors::deep()
+                && DS::semColor(DS::SemColor::ai) == SemColors::ai()
+                && DS::semColor(DS::SemColor::orange) == SemColors::orange()
+                && DS::semColor(DS::SemColor::red) == SemColors::red()
+                && DS::semColor(DS::SemColor::yellow) == SemColors::yellow()
+                && DS::semColor(DS::SemColor::gray) == SemColors::gray()
+                && DS::semColor(DS::SemColor::stale) == SemColors::stale());
+        // 陈旧红（#EF4444）与危险红（#DC2626）是**两档不同的红**，不许合并。
+        check(log, "设计系统：陈旧红与危险红是两档（stale #EF4444 / red #DC2626）",
+            SemColors::stale() == QColor(0xEF, 0x44, 0x44)
+                && SemColors::red() == QColor(0xDC, 0x26, 0x26)
+                && SemColors::stale() != SemColors::red());
+        check(log, "设计系统：固定色（图标兜底灰 / 托盘强调蓝 / 托盘条底轨）",
+            FixedColors::iconFallback() == QColor(0x88, 0x88, 0x88)
+                && FixedColors::trayAccent() == QColor(0x1E, 0x6F, 0xEB)
+                && FixedColors::trayBarTrack() == QColor(128, 128, 128, 60));
+        // 判定层（logic/Derived）必须与唯一出处同源 —— 判定层不依赖 ui 层，
+        // 所以它**只能**从 logic/SemColors 取色。
+        check(log, "设计系统：判定层状态色与唯一出处同源（liveness/branch/stat）",
+            Derived::livenessColor(Liveness::recent) == SemColors::shallow()
+                && Derived::livenessColor(Liveness::needsAction) == SemColors::orange()
+                && Derived::livenessColor(Liveness::engineStale) == SemColors::stale()
+                && Derived::branchStatusColor(QStringLiteral("active")) == SemColors::shallow()
+                && Derived::branchStatusColor(QStringLiteral("stale")) == SemColors::stale()
+                && Derived::statTint(5) == SemColors::orange());
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

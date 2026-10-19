@@ -1,5 +1,6 @@
 #include "TrayPopupWindow.h"
 #include "TrayGeometry.h"
+#include "../logic/SemColors.h"
 #include "../ui/DesignTokens.h"
 #include "../ui/common/BusyRow.h"
 #include "../ui/common/FlatButton.h"
@@ -181,7 +182,7 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
         pm.fill(Qt::transparent);
         QPainter p(&pm);
         p.setRenderHint(QPainter::Antialiasing);
-        p.setBrush(row.dot.isValid() ? row.dot : QColor(0x9C, 0xA3, 0xAF));
+        p.setBrush(row.dot.isValid() ? row.dot : SemColors::gray());
         p.setPen(Qt::NoPen);
         p.drawEllipse(0, 0, DS::Height::dotLg, DS::Height::dotLg);
         dot->setPixmap(pm);
@@ -226,10 +227,10 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
             QPainter bp(&barPm);
             bp.setRenderHint(QPainter::Antialiasing);
             bp.setPen(Qt::NoPen);
-            bp.setBrush(QColor(128, 128, 128, 60));
+            bp.setBrush(FixedColors::trayBarTrack());
             bp.drawRoundedRect(0, 0, TrayGeometry::miniBarWidth, DS::Height::barMini,
                 DS::Height::barMini / 2.0, DS::Height::barMini / 2.0);
-            bp.setBrush(QColor(0x1E, 0x6F, 0xEB));
+            bp.setBrush(FixedColors::trayAccent());
             const int w = TrayGeometry::miniBarWidth * qMin(row.pending, TrayGeometry::pendingBarCap)
                 / TrayGeometry::pendingBarCap;
             if (w > 0)

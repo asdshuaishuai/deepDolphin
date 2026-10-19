@@ -179,6 +179,23 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | **Canvas font 简写按 CSS 口径解析** | ✅ 批 M：判定层 `logic/CanvasFont`（`px` 与 `pt` 都认）—— 修掉「`11pt` 被当成字体族名吞掉、字号根本没设上」的**移植语义缩水**；平台侧按串静态缓存 QFont + 同串跳过 | ⬜ 未接（mac 侧用浏览器原生 font 简写，无此坑） | ⬜ 未接 | —— |
 | 引擎索引自愈（`selfHealed`） | ✅ 批 L：索引缺失/过期时引擎会**自愈**（实测 2026-10-19：`selfHealed: true`）→ 索引状态行在用户点「生成」前就有内容，并明说「引擎自愈过索引」 | ⬜ 未接 | ⬜ 未接 | —— 条件键，需 present 标志 |
 
+### D.1 跨端状态色**取值口径**差异（批 O 查 mac 时照出，**未动**）
+
+批 O 把状态语义色收敛成单一真相源（E.1 节）时，顺手核了 mac 的着色口径，发现**两端取值不一致**
+—— 而且 **mac 自己就有两套映射**。这属于「取值对齐」，**会动视觉基线**，需专门评审，不在批 O 顺手改。
+
+| 语义档 | deepin（现值） | mac 侧 | 差异 |
+| --- | --- | --- | --- |
+| 分支 `stale` | 红 `#EF4444` | `StatusColor.systemColor` → **red** ✅ / `DSColor.color(DSStatus)` → **orange** ❌ | deepin 对齐了 mac 的 **`StatusColor`**；mac 自己的 `DSColor` 是橙 —— **mac 内部两个出处** |
+| `engineStale` / `quiet`（Liveness） | 红 `#EF4444` | `BoardView` 的 `stateTint` → **secondary（灰）** | 口径不同：deepin 偏「警示」，mac 偏「静默」 |
+| `notGit`（Liveness） | 紫 `#8B5CF6` | mac → **secondary（灰）** | 同上 |
+| `idle`（分支状态） | 黄 `#E8B01C`（tailwind yellow-400） | mac → SwiftUI `.yellow` | mac 用系统标准黄，deepin 用 tailwind 档 |
+| unknown | 灰 `#9CA3AF`（tailwind gray-400） | mac → `.secondary`（系统灰） | 同上 |
+| 分段条底轨遮罩 | 灰 40/255 | — | 与托盘迷你条底轨（灰 **60**/255）**同语义不同档** |
+
+**待办**：逐点核对后统一口径（会动四页快照基线 + 需视觉评审）。**本轮次序是先搞定 dde**，
+且 mac 侧自己的两套映射也要一并厘清 —— 在此之前 deepin 不动取值。
+
 ---
 
 ## E. deepin 自身 DDE/DTK 化剩余项（`docs/DDE-INTEGRATION-PLAN.md` §9 看板）
@@ -197,7 +214,7 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | M3c | 清第二套色板 + 一致性 / HiDPI / 动效收尾 | ⬜（与 B13/B14 同批更省） |
 | M1a / M0-8 / M3b / M4a / M4b | 容器批 / 干净容器 / KPI 骨架屏 / 拆分 / deb 矩阵 | ◐ 部分落地 |
 
-### E.1 状态语义色第二份定义（批 N 照出，**待批 O 收敛**）
+### E.1 状态语义色第二份定义（批 N 照出 → **批 O 已收敛**）
 
 批 N 把 D2 散值门的**检测形式补全**后（不再只盯 `#RRGGBB`），照出状态语义色在**两处**定义：
 
@@ -207,14 +224,14 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | `tray/TrayController.cpp`（`tintColor`） | 同上一批 | **同值** → 同上 |
 | `tray/TrayPopupWindow.cpp` | 灰 `0x9CA3AF` | **同值** → 同上 |
 | `platform/IconLoader.cpp` | 灰 `0x888888` / 蓝 `0x1E6FEB` | 图标 tint 兜底 + 托盘强调蓝（**独立语义**，DS 里没有） |
-| `logic/Derived.cpp` 另有一档红 `0xEF4444` | `engineStale` / `quiet` / `stale` | **DS 没有这一档**（DS 的 `red` 是 `0xDC2626`）—— 需跟 mac 逐档核对谁对 |
+| `logic/Derived.cpp` 另有一档红 `0xEF4444` | `engineStale` / `quiet` / `stale`（分支状态） | **DS 没有这一档**（DS 的 `red` 是 `0xDC2626`）→ 批 O 补为 `SemColors::stale()`（**两档红语义不同，不合并**） |
 
-**批 N 的处置**：不吞。四条记进 D2 门的 `fix` 豁免项（**命中数归零即门红**，逼着收敛），
-另在 README 决策 176–178 记明。**批 O 要定的两件事**：
-① `0xEF4444` 与 `0xDC2626` 两档红哪个跟 mac 逐值对齐（`Models.swift:877-887`）；
-② 状态语义色的**归属层** —— 判定层（`logic/`，纯数据、零 UI 依赖）还是 DS（`ui/`，依赖
-DTK 调色板）？判定层若要取色，就得有一份**不依赖 DGuiApplicationHelper** 的纯色定义
-（`accent` 例外：它接 DTK 主题强调色，天然属于 `ui/` 层）。
+**批 O 已收敛**：新增 `src/logic/SemColors.h`（判定层纯色、零 UI 依赖）作为**唯一出处**，
+`DS::semColor()` 改为**转发**它；判定层 / 托盘 / 平台层一律从它取值。
+D2 门里的四条 `fix` 豁免（`Derived` / `TrayController` / `TrayPopupWindow` / `IconLoader`）
+**因命中归零而删掉** —— 门本来就会红（`fix` 模式「归零即红」），是它在逼着收敛。
+**取值一字未改** → 视觉零变化。
+⚠ **剩下的跨端取值差异不在本批**，见 D.1 节。
 
 ---
 

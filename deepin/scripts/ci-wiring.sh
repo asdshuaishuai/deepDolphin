@@ -54,6 +54,47 @@ arch_need() { # arch_need <文件> <正则> <说明>
         ARCH_FAIL=1
     fi
 }
+# arch_need_count：盯「**恰好出现 N 次**」。
+# ⚠ 为什么需要它：arch_need 盯的是「这个 token 出现过」—— 但同名 token 在一个文件里
+#   常出现多处（`SemColors::shallow()` 在 Derived.cpp 有 2 处、`FixedColors::iconFallback()`
+#   在 IconLoader.cpp 有 2 处）。变异只拿掉其中一处时，arch_need 照样绿 —— **门被骗过**
+#   （负控实测，第八次「同名/子串互相顶替」）。改成「必须恰好 N 次」：
+#   少一处、多一处都红。
+arch_need_count() { # arch_need_count <文件> <正则> <期望次数> <说明>
+    local f="$1" re="$2" want="$3" label="$4"
+    ARCH_N=$((ARCH_N + 1))
+    if [ ! -f "$f" ]; then
+        echo "  ✗ $label：文件不存在 $f" >&2
+        ARCH_FAIL=1
+        return
+    fi
+    local got
+    got="$(strip_comments "$f" | grep -oE -- "$re" | grep -c . || true)"
+    got="${got:-0}"
+    if [ "$got" = "$want" ]; then
+        echo "  ✓ $label"
+    else
+        echo "  ✗ $label：$f 里 $re 出现 $got 次（期望 $want 次）" >&2
+        ARCH_FAIL=1
+    fi
+}
+# arch_forbid：盯「**不该有的东西没了**」—— 收敛类改动光靠 arch_need（查「在」）
+# 看不出来：把写死的色值又写回去，「它还在」这件事没有正向条目能抓。
+arch_forbid() { # arch_forbid <文件> <正则> <说明>
+    local f="$1" re="$2" label="$3"
+    ARCH_N=$((ARCH_N + 1))
+    if [ ! -f "$f" ]; then
+        echo "  ✗ $label：文件不存在 $f" >&2
+        ARCH_FAIL=1
+        return
+    fi
+    if strip_comments "$f" | grep -E -- "$re" >/dev/null; then
+        echo "  ✗ $label：$f 里仍有 $re（该收敛的又写回去了）" >&2
+        ARCH_FAIL=1
+    else
+        echo "  ✓ $label"
+    fi
+}
 arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("graph"\).*QStringLiteral\("arch"\)' 'AppModel 调引擎 graph arch 取场景'
 arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("scene"\)' '场景按 scene 契约格式取（--format scene）'
 arch_need "$SRC/src/app/AppModel.h" 'loadScene' 'AppModel 暴露 loadScene'
@@ -348,6 +389,26 @@ arch_need "$SRC/src/ui/HeatmapWidget.cpp" 'HeatLayout::Canvas::cardText' '热力
 arch_need "$SRC/scripts/ci.sh" 'sh "\$SRC/scripts/ci-d2\.sh"' 'CI 流程调用独立散值门'
 arch_need "$SRC/scripts/ci-d2.sh" "D2_EXEMPT='src/ui/DesignTokens\.h" '散值门有显式豁免清单（豁免是登记的）'
 arch_need "$SRC/scripts/ci-d2.sh" '豁免已失效：\$_p' '散值门自检豁免不腐化（归零即红）'
+
+# 批 O · 状态语义色单一真相源：固定色下沉到 logic/SemColors（判定层纯色、零 UI 依赖），
+#   DS::semColor 转发它；判定层 / 托盘 / 平台层都不再自己写字面色值。
+arch_need "$SRC/src/logic/SemColors.h" 'namespace SemColors [{]' '固定色有唯一出处（判定层纯色）'
+arch_need "$SRC/src/logic/SemColors.h" 'namespace FixedColors [{]' '固定非语义色有唯一出处'
+# ⚠ 下面这五条用**精确计数**而不是「出现过」：同名 token 在文件里有多处
+#   （Derived 的 shallow ×2、IconLoader 的 iconFallback ×2），
+#   变异只摘掉其中一处时「出现过」照样绿（负控实测，第八次同类问题）。
+arch_need_count "$SRC/src/ui/DesignTokens.cpp" 'SemColors::shallow\(\)' 1 'DS::semColor 转发唯一出处（恰好 1 处）'
+arch_need_count "$SRC/src/logic/Derived.cpp" 'SemColors::shallow\(\)' 2 '判定层状态色走唯一出处（恰好 2 处）'
+arch_need_count "$SRC/src/tray/TrayController.cpp" 'SemColors::stale\(\)' 1 '托盘状态色走唯一出处（恰好 1 处）'
+arch_need_count "$SRC/src/tray/TrayPopupWindow.cpp" 'FixedColors::trayAccent\(\)' 1 '托盘强调色走唯一出处（恰好 1 处）'
+arch_need_count "$SRC/src/platform/IconLoader.cpp" 'FixedColors::iconFallback\(\)' 2 '图标兜底色走唯一出处（恰好 2 处）'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'SemColors::stale\(\)' 'SelfCheck 钉住唯一出处的值'
+# 「不该有的东西没了」：写死的色值又写回去 → 必须红（正向条目抓不到这种回退）
+arch_forbid "$SRC/src/logic/Derived.cpp" 'QColor\(0x' '判定层不再自己写字面色值'
+arch_forbid "$SRC/src/tray/TrayController.cpp" 'QColor\(0x' '托盘不再自己写字面色值'
+arch_forbid "$SRC/src/tray/TrayPopupWindow.cpp" 'QColor\(0x' '托盘弹层不再自己写字面色值'
+arch_forbid "$SRC/src/platform/IconLoader.cpp" 'QColor\(0x' '平台层不再自己写字面色值'
+arch_forbid "$SRC/src/ui/DesignTokens.cpp" 'QColor\(0x' 'DS 不再自己写语义色字面量'
 
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \

@@ -51,6 +51,9 @@ int frame();  // DStyle::PM_FrameRadius —— 控件框圆角（M3b 组件化�
 } // namespace Radius
 
 // ── 语义色（状态语义保留 mac 取值；accent 接 DTK 主题强调色）──
+// ⚠ **取值不在这里** —— 固定语义色下沉到 `logic/SemColors.h`（判定层纯色，
+//   唯一出处；判定层 / 托盘 / 平台层都要用同一批色）。只有 `accent` 例外：
+//   它接 **DTK 运行期主题强调色**（DGuiApplicationHelper = ui 层），天然住 ui 层。
 enum class SemColor {
     accent,     // DTK 主题强调色（LightLively，亮暗自适应）· 强调
     shallow,    // 绿 #10B981 · 浅更新轨 / 活跃
@@ -60,6 +63,7 @@ enum class SemColor {
     red,        // 红 #DC2626 · 错误 / 量级高档
     yellow,     // 黄 #E8B01C · idle / 量级低档
     gray,       // 灰 #9CA3AF · unknown
+    stale,      // 陈旧红 #EF4444 · 分支 stale / 引擎停滞（与 red 是两档，不合并）
 };
 
 QColor semColor(SemColor c);

@@ -1,6 +1,7 @@
 #include "TrayController.h"
 #include "TrayGeometry.h"
 #include "TrayPopupWindow.h"
+#include "../logic/SemColors.h"
 #include "../platform/IconLoader.h"
 #include <QApplication>
 #include <QMenu>
@@ -20,7 +21,7 @@ QIcon tintedIcon(const QColor &tint, bool alert)
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);
-    p.setBrush(tint.isValid() ? tint : QColor(0x10, 0xB9, 0x81));
+    p.setBrush(tint.isValid() ? tint : SemColors::shallow());
     p.setPen(Qt::NoPen);
     if (alert) {
         // 感叹三角（⚠︎ 形）
@@ -42,20 +43,20 @@ QColor tintColor(Liveness l)
 {
     switch (l) {
     case Liveness::engineStale:
-        return QColor(0xEF, 0x44, 0x44); // 红（stale 优先）
+        return SemColors::stale(); // 陈旧红（stale 优先）
     case Liveness::needsAction:
-        return QColor(0xF5, 0x9E, 0x0B); // 橙（dirty）
+        return SemColors::orange(); // 橙（dirty）
     case Liveness::recent:
-        return QColor(0x10, 0xB9, 0x81); // 绿
+        return SemColors::shallow(); // 绿
     case Liveness::unreadable:
-        return QColor(0xDC, 0x26, 0x26);
+        return SemColors::red();
     case Liveness::notGit:
-        return QColor(0x8B, 0x5C, 0xF6);
+        return SemColors::deep();
     case Liveness::quiet:
     case Liveness::unknown:
         break;
     }
-    return QColor(0x9C, 0xA3, 0xAF);
+    return SemColors::gray();
 }
 } // namespace
 
