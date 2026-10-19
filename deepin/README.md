@@ -38,7 +38,7 @@ moonGit（仓颉引擎，仓内别名 deepgit）项目群进度客户端的 Linu
 | Dock 菜单（打开面板 / 全部浅更新） | 托盘菜单：打开面板 / 全部浅更新 + **退出**（Linux 托盘必须有退出项） | `tray/TrayController` |
 | 添加 / 扫描项目（`ScanSheet`） | ScanDialog + ScanCoverage 覆盖度披露接回主窗口说明条 | `ui/dialogs/ScanDialog`；`logic/ScanCoverage`、`PathInput` |
 | 深链启动参数（`Route.swift`） | `--project <名>`、`--section board\|milestones\|dashboard`、`--open-settings`、`--agent-selftest`；pendingRoute 消费一次即置闩 | `logic/Route`、`Router`；`PanelWindow::maybeApplyPendingRoute` |
-| 纯函数判定层（`client-check.sh` 单独编译断言） | `models/`、`logic/` 零 QWidget 头，判定收敛为二进制内置 `--selfcheck`（125 例） | `src/models/`、`src/logic/`、`app/SelfCheck` |
+| 纯函数判定层（`client-check.sh` 单独编译断言） | `models/`、`logic/` 零 QWidget 头，判定收敛为二进制内置 `--selfcheck`（135 例） | `src/models/`、`src/logic/`、`app/SelfCheck` |
 | 设置窗口（自动化 + AI） | 设置三页签（DTabBar+QStackedWidget）：通用 / 自动化（分段改完立即生效）/ AI | `ui/dialogs/panes/*` |
 | 快捷键（CommandMenu + ShortcutMap.swift） | QShortcut 全量真绑（含深更新——mac 曾「声明未绑」的缺陷不重犯） | `ui/PanelWindow.cpp:516`；`logic/ShortcutMap.h`（唯一声明处） |
 | 定时更新 + AI 简报 | autoHours 周期 + 首轮 600s；简报经通知；silent 场景不偷弹结果面板 | `app/AppModel.cpp:202`；`ai/AiDigests`（scheduledDigest） |
@@ -101,7 +101,7 @@ cmake --build build --parallel 4
 冒烟脚本按此硬路径断言）。
 
 ```sh
-./build/deepDolphin --selfcheck   # 模型层 fixtures 自检（无 GUI、无引擎依赖；当前 125 例）
+./build/deepDolphin --selfcheck   # 模型层 fixtures 自检（无 GUI、无引擎依赖；当前 135 例）
 ./build/deepDolphin --version
 ./build/deepDolphin --project <名>   # 深链（--section board|milestones|dashboard 同理）
 ./build/deepDolphin --agent-selftest [问题]   # 无头 agent 自测（默认「总结一下项目群现状」）
@@ -125,7 +125,7 @@ export QT_QPA_PLATFORM=offscreen        # 无显示环境时；共享 X11 会话
 share/applications/cn.deepdolphin.app.desktop，图标 → share/icons/hicolor/scalable/apps）。
 安装后由系统 Qt6/DTK6 运行库满足链接，无需上述环境变量。
 
-本阶段实测记录：`--selfcheck` 125 通过 0 失败；`--version` 输出 `deepDolphin 0.1.0`；
+本阶段实测记录：`--selfcheck` 135 通过 0 失败；`--version` 输出 `deepDolphin 0.1.0`；
 offscreen 启动探测 `timeout 8` 退出码 124（进程存活满 8 秒）；`ldd` 裸环境报 Qt6/DTK6 not found、
 带上 `LD_LIBRARY_PATH` 后 0 个 not found。**运行期环境变量**（sysroot 方案的代价，打包后消失）：
 `LD_LIBRARY_PATH=~/.local/dd-sysroot/usr/lib/x86_64-linux-gnu`（Qt/DTK 运行库）+
@@ -238,7 +238,7 @@ key 只进 libsecret（service=cn.deepdolphin.app.ai / account=api-key），不�
    的文件（models/app 逻辑/tray 壳/ui 壳），页面、AI、AppModel、Notifier、AutostartManager、
    SysOpen、DesignTokens 等随其实现阶段同步加入（CMakeLists 有显式提醒注释）。
    `tests/` 子目录随 PLAN 里程碑 2 加入；当前模型层冒烟判据由二进制内置 `--selfcheck`
-   承担（125 例，含缺键拒绝/契约过旧判据/双形态 update/shallow-deep 分派等 CONTRACT 红线）。
+   承担（135 例，含缺键拒绝/契约过旧判据/双形态 update/shallow-deep 分派等 CONTRACT 红线）。
    代价：CMakeLists 与 PLAN 清单阶段性地不一致，靠注释锚点防丢失。
 2. **托盘数据对接用 `TraySnapshot` 纯结构体**，而非 PLAN 签名里的 `AppModel*`：
    AppModel 属里程碑 3，提前引入会迫使托盘壳依赖一个不存在的类型。AppModel 落地后由它
@@ -457,7 +457,7 @@ key 只进 libsecret（service=cn.deepdolphin.app.ai / account=api-key），不�
 | `dtk.core.dsg: AppId is fetched from AM, and value is "zcode"` | 环境限制 | 容器会话无应用商店注册项，DSG AppId 回退到宿主进程名；真机经 .desktop 安装后取 `cn.deepdolphin.app` |
 | `QObject::connect: No such signal QPlatformNativeInterface::systemTrayWindowChanged(QScreen*)` | 环境限制 | offscreen 无系统托盘；真 DDE 走 SNI 协议（与「运行期事实」一致）。托盘真实表现仍**待真机验证** |
 | `desktop-file-validate` 未跑 | 工具缺席 | 容器内无该工具（`command -v` 为空）。`.desktop` 内容已人工核对（Exec/Icon/StartupWMClass/X-Deepin-Vendor），装真机后建议补跑 |
-| `ctest`：无目标可跑 | 设计如此 | CMakeLists.txt:134 注释：`enable_testing()+tests/` 缓建，模型层冒烟判据由 `--selfcheck`（125 例）承担 |
+| `ctest`：无目标可跑 | 设计如此 | CMakeLists.txt:134 注释：`enable_testing()+tests/` 缓建，模型层冒烟判据由 `--selfcheck`（135 例）承担 |
 | Ctrl+Shift+U 与输入法的潜在冲突 | 待真机验证 | 决策 19 预案：保持绑定、菜单显示实际序列；容器内无真实 IME，无法在本阶段闭环 |
 
 ### 真机联调阶段（2026-10-03 收尾，决策 36–44）
@@ -646,6 +646,30 @@ mac 端 30 个提交（`d467a4f..d62e429`，7919 行）已具现化；章程同�
 **视觉零变化**（架构图是独立窗口，不进四页快照矩阵，快照基线未动）。
 **本批还修了批 D1 的三处真缺陷**（决策 94/95）：排序比较器 UB、恒发字段缺键静默回落成 0、
 契约夹具无源码导致整组断言空转。
+
+### 批 E1：agent 工具面补齐（引擎 28 个工具全接）
+
+批 D2 之后，引擎的图/架构/置信度能力 GUI 侧已通；**agent 侧还只会 10 个老工具** ——
+模型在对话里想查代码图谱、想算补丁置信度，客户端只能回一句「未知工具：X」。
+
+| # | 决策 | 为什么 | 已知代价 |
+|---|---|---|---|
+| 96 | **工具 → 引擎 argv 的映射抽成纯函数表**（`logic/AgentToolPlan`），执行点只做 I/O：28 个工具的命令形态、flag 解析、白名单、超时预算全在表里；`knownToolNames()` 是「客户端能执行哪些工具」的**单一真相源** | 原来这层是 `AgentCore::executeTool` 的 if-else 链，每加一个工具多一段分支，长了就出三种毛病：① argv 拼错只有真跑到那个工具才看得出；② 「客户端支持哪些工具」说不清 → 契约无从比对；③ 参数校验散在分支里各自一套口径。抽成纯函数后可**无头判**（selfcheck 直接判 argv 形状、flag 解析、白名单） | 纯函数层不碰文件系统 —— 引擎 CLI 吃路径的那种（`graph patchconf --merge`）由表声明「哪个参数落盘 + argv 哪一格放路径」，落盘在 app 层做（`{{tmp:<参数>}}` 占位） |
+| 97 | **开关型参数收字符串形态**（`"true"/"1"/"yes"/"on"` 与布尔 true 同等对待），数值型参数**只给真数**（非数不递给引擎，缺省交给引擎） | 引擎把 `params` 声明成**全 string 型必填**，模型多半发字符串；只认布尔会让 `--force`/`--violations` 永远不生效（形同虚设）。mac 侧 `as? Bool` 在这条路径上恒假 —— 属跨端债 | 数值参数若模型给了 `"3.0"`，按正则判为合法数字（与引擎的解析口径未必完全一致，但引擎会自己校验） |
+| 98 | **超时预算常量下沉到 `logic/EngineTimeouts.h`**（数字一个没改，只是搬家），`app/EngineCli.h` include 它；**`contract-check.sh` 接进 `ci.sh` 成为第 10 门**（之前它是**游离脚本**，CI 从来没跑过） | 工具表与 app 层要用同一批超时数字 —— 同一件事两处字面量必然漂移（改了引擎调用忘了改工具表，症状是「大仓整图构建在 agent 里被砍成 120 秒」这类难查的问题）。契约脚本游离在 CI 之外，等于契约漂移不会被拦 | `logic/` 现在多了一个纯常量头（不违反「零 QWidget 头」纪律） |
+
+**本批验证**（全部实跑）：`--selfcheck` **135 通过 0 失败**（125 → 135，+10 例：工具清单 28 个 /
+每个都有 argv 与预算 / 未知工具明说 / argv 形状两则 / 开关参数收字符串 / 数值参数只给真数 /
+op 越界被拒 / 临时文件声明 / format 决定 flag）；
+`contract-check.sh` **32/32**（真引擎沙箱，30 → 32，+2 条：第 12 组「前提抓到两边清单」+
+「客户端能执行的工具集 == 引擎声明的工具集」）；
+`ci.sh` **10/10 门全绿**（第 9 门扩到 22 项接线点；新增第 10 门「引擎契约门」—— 把游离的
+contract-check 收进 CI，引擎缺席时显式 SKIP 且**不算通过**）；
+**六处负控真红**：① 工具清单少一个 → 契约第 12 组红（差集原样打出：`引擎有、客户端不会执行：
+codegraph_patch_merge`）+ ci.sh 第 10 门红；② 摘掉 AgentCore 的工具表接线 → 第 9 门红
+（且 agent 自测同时变红）；③ flag 只认布尔 → selfcheck 红；④ op 白名单去掉 → selfcheck 红；
+⑤ 数值参数不校验 → selfcheck 红；⑥ 临时文件声明去掉 → selfcheck 红。
+**视觉零变化**（agent 面板无 UI 改动，快照基线未动）。
 
 ## 分层纪律（后续阶段必须延续）
 

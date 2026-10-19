@@ -1,5 +1,6 @@
 #include "SelfCheck.h"
 #include "EngineCli.h"
+#include "../logic/AgentToolPlan.h"
 #include "../logic/ArchReceipt.h"
 #include "../logic/DashFilter.h"
 #include "../logic/Derived.h"
@@ -995,6 +996,107 @@ int SelfCheck::run(QStringList &log)
                 && EngineCli::stdoutSatisfies(EngineCli::OutputMode::Json, QStringLiteral("{\"v\":1}")));
         check(log, "输出契约：Json 模式空 stdout = 契约破坏（不是合法空态）",
             !EngineCli::stdoutSatisfies(EngineCli::OutputMode::Json, QString()));
+
+        // ── agent 工具表（纯函数，无头可判）──
+        // 引擎 tools --json 声明 28 个工具；客户端必须**能执行全部 28 个**。
+        // 漂移的症状很隐蔽：模型调了个客户端不会执行的工具，界面上只显示
+        // 「未知工具：X」—— 很容易被当成模型乱调，真因却是两份清单不一致。
+        {
+            const QStringList names = AgentToolPlan::knownToolNames();
+            check(log, "agent 工具表：清单恰好 28 个（与引擎 tools --json 声明集对位）",
+                names.size() == 28);
+            bool allPlanned = !names.isEmpty();
+            for (const QString &tool : names) {
+                const AgentToolPlan::Plan p = AgentToolPlan::planFor(tool, QJsonObject());
+                if (!p.known || p.argv.isEmpty() || p.timeoutMs <= 0) {
+                    allPlanned = false;
+                    break;
+                }
+            }
+            check(log, "agent 工具表：每个工具都有可执行的 argv 与超时预算（不是半张表）",
+                allPlanned);
+            check(log, "agent 工具表：未知工具明说（known=false，不静默成功）",
+                !AgentToolPlan::planFor(QStringLiteral("没有这个工具"), QJsonObject()).known);
+
+            // argv 形状：命令与引擎 usage 逐一对应
+            const AgentToolPlan::Plan archGen
+                = AgentToolPlan::planFor(QStringLiteral("arch_gen"),
+                    QJsonObject { { QStringLiteral("name"), QStringLiteral("atlas") } });
+            check(log, "agent 工具表：arch_gen → arch gen <项目>",
+                archGen.argv == (QStringList { QStringLiteral("arch"), QStringLiteral("gen"),
+                    QStringLiteral("atlas") }));
+            const AgentToolPlan::Plan cgSym
+                = AgentToolPlan::planFor(QStringLiteral("codegraph_symbol"),
+                    QJsonObject { { QStringLiteral("name"), QStringLiteral("atlas") },
+                        { QStringLiteral("symbol"), QStringLiteral("main") } });
+            check(log, "agent 工具表：codegraph_symbol → graph symbol <项目> <符号> --json",
+                cgSym.argv == (QStringList { QStringLiteral("graph"), QStringLiteral("symbol"),
+                    QStringLiteral("atlas"), QStringLiteral("main"), QStringLiteral("--json") }));
+
+            // 开关型参数：引擎把 params 声明成**全 string 型必填**，模型多半发字符串。
+            // 只认布尔会让 --force/--violations 永远不生效（形同虚设）。
+            const AgentToolPlan::Plan forced
+                = AgentToolPlan::planFor(QStringLiteral("arch_update"),
+                    QJsonObject { { QStringLiteral("name"), QStringLiteral("atlas") },
+                        { QStringLiteral("force"), QStringLiteral("true") } });
+            const AgentToolPlan::Plan notForced
+                = AgentToolPlan::planFor(QStringLiteral("arch_update"),
+                    QJsonObject { { QStringLiteral("name"), QStringLiteral("atlas") },
+                        { QStringLiteral("force"), QStringLiteral("false") } });
+            check(log, "agent 工具表：开关参数收字符串形态（模型发 \"true\" 也算开）",
+                forced.argv.contains(QStringLiteral("--force"))
+                    && !notForced.argv.contains(QStringLiteral("--force")));
+
+            // 数值型参数：不是数就不给（缺省交给引擎），不把垃圾递给引擎让它报错
+            const AgentToolPlan::Plan badDepth
+                = AgentToolPlan::planFor(QStringLiteral("codegraph_tree"),
+                    QJsonObject { { QStringLiteral("name"), QStringLiteral("atlas") },
+                        { QStringLiteral("depth"), QStringLiteral("abc") } });
+            const AgentToolPlan::Plan goodDepth
+                = AgentToolPlan::planFor(QStringLiteral("codegraph_tree"),
+                    QJsonObject { { QStringLiteral("name"), QStringLiteral("atlas") },
+                        { QStringLiteral("depth"), QStringLiteral("3") } });
+            check(log, "agent 工具表：数值参数只给真数（非数不递给引擎）",
+                !badDepth.argv.contains(QStringLiteral("--depth"))
+                    && goodDepth.argv.contains(QStringLiteral("--depth"))
+                    && goodDepth.argv.contains(QStringLiteral("3")));
+
+            // 白名单：越界明说，不转交（引擎的 op 契约只有 pull|push）
+            const AgentToolPlan::Plan badOp
+                = AgentToolPlan::planFor(QStringLiteral("git_pull_push"),
+                    QJsonObject { { QStringLiteral("name"), QStringLiteral("atlas") },
+                        { QStringLiteral("op"), QStringLiteral("fetch") } });
+            check(log, "agent 工具表：op 越界被拒（明说理由，不静默转交）",
+                !badOp.reject.isEmpty() && badOp.argv.isEmpty());
+
+            // 需要落临时文件的工具：纯函数层只声明「落哪个 + argv 哪一格放路径」
+            const AgentToolPlan::Plan merge
+                = AgentToolPlan::planFor(QStringLiteral("codegraph_patch_merge"),
+                    QJsonObject { { QStringLiteral("algorithm_json"), QStringLiteral("{}") },
+                        { QStringLiteral("agent_json"), QStringLiteral("{}") } });
+            check(log, "agent 工具表：吃路径的工具声明临时文件（落盘交给执行方）",
+                merge.tempParams.size() == 2
+                    && merge.argv.contains(QStringLiteral("{{tmp:algorithm_json}}"))
+                    && merge.argv.contains(QStringLiteral("{{tmp:agent_json}}")));
+
+            // format 决定 flag：llm → --llm；text → 纯文本；缺省 → --json
+            const AgentToolPlan::Plan confLlm
+                = AgentToolPlan::planFor(QStringLiteral("codegraph_confidence"),
+                    QJsonObject { { QStringLiteral("name"), QStringLiteral("atlas") },
+                        { QStringLiteral("format"), QStringLiteral("llm") } });
+            const AgentToolPlan::Plan confText
+                = AgentToolPlan::planFor(QStringLiteral("codegraph_confidence"),
+                    QJsonObject { { QStringLiteral("name"), QStringLiteral("atlas") },
+                        { QStringLiteral("format"), QStringLiteral("text") } });
+            const AgentToolPlan::Plan confDefault
+                = AgentToolPlan::planFor(QStringLiteral("codegraph_confidence"),
+                    QJsonObject { { QStringLiteral("name"), QStringLiteral("atlas") } });
+            check(log, "agent 工具表：format 决定 flag（llm/text/缺省各走各的）",
+                confLlm.argv.contains(QStringLiteral("--llm"))
+                    && !confText.argv.contains(QStringLiteral("--llm"))
+                    && !confText.argv.contains(QStringLiteral("--json"))
+                    && confDefault.argv.contains(QStringLiteral("--json")));
+        }
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

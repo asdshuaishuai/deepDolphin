@@ -16,6 +16,7 @@
 #include "app/Version.h"
 #include "platform/AppService.h"
 #include "platform/CrashHandler.h"
+#include "logic/AgentToolPlan.h"
 #include "logic/Liveness.h"
 #include "logic/Route.h"
 #include "tray/TrayController.h"
@@ -256,6 +257,15 @@ int main(int argc, char *argv[])
     }
     if (rawArgs.contains(QStringLiteral("--version"))) {
         fprintf(stdout, "deepDolphin %s\n", DD_VERSION_STRING);
+        return 0;
+    }
+    if (rawArgs.contains(QStringLiteral("--agent-tool-names"))) {
+        // 客户端能执行的 agent 工具清单（**单一真相源**在 logic/AgentToolPlan）。
+        // 契约检查拿它与引擎 `tools --json` 的声明集对位（mac 同款第 12 组，
+        // 但这里是运行时真清单，不靠源码解析 —— 解析 switch 会在改写法时静默空转）。
+        for (const QString &tool : AgentToolPlan::knownToolNames())
+            fprintf(stdout, "%s\n", qPrintable(tool));
+        fflush(stdout);
         return 0;
     }
     if (rawArgs.contains(QStringLiteral("--platform-probe"))) {

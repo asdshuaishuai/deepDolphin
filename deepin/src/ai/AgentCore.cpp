@@ -1,5 +1,6 @@
 #include "AgentCore.h"
 #include "../app/EngineCli.h"
+#include "../logic/AgentToolPlan.h"
 #include "../models/ContextEnvelope.h"
 #include "../models/ToolsEnvelope.h"
 #include "AIEngineFactory.h"
@@ -7,14 +8,16 @@
 #include "AgentOutcome.h"
 #include "AgentPrompts.h"
 #include "ToolArgs.h"
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QTemporaryDir>
 #include <memory>
 
 namespace {
-// 上下文预算：整轮 9000（SPEC §4.4）；工具内取 8000（与 mac 一致）。
+// 上下文预算：整轮 9000（SPEC §4.4）；工具内取 8000（与 mac 一致）——
+// 工具内的那个已随 argv 形态一起搬进 logic/AgentToolPlan（跟命令形态同处）。
 constexpr int kContextBudget = 9000;
-constexpr int kToolContextBudget = 8000;
 // 客户端自报截断阈值：引擎自己的截断披露写在**结尾**，头部切会把它切掉，
 // 于是客户端切的这刀必须自报家门（#191）。
 constexpr int kToolOutputClip = 16000;
@@ -97,96 +100,72 @@ bool AgentCore::executeTool(const QString &name, const QJsonObject &params,
             *outText = ToolArgs::missingMessage(name, absent);
         return false;
     }
-    const auto str = [&params](const QString &key) {
-        return params.value(key).toString();
-    };
 
-    QString raw;
-    QString err;
-    bool ok = false;
-    // 10 个工具，与引擎 tools --json 声明集严格相等（contract 钉住）；
-    // default → 明说「未知工具」，不静默成功。
-    if (name == QLatin1String("get_group_context")) {
-        ok = runEngineRaw({ QStringLiteral("context"), QStringLiteral("--budget"),
-                                QString::number(kToolContextBudget), QStringLiteral("--json") },
-            EngineTimeouts::Context, &raw, &err, cancelled);
-        if (ok && outText) {
-            ContextEnvelope::Note note;
-            if (const auto env = ContextEnvelope::decode(raw.toUtf8(), &note))
-                *outText = env->context; // mac：工具内只交正文（说明走系统提示词那条路）
-            else
-                *outText = raw;
-        }
-    } else if (name == QLatin1String("get_project_context")) {
-        ok = runEngineRaw({ QStringLiteral("context"), str(QStringLiteral("name")),
-                                QStringLiteral("--budget"), QString::number(kToolContextBudget),
-                                QStringLiteral("--json") },
-            EngineTimeouts::Context, &raw, &err, cancelled);
-        if (ok && outText) {
-            ContextEnvelope::Note note;
-            if (const auto env = ContextEnvelope::decode(raw.toUtf8(), &note))
-                *outText = env->context;
-            else
-                *outText = raw;
-        }
-    } else if (name == QLatin1String("get_project_docs")) {
-        ok = runEngineRaw({ QStringLiteral("docs"), str(QStringLiteral("name")),
-                                QStringLiteral("--json") },
-            EngineTimeouts::Docs, &raw, &err, cancelled);
-    } else if (name == QLatin1String("get_journal")) {
-        ok = runEngineRaw({ QStringLiteral("journal"), str(QStringLiteral("name")),
-                                QStringLiteral("--json") },
-            EngineTimeouts::Journal, &raw, &err, cancelled);
-    } else if (name == QLatin1String("get_milestones")) {
-        ok = runEngineRaw({ QStringLiteral("milestone"), QStringLiteral("list"),
-                                QStringLiteral("--json") },
-            EngineTimeouts::Milestones, &raw, &err, cancelled);
-    } else if (name == QLatin1String("run_shallow_update")) {
-        ok = runEngineRaw({ QStringLiteral("update"), str(QStringLiteral("name")),
-                                QStringLiteral("--json"), QStringLiteral("--quiet") },
-            EngineTimeouts::Update, &raw, &err, cancelled);
-    } else if (name == QLatin1String("run_deep_update")) {
-        ok = runEngineRaw({ QStringLiteral("deep"), str(QStringLiteral("name")),
-                                QStringLiteral("--json"), QStringLiteral("--quiet") },
-            EngineTimeouts::Deep, &raw, &err, cancelled);
-    } else if (name == QLatin1String("git_commit")) {
-        ok = runEngineRaw({ QStringLiteral("git"), QStringLiteral("commit"),
-                                str(QStringLiteral("name")), QStringLiteral("--message"),
-                                str(QStringLiteral("message")), QStringLiteral("--json") },
-            EngineTimeouts::Git, &raw, &err, cancelled);
-    } else if (name == QLatin1String("git_pull_push")) {
-        // 引擎 git 白名单里 agent 工具只该碰 pull/push——越界明说，不转交
-        QString op = str(QStringLiteral("op"));
-        if (op.isEmpty())
-            op = QStringLiteral("pull");
-        if (op != QLatin1String("pull") && op != QLatin1String("push")) {
-            if (outText)
-                *outText = QStringLiteral(
-                    "git_pull_push 的 op 只支持 pull|push，收到：「%1」。已拒绝执行。")
-                    .arg(op);
-            return false;
-        }
-        ok = runEngineRaw({ QStringLiteral("git"), op, str(QStringLiteral("name")),
-                                QStringLiteral("--json") },
-            EngineTimeouts::Git, &raw, &err, cancelled);
-    } else if (name == QLatin1String("milestone_done")) {
-        ok = runEngineRaw({ QStringLiteral("milestone"), QStringLiteral("done"),
-                                str(QStringLiteral("project")), str(QStringLiteral("name")),
-                                QStringLiteral("--json") },
-            EngineTimeouts::Milestones, &raw, &err, cancelled);
-    } else {
+    // argv 形态、参数校验、拒绝理由全在**纯函数表**里（logic/AgentToolPlan）：
+    // 28 个工具（与引擎 tools --json 严格对位）的命令形态、flag 解析、白名单
+    // 都可无头判；这一层只做 I/O 与执行。
+    AgentToolPlan::Plan plan = AgentToolPlan::planFor(name, params);
+    if (!plan.known) {
         if (outText)
             *outText = QStringLiteral("未知工具：%1").arg(name);
         return false;
     }
+    if (!plan.reject.isEmpty()) {
+        if (outText)
+            *outText = plan.reject;
+        return false;
+    }
 
+    // 临时文件：引擎 CLI 吃**路径**的那种（graph patchconf --merge <a.json> <b.json>）。
+    // 落盘是 I/O，在这里做 —— 纯函数层只声明「哪个参数要落盘、argv 哪一格放路径」。
+    QStringList argv = plan.argv;
+    QTemporaryDir tmpDir;
+    if (!plan.tempParams.isEmpty()) {
+        if (!tmpDir.isValid()) {
+            if (outText)
+                *outText = QStringLiteral("无法创建临时目录，%1 未执行。").arg(name);
+            return false;
+        }
+        for (const QString &key : plan.tempParams) {
+            const QString path = tmpDir.filePath(key + QStringLiteral(".json"));
+            QFile f(path);
+            if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                if (outText)
+                    *outText = QStringLiteral("写临时文件失败（%1），%2 未执行。")
+                                   .arg(path, name);
+                return false;
+            }
+            f.write(params.value(key).toString().toUtf8());
+            f.close();
+            for (QString &a : argv) {
+                if (a == QStringLiteral("{{tmp:%1}}").arg(key))
+                    a = path;
+            }
+        }
+    }
+
+    QString raw;
+    QString err;
+    const bool ok = runEngineRaw(argv, plan.timeoutMs, &raw, &err, cancelled);
     if (!ok) {
         if (outText)
             *outText = err;
         return false;
     }
-    if (outText)
-        *outText = raw; // 原始 stdout（JSON 原文交给模型解读，mac 同款）
+    if (!outText)
+        return true;
+
+    // context 两个工具：只交正文给模型（说明走系统提示词那条路，mac 同款）
+    if (name == QLatin1String("get_group_context")
+        || name == QLatin1String("get_project_context")) {
+        ContextEnvelope::Note note;
+        if (const auto env = ContextEnvelope::decode(raw.toUtf8(), &note))
+            *outText = env->context;
+        else
+            *outText = raw;
+        return true;
+    }
+    *outText = raw; // 原始 stdout（JSON 原文交给模型解读，mac 同款）
     return true;
 }
 

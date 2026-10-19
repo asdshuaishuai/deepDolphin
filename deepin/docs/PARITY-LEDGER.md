@@ -62,7 +62,7 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | B8 | **四语言本地化（全应用接入）** | `L10n.swift`（2108 行） | ⬜ 未开始（deepin 现无 i18n；引擎侧 CLI 已双语） | P2（量大） |
 | B9 | **原生菜单栏三件套（关于/帮助/设置）+ 设置统一为系统原生窗口** | `DeepDolphinApp.swift` | 🟡 deepin 有托盘菜单与设置页签，但非「原生独立设置窗口」 | P2 |
 | B10 | **仪表盘项目卡片整卡可点** | `DashboardParts.swift` | ⬜ 未开始 | P3（小） |
-| B11 | **Agent 补齐 18 个图能力工具**（契约检查第 12 组抓到的清单漂移） | `AgentCheck` | ⬜ deepin agent 仍只接 10 个老工具 | **P0**（引擎工具清单已 28） |
+| B11 | **Agent 补齐 18 个图能力工具**（契约检查第 12 组抓到的清单漂移） | `AgentCheck` | 🟢 **已对位（批 E1）**：28 个工具全接（命令形态抽成纯函数表 `logic/AgentToolPlan`，可无头判）；`deepDolphin --agent-tool-names` 出客户端权威清单，contract-check 第 12 组与真引擎 `tools --json` 严格对位（**CI 第 10 门**） | ~~P0~~ 已完成 |
 | B12 | **9 语言语法高亮** | mac 原生 `AttributedString` | ⬜ 未开始（引擎侧 `graph confidence` 已给语义层检测） | P2 |
 | B13 | **性能审计**：动画时钟可见性暂停 + formatter 静态化 | `21c7082` | ⬜ 未开始（deepin 有 HasAnimations 纪律但无可见性暂停） | P3 |
 | B14 | **设计系统存量清零**（字号/散值收进 token，基线 87→95） | `e9d6074` | ⬜ deepin 侧 D2 门仍有 4 处存量 | P3 |
@@ -78,7 +78,7 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | `graph confidence` / `patchconf` | 置信度与补丁体检（B4/B6） | ⬜ |
 | `arch gen` / `graph gen` / `index gen` | 生成（B16） | 🟡 批 D2 已接 `arch gen`（架构图页「生成」钮）；`graph gen`/`index gen` ⬜ |
 | `render arch` | 导出交互 HTML（B16） | 🟡 批 D2 已接（架构图页「导出」钮；落盘 HTML 是引擎层交付物，**不是**本平台的渲染路径） |
-| `codegraph_*`（CLI 清单 18 个新工具） | agent 工具循环（B11） | ⬜ |
+| `codegraph_*`（CLI 清单 18 个新工具） | agent 工具循环（B11） | 🟢 批 E1 已接 |
 | `render` 工具 | 渲染交付物 | ⬜ |
 | `index_*` 家族 | 代码索引（`graph` 的新家） | ⬜ |
 
@@ -107,6 +107,8 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | 图谱 Canvas 内核（26 方法 + scene 契约） | ✅ 批 D1 | ✅（SwiftUI 版） | ⬜ 未接 | 后续批次（仓颉 Canvas 移植） |
 | 交互架构图页（窗口 + 视口/命中 + 生成/导出） | ✅ 批 D2 | ✅（sheet 版） | ⬜ 未接 | 后续批次 |
 | 导出回执里的 HTML 路径提取 | ✅ 批 D2（按词边界 + 全角分隔符扫） | ⬜ **抽不到** —— `extractHTMLPath` 按空格切词，而引擎真实回执是「已重绘：`<路径>` · 第 N 版」（路径与文案用**全角冒号**粘连），切出来的 token 不以 `/` 开头 → 判定恒假 → 导出后「打开」入口**始终不出现** | ⬜ 未接 | mac 侧后续批次（**本轮次序是先搞定 dde**，未改 mac） |
+| agent 开关型参数（`--force`/`--violations`） | ✅ 批 E1（字符串形态与布尔同等对待） | ⬜ **恒假** —— 引擎把 `params` 声明成**全 string 型必填**，模型发的是字符串；mac 用 `as? Bool` 判定 → 恒不成立 → `--force`/`--violations`/`--confidence` 实际从未生效 | ⬜ 未接 | mac 侧后续批次 |
+| agent `git_pull_push` 的 op 白名单 | ✅ 只放行 `pull\|push`（**与引擎工具契约一致**：`op(pull\|push)`） | ⬜ 放行 `fetch`（**超出引擎契约** —— 引擎的 git 白名单里没有 fetch，模型要 fetch 也给不了） | ⬜ 未接 | mac 侧后续批次 |
 
 ---
 

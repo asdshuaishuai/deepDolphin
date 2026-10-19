@@ -92,6 +92,7 @@ add_executable(deepDolphin
     src/logic/SceneRender.cpp
     src/logic/ArchViewport.cpp
     src/logic/ArchReceipt.cpp
+    src/logic/AgentToolPlan.cpp
     # ── platform/ ──
     src/platform/AppService.cpp
     src/platform/AutostartManager.cpp

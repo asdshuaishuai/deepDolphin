@@ -36,27 +36,13 @@
 class QProcess;
 class QTimer;
 
-// 各命令超时（SPEC §2 表 / PLAN §2.3），单位毫秒
-namespace EngineTimeouts {
-constexpr int Version = 8'000;        // 探活
-constexpr int Status = 30'000;        // status --json（全群）
-constexpr int StatusProject = 60'000; // status <name> --json
-constexpr int Dashboard = 180'000;
-constexpr int Milestones = 60'000;    // milestone list/add/done/drop/reopen/remove
-constexpr int Docs = 60'000;
-constexpr int Verify = 60'000;      // verify <name>（只读：文档完整性校验）
-constexpr int Graph = 300'000;      // graph arch <name> --format scene（只读：架构图场景）
-constexpr int Journal = 30'000;
-constexpr int Update = 300'000;       // update <name>
-constexpr int Deep = 600'000;         // deep <name>
-constexpr int UpdateAll = 900'000;    // update（全项目）
-constexpr int DeepAll = 1'800'000;    // deep（全项目）
-constexpr int Git = 120'000;
-constexpr int Add = 30'000;
-constexpr int Scan = 300'000;
-constexpr int Tools = 30'000;
-constexpr int Context = 60'000;
-} // namespace EngineTimeouts
+// 各命令超时（SPEC §2 表 / PLAN §2.3），单位毫秒。
+// 常量已下沉到 logic/EngineTimeouts.h —— agent 工具表（logic/AgentToolPlan）
+// 要用同一批数字，同一件事两处字面量必然漂移（改了引擎调用忘了改工具表，
+// 症状是「大仓整图构建在 agent 里被砍成 120 秒」这类难查的问题）。
+// logic/ 不依赖 app/，所以常量住在下面这一层；这里 include 它，
+// `EngineTimeouts::X` 的写法在全局作用域照样成立（老调用点零改动）。
+#include "../logic/EngineTimeouts.h"
 
 class EngineCli : public QObject {
     Q_OBJECT

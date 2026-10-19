@@ -30,7 +30,7 @@ export LD_LIBRARY_PATH="$HOME/.local/dd-sysroot/usr/lib/x86_64-linux-gnu${LD_LIB
 export QT_PLUGIN_PATH="$HOME/.local/dd-sysroot/usr/lib/x86_64-linux-gnu/qt6/plugins${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 
-echo "› 1/9 selfcheck（断言 0 failed 且 ≥58 passed）"
+echo "› 1/10 selfcheck（断言 0 failed 且 ≥58 passed）"
 SELFCHECK_OUT="$("$BIN" --selfcheck || true)"
 printf '%s\n' "$SELFCHECK_OUT" | tail -1
 SC_PASSED="$(printf '%s\n' "$SELFCHECK_OUT" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+' || true)"
@@ -45,7 +45,7 @@ if [ "$SC_FAILED" -ne 0 ] || [ "$SC_PASSED" -lt 58 ]; then
 fi
 echo "✓ selfcheck ${SC_PASSED} passed, ${SC_FAILED} failed"
 
-echo "› 2/9 截图矩阵（离屏）"
+echo "› 2/10 截图矩阵（离屏）"
 # ⚠ 这一步**强制** offscreen，不继承环境里的 QT_QPA_PLATFORM。
 #   理由（决策 86）：基线是离屏拍的；若宿主已设 QT_QPA_PLATFORM=dxcb;xcb，
 #   快照会带 DTK 原生窗口装饰与 chameleon 样式 —— 同一份代码拍出另一张脸，
@@ -60,7 +60,7 @@ for theme in light dark; do
     done
 done
 
-echo "› 3/9 desktop / metainfo 校验（缺工具显式 SKIP）"
+echo "› 3/10 desktop / metainfo 校验（缺工具显式 SKIP）"
 if command -v desktop-file-validate >/dev/null 2>&1; then
     desktop-file-validate "$SRC/data/cn.deepdolphin.app.desktop" && echo "✓ desktop 合法"
 else
@@ -73,7 +73,7 @@ else
     echo "SKIP: appstream-util 未安装（README 决策 69 的硬门随工具到位生效）"
 fi
 
-echo "› 4/9 平台探针（正式断言：exit 0 且输出含 backend=）"
+echo "› 4/10 平台探针（正式断言：exit 0 且输出含 backend=）"
 PROBE_RC=0
 PROBE_OUT="$("$BIN" --platform-probe)" || PROBE_RC=$?
 printf '%s\n' "$PROBE_OUT"
@@ -87,7 +87,7 @@ if ! printf '%s\n' "$PROBE_OUT" | grep -q '^backend='; then
 fi
 echo "✓ 平台探针通过（backend=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^backend=//p')，托盘/主题/字号档位见上，offscreen 下托盘无效属预期）"
 
-echo "› 5/9 D2 grep 门（DS::* 单点真相源；排除白名单后命中 >4 判失败）"
+echo "› 5/10 D2 grep 门（DS::* 单点真相源；排除白名单后命中 >4 判失败）"
 if [ ! -d "$SRC/src" ]; then
     echo "✗ 源码目录不存在：$SRC/src（脚本位置/参数错了——门失效比门失败更糟）" >&2
     exit 1
@@ -103,10 +103,10 @@ if [ "$D2_COUNT" -gt 4 ]; then
 fi
 echo "✓ D2 命中 ${D2_COUNT}/4（余量仅限已登记字号项，README 决策 72）"
 
-echo "› 6/9 agent 自测（mock 渠道）"
+echo "› 6/10 agent 自测（mock 渠道）"
 "$BIN" --agent-selftest | tail -2
 
-echo "› 7/9 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
+echo "› 7/10 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
 # 剥注释再匹配：注释里出现的字样不算接线（否则加一行注释就能骗过门）。
 strip_comments() {
     if command -v perl >/dev/null 2>&1; then
@@ -126,7 +126,7 @@ wire_need() { # wire_need <文件> <正则> <说明>
     fi
     # ⚠ 不用 `grep -q`：它一匹配就退出，剥注释的 perl 会收 SIGPIPE，
     #   配 set -o pipefail 整个管道判失败（接线明明在却报 ✗ —— 门自己坏了比门放水更糟）。
-    if strip_comments "$f" | grep -E "$re" >/dev/null; then
+    if strip_comments "$f" | grep -E -- "$re" >/dev/null; then
         echo "  ✓ $label"
         WIRING_HITS=$((WIRING_HITS + 1))
     else
@@ -146,7 +146,7 @@ if [ "$WIRING_FAIL" -ne 0 ]; then
 fi
 echo "✓ verify 接线完整（$WIRING_HITS 项）"
 
-echo "› 8/9 图谱 Canvas 契约清单齐（章程 §3.5：方法清单就是移植验收清单）"
+echo "› 8/10 图谱 Canvas 契约清单齐（章程 §3.5：方法清单就是移植验收清单）"
 # 契约清单（引擎 docs/graph-scene-schema.md 的渲染契约层）：26 个标准 Canvas2D 方法。
 # 「少实现一项，渲染器就跑不完」——本门逐个核 Canvas2D 是否声明为 override。
 CANVAS_METHODS="setTransform fillRect strokeRect rect beginPath moveTo lineTo arcTo closePath arc bezierCurveTo fill stroke fillText createLinearGradient addColorStop setLineDash setLineDashOffset setShadowBlur setShadowColor setGlobalAlpha setLineWidth setStrokeStyle setFillStyle setFont setTextAlign"
@@ -182,7 +182,7 @@ if [ "$CANVAS_FAIL" -ne 0 ]; then
 fi
 echo "✓ Canvas2D 覆盖契约清单 ${CANVAS_N}/26 个方法；logic/ 与 models/ 零 QWidget 头；新文件均已登记构建"
 
-echo "› 9/9 架构图接线在（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
+echo "› 9/10 架构图与 agent 工具表接线在（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
 # 架构图链路分四段，任一段被摘掉都必须红：
 #   引擎取数（AppModel 调 graph arch --format scene）
 #   → 判定层（ArchViewport 视口/命中、ArchReceipt 回执提取）
@@ -198,7 +198,7 @@ arch_need() { # arch_need <文件> <正则> <说明>
         ARCH_FAIL=1
         return
     fi
-    if strip_comments "$f" | grep -E "$re" >/dev/null; then
+    if strip_comments "$f" | grep -E -- "$re" >/dev/null; then
         echo "  ✓ $label"
     else
         echo "  ✗ $label：$f 里找不到 $re" >&2
@@ -228,8 +228,13 @@ arch_need "$SRC/src/ui/PanelWindow.cpp" 'ArchDialog' 'PanelWindow 用的是架�
 #（在错误的窗口里显示回执、甚至触发重载）。
 arch_need "$SRC/src/app/AppModel.h" 'archActionFinished\(bool ok, const QString &project' '回执信号带项目名'
 arch_need "$SRC/src/ui/dialogs/ArchDialog.cpp" 'project != m_project' '架构图窗按项目过滤回执'
+
+# agent 工具表接线：执行走纯函数表；清单能被无头 flag 打印出来（契约第 12 组靠它对位）
+arch_need "$SRC/src/ai/AgentCore.cpp" 'AgentToolPlan::planFor' 'AgentCore 经工具表执行'
+arch_need "$SRC/src/logic/AgentToolPlan.cpp" 'knownToolNames' '工具表有权威清单出口'
+arch_need "$SRC/src/main.cpp" '--agent-tool-names' '客户端能无头打印工具清单（契约对位用）'
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
-for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp \
+for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \
          src/ui/ArchCanvasWidget.cpp src/ui/dialogs/ArchDialog.cpp; do
     if ! grep -qF "$f" "$SRC/CMakeLists.txt"; then
         echo "  ✗ 构建未登记：$f" >&2
@@ -237,9 +242,30 @@ for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp \
     fi
 done
 if [ "$ARCH_FAIL" -ne 0 ]; then
-    echo "✗ 架构图接线门失败：取数/判定/渲染/接线任一段被摘掉" >&2
+    echo "✗ 接线门失败：取数/判定/渲染/接线任一段被摘掉" >&2
     exit 1
 fi
-echo "✓ 架构图链路完整（取数 → 判定 → 渲染 → 接线，${ARCH_N} 项）"
+echo "✓ 架构图 + agent 工具表接线完整（取数 → 判定 → 渲染 → 接线，${ARCH_N} 项）"
+
+echo "› 10/10 引擎契约门（真引擎沙箱；引擎缺席显式 SKIP 且不算通过）"
+# contract-check.sh 之前是**游离脚本** —— CI 从来没跑过它，契约漂移不会被拦。
+# 接进 CI 后：引擎在 → 真跑（32 条）；引擎不在 → 脚本自己 SKIP 并如实说明
+# 「本组未验证」（不是静默通过）。
+if [ -n "${DEEPGIT_BIN:-}" ] || command -v moongit >/dev/null || command -v deepgit >/dev/null; then
+    # ⚠ 别写成 `if cmd | tail -3` —— 那样 if 判的是 tail 的退出码（永远 0），
+    #   契约挂了门也是绿的。必须拿脚本自己的退出码。
+    _cc_log="$BUILD/contract-check.log"
+    if DEEPGIT_CLIENT_BIN="$BIN" sh "$SRC/scripts/contract-check.sh" > "$_cc_log" 2>&1; then
+        tail -3 "$_cc_log"
+        echo "✓ 引擎契约门通过"
+    else
+        tail -20 "$_cc_log" >&2
+        echo "✗ 引擎契约门失败" >&2
+        exit 1
+    fi
+else
+    echo "‣ SKIP 引擎契约门：未找到 moongit/deepgit（可设 DEEPGIT_BIN 指定）"
+    echo "‣ 本组**未验证**，不算通过"
+fi
 
 echo "✓ CI 门通过：请 git diff docs/snapshots 人工确认视觉变化符合预期"

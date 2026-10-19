@@ -20,6 +20,10 @@
 #  11. 架构图回执契约     arch gen / render arch 是**回执型命令**（stdout 是人话，
 #                          不是 JSON）：回执非空、给出 arch.json / .html 落盘路径；
 #                          arch gen --format json 另给一份机器可读载荷
+#  12. agent 工具清单对位 引擎 `tools --json` 声明集 ⇄ 客户端能执行清单
+#                          （客户端 `deepDolphin --agent-tool-names`）：必须严格相等。
+#                          漂移的症状很隐蔽：模型调了个客户端不会执行的工具，
+#                          界面上只显示「未知工具：X」，很容易被当成模型乱调
 #
 # 引擎缺席：SKIP 且不算通过（如实报告，不伪造契约验证）。
 set -uo pipefail
@@ -33,6 +37,13 @@ if [ -z "$BIN" ]; then
     exit 0
 fi
 command -v python3 >/dev/null || { echo "SKIP contract-check：需要 python3 做 JSON 断言"; exit 0; }
+
+# 客户端二进制（第 12 组要拿它的工具清单）。找不到 → 该组显式 SKIP，
+# **不算通过**（否则「清单没对过」会被当成「对过了」）。
+CLIENT_BIN="${DEEPGIT_CLIENT_BIN:-}"
+if [ -z "$CLIENT_BIN" ]; then
+    CLIENT_BIN="$(cd "$(dirname "$0")/.." && pwd)/build/deepDolphin"
+fi
 
 echo "› 引擎：$BIN"
 "$BIN" version >/dev/null || { echo "✗ 引擎探活失败"; exit 1; }
@@ -190,6 +201,48 @@ check "arch gen --format json：载荷是合法 JSON 且含 modules 数组（模
 RENDER="$("$BIN" render arch atlas 2>/dev/null)"
 check_text "render arch 回执：非空且给出 .html 落盘路径（引擎层交付物）" \
     '\.html' "$RENDER"
+
+# 12. agent 工具清单对位（引擎 tools --json ⇄ 客户端能执行清单）。
+#     漂移的表现：模型调了一个客户端不会执行的工具，界面上只显示一句
+#     「未知工具：X」—— 很容易被当成模型乱调，而真因是两份清单已经不一致。
+#     引擎加工具时必须同步客户端，否则这条会红。
+if [ ! -x "$CLIENT_BIN" ]; then
+    echo "  ‣ SKIP 第 12 组：找不到客户端二进制 $CLIENT_BIN（可设 DEEPGIT_CLIENT_BIN 指定）"
+    echo "    ‣ 本组**未验证**，不算通过"
+else
+    ENGINE_TOOLS_JSON="$("$BIN" tools --json 2>/dev/null)"
+    CLIENT_TOOLS="$("$CLIENT_BIN" --agent-tool-names 2>/dev/null)"
+    ENGINE_TOOLS="$(printf '%s' "$ENGINE_TOOLS_JSON" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print('\n'.join(sorted(t.get('name','') for t in d.get('tools',[]) if t.get('name'))))
+" 2>/dev/null | grep -v '^$' | sort)"
+    CLIENT_SORTED="$(printf '%s\n' "$CLIENT_TOOLS" | grep -v '^$' | sort)"
+    # 前提：两边都抓到了东西（抓不到就是本组空转，必须先修抓取）
+    if [ -z "$ENGINE_TOOLS" ] || [ -z "$CLIENT_SORTED" ]; then
+        echo "  ✗ 第 12 组前提：引擎或客户端的清单没抓到（引擎 $(printf '%s\n' "$ENGINE_TOOLS" | grep -c . ) 个 / 客户端 $(printf '%s\n' "$CLIENT_SORTED" | grep -c . ) 个）" >&2
+        fail=$((fail+1))
+    else
+        echo "  ✓ 第 12 组前提：引擎 $(printf '%s\n' "$ENGINE_TOOLS" | grep -c . ) 个 / 客户端 $(printf '%s\n' "$CLIENT_SORTED" | grep -c . ) 个（两边都抓到了，不是空转）"
+        pass=$((pass+1))
+        # 差集用临时文件比对（不用进程替换：脚本以 sh/dash 跑，POSIX 没有 <(...)）
+        _e="$SANDBOX/tools-engine.txt"
+        _c="$SANDBOX/tools-client.txt"
+        printf '%s\n' "$ENGINE_TOOLS" > "$_e"
+        printf '%s\n' "$CLIENT_SORTED" > "$_c"
+        ONLY_ENGINE="$(comm -23 "$_e" "$_c")"
+        ONLY_CLIENT="$(comm -13 "$_e" "$_c")"
+        if [ -z "$ONLY_ENGINE" ] && [ -z "$ONLY_CLIENT" ]; then
+            echo "  ✓ agent 工具清单：客户端能执行的工具集 == 引擎声明的工具集（一份清单不许抄两份）"
+            pass=$((pass+1))
+        else
+            echo "  ✗ agent 工具清单：两份清单漂移了。" >&2
+            [ -n "$ONLY_ENGINE" ] && echo "      引擎有、客户端不会执行：$(echo "$ONLY_ENGINE" | tr '\n' ' ')" >&2
+            [ -n "$ONLY_CLIENT" ] && echo "      客户端会执行、引擎没声明：$(echo "$ONLY_CLIENT" | tr '\n' ' ')" >&2
+            fail=$((fail+1))
+        fi
+    fi
+fi
 
 echo "──── contract-check: $pass passed, $fail failed ────"
 [ "$fail" -eq 0 ]
