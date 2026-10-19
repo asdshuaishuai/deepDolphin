@@ -1,0 +1,36 @@
+# deepDolphin deb 运行时依赖清单（**唯一出处**）
+#
+# 【为什么要有清单 + 双向校验】
+#   deb 的 Depends 写错 = 装不上（包名根本不存在）；漏了运行库 = 装上跑不起来。
+#   漏 DTK 的两个插件包更隐蔽：`dde-qt6integration` 缺了 → chameleon 样式加载失败 →
+#   控件**静默退回「纯 Qt 感」**（白底白字那类观感问题），不报错、只是不像 deepin 应用。
+#   ⇒ `scripts/build-deb.sh` 拿二进制的实际 DT_NEEDED 逐条反查包名，与本清单
+#     **双向比对**：清单缺项 / 多项 / 包名不存在，一律构建失败。
+#     「加了新依赖忘改清单」= 装不上 = 红。
+#
+# 【每条的来源】——soname 与插件路径都是**实测**（`readelf -d` + `dpkg -S`），
+#   不是照着文档抄的；包名可能随发行版版本变，脚本每次构建都会重新核对。
+#
+# —— 库依赖（DT_NEEDED，15 个 soname → 13 个包）——
+libc6                 # libc.so.6 / libm.so.6
+libgcc-s1             # libgcc_s.so.1
+libstdc++6            # libstdc++.so.6
+libglib2.0-0          # libglib-2.0.so.0
+libdtk6core           # libdtk6core.so.6
+libdtk6gui            # libdtk6gui.so.6
+libdtk6log            # libdtk6log.so.0
+libdtk6widget         # libdtk6widget.so.6
+libqt6core6           # libQt6Core.so.6
+libqt6dbus6           # libQt6DBus.so.6
+libqt6gui6            # libQt6Gui.so.6
+libqt6network6        # libQt6Network.so.6
+libqt6widgets6        # libQt6Widgets.so.6
+libsecret-1-0         # libsecret-1.so.0
+#
+# —— 运行时插件（**不在 DT_NEEDED 里，但缺了就静默降级**）——
+dde-qt6integration    # qt6/plugins/styles/libchameleon.so —— DTK 样式（缺 = 纯 Qt 感）
+dde-qt6xcb-plugin     # qt6/plugins/platforms/libdxcb.so —— DTK 的 xcb 平台插件
+#
+# ⚠ **刻意不声明 qt6-wayland**：Wayland 分支（M1-8）未做、未验证 ——
+#   声明它等于承诺「Wayland 下可用」，那是虚假承诺。
+#   （与 README 决策 68「写一条注定失败的自启项比不给选项更糟」同一逻辑。）

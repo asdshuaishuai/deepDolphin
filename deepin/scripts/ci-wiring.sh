@@ -17,9 +17,13 @@ SRC="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 #   于是「注释里提过 ci-d2.sh」被当成「ci.sh 调了 ci-d2.sh」→ 门被骗过（负控实测）。
 strip_comments() {
     case "$1" in
-    *.sh)
+    *.sh|*.txt)
         # shell 注释：行首（可含空白）的 # 到行尾。shell 脚本里没有 #include，
         # 所以整段剥掉是安全的。
+        # ⚠ `.txt` 也要走这一支（批 S 实测）：依赖清单 `deb-deps.txt` 用 `#` 写注释，
+        #   若按默认分支只剥 `//`，**注释里提到的包名会顶替真条目** ——
+        #   门项「清单里有 dde-qt6integration」在清单真条目被删后照样绿（负控实测，
+        #   「子串/注释互相顶替」的又一形态）。
         sed -e 's/^[[:space:]]*#.*$//' "$1" ;;
     *)
         if command -v perl >/dev/null 2>&1; then
@@ -437,6 +441,18 @@ arch_need "$SRC/src/ui/ColorSampleSheet.cpp" 'Derived::branchStatusKinds\(\)' '�
 arch_forbid "$SRC/src/ui/ColorSampleSheet.cpp" 'QColor\(0[xX][0-9A-Fa-f]' '色卡不自己写色值'
 arch_need "$SRC/src/main.cpp" '"--color-sample"' '无头入口可拍状态色样张'
 arch_need "$SRC/scripts/ci.sh" '--color-sample ' 'CI 截图矩阵含状态色样张'
+
+# 批 S · deb 打包（D7 达分的必经）：依赖清单是**唯一出处**，且必须与二进制实际依赖一致。
+# ⚠ 漏声明 DTK 的两个插件包最隐蔽：不报错，只是**静默降级**成「纯 Qt 感」。
+arch_need "$SRC/scripts/build-deb.sh" 'deb-deps\.txt\b' 'deb 依赖清单是唯一出处（脚本只读它）'
+arch_need "$SRC/scripts/deb-deps.txt" 'dde-qt6integration\b' 'DTK 样式插件包在依赖清单里（缺 = 静默降级）'
+arch_need "$SRC/scripts/deb-deps.txt" 'dde-qt6xcb-plugin\b' 'DTK xcb 插件包在依赖清单里（缺 = 退回 Qt 原生 xcb）'
+# ⚠ 正则盯**具体那一行调用**（`grep -c 'not found'`），不是「出现过 not found」——
+#   `not found` 在脚本里出现两次（这一行 + die 消息里那句），
+#   只改这一行时「出现过」照样绿（同名多处互相顶替，负控实测）。
+arch_need "$SRC/scripts/build-deb.sh" 'grep -c .not found\b' 'deb 构建校验解包后无缺失库（D7 核心）'
+arch_need "$SRC/scripts/build-deb.sh" 'rpath|runpath' 'deb 构建检查包内二进制无 RPATH'
+arch_need "$SRC/scripts/ci.sh" 'build-deb\.sh\b' 'CI 流程构建 deb（D7 达标必经）'
 
 # 批 P · 引擎获取链（GitHub Releases 下载安装）：判定层出结论，执行层只管跑，
 #   界面只读结论。⚠ URL / 资产名 / 校验和 / 落盘位置**一处**说了算。

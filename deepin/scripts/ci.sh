@@ -30,7 +30,7 @@ export LD_LIBRARY_PATH="$HOME/.local/dd-sysroot/usr/lib/x86_64-linux-gnu${LD_LIB
 export QT_PLUGIN_PATH="$HOME/.local/dd-sysroot/usr/lib/x86_64-linux-gnu/qt6/plugins${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 
-echo "› 1/10 selfcheck（断言 0 failed 且 ≥58 passed）"
+echo "› 1/11 selfcheck（断言 0 failed 且 ≥58 passed）"
 SELFCHECK_OUT="$("$BIN" --selfcheck || true)"
 printf '%s\n' "$SELFCHECK_OUT" | tail -1
 SC_PASSED="$(printf '%s\n' "$SELFCHECK_OUT" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+' || true)"
@@ -45,7 +45,7 @@ if [ "$SC_FAILED" -ne 0 ] || [ "$SC_PASSED" -lt 58 ]; then
 fi
 echo "✓ selfcheck ${SC_PASSED} passed, ${SC_FAILED} failed"
 
-echo "› 2/10 截图矩阵（离屏）"
+echo "› 2/11 截图矩阵（离屏）"
 # ⚠ 这一步**强制** offscreen，不继承环境里的 QT_QPA_PLATFORM。
 #   理由（决策 86）：基线是离屏拍的；若宿主已设 QT_QPA_PLATFORM=dxcb;xcb，
 #   快照会带 DTK 原生窗口装饰与 chameleon 样式 —— 同一份代码拍出另一张脸，
@@ -66,7 +66,7 @@ for theme in light dark; do
         "$SRC/docs/snapshots/${theme}-colors.png" | tail -1
 done
 
-echo "› 3/10 desktop / metainfo 校验（缺工具显式 SKIP）"
+echo "› 3/11 desktop / metainfo 校验（缺工具显式 SKIP）"
 if command -v desktop-file-validate >/dev/null 2>&1; then
     desktop-file-validate "$SRC/data/cn.deepdolphin.app.desktop" && echo "✓ desktop 合法"
 else
@@ -79,7 +79,7 @@ else
     echo "SKIP: appstream-util 未安装（README 决策 69 的硬门随工具到位生效）"
 fi
 
-echo "› 4/10 平台探针（正式断言：exit 0 且输出含 backend=）"
+echo "› 4/11 平台探针（正式断言：exit 0 且输出含 backend=）"
 PROBE_RC=0
 PROBE_OUT="$("$BIN" --platform-probe)" || PROBE_RC=$?
 printf '%s\n' "$PROBE_OUT"
@@ -101,17 +101,17 @@ strip_comments() {
     fi
 }
 
-echo "› 5/10 D2 grep 门（DS::* 单点真相源；散值上限 0，存量已清零）"
+echo "› 5/11 D2 grep 门（DS::* 单点真相源；散值上限 0，存量已清零）"
 # 散值门独立成 scripts/ci-d2.sh：可单独跑，负控也能精确打它。
 if ! sh "$SRC/scripts/ci-d2.sh" "$SRC"; then
     echo "✗ 设计系统散值门失败：src/ 下出现色值/硬编码 px 字号" >&2
     exit 1
 fi
 
-echo "› 6/10 agent 自测（mock 渠道）"
+echo "› 6/11 agent 自测（mock 渠道）"
 "$BIN" --agent-selftest | tail -2
 
-echo "› 7/10 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
+echo "› 7/11 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
 # 剥注释再匹配：注释里出现的字样不算接线（否则加一行注释就能骗过门）。
 WIRING_HITS=0
 WIRING_FAIL=0
@@ -144,7 +144,7 @@ if [ "$WIRING_FAIL" -ne 0 ]; then
 fi
 echo "✓ verify 接线完整（$WIRING_HITS 项）"
 
-echo "› 8/10 图谱 Canvas 契约清单齐（章程 §3.5：方法清单就是移植验收清单）"
+echo "› 8/11 图谱 Canvas 契约清单齐（章程 §3.5：方法清单就是移植验收清单）"
 # 契约清单（引擎 docs/graph-scene-schema.md 的渲染契约层）：26 个标准 Canvas2D 方法。
 # 「少实现一项，渲染器就跑不完」——本门逐个核 Canvas2D 是否声明为 override。
 CANVAS_METHODS="setTransform fillRect strokeRect rect beginPath moveTo lineTo arcTo closePath arc bezierCurveTo fill stroke fillText createLinearGradient addColorStop setLineDash setLineDashOffset setShadowBlur setShadowColor setGlobalAlpha setLineWidth setStrokeStyle setFillStyle setFont setTextAlign"
@@ -182,7 +182,7 @@ if [ "$CANVAS_FAIL" -ne 0 ]; then
 fi
 echo "✓ Canvas2D 覆盖契约清单 ${CANVAS_N}/26 个方法；logic/ 与 models/ 零 QWidget 头；新文件均已登记构建"
 
-echo "› 9/10 接线门（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
+echo "› 9/11 接线门（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
 # 接线门独立成 scripts/ci-wiring.sh：可单独跑，负控也能精确打它。
 if sh "$SRC/scripts/ci-wiring.sh" "$SRC"; then
     :
@@ -191,7 +191,7 @@ else
     exit 1
 fi
 
-echo "› 10/10 引擎契约门（真引擎沙箱；引擎缺席显式 SKIP 且不算通过）"
+echo "› 10/11 引擎契约门（真引擎沙箱；引擎缺席显式 SKIP 且不算通过）"
 # contract-check.sh 之前是**游离脚本** —— CI 从来没跑过它，契约漂移不会被拦。
 # 接进 CI 后：引擎在 → 真跑（32 条）；引擎不在 → 脚本自己 SKIP 并如实说明
 # 「本组未验证」（不是静默通过）。
@@ -209,6 +209,27 @@ if [ -n "${DEEPGIT_BIN:-}" ] || command -v moongit >/dev/null || command -v deep
     fi
 else
     echo "‣ SKIP 引擎契约门：未找到 moongit/deepgit（可设 DEEPGIT_BIN 指定）"
+    echo "‣ 本组**未验证**，不算通过"
+fi
+
+echo "› 11/11 deb 打包（D7 达标的必经：能出包装进 deepin，且装后零环境变量）"
+# PLAN §「CI 流程」明确列了「⑥ deb 构建」—— 这一门以前根本不存在，
+# 于是「能不能出包装进 deepin」从没被验证过。
+# build-deb.sh 自带**依赖清单双向校验**（清单 ↔ 二进制实际 DT_NEEDED）：
+# 漏声明（装上跑不起来）/ 多声明（包名不存在装不上）/ 包名抄错，一律构建失败。
+if command -v dpkg-deb >/dev/null 2>&1; then
+    if sh "$SRC/scripts/build-deb.sh" "$BUILD/deb" > "$BUILD/build-deb.log" 2>&1; then
+        tail -3 "$BUILD/build-deb.log"
+        # ⚠ 解包后「零环境变量下无缺失库」的校验**在 build-deb.sh 里**（产物自检归打包脚本，
+        #   别在这里再写一份 —— 两处定义会漂）。
+        echo "✓ deb 构建通过（依赖清单自洽 + 产物零环境变量下无缺失库）"
+    else
+        tail -20 "$BUILD/build-deb.log" >&2
+        echo "✗ deb 构建失败" >&2
+        exit 1
+    fi
+else
+    echo "‣ SKIP deb 构建：没有 dpkg-deb"
     echo "‣ 本组**未验证**，不算通过"
 fi
 

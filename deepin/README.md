@@ -117,25 +117,35 @@ cmake --build build --parallel 4
 scripts/smoke.sh                  # 配置+构建+selfcheck；引擎在位时追加 contract-check
 ```
 
-**开发树内运行**（二进制无 rpath，Qt6/DTK6 运行库在 sysroot 里，环境变量缺一不可）：
+**开发树内运行**（⚠ **批 S 实测修正**：运行期**不需要**任何环境变量 —— 宿主自带 Qt6/DTK6）：
 
 ```sh
-export LD_LIBRARY_PATH=~/.local/dd-sysroot/usr/lib/x86_64-linux-gnu
-export QT_PLUGIN_PATH=~/.local/dd-sysroot/usr/lib/x86_64-linux-gnu/qt6/plugins
-export QT_QPA_PLATFORM=offscreen        # 无显示环境时；共享 X11 会话可去掉这行直接上真 DDE
+# 裸环境直接跑（实测：`env -u LD_LIBRARY_PATH -u QT_PLUGIN_PATH ./build/deepDolphin --selfcheck`
+#       → 269 通过 0 失败；`ldd` 0 个 not found；加载的是 /lib/x86_64-linux-gnu 下的系统库）
+QT_QPA_PLATFORM=offscreen        # 无显示环境时；共享 X11 会话可去掉这行直接上真 DDE
 ./build/deepDolphin
 ```
 
+> **原文失真已修**（批 S）：这里原写着「Qt6/DTK6 运行库在 sysroot 里，环境变量缺一不可」，
+> 并说「`ldd` 裸环境报 Qt6/DTK6 not found」。**实测不成立** —— 宿主 `/lib/x86_64-linux-gnu`
+> 里本来就有 `libdtk6widget.so.6` / `libQt6Widgets.so.6`，插件目录里也有
+> `libchameleon.so`（DTK 样式）与 `libdxcb.so`（DTK 平台插件）。
+> sysroot 是**编译期**用来装 dev 头文件的（宿主没有 `-dev` 包），**不是运行期依赖**。
+> ⚠ 二进制**无 RPATH/RUNPATH**，`DT_NEEDED` 全是 soname ⇒ 换台机器只要系统有这些库就能跑。
+> 实测：裸环境与带 sysroot 环境**拍出的快照逐像素 0 差异**（两种环境观感相同）。
+
 安装：`cmake --install build --prefix /usr`（binary → bin，desktop →
 share/applications/cn.deepdolphin.app.desktop，图标 → share/icons/hicolor/scalable/apps）。
-安装后由系统 Qt6/DTK6 运行库满足链接，无需上述环境变量。
+**打 deb（批 S 新增，D7 达分的必经）**：`sh scripts/build-deb.sh` → `build/deb/cn.deepdolphin.app_<版本>_amd64.deb`。
+安装后由系统 Qt6/DTK6 运行库满足链接，**无需任何环境变量**（deb 的 `Depends` 已实测列出，
+且构建时会拿二进制的实际 `DT_NEEDED` 与 `scripts/deb-deps.txt` **双向核对**，漏一项就构建失败）。
 
-本阶段实测记录：`--selfcheck` 148 通过 0 失败；`--version` 输出 `deepDolphin 0.1.0`；
-offscreen 启动探测 `timeout 8` 退出码 124（进程存活满 8 秒）；`ldd` 裸环境报 Qt6/DTK6 not found、
-带上 `LD_LIBRARY_PATH` 后 0 个 not found。**运行期环境变量**（sysroot 方案的代价，打包后消失）：
-`LD_LIBRARY_PATH=~/.local/dd-sysroot/usr/lib/x86_64-linux-gnu`（Qt/DTK 运行库）+
-`QT_PLUGIN_PATH=~/.local/dd-sysroot/usr/lib/x86_64-linux-gnu/qt6/plugins`（xcb/offscreen 平台插件、
-样式插件）；已拷入宿主的 `libchameleon.so`（DTK 样式）与 `libdxcb.so`（DTK 平台）到对应插件目录。
+本阶段实测记录：`--selfcheck` 269 通过 0 失败；`--version` 输出 `deepDolphin 0.1.0`；
+offscreen 启动探测 `timeout 8` 退出码 124（进程存活满 8 秒）；
+**批 S 实测**：裸环境 `ldd` **0 个 not found**；deb 解包后的二进制在裸环境下
+`--selfcheck` 269/0 通过、快照能拍出 ⇒ D7 的「装后零环境变量」在本机达成。
+（真机 clean deepin 25 容器的 `dpkg-deb -b` + 安装 + 启动仍是 D7 的最终验收，
+本机**无 docker/podman**，该步未实跑。）
 
 ## 引擎安装前提
 
@@ -930,6 +940,9 @@ deepin 接进 GUI 属**领先 mac**。
 | 205 | **档位清单单一真相源**（`Derived::livenessKinds()` / `branchStatusKinds()`） | 样张按清单画、判据按清单断言 ⇒ 加一档 `Liveness` 自动多画一格，**不会漏画**（漏画 = 基线里没有那一格 = 又一个空门） | 清单必须是**引擎真实产出**的档 —— 引擎 `computeBranchStatus` 只有 5 档，**没有 `dirty`**（mac 的 `.dirty`→红是死路径）。列出引擎不产出的档 = 永远画不出来的一格 |
 | 206 | **门项正则一律带 token 边界**（本批给 **171 条**门项追加 `\b`） | 负控实测：`--color-sample` 被改成 `--color-sampleX` 后，子串正则**照样匹配** ⇒ 门是假的（**第十二次**「子串互相顶替」）。通用规则：正则尾部是词字符就加 `\b` | ⚠ **规则有反例**：尾部是**前缀形态**时不能加 `\b` —— `QColor\(0x` 的 `x` 后面紧跟十六进制数字（两边都是词字符 ⇒ 无词边界），加了 `\b` 门反而**抓不住**。6 条门因此被改坏，已改成 `QColor\(0[xX][0-9A-Fa-f]`（盯 hex **首字符**）。⚠ **引号形式必须统一用单引号** —— 批量加固按形式分派，双引号那批会被漏掉（门脚本里两种写法混用 = 「形式互相顶替」的又一次变体）；已加自检门项禁止混用 |
 | 207 | **深色色卡与浅色色卡都进基线** | 状态色是**固定色**（不随主题改写），但**表面/文字色**随主题变 —— 两张都要拍，否则暗色下的对比度问题看不见 | 快照文件从 6 张（+2 setupguide）增到 8 张 |
+| 208 | **deb 的依赖清单是唯一出处，且构建时与二进制实际依赖**双向**核对** | Depends 写错 = 装不上（包名不存在）；漏声明 = 装上跑不起来；漏 DTK 的两个插件包更隐蔽 —— `dde-qt6integration` 缺了 → chameleon 样式加载失败 → 控件**静默退回「纯 Qt 感」**（白底白字那类），不报错、只是不像 deepin 应用。⇒ `scripts/deb-deps.txt` 是唯一出处，`build-deb.sh` 拿 `readelf -d` 的 `DT_NEEDED` 逐条反查包名，与清单**双向比对**，差集非空即构建失败 | 包名随发行版版本变（实测于本机 UOS）—— 脚本每次构建都重新核对，换发行版只需改这一份清单 |
+| 209 | **刻意不声明 `qt6-wayland`** | Wayland 分支（M1-8）**未做、未验证** —— 声明它等于承诺「Wayland 下可用」，那是虚假承诺（与决策 68「写一条注定失败的自启项比不给选项更糟」同一逻辑） | Wayland 用户装上可能起不来 —— 已在依赖清单里写明原因 |
+| 210 | **D7 的核心是「装后零环境变量」—— 实测发现 M2-8 其实早就达标** | README 原写「运行库在 sysroot 里，环境变量缺一不可」「裸环境 `ldd` 报 not found」—— **实测不成立**：宿主 `/lib/x86_64-linux-gnu` 本来就有 `libdtk6widget.so.6` / `libQt6Widgets.so.6`，插件目录里也有 `libchameleon.so`（DTK 样式）与 `libdxcb.so`（DTK 平台插件）。二进制**无 RPATH**、`DT_NEEDED` 全是 soname ⇒ 换台机器只要系统有这些库就能跑 | 文档失真已修。顺带查出**此前所有「视觉零变化」的结论仍然有效**：裸环境与带 sysroot 环境拍出的快照**逐像素 0 差异**（两种环境观感相同）。sysroot 是**编译期**装 dev 头文件用的，不是运行期依赖 |
 
 **本批验证**（全部实跑）：`--selfcheck` **205 通过 0 失败**（198 → 205，+7 例：id 取名字 / 概览解析 /
 概览契约不对时报错 / 符号详情解析 / 符号不存在是「没找到」不是错误 / 影响面解析 / 影响面契约不对时报错）；
@@ -1343,6 +1356,49 @@ mac 真正在用的那套是 `DSColor.color(DSStatus)`（stale 落**橙**）。
 
 **视觉变化**：4 页面板快照**零变化**（基线是空态，状态点没画进去 —— 这正是空门本身）；
 **新增两张色卡**（浅/深），是本批唯一落到基线上的像素变化。
+
+### 批 S：deb 打包 —— D7 达分的必经（顺带查出 M2-8 其实早就达标）
+
+决策见上表 **208–210**（依赖清单唯一出处 + 与二进制实际依赖双向核对 /
+刻意不声明 `qt6-wayland` / D7 的核心是「装后零环境变量」，实测 M2-8 早就达标）。
+
+**做了什么**：新增 `scripts/build-deb.sh` + `scripts/deb-deps.txt`（依赖清单唯一出处），
+产出 `build/deb/cn.deepdolphin.app_<版本>_amd64.deb`；接入 CI 作为**第 11 门**
+（PLAN §CI 流程早就列了「⑥ deb 构建」，这一门此前根本不存在 ⇒「能不能出包装进 deepin」
+从没被验证过）。包内容：二进制 / desktop / D-Bus service / hicolor 多尺寸图标 + symbolic 图标 /
+metainfo / `control` / `postinst`（DBus 激活环境）。版本号取 **CMakeLists 的 `project(VERSION …)`**
+（单一真相源，不手抄）。
+
+**依赖清单与二进制实际依赖双向核对**（本批的核心，不是「写个 Depends 就完」）：
+`readelf -d` 读出 15 个 `DT_NEEDED` → `ldconfig` 定位真实路径 → `dpkg -S` 反查包名 →
+与清单**双向求差集**：清单缺项（装上跑不起来）/ 多项（包名不存在装不上）**一律构建失败**。
+⇒「加了新依赖忘改清单」在这一步就红，而不是等用户装完才发现。
+⚠ 漏声明 DTK 的两个插件包最隐蔽：`dde-qt6integration`（chameleon 样式）缺了 →
+控件**静默退回「纯 Qt 感」**，不报错、只是不像 deepin 应用。
+
+**顺带查出一处 README 失真并修掉**：原文说「Qt6/DTK6 运行库在 sysroot 里，环境变量缺一不可」、
+「裸环境 `ldd` 报 not found」—— **实测不成立**：宿主 `/lib/x86_64-linux-gnu` 本来就有
+`libdtk6widget.so.6` / `libQt6Widgets.so.6`，插件目录里也有 `libchameleon.so`（DTK 样式）
+与 `libdxcb.so`（DTK 平台插件）。二进制**无 RPATH/RUNPATH**、`DT_NEEDED` 全是 soname
+⇒ sysroot 是**编译期**装 dev 头文件用的，不是运行期依赖。
+⇒ **M2-8 实测早就达标**，台账状态从 ⬜ 改成 ✅。
+⚠ 顺带确认：**此前所有「视觉零变化」的结论仍然有效** —— 裸环境与带 sysroot 环境拍出的
+快照**逐像素 0 差异**（两种环境观感相同，此前担心的「基线在两种观感之间漂移」不成立）。
+
+**本批验证**（全部实跑）：`--selfcheck` **269 通过 0 失败**（不变）；`ci-wiring.sh`
+**257 项**（251 → 257，+6 项）；`ci.sh` **11/11 门全绿**（10 → 11，新增 deb 门）；
+**负控 10 处全部真红**（打包脚本 5 + 接线门 5）；
+**deb 产物实测**：解包后 `ldd` **0 个 not found**、裸环境 `--selfcheck` **269/0** 通过、
+快照能拍出 ⇒「装出来的样子能跑」成立。
+
+**本批踩到的两个坑（都是「门太松」的老毛病，第 13 次）**：
+① `strip_comments` **不剥 `.txt` 的 `#` 注释** ⇒ 依赖清单**注释里提到的包名**顶替了真条目，
+「清单里有 `dde-qt6integration`」在真条目被删后照样绿 ⇒ `.txt` 也归到「剥 `#` 注释」那一支。
+② `not found` 在脚本里出现**两次**（调用 + die 消息）⇒ 只改调用那行时「出现过」照样绿
+⇒ 门项改成盯**具体那一行调用**（`grep -c .not found\b`）。
+
+**未完成**：真机 clean deepin 25 容器的 `dpkg-deb -b` + 安装 + 启动（**本机无 docker/podman**）
+—— D7 的最终验收仍待真机，本批只做到「本机可复现的等价验证」。
 
 ## 分层纪律（后续阶段必须延续）
 

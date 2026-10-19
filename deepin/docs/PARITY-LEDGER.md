@@ -141,7 +141,7 @@ agent 工具清单后修正，README 决策 199）：
 | `graph arch --format scene` | ✅ | 批 D2：架构图页（Qt QPainter Canvas） |
 | `graph confidence` | ✅ | 批 E2：置信度页签 |
 | `graph patchconf` | ✅ | 批 F：补丁体检（三形态） |
-| `graph db` | ⬜ **判定不接 GUI** | 给 agent 用 SQL 查的单文件 SQLite；GUI 无对应物（客户端零业务数据写入的纪律已满足 —— 经引擎写） |
+| `graph db` | ⬜ **判定不接 GUI** | 给 agent 用 SQL 查的单文件 SQLite；GUI 无对应物（客户端零业务数据写入的纪律已满足 —— 经引擎写）。⚠ **不在 agent 工具面里**（决策 199 实测：28 个工具里没有它）⇒ 只能走命令行，不是「agent 能用」 |
 | `arch gen` | ✅ | 批 D2：`graph arch --format scene` 走的是同一份 arch.json |
 | `arch update` / `arch query` | ⬜ **判定不接 GUI** | `query` 与架构图页的 scene 数据重叠，接了会造出**第二个真相源**；`update` 是探针增量，无 GUI 对位物 |
 | `index gen` | ✅ | 批 E2：代码图谱页「生成」 |
@@ -296,8 +296,8 @@ deepin 用 **tailwind 固定色值**（`#10B981` / `#F59E0B` / `#9CA3AF` …）�
 | M1-7 | `platform/Backend` 平台层 | ⬜ |
 | M1-8 | Wayland 分支 | ⬜ |
 | M2-5 | i18n | ⬜（与 B8 合并做更省） |
-| M2-7 | deb 打包 | ⬜（D7 达标必经） |
-| M2-8 | 安装后零环境变量 | ⬜（D7 达标必经） |
+| M2-7 | deb 打包 | 🟡 **批 S 已做**（`scripts/build-deb.sh` + 依赖清单 `scripts/deb-deps.txt` + **依赖清单↔二进制实际 DT_NEEDED 双向校验** + CI 第 11 门）；⚠ **真机 clean deepin 25 容器验收未跑**（本机无 docker/podman）—— D7 的最终验收仍待真机 |
+| M2-8 | 安装后零环境变量 | ✅ **批 S 实测达标**：二进制**无 RPATH/RUNPATH**、`DT_NEEDED` 全是 soname；宿主自带 Qt6/DTK6 ⇒ 裸环境 `--selfcheck` 269/0、**deb 解包后的二进制**裸环境同样 269/0 且能拍快照。⚠ README 原写「运行库在 sysroot 里，环境变量缺一不可」是**失真描述**，已改 |
 | M3c | 清第二套色板 + 一致性 / HiDPI / 动效收尾 | ⬜（与 B13/B14 同批更省） |
 | M1a / M0-8 / M3b / M4a / M4b | 容器批 / 干净容器 / KPI 骨架屏 / 拆分 / deb 矩阵 | ◐ 部分落地 |
 
