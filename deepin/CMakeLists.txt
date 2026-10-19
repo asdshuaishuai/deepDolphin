@@ -96,6 +96,7 @@ add_executable(deepDolphin
     src/logic/CodeGraphBuild.cpp
     src/logic/HeatLayout.cpp
     src/logic/PatchCheck.cpp
+    src/logic/DocPages.cpp
     # ── platform/ ──
     src/platform/AppService.cpp
     src/platform/AutostartManager.cpp
@@ -134,6 +135,7 @@ add_executable(deepDolphin
     src/ui/dialogs/ArchDialog.cpp
     src/ui/dialogs/CodeGraphDialog.cpp
     src/ui/dialogs/PatchCheckDialog.cpp
+    src/ui/dialogs/DocsDialog.cpp
     src/ui/dialogs/ScanDialog.cpp
     src/ui/dialogs/panes/AutomationPane.cpp
     src/ui/dialogs/panes/GeneralPane.cpp

@@ -182,7 +182,7 @@ if [ "$CANVAS_FAIL" -ne 0 ]; then
 fi
 echo "✓ Canvas2D 覆盖契约清单 ${CANVAS_N}/26 个方法；logic/ 与 models/ 零 QWidget 头；新文件均已登记构建"
 
-echo "› 9/10 架构图 / agent 工具表 / 代码图谱+热力图 / 补丁体检接线在（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
+echo "› 9/10 架构图 / agent 工具表 / 代码图谱+热力图 / 补丁体检 / 固定文档页接线在（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
 # 架构图链路分四段，任一段被摘掉都必须红：
 #   引擎取数（AppModel 调 graph arch --format scene）
 #   → 判定层（ArchViewport 视口/命中、ArchReceipt 回执提取）
@@ -286,12 +286,28 @@ arch_need "$SRC/src/ui/PanelWindow.cpp" 'showPatchCheck' 'PanelWindow 有开补�
 arch_need "$SRC/src/ui/PanelWindow.cpp" 'PatchCheckDialog' 'PanelWindow 用的是补丁体检窗'
 arch_need "$SRC/src/app/SelfCheck.cpp" 'PatchCheck::parseLayer1' 'SelfCheck 覆盖 Layer1 解析'
 arch_need "$SRC/src/app/SelfCheck.cpp" 'PatchCheck::diffSnippet' 'SelfCheck 覆盖 diff 抽实码'
+
+# 固定文档页链路：内容（DocPages 纯函数，四类目写死在代码里）→ 渲染（DocsDialog，
+#   markdown）→ 接线（面板菜单「关于 / 帮助」）。文档不进引擎 —— 它不是数据。
+arch_need "$SRC/src/logic/DocPages.cpp" 'kindKey' '判定层有类目标识'
+arch_need "$SRC/src/logic/DocPages.cpp" 'content' '判定层有文档正文'
+arch_need "$SRC/src/logic/DocPages.cpp" 'clientRepo' '仓库地址有单一出处'
+arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::content' '窗经判定层取正文'
+arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'setMarkdown' '正文按 markdown 渲染'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'showDocs' 'PanelWindow 有开文档窗的动作'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'DocsDialog' 'PanelWindow 用的是文档窗'
+# 入口级检查：光有 showDocs 方法不算数 —— 菜单里没人调它，用户就永远打不开
+# （负控实测：只删菜单两行、留着方法，上面两条照样全绿）。
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'addAction\(QStringLiteral\("关于 deepDolphin"\)\)' '面板菜单有「关于」入口'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'addAction\(QStringLiteral\("帮助"\)\)' '面板菜单有「帮助」入口'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'DocPages::content' 'SelfCheck 覆盖文档正文'
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \
          src/logic/CodeGraphBuild.cpp src/ui/ArchCanvasWidget.cpp \
          src/ui/dialogs/ArchDialog.cpp src/ui/dialogs/CodeGraphDialog.cpp \
          src/logic/HeatLayout.cpp src/ui/HeatmapWidget.cpp \
-         src/logic/PatchCheck.cpp src/ui/dialogs/PatchCheckDialog.cpp; do
+         src/logic/PatchCheck.cpp src/ui/dialogs/PatchCheckDialog.cpp \
+         src/logic/DocPages.cpp src/ui/dialogs/DocsDialog.cpp; do
     if ! grep -qF "$f" "$SRC/CMakeLists.txt"; then
         echo "  ✗ 构建未登记：$f" >&2
         ARCH_FAIL=1
@@ -301,7 +317,7 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：取数/判定/渲染/接线任一段被摘掉" >&2
     exit 1
 fi
-echo "✓ 架构图 + agent 工具表 + 代码图谱/热力图 + 补丁体检接线完整（取数 → 判定 → 渲染 → 接线，${ARCH_N} 项）"
+echo "✓ 架构图 + agent 工具表 + 代码图谱/热力图 + 补丁体检 + 固定文档页接线完整（取数 → 判定 → 渲染 → 接线，${ARCH_N} 项）"
 
 echo "› 10/10 引擎契约门（真引擎沙箱；引擎缺席显式 SKIP 且不算通过）"
 # contract-check.sh 之前是**游离脚本** —— CI 从来没跑过它，契约漂移不会被拦。

@@ -33,6 +33,7 @@ class AgentDialog;
 class ArchDialog;
 class CodeGraphDialog;
 class PatchCheckDialog;
+class DocsDialog;
 class TrayController;
 
 DWIDGET_USE_NAMESPACE
@@ -73,6 +74,7 @@ private:
     void showArch(const QString &project); // 架构图窗（按项目各一个；单仓库在入口锁定）
     void showCodeGraph(const QString &project); // 代码图谱窗（按项目各一个）
     void showPatchCheck(const QString &project); // 补丁体检窗（按项目各一个）
+    void showDocs(int kindIndex); // 固定文档窗（关于 / 帮助 / 开源感谢 / 更新日志）
     void showBrief(const QString &project, const QString &titleOverride = QString()); // AI 说明（worker 生成；未配置 → 诚实降级）
     void confirmBulkUpdate(bool deep);
     void runUpdateForScope(bool deep);
@@ -105,6 +107,7 @@ private:
     // 代码图谱窗：按项目各一个（与架构图窗同理）。
     QHash<QString, QPointer<CodeGraphDialog>> m_codeGraphDialogs;
     QHash<QString, QPointer<PatchCheckDialog>> m_patchDialogs;
+    QPointer<DocsDialog> m_docsDialog;
     QPointer<AiResultDialog> m_digestDialog; // 「更新 + AI 摘要」结果窗（busy → 正文/错误）
 
     Selection m_selection;

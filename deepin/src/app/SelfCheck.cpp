@@ -5,6 +5,7 @@
 #include "../logic/CodeGraphBuild.h"
 #include "../logic/DashFilter.h"
 #include "../logic/Derived.h"
+#include "../logic/DocPages.h"
 #include "../logic/DocumentIntegrity.h"
 #include "../logic/GraphToken.h"
 #include "../logic/HeatLayout.h"
@@ -43,6 +44,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMargins>
+#include <QRegularExpression>
 #include <QPainter>
 
 namespace {
@@ -1754,6 +1756,109 @@ int SelfCheck::run(QStringList &log)
                     && PatchCheck::bandOf(0.79) == PatchCheck::ScoreBand::mid
                     && PatchCheck::bandOf(0.5) == PatchCheck::ScoreBand::mid
                     && PatchCheck::bandOf(0.49) == PatchCheck::ScoreBand::low);
+        }
+    }
+
+    // ── 固定文档页（关于 / 帮助 / 开源感谢 / 更新日志）──
+    // 文档是「写死在代码里」的长文，但它**会撒谎**：抄 mac 的文案就把本客户端
+    // 说成 Swift/macOS 的了。所以判据盯的是「事实写对没有」，不是「有没有字」：
+    //   ① 四个类目齐全、正文非空、互不相同
+    //   ② 平台词写对（Qt / DDE / deepin），且**不含** mac 的平台词
+    //   ③ 仓库地址只有一个出处（正文里的 URL 必须都来自 clientRepo()/engineRepo()）
+    //   ④ 帮助页提到的入口必须**真的存在**（架构图 / 代码图谱 / 补丁体检）
+    //   ⑤ 认不出的语言 → 空串（不回落成中文）
+    {
+        const QVector<DocPages::Kind> all = DocPages::kinds();
+        check(log, "文档页：四个类目齐全且标识稳定（about / help / openSource / changelog）",
+            all.size() == 4 && DocPages::kindKey(DocPages::Kind::about) == QStringLiteral("about")
+                && DocPages::kindKey(DocPages::Kind::help) == QStringLiteral("help")
+                && DocPages::kindKey(DocPages::Kind::openSource)
+                    == QStringLiteral("openSource")
+                && DocPages::kindKey(DocPages::Kind::changelog)
+                    == QStringLiteral("changelog"));
+
+        bool allNonEmpty = !all.isEmpty();
+        QSet<QString> seen;
+        bool distinct = true;
+        for (const DocPages::Kind &k : all) {
+            const QString text = DocPages::content(k);
+            allNonEmpty = allNonEmpty && !text.trimmed().isEmpty();
+            distinct = distinct && !seen.contains(text);
+            seen.insert(text);
+        }
+        check(log, "文档页：四类正文都非空且互不相同（不是同一篇复制四份）",
+            allNonEmpty && distinct);
+
+        {
+            // 显示名也必须齐全且互不相同（切换按钮不能有两个「帮助」）
+            QSet<QString> titles;
+            bool ok = true;
+            for (const DocPages::Kind &k : all) {
+                const QString t = DocPages::kindTitle(k);
+                ok = ok && !t.isEmpty() && !titles.contains(t);
+                titles.insert(t);
+            }
+            check(log, "文档页：类目显示名齐全且互不相同", ok);
+        }
+        {
+            // ② 平台词写对：必须是 deepin 的事实，且**不许**出现 mac 的平台词
+            const QString about = DocPages::content(DocPages::Kind::about);
+            check(log, "文档页：关于页写的是本平台事实（Qt / DDE / deepin），不含 mac 的平台词",
+                about.contains(QStringLiteral("Qt")) && about.contains(QStringLiteral("DDE"))
+                    && about.contains(QStringLiteral("deepin"))
+                    && !about.contains(QStringLiteral("Swift"))
+                    && !about.contains(QStringLiteral("macOS")));
+        }
+        {
+            // ③ 仓库地址单一出处：正文里出现的仓库 URL 必须都来自两个函数之一。
+            //   ⚠ 正则必须**吃掉路径段**（`/tree/dev` 之类）：只在 `/` 前截断的话，
+            //   「https://…/moongit/tree/dev」会被截成「https://…/moongit」→ 蒙对。
+            QRegularExpression urlRe(
+                QStringLiteral("https://github\\.com/asdshuaishuai/[A-Za-z0-9_./-]+"));
+            bool onlyKnown = true;
+            for (const DocPages::Kind &k : all) {
+                const QString text = DocPages::content(k);
+                auto it = urlRe.globalMatch(text);
+                while (it.hasNext()) {
+                    QString u = it.next().captured(0);
+                    while (u.endsWith(QLatin1Char('.'))) // 句末的点不算地址的一部分
+                        u.chop(1);
+                    onlyKnown = onlyKnown
+                        && (u == DocPages::clientRepo() || u == DocPages::engineRepo());
+                }
+            }
+            check(log, "文档页：正文里的仓库地址只有两个出处（不许手抄第三份）",
+                onlyKnown && DocPages::content(DocPages::Kind::about)
+                        .contains(DocPages::engineRepo())
+                    && DocPages::content(DocPages::Kind::openSource)
+                        .contains(DocPages::engineRepo()));
+        }
+        {
+            // ④ 帮助页提到的入口必须真的存在（文档不许吹牛）
+            const QString help = DocPages::content(DocPages::Kind::help);
+            check(log, "文档页：帮助页提到的入口都真实存在（架构图 / 代码图谱 / 补丁体检）",
+                help.contains(QStringLiteral("架构图")) && help.contains(QStringLiteral("代码图谱"))
+                    && help.contains(QStringLiteral("补丁体检")));
+        }
+        {
+            // 致谢页要点名引擎与模型目录
+            const QString ack = DocPages::content(DocPages::Kind::openSource);
+            check(log, "文档页：致谢页点名引擎与模型目录",
+                ack.contains(QStringLiteral("moongit"))
+                    && ack.contains(QStringLiteral("models.dev")));
+        }
+        {
+            // 更新日志要给出版本
+            check(log, "文档页：更新日志给出版本号",
+                DocPages::content(DocPages::Kind::changelog)
+                    .contains(QStringLiteral("v0.1.0")));
+        }
+        {
+            // ⑤ 认不出的语言 → 空串，不回落成中文
+            const bool empty = DocPages::content(DocPages::Kind::about,
+                static_cast<DocPages::Language>(99))
+                                   .isEmpty();
+            check(log, "文档页：认不出的语言返回空串（不回落成中文冒充）", empty);
         }
     }
 

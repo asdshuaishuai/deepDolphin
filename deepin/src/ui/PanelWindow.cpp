@@ -23,6 +23,7 @@
 #include "dialogs/AiSettingsDialog.h"
 #include "dialogs/ArchDialog.h"
 #include "dialogs/CodeGraphDialog.h"
+#include "dialogs/DocsDialog.h"
 #include "dialogs/PatchCheckDialog.h"
 #include "../app/Settings.h"
 #include "dialogs/ScanDialog.h"
@@ -563,6 +564,12 @@ void PanelWindow::buildMenu()
     connect(panelMenu->addAction(QStringLiteral("添加 / 扫描项目")), &QAction::triggered, this,
         [this] { openScanDialog(); });
     panelMenu->addAction(QStringLiteral("设置"), this, &PanelWindow::showSettings);
+    panelMenu->addSeparator();
+    // 固定文档（mac 的原生「关于 / 帮助」窗口在 DDE 下无对位物 → 合为一个文档窗）
+    connect(panelMenu->addAction(QStringLiteral("关于 deepDolphin")), &QAction::triggered, this,
+        [this] { showDocs(0); });
+    connect(panelMenu->addAction(QStringLiteral("帮助")), &QAction::triggered, this,
+        [this] { showDocs(1); });
 
     if (DTitlebar *tb = titlebar()) {
         tb->setMenu(panelMenu);
@@ -775,6 +782,21 @@ void PanelWindow::showPatchCheck(const QString &project)
     dlg->show();
     dlg->raise();
     dlg->activateWindow();
+}
+
+void PanelWindow::showDocs(int kindIndex)
+{
+    // 一个窗 + 顶部分段切四类目（mac 是两个原生窗 + 设置里四个区，内容同源）
+    if (!m_docsDialog) {
+        m_docsDialog = new DocsDialog(this);
+        connect(m_docsDialog, &DocsDialog::openUrl, this, [](const QString &url) {
+            SysOpen::openUrl(QUrl(url));
+        });
+    }
+    m_docsDialog->show();
+    m_docsDialog->raise();
+    m_docsDialog->activateWindow();
+    Q_UNUSED(kindIndex); // 类别由窗内分段切换决定，入口只负责把窗叫醒
 }
 
 void PanelWindow::showBrief(const QString &project, const QString &titleOverride)
