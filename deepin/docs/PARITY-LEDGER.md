@@ -103,6 +103,54 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 
 > ⚠ 章程 §4 写的「23 工具」也已过期（dev 分支实测 33）—— 属引擎仓的账，本仓只记事实。
 
+### C.1 引擎命令逐条判定（2026-10-19 实测后全表覆盖）
+
+**接了 = deepin 端有 GUI 入口；判定不接 = 明确记了理由**（判定不接 GUI ≠ 判定不接能力 ——
+多数仍可经 agent 工具面用）。
+
+| 命令 | 判定 | 落点 / 理由 |
+|---|---|---|
+| `list` | ✅ | 项目列表（主界面） |
+| `add` | ✅ | 项目列表「添加」 |
+| `remove` | ✅ | 项目列表「移除」 |
+| `scan` | ✅ | 项目列表「扫描」 |
+| `status` | ✅ | 详情页现状 |
+| `update` / `deep` | ✅ | 详情页「更新」/「深度更新」 |
+| `journal` | ✅ | 进度日志（详情页） |
+| `git pull/push/commit/stash/unstash/fetch` | ✅ | 详情页提交区 + 顶栏 fetch/pull/push |
+| `milestone add/list/done/drop/remove/reopen` | ✅ | 里程碑页（增删改完成） |
+| `dashboard` | ✅ | 仪表盘页 |
+| `context` | ✅ | agent 上下文包（agent 侧） |
+| `docs` | ✅ | 详情页「项目说明」 |
+| `tools` | ✅ | agent 工具面（28 工具） |
+| `verify` | ✅ | 详情页「文档完整性」卡（四态） |
+| `report` | ✅ | **批 J**：详情页「导出报告」+ 报告卡 |
+| `doctor` | ✅ | **批 J**：设置·通用页「环境自检」卡 |
+| `config list/get/set` | ✅ | **批 K**：设置·通用页「引擎配置」卡 |
+| `graph overview` | ✅ | **批 I**：代码图谱页页头概览 |
+| `graph tree` | ✅ | 批 E2：左栏符号树 |
+| `graph symbol` | ✅ | **批 I**：关系页签「引用来源」 |
+| `graph impact` | ✅ | **批 I**：关系页签「影响面」 |
+| `graph arch --format scene` | ✅ | 批 D2：架构图页（Qt QPainter Canvas） |
+| `graph confidence` | ✅ | 批 E2：置信度页签 |
+| `graph patchconf` | ✅ | 批 F：补丁体检（三形态） |
+| `graph db` | ⬜ **判定不接 GUI** | 给 agent 用 SQL 查的单文件 SQLite；GUI 无对应物（客户端零业务数据写入的纪律已满足 —— 经引擎写） |
+| `arch gen` | ✅ | 批 D2：`graph arch --format scene` 走的是同一份 arch.json |
+| `arch update` / `arch query` | ⬜ **判定不接 GUI** | `query` 与架构图页的 scene 数据重叠，接了会造出**第二个真相源**；`update` 是探针增量，无 GUI 对位物 |
+| `index gen` | ✅ | 批 E2：代码图谱页「生成」 |
+| `index overview` | ✅ | **批 L**：代码图谱页索引状态行 |
+| `index update` | ✅ | **批 L**：代码图谱页「增量更新」钮 |
+| `index query` | ⬜ **判定不接 GUI** | 与已接的 `graph functions`（关系页签在用）**高度重叠**（`tier`/`findings`/`weight` 两边都有，`defs[]` 只是 `functions[]` 的重排）→ 接它会造出第二个真相源；仍可经 agent 工具面用 |
+| `confidence gen` | ✅ | 批 E2：置信度生成 |
+| `confidence query` | ⬜ **判定不接 GUI** | 是 `graph confidence` 的**子集**（少了 `findings[]` 逐条疑点，多了 `indexUpdateCount`/`generatedAt`）→ 接了反而丢信息；仍可经 agent 工具面用 |
+| `render arch` | ✅ | 批 D2：架构图导出 HTML（引擎层交付物） |
+| `render index` | ✅ | 批 E2：代码图谱导出（交互 HTML） |
+| `config` 的 `ai` 段 | ⬜ **刻意不接** | 引擎自报「AI 由客户端层负责」，`config.ai` 恒为 `{}` —— 客户端的 AI 设置在 `app/Settings`，两处各有一份会形成**两个真相源** |
+| `track` | ⬜ **判定不接 GUI** | 进度快照（钩子用），无 GUI 对位物 |
+| `hook` | ⬜ **判定不接 GUI** | post-commit 钩子安装，交给 agent / 命令行 |
+| `mcp` | ⬜ **判定不接 GUI** | 以 MCP 服务器运行（供 Claude 等**宿主**接入）—— 客户端是 GUI，不是宿主 |
+| `skill` | ⬜ **判定不接 GUI** | agent Skill 教学包，给 agent 用 |
+
 ---
 
 ## D. 跨端一致性债（**deepin 领先 mac / linux 的部分**）
