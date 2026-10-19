@@ -23,6 +23,7 @@
 #include "dialogs/AiSettingsDialog.h"
 #include "dialogs/ArchDialog.h"
 #include "dialogs/CodeGraphDialog.h"
+#include "dialogs/PatchCheckDialog.h"
 #include "../app/Settings.h"
 #include "dialogs/ScanDialog.h"
 #include "dialogs/panes/AutomationPane.h"
@@ -269,6 +270,9 @@ void PanelWindow::wirePages()
     // 代码图谱：独立窗承载（项目名在入口锁定）
     connect(m_detail, &ProjectDetailPage::codeGraphRequested, this,
         [this](const QString &p) { showCodeGraph(p); });
+    // 补丁体检：独立窗承载（项目名在入口锁定，同架构图/代码图谱窗）
+    connect(m_detail, &ProjectDetailPage::patchCheckRequested, this,
+        [this](const QString &p) { showPatchCheck(p); });
     connect(m_detail, &ProjectDetailPage::updateMenuRequested, this, [this] {
         const UpdateScope scope = scopeFromSelection(m_model->selection());
         QMenu menu(this);
@@ -752,6 +756,21 @@ void PanelWindow::showCodeGraph(const QString &project)
         connect(dlg, &CodeGraphDialog::openExportedFile, this, [](const QString &path) {
             SysOpen::openUrl(QUrl::fromLocalFile(path));
         });
+    }
+    dlg->show();
+    dlg->raise();
+    dlg->activateWindow();
+}
+
+void PanelWindow::showPatchCheck(const QString &project)
+{
+    if (project.isEmpty())
+        return;
+    // 按项目各一个窗（与架构图窗/代码图谱窗同理）：重复点入口叫醒已有窗口，
+    // 不叠第二个（两个窗抢同一份体检状态会让人搞不清谁在显示什么）。
+    QPointer<PatchCheckDialog> &dlg = m_patchDialogs[project];
+    if (!dlg) {
+        dlg = new PatchCheckDialog(project, m_model, this);
     }
     dlg->show();
     dlg->raise();

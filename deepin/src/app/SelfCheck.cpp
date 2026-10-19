@@ -8,6 +8,7 @@
 #include "../logic/DocumentIntegrity.h"
 #include "../logic/GraphToken.h"
 #include "../logic/HeatLayout.h"
+#include "../logic/PatchCheck.h"
 #include "../logic/ArchViewport.h"
 #include "../logic/SceneRender.h"
 #include "../logic/Route.h"
@@ -1559,6 +1560,200 @@ int SelfCheck::run(QStringList &log)
                 sm.size() == 1 + (pts.size() - 1) * 8 && qFuzzyCompare(sm.first().x(), 0.0)
                     && qFuzzyCompare(sm.first().y(), 0.0) && qFuzzyCompare(sm.last().x(), 50.0)
                     && qFuzzyCompare(sm.last().y(), 40.0));
+        }
+    }
+
+    // ── 补丁体检（引擎 graph patchconf 三层，判定层纯函数）──
+    // 判据盯的是「披露得对不对」与「排序/阈值算得对不对」：
+    //   ① null 信号 ≠ 0 分（null = 分母为 0、算不出）
+    //   ② 契约形状不对时**必须报错**，不许当 0 分放行
+    //   ③ 低置信度实体：阈值 + 升序 + 置信度未知不参与
+    //   ④ 裁决 id **原样回填**（uncertain.id 与 entity.id 不是同一套 id 空间）
+    //   ⑤ 终稿的复核数在 diagnostics.reviewed_by_agent（不在顶层 reviewed）
+    //   ⑥ diff 抽实码：行号对得上、抽不到就说抽不到
+    {
+        // ---- 夹具：一份 Layer 1 载荷（形状照引擎实测）----
+        const QString kLayer1 = QStringLiteral(R"JSON({
+  "schema": "moongit-patch-confidence/1",
+  "overall": 0.5625,
+  "signals": {"S1": 1, "S2": 0, "S3": 0.5, "S4": null, "S5": 1,
+              "S6": 0, "S7": null, "S8": 1, "S9": 1, "S10": 1},
+  "entities": [
+    {"id": "helper@src/util.c:5", "kind": "func", "confidence": 0.9,
+     "file": "src/util.c", "line": 5, "relations": []},
+    {"id": "weak@src/util.c:9", "kind": "func", "confidence": 0.4,
+     "file": "src/util.c", "line": 9, "relations": []},
+    {"id": "worse@src/util.c:12", "kind": "func", "confidence": 0.1,
+     "file": "src/util.c", "line": 12, "relations": []},
+    {"id": "unknown@src/util.c:20", "kind": "func",
+     "file": "src/util.c", "line": 20, "relations": []}
+  ],
+  "uncertain": [
+    {"id": "src/util.c@6:mystery_call", "issue": "unresolved_call",
+     "detail": "call to mystery_call(…) not found in repo or patch",
+     "candidates": [], "context_ref": {"file": "src/util.c", "line": 6}}
+  ],
+  "diagnostics": {"total_entities": 4, "total_relations": 3, "parse_errors": 0,
+                  "patch_files": 1, "added_lines": 9, "null_signals": ["S4", "S7"],
+                  "null_signals_note": "null 信号 = 词法层无法可靠计算"}
+})JSON");
+        const QJsonDocument kDoc = QJsonDocument::fromJson(kLayer1.toUtf8());
+        const PatchLayer1 l1 = PatchCheck::parseLayer1(kDoc.object());
+
+        check(log, "补丁体检：Layer 1 载荷解析（总分 / 实体 / 拿不准的项 / 诊断）",
+            l1.ok && l1.schema == QLatin1String("moongit-patch-confidence/1")
+                && l1.overallPresent && qFuzzyCompare(l1.overall, 0.5625)
+                && l1.entities.size() == 4 && l1.uncertain.size() == 1
+                && l1.uncertain.first().id == QLatin1String("src/util.c@6:mystery_call")
+                && l1.uncertain.first().hasContext
+                && l1.uncertain.first().file == QLatin1String("src/util.c")
+                && l1.uncertain.first().line == 6
+                && l1.diagnostics.present && l1.diagnostics.patchFiles == 1
+                && l1.diagnostics.addedLines == 9
+                && l1.diagnostics.nullSignals == QStringList({ "S4", "S7" }));
+
+        // ① null 信号 ≠ 0 分：S4/S7 是 null，S2 是 0 —— 两者必须分得开
+        {
+            bool s4Null = false, s2Zero = false, s1One = false;
+            for (const PatchSignal &s : l1.signalList) {
+                if (s.key == QLatin1String("S4"))
+                    s4Null = !s.hasValue;
+                if (s.key == QLatin1String("S2"))
+                    s2Zero = s.hasValue && qFuzzyCompare(s.value, 0.0);
+                if (s.key == QLatin1String("S1"))
+                    s1One = s.hasValue && qFuzzyCompare(s.value, 1.0);
+            }
+            check(log, "补丁体检：null 信号与 0 分可区分（算不出 ≠ 得了 0 分）",
+                s4Null && s2Zero && s1One);
+        }
+        {
+            // 信号键要**列全 10 个**（缺键的也要列出来标成算不出）——
+                // 少了 S7，用户不知道是引擎没发还是这一项没算。
+            check(log, "补丁体检：信号键列全 S1–S10（缺键不当成不存在）",
+                l1.signalList.size() == 10);
+        }
+        {
+            // ② 契约形状不对必须报错，不许当 0 分放行
+            QJsonObject noSchema;
+            noSchema.insert(QStringLiteral("overall"), 0.5);
+            const PatchLayer1 bad1 = PatchCheck::parseLayer1(noSchema);
+            QJsonObject oldSchema;
+            oldSchema.insert(QStringLiteral("schema"),
+                QStringLiteral("moongit-patch-confidence/0"));
+            oldSchema.insert(QStringLiteral("signals"), QJsonObject());
+            const PatchLayer1 bad2 = PatchCheck::parseLayer1(oldSchema);
+            check(log, "补丁体检：契约形状不对时报错（缺 schema / 版本不认识），不当成 0 分",
+                !bad1.ok && bad1.error.contains(QStringLiteral("schema")) && !bad2.ok
+                    && bad2.error.contains(QStringLiteral("moongit-patch-confidence/1")));
+        }
+        {
+            // ③ 低置信度：阈值 0.75、**升序**、置信度未知（缺键）不参与
+            const QVector<PatchEntity> lows = PatchCheck::lowConfidenceEntities(l1);
+            bool shape = lows.size() == 2;
+            if (shape) {
+                shape = qFuzzyCompare(lows.at(0).confidence, 0.1)
+                    && qFuzzyCompare(lows.at(1).confidence, 0.4);
+                // 0.9 的不参与、缺 confidence 的不参与
+                for (const PatchEntity &e : lows)
+                    shape = shape && e.confidence < 0.75 && e.confidencePresent;
+            }
+            check(log, "补丁体检：低置信度实体按 <0.75 筛出并**升序**（最不可信的排最前）", shape);
+        }
+        {
+            // ④ 默认裁决：每个拿不准的项一条、默认存疑 / 0.5、id 原样回填
+            const QVector<PatchVerdict> verdicts = PatchCheck::defaultVerdicts(l1);
+            check(log, "补丁体检：默认裁决逐项给（存疑 / 0.5，id 原样回填）",
+                verdicts.size() == 1
+                    && verdicts.first().id == QLatin1String("src/util.c@6:mystery_call")
+                    && verdicts.first().verdict == QLatin1String("ambiguous")
+                    && qFuzzyCompare(verdicts.first().confidence, 0.5));
+        }
+        {
+            // ⑤ agent.json 形状：task + items；id 原样回填；越界 verdict 归一
+            QVector<PatchVerdict> v = PatchCheck::defaultVerdicts(l1);
+            v[0].verdict = QLatin1String("resolved");
+            v[0].confidence = 0.9;
+            const QJsonObject payload = PatchCheck::agentPayload(v);
+            const QJsonArray items = payload.value(QStringLiteral("items")).toArray();
+            bool shape = payload.value(QStringLiteral("task")).toString()
+                    == QLatin1String("layer2_review")
+                && items.size() == 1
+                && items.at(0).toObject().value(QStringLiteral("id")).toString()
+                    == QLatin1String("src/util.c@6:mystery_call")
+                && items.at(0).toObject().value(QStringLiteral("verdict")).toString()
+                    == QLatin1String("resolved");
+            // 越界值要归一，不能原样透给引擎
+            QVector<PatchVerdict> bad = PatchCheck::defaultVerdicts(l1);
+            bad[0].verdict = QLatin1String("whatever");
+            const QJsonArray badItems
+                = PatchCheck::agentPayload(bad).value(QStringLiteral("items")).toArray();
+            shape = shape && badItems.at(0).toObject().value(QStringLiteral("verdict")).toString()
+                == QLatin1String("ambiguous");
+            check(log, "补丁体检：agent.json 形状对（task/items、id 原样回填、越界值归一）", shape);
+        }
+        {
+            // ⑤ 终稿：复核数在 diagnostics.reviewed_by_agent（**不在**顶层 reviewed）
+            const QString kMerged = QStringLiteral(R"JSON({
+  "schema": "moongit-patch-confidence-merged/1",
+  "overall": 0.475,
+  "signals": {"S1": 0.5, "S4": null},
+  "entities": [],
+  "alerts": [{"level": "high", "type": "unresolved_call",
+              "detail": "call to mystery_call(…) not found in repo or patch — agent 判定未解析"}],
+  "sources": {"algorithm": true, "agent": true},
+  "diagnostics": {"certain_from_algorithm": 1, "reviewed_by_agent": 1, "deferred": 0}
+})JSON");
+            const PatchMerged merged
+                = PatchCheck::parseMerged(QJsonDocument::fromJson(kMerged.toUtf8()).object());
+            check(log, "补丁体检：终稿读复核数走 diagnostics.reviewed_by_agent（顶层 reviewed 没有这个键）",
+                merged.ok && merged.overallPresent && qFuzzyCompare(merged.overall, 0.475)
+                    && merged.alerts.size() == 1
+                    && merged.alerts.first().level == QLatin1String("high")
+                    && merged.diagnosticsPresent && merged.reviewedByAgent == 1
+                    && merged.certainFromAlgorithm == 1 && merged.deferred == 0
+                    && merged.sourcesAlgorithm && merged.sourcesAgent);
+        }
+        {
+            // ⑥ diff 抽实码：行号对得上、文件不在补丁里就是抽不到
+            const QString kDiff = QStringLiteral(
+                "diff --git a/src/util.c b/src/util.c\n"
+                "index 41d0610..5ff4b9a 100644\n"
+                "--- a/src/util.c\n"
+                "+++ b/src/util.c\n"
+                "@@ -1,3 +1,7 @@\n"
+                " int compute(int n) {\n"
+                "-    return n * 2;\n"
+                "+    return n * 3;\n"
+                "+}\n"
+                "+\n"
+                "+int helper(int a) {\n"
+                "+    return compute(a) + 1;\n"
+                " }\n");
+            const QStringList snip
+                = PatchCheck::diffSnippet(kDiff, QStringLiteral("src/util.c"), 6, 2);
+            const QStringList other
+                = PatchCheck::diffSnippet(kDiff, QStringLiteral("src/other.c"), 6, 2);
+            check(log, "补丁体检：diff 抽实码行号对得上（抽不到就说抽不到，不给空壳）",
+                snip.size() == 4 && snip.at(0).startsWith(QLatin1Char('4'))
+                    && snip.at(1).startsWith(QLatin1Char('5'))
+                    && snip.at(2) == QLatin1String("6\t    return compute(a) + 1;")
+                    && snip.at(3).startsWith(QLatin1Char('7'))
+                    && other.isEmpty());
+        }
+        {
+            // hunk 头解析：@@ -3,7 +41,9 @@ → 新起始行 41
+            check(log, "补丁体检：hunk 头的新起始行号解析（+41 → 41）",
+                PatchCheck::parseNewStart(QStringLiteral("@@ -3,7 +41,9 @@")) == 41
+                    && PatchCheck::parseNewStart(QStringLiteral("@@ -1,3 +1,7 @@")) == 1
+                    && PatchCheck::parseNewStart(QStringLiteral("no hunk here")) == 0);
+        }
+        {
+            // 分数档位边界（mac 同款：≥0.8 高 / ≥0.5 中 / 其余低）
+            check(log, "补丁体检：分数档位边界（0.8 高 / 0.5 中 / 其余低）",
+                PatchCheck::bandOf(0.8) == PatchCheck::ScoreBand::high
+                    && PatchCheck::bandOf(0.79) == PatchCheck::ScoreBand::mid
+                    && PatchCheck::bandOf(0.5) == PatchCheck::ScoreBand::mid
+                    && PatchCheck::bandOf(0.49) == PatchCheck::ScoreBand::low);
         }
     }
 

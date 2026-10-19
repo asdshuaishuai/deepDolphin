@@ -21,6 +21,7 @@
 #include "../logic/CodeGraphBuild.h"
 #include "../models/GraphScene.h"
 #include "../models/Milestone.h"
+#include "../models/PatchReport.h"
 #include "../models/ProjectStatus.h"
 #include "../models/StatusEnvelope.h"
 #include "../models/VerifyEnvelope.h"
@@ -28,6 +29,7 @@
 #include "EngineCli.h"
 #include "EngineLocator.h"
 #include <QElapsedTimer>
+#include <QJsonObject>
 #include <QMap>
 #include <QMetaObject>
 #include <QObject>
@@ -182,6 +184,33 @@ public:
     /// 导出交互 HTML（引擎 render index --confidence；引擎层交付物）。
     void exportIndex(const QString &name);
 
+    // ── 补丁体检（引擎 graph patchconf 三层）──
+    // 按项目存（与场景/代码图谱同理：两个项目的体检窗可以同时开着）。
+    LoadStateBox patchState(const QString &name) const
+    {
+        return m_patchStates.value(name);
+    }
+    const PatchLayer1 *patchFor(const QString &name) const
+    {
+        auto it = m_patchLayers.constFind(name);
+        return it == m_patchLayers.constEnd() ? nullptr : &it.value();
+    }
+    const PatchMerged *patchMergedFor(const QString &name) const
+    {
+        auto it = m_patchMerged.constFind(name);
+        return it == m_patchMerged.constEnd() ? nullptr : &it.value();
+    }
+    /// 工作区未提交 diff（补丁体检的输入）。
+    /// ⚠ 走本机 git 而不是引擎：引擎的 git 白名单里没有 diff（它是读操作，
+    ///   引擎刻意不把任意 git 透传进白名单）。本机只读 `git diff HEAD` 不越权。
+    QString workingDiff(const QString &name, QString *error) const;
+    /// Layer 1：算法体检（引擎 graph patchconf --patch）。
+    void loadPatchCheck(const QString &name);
+    /// Layer 3：合并终稿（引擎 graph patchconf --merge）。
+    void mergePatchCheck(const QString &name, const QJsonObject &agentPayload);
+    /// Layer 2 任务书（引擎 graph patchconf --skill）：给人/模型看的 markdown。
+    void loadPatchSkill(const QString &name);
+
 signals:
     void projectsChanged();
     void dashboardChanged();
@@ -194,6 +223,11 @@ signals:
     /// 带项目名 —— 两个项目的架构图窗可以同时开着，回执不许串台。
     void archActionFinished(bool ok, const QString &project, const QString &receipt);
     void codeGraphChanged(const QString &name);
+    /// 补丁体检：Layer 1 结果就绪 / 终稿就绪 / 任务书就绪。
+    /// 都带项目名 —— 两个项目的体检窗可以同时开着，信号不许串台。
+    void patchCheckChanged(const QString &name);
+    void patchMerged(const QString &name);
+    void patchSkillReady(const QString &name, const QString &text);
     void gitOutputReady(const QString &name, const GitOpResponse &resp);
     void scanFinished(bool ok, const QString &message, const QString &coverageNote);
     void addFinished(bool ok, const QString &message);
@@ -250,6 +284,10 @@ private:
     QMap<QString, GraphScene> m_scenes;
     QMap<QString, LoadStateBox> m_codeGraphStates;
     QMap<QString, CodeGraphBuild::Result> m_codeGraphs;
+    QMap<QString, LoadStateBox> m_patchStates;
+    QMap<QString, PatchLayer1> m_patchLayers;
+    QMap<QString, PatchMerged> m_patchMerged;
+    QMap<QString, QJsonObject> m_patchRawPayload; ///< 引擎给的原始载荷（合并终稿要原样回写）
     QMap<QString, QString> m_projectLoadErrors;
 
     QString m_lastError;

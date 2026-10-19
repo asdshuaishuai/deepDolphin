@@ -274,6 +274,12 @@ QWidget *ProjectDetailPage::buildHeader(const ProjectStatus &p)
     connect(cgraph, &QPushButton::clicked, this, [this] { emit codeGraphRequested(m_name); });
     actions->addWidget(cgraph);
 
+    // 补丁体检：三层体检（算法 → 人工裁决 → 合并终稿），独立窗承载。
+    auto *patch = iconButton(QStringLiteral("utilities-diagnose"), QStringLiteral("补丁体检"),
+        QStringLiteral("对工作区未提交改动做置信度三层体检"), header);
+    connect(patch, &QPushButton::clicked, this, [this] { emit patchCheckRequested(m_name); });
+    actions->addWidget(patch);
+
     auto *brief = iconButton(QStringLiteral("applications-utilities"), QStringLiteral("项目说明"),
         QStringLiteral("AI 项目说明（未配置 AI 时会给出配置指引）"), header);
     connect(brief, &QPushButton::clicked, this, [this] { emit briefRequested(m_name); });

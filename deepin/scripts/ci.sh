@@ -182,7 +182,7 @@ if [ "$CANVAS_FAIL" -ne 0 ]; then
 fi
 echo "✓ Canvas2D 覆盖契约清单 ${CANVAS_N}/26 个方法；logic/ 与 models/ 零 QWidget 头；新文件均已登记构建"
 
-echo "› 9/10 架构图 / agent 工具表 / 代码图谱+热力图接线在（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
+echo "› 9/10 架构图 / agent 工具表 / 代码图谱+热力图 / 补丁体检接线在（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
 # 架构图链路分四段，任一段被摘掉都必须红：
 #   引擎取数（AppModel 调 graph arch --format scene）
 #   → 判定层（ArchViewport 视口/命中、ArchReceipt 回执提取）
@@ -266,11 +266,32 @@ arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_leftStack' '左栏是模�
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_heat->setData' '热力图数据源接上了（与树同源）'
 arch_need "$SRC/src/app/SelfCheck.cpp" 'HeatLayout::layout' 'SelfCheck 覆盖铺排'
 arch_need "$SRC/src/app/SelfCheck.cpp" 'HeatLayout::routes' 'SelfCheck 覆盖走线'
+
+# 补丁体检链路：判定（PatchCheck 纯函数）→ 取数（工作区 diff + 引擎 patchconf）
+#   → 接线（详情页入口 → 独立窗 → 人工裁决 → 合并终稿）
+arch_need "$SRC/src/logic/PatchCheck.cpp" 'parseLayer1' '判定层有 Layer1 解析'
+arch_need "$SRC/src/logic/PatchCheck.cpp" 'parseMerged' '判定层有终稿解析'
+arch_need "$SRC/src/logic/PatchCheck.cpp" 'lowConfidenceEntities' '判定层有低置信度筛选'
+arch_need "$SRC/src/logic/PatchCheck.cpp" 'agentPayload' '判定层有裁决载荷生成'
+arch_need "$SRC/src/logic/PatchCheck.cpp" 'diffSnippet' '判定层有 diff 抽实码'
+arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("patchconf"\)' 'AppModel 调引擎 patchconf'
+arch_need "$SRC/src/app/AppModel.cpp" 'workingDiff' 'AppModel 取工作区 diff'
+arch_need "$SRC/src/app/AppModel.cpp" 'mergePatchCheck' 'AppModel 有合并终稿动作'
+arch_need "$SRC/src/ui/dialogs/PatchCheckDialog.cpp" 'PatchCheck::lowConfidenceEntities' '窗经判定层取低置信度实体'
+arch_need "$SRC/src/ui/dialogs/PatchCheckDialog.cpp" 'PatchCheck::agentPayload' '窗经判定层生成裁决载荷'
+arch_need "$SRC/src/ui/dialogs/PatchCheckDialog.cpp" 'PatchCheck::diffSnippet' '窗经判定层抽实码'
+arch_need "$SRC/src/ui/pages/ProjectDetailPage.cpp" 'patchCheckRequested' '详情页发 patchCheckRequested'
+arch_need "$SRC/src/ui/PanelWindow.cpp" '&ProjectDetailPage::patchCheckRequested' 'PanelWindow 接了补丁体检入口'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'showPatchCheck' 'PanelWindow 有开补丁体检窗的动作'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'PatchCheckDialog' 'PanelWindow 用的是补丁体检窗'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'PatchCheck::parseLayer1' 'SelfCheck 覆盖 Layer1 解析'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'PatchCheck::diffSnippet' 'SelfCheck 覆盖 diff 抽实码'
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \
          src/logic/CodeGraphBuild.cpp src/ui/ArchCanvasWidget.cpp \
          src/ui/dialogs/ArchDialog.cpp src/ui/dialogs/CodeGraphDialog.cpp \
-         src/logic/HeatLayout.cpp src/ui/HeatmapWidget.cpp; do
+         src/logic/HeatLayout.cpp src/ui/HeatmapWidget.cpp \
+         src/logic/PatchCheck.cpp src/ui/dialogs/PatchCheckDialog.cpp; do
     if ! grep -qF "$f" "$SRC/CMakeLists.txt"; then
         echo "  ✗ 构建未登记：$f" >&2
         ARCH_FAIL=1
@@ -280,7 +301,7 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：取数/判定/渲染/接线任一段被摘掉" >&2
     exit 1
 fi
-echo "✓ 架构图 + agent 工具表 + 代码图谱/热力图接线完整（取数 → 判定 → 渲染 → 接线，${ARCH_N} 项）"
+echo "✓ 架构图 + agent 工具表 + 代码图谱/热力图 + 补丁体检接线完整（取数 → 判定 → 渲染 → 接线，${ARCH_N} 项）"
 
 echo "› 10/10 引擎契约门（真引擎沙箱；引擎缺席显式 SKIP 且不算通过）"
 # contract-check.sh 之前是**游离脚本** —— CI 从来没跑过它，契约漂移不会被拦。

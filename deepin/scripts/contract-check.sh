@@ -349,5 +349,84 @@ else
         "$ALIGN_JSON"
 fi
 
+# 15. 补丁体检契约（引擎 graph patchconf 三层）。
+#     客户端的三层判定全靠这三个载荷的形状 —— 形状一漂，界面就会把
+#     「算不出的信号（null）」显示成 0 分、把「拿不准的项」整段吞掉。
+#     夹具是**独立项目**：改动必须留在工作区（不提交），又不能污染主夹具
+#     （主夹具的 tree/arch 断言依赖它的原始内容）。
+#     改动内容特意调一个**仓库里不存在**的函数 → 造出真实的「拿不准的项」，
+#     否则 uncertain 恒空，那组断言就整组空转（看着全绿，其实什么都没验到）。
+PFIX="$SANDBOX/fixture/atlaspatch"
+mkdir -p "$PFIX/src"
+git -C "$PFIX" init -q -b main . 2>/dev/null
+printf 'int compute(int n) {\n    return n * 2;\n}\n' > "$PFIX/src/util.c"
+git -C "$PFIX" add . 2>/dev/null
+GIT_AUTHOR_DATE='2026-10-03T09:00:00' GIT_COMMITTER_DATE='2026-10-03T09:00:00' \
+    git -C "$PFIX" commit -qm 'feat: 初始提交' 2>/dev/null
+# ↓ 未提交改动（留在工作区，不提交）
+printf 'int compute(int n) {\n    return n * 2;\n}\n\nint helper(int a) {\n    return mystery_call(a) + 1;\n}\n' \
+    > "$PFIX/src/util.c"
+git -C "$PFIX" diff HEAD > "$SANDBOX/patch.diff" 2>/dev/null
+"$BIN" add "$PFIX" --json >/dev/null 2>&1
+PATCH_JSON="$("$BIN" graph patchconf atlaspatch --patch "$SANDBOX/patch.diff" --json 2>/dev/null)"
+if [ -z "$PATCH_JSON" ]; then
+    echo "  ✗ 第 15 组前提：引擎没吐出补丁体检载荷（patchconf 缺席或项目没注册）" >&2
+    fail=$((fail+1))
+else
+    check "补丁体检 Layer1：schema 是 moongit-patch-confidence/1" \
+        "d.get('schema') == 'moongit-patch-confidence/1'" \
+        "$PATCH_JSON"
+    check "补丁体检 Layer1：总分在 0..1 之间且是数字" \
+        "isinstance(d.get('overall'), (int, float)) and not isinstance(d.get('overall'), bool) and 0.0 <= d['overall'] <= 1.0" \
+        "$PATCH_JSON"
+    check "补丁体检 Layer1：signals 的值要么是数字要么是 null（null = 分母为 0，算不出）" \
+        "isinstance(d.get('signals'), dict) and all(v is None or (isinstance(v, (int, float)) and not isinstance(v, bool)) for v in d['signals'].values())" \
+        "$PATCH_JSON"
+    check "补丁体检 Layer1：signals 含 S1..S10 全部键（少了就是契约漂了）" \
+        "set(['S%d' % i for i in range(1, 11)]) <= set(d.get('signals', {}).keys())" \
+        "$PATCH_JSON"
+    check "补丁体检 Layer1：entities 每项带 id/kind/confidence/file/line" \
+        "isinstance(d.get('entities'), list) and all(set(['id','kind','confidence','file','line']) <= set(e.keys()) for e in d['entities'])" \
+        "$PATCH_JSON"
+    check "补丁体检 Layer1：uncertain 每项带 id/issue/detail 与 context_ref{file,line}" \
+        "isinstance(d.get('uncertain'), list) and all(set(['id','issue','detail']) <= set(u.keys()) and isinstance(u.get('context_ref'), dict) and set(['file','line']) <= set(u['context_ref'].keys()) for u in d['uncertain'])" \
+        "$PATCH_JSON"
+    check "补丁体检 Layer1：夹具造得出真实的「拿不准的项」（不确定项恒空就是空转）" \
+        "len(d.get('uncertain', [])) > 0" \
+        "$PATCH_JSON"
+    check "补丁体检 Layer1：diagnostics 带 total_entities/patch_files/added_lines/null_signals" \
+        "isinstance(d.get('diagnostics'), dict) and set(['total_entities','patch_files','added_lines','null_signals']) <= set(d['diagnostics'].keys())" \
+        "$PATCH_JSON"
+
+    # Layer 3 合并：拿 Layer 1 的载荷 + 一份裁决 → 终稿
+    printf '%s' "$PATCH_JSON" > "$SANDBOX/algorithm.json"
+    python3 - "$SANDBOX/algorithm.json" "$SANDBOX/agent.json" <<'PY'
+import json, sys
+alg = json.load(open(sys.argv[1]))
+items = [{"id": u.get("id", ""), "verdict": "unresolved", "value": "",
+          "confidence": 0.05, "reason": "契约门：人工裁决未解析",
+          "evidence_refs": []} for u in alg.get("uncertain", [])]
+json.dump({"task": "layer2_review", "items": items}, open(sys.argv[2], "w"))
+PY
+    MERGED_JSON="$("$BIN" graph patchconf --merge "$SANDBOX/algorithm.json" "$SANDBOX/agent.json" --json 2>/dev/null)"
+    if [ -z "$MERGED_JSON" ]; then
+        echo "  ✗ 第 15 组前提：引擎没吐出合并终稿（--merge 缺席）" >&2
+        fail=$((fail+1))
+    else
+        check "补丁体检 Layer3：schema 是 moongit-patch-confidence-merged/1" \
+            "d.get('schema') == 'moongit-patch-confidence-merged/1'" \
+            "$MERGED_JSON"
+        check "补丁体检 Layer3：alerts 每项带 level/type/detail" \
+            "isinstance(d.get('alerts'), list) and all(set(['level','type','detail']) <= set(a.keys()) for a in d['alerts'])" \
+            "$MERGED_JSON"
+        check "补丁体检 Layer3：sources 带 algorithm/agent 两个来源标志" \
+            "isinstance(d.get('sources'), dict) and set(['algorithm','agent']) <= set(d['sources'].keys())" \
+            "$MERGED_JSON"
+        check "补丁体检 Layer3：复核数在 diagnostics.reviewed_by_agent（顶层 reviewed 没有这个键）" \
+            "isinstance(d.get('diagnostics'), dict) and 'reviewed_by_agent' in d['diagnostics']" \
+            "$MERGED_JSON"
+    fi
+fi
+
 echo "──── contract-check: $pass passed, $fail failed ────"
 [ "$fail" -eq 0 ]

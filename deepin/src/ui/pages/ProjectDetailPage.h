@@ -55,6 +55,8 @@ signals:
     void archRequested(const QString &project);
     // 代码图谱：同样在入口锁定（独立窗，两栏：列表树 + 详情）。
     void codeGraphRequested(const QString &project);
+    /// 补丁体检（引擎 graph patchconf 三层）：独立窗承载，项目名在入口锁定。
+    void patchCheckRequested(const QString &project);
     void retryRequested();          // 「读不出来」空态的重试（→ loadProject）
     // 里程碑行内动作（详情页里程碑卡；UI 词已转 CLI 词）
     void milestoneDone(const QString &project, const QString &name);

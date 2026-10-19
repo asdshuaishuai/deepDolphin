@@ -5,17 +5,23 @@
 #include "../ai/AiDigests.h"
 #include "../ai/SecretStore.h"
 #include "../logic/Derived.h"
+#include "../logic/PatchCheck.h"
 #include "../logic/ScanCoverage.h"
 #include "../logic/StopDecision.h"
 #include "../logic/UpdateOutcome.h"
 #include "Notifier.h"
 #include "Settings.h"
 #include <QDateTime>
+#include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
 #include <QMetaObject>
 #include <QPointer>
+#include <QProcess>
+#include <QTemporaryDir>
 #include <QThreadPool>
 #include <QTimer>
 #include <algorithm>
@@ -664,6 +670,216 @@ void AppModel::exportIndex(const QString &name)
 }
 
 // 代码图谱页的回执与架构图页共用一个信号（都是「引擎跑完给一句话」）。
+
+// ── 补丁体检（引擎 graph patchconf 三层）──
+
+QString AppModel::workingDiff(const QString &name, QString *error) const
+{
+    // 找项目的绝对路径（引擎 status 的 projects[].path）
+    QString path;
+    for (const ProjectStatus &p : m_projects) {
+        if (p.name == name) {
+            path = p.path;
+            break;
+        }
+    }
+    if (path.isEmpty()) {
+        if (error)
+            *error = QStringLiteral("找不到项目 %1 的本地路径（补丁体检要读它的工作区）").arg(name);
+        return QString();
+    }
+    // 只读 `git diff HEAD` —— 不写、不动仓库。
+    QProcess proc;
+    proc.start(QStringLiteral("git"), { QStringLiteral("-C"), path, QStringLiteral("diff"),
+        QStringLiteral("HEAD") });
+    if (!proc.waitForStarted(5000)) {
+        if (error)
+            *error = QStringLiteral("git 启动失败（补丁体检读不到工作区改动）");
+        return QString();
+    }
+    if (!proc.waitForFinished(30000)) {
+        proc.kill();
+        proc.waitForFinished(2000);
+        if (error)
+            *error = QStringLiteral("git diff 超时（工作区可能太大）");
+        return QString();
+    }
+    const QByteArray out = proc.readAllStandardOutput();
+    if (proc.exitCode() != 0) {
+        if (error)
+            *error = QStringLiteral("git diff 失败：%1")
+                         .arg(QString::fromUtf8(proc.readAllStandardError()).trimmed());
+        return QString();
+    }
+    return QString::fromUtf8(out);
+}
+
+void AppModel::loadPatchCheck(const QString &name)
+{
+    m_patchStates[name] = { LoadState::loading, QString() };
+    emit patchCheckChanged(name);
+
+    QString err;
+    const QString diff = workingDiff(name, &err);
+    if (!err.isEmpty()) {
+        m_patchStates[name] = { LoadState::failed, err };
+        emit patchCheckChanged(name);
+        return;
+    }
+    if (diff.trimmed().isEmpty()) {
+        m_patchStates[name] = { LoadState::failed,
+            QStringLiteral("工作区没有未提交改动（补丁体检没有输入）") };
+        emit patchCheckChanged(name);
+        return;
+    }
+
+    // 引擎的 --patch 吃**文件路径**（不是 diff 正文）—— 落盘在 app 层做，
+    // 判定层只管解析结果。临时目录随 QTemporaryDir 析构自动清。
+    QTemporaryDir tmpDir;
+    if (!tmpDir.isValid()) {
+        m_patchStates[name] = { LoadState::failed, QStringLiteral("临时目录建不起来，补丁体检未执行") };
+        emit patchCheckChanged(name);
+        return;
+    }
+    const QString diffPath = tmpDir.filePath(QStringLiteral("patch.diff"));
+    {
+        QFile f(diffPath);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            m_patchStates[name] = { LoadState::failed, QStringLiteral("临时 diff 写不下去，补丁体检未执行") };
+            emit patchCheckChanged(name);
+            return;
+        }
+        f.write(diff.toUtf8());
+    }
+    m_cli->callJson({ QStringLiteral("graph"), QStringLiteral("patchconf"), name,
+                        QStringLiteral("--patch"), diffPath, QStringLiteral("--json") },
+        EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                m_patchStates[name] = { LoadState::failed,
+                    res.ok() ? QStringLiteral("补丁体检输出不是 JSON 对象")
+                             : res.error.userMessage() };
+                emit patchCheckChanged(name);
+                return;
+            }
+            const PatchLayer1 layer = PatchCheck::parseLayer1(res.payload->object());
+            if (!layer.ok) {
+                m_patchStates[name] = { LoadState::failed, layer.error };
+                emit patchCheckChanged(name);
+                return;
+            }
+            m_patchLayers[name] = layer;
+            // 原始载荷留着：合并终稿时**原样回写**（丢了就拼不出正确的终稿）。
+            m_patchRawPayload[name] = res.payload->object();
+            m_patchStates[name] = { LoadState::loaded, QString() };
+            emit patchCheckChanged(name);
+        });
+}
+
+void AppModel::mergePatchCheck(const QString &name, const QJsonObject &agentPayload)
+{
+    const PatchLayer1 *layer = patchFor(name);
+    if (!layer) {
+        m_patchStates[name] = { LoadState::failed, QStringLiteral("还没有算法层结果，没法合并终稿") };
+        emit patchCheckChanged(name);
+        return;
+    }
+    // 引擎的 --merge 吃两个**文件路径**（算法结果 + 裁决）—— 落盘在 app 层做。
+    QTemporaryDir tmpDir;
+    if (!tmpDir.isValid()) {
+        m_patchStates[name] = { LoadState::failed, QStringLiteral("临时目录建不起来，合并终稿未执行") };
+        emit patchCheckChanged(name);
+        return;
+    }
+    const QString algPath = tmpDir.filePath(QStringLiteral("algorithm.json"));
+    const QString agentPath = tmpDir.filePath(QStringLiteral("agent.json"));
+    {
+        // ⚠ 算法结果**原样回写**引擎给的那份载荷（mac 同款）——
+        //   自己拼一个精简版会把 entities/uncertain/signals 丢掉，
+        //   合并出来的终稿就没有实体了。
+        QFile f(algPath);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            m_patchStates[name] = { LoadState::failed, QStringLiteral("算法结果落盘失败，合并终稿未执行") };
+            emit patchCheckChanged(name);
+            return;
+        }
+        const QJsonObject &raw = m_patchRawPayload.value(name);
+        if (raw.isEmpty()) {
+            m_patchStates[name] = { LoadState::failed, QStringLiteral("算法层原始载荷丢了，合并终稿未执行") };
+            emit patchCheckChanged(name);
+            return;
+        }
+        f.write(QJsonDocument(raw).toJson(QJsonDocument::Indented));
+    }
+    {
+        QFile f(agentPath);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            m_patchStates[name] = { LoadState::failed, QStringLiteral("裁决落盘失败，合并终稿未执行") };
+            emit patchCheckChanged(name);
+            return;
+        }
+        f.write(QJsonDocument(agentPayload).toJson(QJsonDocument::Indented));
+    }
+    m_cli->callJson({ QStringLiteral("graph"), QStringLiteral("patchconf"),
+                        QStringLiteral("--merge"), algPath, agentPath, QStringLiteral("--json") },
+        EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                m_patchStates[name] = { LoadState::failed,
+                    res.ok() ? QStringLiteral("合并终稿输出不是 JSON 对象")
+                             : res.error.userMessage() };
+                emit patchCheckChanged(name);
+                return;
+            }
+            const PatchMerged merged = PatchCheck::parseMerged(res.payload->object());
+            if (!merged.ok) {
+                m_patchStates[name] = { LoadState::failed, merged.error };
+                emit patchCheckChanged(name);
+                return;
+            }
+            m_patchMerged[name] = merged;
+            m_patchStates[name] = { LoadState::loaded, QString() };
+            emit patchMerged(name);
+            emit patchCheckChanged(name);
+        });
+}
+
+void AppModel::loadPatchSkill(const QString &name)
+{
+    // --skill 输出的**不是 JSON**，是给 agent/人看的 markdown 任务书 → 走 Text 契约。
+    QString err;
+    const QString diff = workingDiff(name, &err);
+    if (!err.isEmpty() || diff.trimmed().isEmpty()) {
+        m_patchStates[name] = { LoadState::failed,
+            err.isEmpty() ? QStringLiteral("工作区没有未提交改动（补丁体检没有输入）") : err };
+        emit patchCheckChanged(name);
+        return;
+    }
+    QTemporaryDir tmpDir;
+    if (!tmpDir.isValid()) {
+        m_patchStates[name] = { LoadState::failed, QStringLiteral("临时目录建不起来，任务书未生成") };
+        emit patchCheckChanged(name);
+        return;
+    }
+    const QString diffPath = tmpDir.filePath(QStringLiteral("patch.diff"));
+    {
+        QFile f(diffPath);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            m_patchStates[name] = { LoadState::failed, QStringLiteral("临时 diff 写不下去，任务书未生成") };
+            emit patchCheckChanged(name);
+            return;
+        }
+        f.write(diff.toUtf8());
+    }
+    m_cli->callText({ QStringLiteral("graph"), QStringLiteral("patchconf"), name,
+                        QStringLiteral("--patch"), diffPath, QStringLiteral("--skill") },
+        EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok()) {
+                m_patchStates[name] = { LoadState::failed, res.error.userMessage() };
+                emit patchCheckChanged(name);
+                return;
+            }
+            emit patchSkillReady(name, res.stdOut);
+        });
+}
 
 // ── 更新动作 ──
 
