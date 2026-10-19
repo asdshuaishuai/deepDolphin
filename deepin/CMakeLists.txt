@@ -79,6 +79,7 @@ add_executable(deepDolphin
     src/logic/DashboardScope.cpp
     src/logic/DashFilter.cpp
     src/logic/Derived.cpp
+    src/logic/DocumentIntegrity.cpp
     src/logic/LanguageCoverage.cpp
     src/logic/PathInput.cpp
     src/logic/Route.cpp

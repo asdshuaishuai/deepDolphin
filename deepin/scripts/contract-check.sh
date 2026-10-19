@@ -12,6 +12,8 @@
 #   6. scan 差值           重扫已注册目录：found ≥ 1 且 added == 0
 #   7. update 载荷         {count, results, succeeded, failed}，succeeded == 1
 #   8. 文档托管承诺        托管标记写入、用户哨兵行逐字节保留、docs --json 可回读
+#   9. verify 四态契约     六键齐全；刚 update 完 verified=true；删文档 → missing=1
+#                          且 verified=false、note 带备份路径（缺失 ≠ 通过）
 #
 # 引擎缺席：SKIP 且不算通过（如实报告，不伪造契约验证）。
 set -uo pipefail
@@ -104,6 +106,25 @@ check "milestone done 载荷：applied 为真且带 status（无 message 键依�
 SCAN="$("$BIN" scan "$(dirname "$FIX")" --depth 2 --json 2>/dev/null)"
 check "scan 差值：found ≥ 1 且 added == 0（已注册不重报）" \
     "len(d.get('candidates',[]))>=1 and d.get('added',0)==0" "$SCAN"
+
+# 9. verify 契约（引擎新能力，客户端 DocumentIntegrity 消费）：四态口径必须逐字对齐。
+#    放在最后：第 9 条要删 README 才能造出 missing 档。
+VERIFY="$("$BIN" verify atlas --json 2>/dev/null)"
+check "verify 载荷：六键齐全（checked/failures/undetermined/missing/verified/documents）" \
+    "all(k in d for k in ('checked','failures','undetermined','missing','verified','documents'))" "$VERIFY"
+check "verify 刚 update 完：verified 为真且零失败零缺失" \
+    "d.get('verified') is True and d.get('failures')==0 and d.get('undetermined')==0 and d.get('missing')==0" "$VERIFY"
+check "verify 文档条目：project/doc/ok 三键在" \
+    "d.get('documents') and all(k in d['documents'][0] for k in ('project','doc','ok'))" "$VERIFY"
+
+# 缺失档：删掉受管文档 → missing==1 且 verified==false，且 note 带**可操作的备份路径**
+mv "$FIX/README.md" "$FIX/README.md.hidden"
+VERIFY_MISSING="$("$BIN" verify atlas --json 2>/dev/null)"
+mv "$FIX/README.md.hidden" "$FIX/README.md"
+check "verify 缺失档：missing==1 且 verified 为假（缺失 ≠ 通过）" \
+    "d.get('missing')==1 and d.get('verified') is False" "$VERIFY_MISSING"
+check "verify 缺失档：note 带备份路径（用户下一步要的东西不许被吞）" \
+    "'备份' in json.dumps(d, ensure_ascii=False) and 'backups' in json.dumps(d, ensure_ascii=False)" "$VERIFY_MISSING"
 
 echo "──── contract-check: $pass passed, $fail failed ────"
 [ "$fail" -eq 0 ]

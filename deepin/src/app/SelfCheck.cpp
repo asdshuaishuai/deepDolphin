@@ -1,6 +1,7 @@
 #include "SelfCheck.h"
 #include "../logic/DashFilter.h"
 #include "../logic/Derived.h"
+#include "../logic/DocumentIntegrity.h"
 #include "../logic/Route.h"
 #include "../logic/Router.h"
 #include "../logic/ShortcutMap.h"
@@ -21,6 +22,7 @@
 #include "../models/StatusEnvelope.h"
 #include "../models/ToolsEnvelope.h"
 #include "../models/UpdateResult.h"
+#include "../models/VerifyEnvelope.h"
 #include "../ui/common/EmptyState.h"
 #include "../ui/common/FlatButton.h"
 #include "../ui/common/SegmentedButton.h"
@@ -573,6 +575,87 @@ int SelfCheck::run(QStringList &log)
         check(log, "FlatButton 双态叠加：半透明互异且 pressed 更重（同 base 纯透明度差）",
             hover.alpha() > 0 && hover.alpha() < 255 && pressed.alpha() > hover.alpha()
                 && hover.rgb() == pressed.rgb());
+    }
+
+    // ── 14. 文档完整性（引擎 verify 四态）：判定层纯函数契约 ──
+    {
+        // 契约键：checked/failures/undetermined/missing/verified/documents 必发，note 可选。
+        const auto vOk = VerifyEnvelope::fromJson(JO(QStringLiteral(R"({
+            "checked":1,"failures":0,"undetermined":0,"missing":0,"verified":true,
+            "documents":[{"project":"atlas","doc":"README.md","ok":true,"note":"仅文末分隔空行差异"}]
+        })")));
+        check(log, "verify envelope：六键齐全才解出（documents 恒发）",
+            vOk.has_value() && vOk->checked == 1 && vOk->verified && vOk->documents.size() == 1
+                && vOk->documents[0].doc == QStringLiteral("README.md"));
+
+        // 缺键 = 契约可能过旧 → nullopt，**不许回落成全 0**（那会把「读不出来」显示成「通过」）。
+        const auto vMissingKey = VerifyEnvelope::fromJson(JO(QStringLiteral(R"({
+            "checked":1,"verified":true,"documents":[]
+        })")));
+        check(log, "verify 缺键 → 解不出（不许回落成 0 计数）",
+            !vMissingKey.has_value());
+
+        // 四态优先级：missing > failed > undetermined > none > verified。
+        VerifyEnvelope e;
+        e.checked = 1;
+        e.verified = true;
+        check(log, "verify 四态：一致 → verified",
+            DocumentIntegrity::stateOf(e) == DocumentIntegrity::State::verified);
+
+        VerifyEnvelope miss;
+        miss.checked = 1;
+        miss.missing = 1;
+        miss.verified = false;
+        check(log, "verify 四态：缺失优先于不一致（missing > failed > undetermined）",
+            DocumentIntegrity::stateOf(miss) == DocumentIntegrity::State::missing);
+
+        VerifyEnvelope fail;
+        fail.checked = 1;
+        fail.failures = 1;
+        fail.undetermined = 1;
+        check(log, "verify 四态：不一致优先于无法判定",
+            DocumentIntegrity::stateOf(fail) == DocumentIntegrity::State::failed);
+
+        VerifyEnvelope und;
+        und.checked = 1;
+        und.undetermined = 1;
+        und.verified = false;
+        check(log, "verify 四态：无法判定是独立一档（≠ 通过）",
+            DocumentIntegrity::stateOf(und) == DocumentIntegrity::State::undetermined);
+
+        // 引擎没说通过、也没给任何计数 → 无从判定，不许当通过。
+        VerifyEnvelope silent;
+        silent.checked = 0;
+        silent.verified = false;
+        check(log, "verify 四态：引擎没说通过 → 无从判定（不落 verified）",
+            DocumentIntegrity::stateOf(silent) == DocumentIntegrity::State::none);
+
+        // 文案纪律：verified 不许带「无法判定」；undetermined 必须说清「不等于通过」。
+        const QString okHead
+            = DocumentIntegrity::headline(DocumentIntegrity::State::verified, e);
+        check(log, "verify 文案：通过档不出现「无法判定」字样",
+            okHead.contains(QStringLiteral("通过")) && !okHead.contains(QStringLiteral("无法判定")));
+
+        const QString undHead
+            = DocumentIntegrity::headline(DocumentIntegrity::State::undetermined, und);
+        check(log, "verify 文案：无法判定档明说「不等于通过」",
+            undHead.contains(QStringLiteral("无法判定")) && undHead.contains(QStringLiteral("不等于通过")));
+
+        // 引擎的 note 原样转述 —— 缺失档的 note 带备份路径，那正是用户要的下一步。
+        VerifyEnvelope missWithNote;
+        missWithNote.checked = 0;
+        missWithNote.missing = 1;
+        missWithNote.note = QStringLiteral("没有可校验的文档：1 份文档缺失（备份仍在，可从备份恢复）");
+        const QString d = DocumentIntegrity::detail(missWithNote);
+        check(log, "verify 副说明：引擎 note 原样转述（不吞备份路径）",
+            d.contains(QStringLiteral("备份仍在")) && d.contains(QStringLiteral("缺失 1 份")));
+
+        const VerifyDocument doc { QStringLiteral("atlas"), QStringLiteral("README.md"), false,
+            QStringLiteral("文档已被删除，但备份仍在 /tmp/x/backups/README.md") };
+        const QString line = DocumentIntegrity::documentLine(doc);
+        check(log, "verify 文档行：文件名 + 引擎 note（不一致档不装没事）",
+            line.contains(QStringLiteral("README.md")) && line.contains(QStringLiteral("不一致"))
+                && line.contains(QStringLiteral("backups/README.md")));
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

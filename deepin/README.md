@@ -38,13 +38,14 @@ moonGit（仓颉引擎，仓内别名 deepgit）项目群进度客户端的 Linu
 | Dock 菜单（打开面板 / 全部浅更新） | 托盘菜单：打开面板 / 全部浅更新 + **退出**（Linux 托盘必须有退出项） | `tray/TrayController` |
 | 添加 / 扫描项目（`ScanSheet`） | ScanDialog + ScanCoverage 覆盖度披露接回主窗口说明条 | `ui/dialogs/ScanDialog`；`logic/ScanCoverage`、`PathInput` |
 | 深链启动参数（`Route.swift`） | `--project <名>`、`--section board\|milestones\|dashboard`、`--open-settings`、`--agent-selftest`；pendingRoute 消费一次即置闩 | `logic/Route`、`Router`；`PanelWindow::maybeApplyPendingRoute` |
-| 纯函数判定层（`client-check.sh` 单独编译断言） | `models/`、`logic/` 零 QWidget 头，判定收敛为二进制内置 `--selfcheck`（55 例） | `src/models/`、`src/logic/`、`app/SelfCheck` |
+| 纯函数判定层（`client-check.sh` 单独编译断言） | `models/`、`logic/` 零 QWidget 头，判定收敛为二进制内置 `--selfcheck`（77 例） | `src/models/`、`src/logic/`、`app/SelfCheck` |
 | 设置窗口（自动化 + AI） | 设置三页签（DTabBar+QStackedWidget）：通用 / 自动化（分段改完立即生效）/ AI | `ui/dialogs/panes/*` |
 | 快捷键（CommandMenu + ShortcutMap.swift） | QShortcut 全量真绑（含深更新——mac 曾「声明未绑」的缺陷不重犯） | `ui/PanelWindow.cpp:516`；`logic/ShortcutMap.h`（唯一声明处） |
 | 定时更新 + AI 简报 | autoHours 周期 + 首轮 600s；简报经通知；silent 场景不偷弹结果面板 | `app/AppModel.cpp:202`；`ai/AiDigests`（scheduledDigest） |
 | 一键全量（agent 通道，覆盖由代码保证） | 先刷新注册表再冻结名单 / 逐仓库显式传名 / 一个失败不中断 / 结果面板 aiNote 永远有值 | `AppModel::updateAll`（AppModel.h:111）；`ai/AgentCore` 批量通道 |
 | 双轨更新 + AI 变体（`UpdateActionMenu`） | WorkBar 双轨按钮（唯一入口）+ 详情页更新菜单「浅更新 + AI 摘要 / 深更新 + AI 报告」 | `ui/DualTrackButtons`；`AppModel::runUpdateDigest`（AppModel.h:110）、`AiResultDialog` |
 | 引擎未装 → 安装引导 | SetupGuidePage + 「重新检测引擎」 | `ui/pages/SetupGuidePage` |
+| **文档完整性校验（引擎 `verify`）——mac 端暂无对位** | 详情页「文档完整性」卡：四态（通过 / 不一致 / **无法判定** / 缺失）+ 引擎 note 原样转述（缺失档带备份路径） | `models/VerifyEnvelope.h`；`logic/DocumentIntegrity.{h,cpp}`；`AppModel::loadVerify` |
 
 ## 快捷键映射表
 
@@ -100,7 +101,7 @@ cmake --build build --parallel 4
 冒烟脚本按此硬路径断言）。
 
 ```sh
-./build/deepDolphin --selfcheck   # 模型层 fixtures 自检（无 GUI、无引擎依赖；当前 55 例）
+./build/deepDolphin --selfcheck   # 模型层 fixtures 自检（无 GUI、无引擎依赖；当前 77 例）
 ./build/deepDolphin --version
 ./build/deepDolphin --project <名>   # 深链（--section board|milestones|dashboard 同理）
 ./build/deepDolphin --agent-selftest [问题]   # 无头 agent 自测（默认「总结一下项目群现状」）
@@ -124,7 +125,7 @@ export QT_QPA_PLATFORM=offscreen        # 无显示环境时；共享 X11 会话
 share/applications/cn.deepdolphin.app.desktop，图标 → share/icons/hicolor/scalable/apps）。
 安装后由系统 Qt6/DTK6 运行库满足链接，无需上述环境变量。
 
-本阶段实测记录：`--selfcheck` 55 通过 0 失败；`--version` 输出 `deepDolphin 0.1.0`；
+本阶段实测记录：`--selfcheck` 77 通过 0 失败；`--version` 输出 `deepDolphin 0.1.0`；
 offscreen 启动探测 `timeout 8` 退出码 124（进程存活满 8 秒）；`ldd` 裸环境报 Qt6/DTK6 not found、
 带上 `LD_LIBRARY_PATH` 后 0 个 not found。**运行期环境变量**（sysroot 方案的代价，打包后消失）：
 `LD_LIBRARY_PATH=~/.local/dd-sysroot/usr/lib/x86_64-linux-gnu`（Qt/DTK 运行库）+
@@ -206,6 +207,10 @@ key 只进 libsecret（service=cn.deepdolphin.app.ai / account=api-key），不�
 
 ## C1–C11 逐项实现位置
 
+> 跨端差距的活账在 [`docs/PARITY-LEDGER.md`](docs/PARITY-LEDGER.md)：
+> mac 端能力 → deepin 的对位结论、引擎命令面 → 客户端的消费点、本端 DDE 化剩余项、
+> 以及「deepin 领先 mac」的跨端一致性债。改一处能力就改那张账。
+
 对照 `PLATFORM-CHARTER.md` 矩阵，逐项给出落点（均已在源码核对）：
 
 | # | 能力 | 实现位置 |
@@ -220,7 +225,7 @@ key 只进 libsecret（service=cn.deepdolphin.app.ai / account=api-key），不�
 | C8 | git 操作 | 详情页页头 `gitOpButtons` 唯一构造点（ProjectDetailPage.cpp:256，pull/push/fetch + stash/unstash，busy 禁用+转圈）+ 「提交改动」卡（--message）；`app/AppModel` git 操作走 `git <op> <项目> --json`；`models/GitOpResponse.h`；确认矩阵 `logic/DestructiveGuard.h`（删/放弃/批量/提交确认，达成/重开不确认） |
 | C9 | 里程碑管理 | `ui/pages/MilestonesPage`（搜索/仓库筛选/按项目分组统计）+ `MilestoneRowWidget`（行内五态）+ `ui/dialogs/AddMilestoneDialog`（tag/date/desc）；`AppModel` milestone CRUD 走 `milestone <子命令> --json`；`models/Milestone{,Write}.h` |
 | C10 | 系统集成 | 托盘：`tray/TrayController.cpp`（五态图标，refreshIcon(menuTitle, tint)，tooltip=menuTitle，:92-96）+ `TrayPopupWindow`（速览弹窗）；通知：`app/Notifier.cpp`（DNotifySender:42 + ActionInvoked→叫醒面板，replaceId 防堆积）；自启：`platform/AutostartManager.cpp`（XDG，:83 唯一文件写入点） |
-| C11 | 文档完整性承诺 | 客户端**唯一的业务文件写入 = 没有**：全 src 检索 `QSaveFile/WriteOnly` 仅 `AutostartManager.cpp:83` 一处（写自启 `.desktop`，非项目文档）；一切文档/进度写操作只经 `EngineCli` 子进程打给引擎（备份与托管区域由引擎保证，`moongit verify` 可校验） |
+| C11 | 文档完整性承诺 | 客户端**唯一的业务文件写入 = 没有**：全 src 检索 `QSaveFile/WriteOnly` 仅 `AutostartManager.cpp:83` 一处（写自启 `.desktop`，非项目文档）；一切文档/进度写操作只经 `EngineCli` 子进程打给引擎（备份与托管区域由引擎保证，`moongit verify` 可校验）——**引擎能力已接入**：`AppModel::loadVerify` 调 `verify <名> --json`，`logic/DocumentIntegrity` 收口四态（通过 / 不一致 / **无法判定** / 缺失），详情页「文档完整性」卡展示（`models/VerifyEnvelope.h`、`logic/DocumentIntegrity.{h,cpp}`、`ui/pages/ProjectDetailPage.cpp`） |
 
 ## 取舍与已知边界
 
@@ -233,7 +238,7 @@ key 只进 libsecret（service=cn.deepdolphin.app.ai / account=api-key），不�
    的文件（models/app 逻辑/tray 壳/ui 壳），页面、AI、AppModel、Notifier、AutostartManager、
    SysOpen、DesignTokens 等随其实现阶段同步加入（CMakeLists 有显式提醒注释）。
    `tests/` 子目录随 PLAN 里程碑 2 加入；当前模型层冒烟判据由二进制内置 `--selfcheck`
-   承担（55 例，含缺键拒绝/契约过旧判据/双形态 update/shallow-deep 分派等 CONTRACT 红线）。
+   承担（77 例，含缺键拒绝/契约过旧判据/双形态 update/shallow-deep 分派等 CONTRACT 红线）。
    代价：CMakeLists 与 PLAN 清单阶段性地不一致，靠注释锚点防丢失。
 2. **托盘数据对接用 `TraySnapshot` 纯结构体**，而非 PLAN 签名里的 `AppModel*`：
    AppModel 属里程碑 3，提前引入会迫使托盘壳依赖一个不存在的类型。AppModel 落地后由它
@@ -452,7 +457,7 @@ key 只进 libsecret（service=cn.deepdolphin.app.ai / account=api-key），不�
 | `dtk.core.dsg: AppId is fetched from AM, and value is "zcode"` | 环境限制 | 容器会话无应用商店注册项，DSG AppId 回退到宿主进程名；真机经 .desktop 安装后取 `cn.deepdolphin.app` |
 | `QObject::connect: No such signal QPlatformNativeInterface::systemTrayWindowChanged(QScreen*)` | 环境限制 | offscreen 无系统托盘；真 DDE 走 SNI 协议（与「运行期事实」一致）。托盘真实表现仍**待真机验证** |
 | `desktop-file-validate` 未跑 | 工具缺席 | 容器内无该工具（`command -v` 为空）。`.desktop` 内容已人工核对（Exec/Icon/StartupWMClass/X-Deepin-Vendor），装真机后建议补跑 |
-| `ctest`：无目标可跑 | 设计如此 | CMakeLists.txt:134 注释：`enable_testing()+tests/` 缓建，模型层冒烟判据由 `--selfcheck`（55 例）承担 |
+| `ctest`：无目标可跑 | 设计如此 | CMakeLists.txt:134 注释：`enable_testing()+tests/` 缓建，模型层冒烟判据由 `--selfcheck`（77 例）承担 |
 | Ctrl+Shift+U 与输入法的潜在冲突 | 待真机验证 | 决策 19 预案：保持绑定、菜单显示实际序列；容器内无真实 IME，无法在本阶段闭环 |
 
 ### 真机联调阶段（2026-10-03 收尾，决策 36–44）
@@ -569,6 +574,28 @@ M3-2 的响应式与 HiDPI、M4 拆分大文件。
 | 81 | **M1-9/M4b 平台探针「只报告不伪造」+ ci.sh 断言转正**：`--platform-probe` 落 main.cpp 无头分支（GUI 构造前），backend/托盘 geometry/paletteType/五档字号逐行 key=value、恒 exit 0；**只读不写**（不 applyThemeOverride、不 setPalette 兜底）——报告平台现状而非伪造状态；字号档位走 `DS::font()` 与页面同一消费出处；托盘 geometry 按计划只报告不断言；退出用 `::_exit(0)`——常规 exit() 的静态析构在本容器 DTK/DBus 全局单例收尾 5/8 挂死（实测挂在 main 返回之后）；ci.sh 四处增强：selfcheck 输出正式断言、校验工具缺失显式 SKIP、探针正式断言、D2 grep 门（>4 判失败，阈值依据决策 72 存量 4 处） | 探针是 CI 断言的数据源，伪造状态的探针比没有更糟；挂死的探针会卡死 CI（M1a 期踩过：未知 flag 落 GUI 主路径单实例常驻） | `::_exit` 跳过 Qt/DTK 全局析构（一次性只读探针无影响）；托盘 geometry 真机应为 1 的断言需真机回归（无托盘管理器环境恒 0）；ci.sh 的 deb 构建/系统 Qt6 矩阵两步仍未做 |
 | 82 | **M4c 崩溃 handler：最小实现 + re-raise 按信号语义终止**：SIGSEGV/SIGABRT handler 用 `backtrace_symbols_fd` 直接写 stderr（**不 malloc**——崩溃点若正持有分配锁，signal 内再 malloc 死锁；fd 变体是本家族最接近 async-signal-safe 的形态）；**默认处置恢复提前到 handler 入口**再打栈——回溯途中再崩按默认语义直落，绝不递归；观测效果 =「打栈 → 按信号语义终止」（SIGSEGV exit=139、SIGABRT exit=134 探针实证）；注册在 main() 最顶，GUI + 五条无头路径全覆盖（CI 崩溃不再只有一行 Segmentation fault） | 排障第一步是现场回溯；「最小」不等于「信号不安全地随便写」——两处与字面口径的偏差（fd 变体/提前恢复）都是把要求做成可辩护的等价实现 | 未开 -rdynamic（CMake 许可改动仅限新增源行）：主程序帧只有地址需 addr2line 人工解析（实测可按打印偏移定位函数名）；栈溢出型 SIGSEGV 无 sigaltstack 不救；backtrace() 栈展开不保证 async-signal-safe（「尽量」口径） |
 | 83 | **M2-6 图标集：母版单源派生，树下不留手写文件**：hicolor 8 档位图严格由 mark.png 满幅缩放（与 out/linux 同几何）；矢量层母版派生不出来，就把 6 枚 SVG 源**内嵌进 `assets/icon/make-icons.py` 作为唯一源**（`--check` 逐字节校验「产物 == 脚本内源」），既有 deepdolphin.svg 原样收编进脚本消除混源；symbolic 装 `share/icons/hicolor/symbolic`——实测 deepin 系 hicolor/index.theme 声明 `[symbolic/apps]` 档（纯猜 `share/icons/symbolic` 会装了不生效）；qrc 只登记 5 枚 `dd-*`（`IconLoader::symbol` 免安装兜底通道），deepdolphin-symbolic 不进 qrc（代码无消费路径，登记死资源是负资产） | 一处改、处处改、可机检；安装目的地按实测而非文档猜 | 本容器无 Qt6Svg：染色通道整段编译不进，容器内 dd-* 走 tint 色圆点占位（SVG 合法含 currentColor，真机由 Qt6Svg 染色渲染）；deepin 树 8 档与 out/ 已入库产物 48px 以上逐字节差（Pillow 版本不同，out/ 已还原未动）；「托盘/菜单不再手绘占位方块」的最终目视按 plan 属 M3 后真机项 |
+
+### 引擎能力接入阶段（2026-10-19，决策 84–86）
+
+本批把**引擎侧已有、客户端侧从未消费**的能力接进 deepin：`moongit verify`（文档完整性校验）。
+起因是「引擎新能力上客户端」这条线：引擎的 `verify` 有严谨的四态判据
+（逐字节一致 / 明确不一致 / **无法判定** / 缺失），而两个客户端都没调它 ——
+C11「文档完整性承诺」当时只靠一条反向 grep（客户端没有业务文件写入）撑着，
+**承诺成立但用户看不见**。接上之后，「引擎说这份文档对不上」才有一条出口。
+
+| # | 决策 | 为什么 | 已知代价 |
+|---|---|---|---|
+| 84 | **引擎 `verify` 接入 deepin，判定收口在 `logic/DocumentIntegrity`（纯函数层，零 QWidget 头）**：`AppModel::loadVerify` 调 `verify <名> --json`（**只读**，不碰用户数据）；`models/VerifyEnvelope.h` 按契约收六键（`checked/failures/undetermined/missing/verified/documents`，`note` 可选）——**缺任一键 → 解不出（契约可能过旧），不许回落成 0**；`DocumentIntegrity::stateOf` 定优先级 missing > failed > undetermined > none > verified；详情页「文档完整性」卡按档配色（通过=绿 / 不一致=红 / **无法判定=橙**（不是灰！没答案 ≠ 没事）/ 缺失=橙（备份仍在，可恢复）/ 无从校验=灰） | 引擎的四态是**引擎的判据**，客户端只负责「显示成哪一句话」，不重算；「无法判定」必须独立成档 —— 引擎在备份被删/权限被改/结构异常时明确拒绝替一次它没做的校验背书，客户端也不许把它显示成「通过」（仓内「缺字段不回落成 0」纪律的同一条纪律）；判定进 `logic/` 保住「纯函数判定层」分层（`models/`、`logic/` 零 QWidget 头） | **能力先行、mac 端暂未对位** —— 章程 C11「能力必须一致」要求另两端补齐，mac/linux 同步是后续批次（本批按「先搞定 dde」的次序落地，此债已记）；缺 `note` 的载荷在缺失档仍能显示计数，但少了引擎给的备份路径；`verify` 每进一次详情页发一次子进程（60s 超时），项目多时是可见的进程开销（当前只对选中项目发，不扫全群） |
+| 85 | **`ci.sh` 新增第 7 道门：verify 接线源扫描（判定不许藏回视图，撤入口 ≠ 撤能力）**：剥注释后逐条钉住 6 个接线点（引擎命令调用 / `loadVerify` 声明 / `verifyChanged` 消费 / 进详情发起校验 / 详情页挂卡 / selfcheck 覆盖四态），任一缺失即失败退出 1 | 判定层判据全绿 ≠ 用户真能看见 —— 接线断了，判据照样全绿（仓内「判定藏回视图 = 运行时抓不到 = 缺陷漏网」）；源扫描是唯一能在无图形环境下钉住接线的手段 | 源扫描按**文件+正则**钉，挪动接线点位置会误报（改接线时须同步改门）；门只查「接线在不在」，不查「接线对不对」（对不对由 selfcheck 四态判据与 contract-check 真引擎断言负责）；门自身一度误报（`set -o pipefail` + `grep -q` 提前退出 → 剥注释的 perl 收 SIGPIPE → 管道判失败），已改为 grep 读完整流 —— **门自己坏了比门放水更糟** |
+| 86 | **截图门强制离屏（`QT_QPA_PLATFORM=offscreen` 写死在第 2 步，不继承环境）**：原写法是全局 `${QT_QPA_PLATFORM:-offscreen}`——宿主若已设 `QT_QPA_PLATFORM=dxcb;xcb`（本机即如此）则沿用，快照会带 DTK 原生窗口装饰与 chameleon 样式，**同一份代码拍出另一张脸**，视觉 diff 被环境牵着走（实测同一提交在 dxcb 下 42501 字节、离屏下 36661 字节，差 5700+）；现只给第 2 步（截图矩阵）写死 offscreen，第 4 步平台探针**仍要**真实 backend 故不强制 | 离屏才是「同机位」可复现的前提；基线是离屏拍的，门就该按基线的机位拍 —— 门自己随环境漂移，等于没有基线 | 平台探针仍继承环境（有意为之：它要报真实 backend）；真机视觉回归仍需在 DDE 桌面真跑（离屏不代表真机观感）；基线里「上次刷新 HH:MM」时间戳本身每次都不同，视觉 diff 须忽略状态条那一行像素（实测差异恒定落在 y 699–708 的 32×9 区域） |
+
+**本批验证**（全部实跑）：`--selfcheck` **77 通过 0 失败**（66 → 77，+11 例：契约六键/缺键拒绝/四态优先级/
+「无法判定 ≠ 通过」/文案纪律/引擎 note 原样转述）；`contract-check.sh` **15/15**（真引擎沙箱，10 → 15，
++5 条 verify 契约断言含「删文档 → missing=1 且 verified=false 且 note 带备份路径」）；
+`ci.sh` **7/7 门全绿**；**三处负控真红**：① `stateOf` 把 undetermined 当 verified → 「无法判定是独立一档」红；
+② `VerifyEnvelope::fromJson` 缺键回落成 0 → 「缺键 → 解不出」红；③ 摘掉 `loadVerify` 调用 → 接线门红（退出码 1）。
+**视觉零变化**（离屏同机位像素级比对：HEAD 与本批 6 张快照的差异恒定落在状态条 y 699–708 的
+32×9 区域 —— 即「上次刷新 HH:MM」时间戳，其余逐像素相同，故基线未随本批改动）。
 
 ## 分层纪律（后续阶段必须延续）
 

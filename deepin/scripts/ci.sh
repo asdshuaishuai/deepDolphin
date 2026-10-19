@@ -10,6 +10,7 @@
 #    DesignTokens/CommitTypeComposition/src/platform/ 后命中 >4 判失败
 #    （存量 4 处为 M3-3 已登记的字号项，README 决策 72；只减不增）
 # 6. --agent-selftest（恒走 mock 渠道）
+# 7. verify 接线源扫描门：引擎 verify 的判定层与接线点必须都在（判定不许藏回视图）
 #
 # 用法：scripts/ci.sh [build目录]（默认 build/）
 set -euo pipefail
@@ -25,7 +26,7 @@ export LD_LIBRARY_PATH="$HOME/.local/dd-sysroot/usr/lib/x86_64-linux-gnu${LD_LIB
 export QT_PLUGIN_PATH="$HOME/.local/dd-sysroot/usr/lib/x86_64-linux-gnu/qt6/plugins${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 
-echo "› 1/6 selfcheck（断言 0 failed 且 ≥58 passed）"
+echo "› 1/7 selfcheck（断言 0 failed 且 ≥58 passed）"
 SELFCHECK_OUT="$("$BIN" --selfcheck || true)"
 printf '%s\n' "$SELFCHECK_OUT" | tail -1
 SC_PASSED="$(printf '%s\n' "$SELFCHECK_OUT" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+' || true)"
@@ -40,17 +41,22 @@ if [ "$SC_FAILED" -ne 0 ] || [ "$SC_PASSED" -lt 58 ]; then
 fi
 echo "✓ selfcheck ${SC_PASSED} passed, ${SC_FAILED} failed"
 
-echo "› 2/6 截图矩阵（离屏）"
+echo "› 2/7 截图矩阵（离屏）"
+# ⚠ 这一步**强制** offscreen，不继承环境里的 QT_QPA_PLATFORM。
+#   理由（决策 86）：基线是离屏拍的；若宿主已设 QT_QPA_PLATFORM=dxcb;xcb，
+#   快照会带 DTK 原生窗口装饰与 chameleon 样式 —— 同一份代码拍出另一张脸，
+#   视觉 diff 门被环境牵着走。离屏才是「同机位」的可复现前提。
+#   注意：第 4 步的平台探针**要**真实 backend，故那里不强制 offscreen。
 mkdir -p "$SRC/docs/snapshots"
 for theme in light dark; do
     for sec in dashboard board milestones; do
-        DEEPDOLPHIN_THEME="$theme" "$BIN" --snapshot \
+        QT_QPA_PLATFORM=offscreen DEEPDOLPHIN_THEME="$theme" "$BIN" --snapshot \
             "$SRC/docs/snapshots/${theme}-${sec}.png" --section "$sec" \
             | tail -1
     done
 done
 
-echo "› 3/6 desktop / metainfo 校验（缺工具显式 SKIP）"
+echo "› 3/7 desktop / metainfo 校验（缺工具显式 SKIP）"
 if command -v desktop-file-validate >/dev/null 2>&1; then
     desktop-file-validate "$SRC/data/cn.deepdolphin.app.desktop" && echo "✓ desktop 合法"
 else
@@ -63,7 +69,7 @@ else
     echo "SKIP: appstream-util 未安装（README 决策 69 的硬门随工具到位生效）"
 fi
 
-echo "› 4/6 平台探针（正式断言：exit 0 且输出含 backend=）"
+echo "› 4/7 平台探针（正式断言：exit 0 且输出含 backend=）"
 PROBE_RC=0
 PROBE_OUT="$("$BIN" --platform-probe)" || PROBE_RC=$?
 printf '%s\n' "$PROBE_OUT"
@@ -77,7 +83,7 @@ if ! printf '%s\n' "$PROBE_OUT" | grep -q '^backend='; then
 fi
 echo "✓ 平台探针通过（backend=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^backend=//p')，托盘/主题/字号档位见上，offscreen 下托盘无效属预期）"
 
-echo "› 5/6 D2 grep 门（DS::* 单点真相源；排除白名单后命中 >4 判失败）"
+echo "› 5/7 D2 grep 门（DS::* 单点真相源；排除白名单后命中 >4 判失败）"
 if [ ! -d "$SRC/src" ]; then
     echo "✗ 源码目录不存在：$SRC/src（脚本位置/参数错了——门失效比门失败更糟）" >&2
     exit 1
@@ -93,6 +99,47 @@ if [ "$D2_COUNT" -gt 4 ]; then
 fi
 echo "✓ D2 命中 ${D2_COUNT}/4（余量仅限已登记字号项，README 决策 72）"
 
-echo "› 6/6 agent 自测（mock 渠道）"
+echo "› 6/7 agent 自测（mock 渠道）"
 "$BIN" --agent-selftest | tail -2
+
+echo "› 7/7 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
+# 剥注释再匹配：注释里出现的字样不算接线（否则加一行注释就能骗过门）。
+strip_comments() {
+    if command -v perl >/dev/null 2>&1; then
+        perl -pe 's{//(?!:).*$}{}' "$1"
+    else
+        sed -e 's|//[^/].*$||' "$1"
+    fi
+}
+WIRING_HITS=0
+WIRING_FAIL=0
+wire_need() { # wire_need <文件> <正则> <说明>
+    local f="$1" re="$2" label="$3"
+    if [ ! -f "$f" ]; then
+        echo "  ✗ $label：文件不存在 $f" >&2
+        WIRING_FAIL=1
+        return
+    fi
+    # ⚠ 不用 `grep -q`：它一匹配就退出，剥注释的 perl 会收 SIGPIPE，
+    #   配 set -o pipefail 整个管道判失败（接线明明在却报 ✗ —— 门自己坏了比门放水更糟）。
+    if strip_comments "$f" | grep -E "$re" >/dev/null; then
+        echo "  ✓ $label"
+        WIRING_HITS=$((WIRING_HITS + 1))
+    else
+        echo "  ✗ $label：$f 里找不到 $re" >&2
+        WIRING_FAIL=1
+    fi
+}
+wire_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("verify"\)' 'AppModel 调引擎 verify 命令'
+wire_need "$SRC/src/app/AppModel.h" 'loadVerify' 'AppModel 暴露 loadVerify'
+wire_need "$SRC/src/ui/PanelWindow.cpp" '&AppModel::verifyChanged' 'PanelWindow 消费 verifyChanged 信号'
+wire_need "$SRC/src/ui/PanelWindow.cpp" 'loadVerify\(' 'PanelWindow 进详情时发起校验'
+wire_need "$SRC/src/ui/pages/ProjectDetailPage.cpp" 'addWidget\(buildIntegrityCard\(\)\)' '详情页挂了文档完整性卡'
+wire_need "$SRC/src/app/SelfCheck.cpp" 'DocumentIntegrity::stateOf' 'SelfCheck 覆盖四态判定'
+if [ "$WIRING_FAIL" -ne 0 ]; then
+    echo "✗ verify 接线门失败：判定层或接线被摘掉（撤入口 ≠ 撤能力）" >&2
+    exit 1
+fi
+echo "✓ verify 接线完整（$WIRING_HITS 项）"
+
 echo "✓ CI 门通过：请 git diff docs/snapshots 人工确认视觉变化符合预期"

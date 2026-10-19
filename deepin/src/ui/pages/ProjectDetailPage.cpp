@@ -3,6 +3,7 @@
 #include "../../logic/Derived.h"
 #include "../../logic/DestructiveGuard.h"
 #include "../../logic/DashboardScope.h"
+#include "../../logic/DocumentIntegrity.h"
 #include "../../logic/MilestoneCardTitle.h"
 #include "../../platform/SysOpen.h"
 #include "../DesignTokens.h"
@@ -92,6 +93,16 @@ void ProjectDetailPage::setDocs(const QString &name, const std::optional<DocsEnv
     rebuild();
 }
 
+void ProjectDetailPage::setVerify(const QString &name, const std::optional<VerifyEnvelope> &verify,
+    const LoadStateBox &state)
+{
+    m_verify = verify;
+    m_verifyState = state;
+    if (m_name != name)
+        m_name = name;
+    rebuild();
+}
+
 void ProjectDetailPage::setMilestones(const QVector<Milestone> &items)
 {
     m_milestones = items;
@@ -171,6 +182,7 @@ void ProjectDetailPage::rebuild()
     m_contentLayout->addWidget(buildMilestoneCard());
     if (!p.journal.empty())
         m_contentLayout->addWidget(buildJournalCard(p));
+    m_contentLayout->addWidget(buildIntegrityCard());
     m_contentLayout->addWidget(buildDocsArea());
     m_contentLayout->addStretch(1);
 }
@@ -805,6 +817,73 @@ QWidget *ProjectDetailPage::buildJournalCard(const ProjectStatus &p)
             QStringLiteral("另有 %1 行日志解析不了（不是「日志到此为止」）").arg(p.journalUnparsableLines),
             card, DS::semColor(DS::SemColor::orange)));
     return card;
+}
+
+QWidget *ProjectDetailPage::buildIntegrityCard()
+{
+    auto *host = new QWidget(m_content);
+    auto *v = new QVBoxLayout(host);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->setSpacing(DS::Spacing::sm);
+
+    // 三态：loading/idle（读）→ failed（橙，读不出来）→ loaded（判定）。
+    // ⚠ 「无法判定」**不是**「通过」：引擎给不出答案时这里给的是「无法判定」，不装没事。
+    if (m_verifyState.state == LoadState::loading || m_verifyState.state == LoadState::idle) {
+        auto *loading = new QWidget(host);
+        auto *lh = new QHBoxLayout(loading);
+        auto *sp = new DSpinner(loading);
+        sp->start();
+        lh->addWidget(sp);
+        lh->addWidget(new QLabel(QStringLiteral("校验文档完整性…"), loading));
+        lh->addStretch(1);
+        v->addWidget(loading);
+        return host;
+    }
+    if (m_verifyState.state == LoadState::failed) {
+        auto *card = new Card(host);
+        card->clearPadding();
+        auto *cv = new QVBoxLayout(card);
+        cv->addWidget(smallLabel(QStringLiteral("读不出来：%1").arg(m_verifyState.message), card,
+            DS::semColor(DS::SemColor::orange)));
+        v->addWidget(card);
+        return host;
+    }
+    if (!m_verify.has_value())
+        return host; // 引擎没给载荷：安静不占位（failed 分支已经兜住异常）
+
+    const VerifyEnvelope &e = *m_verify;
+    const DocumentIntegrity::State st = DocumentIntegrity::stateOf(e);
+
+    auto *card = new Card(host);
+    auto *cv = new QVBoxLayout(card);
+    cv->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
+    cv->setSpacing(DS::Spacing::sm);
+
+    auto *title = new QLabel(QStringLiteral("文档完整性"), card);
+    title->setFont(DS::font(DS::FontT::cardTitle));
+    cv->addWidget(title);
+
+    // 状态色由视图层映射（判定层只给档，不给色）：
+    // 通过=绿 / 明确不一致=红 / 无法判定=橙（不是灰！没答案 ≠ 没事）/
+    // 缺失=橙（备份仍在，可恢复）/ 无从校验=灰。
+    DS::SemColor tone = DS::SemColor::gray;
+    if (st == DocumentIntegrity::State::verified)
+        tone = DS::SemColor::shallow;
+    else if (st == DocumentIntegrity::State::failed)
+        tone = DS::SemColor::red;
+    else if (st == DocumentIntegrity::State::undetermined || st == DocumentIntegrity::State::missing)
+        tone = DS::SemColor::orange;
+
+    cv->addWidget(smallLabel(DocumentIntegrity::headline(st, e), card, DS::semColor(tone)));
+    const QString detail = DocumentIntegrity::detail(e);
+    if (!detail.isEmpty())
+        cv->addWidget(smallLabel(detail, card, DS::textSecondary()));
+
+    for (const VerifyDocument &d : e.documents)
+        cv->addWidget(smallLabel(DocumentIntegrity::documentLine(d), card, DS::textSecondary()));
+
+    v->addWidget(card);
+    return host;
 }
 
 QWidget *ProjectDetailPage::buildDocsArea()

@@ -331,8 +331,10 @@ void PanelWindow::wireModel()
         m_sidebar->select(sel, false); // 同步侧栏高亮（不再回发信号，防循环）
         navigate(sel);
         // 进入详情 = loadProject + loadDocs（go 已带 loadProject；这里补 docs）
-        if (sel.kind == Selection::Kind::project)
+        if (sel.kind == Selection::Kind::project) {
             m_model->loadDocs(sel.projectName);
+            m_model->loadVerify(sel.projectName); // 文档完整性（只读校验）
+        }
     });
     connect(m_model, &AppModel::busyChanged, this, &PanelWindow::refreshChrome);
     connect(m_model, &AppModel::lastErrorChanged, this, [this](const QString &msg) {
@@ -353,6 +355,12 @@ void PanelWindow::wireModel()
         if (m_model->selection().kind == Selection::Kind::project
             && m_model->selection().projectName == name) {
             m_detail->setDocs(name, m_model->docsFor(name), m_model->docsState(name));
+        }
+    });
+    connect(m_model, &AppModel::verifyChanged, this, [this](const QString &name) {
+        if (m_model->selection().kind == Selection::Kind::project
+            && m_model->selection().projectName == name) {
+            m_detail->setVerify(name, m_model->verifyFor(name), m_model->verifyState(name));
         }
     });
     connect(m_model, &AppModel::bulkReportReady, this, [this](const AgentBulkReport &report) {

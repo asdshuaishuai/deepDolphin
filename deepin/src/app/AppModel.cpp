@@ -481,6 +481,34 @@ void AppModel::loadDocs(const QString &name)
         });
 }
 
+// 文档完整性校验：引擎 `verify <name> --json`。
+// 只读命令 —— 客户端不写任何用户数据，校验口径全部来自引擎（VERIFY 契约）。
+void AppModel::loadVerify(const QString &name)
+{
+    m_verifyStates[name] = { LoadState::loading, QString() };
+    emit verifyChanged(name);
+    m_cli->callJson({ QStringLiteral("verify"), name, QStringLiteral("--json") },
+        EngineTimeouts::Verify, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value()) {
+                m_verifyStates[name] = { LoadState::failed,
+                    res.ok() ? QStringLiteral("引擎输出不是合法 JSON（契约可能过旧）")
+                             : res.error.userMessage() };
+                emit verifyChanged(name);
+                return;
+            }
+            const auto e = VerifyEnvelope::fromJson(res.payload->object());
+            if (!e.has_value()) {
+                m_verifyStates[name] = { LoadState::failed,
+                    QStringLiteral("verify 载荷缺键（契约可能过旧）") };
+                emit verifyChanged(name);
+                return;
+            }
+            m_verifies[name] = *e;
+            m_verifyStates[name] = { LoadState::loaded, QString() };
+            emit verifyChanged(name);
+        });
+}
+
 // ── 更新动作 ──
 
 void AppModel::runUpdate(const QString &name, bool deep)

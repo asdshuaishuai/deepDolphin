@@ -10,6 +10,7 @@
 #include "../../models/LoadState.h"
 #include "../../models/Milestone.h"
 #include "../../models/ProjectStatus.h"
+#include "../../models/VerifyEnvelope.h"
 #include "../common/Card.h"
 #include <DScrollArea>
 #include <DLineEdit>
@@ -39,6 +40,9 @@ public:
         const QString &loadError);
     void setDocs(const QString &name, const std::optional<DocsEnvelope> &docs,
         const LoadStateBox &state);
+    // 文档完整性（引擎 verify）：与 docs 各自一份状态，不共用。
+    void setVerify(const QString &name, const std::optional<VerifyEnvelope> &verify,
+        const LoadStateBox &state);
     void setMilestones(const QVector<Milestone> &items); // 详情页里程碑卡（该项目范围）
     void setGitOutput(const QString &name, const GitOpResponse &resp);
     void setBusy(bool busy);
@@ -64,12 +68,15 @@ private:
     QWidget *buildMilestoneCard();
     QWidget *buildJournalCard(const ProjectStatus &p);
     QWidget *buildDocsArea();
+    QWidget *buildIntegrityCard();
 
     QString m_name;
     std::optional<ProjectStatus> m_project;
     QString m_loadError;
     std::optional<DocsEnvelope> m_docs;
     LoadStateBox m_docsState;
+    std::optional<VerifyEnvelope> m_verify;
+    LoadStateBox m_verifyState;
     QVector<Milestone> m_milestones;
     GitOpResponse m_gitOutput;
     bool m_hasGitOutput = false;

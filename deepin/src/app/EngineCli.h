@@ -37,6 +37,7 @@ constexpr int StatusProject = 60'000; // status <name> --json
 constexpr int Dashboard = 180'000;
 constexpr int Milestones = 60'000;    // milestone list/add/done/drop/reopen/remove
 constexpr int Docs = 60'000;
+constexpr int Verify = 60'000;      // verify <name>（只读：文档完整性校验）
 constexpr int Journal = 30'000;
 constexpr int Update = 300'000;       // update <name>
 constexpr int Deep = 600'000;         // deep <name>

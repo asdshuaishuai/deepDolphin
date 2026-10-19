@@ -21,6 +21,7 @@
 #include "../models/Milestone.h"
 #include "../models/ProjectStatus.h"
 #include "../models/StatusEnvelope.h"
+#include "../models/VerifyEnvelope.h"
 #include "../models/UpdateResult.h"
 #include "EngineCli.h"
 #include "EngineLocator.h"
@@ -84,6 +85,13 @@ public:
         return m_docs.contains(name) ? std::optional<DocsEnvelope>(m_docs.value(name))
                                      : std::nullopt;
     }
+    // 文档完整性（引擎 `verify`）：按项目一份自己的状态，不共用 lastError。
+    LoadStateBox verifyState(const QString &name) const { return m_verifyStates.value(name); }
+    const std::optional<VerifyEnvelope> verifyFor(const QString &name) const
+    {
+        return m_verifies.contains(name) ? std::optional<VerifyEnvelope>(m_verifies.value(name))
+                                         : std::nullopt;
+    }
     QString projectLoadError(const QString &name) const { return m_projectLoadErrors.value(name); }
     QString lastError() const { return m_lastError; }
     bool hasLoadedProjectsOnce() const { return m_hasLoadedProjectsOnce; }
@@ -104,6 +112,8 @@ public:
     void refreshLight(); // 300s 周期 / 托盘弹窗 onShow：仅 status
     void loadProject(const QString &name);
     void loadDocs(const QString &name);
+    // 文档完整性校验：引擎 `verify <name> --json`（只读，不写用户数据）。
+    void loadVerify(const QString &name);
 
     void runUpdate(const QString &name, bool deep);
     // C5「更新 + AI 摘要」（mac UpdateActionMenu 变体）：真更新走同一把 busy 锁，
@@ -143,6 +153,7 @@ signals:
     void milestonesChanged();
     void projectChanged(const QString &name);
     void docsChanged(const QString &name);
+    void verifyChanged(const QString &name);
     void gitOutputReady(const QString &name, const GitOpResponse &resp);
     void scanFinished(bool ok, const QString &message, const QString &coverageNote);
     void addFinished(bool ok, const QString &message);
@@ -193,6 +204,8 @@ private:
     LoadStateBox m_milestonesState;
     QMap<QString, LoadStateBox> m_docsStates;
     QMap<QString, DocsEnvelope> m_docs;
+    QMap<QString, LoadStateBox> m_verifyStates;
+    QMap<QString, VerifyEnvelope> m_verifies;
     QMap<QString, QString> m_projectLoadErrors;
 
     QString m_lastError;
