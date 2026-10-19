@@ -7,6 +7,7 @@
 #include "../logic/Derived.h"
 #include "../logic/DocumentIntegrity.h"
 #include "../logic/GraphToken.h"
+#include "../logic/HeatLayout.h"
 #include "../logic/ArchViewport.h"
 #include "../logic/SceneRender.h"
 #include "../logic/Route.h"
@@ -1246,6 +1247,318 @@ int SelfCheck::run(QStringList &log)
                     !filtered.isEmpty()
                         && filtered.last().node == workerIdx);
             }
+        }
+    }
+
+    // ── 符号索引热力图（布局与走线，纯函数）──
+    // 热力图是代码图谱左栏的另一种模式：文件层铺文件卡，点文件卡下钻到符号层。
+    // 铺排与走线都在 logic/HeatLayout（零 QWidget 头），所以判据能无头跑。
+    // 判据盯的是**画出来对不对**，不是「函数被调用了没有」：
+    //   ① 分数公式与热色三档（契约色，逐字对齐 HTML 交付物）
+    //   ② 身份色相：黄金角散布，且**与节点顺序无关**（换个顺序画得一样）
+    //   ③ 作用域：文件层=全部文件；下钻层=该文件符号 + 跨作用域边界卡（≤9 + "+N"）
+    //   ④ 铺排：不重叠、网格等距、序号连续、分带有序
+    //   ⑤ 重心扫描**真的跑了**（关联卡的次序被重排）—— 这条最容易被悄悄摘掉
+    //   ⑥ 走线：端点贴在卡上、边不丢、曲线过端点
+    {
+        // ---- 夹具：一棵两文件的树（a.c 两个符号、b.c 一个符号）----
+        auto addNode = [](CodeGraph &g, GraphNodeKind kind, const QString &id, const QString &name,
+                          const QString &path, int declLine) {
+            GraphNode n;
+            n.kind = kind;
+            n.id = id;
+            n.name = name;
+            n.path = path;
+            n.declLine = declLine;
+            g.nodes << n;
+            const int idx = g.nodes.size() - 1;
+            g.indexById.insert(id, idx);
+            return idx;
+        };
+        auto addSym = [&addNode](CodeGraph &g, int parent, const QString &path,
+                        const QString &name, int line) {
+            const int idx = addNode(g, GraphNodeKind::sym,
+                QStringLiteral("f:%1:%2:%3").arg(path).arg(line).arg(name), name, path, line);
+            g.nodes[parent].kids << idx;
+            g.nodes[idx].parent = parent;
+            return idx;
+        };
+        CodeGraph hg;
+        const int hA = addNode(hg, GraphNodeKind::file, QStringLiteral("f:src/a.c"),
+            QStringLiteral("a.c"), QStringLiteral("src/a.c"), 0);
+        const int hB = addNode(hg, GraphNodeKind::file, QStringLiteral("f:src/b.c"),
+            QStringLiteral("b.c"), QStringLiteral("src/b.c"), 0);
+        hg.root = hA;
+        addSym(hg, hA, QStringLiteral("src/a.c"), QStringLiteral("alpha"), 1);
+        addSym(hg, hA, QStringLiteral("src/a.c"), QStringLiteral("beta"), 5);
+        addSym(hg, hB, QStringLiteral("src/b.c"), QStringLiteral("gamma"), 2);
+        hg.nodes[hA].rollWeightSum = 12; // 文件的子树罚分（热色输入）
+
+        // alpha → gamma 是**跨文件**调用（下钻 a.c 时算跨作用域边界）；
+        // beta → alpha 是**同文件**调用（下钻 a.c 时算作用域内的边）。
+        const QVector<HeatLayout::Edge> hSymEdges {
+            HeatLayout::Edge { QStringLiteral("f:src/a.c:1:alpha"),
+                QStringLiteral("f:src/b.c:2:gamma"), 3, QStringLiteral("resolved") },
+            HeatLayout::Edge { QStringLiteral("f:src/a.c:5:beta"),
+                QStringLiteral("f:src/a.c:1:alpha"), 1, QStringLiteral("resolved") },
+        };
+        const QVector<GraphFileEdge> hFileEdges {
+            GraphFileEdge { QStringLiteral("src/a.c"), QStringLiteral("src/b.c"), 2 },
+        };
+        // 文件层的边集（文件级引用边 → 节点 id 形如 f:路径）
+        const QVector<HeatLayout::Edge> hFileEdgesOut
+            = HeatLayout::scopeEdges(hg, hSymEdges, hFileEdges, -1);
+        const QHash<QString, int> hHues = HeatLayout::huesFor(hg);
+
+        // ① 分数公式（引擎 confidence 的镜像）与热色三档
+        check(log, "热力图：置信度分数按罚分算（0→100 / 5→80 / 20→50，多文件摊薄）",
+            HeatLayout::confScore(0, 1) == 100 && HeatLayout::confScore(5, 1) == 80
+                && HeatLayout::confScore(20, 1) == 50 && HeatLayout::confScore(20, 2) == 66
+                && HeatLayout::confScore(0, 1) > HeatLayout::confScore(5, 1)
+                && HeatLayout::confScore(5, 1) > HeatLayout::confScore(20, 1));
+        check(log, "热力图：热色三档边界（≥80 / ≥60 / 其余）且三色互异",
+            HeatLayout::heatColor(80) == QColor(89, 240, 184)
+                && HeatLayout::heatColor(79) == QColor(255, 200, 87)
+                && HeatLayout::heatColor(60) == QColor(255, 200, 87)
+                && HeatLayout::heatColor(59) == QColor(255, 107, 138)
+                && HeatLayout::heatColor(85) != HeatLayout::heatColor(65)
+                && HeatLayout::heatColor(65) != HeatLayout::heatColor(20));
+
+        // ② 身份色：同色相稳定、不同色相不同色；色相按 id 字典序的黄金角分配
+        check(log, "热力图：身份色同色相稳定、异色相异色",
+            HeatLayout::idColor(30) == HeatLayout::idColor(30)
+                && HeatLayout::idColor(30) != HeatLayout::idColor(200));
+        {
+            // 黄金角：排序后相邻两 id 的色相差 = round(137.508) = 138
+            QStringList ids;
+            for (const GraphNode &n : hg.nodes) {
+                if (n.kind != GraphNodeKind::dir)
+                    ids << n.id;
+            }
+            ids.sort();
+            bool golden = ids.size() >= 2;
+            if (golden) {
+                const int d = (hHues.value(ids.at(1)) - hHues.value(ids.at(0)) + 360) % 360;
+                golden = (d == 138);
+            }
+            check(log, "热力图：身份色相按黄金角 137.508° 散布（相邻 id 色相差 138）", golden);
+        }
+        {
+            // 身份色相**与节点在 arena 里的顺序无关**（排序键是 id 字典序）——
+            // 换一个遍历顺序画出来必须一模一样，否则「同一份数据两台机器两张脸」。
+            CodeGraph hg2 = hg;
+            std::reverse(hg2.nodes.begin(), hg2.nodes.end());
+            const QHash<QString, int> hHues2 = HeatLayout::huesFor(hg2);
+            bool same = hHues.size() == hHues2.size();
+            for (auto it = hHues.constBegin(); same && it != hHues.constEnd(); ++it)
+                same = (hHues2.value(it.key()) == it.value());
+            check(log, "热力图：身份色相与节点顺序无关（同一份数据画出来一样）", same);
+        }
+
+        // ③ 作用域：文件层 = 全部文件；下钻层 = 该文件符号 + 跨作用域边界卡
+        const QVector<HeatLayout::Card> hFileCards
+            = HeatLayout::scopeCards(hg, hHues, -1, hSymEdges);
+        check(log, "热力图：文件层铺全部文件卡（按名排序，无符号卡）",
+            hFileCards.size() == 2 && hFileCards.at(0).name == QStringLiteral("a.c")
+                && hFileCards.at(1).name == QStringLiteral("b.c")
+                && hFileCards.at(0).kind == GraphNodeKind::file
+                && !hFileCards.at(0).boundary);
+        const QVector<HeatLayout::Card> hDrillCards
+            = HeatLayout::scopeCards(hg, hHues, hA, hSymEdges);
+        {
+            bool shape = hDrillCards.size() == 3;
+            if (shape) {
+                // 两个符号卡（按声明行 alpha(1) → beta(5)）+ 一个跨作用域边界卡
+                shape = hDrillCards.at(0).name == QStringLiteral("alpha")
+                    && hDrillCards.at(1).name == QStringLiteral("beta")
+                    && hDrillCards.at(0).declLine == 1 && hDrillCards.at(1).declLine == 5
+                    && !hDrillCards.at(0).boundary && !hDrillCards.at(1).boundary
+                    && hDrillCards.at(2).boundary
+                    && hDrillCards.at(2).path == QStringLiteral("src/b.c");
+            }
+            check(log, "热力图：下钻层 = 该文件符号（按声明行）+ 跨作用域边界卡（按文件聚合）",
+                shape);
+        }
+        {
+            // 边界卡上限：跨作用域引用超过 9 个文件 → 9 张 + 一张「+N」
+            CodeGraph many = hg;
+            QVector<HeatLayout::Edge> edges = hSymEdges;
+            for (int i = 0; i < 12; ++i) {
+                const QString path = QStringLiteral("src/x%1.c").arg(i);
+                const QString sid = QStringLiteral("f:%1:1:g%2").arg(path).arg(i);
+                // ⚠ 这些符号**不能**挂到 a.c 的子节点下 —— 挂上去就在作用域内，
+                //   就不算「跨作用域」了（那是夹具的坑，不是实现的坑）。
+                addNode(many, GraphNodeKind::sym, sid, QStringLiteral("g%1").arg(i), path, 1);
+                edges << HeatLayout::Edge { QStringLiteral("f:src/a.c:1:alpha"), sid, 1,
+                    QStringLiteral("resolved") };
+            }
+            const QHash<QString, int> manyHues = HeatLayout::huesFor(many);
+            const QVector<HeatLayout::Card> manyCards
+                = HeatLayout::scopeCards(many, manyHues, hA, edges);
+            int boundaryCards = 0;
+            bool hasMore = false;
+            for (const HeatLayout::Card &c : manyCards) {
+                if (!c.boundary)
+                    continue;
+                ++boundaryCards;
+                if (c.id == QStringLiteral("cgx:__more"))
+                    hasMore = true;
+            }
+            check(log, "热力图：跨作用域边界卡封顶 9 张，溢出并成「+N」（不无限铺）",
+                boundaryCards == 10 && hasMore);
+        }
+        {
+            // 作用域内的边只留同文件那条；跨文件那条不混进来
+            const QVector<HeatLayout::Edge> hDrillEdges
+                = HeatLayout::scopeEdges(hg, hSymEdges, hFileEdges, hA);
+            check(log, "热力图：下钻层的边只含作用域内的（同文件）调用",
+                hDrillEdges.size() == 1
+                    && hDrillEdges.first().from == QStringLiteral("f:src/a.c:5:beta")
+                    && hDrillEdges.first().to == QStringLiteral("f:src/a.c:1:alpha"));
+        }
+        {
+            // 文件层的边是文件级引用边（节点 id 形如 f:路径）
+            check(log, "热力图：文件层的边是文件级引用边（id 形如 f:路径）",
+                hFileEdgesOut.size() == 1
+                    && hFileEdgesOut.first().from == QStringLiteral("f:src/a.c")
+                    && hFileEdgesOut.first().to == QStringLiteral("f:src/b.c"));
+        }
+
+        // ④ 铺排：不重叠、网格等距、序号连续
+        const QVector<HeatLayout::Card> hLaid
+            = HeatLayout::layout(hFileCards, hFileEdgesOut, 800, 600);
+        {
+            bool noOverlap = true;
+            for (int i = 0; i < hLaid.size() && noOverlap; ++i) {
+                for (int j = i + 1; j < hLaid.size(); ++j) {
+                    const HeatLayout::Card &x = hLaid.at(i);
+                    const HeatLayout::Card &y = hLaid.at(j);
+                    if (x.x < y.x + y.w && y.x < x.x + x.w && x.y < y.y + y.h
+                        && y.y < x.y + x.h)
+                        noOverlap = false;
+                }
+            }
+            check(log, "热力图：卡片互不重叠（重叠的图没法读）", noOverlap && hLaid.size() == 2);
+        }
+        {
+            // 同一行内：y 严格相等、卡高一致（网格工整）
+            bool grid = hLaid.size() == 2;
+            if (grid) {
+                const HeatLayout::Card &x = hLaid.at(0);
+                const HeatLayout::Card &y = hLaid.at(1);
+                grid = qFuzzyCompare(x.y, y.y) && qFuzzyCompare(x.h, y.h)
+                    && !qFuzzyCompare(x.x, y.x);
+            }
+            check(log, "热力图：同一行内卡片 y 相等（网格工整，不许参差）", grid);
+        }
+        {
+            // 序号：带内**阅读序**（先 y 后 x）从 1 连续
+            // ⚠ 序号跟的是排布后的阅读序，不是 arena/输入序 —— 重心扫描会换位，
+            //   序号必须跟着换（不然徽标和看到的顺序对不上）。
+            QVector<HeatLayout::Card> byRead = hLaid;
+            std::sort(byRead.begin(), byRead.end(),
+                [](const HeatLayout::Card &a, const HeatLayout::Card &b) {
+                    if (!qFuzzyCompare(a.y, b.y))
+                        return a.y < b.y;
+                    return a.x < b.x;
+                });
+            bool rank = !byRead.isEmpty();
+            for (int i = 0; i < byRead.size() && rank; ++i)
+                rank = (byRead.at(i).rank == i + 1);
+            check(log, "热力图：序号徽标按阅读序从 1 连续", rank);
+        }
+        {
+            // 铺排结果**与输入顺序无关**（带内先按语义排序再铺）
+            QVector<HeatLayout::Card> shuffled = hFileCards;
+            std::reverse(shuffled.begin(), shuffled.end());
+            const QVector<HeatLayout::Card> laid2
+                = HeatLayout::layout(shuffled, hFileEdgesOut, 800, 600);
+            bool same = laid2.size() == hLaid.size();
+            for (int i = 0; same && i < hLaid.size(); ++i)
+                same = (laid2.at(i).id == hLaid.at(i).id)
+                    && qFuzzyCompare(laid2.at(i).x, hLaid.at(i).x)
+                    && qFuzzyCompare(laid2.at(i).y, hLaid.at(i).y);
+            check(log, "热力图：铺排结果与输入顺序无关（同一份数据画出来一样）", same);
+        }
+        {
+            // 分带：文件带在上、符号带在下（下钻层才有两带）
+            const QVector<HeatLayout::Card> drillLaid
+                = HeatLayout::layout(hDrillCards, QVector<HeatLayout::Edge>(), 800, 600);
+            bool banded = drillLaid.size() == 3;
+            if (banded) {
+                // 边界卡在独立的一带（layerIndex 更大），y 更大
+                int symLayer = -1, bndLayer = -1;
+                for (const HeatLayout::Card &c : drillLaid) {
+                    if (c.boundary)
+                        bndLayer = c.layerIndex;
+                    else if (symLayer < 0)
+                        symLayer = c.layerIndex;
+                }
+                banded = symLayer >= 0 && bndLayer > symLayer;
+            }
+            check(log, "热力图：分带有序（符号带在上、跨作用域边界带在下）", banded);
+        }
+
+        // ⑤ 重心扫描**真的跑了**（最容易悄悄摘掉的一段）
+        // 夹具：三个文件排成一行，a.c ↔ c.c 有边。名次序是 a,b,c；
+        // 重心扫描会把关联的两张卡重排到邻居重心一侧 —— 于是 a 的 x 跑到 c 的右边。
+        // 摘掉扫描 → a 仍在最左 → 这条判据必须变红。
+        {
+            CodeGraph g3;
+            auto addFile = [&g3](const QString &name) {
+                GraphNode n;
+                n.kind = GraphNodeKind::file;
+                n.id = QStringLiteral("f:src/") + name;
+                n.name = name;
+                n.path = QStringLiteral("src/") + name;
+                g3.nodes << n;
+                return g3.nodes.size() - 1;
+            };
+            addFile(QStringLiteral("a.c"));
+            addFile(QStringLiteral("b.c"));
+            addFile(QStringLiteral("c.c"));
+            const QHash<QString, int> hues3 = HeatLayout::huesFor(g3);
+            const QVector<HeatLayout::Card> scope3
+                = HeatLayout::scopeCards(g3, hues3, -1, QVector<HeatLayout::Edge>());
+            const QVector<HeatLayout::Edge> edges3 {
+                HeatLayout::Edge { QStringLiteral("f:src/a.c"), QStringLiteral("f:src/c.c"), 2,
+                    QStringLiteral("resolved") },
+            };
+            const QVector<HeatLayout::Card> laid3
+                = HeatLayout::layout(scope3, edges3, 800, 600);
+            double ax = 0, cx = 0;
+            bool found = laid3.size() == 3;
+            for (const HeatLayout::Card &c : laid3) {
+                if (c.id == QStringLiteral("f:src/a.c"))
+                    ax = c.x;
+                if (c.id == QStringLiteral("f:src/c.c"))
+                    cx = c.x;
+            }
+            check(log, "热力图：重心扫描生效（关联卡被重排到邻居重心侧）",
+                found && ax > cx);
+        }
+
+        // ⑥ 走线：端点贴在卡上、边不丢、曲线过端点
+        {
+            const QVector<HeatLayout::Route> hRoutes
+                = HeatLayout::routes(hLaid, hFileEdgesOut);
+            bool ends = hRoutes.size() == 1;
+            if (ends) {
+                const HeatLayout::Route &r = hRoutes.first();
+                ends = r.points.size() >= 2 && r.smoothed.size() >= 2
+                    && !r.smoothed.first().isNull() && !r.smoothed.last().isNull();
+            }
+            check(log, "热力图：走线有折线与平滑采样（边不丢）", ends);
+        }
+        {
+            // Catmull-Rom：过端点、点数 = 1 + (n-1)*per
+            const QVector<QPointF> pts { QPointF(0, 0), QPointF(10, 20), QPointF(30, 5),
+                QPointF(50, 40) };
+            const QVector<QPointF> sm = HeatLayout::catmull(pts, 8);
+            check(log, "热力图：曲线过首尾端点且采样数按段数给足",
+                sm.size() == 1 + (pts.size() - 1) * 8 && qFuzzyCompare(sm.first().x(), 0.0)
+                    && qFuzzyCompare(sm.first().y(), 0.0) && qFuzzyCompare(sm.last().x(), 50.0)
+                    && qFuzzyCompare(sm.last().y(), 40.0));
         }
     }
 

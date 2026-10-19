@@ -236,22 +236,28 @@ Result build(const Source &src, const QString &projectName)
     if (g.root >= 0)
         sortKids(g.root);
 
-    // ── 汇总卷积：rollN（子树疑点数）/ rollW（子树最高权重）/ fileCount ──
+    // ── 汇总卷积：rollN（子树疑点数）/ rollW（子树最高权重）/ rollWeightSum
+    //    （子树疑点**权重和** —— 热力图的置信度分数按它算）/ fileCount ──
     const auto rollup = [&g](const auto &self, int idx) -> void {
         GraphNode &n = g.nodes[idx];
         int cnt = n.ownFindings.size();
         int w = 0;
-        for (const GraphFinding &f : n.ownFindings)
+        int sum = 0;
+        for (const GraphFinding &f : n.ownFindings) {
             w = qMax(w, f.weight);
+            sum += f.weight;
+        }
         int files = 0;
         for (int k : n.kids) {
             self(self, k);
             cnt += g.nodes[k].rollN;
             w = qMax(w, g.nodes[k].rollW);
+            sum += g.nodes[k].rollWeightSum;
             files += (g.nodes[k].kind == GraphNodeKind::file ? 1 : g.nodes[k].fileCount);
         }
         g.nodes[idx].rollN = cnt;
         g.nodes[idx].rollW = w;
+        g.nodes[idx].rollWeightSum = sum;
         g.nodes[idx].fileCount = files;
     };
     if (g.root >= 0)

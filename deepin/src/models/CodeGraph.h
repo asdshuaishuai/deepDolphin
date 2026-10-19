@@ -67,6 +67,7 @@ struct GraphNode {
     // 汇总（自底向上卷积得出）。
     int rollN = 0;   ///< 子树疑点总数
     int rollW = 0;   ///< 子树最高权重（徽标档位色）
+    int rollWeightSum = 0; ///< 子树疑点**权重和**（热色的输入：置信度分数按罚分算）
     int fileCount = 0; ///< 子树文件数
 };
 

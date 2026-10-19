@@ -56,7 +56,11 @@ git -C "$FIX" init -q -b main . 2>/dev/null
 printf '# atlas\n\nUSER-SENTINEL 用户手写内容不许动\n' > "$FIX/README.md"
 # ⚠ 夹具必须带**源码**：没有源码的项目，arch 视图是空的（0 shapes / 0 hits /
 #   包围盒退化）—— scene 那组断言会整组空转，看着全绿其实什么都没验到。
-printf 'int main(void) { return 0; }\n' > "$FIX/src/main.c"
+# ⚠ main.c 里那个**跨文件调用**（compute 在 util.c）是第 14 组的原料：
+#   没有跨文件函数边，热力图的「跨作用域边界卡」就没有真实数据可验，
+#   那组断言会整组空转（看着全绿，其实什么都没验到）。
+printf 'int compute(int n);\nint main(void) {\n    return compute(21);\n}\n' > "$FIX/src/main.c"
+printf 'int compute(int n) {\n    return n * 2;\n}\n' > "$FIX/src/util.c"
 git -C "$FIX" add . 2>/dev/null
 GIT_AUTHOR_DATE='2026-10-03T09:00:00' GIT_COMMITTER_DATE='2026-10-03T09:00:00' \
     git -C "$FIX" commit -qm 'feat: 初始提交' 2>/dev/null
@@ -302,7 +306,7 @@ for b in bad:
     print('MISMATCH\t' + '\t'.join(str(x) for x in b))
 print('COUNT\t%d' % len(fns))
 " "$CLIENT_BIN" 2>/dev/null)"
-    E2E_N="$(printf '%s\n' "$E2E_OUT" | grep -c '^COUNT' || true)"
+    E2E_N="$(printf '%s\n' "$E2E_OUT" | grep '^COUNT' | head -1 | cut -f2 | tr -d '[:space:]')"
     E2E_BAD="$(printf '%s\n' "$E2E_OUT" | grep -c '^MISMATCH' || true)"
     if [ "$E2E_N" -eq 0 ]; then
         echo "  ✗ 符号 id 端到端：没取到可比对的符号（断言空转，必须先修取数）" >&2
@@ -317,6 +321,32 @@ print('COUNT\t%d' % len(fns))
         echo "  ✓ 符号 id 端到端：客户端对 ${E2E_N} 个真实符号造出的 id 与引擎完全一致"
         pass=$((pass+1))
     fi
+fi
+
+# 14. 三源**符号对齐**（热力图「跨作用域边界卡」的前提）。
+#     客户端用 graph tree 的 (路径,名字,行号) 造符号 id，用 graph functions 的
+#     引擎 id 认调用边。两边对不上（哪怕只差一个行号）→「调用方在不在作用域内」
+#     就判错，跨作用域引用会**静默消失**：热力图少画几张卡，用户看不出是契约漂移
+#     还是数据就这样 —— 这类症状最难查，所以要在契约层钉死。
+#     另附一条前提：夹具里确有**跨文件**函数边，否则这组是空转。
+ALIGN_JSON="$(printf '%s' "$TREE_JSON" | python3 -c "
+import json, sys
+t = json.load(sys.stdin)
+f = json.loads(sys.argv[1])
+print(json.dumps({'tree': t, 'fns': f}, ensure_ascii=False))
+" "$FNS_JSON" 2>/dev/null)"
+if [ -z "$ALIGN_JSON" ]; then
+    echo "  ✗ 第 14 组前提：两份 JSON 合不到一起（tree/functions 没取到）" >&2
+    fail=$((fail+1))
+else
+    check "代码图谱符号对齐：tree 与 functions 的符号集合逐条一致（差集为空）" \
+        "len(d['tree'].get('files',[]))>0 and len(d['fns'].get('functions',[]))>0 and \
+{(fl.get('path'), s.get('name'), s.get('line')) for fl in d['tree'].get('files',[]) for s in fl.get('symbols',[])} == \
+{(x.get('file'), x.get('name'), x.get('line')) for x in d['fns'].get('functions',[])}" \
+        "$ALIGN_JSON"
+    check "代码图谱跨文件调用边：夹具造得出跨文件 functionEdge（热力图边界卡的原料）" \
+        "any(e.get('from','').split(':')[1:2] != e.get('to','').split(':')[1:2] for e in d['fns'].get('functionEdges',[]))" \
+        "$ALIGN_JSON"
 fi
 
 echo "──── contract-check: $pass passed, $fail failed ────"

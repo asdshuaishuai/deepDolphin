@@ -182,7 +182,7 @@ if [ "$CANVAS_FAIL" -ne 0 ]; then
 fi
 echo "✓ Canvas2D 覆盖契约清单 ${CANVAS_N}/26 个方法；logic/ 与 models/ 零 QWidget 头；新文件均已登记构建"
 
-echo "› 9/10 架构图与 agent 工具表接线在（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
+echo "› 9/10 架构图 / agent 工具表 / 代码图谱+热力图接线在（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
 # 架构图链路分四段，任一段被摘掉都必须红：
 #   引擎取数（AppModel 调 graph arch --format scene）
 #   → 判定层（ArchViewport 视口/命中、ArchReceipt 回执提取）
@@ -249,10 +249,28 @@ arch_need "$SRC/src/ui/pages/ProjectDetailPage.cpp" 'codeGraphRequested' '详情
 arch_need "$SRC/src/ui/PanelWindow.cpp" '&ProjectDetailPage::codeGraphRequested' 'PanelWindow 接了代码图谱入口'
 arch_need "$SRC/src/ui/PanelWindow.cpp" 'showCodeGraph' 'PanelWindow 有开代码图谱窗的动作'
 arch_need "$SRC/src/ui/PanelWindow.cpp" 'CodeGraphDialog' 'PanelWindow 用的是代码图谱窗'
+
+# 热力图链路：判定（作用域切分 / 铺排 / 走线）→ 渲染（HeatmapWidget + Canvas2D）
+#   → 接线（左栏模式切换 + 堆叠页 + 下钻 + 点选）。
+# ⚠ 热力图是**左栏的另一种模式**，不是第三栏 —— 形状钉在左栏的堆叠页上。
+arch_need "$SRC/src/logic/HeatLayout.cpp" 'scopeCards' '判定层有作用域切分（文件层 / 下钻层）'
+arch_need "$SRC/src/logic/HeatLayout.cpp" 'layout' '判定层有卡片铺排'
+arch_need "$SRC/src/logic/HeatLayout.cpp" 'routes' '判定层有边走线'
+arch_need "$SRC/src/ui/HeatmapWidget.cpp" 'HeatLayout::layout' '画布经 HeatLayout 铺排'
+arch_need "$SRC/src/ui/HeatmapWidget.cpp" 'HeatLayout::routes' '画布经 HeatLayout 走线'
+arch_need "$SRC/src/ui/HeatmapWidget.cpp" 'Canvas2D' '画布走 D1 的 Canvas2D 内核（不自己造图形栈）'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'HeatmapWidget' '代码图谱窗挂了热力图'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '&HeatmapWidget::nodeSelected' '热力图点选信号接上了（→ 右栏详情）'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '&HeatmapWidget::drillChanged' '热力图下钻信号接上了（面包屑跟着走）'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_leftStack' '左栏是模式切换 + 堆叠页（热力图是左栏的另一种模式）'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_heat->setData' '热力图数据源接上了（与树同源）'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'HeatLayout::layout' 'SelfCheck 覆盖铺排'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'HeatLayout::routes' 'SelfCheck 覆盖走线'
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \
          src/logic/CodeGraphBuild.cpp src/ui/ArchCanvasWidget.cpp \
-         src/ui/dialogs/ArchDialog.cpp src/ui/dialogs/CodeGraphDialog.cpp; do
+         src/ui/dialogs/ArchDialog.cpp src/ui/dialogs/CodeGraphDialog.cpp \
+         src/logic/HeatLayout.cpp src/ui/HeatmapWidget.cpp; do
     if ! grep -qF "$f" "$SRC/CMakeLists.txt"; then
         echo "  ✗ 构建未登记：$f" >&2
         ARCH_FAIL=1
@@ -262,7 +280,7 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：取数/判定/渲染/接线任一段被摘掉" >&2
     exit 1
 fi
-echo "✓ 架构图 + agent 工具表接线完整（取数 → 判定 → 渲染 → 接线，${ARCH_N} 项）"
+echo "✓ 架构图 + agent 工具表 + 代码图谱/热力图接线完整（取数 → 判定 → 渲染 → 接线，${ARCH_N} 项）"
 
 echo "› 10/10 引擎契约门（真引擎沙箱；引擎缺席显式 SKIP 且不算通过）"
 # contract-check.sh 之前是**游离脚本** —— CI 从来没跑过它，契约漂移不会被拦。

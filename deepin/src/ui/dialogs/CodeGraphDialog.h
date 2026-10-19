@@ -25,7 +25,10 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QTextEdit;
 class QPlainTextEdit;
+class QStackedWidget;
 class FlatButton;
+class SegmentedButton;
+class HeatmapWidget;
 class AppModel;
 
 class CodeGraphDialog : public DDialog {
@@ -46,6 +49,10 @@ private:
     void applyVisibility();
     void onItemActivated(QTreeWidgetItem *item, int column);
     void onSearchChanged(const QString &text);
+    void onModeChanged(int id);
+    void onHeatNodeSelected(int nodeIdx);
+    void onHeatDrillChanged(int nodeIdx);
+    void updateHeatBreadcrumb();
     void showDetail();
     void showSource();
     void showConfidence();
@@ -66,6 +73,11 @@ private:
     FlatButton *m_openExport = nullptr;
     QLineEdit *m_search = nullptr;
     QTreeWidget *m_tree = nullptr;
+    QStackedWidget *m_leftStack = nullptr;
+    SegmentedButton *m_mode = nullptr;
+    HeatmapWidget *m_heat = nullptr;
+    QLabel *m_heatCrumb = nullptr;
+    FlatButton *m_heatBack = nullptr;
     QLabel *m_detailTitle = nullptr;
     QPlainTextEdit *m_source = nullptr;
     QTreeWidget *m_findings = nullptr;

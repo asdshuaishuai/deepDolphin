@@ -3,18 +3,24 @@
 #include "../../app/AppModel.h"
 #include "../../logic/ArchReceipt.h"
 #include "../../logic/CodeGraphBuild.h"
+#include "../../logic/HeatLayout.h"
 #include "../../models/CodeGraph.h"
 #include "../DesignTokens.h"
+#include "../HeatmapWidget.h"
 #include "../common/FlatButton.h"
+#include "../common/LegendRow.h"
 #include "../common/SecondaryLabel.h"
+#include "../common/SegmentedButton.h"
 
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QScrollArea>
 #include <QSet>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QTextCharFormat>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -118,17 +124,33 @@ CodeGraphDialog::CodeGraphDialog(const QString &projectName, AppModel *model, QW
     // ── 两栏 ──
     auto *split = new QSplitter(Qt::Horizontal, content);
 
-    // 左栏：搜索 + 列表树
+    // 左栏：模式切换（列表 / 热力图）+ 堆叠页
+    // 形状与 mac 同款：热力图是**左栏的另一种模式**，不是第三栏。
     auto *left = new QWidget(split);
     auto *lv = new QVBoxLayout(left);
     lv->setContentsMargins(0, 0, 0, 0);
     lv->setSpacing(DS::Spacing::xs);
-    m_search = new QLineEdit(left);
+
+    m_mode = new SegmentedButton(left);
+    m_mode->addButton(QStringLiteral("列表"), QStringLiteral("按目录树浏览符号"));
+    m_mode->addButton(QStringLiteral("热力图"), QStringLiteral("符号索引热力图：点文件卡下钻、点符号卡选中"));
+    m_mode->setChecked(0);
+    m_mode->onClicked = [this](int id) { onModeChanged(id); };
+    lv->addWidget(m_mode);
+
+    m_leftStack = new QStackedWidget(left);
+
+    // 页 0：搜索 + 列表树
+    auto *listPage = new QWidget(m_leftStack);
+    auto *listV = new QVBoxLayout(listPage);
+    listV->setContentsMargins(0, 0, 0, 0);
+    listV->setSpacing(DS::Spacing::xs);
+    m_search = new QLineEdit(listPage);
     m_search->setPlaceholderText(QStringLiteral("搜索文件或符号…"));
     m_search->setClearButtonEnabled(true);
     connect(m_search, &QLineEdit::textChanged, this, &CodeGraphDialog::onSearchChanged);
-    lv->addWidget(m_search);
-    m_tree = new QTreeWidget(left);
+    listV->addWidget(m_search);
+    m_tree = new QTreeWidget(listPage);
     m_tree->setHeaderHidden(true);
     m_tree->setUniformRowHeights(true);
     m_tree->setColumnCount(1);
@@ -156,7 +178,53 @@ CodeGraphDialog::CodeGraphDialog(const QString &projectName, AppModel *model, QW
             return;
         m_expanded.removeAll(g->graph.nodes.at(idx).id);
     });
-    lv->addWidget(m_tree, 1);
+    listV->addWidget(m_tree, 1);
+    m_leftStack->addWidget(listPage);
+
+    // 页 1：热力图（面包屑 + 画布 + 图例）
+    auto *heatPage = new QWidget(m_leftStack);
+    auto *heatV = new QVBoxLayout(heatPage);
+    heatV->setContentsMargins(0, 0, 0, 0);
+    heatV->setSpacing(DS::Spacing::xs);
+
+    auto *crumbRow = new QHBoxLayout;
+    crumbRow->setSpacing(DS::Spacing::xs);
+    m_heatBack = new FlatButton(heatPage);
+    m_heatBack->setText(QStringLiteral("返回文件层"));
+    m_heatBack->setToolTip(QStringLiteral("回到文件层热力图"));
+    connect(m_heatBack, &QPushButton::clicked, this, [this] {
+        if (m_heat)
+            m_heat->setDrill(-1);
+    });
+    m_heatBack->hide();
+    crumbRow->addWidget(m_heatBack);
+    m_heatCrumb = new SecondaryLabel(QString(), heatPage);
+    m_heatCrumb->setWordWrap(true);
+    crumbRow->addWidget(m_heatCrumb, 1);
+    heatV->addLayout(crumbRow);
+
+    m_heat = new HeatmapWidget(heatPage);
+    m_heat->setToolTip(QStringLiteral("点文件卡 → 下钻到符号层；点符号卡 → 右栏看详情"));
+    connect(m_heat, &HeatmapWidget::nodeSelected, this, &CodeGraphDialog::onHeatNodeSelected);
+    connect(m_heat, &HeatmapWidget::drillChanged, this, &CodeGraphDialog::onHeatDrillChanged);
+    // 滚动区：卡片铺完的实际高度由画布自己报（minimumSizeHint），
+    // 仓库一大就出竖向滚动条 —— 不用滚动条的话，后半张图根本看不到。
+    auto *heatScroll = new QScrollArea(heatPage);
+    heatScroll->setWidgetResizable(true);
+    heatScroll->setFrameShape(QFrame::NoFrame);
+    heatScroll->setWidget(m_heat);
+    heatV->addWidget(heatScroll, 1);
+
+    // 图例：热色三档是**契约色**（与 HTML 交付物逐字同色），不是 DS 令牌
+    auto *legend = new LegendRow(heatPage);
+    legend->setEntries({ { HeatLayout::heatColor(85), QStringLiteral("置信度高") },
+        { HeatLayout::heatColor(65), QStringLiteral("置信度中") },
+        { HeatLayout::heatColor(20), QStringLiteral("置信度低") },
+        { HeatLayout::idColor(30), QStringLiteral("身份色（边色）") } });
+    heatV->addWidget(legend);
+
+    m_leftStack->addWidget(heatPage);
+    lv->addWidget(m_leftStack, 1);
     split->addWidget(left);
 
     // 右栏：详情头 + 页签 + 详情体
@@ -259,6 +327,9 @@ void CodeGraphDialog::refreshData()
         showError(st.message);
         m_tree->clear();
         m_score->setText(QString());
+        if (m_heat)
+            m_heat->setData(nullptr);
+        updateHeatBreadcrumb();
         return;
     }
     if (st.state != LoadState::loaded) {
@@ -271,6 +342,10 @@ void CodeGraphDialog::refreshData()
     rebuildTree();
     updateScore();
     showDetail();
+    // 热力图的数据源与树同源（一次刷新，两种模式一致）
+    if (m_heat)
+        m_heat->setData(m_model ? m_model->codeGraphFor(m_project) : nullptr);
+    updateHeatBreadcrumb();
 }
 
 void CodeGraphDialog::rebuildTree()
@@ -301,7 +376,7 @@ void CodeGraphDialog::rebuildTree()
         item->setData(0, kNodeRole, row.node);
         item->setToolTip(0, n->kind == GraphNodeKind::sym
                 ? QStringLiteral("%1 · %2:%3").arg(n->symKind, n->path).arg(n->declLine)
-                : n->path);
+                : QStringLiteral("%1 · %2").arg(kindLabel(n->kind), n->path));
         // 疑点徽标：子树疑点数（0 不占位）
         if (n->rollN > 0) {
             item->setText(1, QString::number(n->rollN));
@@ -384,8 +459,63 @@ void CodeGraphDialog::onItemActivated(QTreeWidgetItem *item, int column)
     if (g) {
         const GraphNode &n = g->graph.nodes.at(idx);
         m_tab = n.kind == GraphNodeKind::sym ? DetailTab::source : DetailTab::confidence;
+        // 两种模式共享同一份选中（单一真相源）
+        if (m_heat)
+            m_heat->setSelected(n.id);
     }
     showDetail();
+}
+
+void CodeGraphDialog::onModeChanged(int id)
+{
+    if (!m_leftStack)
+        return;
+    m_leftStack->setCurrentIndex(id);
+    // 切到热力图：把列表的当前选中带过去（两种模式共享选中）
+    if (id == 1 && m_heat && m_selected >= 0) {
+        const CodeGraphBuild::Result *g = m_model ? m_model->codeGraphFor(m_project) : nullptr;
+        if (g && m_selected < g->graph.nodes.size())
+            m_heat->setSelected(g->graph.nodes.at(m_selected).id);
+    }
+}
+
+void CodeGraphDialog::onHeatNodeSelected(int nodeIdx)
+{
+    if (nodeIdx < 0)
+        return;
+    m_selected = nodeIdx;
+    const CodeGraphBuild::Result *g = m_model ? m_model->codeGraphFor(m_project) : nullptr;
+    if (g && nodeIdx < g->graph.nodes.size()) {
+        const GraphNode &n = g->graph.nodes.at(nodeIdx);
+        m_tab = n.kind == GraphNodeKind::sym ? DetailTab::source : DetailTab::confidence;
+    }
+    showDetail();
+}
+
+void CodeGraphDialog::onHeatDrillChanged(int nodeIdx)
+{
+    Q_UNUSED(nodeIdx);
+    updateHeatBreadcrumb();
+}
+
+void CodeGraphDialog::updateHeatBreadcrumb()
+{
+    if (!m_heatCrumb || !m_heatBack)
+        return;
+    const int drill = m_heat ? m_heat->drill() : -1;
+    if (drill < 0) {
+        m_heatBack->hide();
+        m_heatCrumb->setText(QStringLiteral("文件层 · 点文件卡下钻到符号层"));
+        return;
+    }
+    m_heatBack->show();
+    const CodeGraphBuild::Result *g = m_model ? m_model->codeGraphFor(m_project) : nullptr;
+    const GraphNode *f = g ? g->graph.node(drill) : nullptr;
+    if (!f) {
+        m_heatCrumb->setText(QStringLiteral("符号层"));
+        return;
+    }
+    m_heatCrumb->setText(QStringLiteral("%1 · %2 行 · 符号层").arg(f->path).arg(f->lines));
 }
 
 void CodeGraphDialog::onSearchChanged(const QString &text)

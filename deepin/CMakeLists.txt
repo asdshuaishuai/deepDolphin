@@ -94,6 +94,7 @@ add_executable(deepDolphin
     src/logic/ArchReceipt.cpp
     src/logic/AgentToolPlan.cpp
     src/logic/CodeGraphBuild.cpp
+    src/logic/HeatLayout.cpp
     # ── platform/ ──
     src/platform/AppService.cpp
     src/platform/AutostartManager.cpp
@@ -111,6 +112,7 @@ add_executable(deepDolphin
     src/ui/SidebarNav.cpp
     src/ui/WorkBar.cpp
     src/ui/ArchCanvasWidget.cpp
+    src/ui/HeatmapWidget.cpp
     src/ui/common/BusyRow.cpp
     src/ui/common/FlatButton.cpp
     src/ui/common/MarkdownView.cpp
