@@ -1,11 +1,13 @@
 #include "GeneralPane.h"
 #include "../../../app/AppModel.h"
 #include "../../../logic/ClientDecisions.h"
+#include "../../../logic/ArchReceipt.h"
 #include "../../../logic/EngineDoctor.h"
 #include "../../../platform/AutostartManager.h"
 #include "../../../platform/SysOpen.h"
 #include "../../DesignTokens.h"
 #include "../../common/SecondaryLabel.h"
+#include <DLineEdit>
 #include <DLog>
 #include <DPushButton>
 #include <DSwitchButton>
@@ -104,6 +106,99 @@ GeneralPane::GeneralPane(AppModel *model, QWidget *parent)
     doctorRow->addWidget(m_doctorButton);
     v->addWidget(doctorCard);
 
+    // ── 引擎配置卡（引擎 config）──
+    // 展示**引擎实际在用的策略**：浅更新只记前 N 个分支、文档备份留 N 份。
+    // 这两条是用户能直接看到后果的 —— 「这个分支怎么没更新」「备份怎么不见了」，
+    // 答案就在这里。用户不必去猜「是不是坏了」。
+    auto *configCard = new QWidget(this);
+    auto *configRow = new QHBoxLayout(configCard);
+    configRow->setSpacing(DS::Spacing::md);
+    auto *configCol = new QVBoxLayout;
+    auto *configTitle = new QLabel(QStringLiteral("引擎配置"), configCard);
+    configTitle->setFont(DS::font(DS::FontT::cardTitle));
+    configCol->addWidget(configTitle);
+    auto *configSub = new SecondaryLabel(
+        QStringLiteral("引擎当前实际在用的策略（改动在下次更新/备份时生效）。"), configCard);
+    configSub->setFont(DS::font(DS::FontT::label));
+    configCol->addWidget(configSub);
+    m_configBody = new QWidget(configCard);
+    auto *configBodyLayout = new QVBoxLayout(m_configBody);
+    configBodyLayout->setContentsMargins(0, 0, 0, 0);
+    configBodyLayout->setSpacing(DS::Spacing::xs);
+    m_configBody->hide();
+    configCol->addWidget(m_configBody);
+
+    // 可改的两个数字项（引擎只认这两个键是「数量」语义）
+    auto *editRow = new QHBoxLayout;
+    editRow->setSpacing(DS::Spacing::sm);
+    editRow->addWidget(new SecondaryLabel(QStringLiteral("浅更新分支上限"), configCard));
+    m_shallowInput = new DLineEdit(configCard);
+    m_shallowInput->setPlaceholderText(QStringLiteral("分支数"));
+    m_shallowInput->setMaximumWidth(90);
+    editRow->addWidget(m_shallowInput);
+    editRow->addWidget(new SecondaryLabel(QStringLiteral("文档备份份数"), configCard));
+    m_backupInput = new DLineEdit(configCard);
+    m_backupInput->setPlaceholderText(QStringLiteral("份数"));
+    m_backupInput->setMaximumWidth(90);
+    editRow->addWidget(m_backupInput);
+    // 用户手改输入框 → 记脏（重读时别把没写回的值冲掉）
+    connect(m_shallowInput, &DLineEdit::textEdited, this, [this] { m_configInputsDirty = true; });
+    connect(m_backupInput, &DLineEdit::textEdited, this, [this] { m_configInputsDirty = true; });
+
+    auto *applyConfig = new DPushButton(QStringLiteral("应用"), configCard);
+    applyConfig->setToolTip(QStringLiteral("写回引擎配置（引擎 config set）"));
+    connect(applyConfig, &DPushButton::clicked, this, [this] {
+        if (!m_model)
+            return;
+        m_configError->hide();
+        // ⚠ 客户端先校验一遍：引擎也会拒，但那是**事后**（用户看到的是一句
+        //   引擎的报错）。这里先拦一道，界面立刻说清是哪个值不对。
+        bool ok = true;
+        const int shallow = m_shallowInput->text().trimmed().toInt(&ok);
+        if (!ok || shallow < 0) {
+            m_configError->setText(QStringLiteral("浅更新分支上限要是非负整数。"));
+            m_configError->show();
+            return;
+        }
+        bool ok2 = true;
+        const int backup = m_backupInput->text().trimmed().toInt(&ok2);
+        if (!ok2 || backup < 0) {
+            m_configError->setText(QStringLiteral("文档备份份数要是非负整数。"));
+            m_configError->show();
+            return;
+        }
+        m_model->setEngineConfig(QStringLiteral("update.maxShallowBranches"),
+            QString::number(shallow));
+        m_model->setEngineConfig(QStringLiteral("update.backupKeep"), QString::number(backup));
+    });
+    editRow->addWidget(applyConfig);
+    editRow->addStretch(1);
+    configCol->addLayout(editRow);
+
+    auto *configNote = new SecondaryLabel(
+        QStringLiteral("浅更新只记前 N 个分支的进度 —— 别的分支没动是撞上了上限，不是坏了。"),
+        configCard);
+    configNote->setFont(DS::font(DS::FontT::label));
+    configNote->setWordWrap(true);
+    configCol->addWidget(configNote);
+
+    m_configError = new QLabel(configCard);
+    m_configError->setFont(DS::font(DS::FontT::label));
+    m_configError->setWordWrap(true);
+    m_configError->setStyleSheet(
+        QStringLiteral("color: %1;").arg(DS::semColor(DS::SemColor::red).name()));
+    m_configError->hide();
+    configCol->addWidget(m_configError);
+
+    configRow->addLayout(configCol, 1);
+    m_configButton = new DPushButton(QStringLiteral("读取引擎配置"), configCard);
+    m_configButton->setToolTip(QStringLiteral("读取引擎当前配置（引擎 config list）"));
+    // ⚠ 这行**故意写成单行**：接线门要能精确区分「按钮 → 读」与
+    //   「打开本页 → 自动读」两个调用点（写成多行就区分不开了）。
+    connect(m_configButton, &DPushButton::clicked, this, [this] { reloadEngineConfig(); });
+    configRow->addWidget(m_configButton);
+    v->addWidget(configCard);
+
     v->addStretch(1);
 
     reflectSystemState(AutostartManager::isEnabled());
@@ -136,9 +231,22 @@ GeneralPane::GeneralPane(AppModel *model, QWidget *parent)
             m_doctorButton->setEnabled(true);
             applyDoctorReport(r);
         });
+        connect(m_model, &AppModel::engineConfigChanged, this, [this] { applyEngineConfig(); });
+        connect(m_model, &AppModel::engineConfigSaved, this, [this](bool ok, const QString &text) {
+            if (ok) {
+                // 写回成功 → 输入框不再是「待写」状态，后续重读可以正常回填
+                m_configInputsDirty = false;
+                m_configError->hide();
+                return;
+            }
+            // 失败原因**原样**给引擎的（引擎自己会校验值：非整数会被拒）。
+            m_configError->setText(ArchReceipt::plain(text));
+            m_configError->show();
+        });
     } else {
         // 没有模型就**禁用按钮**：给个点了没反应的入口比不给更糟
         m_doctorButton->setEnabled(false);
+        m_configButton->setEnabled(false);
     }
 }
 
@@ -212,6 +320,74 @@ void GeneralPane::applyDoctorReport(const EngineDoctor::Report &r)
     m_doctorBody->setVisible(!r.checks.isEmpty());
 }
 
+void GeneralPane::applyEngineConfig()
+{
+    if (!m_model)
+        return;
+    // 逐行重建（旧行全部清掉）：只读项每次都可能不同。
+    if (m_configBody->layout()) {
+        auto *lay = m_configBody->layout();
+        while (lay->count() > 0) {
+            QLayoutItem *it = lay->takeAt(0);
+            if (it->widget())
+                it->widget()->deleteLater();
+            delete it;
+        }
+    }
+    auto *bodyLayout = qobject_cast<QVBoxLayout *>(m_configBody->layout());
+    if (!bodyLayout)
+        bodyLayout = new QVBoxLayout(m_configBody);
+
+    const auto addLine = [&](const QString &text) {
+        auto *l = new SecondaryLabel(text, m_configBody);
+        l->setFont(DS::font(DS::FontT::label));
+        l->setWordWrap(true);
+        bodyLayout->addWidget(l);
+    };
+
+    const LoadStateBox &st = m_model->engineConfigState();
+    if (st.state == LoadState::loading) {
+        addLine(QStringLiteral("正在读取引擎配置…"));
+        m_configBody->show();
+        return;
+    }
+    if (st.state == LoadState::failed) {
+        addLine(QStringLiteral("读不出来：%1").arg(st.message));
+        m_configBody->show();
+        return;
+    }
+
+    const EngineConfig::Config &c = *m_model->engineConfig();
+    if (!c.ok) {
+        addLine(c.error.isEmpty() ? QStringLiteral("引擎配置读不出来。") : c.error);
+        m_configBody->show();
+        return;
+    }
+
+    // 只读项：界面语言（引擎侧）、受管文档、扫描根。
+    // ⚠ **不展示引擎的 ai**（恒为空对象）—— AI 设置是客户端的事（app/Settings），
+    //   两边各有一份会形成两个真相源。
+    if (!c.language.isEmpty())
+        addLine(QStringLiteral("界面语言（引擎侧）：%1").arg(c.language));
+    addLine(QStringLiteral("受管文档：%1")
+                .arg(c.docs.isEmpty() ? QStringLiteral("（无）")
+                                       : c.docs.join(QStringLiteral("、"))));
+    addLine(QStringLiteral("扫描根：%1")
+                .arg(c.roots.isEmpty() ? QStringLiteral("（未设置）")
+                                       : c.roots.join(QStringLiteral("、"))));
+    m_configBody->show();
+
+    // 可改项回填引擎**当前真的在用**的值（缺项就留空，不填 0 —— 那可能是合法值 0）。
+    // ⚠ 用户手改过但还没写回时**不回填** —— 回填会把用户刚填的值冲掉
+    //   （点「应用」写回第一个键会触发一次重读，第二个还没写回的值就没了）。
+    if (!m_configInputsDirty) {
+        if (c.hasMaxShallowBranches())
+            m_shallowInput->setText(QString::number(c.maxShallowBranches));
+        if (c.hasBackupKeep())
+            m_backupInput->setText(QString::number(c.backupKeep));
+    }
+}
+
 void GeneralPane::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
@@ -219,4 +395,13 @@ void GeneralPane::showEvent(QShowEvent *event)
     const QString path = DLogManager::getlogFilePath();
     m_logPath->setText(path.isEmpty() ? QStringLiteral("日志文件路径不可用。") : path);
     m_logButton->setEnabled(!path.isEmpty());
+    // 引擎配置是**引擎当前在用的策略**（别的进程/命令行也可能改过它）——
+    // 每次打开这一页都重读一次，别让用户看着一份过期的值做决定。
+    reloadEngineConfig();
+}
+
+void GeneralPane::reloadEngineConfig()
+{
+    if (m_model)
+        m_model->loadEngineConfig();
 }

@@ -656,5 +656,87 @@ sys.exit(0 if isinstance(d, dict) and 'checks' in d else 1)
     fi
 fi
 
+# 19. 引擎配置（config list / get / set）。
+#     三处最容易「错得毫无声响」：
+#     ① **`backupKeep: 0` 是合法值**（明确不保留备份），客户端若拿 0 当「引擎没发」
+#        的哨兵，界面会把「明确不要备份」说成「不知道留几份」—— 意思完全相反。
+#     ② **引擎的 `ai` 恒为空对象**（引擎自报「AI 由客户端层负责，引擎保持 AI 无关」）。
+#        客户端若从引擎 config 读 AI 设置，就与客户端自己的 AI 设置形成**两个真相源**。
+#     ③ **可写键只有四个**（language / update.backupKeep / update.maxShallowBranches /
+#        roots）—— 界面给的键必须是引擎认的那些，给错键必然失败。
+#     另注：`config set` 的回执走 **stderr**（与 `report` 同款），Text 契约要两路兜底。
+CFG_JSON="$("$BIN" config list --json 2>/dev/null)"
+if [ -z "$CFG_JSON" ]; then
+    echo "  ✗ 第 19 组前提：引擎没吐出 config 载荷" >&2
+    fail=$((fail+1))
+else
+    check "引擎配置：顶层键齐全（version/language/roots/ai/update）" \
+        "all(k in d for k in ['version','language','roots','ai','update'])" \
+        "$CFG_JSON"
+    check "引擎配置：update 四键齐全（docs/agentDocCandidates/backupKeep/maxShallowBranches）" \
+        "all(k in d.get('update',{}) for k in ['docs','agentDocCandidates','backupKeep','maxShallowBranches'])" \
+        "$CFG_JSON"
+    check "引擎配置：backupKeep / maxShallowBranches 是**数字**（客户端要按数字校验）" \
+        "isinstance(d.get('update',{}).get('backupKeep'), int) and isinstance(d.get('update',{}).get('maxShallowBranches'), int)" \
+        "$CFG_JSON"
+    check "引擎配置：roots 与 docs 是数组（空也发）" \
+        "isinstance(d.get('roots'), list) and isinstance(d.get('update',{}).get('docs'), list)" \
+        "$CFG_JSON"
+    check "引擎配置：引擎的 **ai 恒为空对象**（引擎 AI 无关；客户端不许从引擎读 AI 设置）" \
+        "d.get('ai') == {}" \
+        "$CFG_JSON"
+
+    # config get：stdout 是 **JSON 值**（不是人话）—— 走 Json 契约
+    CFG_GET="$("$BIN" config get language 2>/dev/null)"
+    check "引擎配置：config get 返回 JSON 值（不是人话；走 Json 契约）" \
+        "isinstance(d, str) and d != ''" \
+        "$CFG_GET"
+
+    # ⚠ config set 的回执在 **stderr**（实测 2026-10-19，与 report 同款）
+    "$BIN" config set update.backupKeep 30 >"$SANDBOX/cfg.out" 2>"$SANDBOX/cfg.err"
+    CFG_SET_OUT="$(cat "$SANDBOX/cfg.out")"
+    CFG_SET_ERR="$(cat "$SANDBOX/cfg.err")"
+    CFG_SET_JSON="$(python3 -c "
+import json, sys
+out = open(sys.argv[1], encoding='utf-8', errors='replace').read()
+err = open(sys.argv[2], encoding='utf-8', errors='replace').read()
+print(json.dumps({'out': out, 'err': err}, ensure_ascii=False))
+" "$SANDBOX/cfg.out" "$SANDBOX/cfg.err" 2>/dev/null)"
+    check "引擎配置：config set 的回执写在 **stderr**（Text 契约要两路兜底，只认 stdout 会把成功说成失败）" \
+        "not d['out'].strip() and 'backupKeep' in d['err']" \
+        "$CFG_SET_JSON"
+    # 坏值必须被引擎拒（客户端界面靠这个说清「哪个值不对」）
+    CFG_BAD="$("$BIN" config set update.backupKeep abc 2>&1)"
+    check_text "引擎配置：config set 拒绝非整数值（客户端本地也拦一道，但引擎是最终裁判）" \
+        '整数' "$CFG_BAD"
+    # 未知键必须被引擎拒并列出可用键（客户端的键集要与之一致）
+    CFG_UNKNOWN="$("$BIN" config set nosuchkey 1 2>&1)"
+    check_text "引擎配置：config set 拒绝未知键并列出可用键（客户端键集须与之一致）" \
+        '未知配置键' "$CFG_UNKNOWN"
+
+    # 端到端：客户端解析真载荷
+    if [ ! -x "$CLIENT_BIN" ]; then
+        echo "  ‣ SKIP 第 19 组端到端：找不到客户端二进制 $CLIENT_BIN"
+        echo "    ‣ 本条**未验证**，不算通过"
+    else
+        CFG_VERDICT="$(printf '%s' "$CFG_JSON" | "$CLIENT_BIN" --engine-config-parse 2>/dev/null)"
+        check "引擎配置端到端：客户端对真载荷解析出同一组值（版本/语言/文档数/两个数字）" \
+            "d.get('ok') is True and d.get('version') == 1 and d.get('language') == 'zh' and d.get('docs') > 0 and d.get('backupKeep') > 0 and d.get('maxShallowBranches') > 0" \
+            "$CFG_VERDICT"
+        # 回执净化端到端：真回执（带色码）喂客户端，出来的是干净的一句话
+        CFG_PLAIN="$(printf '%s' "$CFG_SET_ERR" | "$CLIENT_BIN" --receipt-plain 2>/dev/null)"
+        if [ -z "$CFG_PLAIN" ]; then
+            echo "  ✗ 引擎配置端到端：客户端把真回执净化后空了（界面会什么都不显示）" >&2
+            fail=$((fail+1))
+        elif printf '%s' "$CFG_PLAIN" | grep -q 'backupKeep'; then
+            echo "  ✓ 引擎配置端到端：客户端把真回执净化成干净的一句话（无 ANSI 残留）"
+            pass=$((pass+1))
+        else
+            echo "  ✗ 引擎配置端到端：客户端净化后的回执内容不对：$CFG_PLAIN" >&2
+            fail=$((fail+1))
+        fi
+    fi
+fi
+
 echo "──── contract-check: $pass passed, $fail failed ────"
 [ "$fail" -eq 0 ]

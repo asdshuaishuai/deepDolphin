@@ -218,6 +218,49 @@ arch_need "$SRC/src/ui/PanelWindow.cpp" '&AppModel::reportExported' 'PanelWindow
 arch_need "$SRC/src/main.cpp" '--doctor-parse' '无头 flag 能把 doctor 载荷判成档（契约门用）'
 arch_need "$SRC/src/main.cpp" '--receipt-file-path' '无头 flag 能从回执抽落盘路径（契约门用）'
 
+# 引擎配置（config list / config set）链路：判定（EngineConfig 纯函数）
+#   → 取数（引擎 config list --json）→ 写（引擎 config set，回执型）
+#   → 接线（设置·通用页「引擎配置」卡）。
+arch_need "$SRC/src/logic/EngineConfig.cpp" 'Config parse' '判定层有配置载荷解析'
+arch_need "$SRC/src/logic/EngineConfig.cpp" 'writableKeys' '判定层有可写键清单（与引擎同一份）'
+arch_need "$SRC/src/logic/EngineConfig.cpp" 'isWritable' '判定层能判键可不可写'
+arch_need "$SRC/src/app/AppModel.h" 'loadEngineConfig' 'AppModel 暴露 loadEngineConfig'
+arch_need "$SRC/src/app/AppModel.h" 'setEngineConfig' 'AppModel 暴露 setEngineConfig'
+arch_need "$SRC/src/app/AppModel.h" 'engineConfigChanged' 'AppModel 有配置变化信号'
+arch_need "$SRC/src/app/AppModel.h" 'engineConfigSaved' 'AppModel 有配置写入回执信号'
+arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("config"\), *QStringLiteral\("list"\)' 'AppModel 调引擎 config list'
+arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("config"\), *QStringLiteral\("set"\)' 'AppModel 调引擎 config set'
+# ⚠ config set 是**回执型命令**（回执在 stderr）→ 必须走 Text 契约。
+#   拿 callJson 去收，exit==0 也会被判成「引擎输出不是合法 JSON」—— 成功报成失败。
+arch_need "$SRC/src/app/AppModel.cpp" 'callText\(\{ *QStringLiteral\("config"\), *QStringLiteral\("set"\)' 'config set 走 Text 契约（callText）'
+# 键白名单：客户端先拦一道，界面才不会给用户一个引擎根本不认的键。
+arch_need "$SRC/src/app/AppModel.cpp" 'EngineConfig::isWritable\(key\)' 'setEngineConfig 有键白名单'
+# ⚠ `res.receipt` 在 AppModel 里有多处（架构图/索引/报告都读它）——
+#   盯泛化的 `res\.receipt` 的话，摘掉配置这一处门照样绿。故盯到本行。
+arch_need "$SRC/src/app/AppModel.cpp" 'emit engineConfigSaved\(true, res\.receipt\);' '配置写入读 receipt（不是 stdOut）'
+# 接线：设置页的「引擎配置」卡 —— 盯构造点与调用点。
+arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'new DPushButton\(QStringLiteral\("读取引擎配置"\)' '设置页真的造了「读取引擎配置」按钮'
+# ⚠ 「读取引擎配置」有**两个**调用点（按钮 / 打开本页自动读）。盯名字会互相顶替：
+#   摘掉其中一处，门照样绿（同名调用点替另一个顶了）—— 这是第五次同类漏洞。
+#   故分别盯：**按钮 → 读**（单行 connect，正则含 connect 头）与 **打开本页 → 读**
+#   （整行独占的正则），再盯**读的方法体**真的调了引擎。
+arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'connect\(m_configButton, &DPushButton::clicked, this, \[this\] \{ reloadEngineConfig\(\); \}\);' '「读取引擎配置」按钮真的接上了读'
+arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" '^[[:space:]]*reloadEngineConfig\(\);[[:space:]]*$' '打开设置·通用页会自动读一次配置'
+arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'm_model->loadEngineConfig\(\)' '读取引擎配置的方法真的调了引擎 config list'
+# ⚠ 同理：两个可写键是**两次**调用。只盯 `setEngineConfig(` 的话，摘掉其中
+#   一次调用门照样绿。故按键分别盯。
+arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'setEngineConfig\(QStringLiteral\("update\.maxShallowBranches"\)' '设置页真的写回了分支上限'
+arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'setEngineConfig\(QStringLiteral\("update\.backupKeep"\)' '设置页真的写回了备份份数'
+arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" '&AppModel::engineConfigChanged' '设置页接了配置变化信号'
+arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" '&AppModel::engineConfigSaved' '设置页接了配置写入回执'
+arch_need "$SRC/src/main.cpp" '--engine-config-parse' '无头 flag 能把 config 载荷判成值（契约门用）'
+arch_need "$SRC/src/main.cpp" '--receipt-plain' '无头 flag 能把回执净化成干净文本（契约门用）'
+# 用户手改输入框后，重读**不得回填**（否则点「应用」写回第一个键会触发重读，
+# 把用户刚填的第二个还没写回的值冲掉 → 用户以为「改了没用」而反复点）。
+arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'if \(!m_configInputsDirty\)' '手改未写回的输入框不被重读冲掉'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'EngineConfig::parse' 'SelfCheck 覆盖配置解析'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'EngineConfig::writableKeys' 'SelfCheck 覆盖可写键清单'
+
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \
          src/logic/CodeGraphBuild.cpp src/ui/ArchCanvasWidget.cpp \
@@ -226,7 +269,8 @@ for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToo
          src/logic/PatchCheck.cpp src/ui/dialogs/PatchCheckDialog.cpp \
          src/logic/DocPages.cpp src/ui/dialogs/DocsDialog.cpp \
          src/logic/SyntaxHighlight.cpp src/ui/CodeHighlighter.cpp \
-         src/logic/GraphInsight.cpp src/logic/EngineDoctor.cpp; do
+         src/logic/GraphInsight.cpp src/logic/EngineDoctor.cpp \
+         src/logic/EngineConfig.cpp; do
     # ⚠ 必须**整词**匹配：`grep -qF "$f"` 是子串匹配，把登记项改成
     #   `src/logic/EngineDoctor.cpp.disabled` 照样命中 —— 门绿着，文件却没编进去。
     #   负控实测过这一条（假阴性）。故用「前后是行首/行尾或空白」的精确匹配。

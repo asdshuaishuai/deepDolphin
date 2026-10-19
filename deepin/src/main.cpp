@@ -19,6 +19,7 @@
 #include "logic/AgentToolPlan.h"
 #include "logic/ArchReceipt.h"
 #include "logic/CodeGraphBuild.h"
+#include "logic/EngineConfig.h"
 #include "logic/EngineDoctor.h"
 #include "logic/SyntaxHighlight.h"
 #include "logic/Liveness.h"
@@ -360,6 +361,50 @@ int main(int argc, char *argv[])
         fprintf(stdout, "%s\n", qPrintable(path));
         fflush(stdout);
         return path.isEmpty() ? 1 : 0;
+    }
+    if (rawArgs.contains(QStringLiteral("--engine-config-parse"))) {
+        // 客户端对 `config list --json` 载荷的判定结果（单一真相源在 logic/EngineConfig）。
+        // 契约检查拿**真引擎**的载荷喂它 —— 客户端与引擎各认各的键时，
+        // 自造夹具验的是另一回事。
+        // 用法：deepDolphin --engine-config-parse < config.json
+        QFile in;
+        in.open(stdin, QIODevice::ReadOnly);
+        const QByteArray raw = in.readAll();
+        QJsonParseError perr{};
+        const QJsonDocument doc = QJsonDocument::fromJson(raw, &perr);
+        EngineConfig::Config rep;
+        if (perr.error != QJsonParseError::NoError || !doc.isObject()) {
+            rep.ok = false;
+            rep.error = QStringLiteral("引擎配置载荷不是 JSON 对象");
+        } else {
+            rep = EngineConfig::parse(doc.object());
+        }
+        QJsonObject out;
+        out.insert(QStringLiteral("ok"), rep.ok);
+        out.insert(QStringLiteral("version"), rep.version);
+        out.insert(QStringLiteral("language"), rep.language);
+        out.insert(QStringLiteral("roots"), rep.roots.size());
+        out.insert(QStringLiteral("docs"), rep.docs.size());
+        out.insert(QStringLiteral("backupKeep"), rep.backupKeep);
+        out.insert(QStringLiteral("maxShallowBranches"), rep.maxShallowBranches);
+        out.insert(QStringLiteral("summary"), EngineConfig::summary(rep));
+        fprintf(stdout, "%s\n",
+            qPrintable(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact))));
+        fflush(stdout);
+        return rep.ok ? 0 : 1;
+    }
+    if (rawArgs.contains(QStringLiteral("--receipt-plain"))) {
+        // 回执净化：剥掉 ANSI 颜色码后打印（界面显示回执前走的就是这一步）。
+        // 契约检查拿**真引擎**的回执喂它 —— 引擎的 `report` / `config set`
+        // 回执带色码（引擎不认 NO_COLOR），裸显示是「[32m✓[0m …」。
+        // 用法：deepDolphin --receipt-plain < receipt.txt
+        QFile in;
+        in.open(stdin, QIODevice::ReadOnly);
+        const QString text = QString::fromUtf8(in.readAll());
+        const QString plainText = ArchReceipt::plain(text).trimmed();
+        fprintf(stdout, "%s\n", qPrintable(plainText));
+        fflush(stdout);
+        return plainText.isEmpty() ? 1 : 0;
     }
     if (rawArgs.contains(QStringLiteral("--platform-probe"))) {
         // 必须留在无头分支：否则未知 flag 落进 GUI 主路径单实例常驻，ci.sh 步骤 4 挂死

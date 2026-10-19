@@ -19,6 +19,7 @@
 #include "../models/DocsEnvelope.h"
 #include "../models/GitOpResponse.h"
 #include "../logic/CodeGraphBuild.h"
+#include "../logic/EngineConfig.h"
 #include "../logic/EngineDoctor.h"
 #include "../logic/GraphInsight.h"
 #include "../models/GraphScene.h"
@@ -251,6 +252,17 @@ public:
     /// 导出 Markdown 进度报告（引擎 report <项目>；回执型命令，stdout 是人话）。
     void exportReport(const QString &name);
 
+    // ── 引擎配置（config list / config set）──
+    /// 读取引擎配置（引擎 `config list --json`）。
+    /// 展示的是**引擎实际在用的策略**（浅更新分支上限 / 文档备份份数 / 受管文档 /
+    /// 扫描根），不是客户端自己的设置 —— 两边刻意分开，避免两个真相源。
+    void loadEngineConfig();
+    /// 改一个引擎配置键（引擎 `config set <键> <值>`；**回执型命令，回执在 stderr**）。
+    /// ⚠ 键必须在 EngineConfig::writableKeys() 里 —— 引擎对未知键直接报错。
+    void setEngineConfig(const QString &key, const QString &value);
+    LoadStateBox engineConfigState() const { return m_engineConfigState; }
+    const EngineConfig::Config *engineConfig() const { return &m_engineConfig; }
+
 signals:
     void projectsChanged();
     void dashboardChanged();
@@ -275,6 +287,10 @@ signals:
     ///   还会触发画布重载），报告回执混进去会让架构图窗显示报告的回执、
     ///   甚至把它当成「架构已生成」而重载画布 —— 两个项目的窗还会串台。
     void reportExported(bool ok, const QString &project, const QString &receipt);
+    /// 引擎配置变化（读或写完都发）。
+    void engineConfigChanged();
+    /// 引擎配置写入的回执（ok=false 时 text 是引擎给的原因原文）。
+    void engineConfigSaved(bool ok, const QString &text);
     /// 图谱三件套的结果就绪（都带项目名；符号级的额外带符号名）。
     void overviewChanged(const QString &name);
     void symbolDetailChanged(const QString &name, const QString &symbolName);
@@ -345,6 +361,8 @@ private:
     QMap<QString, GraphInsight::SymbolDetail> m_symbolDetails;
     QMap<QString, GraphInsight::Impact> m_impacts;
     EngineDoctor::Report m_doctor;
+    EngineConfig::Config m_engineConfig;
+    LoadStateBox m_engineConfigState;
     QMap<QString, QString> m_projectLoadErrors;
 
     QString m_lastError;

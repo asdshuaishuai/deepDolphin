@@ -884,6 +884,58 @@ void AppModel::exportReport(const QString &name)
         });
 }
 
+// ── 引擎配置（config list / config set）──
+
+void AppModel::loadEngineConfig()
+{
+    m_engineConfigState = { LoadState::loading, QString() };
+    emit engineConfigChanged();
+    // `config list --json` 是 **Json 契约**（stdout 是一份 JSON 对象）。
+    m_cli->callJson({ QStringLiteral("config"), QStringLiteral("list"),
+                        QStringLiteral("--json") },
+        EngineTimeouts::Status, [this](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                m_engineConfigState = { LoadState::failed,
+                    res.ok() ? QStringLiteral("引擎配置输出不是 JSON 对象")
+                             : res.error.userMessage() };
+                emit engineConfigChanged();
+                return;
+            }
+            const EngineConfig::Config c = EngineConfig::parse(res.payload->object());
+            if (!c.ok) {
+                m_engineConfigState = { LoadState::failed, c.error };
+                emit engineConfigChanged();
+                return;
+            }
+            m_engineConfig = c;
+            m_engineConfigState = { LoadState::loaded, QString() };
+            emit engineConfigChanged();
+        });
+}
+
+void AppModel::setEngineConfig(const QString &key, const QString &value)
+{
+    // 键白名单在客户端也卡一道：引擎对未知键会报错，但那是**事后**；
+    // 客户端先拦一道，界面就不会给用户一个必然失败的键。
+    if (!EngineConfig::isWritable(key)) {
+        emit engineConfigSaved(false, QStringLiteral("引擎不认这个配置键：%1").arg(key));
+        return;
+    }
+    // ⚠ 回执型命令，**回执在 stderr**（实测 2026-10-19：`config set` 与 `report` 同款）。
+    //   走 Text 契约（callText），回执由 EngineCli::receiptText 两路兜底取回。
+    m_cli->callText({ QStringLiteral("config"), QStringLiteral("set"), key, value },
+        EngineTimeouts::Status, [this, key](const EngineCli::EngineResult &res) {
+            if (!res.ok()) {
+                emit engineConfigSaved(false, res.error.userMessage());
+                return;
+            }
+            // 写完重读 —— 界面显示的必须是**引擎当前真的在用的值**，
+            // 不是客户端刚发过去的值（引擎可能做了钳制或改写）。
+            loadEngineConfig();
+            emit engineConfigSaved(true, res.receipt);
+        });
+}
+
 // ── 图谱三件套（引擎 graph overview / symbol / impact）──
 
 void AppModel::loadOverview(const QString &name)

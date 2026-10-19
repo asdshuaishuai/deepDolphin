@@ -48,6 +48,7 @@ moonGit（仓颉引擎，仓内别名 deepgit）项目群进度客户端的 Linu
 | **文档完整性校验（引擎 `verify`）——mac 端暂无对位** | 详情页「文档完整性」卡：四态（通过 / 不一致 / **无法判定** / 缺失）+ 引擎 note 原样转述（缺失档带备份路径） | `models/VerifyEnvelope.h`；`logic/DocumentIntegrity.{h,cpp}`；`AppModel::loadVerify` |
 | **引擎自检（引擎 `doctor`）——mac 端暂无对位** | 设置·通用页「环境自检」卡：按引擎口径的 `problems` 判档（**退出码 1 也是有效报告**；`result` 是自由文本不按 `=="OK"` 判健康；缺 `problems` 键记「未知」） | `logic/EngineDoctor.{h,cpp}`；`AppModel::runDoctor`；`panes/GeneralPane` |
 | **进度报告导出（引擎 `report`）——mac 端暂无对位** | 详情页页头「导出报告」入口 + 「进度报告」卡：回执 + 落盘 .md 路径 + 「打开报告」（抽不到路径就不给坏按钮） | `logic/ArchReceipt`（`filePath` / `plain`）；`AppModel::exportReport`；`pages/ProjectDetailPage` |
+| **引擎配置（引擎 `config`）——mac 端暂无对位** | 设置·通用页「引擎配置」卡：浅更新分支上限 / 文档备份份数 / 受管文档 / 扫描根；前两项可改（经引擎 `config set`） | `logic/EngineConfig.{h,cpp}`；`AppModel::loadEngineConfig` / `setEngineConfig`；`panes/GeneralPane` |
 
 ## 快捷键映射表
 
@@ -870,6 +871,14 @@ deepin 接进 GUI 属**领先 mac**。
 | 148 | **新增两个无头 flag**（`--doctor-parse` / `--receipt-file-path`） | 契约门第 18 组要拿**真引擎**的载荷/回执喂客户端逐条对判定结果 —— 自造夹具验的是另一回事（引擎形状变了、客户端没跟上，自造夹具照样全绿）。与 `--agent-tool-names` / `--syntax-languages` 同款理由 | 无 |
 | 149 | **接线门抽成独立脚本 `scripts/ci-wiring.sh`**（ci.sh 第 9 门调它） | 改接线时要能秒级验（不用跑完整个 ci.sh —— 截图矩阵最慢）；更要紧的是**负控能精确打这一门**（门内嵌在 ci.sh 里时，负控得跑整条 CI 才看得到红） | 多一个脚本（无） |
 | 150 | **构建登记检查改整词匹配**（`grep -qE "(^|\s)$f(\s|$)"` 而不是 `grep -qF "$f"`） | `grep -qF` 是**子串**匹配：把登记项改成 `src/logic/EngineDoctor.cpp.disabled` 照样命中 —— 门绿着，文件却没编进去。负控实测出的假阴性 | 无 |
+| 151 | **引擎配置（`config list`）接进设置·通用页**：展示「浅更新只记前 N 个分支」「文档备份留 N 份」「受管文档」「扫描根」 | 这两条是**用户能直接看到后果**的策略：「这个分支怎么没更新」= 撞上了上限，「备份怎么不见了」= 留份数到了。用户此前只能靠猜，而猜错就会去改代码。mac 侧的注释（`Models.swift`）已经点出「按 `backupKeep` 裁剪，而用户从不知道它存在」，但 mac 也没接 `config list` —— deepin 补上 | 无 |
+| 152 | **引擎配置与客户端设置刻意分开**（不许形成两个真相源） | 客户端的 AI 设置在 `app/Settings`；引擎的 `config.ai` **恒为空对象**（引擎自报「AI 由客户端层负责，引擎保持 AI 无关」）。客户端**不许**从引擎 config 读 AI 设置 —— 两边各有一份，用户改哪边都可能不生效。判定层连 `ai` 键都不解析 | 无 |
+| 153 | **缺字段用 -1 哨兵 + present 标志，不拿 0 当缺失** | `backupKeep: 0` 是**合法值**（明确不保留备份）。拿 0 当缺失 → 界面把「明确不要备份」说成「不知道留几份」，两句话意思完全相反。缺 `update` 键则整份配置判为「读不出来」，不当空配置放行 | 无 |
+| 154 | **可写键白名单在客户端也卡一道**（`EngineConfig::writableKeys`） | 引擎对未知键会报错，但那是**事后**（用户看到的是一句引擎报错）。客户端先拦一道，界面就不会给用户一个必然失败的键 | 无 |
+| 155 | **可写项只给「数量」语义的两个键**（`update.maxShallowBranches` / `update.backupKeep`），`language` 与 `roots` **只读** | ① `language` 是**引擎侧**的语言 —— 客户端自己没有 i18n（台账 B8 未做），让用户改引擎语言只会造成中英混排；② `roots` 是数组语义，而客户端已有「添加/扫描项目」入口（`scan <根>`），两个入口改同一件事会打架 | 这两个键仍可从命令行改（`moongit config set language en`）—— 客户端只是不在界面上给入口 |
+| 156 | **改动在下次更新/备份时生效**，界面明说 | 引擎配置是引擎读配置时生效的，改完当前行为不变。界面若不说清，用户会以为「改了没用」而反复点 | 无 |
+| 157 | **`config set` 走 Text 契约**（回执在 stderr，与 `report` 同款） | 拿 callJson 去收，exit==0 也会被判成「引擎输出不是合法 JSON」—— 成功被报成失败。批 J 修的 `EngineCli::receiptText`（stdout 优先、空则 stderr）正好覆盖 | 无 |
+| 158 | **判定不接 GUI 的引擎能力**：`confidence query` / `graph db` / `confidence db` / `arch query|update` / `track` / `hook` / `mcp` / `skill` | ① `confidence query` 是 `graph confidence` 的**子集**（少了 `findings[]` 逐条疑点，多了 `indexUpdateCount`/`generatedAt`）—— 接了反而丢信息；② `graph db` / `confidence db` 是给 agent 用 SQL 查的单文件 SQLite，GUI 无对应物；③ `arch query` 与架构图页的 scene 数据重叠，会造出第二个真相源；④ `track`/`hook`/`mcp`/`skill` 是钩子/宿主/教学包，无 GUI 对位物 | 这些能力**仍可经 agent 工具面使用**（28 个工具里已含 `arch query` / `index query` / `confidence query`）—— 判定不接 GUI ≠ 判定不接能力 |
 
 **本批验证**（全部实跑）：`--selfcheck` **205 通过 0 失败**（198 → 205，+7 例：id 取名字 / 概览解析 /
 概览契约不对时报错 / 符号详情解析 / 符号不存在是「没找到」不是错误 / 影响面解析 / 影响面契约不对时报错）；
@@ -919,6 +928,41 @@ selfcheck 红；⑤ 检查项行文留悬空「·」 → selfcheck 红；⑥ **�
 **视觉变化**：设置·通用页多一张「环境自检」卡（按钮 + 摘要 + 逐项检查行）；项目详情页页头多
 「导出报告」钮、页头下多一张「进度报告」卡（回执 + 落盘路径 + 「打开报告」）。**两处都不在
 四页快照矩阵里**（设置窗与详情页都不进矩阵），基线未动。
+
+### 批 K：引擎配置面（config list / get / set）接进设置页
+
+决策见上表 **151–158**（引擎配置接进设置页 / 与客户端设置分开 / -1 哨兵 / 键白名单 /
+只给「数量」语义的两个键 / 生效时机说明 / Text 契约 / 判定不接的引擎能力清单）。
+
+**本批验证**（全部实跑）：`--selfcheck` **226 通过 0 失败**（220 → 226，+6 例：配置载荷解析 /
+摘要只报有值的项 / 缺 update 键报错 / **缺 backupKeep 记「未知」而不是 0** /
+**0 是合法值** / 可写键恰好四个）；`contract-check.sh` **87/87**（真引擎沙箱，76 → 87，
++11 条 = **契约门第 19 组**：顶层键齐全 / update 四键齐全 / 两个数字是数字 / roots 与 docs 是数组 /
+**引擎的 ai 恒为空对象** / `config get` 返回 JSON 值 / **`config set` 的回执写在 stderr** /
+引擎拒绝非整数值 / 引擎拒绝未知键并列出可用键 / 客户端端到端解析真载荷 /
+客户端端到端把真回执净化成干净的一句话）；
+`ci.sh` **10/10 门全绿**（第 9 门扩到 **154 项**接线点，+25 项）。
+**十七处负控真红**：判定层 5 处 —— ① 缺 update 键不当空配置放行 → selfcheck 红；
+② **backupKeep 缺键回落成 0** → selfcheck 红；③ **0 被当成「引擎没发」** → selfcheck 红；
+④ 可写键清单多给引擎不认的键 → selfcheck 红；⑤ 受管文档读错键 → selfcheck 红；
+接线 12 处 —— ⑥ 摘掉「读取引擎配置」按钮构造点 → 接线门红；⑦ 按钮不再接读 → 接线门红；
+⑧ 打开设置页不再自动读 → 接线门红；⑨ 不再写回分支上限 → 接线门红；⑩ 不再写回备份份数 →
+接线门红；⑪ 摘掉配置变化信号接线 → 接线门红；⑫ 摘掉配置写入回执接线 → 接线门红；
+⑬ **`config set` 改成 callJson**（回执型命令走 Json 契约 = 成功报成失败）→ 接线门红；
+⑭ 键白名单被摘掉 → 接线门红；⑮ **配置写入读 stdOut 而不是 receipt**（回执在 stderr，读不到）
+→ 接线门红；⑯ 读取引擎配置的方法不再调引擎 → 接线门红；⑰ 摘掉 CMake 登记 → 接线门红。
+**负控抓出并已修的四处「门太松」**（**第五次**同类漏洞：同名调用点互相顶替）：
+① 门盯 `m_model->loadEngineConfig()` 而该调用有**两处**（按钮 / 打开本页自动读）→ 摘掉一处
+门照样绿；已拆出 `reloadEngineConfig()`，门改成分别盯「按钮→读」（单行 connect 正则）与
+「打开本页→读」（整行独占正则）。② 门盯 `m_model->setEngineConfig(` 而写回有**两次**调用
+（两个键）→ 改成按键分别盯。③ 门盯泛化的 `res\.receipt` 而 AppModel 里有多处读它 → 改成盯
+`emit engineConfigSaved(true, res.receipt);` 本行。④ 负控驱动器自身 expect 串扰
+（「载荷解析」撞上批 J 的同名行）→ 改成带前缀的精确串。
+**另修一个自己发现的缺陷**：点「应用」写回第一个键会触发一次配置重读，把用户**刚填的第二个
+还没写回的值冲掉**（用户以为「改了没用」而反复点）→ 加 `m_configInputsDirty` 脏标志，
+手改未写回时重读不回填。
+**视觉变化**：设置·通用页多一张「引擎配置」卡（读取引擎配置钮 + 只读行 + 两个数字输入 + 应用钮）。
+该页不在四页快照矩阵内，基线未动。
 
 ## 分层纪律（后续阶段必须延续）
 

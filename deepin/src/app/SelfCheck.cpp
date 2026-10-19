@@ -7,6 +7,7 @@
 #include "../logic/Derived.h"
 #include "../logic/DocPages.h"
 #include "../logic/DocumentIntegrity.h"
+#include "../logic/EngineConfig.h"
 #include "../logic/EngineDoctor.h"
 #include "../logic/GraphToken.h"
 #include "../logic/GraphInsight.h"
@@ -2218,6 +2219,74 @@ int SelfCheck::run(QStringList &log)
                     == QStringLiteral("/tmp/x/report-1.md")
                 && ArchReceipt::filePath(QStringLiteral("已重绘：/tmp/x/arch.html"), QStringLiteral(".md"))
                     .isEmpty());
+    }
+
+    // ── 引擎配置（config list / config set）──
+    // 判据盯三处「错得毫无声响」的口径：
+    //   ① **`backupKeep: 0` 是合法值**（明确不保留备份），**不是**「引擎没发这个键」。
+    //      拿 0 当缺失 → 界面把「明确不要备份」说成「不知道留几份」，意思完全相反。
+    //   ② **引擎的 `ai` 恒为空对象**（引擎 AI 无关）→ 客户端不许从引擎读 AI 设置
+    //      （与客户端自己的 app/Settings 形成两个真相源）。
+    //   ③ **可写键只有四个** —— 界面给的键必须是引擎认的那些。
+    {
+        const EngineConfig::Config c = EngineConfig::parse(JO(R"JSON({
+  "version": 1,
+  "language": "zh",
+  "roots": ["/home/u/dev"],
+  "ai": {},
+  "update": {
+    "docs": ["README.md", "AGENTS.md", "CLAUDE.md"],
+    "agentDocCandidates": ["AGENTS.md", "AGENT.md", "CLAUDE.md"],
+    "backupKeep": 20,
+    "maxShallowBranches": 6
+  }
+})JSON"));
+        check(log, "引擎配置：载荷解析（版本 / 语言 / 扫描根 / 受管文档 / 备份份数 / 分支上限）",
+            c.ok && c.version == 1 && c.language == QStringLiteral("zh")
+                && c.roots.size() == 1 && c.roots.at(0) == QStringLiteral("/home/u/dev")
+                && c.docs.size() == 3 && c.docs.at(0) == QStringLiteral("README.md")
+                && c.docs.at(2) == QStringLiteral("CLAUDE.md")
+                && c.agentDocCandidates.size() == 3
+                && c.hasBackupKeep() && c.backupKeep == 20
+                && c.hasMaxShallowBranches() && c.maxShallowBranches == 6);
+        check(log, "引擎配置：摘要只报有值的项（缺项不占位）",
+            EngineConfig::summary(c) == QStringLiteral("语言 zh · 分支上限 6 · 备份 20 份"));
+        {
+            // 缺 update 键 → 契约形状不对 → 报错，不当空配置放行
+            const EngineConfig::Config bad
+                = EngineConfig::parse(JO(R"JSON({"version":1,"language":"zh","roots":[],"ai":{}})JSON"));
+            check(log, "引擎配置：缺 update 键时报错（不当成「什么都没设」）",
+                !bad.ok && !bad.error.isEmpty());
+        }
+        {
+            // ⚠ 缺键 → -1（未知），**不回落成 0**
+            const EngineConfig::Config partial = EngineConfig::parse(JO(R"JSON({
+  "version": 1, "language": "zh", "roots": [], "ai": {},
+  "update": {"docs": ["README.md"], "agentDocCandidates": []}
+})JSON"));
+            check(log, "引擎配置：缺 backupKeep/maxShallowBranches → 记为「未知」而不是 0",
+                partial.ok && !partial.hasBackupKeep() && partial.backupKeep == -1
+                    && !partial.hasMaxShallowBranches() && partial.maxShallowBranches == -1);
+        }
+        {
+            // ⚠ 0 是**合法值**（明确不保留备份 / 不记任何分支）——
+            //    拿 0 当缺失会把两件相反的事说成同一句。
+            const EngineConfig::Config zero = EngineConfig::parse(JO(R"JSON({
+  "version": 1, "language": "zh", "roots": [], "ai": {},
+  "update": {"docs": [], "agentDocCandidates": [], "backupKeep": 0, "maxShallowBranches": 0}
+})JSON"));
+            check(log, "引擎配置：0 是合法值（backupKeep: 0 不被当成「没发」）",
+                zero.ok && zero.hasBackupKeep() && zero.backupKeep == 0
+                    && zero.hasMaxShallowBranches() && zero.maxShallowBranches == 0);
+        }
+        check(log, "引擎配置：可写键恰好四个且与引擎一致（界面不能给引擎不认的键）",
+            EngineConfig::writableKeys().size() == 4
+                && EngineConfig::isWritable(QStringLiteral("language"))
+                && EngineConfig::isWritable(QStringLiteral("update.backupKeep"))
+                && EngineConfig::isWritable(QStringLiteral("update.maxShallowBranches"))
+                && EngineConfig::isWritable(QStringLiteral("roots"))
+                && !EngineConfig::isWritable(QStringLiteral("update.docs"))
+                && !EngineConfig::isWritable(QStringLiteral("ai")));
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);
