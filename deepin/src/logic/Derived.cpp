@@ -255,36 +255,74 @@ QString milestoneUnverifiedNote(const Milestone &m)
 
 QColor livenessColor(Liveness l)
 {
+    // 【批 R · 跨端取值对齐】对齐 mac **活代码**（`BoardView.stateColor` /
+    // `DashboardParts.stateWord` 两处多数派，不是那段没人调用的 `StatusColor`）：
+    //   engineStale/quiet → 灰（静默，不是「坏了」）
+    //   notGit            → 灰（不适用；紫色已被「深更新轨 / 已合并」占用）
+    //   unknown           → 红（读不出来 = 真有问题，不许装成「不活跃」的灰）
+    // ⚠ 托盘**不跟这套**（托盘图标无文字，颜色是唯一信号）—— 见 SemColors.h。
     switch (l) {
     case Liveness::needsAction:
         return SemColors::orange(); // 橙
     case Liveness::engineStale:
     case Liveness::quiet:
-        return SemColors::stale(); // 陈旧红
+        return SemColors::gray(); // 静默
     case Liveness::recent:
         return SemColors::shallow(); // 绿
     case Liveness::unreadable:
-        return SemColors::red();
+        return SemColors::red(); // 采集失败
     case Liveness::notGit:
-        return SemColors::deep(); // 紫
+        return SemColors::gray(); // 不适用
     case Liveness::unknown:
-        break;
+        return SemColors::red(); // 读不出来（与 unreadable 同档）
     }
     return SemColors::gray(); // 灰
 }
 
 QColor branchStatusColor(const QString &status)
 {
-    // active绿 / idle黄 / stale红 / merged紫 / 未知灰（mac Models.swift:877-887）。
+    // active绿 / idle黄 / **stale橙** / merged紫 / 未知灰。
+    // ⚠ stale 染**橙**（不是红）—— 对齐 mac 活代码 `DSColor.color(.stale)` = .orange。
+    //   （原先染陈旧红 #EF4444：那档红与危险红 #DC2626 肉眼几乎分不出，却表达两件事。）
     if (status == QLatin1String("active"))
         return SemColors::shallow();
     if (status == QLatin1String("idle"))
         return SemColors::yellow();
     if (status == QLatin1String("stale"))
-        return SemColors::stale();
+        return SemColors::orange();
     if (status == QLatin1String("merged"))
         return SemColors::deep();
     return SemColors::gray();
+}
+
+QStringList branchStatusKinds()
+{
+    // 引擎 `computeBranchStatus` 的**全部**产出（`moongit/src/kernel/progress.cj:14-37`）：
+    //   merged / unknown / active / idle / stale —— 就这 5 档，没有别的。
+    // ⚠ 别加引擎不产出的档（如 mac 的 `dirty`）：加了就是**永远画不出来的一格**。
+    return {
+        QStringLiteral("active"),
+        QStringLiteral("idle"),
+        QStringLiteral("stale"),
+        QStringLiteral("merged"),
+        QStringLiteral("unknown"),
+    };
+}
+
+QList<Liveness> livenessKinds()
+{
+    // Liveness 的**全部**档位（`logic/Liveness.h` 的枚举，共 7 档）。
+    // 穷举列出而不是「抄一份」—— 加一档 Liveness 时这里必须跟着改（编译器盯得住），
+    // 色卡样张也就自动多画一格，不会漏画一档。
+    return {
+        Liveness::unreadable,
+        Liveness::notGit,
+        Liveness::needsAction,
+        Liveness::engineStale,
+        Liveness::quiet,
+        Liveness::recent,
+        Liveness::unknown,
+    };
 }
 
 QColor statTint(int n)

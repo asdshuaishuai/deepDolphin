@@ -113,8 +113,6 @@ QColor semColor(SemColor c)
         return SemColors::yellow();
     case SemColor::gray:
         return SemColors::gray();
-    case SemColor::stale:
-        return SemColors::stale();
     }
     return SemColors::gray();
 }

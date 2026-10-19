@@ -2482,9 +2482,9 @@ int SelfCheck::run(QStringList &log)
                 && DS::semColor(DS::SemColor::orange) == SemColors::orange()
                 && DS::semColor(DS::SemColor::red) == SemColors::red()
                 && DS::semColor(DS::SemColor::yellow) == SemColors::yellow()
-                && DS::semColor(DS::SemColor::gray) == SemColors::gray()
-                && DS::semColor(DS::SemColor::stale) == SemColors::stale());
+                && DS::semColor(DS::SemColor::gray) == SemColors::gray());
         // 陈旧红（#EF4444）与危险红（#DC2626）是**两档不同的红**，不许合并。
+        // ⚠ 批 R：陈旧红**只服务托盘**（托盘图标无文字，颜色是它区分档位的唯一手段）。
         check(log, "设计系统：陈旧红与危险红是两档（stale #EF4444 / red #DC2626）",
             SemColors::stale() == QColor(0xEF, 0x44, 0x44)
                 && SemColors::red() == QColor(0xDC, 0x26, 0x26)
@@ -2495,13 +2495,41 @@ int SelfCheck::run(QStringList &log)
                 && FixedColors::trayBarTrack() == QColor(128, 128, 128, 60));
         // 判定层（logic/Derived）必须与唯一出处同源 —— 判定层不依赖 ui 层，
         // 所以它**只能**从 logic/SemColors 取色。
+        // 【批 R · 跨端取值对齐】下面的取值即定案（对齐 mac 活代码，见台账 D.1）：
+        //   静默(停滞/久未更新)与不适用(非 git)→ 灰；读不出来(unknown)→ 红；
+        //   分支 stale → 橙。
         check(log, "设计系统：判定层状态色与唯一出处同源（liveness/branch/stat）",
             Derived::livenessColor(Liveness::recent) == SemColors::shallow()
                 && Derived::livenessColor(Liveness::needsAction) == SemColors::orange()
-                && Derived::livenessColor(Liveness::engineStale) == SemColors::stale()
+                && Derived::livenessColor(Liveness::engineStale) == SemColors::gray()
+                && Derived::livenessColor(Liveness::quiet) == SemColors::gray()
+                && Derived::livenessColor(Liveness::notGit) == SemColors::gray()
+                && Derived::livenessColor(Liveness::unreadable) == SemColors::red()
+                && Derived::livenessColor(Liveness::unknown) == SemColors::red()
                 && Derived::branchStatusColor(QStringLiteral("active")) == SemColors::shallow()
-                && Derived::branchStatusColor(QStringLiteral("stale")) == SemColors::stale()
+                && Derived::branchStatusColor(QStringLiteral("idle")) == SemColors::yellow()
+                && Derived::branchStatusColor(QStringLiteral("stale")) == SemColors::orange()
+                && Derived::branchStatusColor(QStringLiteral("merged")) == SemColors::deep()
                 && Derived::statTint(5) == SemColors::orange());
+        // 陈旧红是**托盘专用**档：判定层（UI 层语义）一律不挂它 ——
+        // 它与危险红 #DC2626 肉眼几乎分不出，UI 层两个红同时出现 = 读者分不出。
+        check(log, "设计系统：陈旧红是托盘专用档（判定层不挂这一档）",
+            Derived::livenessColor(Liveness::engineStale) != SemColors::stale()
+                && Derived::livenessColor(Liveness::quiet) != SemColors::stale()
+                && Derived::livenessColor(Liveness::notGit) != SemColors::stale()
+                && Derived::livenessColor(Liveness::unknown) != SemColors::stale()
+                && Derived::branchStatusColor(QStringLiteral("stale")) != SemColors::stale()
+                && Derived::statTint(5) != SemColors::stale());
+        // 档位清单（色卡样张与判据都从这里取）：份数与内容钉死 ——
+        // 少一档 = 样张少画一格 = 基线里那一格没有 = 又一个空门。
+        check(log, "设计系统：档位清单齐全（liveness 7 档 / 分支状态 5 档）",
+            Derived::livenessKinds().size() == 7
+                && Derived::branchStatusKinds().size() == 5
+                && Derived::branchStatusKinds().contains(QStringLiteral("active"))
+                && Derived::branchStatusKinds().contains(QStringLiteral("idle"))
+                && Derived::branchStatusKinds().contains(QStringLiteral("stale"))
+                && Derived::branchStatusKinds().contains(QStringLiteral("merged"))
+                && Derived::branchStatusKinds().contains(QStringLiteral("unknown")));
     }
 
     // ── 引擎获取（GitHub Releases 下载）判定层 ──

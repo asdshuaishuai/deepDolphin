@@ -118,6 +118,7 @@ add_executable(deepDolphin
     src/tray/TrayPopupWindow.cpp
     # ── ui/：主窗口与四页 ──
     src/ui/DesignTokens.cpp
+    src/ui/ColorSampleSheet.cpp
     src/ui/DualTrackButtons.cpp
     src/ui/PanelWindow.cpp
     src/ui/SidebarNav.cpp

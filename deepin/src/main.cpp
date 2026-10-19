@@ -28,6 +28,7 @@
 #include "logic/Liveness.h"
 #include "logic/Route.h"
 #include "tray/TrayController.h"
+#include "ui/ColorSampleSheet.h"
 #include "ui/DesignTokens.h"
 #include "ui/PanelWindow.h"
 #include <DApplication>
@@ -177,6 +178,39 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
     });
     poll->start();
     app.exec();
+    return rc;
+}
+
+// ── 无头状态色样张（批 R）──
+// 用法：deepDolphin --color-sample <out.png>（配合 QT_QPA_PLATFORM=offscreen）
+// 画一张状态语义色色卡：把**每一档**都画出来。
+//
+// 【为什么必须单独做这个】4 页面板快照拍的是**空态**（本机引擎注册项目数 0，
+// 快照里只有「仪表盘还没有数据」）—— 状态点一个都没画进去。
+// ⇒ 面板快照对状态色是**空门**：改色它不红，说「视觉已评审」是假的。
+// 这张色卡把每档都画出来，纳入截图矩阵 —— 改色 ⇒ 色卡 diff 红。
+// 退出码：0 = 已写文件；1 = 抓取/写盘失败（响亮失败，别把错图固化成基线）。
+static int headlessColorSample(int argc, char *argv[], const QString &outPath)
+{
+    DApplication app(argc, argv);
+    app.setApplicationName(QStringLiteral("deepDolphin"));
+    app.setOrganizationName(QStringLiteral("deepin"));
+    applyThemeOverride(); // 与面板快照同一套主题口径（DEEPDOLPHIN_THEME）
+    if (!DS::paletteIsThemeConsistent())
+        app.setPalette(DS::applicationPaletteFallback());
+
+    ColorSampleSheet sheet;
+    sheet.show();
+    const QPixmap shot = sheet.grab();
+    int rc = 1;
+    if (!shot.isNull() && shot.save(outPath)) {
+        rc = 0;
+        fprintf(stdout, "[color-sample] 已写入 %s（%dx%d）\n", qPrintable(outPath),
+            shot.width(), shot.height());
+    } else {
+        fprintf(stderr, "[color-sample] 写入失败：%s\n", qPrintable(outPath));
+    }
+    fflush(stdout);
     return rc;
 }
 
@@ -563,6 +597,14 @@ int main(int argc, char *argv[])
             return 2;
         }
         return headlessSnapshot(argc, argv, preRoute, rawArgs.at(snapIdx + 1));
+    }
+    const int sampleIdx = rawArgs.indexOf(QStringLiteral("--color-sample"));
+    if (sampleIdx >= 0) {
+        if (sampleIdx + 1 >= rawArgs.size()) {
+            fprintf(stderr, "用法：deepDolphin --color-sample <out.png>\n");
+            return 2;
+        }
+        return headlessColorSample(argc, argv, rawArgs.at(sampleIdx + 1));
     }
 
     DApplication app(argc, argv);

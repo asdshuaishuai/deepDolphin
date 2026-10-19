@@ -59,11 +59,13 @@ enum class SemColor {
     shallow,    // 绿 #10B981 · 浅更新轨 / 活跃
     deep,       // 紫 #8B5CF6 · 深更新轨 / 已合并
     ai,         // 青 #06B6D4 · AI（provider 徽章）
-    orange,     // 橙 #F59E0B · needsAction / 量级中档
-    red,        // 红 #DC2626 · 错误 / 量级高档
+    orange,     // 橙 #F59E0B · needsAction / 分支 stale / 量级中档
+    red,        // 红 #DC2626 · 读不出来 / 量级高档
     yellow,     // 黄 #E8B01C · idle / 量级低档
-    gray,       // 灰 #9CA3AF · unknown
-    stale,      // 陈旧红 #EF4444 · 分支 stale / 引擎停滞（与 red 是两档，不合并）
+    gray,       // 灰 #9CA3AF · 静默 / 不适用
+    // ⚠ **没有 stale 档**（批 R）：陈旧红 #EF4444 只服务托盘（颜色是它的唯一信号），
+    //   UI 层一律走 mac 口径（停滞=灰、读不出来=红）。托盘直接取 logic/SemColors，
+    //   不经本枚举。
 };
 
 QColor semColor(SemColor c);

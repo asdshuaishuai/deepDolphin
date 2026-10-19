@@ -58,6 +58,12 @@ for theme in light dark; do
             "$SRC/docs/snapshots/${theme}-${sec}.png" --section "$sec" \
             | tail -1
     done
+    # 状态色样张（批 R）：**面板快照拍的是空态**（本机引擎注册项目数 0，
+    # 快照里只有「仪表盘还没有数据」）—— 状态点一个都没画进去。
+    # ⇒ 面板快照对状态色是**空门**：改色它不红，说「视觉已评审」是假的。
+    #   这张色卡把**每一档**都画出来，改色 ⇒ 色卡 diff 红。
+    QT_QPA_PLATFORM=offscreen DEEPDOLPHIN_THEME="$theme" "$BIN" --color-sample \
+        "$SRC/docs/snapshots/${theme}-colors.png" | tail -1
 done
 
 echo "› 3/10 desktop / metainfo 校验（缺工具显式 SKIP）"

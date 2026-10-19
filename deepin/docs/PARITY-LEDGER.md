@@ -187,22 +187,101 @@ agent 工具清单后修正，README 决策 199）：
 | **引擎获取链（GitHub Releases 下载安装）** | 🟡 批 P：判定层 + 执行层 + 设置页入口 + 契约门第 21 组端到端（file:// 打桩）；⚠ **当下 latest v0.1.0 没有 Linux x64 资产** ⇒ 真机上暂时下载不到（引擎侧下次发版即生效，**引擎仓不用改**） | ⬜ **URL 已失效** —— `build.sh` 用固定 URL `releases/latest/download/moongit-darwin-arm64.tar.gz`，而引擎的资产名**带版本号**（`moongit-v0.1.0-darwin-arm64.tar.gz`）⇒ **实测 404**（不带版本号的才 404，带版本号的 200） | ⬜ 未接 | mac 侧后续批次（**本轮次序先搞定 dde**，未改 mac） |
 | 引擎索引自愈（`selfHealed`） | ✅ 批 L：索引缺失/过期时引擎会**自愈**（实测 2026-10-19：`selfHealed: true`）→ 索引状态行在用户点「生成」前就有内容，并明说「引擎自愈过索引」 | ⬜ 未接 | ⬜ 未接 | —— 条件键，需 present 标志 |
 
-### D.1 跨端状态色**取值口径**差异（批 O 查 mac 时照出，**未动**）
+### D.1 跨端状态色**取值口径**差异（批 O 照出，**批 R 逐点核对后照实修正**）
 
-批 O 把状态语义色收敛成单一真相源（E.1 节）时，顺手核了 mac 的着色口径，发现**两端取值不一致**
-—— 而且 **mac 自己就有两套映射**。这属于「取值对齐」，**会动视觉基线**，需专门评审，不在批 O 顺手改。
+批 O 把状态语义色收敛成单一真相源（E.1 节）时，顺手核了 mac 的着色口径，发现**两端取值不一致**。
+这属于「取值对齐」，**会动视觉基线**，需专门评审，不在批 O 顺手改。
 
-| 语义档 | deepin（现值） | mac 侧 | 差异 |
+> **⚠ 本节原描述有失真，批 R 逐点核对后照实修正**（原文说「mac 自己就有两套映射：
+> `StatusColor.systemColor` 与 `DSColor.color(DSStatus)`」）——
+> **事实是 `StatusColor.systemColor` 在整个 mac 仓零调用，是死代码**。
+> 也就是说 deepin 的 stale 红**对标的是一段没人用的代码**；mac 实际在用的那套是
+> `DSColor.color(DSStatus)`（`Components.swift:18` 状态点 / `DetailViews.swift:667` 分支行）。
+> 真正在 mac 里分叉的不是 `StatusColor` vs `DSColor`，而是**Liveness 层的三处副本**。
+
+#### D.1.1 分支状态层（引擎 `branch status`）
+
+引擎取值域**只有 5 档**（`moongit/src/kernel/progress.cj:14-37` 的 `computeBranchStatus`）：
+`merged` / `unknown` / `active` / `idle` / `stale`。
+（`unknown` = 时间戳无效或**时钟不可信**（`d < -1.0`），不是「不知道状态」。）
+
+| 语义档 | deepin（现值） | mac 活代码 | 差异 |
 | --- | --- | --- | --- |
-| 分支 `stale` | 红 `#EF4444` | `StatusColor.systemColor` → **red** ✅ / `DSColor.color(DSStatus)` → **orange** ❌ | deepin 对齐了 mac 的 **`StatusColor`**；mac 自己的 `DSColor` 是橙 —— **mac 内部两个出处** |
-| `engineStale` / `quiet`（Liveness） | 红 `#EF4444` | `BoardView` 的 `stateTint` → **secondary（灰）** | 口径不同：deepin 偏「警示」，mac 偏「静默」 |
-| `notGit`（Liveness） | 紫 `#8B5CF6` | mac → **secondary（灰）** | 同上 |
-| `idle`（分支状态） | 黄 `#E8B01C`（tailwind yellow-400） | mac → SwiftUI `.yellow` | mac 用系统标准黄，deepin 用 tailwind 档 |
-| unknown | 灰 `#9CA3AF`（tailwind gray-400） | mac → `.secondary`（系统灰） | 同上 |
-| 分段条底轨遮罩 | 灰 40/255 | — | 与托盘迷你条底轨（灰 **60**/255）**同语义不同档** |
+| `active` | 绿 `#10B981` | `DSPalette.shallow` `#10B981` | ✅ 同值 |
+| `merged` | 紫 `#8B5CF6` | `DSPalette.deep` `#8B5CF6` | ✅ 同值 |
+| `idle` | 黄 `#E8B01C`（tailwind yellow-400） | SwiftUI `.yellow`（**系统色**） | 色源不同（见 D.1.3） |
+| `stale` | **红 `#EF4444`** | **SwiftUI `.orange`（系统橙）** | ❌ **口径冲突** |
+| `unknown` | 灰 `#9CA3AF` | `.secondary`（系统灰） | 色源不同 |
+| `dirty` | —（**引擎不产出**） | `.red` | mac 的这一档是**死路径**（引擎永不返回 `dirty`） |
 
-**待办**：逐点核对后统一口径（会动四页快照基线 + 需视觉评审）。**本轮次序是先搞定 dde**，
-且 mac 侧自己的两套映射也要一并厘清 —— 在此之前 deepin 不动取值。
+#### D.1.2 Liveness 层（项目活跃度，7 档）
+
+deepin 的 `Liveness` 枚举与 mac **逐档一一对应**（`deepin/src/logic/Liveness.h` ↔ `macos/Sources/deepDolphin/Models.swift:524-538`），
+差别只在**着色**。mac 侧着色在**三处各写一遍**（`BoardView.swift:156-164`、`DashboardParts.swift:212-218`、
+`DetailViews.swift:508-516`），其中 `notGit` 一档 `DetailViews` 用 `.gray`、另两处用 `.secondary`
+—— **mac 自己的第二套口径**（多数派是 `.secondary`）。
+
+| 语义档 | deepin（现值） | mac（两处多数派） | 差异 |
+| --- | --- | --- | --- |
+| `recent` | 绿 `#10B981` | `.green` | 色源不同 |
+| `needsAction` | 橙 `#F59E0B` | `.orange` | 色源不同 |
+| `engineStale` / `quiet` | **红 `#EF4444`** | **`.secondary`（灰）** | ❌ **口径冲突** |
+| `notGit` | **紫 `#8B5CF6`** | **`.secondary`（灰）**（`DetailViews` 是 `.gray`） | ❌ **口径冲突** |
+| `unreadable` | 红 `#DC2626` | `.red` | 色源不同 |
+| `unknown` | 灰 `#9CA3AF` | **`.red`（与 `unreadable` 同档）** | ❌ **口径冲突** |
+
+#### D.1.3 差异的本质（不是「档位不同」，是**色源不同**）
+
+deepin 用 **tailwind 固定色值**（`#10B981` / `#F59E0B` / `#9CA3AF` …），mac 混用两种：
+- **设计稿色**：`DSPalette`（`DesignTokens.swift:13-36`）—— 绿/紫/青/蓝四档，**与 deepin 同值**；
+- **SwiftUI 系统色**：`.orange` / `.red` / `.yellow` / `.secondary` / `.green` —— 橙/红/黄/灰四档，
+  **在 deepin 侧物理上不存在对应物**（Linux/DDE 没有 macOS 系统色，系统色会随外观/强调色变，
+  固定色不会）。
+
+⇒ **「对齐 mac 的色值」在橙/红/黄/灰四档上不成立**，只能对齐**语义分档**（哪一档该是警示色、
+哪一档该是静默色）。绿/紫/青/蓝四档已同值，不动。
+
+#### D.1.4 其他
+
+| 项 | deepin | mac | 差异 |
+| --- | --- | --- | --- |
+| 分段条底轨遮罩 | 灰 **40**/255 | — | 与托盘迷你条底轨（灰 **60**/255）**同语义不同档**；mac 侧无对应物（`CodeGraphHeatmap.swift:484` 的画布底轨是 `white.opacity(0.10)`，属另一层） |
+
+**待办（批 R-2）**：按 D.1.3 的口径定案后统一取值 —— 动四页快照基线 + 需视觉评审。
+**本轮次序是先搞定 dde**；mac 侧那三处 Liveness 副本与 `StatusColor` 死代码一并记为 mac 自身债（不改 mac）。
+
+#### D.1.5 批 R-2 定案（已落地）
+
+| 语义档 | 改前 | 改后 | 依据 |
+| --- | --- | --- | --- |
+| 分支 `stale` | 陈旧红 `#EF4444` | **橙 `#F59E0B`** | mac 活代码 `DSColor.color(.stale)` = `.orange` |
+| Liveness `engineStale` / `quiet` | 陈旧红 `#EF4444` | **灰 `#9CA3AF`** | mac 两处多数派 = `.secondary`（静默 ≠ 坏了） |
+| Liveness `notGit` | 紫 `#8B5CF6` | **灰 `#9CA3AF`** | mac 两处多数派 = `.secondary`；且紫已被「深更新轨 / 已合并」占用，notGit 用紫会误读 |
+| Liveness `unknown` | 灰 `#9CA3AF` | **红 `#DC2626`** | mac = `.red`（与 `unreadable` 同档）—— 「读不出来」是真有问题，不该装成「不活跃」的灰 |
+| Liveness `unreadable` | 红 `#DC2626` | 不变 | |
+| Liveness `needsAction` / `recent` | 橙 / 绿 | 不变 | |
+| 分支 `active` / `merged` / `idle` / `unknown` | 绿 / 紫 / 黄 / 灰 | 不变 | 绿紫已同值；黄灰是色源差异（见 D.1.3） |
+
+**陈旧红 `#EF4444` 改为托盘专用档**：
+它与危险红 `#DC2626` **肉眼几乎分不出**，UI 层同时出现两个红 = 读者分不出谁是谁。
+但**托盘不参与压档** —— 托盘图标无文字，形状只分「告警三角 / 普通环形」两档，
+`notGit` / `quiet` 之间**没有形状差别**，颜色是它区分档位的**唯一手段**。
+⇒ 判定层（UI 层语义）不挂这一档；托盘保留（`tray/TrayController.cpp` 的 `tintColor`）。
+分界是「**颜色是不是唯一信号**」，不是「哪个界面」。
+
+**⚠ 批 R 照出的基线盲区（重要）**：
+4 页面板快照拍的是**空态** —— 本机引擎注册项目数 0，快照里只有「仪表盘还没有数据」，
+**状态点一个都没画进去**。⇒ **面板快照对状态色是空门**：改色它不红，
+说「视觉已评审」是假的（这是第 11 次同类问题：空门比没门更糟）。
+⇒ 批 R 新增**状态色样张**（`ui/ColorSampleSheet` + 无头入口 `--color-sample`），
+把 liveness 7 档 + 分支状态 5 档 + 托盘专用档 + 固定色**每一档都画出来**，
+纳入 CI 截图矩阵（`light-colors.png` / `dark-colors.png`）—— 改色 ⇒ 色卡 diff 红。
+样张颜色**全部走判定层**（接线门钉住），判定层改色它自动跟着变。
+
+**档位清单单一真相源**：判定层导出 `Derived::livenessKinds()`（7 档）与
+`Derived::branchStatusKinds()`（5 档，与引擎 `computeBranchStatus` 的产出**严格相等**）——
+样张按清单画、判据按清单断言。加一档 `Liveness` ⇒ 样张自动多画一格，不会漏画。
+⚠ **不列引擎不产出的档**（如 mac 的 `dirty`）：列了就是永远画不出来的一格。
 
 ---
 

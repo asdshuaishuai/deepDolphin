@@ -14,6 +14,7 @@
 #include "../models/Milestone.h"
 #include "../models/StatusTypes.h"
 #include <QColor>
+#include <QList>
 #include <QString>
 #include <QStringList>
 #include <optional>
@@ -83,11 +84,21 @@ QString milestoneDueText(const Milestone &m);     // 还剩 N 天 / 逾期 N 天
 QString milestoneCommitsText(const Milestone &m); // 创建以来 N 提交 / 提交数读不出来
 QString milestoneUnverifiedNote(const Milestone &m);
 
-// liveness 的状态点颜色（红橙绿灰黄；unknown 灰——不许默认绿）。
+// liveness 的状态点颜色（批 R 定案：绿/橙/灰/红四档；unknown→红，见台账 D.1）。
 QColor livenessColor(Liveness l);
 
-// 引擎分支状态字符串 → 状态色（active绿/idle黄/stale红/merged紫/未知灰，不自推档位）。
+// 引擎分支状态字符串 → 状态色（批 R 定案：active绿/idle黄/**stale橙**/merged紫/未知灰）。
 QColor branchStatusColor(const QString &status);
+
+/// 引擎分支状态的**档位清单**（唯一出处）。
+/// 引擎实际只产这 5 档（`moongit/src/kernel/progress.cj:14-37` 的 `computeBranchStatus`：
+/// merged / unknown / active / idle / stale）—— 渲染、色卡样张、判据都从这里取，
+/// 不各处抄一份（抄一份 = 两份清单会漂移）。
+QStringList branchStatusKinds();
+
+/// liveness 的**档位清单**（唯一出处，7 档）。
+/// 加一档 `Liveness` 时，色卡样张会自动多画一格 —— 不会漏画。
+QList<Liveness> livenessKinds();
 
 // 数值量级分档色（DSStat）：0→中性文字；1–2→黄；3–9→橙；≥10 与**负数（读不出来）**→红。
 QColor statTint(int n);
