@@ -1,6 +1,8 @@
 // Backend.cpp — 平台层：执行后端差异（PLAN §9 M1-7）。
 #include "Backend.h"
+#include "DdePanel.h"
 
+#include <QCursor>
 #include <QGuiApplication>
 #include <QScreen>
 #include <QSystemTrayIcon>
@@ -73,6 +75,16 @@ QRect availableGeometryAt(const QPoint &anchor)
     return screen->availableGeometry();
 }
 
+QRect screenGeometryAt(const QPoint &anchor)
+{
+    QScreen *screen = QGuiApplication::screenAt(anchor);
+    if (!screen)
+        screen = QGuiApplication::primaryScreen();
+    if (!screen)
+        return QRect();
+    return screen->geometry();
+}
+
 Backend::Insets taskbarInsetsAt(const QPoint &anchor)
 {
     QScreen *screen = QGuiApplication::screenAt(anchor);
@@ -86,11 +98,21 @@ Backend::Insets taskbarInsetsAt(const QPoint &anchor)
 QRect trayPopupTarget(const QRect &trayIconGeometry, const QSize &popupSize,
                        const Backend::PopupGeometry &geo)
 {
-    // 托盘图标所在的屏：托盘几何不可用时（Wayland 常见）退到主屏。
-    const QPoint anchor = Backend::trayGeometryUsable(trayIconGeometry) ? trayIconGeometry.center()
-                                                                        : QPoint(0, 0);
-    const QRect avail = availableGeometryAt(anchor);
-    return Backend::placePopup(trayIconGeometry, popupSize, avail, geo).rect;
+    // ① 托盘图标所在屏（托盘几何可用时）
+    // ② 托盘几何不可用 ⇒ **光标所在屏**（DDE 上托盘是 SNI，拿不到坐标；
+    //    用户点了托盘，光标就在那块屏上 ⇒ 用光标比用主屏准）
+    // ③ 都没有 ⇒ 主屏（availableGeometryAt 内部兜底）
+    const bool haveTray = Backend::trayGeometryUsable(trayIconGeometry);
+    const QPoint anchor =
+        haveTray ? trayIconGeometry.center() : QCursor::pos();
+
+    // 面板真几何（D-Bus 读来的，见 platform/DdePanel）：
+    // Wayland 下 QPA 的 availableGeometry **未必**扣掉面板 ⇒ 用面板真几何修正。
+    const PanelGeometry::Panel panel = DdePanel::current();
+    const QRect screen = screenGeometryAt(anchor);
+    const QRect avail =
+        PanelGeometry::effectiveAvailable(availableGeometryAt(anchor), screen, panel);
+    return Backend::placePopup(trayIconGeometry, popupSize, avail, geo, panel).rect;
 }
 
 } // namespace platform

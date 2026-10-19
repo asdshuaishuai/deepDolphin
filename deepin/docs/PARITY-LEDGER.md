@@ -298,9 +298,9 @@ deepin 用 **tailwind 固定色值**（`#10B981` / `#F59E0B` / `#9CA3AF` …）�
 | 任务 | 内容 | 状态 |
 |---|---|---|
 | M1-2 | 统一 `platform::icon()`（fallback 链 + 缺失告警 + DDciIcon 优先） | ✅ **批 U 已做**：判定层 `logic/IconNames`（`enum class Id` 27 个逻辑图标 → **候选名链**，唯一出处）+ 平台层 `platform/IconResolver`（**DDci → 主题 → qrc 染色 → 缺失告警 + 占位**）；**11 处**散落的 `QIcon::fromTheme` 全改走统一入口；**删掉零调用点的 `IconLoader`（170 行死代码）**。探针实测：27 个逻辑图标 **8 个走 DDci / 19 个走主题 / 0 个解析不到**（bloom 主题）；离屏（无图标主题）27 个全 `none`、0 告警。**视觉零变化**（基线逐字节未变） |
-| M1-3 | 托盘迁移 SNI | ⬜ |
+| M1-3 | 托盘迁移 SNI | 🟡 **风险由「高」下调为「中」**（批 W 实测重估，详见 E.1e）：DDE 走**旧托盘协议**（我们没注册成 SNI 项；`geometry()` 恒无效）⇒ 迁 SNI **解决不了弹窗定位**（SNI 也没位置字段）；真实价值只剩**保住图标颜色**（`IconName` 指绝对路径 ⇒ 五态彩色图标渲成缓存文件指过去），有明确解法，但要真机 DDE 上验 |
 | M1-7 | `platform/Backend` 平台层 | ✅ **批 V 已做**：判定层 `logic/Backend`（纯结论：`enum class Kind {X11,Wayland,Other}` + `classify()` **带 token 边界** / `activationFor()` / `reservedInsets()` / `placePopup()` / `trayGeometryUsable()`）+ 平台层 `platform/Backend`（`activate()` / `availableGeometryAt()` / `taskbarInsetsAt()` / `trayIconGeometry()` / `trayPopupTarget()`）；**8 处**散落的 `show/raise/activateWindow` 收编成**一个入口**；**修掉真缺陷**：`show()` 不恢复最小化窗口（实测）⇒ 最小化态从托盘叫不醒面板；托盘弹窗**右/上两边**旧实现不夹紧 ⇒ 右上角托盘时溢出屏幕 |
-| M1-8 | Wayland 分支 | ⬜ |
+| M1-8 | Wayland 分支 | ✅ **批 W 已做**（本机无 Wayland 会话 ⇒ Wayland 侧未实跑）：判定层 `logic/PanelGeometry` + 取数层 `platform/DdePanel`（D-Bus 读 `org.deepin.ds.Dock` 的 `geometry`/`position`）；`placePopup()` 加面板参数（面板在下 ⇒ 弹窗落面板上方右对齐）；托盘坐标不可用时按**光标所在屏**；失焦收起加 `applicationStateChanged` 兜底。**修掉真缺陷**：DDE 托盘是 SNI ⇒ 坐标恒无效 ⇒ 弹窗飞到离托盘很远的屏幕右上（实测 (1523,32) → (1524,731)） |
 | M2-5 | i18n | ⬜（与 B8 合并做更省） |
 | M2-7 | deb 打包 | 🟡 **批 S 已做**（`scripts/build-deb.sh` + 依赖清单 `scripts/deb-deps.txt` + **依赖清单↔二进制实际 DT_NEEDED 双向校验** + CI 第 11 门）；⚠ **真机 clean deepin 25 容器验收未跑**（本机无 docker/podman）—— D7 的最终验收仍待真机 |
 | M2-8 | 安装后零环境变量 | ✅ **批 S 实测达标**：二进制**无 RPATH/RUNPATH**、`DT_NEEDED` 全是 soname；宿主自带 Qt6/DTK6 ⇒ 裸环境 `--selfcheck` 269/0、**deb 解包后的二进制**裸环境同样 269/0 且能拍快照。⚠ README 原写「运行库在 sysroot 里，环境变量缺一不可」是**失真描述**，已改 |
@@ -359,6 +359,61 @@ D2 门里的四条 `fix` 豁免（`Derived` / `TrayController` / `TrayPopupWindo
 - **`raise()` 在 Wayland 上是空操作**（叠放次序由合成器决定）⇒ Wayland 分支不调它。
 - xcb 会话下**任务栏占 41px**（`taskbarInsets=0,0,0,41`）—— 这正是 M1-8 要用的那组数
   （Wayland 侧 QPA 未必扣面板 ⇒ 要问 `org.deepin.dde.Panel`）。
+
+### E.1d DDE 面板的 D-Bus 接口（批 W 照出 —— **PLAN 写的接口名不存在**）
+
+PLAN §9 M1-8 写的是「`org.deepin.dde.Panel` 位置/光标位置定位」。
+**批 W 在本机总线上逐个探测后确认：`org.deepin.dde.Panel` 这个服务根本不存在。**
+真实的面板几何接口是：
+
+| 服务名 | 对象路径 | 接口 | 说明 |
+|---|---|---|---|
+| `org.deepin.ds.Dock`（新） | `/org/deepin/ds/Dock` | `org.deepin.dde.Dock1` | **只有它带 `position`**（面板在哪条边） |
+| `org.deepin.dde.Dock1`（旧） | `/org/deepin/dde/Dock1` | `org.deepin.dde.Dock1` | 只有 `geometry` + `showInPrimary` |
+| `org.deepin.dde.daemon.Dock1`（旧） | `/org/deepin/dde/daemon/Dock1` | `org.deepin.dde.Dock1` | 同上 |
+
+接口属性（Introspect 实测）：
+
+| 属性 | 类型 | 权限 | 含义 |
+|---|---|---|---|
+| `geometry` | `(iiii)` = QRect | 只读 | 面板在**屏幕坐标系**里的矩形 |
+| `position` | `i` | 读写 | 0=上 1=右 2=下 3=左（**只有新服务名有**） |
+| `showInPrimary` | `b` | 读写 | 面板是否只在主屏 |
+
+**本机实测**：`geometry = (0, 1039, 1920, 41)`、`position = 2`（下）——
+与 QPA 的 `availableGeometry()` 扣出来的边距 **0,0,0,41** **完全吻合**
+（两套独立来源对上了 ⇒ 这条链路可信）。
+
+另附两个**踩过的坑**（都在本批修掉了）：
+
+- D-Bus 的 `(iiii)` 存进 QVariant 后**丢了类型上下文** ⇒ 裸 `arg >> int` 会走
+  libdbus 的「type struct 114 not a basic type」并 **abort**（探针直接 SIGABRT）。
+  正确姿势是 `qdbus_cast<QRect>`（需先 `qDBusRegisterMetaType<QRect>()`）。
+- `QDBusInterface::property()` **没有超时参数** ⇒ 面板服务卡住会把 GUI 线程
+  一起卡住（最深 25s）。改用 `QDBusConnection::call(..., QDBus::Block, 2000)`；
+  实测**服务不存在时立刻**返回错误（非 DDE 桌面零成本）。
+
+### E.1e DDE 托盘图标为什么「没有位置」（批 W 照出 —— **这重写了 M1-3 的风险评估**）
+
+批 W 顺手查了「托盘图标在 DDE 上到底什么状态」，实测三件事：
+
+| 事实 | 实测 |
+|---|---|
+| 托盘**可用** | `QSystemTrayIcon::isSystemTrayAvailable()` = **true**（平台插件认到系统托盘） |
+| 但**位置永远不报** | `QSystemTrayIcon::geometry()` = (0,0,0×0)，等 2s 也不变 ⇒ **托盘几何恒为无效** |
+| 我们**没有**注册成 SNI 项 | 我们的测试程序跑着时，`org.kde.StatusNotifierWatcher` 的已注册项里**只有 3 个 ayatana 项**，没有我们 ⇒ DDE 走的是**旧托盘协议**（XEmbed/Qt），不是 SNI |
+
+⇒ **两条结论**：
+
+1. **迁 SNI 解决不了「弹窗定位」问题** —— SNI 的 `IconName`/`IconThemePath`
+   **同样没有位置字段**。原先把 M1-3 判成「高风险：迁过去会丢托盘状态染色」
+   的**前提**（迁过去能顺带解决定位）**不成立**。
+2. **M1-3 的真实价值只剩「图标颜色」**：SNI 允许 `IconName` 指向**绝对路径**，
+   所以把五态彩色图标预先渲成文件、`IconName` 指过去，颜色**能**保住 ——
+   代价是往缓存目录写文件（属「程序自身依赖」，纪律允许）。
+   ⇒ M1-3 的风险等级应从「高风险」下调为「中等：有明确解法，但要在真机 DDE 上验」。
+
+⇒ 弹窗定位的正确解法**不是** SNI，而是**面板几何**（批 W 已做）。
 
 ---
 

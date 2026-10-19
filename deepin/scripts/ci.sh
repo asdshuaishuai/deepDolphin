@@ -132,49 +132,11 @@ else
 fi
 
 echo "› 4/11 平台探针（正式断言：exit 0 且输出含 backend=）"
-PROBE_RC=0
-PROBE_OUT="$("$BIN" --platform-probe)" || PROBE_RC=$?
-printf '%s\n' "$PROBE_OUT"
-if [ "$PROBE_RC" -ne 0 ]; then
-    echo "✗ platform-probe 退出码 $PROBE_RC（要求 0）" >&2
+# 探针断言独立成 scripts/ci-platform-probe.sh：可单独跑，负控也能精确打它。
+if ! sh "$SRC/scripts/ci-platform-probe.sh" "$BIN"; then
+    echo "✗ 平台探针门失败" >&2
     exit 1
 fi
-if ! printf '%s\n' "$PROBE_OUT" | grep -q '^backend='; then
-    echo "✗ platform-probe 输出缺 backend= 行" >&2
-    exit 1
-fi
-# ⚠ 后端分档（批 V · M1-7）：探针必须报得出「X11 / Wayland / Other」。
-#   报不出来 = 平台差异没有可见面 ⇒ 真机回归时「这台机器跑的是哪套后端」没人知道。
-BACKEND_KIND="$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^backendKind=//p')"
-case "$BACKEND_KIND" in
-    x11|wayland|other) ;;
-    *)
-        echo "✗ platform-probe 的 backendKind= 缺失或不是 x11/wayland/other（得到 '$BACKEND_KIND'）" >&2
-        exit 1
-        ;;
-esac
-# ⚠ 任务栏几何（批 V · M1-7）：四边边距必须是四个整数（面板占位是平台事实，
-#   看不见就等于没有 —— Wayland 分支要靠它接 `org.deepin.dde.Panel`）。
-TASKBAR_INSETS="$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^taskbarInsets=//p')"
-if ! printf '%s' "$TASKBAR_INSETS" | grep -Eq '^[0-9]+,[0-9]+,[0-9]+,[0-9]+$'; then
-    echo "✗ platform-probe 的 taskbarInsets= 缺失或不是四个整数（得到 '$TASKBAR_INSETS'）" >&2
-    exit 1
-fi
-# ⚠ 图标解析（批 U · M1-2）：**有图标主题时**，每个逻辑图标都必须解析得到。
-#   解析不到 = 候选链没覆盖该主题的名字 ⇒ 界面上那个位置是占位圆点 ⇒ 得加候选。
-#   没有图标主题时（offscreen / 极简环境）一律报 `none` 不报 `missing`，
-#   那不是我们的问题（环境事实），故此时不断言。
-ICON_THEME="$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^iconTheme=//p')"
-ICON_MISSING="$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^iconMissing=//p')"
-if [ -z "$ICON_MISSING" ]; then
-    echo "✗ platform-probe 输出缺 iconMissing= 行（图标解析不可见 ⇒ 缺失没人知道）" >&2
-    exit 1
-fi
-if [ -n "$ICON_THEME" ] && [ "$ICON_MISSING" != "0" ]; then
-    echo "✗ 有图标主题（$ICON_THEME）但 $ICON_MISSING 个逻辑图标解析不到 ⇒ 候选链要补" >&2
-    exit 1
-fi
-echo "✓ 平台探针通过（backend=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^backend=//p')，图标主题=${ICON_THEME:-无} 缺失 ${ICON_MISSING} 个，托盘/主题/字号档位见上，offscreen 下托盘无效属预期）"
 
 strip_comments() {
     if command -v perl >/dev/null 2>&1; then

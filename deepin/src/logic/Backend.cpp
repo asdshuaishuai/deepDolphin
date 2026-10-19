@@ -89,7 +89,8 @@ Insets reservedInsets(const QRect &screen, const QRect &available)
 }
 
 PopupPlacement placePopup(const QRect &trayIconGeometry, const QSize &popupSize,
-                           const QRect &available, const PopupGeometry &geo)
+                           const QRect &available, const PopupGeometry &geo,
+                           const PanelGeometry::Panel &panel)
 {
     PopupPlacement out;
     const int w = qMax(0, popupSize.width());
@@ -103,12 +104,51 @@ PopupPlacement placePopup(const QRect &trayIconGeometry, const QSize &popupSize,
         proposed.setLeft(trayIconGeometry.right() - w + geo.dockGap);
         proposed.setTop(trayIconGeometry.bottom() + geo.dockGap);
     } else if (!available.isEmpty()) {
-        // 托盘几何不可用（Wayland 上 `QSystemTrayIcon::geometry()` 常给无效矩形）
-        // ⇒ 屏幕右上（PLAN §8 T4）。⚠ 右边缘对齐口径：QRect 的 right() = left + w - 1,
-        //   所以「右边缘落在 p.x()」对应 left = p.x() - w + 1。
-        const QPoint topRight = available.topRight() + QPoint(geo.fallbackDx, geo.fallbackDy);
-        proposed.setLeft(topRight.x() - w + 1);
-        proposed.setTop(topRight.y());
+        // 托盘几何不可用（DDE 上的常态：托盘是 SNI，拿不到坐标）⇒ 按**面板位置**落。
+        const PanelGeometry::Edge edge = panel.isEmpty() ? PanelGeometry::Edge::Unknown
+                                                          : panel.edge;
+        if (edge != PanelGeometry::Edge::Unknown && !panel.rect.isEmpty()) {
+            // 面板在**哪条边**，弹窗就落在它**朝屏幕中心**的那一侧，
+            // 并贴着面板的「尾端」（横板 = 右端，竖板 = 底端）——
+            // 那正是托盘图标所在的那个角。
+            // ⚠ 一律先算**左上角**再配尺寸：QRect 的 setRight/setBottom 会
+            //   反过来挪动另一条边，混着设必然错位。
+            out.usedPanelGeometry = true;
+            int left = 0;
+            int top = 0;
+            switch (edge) {
+            case PanelGeometry::Edge::Top:
+                // 面板在上 ⇒ 弹窗在面板**下方**，右对齐（与屏幕右缘留 fallbackDx）
+                left = available.right() + geo.fallbackDx - w + 1;
+                top = panel.rect.bottom() + geo.dockGap;
+                break;
+            case PanelGeometry::Edge::Bottom:
+                // 面板在下（DDE 默认）⇒ 弹窗在面板**上方**，右对齐
+                left = available.right() + geo.fallbackDx - w + 1;
+                top = panel.rect.top() - geo.dockGap - h;
+                break;
+            case PanelGeometry::Edge::Left:
+                // 面板在左 ⇒ 弹窗在面板**右侧**，贴底
+                left = panel.rect.right() + geo.dockGap;
+                top = available.bottom() - geo.edgeMargin - h;
+                break;
+            case PanelGeometry::Edge::Right:
+                // 面板在右 ⇒ 弹窗在面板**左侧**，贴底
+                left = panel.rect.left() - geo.dockGap - w;
+                top = available.bottom() - geo.edgeMargin - h;
+                break;
+            case PanelGeometry::Edge::Unknown:
+                break;
+            }
+            proposed.setLeft(left);
+            proposed.setTop(top);
+        } else {
+            // 面板也读不到 ⇒ 屏幕右上（PLAN §8 T4）。⚠ 右边缘对齐口径：QRect 的
+            //   right() = left + w - 1，所以「右边缘落在 p.x()」对应 left = p.x() - w + 1。
+            const QPoint topRight = available.topRight() + QPoint(geo.fallbackDx, geo.fallbackDy);
+            proposed.setLeft(topRight.x() - w + 1);
+            proposed.setTop(topRight.y());
+        }
     } else {
         // 既没有托盘几何、又没有任何屏幕 ⇒ **不猜落点**（空矩形的 topRight 是 (-1,-1)，
         // 拿它算会得出负坐标）。落回原点：位置难看，但确定、可测。

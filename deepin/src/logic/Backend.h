@@ -17,6 +17,8 @@
 //   ⇒ 「结论」可离线测，「执行」由探针 + 接线门守；两边都不藏规则。
 #pragma once
 
+#include "PanelGeometry.h"
+
 #include <QPoint>
 #include <QRect>
 #include <QSize>
@@ -105,7 +107,9 @@ struct PopupGeometry {
 struct PopupPlacement {
     QRect rect;                       ///< 弹窗最终落点（已夹在可用区内）
     bool usedTrayGeometry = false;    ///< 落点是从托盘图标几何算出来的吗
-                                        ///< （false = 托盘几何不可用，落到屏幕右上）
+                                        ///< （false = 托盘几何不可用，落到面板/屏幕角）
+    bool usedPanelGeometry = false;   ///< 落点是不是**按面板位置**算的
+                                        ///< （面板在下 ⇒ 弹窗在面板上方右对齐）
     bool clamped = false;             ///< 落点有没有被夹紧挪动过
 };
 
@@ -117,12 +121,23 @@ struct PopupPlacement {
 ///   · 弹窗比可用区还高（长项目列表）⇒ 顶部**溢出屏幕上边缘**。
 /// ⇒ 这里改成**四边都夹**。
 ///
+/// 【托盘几何不可用时落在哪】——这是 DDE 上的**常态**，不是边角情况：
+///   DDE 的系统托盘由 SNI 托管（`org.deepin.dde.TrayManager1`），
+///   `QSystemTrayIcon::geometry()` **恒为无效矩形** ⇒ 托盘几何一直不可用。
+///   旧实现只能瞎猜「屏幕右上」⇒ 托盘在**底部**任务栏时（DDE 默认布局），
+///   弹窗落在离托盘图标**很远**的屏幕右上角。
+///   ⇒ 有了面板真几何就能落对：面板在下 ⇒ 弹窗在**面板上方右对齐**，
+///     面板在上 ⇒ 面板**下方右对齐**，面板在左/右 ⇒ 弹窗在面板**旁边、贴底**。
+///   面板也读不到 ⇒ 退回「屏幕右上」（旧行为，一字未改）。
+///
 /// @param trayIconGeometry 托盘图标几何；**宽高非正即视为不可用**
 ///        （Wayland 上 `QSystemTrayIcon::geometry()` 常返回无效矩形）。
 /// @param popupSize        弹窗尺寸（由调用方 adjustSize() 后给出）。
 /// @param available        可用区（已扣掉面板/任务栏）。
 /// @param geo              定位参数（数值由托盘域 token 给，本层不拥有）。
+/// @param panel            面板真几何（无效 ⇒ 不按面板定位）。
 PopupPlacement placePopup(const QRect &trayIconGeometry, const QSize &popupSize,
-                           const QRect &available, const PopupGeometry &geo);
+                           const QRect &available, const PopupGeometry &geo,
+                           const PanelGeometry::Panel &panel = PanelGeometry::Panel());
 
 } // namespace Backend

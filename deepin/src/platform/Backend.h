@@ -67,6 +67,12 @@ QRect trayIconGeometry(const QSystemTrayIcon *icon);
 /// 取不到屏幕时返回空矩形（不猜分辨率）。
 QRect availableGeometryAt(const QPoint &anchor);
 
+/// 锚点所在屏幕的**整块**矩形（**未**扣面板/任务栏）。
+///
+/// ⚠ 与 `availableGeometryAt()` 的区别就是「扣没扣面板」——
+///   面板真几何要拿整屏去算「扣掉它之后还剩哪块」⇒ 两个都要。
+QRect screenGeometryAt(const QPoint &anchor);
+
 /// 锚点所在屏幕被面板/任务栏占掉的边距（**任务栏几何**）。
 Backend::Insets taskbarInsetsAt(const QPoint &anchor);
 

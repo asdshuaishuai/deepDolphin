@@ -7,6 +7,7 @@
 #include "../ui/common/FlatButton.h"
 #include "../ui/common/SecondaryLabel.h"
 #include <QApplication>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPainter>
@@ -62,6 +63,20 @@ TrayPopupWindow::TrayPopupWindow(QWidget *parent)
     connect(m_updateAllBtn, &QPushButton::clicked, this, &TrayPopupWindow::updateAllClicked);
     connect(m_quitBtn, &QPushButton::clicked, this, &TrayPopupWindow::quitClicked);
 
+    // ── 失焦收起的**兜底**（批 W · M1-8）──
+    // 原来只有 `QEvent::WindowDeactivate` ⇒ 失焦就收起。Wayland 上失焦事件
+    // **可能不送达**（合成器不给你 focus 变化）⇒ 弹窗赖在屏幕上不走。
+    // 应用级失焦（`applicationStateChanged`）是一定会来的信号 ⇒ 用它兜底。
+    // ⚠ 判据：只在**转成 Inactive** 时收起 ⇒ 弹窗刚弹出、应用还没被激活
+    //   （托盘图标属于壳，点击它激活的是壳不是我们）时**不会**被误收起。
+    if (auto *guiApp = qobject_cast<QGuiApplication *>(QCoreApplication::instance())) {
+        connect(guiApp, &QGuiApplication::applicationStateChanged, this,
+            [this](Qt::ApplicationState state) {
+                if (state == Qt::ApplicationInactive)
+                    hide();
+            });
+    }
+
     rebuildBody(TraySnapshot{});
 }
 
@@ -114,7 +129,7 @@ void TrayPopupWindow::popupNear(const QRect &trayIconGeometry)
     adjustSize();
     // 落点收口到平台层（M1-7）：几何算法在判定层（`logic/Backend`），
     // 屏幕可用区在这里取（平台层），定位参数出自托盘域 token（`TrayGeometry`）。
-    const QRect target = platform::trayPopupTarget(trayIconGeometry, size(), popupGeometry());
+    const QRect target = platform::trayPopupTarget(trayIconGeometry, size(), TrayGeometry::popupGeometry());
     move(target.topLeft());
     // 激活动作也收口到平台层：**这里以前是 show/raise/activateWindow 三连**，
     // 最小化态下 show() 拉不回来（点了跟没点一样）——平台层统一处理。

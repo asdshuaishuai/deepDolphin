@@ -37,8 +37,6 @@ constexpr int iconCanvas = 32;    // 画布边长
 constexpr int iconRingInset = 4;  // 外环内缩（直径 = canvas − 2×inset = 24）
 constexpr int iconCoreInset = 11; // 内芯内缩（直径 = canvas − 2×inset = 10）
 
-} // namespace TrayGeometry
-
 /// 弹窗定位参数（把上面四个 token 打包成判定层的入参形状）。
 ///
 /// ⚠ **这四个数只有这一处出处**：判定层（`logic/Backend`）只管「拿到这组数之后
@@ -47,9 +45,13 @@ constexpr int iconCoreInset = 11; // 内芯内缩（直径 = canvas − 2×inset
 constexpr Backend::PopupGeometry popupGeometry()
 {
     Backend::PopupGeometry g;
+    // ⚠ 显式限定 `TrayGeometry::`：让「值出自本域 token」这件事在源码里**看得见**
+    //   （接线门按这一行钉；写成裸名就认不出来了）。
     g.dockGap = TrayGeometry::dockGap;
     g.edgeMargin = TrayGeometry::edgeMargin;
     g.fallbackDx = TrayGeometry::fallbackDx;
     g.fallbackDy = TrayGeometry::fallbackDy;
     return g;
 }
+
+} // namespace TrayGeometry

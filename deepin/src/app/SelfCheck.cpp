@@ -7,6 +7,7 @@
 #include "../logic/AgentToolPlan.h"
 #include "../logic/ArchReceipt.h"
 #include "../logic/Backend.h"
+#include "../logic/PanelGeometry.h"
 #include "../logic/CanvasFont.h"
 #include "../logic/CodeGraphBuild.h"
 #include "../logic/DashFilter.h"
@@ -862,7 +863,7 @@ int SelfCheck::run(QStringList &log)
         // ⚠ **参数从托盘域 token 取**（不在这儿另抄一份数）：判据要锁的是**算法**
         //   （落点不越界、托盘几何不可用时落屏幕右上），不是某个具体数值；
         //   数值另抄一份 = 两个出处 = 改一处忘另一处。
-        const Backend::PopupGeometry geo = popupGeometry();
+        const Backend::PopupGeometry geo = TrayGeometry::popupGeometry();
         const QRect avail(0, 30, 1920, 970); // 顶栏 30 + 任务栏 80
 
         // ⚠ **右边缘溢出**（本批修的真缺陷）：托盘在屏幕右上角时，弹窗右边缘 =
@@ -907,6 +908,147 @@ int SelfCheck::run(QStringList &log)
         // 夹紧是**可见事实**：越界时标记为真，不越界时为假。
         check(log, "托盘弹窗：越界时标记被夹紧（夹紧不是静默修正）",
             corner.clamped && !normal.clamped);
+
+        // ── 面板感知落点（批 W · M1-8）───────────────────────────
+        // ⚠ 这条是本批的**主修复**：DDE 的托盘是 SNI ⇒ 托盘坐标**恒拿不到**
+        //   ⇒ 旧实现只能瞎猜「屏幕右上」，而托盘在**底部**任务栏里（DDE 默认）
+        //   ⇒ 弹窗落在离托盘图标很远的地方。
+        {
+            PanelGeometry::Panel bottomPanel;
+            bottomPanel.valid = true;
+            bottomPanel.rect = QRect(0, 1039, 1920, 41); // 本机实测值
+            bottomPanel.edge = PanelGeometry::Edge::Bottom;
+            const QRect availBottom(0, 0, 1920, 1039);   // 扣掉面板后的可用区
+
+            const Backend::PopupPlacement byPanel = Backend::placePopup(
+                QRect(), QSize(380, 300), availBottom, geo, bottomPanel);
+            // ⚠ 期望值与无头探针实测**逐字一致**（trayPopupTarget=1524,731,380,300）
+            //   —— 判据与运行期事实对得上，不是各算各的。
+            check(log, "托盘弹窗：面板在下时弹窗落在面板上方、右对齐（不再飞到屏幕右上）",
+                byPanel.usedPanelGeometry && !byPanel.usedTrayGeometry
+                    && byPanel.rect.left() == 1524 && byPanel.rect.top() == 731);
+
+            PanelGeometry::Panel topPanel;
+            topPanel.valid = true;
+            topPanel.rect = QRect(0, 0, 1920, 41);
+            topPanel.edge = PanelGeometry::Edge::Top;
+            const QRect availTop(0, 41, 1920, 1039);
+            const Backend::PopupPlacement byTopPanel = Backend::placePopup(
+                QRect(), QSize(380, 300), availTop, geo, topPanel);
+            check(log, "托盘弹窗：面板在上时弹窗落在面板下方、右对齐",
+                byTopPanel.usedPanelGeometry && byTopPanel.rect.left() == 1524
+                    && byTopPanel.rect.top() == 48);
+            // 没有面板 ⇒ 旧行为一字不改（屏幕右上）
+            const Backend::PopupPlacement noPanel = Backend::placePopup(
+                QRect(), QSize(380, 300), availBottom, geo, PanelGeometry::Panel());
+            check(log, "托盘弹窗：读不到面板时退回屏幕右上（旧行为不变）",
+                !noPanel.usedPanelGeometry && noPanel.rect.top() == 32);
+        }
+    }
+
+    // ── 12d. DDE 面板几何（批 W · M1-8）─────────────────────────────
+    // 判定层纯函数（QGuiApplication 构造前可跑）：面板在哪条边、扣掉面板后
+    // 可用区还剩哪块。面板几何来自 D-Bus（平台层），这里锁的是**算法**。
+    {
+        // 位置枚举（dde-shell 的 Position：0=上 1=右 2=下 3=左）
+        check(log, "面板几何：位置枚举对上（0上 1右 2下 3左，别的算不知道）",
+            PanelGeometry::edgeFromPosition(0) == PanelGeometry::Edge::Top
+                && PanelGeometry::edgeFromPosition(1) == PanelGeometry::Edge::Right
+                && PanelGeometry::edgeFromPosition(2) == PanelGeometry::Edge::Bottom
+                && PanelGeometry::edgeFromPosition(3) == PanelGeometry::Edge::Left
+                && PanelGeometry::edgeFromPosition(99) == PanelGeometry::Edge::Unknown);
+        check(log, "面板几何：边的名字能报出来（探针按名字报告）",
+            PanelGeometry::edgeName(PanelGeometry::Edge::Bottom) == QStringLiteral("bottom")
+                && PanelGeometry::edgeName(PanelGeometry::Edge::Unknown)
+                    == QStringLiteral("unknown"));
+
+        const QRect screen(0, 0, 1920, 1080);
+        PanelGeometry::Panel bottom;
+        bottom.valid = true;
+        bottom.rect = QRect(0, 1039, 1920, 41);
+        bottom.edge = PanelGeometry::Edge::Bottom;
+        // ⚠ 本机实测：面板 (0,1039,1920,41) 扣完应是 (0,0,1920,1039) ——
+        //   与 QPA 的 availableGeometry **逐字一致**（两套独立来源对上了）。
+        check(log, "面板几何：扣掉底部面板后的可用区（与 QPA 的 availableGeometry 一致）",
+            PanelGeometry::usableArea(screen, bottom) == QRect(0, 0, 1920, 1039));
+
+        PanelGeometry::Panel top;
+        top.valid = true;
+        top.rect = QRect(0, 0, 1920, 41);
+        top.edge = PanelGeometry::Edge::Top;
+        check(log, "面板几何：扣掉顶部面板后可用区往下移",
+            PanelGeometry::usableArea(screen, top) == QRect(0, 41, 1920, 1039));
+
+        PanelGeometry::Panel left;
+        left.valid = true;
+        left.rect = QRect(0, 0, 41, 1080);
+        left.edge = PanelGeometry::Edge::Left;
+        check(log, "面板几何：扣掉左侧面板后可用区往右移",
+            PanelGeometry::usableArea(screen, left) == QRect(41, 0, 1879, 1080));
+
+        PanelGeometry::Panel right;
+        right.valid = true;
+        right.rect = QRect(1879, 0, 41, 1080);
+        right.edge = PanelGeometry::Edge::Right;
+        check(log, "面板几何：扣掉右侧面板后可用区往左移",
+            PanelGeometry::usableArea(screen, right) == QRect(0, 0, 1879, 1080));
+
+        // 面板缺席 ⇒ 一点都不能扣（否则可用区凭空少一块）
+        check(log, "面板几何：没有面板时可用区原样返回",
+            PanelGeometry::usableArea(screen, PanelGeometry::Panel()) == screen);
+        // ⚠ **面板悬空**（不贴屏幕边）⇒ 可用区按面板的**上沿**算，不是「减厚度」。
+        //   面板 (0,1000,1920,41) 悬在 1080 屏里：正确的是 (0,0,1920,999)；
+        //   「减厚度」会算成 (0,0,1920,1039) —— 两种实现在「面板贴边」时**完全一样**，
+        //   只测贴边的面板 = 判据与错误实现不分叉（负控实测，第十九次同类问题）。
+        PanelGeometry::Panel floating;
+        floating.valid = true;
+        floating.rect = QRect(0, 1000, 1920, 41);
+        floating.edge = PanelGeometry::Edge::Bottom;
+        check(log, "面板几何：面板悬空时可用区按面板上沿算（不是减厚度）",
+            PanelGeometry::usableArea(screen, floating) == QRect(0, 0, 1920, 1000));
+        // 面板把整块屏占满 ⇒ 扣完是空矩形 ⇒ 退回整屏（空矩形会让落点全乱）
+        PanelGeometry::Panel huge;
+        huge.valid = true;
+        huge.rect = screen;
+        huge.edge = PanelGeometry::Edge::Bottom;
+        check(log, "面板几何：面板占满整屏时退回整屏（不给出空可用区）",
+            PanelGeometry::usableArea(screen, huge) == screen);
+
+        // ⚠ **位置读不出来时按几何猜边**：通高的左侧面板同时贴着上/下/左三条边，
+        //   按固定顺序挑会挑到「上」⇒ 把可用区从**底**上扣（错得离谱）。
+        //   正确答案是「左」（接触长度 = 屏高 > 面板宽）。
+        PanelGeometry::Panel sideUnknown;
+        sideUnknown.valid = true;
+        sideUnknown.rect = QRect(0, 0, 60, 1080); // 通高、贴左
+        sideUnknown.edge = PanelGeometry::Edge::Unknown;
+        check(log, "面板几何：位置未知时按接触长度猜边（通高左面板判「左」不是「上」）",
+            PanelGeometry::usableArea(screen, sideUnknown) == QRect(60, 0, 1860, 1080));
+        // ⚠ **通栏顶部面板**（edge 未知）：它同时贴着上/左/右三条边。
+        //   按「最后一条命中的边」猜会判成「右」；按「接触长度最大」才判「上」
+        //   （接触长度 = 屏宽 > 面板高）。⇒ 上一条与这一条**合起来**才把
+        //   「先命中」「后命中」两种错实现都堵住（负控实测，第十九次同类问题）。
+        PanelGeometry::Panel topUnknown;
+        topUnknown.valid = true;
+        topUnknown.rect = QRect(0, 0, 1920, 41); // 通栏、贴上
+        topUnknown.edge = PanelGeometry::Edge::Unknown;
+        check(log, "面板几何：位置未知时通栏顶部面板判「上」（不是最后命中的那条边）",
+            PanelGeometry::usableArea(screen, topUnknown) == QRect(0, 41, 1920, 1039));
+
+        // Wayland 下 QPA 的 availableGeometry **不扣**面板 ⇒ 用面板真几何修正
+        const QRect qpaNoPanel(0, 0, 1920, 1080);
+        check(log, "面板几何：QPA 没扣面板时用面板真几何补上（Wayland 场景）",
+            PanelGeometry::effectiveAvailable(qpaNoPanel, screen, bottom)
+                == QRect(0, 0, 1920, 1039));
+        // X11 下 QPA 已经扣了 ⇒ 取交不变（不能越扣越多）
+        const QRect qpaWithPanel(0, 0, 1920, 1039);
+        check(log, "面板几何：QPA 已扣过面板时不重复扣（X11 场景）",
+            PanelGeometry::effectiveAvailable(qpaWithPanel, screen, bottom)
+                == QRect(0, 0, 1920, 1039));
+        // 面板在别的屏上（多屏 + 面板只在主屏）⇒ 不动这块屏
+        const QRect otherScreen(1920, 0, 1920, 1080);
+        check(log, "面板几何：面板不在这块屏上时不动它",
+            PanelGeometry::effectiveAvailable(QRect(1920, 0, 1920, 1080), otherScreen, bottom)
+                == QRect(1920, 0, 1920, 1080));
     }
 
     // ── 13. FlatButton 契约（M3b 组件三）：padding 一档与双态叠加（纯函数层）──

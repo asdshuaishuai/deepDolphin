@@ -28,10 +28,13 @@
 #include "logic/EngineDownload.h"
 #include "logic/IconNames.h"
 #include "logic/IndexStatus.h"
+#include "logic/PanelGeometry.h"
 #include "logic/SyntaxHighlight.h"
 #include "logic/Liveness.h"
 #include "logic/Route.h"
+#include "platform/DdePanel.h"
 #include "tray/TrayController.h"
+#include "tray/TrayGeometry.h"
 #include "ui/ColorSampleSheet.h"
 #include "ui/DesignTokens.h"
 #include "ui/PanelWindow.h"
@@ -271,6 +274,35 @@ static int headlessPlatformProbe(int argc, char *argv[])
             const Backend::Insets ins = platform::taskbarInsetsAt(anchor);
             fprintf(stdout, "taskbarInsets=%d,%d,%d,%d\n", ins.left, ins.top, ins.right,
                 ins.bottom);
+        }
+
+        // DDE 面板真几何（批 W · M1-8）：面板**自己**报的几何（D-Bus），
+        // 以及由此算出的可用区与**托盘弹窗落点**。
+        // ⚠ 探针是「一次性、无交互」的无头工具 ⇒ 这里**同步读**是安全的
+        //   （交互路径走 platform::DdePanel::refreshAsync()，不卡 GUI 线程）。
+        {
+            const PanelGeometry::Panel panel = platform::DdePanel::readNow();
+            fprintf(stdout, "panelService=%d\n", platform::DdePanel::servicePresent() ? 1 : 0);
+            fprintf(stdout, "panelValid=%d\n", panel.valid ? 1 : 0);
+            if (panel.valid) {
+                fprintf(stdout, "panelRect=%d,%d,%d,%d\n", panel.rect.x(), panel.rect.y(),
+                    panel.rect.width(), panel.rect.height());
+                fprintf(stdout, "panelEdge=%s\n", qPrintable(PanelGeometry::edgeName(panel.edge)));
+            }
+            const QRect screen = platform::screenGeometryAt(QPoint(0, 0));
+            fprintf(stdout, "screenRect=%d,%d,%d,%d\n", screen.x(), screen.y(), screen.width(),
+                screen.height());
+            const QRect avail = PanelGeometry::effectiveAvailable(
+                platform::availableGeometryAt(QPoint(0, 0)), screen, panel);
+            fprintf(stdout, "usableRect=%d,%d,%d,%d\n", avail.x(), avail.y(), avail.width(),
+                avail.height());
+            // 托盘弹窗落点：**托盘几何不可用**（DDE 常态：托盘是 SNI，拿不到坐标）
+            // ⇒ 走面板/兜底落点。尺寸用 380×300 代替真实高度（探针里没有真实弹窗）。
+            const QRect target = Backend::placePopup(QRect(), QSize(380, 300), avail,
+                TrayGeometry::popupGeometry(), panel)
+                                    .rect;
+            fprintf(stdout, "trayPopupTarget=%d,%d,%d,%d\n", target.x(), target.y(),
+                target.width(), target.height());
         }
 
         // 托盘 geometry：先置可见才有平台集成可言；真机托盘嵌入是异步的（毫秒级），
@@ -716,6 +748,12 @@ int main(int argc, char *argv[])
     const LaunchRoute route = Route::parseArgs(app.arguments());
 
     PanelWindow panel(route, engine, &model);
+
+    // ── DDE 面板真几何（批 W · M1-8）：托盘弹窗要落在**面板旁边**，
+    //    而 DDE 的托盘是 SNI（`QSystemTrayIcon::geometry()` 恒无效）⇒
+    //    拿不到托盘坐标时，弹窗的落点只能靠面板几何推。
+    //    读面板是 D-Bus 同步往返 ⇒ 放 worker 线程，结果回 GUI 线程存缓存。
+    platform::DdePanel::refreshAsync();
 
     // ── 托盘（C10）：图标五态 + 速览弹窗 + 右键两项纪律 ──
     TrayController *tray = new TrayController();

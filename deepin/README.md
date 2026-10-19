@@ -963,6 +963,13 @@ deepin 接进 GUI 属**领先 mac**。
 | 228 | **弹窗定位的四个数值只有托盘域一个出处**（`TrayGeometry::popupGeometry()`） | 判定层只管「拿到这组数之后怎么落」，**不拥有数值** —— 两处各写一份，改一处忘另一处就是「弹窗贴着屏幕边」这种没人说得清来源的毛病。判定层的 `PopupGeometry` 默认值全 0（= 调用方没给），真实值由托盘域 token 打包 | 判定层入参是个结构体，调用方要打包一次 |
 | 229 | **任务栏几何先做成只读事实（探针可见），M1-8 才当输入用** | X11/DDE 下 `availableGeometry()` 已扣掉面板；Wayland 下 QPA **未必**扣 ⇒ 这行正是 M1-8 接 `org.deepin.dde.Panel` 的输入口。现在先让它**看得见**（探针报 `taskbarInsets=l,t,r,b`），别等要用时才发现没这份数据 | 现在只是读出，没有消费者去**用**它（探针是消费者）；Wayland 侧仍要等 M1-8 |
 | 230 | **后端分档带 token 边界**（`wayland` / `wayland-egl` 命中，`mywayland` / `xwayland` **不**命中） | 朴素前缀比较会把 `mywayland` 也判成 Wayland ⇒ 走错激活动作分支（Wayland 分支不调 `raise`）。这是「子串互相顶替」在**协议名**上的同款形态（累计第 17 次） | 无 |
+| 231 | **面板几何的真值源 = 面板自己报（D-Bus），不是 QPA 推算** | 批 V 的任务栏边距是「QPA 可用区与整屏的差值」——**推算**的。Wayland 下 QPA **未必**扣面板 ⇒ 推算值在 Wayland 上可能是错的。而 DDE 面板**自己**报 `geometry`（QRect）与 `position`（在哪条边）⇒ 不用猜。实测：面板报 (0,1039,1920,41)/bottom，与 QPA 推算出的边距 **0,0,0,41** **完全吻合**（两套独立来源对上了） | 多一条 D-Bus 依赖；服务不在时自动退回报缺，**不影响非 DDE 桌面**（实测服务不存在时**立刻**返回错误，不等超时） |
+| 232 | **PLAN 里写的 `org.deepin.dde.Panel` 不存在 —— 真实接口是 `org.deepin.ds.Dock`（新）/ `org.deepin.dde.Dock1`（旧）的 `org.deepin.dde.Dock1` 接口** | 实测本机会话总线上 `org.deepin.ds.Dock`、`org.deepin.dde.Dock1`、`org.deepin.dde.daemon.Dock1` **三个都在**，Introspect 出 `geometry`（`(iiii)`，只读）、`position`（`i`：0上 1右 2下 3左，**只有新服务有**）、`showInPrimary`（`b`）；而 `org.deepin.dde.Panel` **没有任何服务**。⇒ PLAN §9 M1-8 的描述按实际接口改写（照实记，不假装原计划能直接做） | 三个服务名都要试（新服务才带 `position`）；旧服务只有 `geometry` ⇒ 位置读不到时按几何猜边 |
+| 233 | **D-Bus 属性读必须带超时**（`QDBusConnection::call(..., QDBus::Block, 2000)`），**不用** `QDBusInterface::property()` | `property()` **没有超时参数** ⇒ 面板服务卡住时会把 GUI 线程一起卡住（最深 25s）。带超时的 `call` 在服务**不存在**时实测**立刻**返回错误 ⇒ 非 DDE 桌面零成本 | `Get` 的回包裹在 `QDBusVariant` 里 ⇒ 要多拆一层；位置与矩形要分两次读 |
+| 234 | **D-Bus 的 `(iiii)` 只能用 `qdbus_cast<QRect>` 解档，裸 `arg >> int` 会 abort** | 存进 QVariant 的 `QDBusArgument` **丢掉了类型上下文**（它带着「当前类型」，而那个上下文在变体里存不住）⇒ 裸拆会走进 libdbus 的「type struct 114 not a basic type」并 **abort**。**本批实测崩过一次**（探针直接 SIGABRT）⇒ `qdbus_cast` 走**注册过的类型解档器**（QRect 的布局它知道） | 需要 `qDBusRegisterMetaType<QRect>()` 注册一次 |
+| 235 | **面板读放 worker 线程 + 缓存**（交互路径不阻塞 GUI） | D-Bus 的属性读是**同步往返**。放在「用户点托盘」那一刻读，面板服务卡住就卡 GUI（最深 2s 冻结）。⇒ 启动时异步读一次，结果回 GUI 线程存缓存 | 弹窗用的是**上一次**读到的值 ⇒ 面板挪边后**第一次**弹可能偏（低频动作，可接受）；缓存只写在 GUI 线程 ⇒ 无需加锁 |
+| 236 | **托盘弹窗落点按面板位置定**：面板在下 ⇒ 弹窗在面板**上方**、右对齐 | DDE 的系统托盘是 **SNI**（宿主是 `org.deepin.dde.TrayManager1`）⇒ `QSystemTrayIcon::geometry()` **恒为无效矩形** ⇒ 托盘坐标**一直**拿不到（不是边角情况，是常态）⇒ 旧实现只能瞎猜「屏幕右上」。而托盘在**底部**任务栏里（DDE 默认布局，position=2）⇒ 弹窗落在**离托盘图标很远**的屏幕右上角。实测：旧落点 (1523,32) ⇒ 新落点 (1524,731)（面板正上方） | 多一个面板分支；**读不到面板时退回旧行为（一字未改）** |
+| 237 | **弹窗失焦收起加应用级兜底**（`applicationStateChanged`），且**只在转成 Inactive 时**收起 | Wayland 上失焦事件可能**不送达**（合成器不给 focus 变化）⇒ 弹窗赖在屏幕上不走。应用级失焦是一定会来的信号 ⇒ 用它兜底。⚠ 判据：只在**转成 Inactive** 时收起 ⇒ 弹窗刚弹出、应用还没被激活时**不会**被误收起 | ⚠ **已知局限**：若应用从未被激活（Wayland 下 `requestActivate` 失败），应用级状态**没有变化** ⇒ 兜底不触发（仍靠 `WindowDeactivate` 或用户点到别处） |
 
 **本批验证**（全部实跑）：`--selfcheck` **205 通过 0 失败**（198 → 205，+7 例：id 取名字 / 概览解析 /
 概览契约不对时报错 / 符号详情解析 / 符号不存在是「没找到」不是错误 / 影响面解析 / 影响面契约不对时报错）；
@@ -1584,6 +1591,71 @@ Wayland 不调 `raise` / 弹窗四边都夹且边距只在越界时生效 / 定�
 托盘几何无效时的落点）**无法实跑验证**；真机 DDE 桌面上的托盘弹窗观感未复核
 （本批全部离屏/探针验证）。M1-8 的**输入口已就位**（`taskbarInsets` 正是
 Wayland 侧接 `org.deepin.dde.Panel` 要用的那组数）。
+
+### 批 W：M1-8 Wayland 分支 —— 面板几何真值源 + 托盘弹窗落回托盘旁边
+
+决策见上表 **231–237**（面板几何以面板自报为准 / PLAN 写的 `org.deepin.dde.Panel`
+不存在 / D-Bus 读必须带超时 / `(iiii)` 只能用 `qdbus_cast` 解档 / 面板读放 worker
+线程 + 缓存 / 弹窗落点按面板位置定 / 失焦收起加应用级兜底）。
+
+**做了什么**：新增判定层 `src/logic/PanelGeometry.{h,cpp}`（纯函数）——
+`enum class Edge { Unknown, Top, Right, Bottom, Left }` + `edgeFromPosition()`
++ `usableArea()`（屏幕扣掉面板）+ `effectiveAvailable()`（QPA 可用区 × 面板真几何）；
+新增取数层 `src/platform/DdePanel.{h,cpp}` —— D-Bus 读面板几何（**2s 超时**、
+worker 线程读 + 缓存）；`logic/Backend::placePopup()` 增加面板参数（面板在下 ⇒
+弹窗落在**面板上方**、右对齐）；`platform::trayPopupTarget()` 在托盘坐标不可用时
+改用**光标所在屏**；`TrayPopupWindow` 失焦收起加 `applicationStateChanged` 兜底；
+`--platform-probe` 增报 `panelService` / `panelValid` / `panelRect` / `panelEdge` /
+`screenRect` / `usableRect` / `trayPopupTarget`。
+**探针断言抽成独立脚本** `scripts/ci-platform-probe.sh`（与 `ci-d2.sh`/`ci-wiring.sh`
+同款做法：可单独跑，负控能精确打这一门）。
+
+**照实修正 PLAN 的一处失真**：PLAN §9 M1-8 写「`org.deepin.dde.Panel` 位置」——
+**这个服务不存在**（实测本机会话总线上没有它）。真实接口是
+`org.deepin.ds.Dock`（新）/ `org.deepin.dde.Dock1`（旧）的 `org.deepin.dde.Dock1`
+接口，属性 `geometry`（QRect）+ `position`（边）。已按真实接口做完，并把 PLAN
+那一行改成实测结论。
+
+**修掉一个真缺陷**：DDE 的系统托盘是 **SNI**（宿主 `org.deepin.dde.TrayManager1`）
+⇒ `QSystemTrayIcon::geometry()` **恒为无效矩形** ⇒ 托盘坐标**一直**拿不到
+（不是边角情况，是常态）⇒ 旧实现只能瞎猜「屏幕右上」。而托盘在**底部**任务栏里
+（DDE 默认布局，position=2）⇒ 弹窗落在**离托盘图标很远**的屏幕右上角。
+实测：旧落点 **(1523, 32)** ⇒ 新落点 **(1524, 731)**（面板正上方）。
+
+**两套独立来源对上了**：面板自报 `geometry = (0,1039,1920,41)` / `position = 2`（下），
+QPA 推算出的任务栏边距是 `0,0,0,41` ⇒ **两套来源完全吻合** ⇒ 这条链路可信。
+
+**本批验证**（全部实跑）：`--selfcheck` **322 通过 0 失败**（305 → 322，+17 例）；
+`ci-wiring.sh` **337 项**（315 → 337，+22 项）；`ci.sh` **11/11 门全绿**；
+`contract-check.sh` **109/109**；D2 **0/0**；**负控 28 处全部真红**
+（判据 11 + 接线门 14 + 探针门 3）。
+
+**本批踩到并修掉的三个坑**（都是实测撞出来的，不是推理）：
+① D-Bus 的 `(iiii)` 存进 QVariant 后**丢了类型上下文** ⇒ 裸 `arg >> int` 会走
+libdbus 的「type struct 114 not a basic type」并 **abort**（探针直接 SIGABRT）⇒
+改用 `qdbus_cast<QRect>`（需先 `qDBusRegisterMetaType<QRect>()`）；
+② `QDBusInterface::property()` **没有超时参数** ⇒ 面板服务卡住会把 GUI 线程
+一起卡住（最深 25s）⇒ 改用 `QDBusConnection::call(..., QDBus::Block, 2000)`
+（实测**服务不存在时立刻**返回错误 ⇒ 非 DDE 桌面零成本）；
+③ 我自己写的注释**是错的** —— 原写「`setTop/setBottom` 会把另一边撑大」，
+实测 Qt6 的 setter 是「设这一条边、另一边不动」（**改变**可用区大小）⇒ 注释按实测改写。
+
+**负控抓出并已修五处**（第十九次「判据与错误实现不分叉」）：
+① `setBottom` 与 `adjust` 在「面板贴着屏边」时**完全等价** ⇒ 那个变异抓不住任何
+东西 ⇒ 补「**面板悬空**」的夹具（正确可用区按面板**上沿**算，不是减厚度）；
+② 「位置未知时猜边」的夹具只堵住了「先命中」这种错实现，**没堵住「后命中」**
+⇒ 补「通栏顶部面板」夹具，两条合起来才把两种错实现都堵住；
+③ 一处变异在当前夹具下是**语义等价**的（QPA 已扣过面板时再扣一次恰好无变化）
+⇒ 换成真会改结果的写法；
+④ 门项盯 `applicationStateChanged` 这个**字符串** ⇒ 把守卫改成拿不到实例，
+那行字还在、兜底却永远不执行 ⇒ 门加「必须用 `qobject_cast` 拿 QGuiApplication」；
+⑤ 门项 `const PanelGeometry::Panel &panel` **缺 token 边界** ⇒ 改名成
+`&panelIgnored` 照样匹配（子串顶替，累计第十八次）⇒ 门改盯 `&panel =`。
+
+**未完成**：**本机无 Wayland 会话** ⇒ Wayland 侧（`requestActivate` 真机效果、
+失焦事件是否真的不送达）**无法实跑验证**；真机 DDE 桌面上的弹窗观感未复核
+（本批全部离屏/探针验证）。已知局限：若应用从未被激活（Wayland 下激活可能失败），
+应用级状态**没有变化** ⇒ 失焦兜底不触发（仍靠 `WindowDeactivate` 或用户点到别处）。
 
 ## 分层纪律（后续阶段必须延续）
 

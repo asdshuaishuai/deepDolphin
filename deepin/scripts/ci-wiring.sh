@@ -662,6 +662,42 @@ arch_need "$SRC/src/app/SelfCheck.cpp" 'Backend::placePopup\(' 'SelfCheck 覆盖
 arch_need "$SRC/src/app/SelfCheck.cpp" 'Backend::reservedInsets\(' 'SelfCheck 覆盖任务栏边距'
 arch_need "$SRC/src/main.cpp" 'backendKind=' '无头探针报出后端分档（平台事实可见）'
 
+# ── 批 W · M1-8 Wayland 分支 + DDE 面板真几何 ──────────────────────
+# 面板几何是**面板自己报的**（D-Bus），不是我们推算的；落点与失焦兜底都挂在这上面。
+arch_need "$SRC/src/logic/PanelGeometry.h" 'namespace PanelGeometry [{]' '面板几何判定层有自己的命名空间'
+# ⚠ token 边界：`enum class Edge` 后面必须跟 `{`（少了它，`enum class EdgeX` 照样匹配）
+arch_need "$SRC/src/logic/PanelGeometry.h" 'enum class Edge [{]' '面板几何判定层有边枚举'
+arch_need "$SRC/src/logic/PanelGeometry.cpp" 'Edge edgeFromPosition\(int position\)' '面板位置枚举到边的判定有唯一入口'
+arch_need "$SRC/src/logic/PanelGeometry.h" 'QRect usableArea\(const QRect &screen, const Panel &panel\)' '扣掉面板后的可用区有唯一入口'
+arch_need "$SRC/src/logic/PanelGeometry.h" 'QRect effectiveAvailable\(' 'QPA 可用区与面板真几何的合成有唯一入口'
+
+arch_need "$SRC/src/platform/DdePanel.h" 'namespace DdePanel [{]' '面板取数层有自己的命名空间'
+# ⚠ **盯住具体那一行**：QRect 的 (iiii) 只能靠 qdbus_cast 解档。
+#   自己 `arg >> x >> y` 会走进 libdbus 的「type struct not a basic type」并 abort
+#   （实测崩过一次）—— 换成别的写法就抓不到了。
+arch_need "$SRC/src/platform/DdePanel.cpp" 'qdbus_cast<QRect>' '面板矩形用 qdbus_cast 解档（裸 >> int 会 abort）'
+arch_forbid "$SRC/src/platform/DdePanel.cpp" 'QDBusArgument.*>>' '面板取数层不裸拆 D-Bus 结构体（会 abort）'
+# ⚠ D-Bus 同步读必须有**超时**：面板服务卡住时不能把 GUI 线程一起卡住。
+#   `QDBusInterface::property()` **没有**超时参数 ⇒ 禁用。
+arch_need "$SRC/src/platform/DdePanel.cpp" 'QDBus::Block, 2000' '面板属性读带 2s 超时（不卡 GUI 线程）'
+arch_forbid "$SRC/src/platform/DdePanel.cpp" 'QDBusInterface::property|\.property\(' '面板属性读不用无超时的 property()'
+
+arch_need "$SRC/src/platform/Backend.cpp" 'DdePanel::current\(\)' '平台的落点用面板真几何'
+arch_need "$SRC/src/platform/Backend.cpp" 'effectiveAvailable\(' '平台的可用区用面板真几何修正（Wayland 场景）'
+arch_need "$SRC/src/platform/Backend.cpp" 'QCursor::pos\(\)' '托盘几何不可用时按光标所在屏定位'
+arch_need "$SRC/src/logic/Backend.h" 'const PanelGeometry::Panel &panel =' '落点判定接面板参数'
+arch_need "$SRC/src/tray/TrayPopupWindow.cpp" 'applicationStateChanged' '弹窗失焦收起有应用级兜底（Wayland 失焦事件可能不送）'
+arch_need "$SRC/src/tray/TrayPopupWindow.cpp" 'Qt::ApplicationInactive' '兜底只在转成 Inactive 时收起（不误收刚弹出的窗）'
+# ⚠ 兜底那一段必须**真拿得到** QGuiApplication（qobject_cast）——
+#   只盯 `applicationStateChanged` 这个**字符串**不够：把守卫改成拿不到实例，
+#   那行字还在，兜底却**永远不执行**（负控实测，第十九次同类问题）。
+arch_need "$SRC/src/tray/TrayPopupWindow.cpp" 'qobject_cast<QGuiApplication \*>' '兜底拿得到 QGuiApplication（否则那段代码永远不跑）'
+arch_need "$SRC/src/main.cpp" 'panelRect=' '无头探针报出面板矩形'
+arch_need "$SRC/src/main.cpp" 'panelEdge=' '无头探针报出面板所在边'
+arch_need "$SRC/src/main.cpp" 'trayPopupTarget=' '无头探针报出托盘弹窗落点'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'PanelGeometry::usableArea\(' 'SelfCheck 覆盖面板可用区'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'usedPanelGeometry' 'SelfCheck 覆盖面板感知落点'
+
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \
          src/logic/CodeGraphBuild.cpp src/ui/ArchCanvasWidget.cpp \
@@ -672,7 +708,8 @@ for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToo
          src/logic/SyntaxHighlight.cpp src/ui/CodeHighlighter.cpp \
          src/logic/GraphInsight.cpp src/logic/EngineDoctor.cpp \
          src/logic/EngineConfig.cpp src/logic/IndexStatus.cpp \
-         src/logic/CanvasFont.cpp src/logic/Backend.cpp src/platform/Backend.cpp; do
+         src/logic/CanvasFont.cpp src/logic/Backend.cpp src/logic/PanelGeometry.cpp \
+         src/platform/Backend.cpp src/platform/DdePanel.cpp; do
     # ⚠ 必须**整词**匹配：`grep -qF "$f"` 是子串匹配，把登记项改成
     #   `src/logic/EngineDoctor.cpp.disabled` 照样命中 —— 门绿着，文件却没编进去。
     #   负控实测过这一条（假阴性）。故用「前后是行首/行尾或空白」的精确匹配。
