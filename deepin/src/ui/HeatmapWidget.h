@@ -12,6 +12,7 @@
 // 且窗口不可见时停表（mac 的电量纪律）。
 #pragma once
 #include <QElapsedTimer>
+#include <QHash>
 #include <QTimer>
 #include <QWidget>
 #include "../logic/CodeGraphBuild.h"
@@ -61,8 +62,18 @@ private:
     QVector<HeatLayout::Card> m_cards;
     QVector<HeatLayout::Route> m_routes;
     QHash<QString, int> m_hues;
-    QString m_cacheKey;
+    /// 布局缓存的判据（**逐项比较**，不拼字符串键）：
+    /// ⚠ 原来用 QString 拼缓存键（"%1|%2x%3|%4"）—— 30fps 下每帧拼一次
+    ///   四个参数的 QString，纯浪费。改成成员逐项比较，零分配。
+    int m_cacheDrill = -1;
+    int m_cacheW = -1;
+    int m_cacheH = -1;
+    int m_cacheEdgeCount = -1;
     bool m_cacheValid = false;
+    /// id → 卡片 的索引（**随布局一起建**）。
+    /// ⚠ 原来在 paintRoutes 里**每帧**重建这个 QHash —— 50 张卡就是每帧
+    ///   50 次哈希插入，30fps 下每秒 1500 次。它只随布局变，缓存即可。
+    QHash<QString, const HeatLayout::Card *> m_cardById;
     double m_contentHeight = 240; ///< 卡片铺完的实际高度（滚动范围）
 
     QElapsedTimer m_clock;

@@ -87,13 +87,33 @@ if ! printf '%s\n' "$PROBE_OUT" | grep -q '^backend='; then
 fi
 echo "✓ 平台探针通过（backend=$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^backend=//p')，托盘/主题/字号档位见上，offscreen 下托盘无效属预期）"
 
+strip_comments() {
+    if command -v perl >/dev/null 2>&1; then
+        perl -pe 's{//(?!:).*$}{}' "$1"
+    else
+        sed -e 's|//[^/].*$||' "$1"
+    fi
+}
+
 echo "› 5/10 D2 grep 门（DS::* 单点真相源；排除白名单后命中 >4 判失败）"
 if [ ! -d "$SRC/src" ]; then
     echo "✗ 源码目录不存在：$SRC/src（脚本位置/参数错了——门失效比门失败更糟）" >&2
     exit 1
 fi
-D2_HITS="$(grep -rnE '#[0-9A-Fa-f]{6}|setPixelSize|font-size: *[0-9]+px' "$SRC/src" \
-    | grep -vE 'DesignTokens|CommitTypeComposition|src/platform/|app/SelfCheck.cpp' || true)"
+# ⚠ **先剥注释再扫**（与门 7 同一份 strip_comments）：注释里提到 API 名
+#   （如 setPixelSize）不是「散值」—— 把它算进命中只会逼人改措辞而不是改代码。
+#   存量 4 处都在**真实代码**里，剥注释不减少它们。
+D2_PATTERN='#[0-9A-Fa-f]{6}|setPixelSize|font-size: *[0-9]+px'
+D2_HITS=""
+for _f in $(grep -rlE "$D2_PATTERN" "$SRC/src" 2>/dev/null \
+        | grep -vE 'DesignTokens|CommitTypeComposition|src/platform/|app/SelfCheck.cpp'); do
+    # 输出格式与 grep -rn 一致（file:line:content），计数才按「命中处数」算
+    _h="$(strip_comments "$_f" | grep -nE "$D2_PATTERN" | sed "s|^|${_f}:|" || true)"
+    if [ -n "$_h" ]; then
+        D2_HITS="${D2_HITS}${_h}
+"
+    fi
+done
 D2_COUNT=0
 [ -n "$D2_HITS" ] && D2_COUNT="$(printf '%s\n' "$D2_HITS" | grep -c . || true)"
 if [ "$D2_COUNT" -gt 4 ]; then
@@ -108,13 +128,6 @@ echo "› 6/10 agent 自测（mock 渠道）"
 
 echo "› 7/10 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
 # 剥注释再匹配：注释里出现的字样不算接线（否则加一行注释就能骗过门）。
-strip_comments() {
-    if command -v perl >/dev/null 2>&1; then
-        perl -pe 's{//(?!:).*$}{}' "$1"
-    else
-        sed -e 's|//[^/].*$||' "$1"
-    fi
-}
 WIRING_HITS=0
 WIRING_FAIL=0
 wire_need() { # wire_need <文件> <正则> <说明>

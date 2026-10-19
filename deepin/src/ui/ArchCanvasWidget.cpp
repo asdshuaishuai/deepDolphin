@@ -107,7 +107,7 @@ void ArchCanvasWidget::ensureAnimTimer()
         m_anim->start();
 }
 
-void ArchCanvasWidget::paintEvent(QPaintEvent *event)
+void ArchCanvasWidget::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);

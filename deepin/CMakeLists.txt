@@ -93,6 +93,7 @@ add_executable(deepDolphin
     src/logic/ArchViewport.cpp
     src/logic/ArchReceipt.cpp
     src/logic/AgentToolPlan.cpp
+    src/logic/CanvasFont.cpp
     src/logic/CodeGraphBuild.cpp
     src/logic/HeatLayout.cpp
     src/logic/PatchCheck.cpp

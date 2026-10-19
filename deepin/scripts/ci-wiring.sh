@@ -285,6 +285,32 @@ arch_need "$SRC/src/main.cpp" '--index-status-parse' '无头 flag 能把索引�
 arch_need "$SRC/src/app/SelfCheck.cpp" 'IndexStatus::parseOverview' 'SelfCheck 覆盖索引概览解析'
 arch_need "$SRC/src/app/SelfCheck.cpp" 'IndexStatus::parseUpdate' 'SelfCheck 覆盖索引更新解析'
 
+# 批 M · 性能审计：Canvas 字体路径（解析在判定层 + QFont 缓存 + 同串跳过）
+#   与热力图每帧分配（索引缓存 / 静态字体串 / 成员比较）。
+# ⚠ Canvas 的 font 简写是**浏览器 CSS 口径**（px 与 pt 都认）——
+#   解析器只认 px 时，"11pt" 会被当成字体族名吞掉，字号根本没设上。
+arch_need "$SRC/src/logic/CanvasFont.cpp" 'Spec parse' '判定层有 Canvas font 简写解析'
+arch_need "$SRC/src/logic/CanvasFont.cpp" 'ptRe' '字体解析认 pt 单位（CSS 口径）'
+# 平台层必须**走判定层**解析（不许自己再 split 一份 —— 那会造出第二个真相源）
+arch_need "$SRC/src/platform/Canvas2D.cpp" 'CanvasFont::parse' 'Canvas2D 走判定层解析字体'
+# QFont 缓存：Canvas2D 每帧新建，实例级缓存等于每帧重建 → 必须静态。
+arch_need "$SRC/src/platform/Canvas2D.cpp" 'static QHash<QString, QFont> cache' 'Canvas2D 有静态字体缓存'
+# ⚠ 盯**跳过的那一行**，不是「m_fontKey 这个名字出现过」—— 只盯名字的话，
+#   把 `if (f == m_fontKey) return;` 换成注释（名字还在）门照样绿。
+arch_need "$SRC/src/platform/Canvas2D.cpp" 'if \(f == m_fontKey\)' '同串连着来时跳过重复设置'
+# 热力图：每帧的分配（三处）
+# ⚠ 盯**值里没有 % 占位**（只盯「有 kFontCard 这个常量」的话，把它改回
+#   QStringLiteral("%1pt sans-serif") 门照样绿 —— 而那正是每帧拼字符串的写法）。
+arch_need "$SRC/src/ui/HeatmapWidget.cpp" 'kFontCard = QStringLiteral\("[^%"]*"\)' '热力图字体串是静态常量（不是每帧拼）'
+arch_need "$SRC/src/ui/HeatmapWidget.cpp" 'kFontSub = QStringLiteral\("[^%"]*"\)' '热力图次级字体串是静态常量'
+# ⚠ 盯**绘制路径引用缓存索引**那一行 —— 只盯「m_cardById 出现过」的话，
+#   把 paintRoutes 改回每帧建 QHash（成员还在 rebuild 里）门照样绿。
+arch_need "$SRC/src/ui/HeatmapWidget.cpp" 'const QHash<QString, const HeatLayout::Card \*> &byId = m_cardById;' '热力图绘制用的是缓存索引（不是每帧建）'
+arch_need "$SRC/src/ui/HeatmapWidget.cpp" 'm_cacheW != width\(\)' '热力图缓存判据逐项比较成员（不是拼字符串键）'
+# formatter 静态化（mac 性能审计 21c7082 同款）
+arch_need "$SRC/src/ui/dialogs/AddMilestoneDialog.cpp" 'toString\(Qt::ISODate\)' '日期格式化走 ISODate 枚举（不建格式串）'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'CanvasFont::parse' 'SelfCheck 覆盖字体解析'
+
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \
          src/logic/CodeGraphBuild.cpp src/ui/ArchCanvasWidget.cpp \
@@ -294,7 +320,8 @@ for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToo
          src/logic/DocPages.cpp src/ui/dialogs/DocsDialog.cpp \
          src/logic/SyntaxHighlight.cpp src/ui/CodeHighlighter.cpp \
          src/logic/GraphInsight.cpp src/logic/EngineDoctor.cpp \
-         src/logic/EngineConfig.cpp src/logic/IndexStatus.cpp; do
+         src/logic/EngineConfig.cpp src/logic/IndexStatus.cpp \
+         src/logic/CanvasFont.cpp; do
     # ⚠ 必须**整词**匹配：`grep -qF "$f"` 是子串匹配，把登记项改成
     #   `src/logic/EngineDoctor.cpp.disabled` 照样命中 —— 门绿着，文件却没编进去。
     #   负控实测过这一条（假阴性）。故用「前后是行首/行尾或空白」的精确匹配。

@@ -11,6 +11,14 @@
 #include <cmath>
 
 namespace {
+// 热力图的两种字体（**静态常量**）：原来每张卡片每次重绘都要拼一次
+// QStringLiteral("%1pt sans-serif").arg(11) —— 50 张卡 × 30fps = 每秒 6000 次
+// QString 分配 + 解析。
+// ⚠ 单位是 **pt**（点）—— 浏览器 CSS font 简写认 px 与 pt；早期解析器只认 px，
+//   把 "11pt" 当成字体族名吞掉，字号**根本没设上**（渲染成默认字号）。
+//   现在由 logic/CanvasFont 按 CSS 口径解析，pt 如实生效。
+const QString kFontCard = QStringLiteral("11pt sans-serif");
+const QString kFontSub = QStringLiteral("9pt sans-serif");
 
 /// 沿走线取样（mac 的 `CGEdgeRoute.sample`）—— 粒子沿曲线走。
 QPointF sampleAt(const HeatLayout::Route &r, double t)
@@ -91,6 +99,7 @@ void HeatmapWidget::rebuild()
 {
     m_cards.clear();
     m_routes.clear();
+    m_cardById.clear();
     if (!m_result)
         return;
     const CodeGraph &g = m_result->graph;
@@ -104,6 +113,11 @@ void HeatmapWidget::rebuild()
         g, symEdges, m_result->fileEdges, m_drill);
     m_cards = HeatLayout::layout(scope, edges, width(), height());
     m_routes = HeatLayout::routes(m_cards, edges);
+    // id → 卡片 索引（随布局一起建；绘制时只读）
+    m_cardById.clear();
+    m_cardById.reserve(m_cards.size());
+    for (const HeatLayout::Card &c : m_cards)
+        m_cardById.insert(c.id, &c);
 
     // 内容高度 = 卡片包围盒（+ 边距）。**按实测算**而不是布局层估的 —— 估不准
     // 就会出现「卡片铺到画布外、又没有滚动条」的情况（仓库一大就复现）。
@@ -134,15 +148,16 @@ void HeatmapWidget::paintEvent(QPaintEvent *event)
     p.setRenderHint(QPainter::Antialiasing, true);
     p.setRenderHint(QPainter::TextAntialiasing, true);
 
-    // 缓存键 = 层级 + 画布尺寸 + 边数（30fps 重绘只重画时变项）
-    const QString key = QStringLiteral("%1|%2x%3|%4")
-                            .arg(m_drill)
-                            .arg(width())
-                            .arg(height())
-                            .arg(m_result ? m_result->symEdges.size() : 0);
-    if (!m_cacheValid || key != m_cacheKey) {
+    // 缓存判据 = 层级 + 画布尺寸 + 边数（30fps 重绘只重画时变项）。
+    // ⚠ 逐项比较成员，**不拼字符串键** —— 拼键本身每帧一次 QString 分配。
+    const int edgeCount = m_result ? m_result->symEdges.size() : 0;
+    if (!m_cacheValid || m_cacheDrill != m_drill || m_cacheW != width()
+        || m_cacheH != height() || m_cacheEdgeCount != edgeCount) {
         rebuild();
-        m_cacheKey = key;
+        m_cacheDrill = m_drill;
+        m_cacheW = width();
+        m_cacheH = height();
+        m_cacheEdgeCount = edgeCount;
         m_cacheValid = true;
     }
 
@@ -162,9 +177,9 @@ void HeatmapWidget::paintEvent(QPaintEvent *event)
 void HeatmapWidget::paintRoutes(QPainter &p, double now)
 {
     Canvas2D canvas(&p);
-    QHash<QString, const HeatLayout::Card *> byId;
-    for (const HeatLayout::Card &c : m_cards)
-        byId.insert(c.id, &c);
+    // ⚠ 用**随布局建好的索引**（m_cardById），不在这里每帧重建 QHash ——
+    //   50 张卡 = 每帧 50 次哈希插入，30fps 下每秒 1500 次。
+    const QHash<QString, const HeatLayout::Card *> &byId = m_cardById;
 
     for (int i = 0; i < m_routes.size(); ++i) {
         const HeatLayout::Route &r = m_routes.at(i);
@@ -306,21 +321,21 @@ void HeatmapWidget::paintCards(QPainter &p)
 
         // 名称 + 序号
         canvas.setFillStyle(CanvasPaint(QColor(235, 240, 248)));
-        canvas.setFont(QStringLiteral("%1pt sans-serif").arg(11));
+        canvas.setFont(kFontCard);
         canvas.setTextAlign(QStringLiteral("left"));
         canvas.fillText(QStringLiteral("%1. %2").arg(c.rank).arg(c.name), c.x + 14,
             c.y + 22);
         if (c.boundary) {
             canvas.setFillStyle(CanvasPaint(QColor(200, 210, 225)));
-            canvas.setFont(QStringLiteral("%1pt sans-serif").arg(9));
+            canvas.setFont(kFontSub);
             canvas.fillText(QStringLiteral("跨作用域引用"), c.x + 14, c.y + 38);
         } else if (c.kind == GraphNodeKind::file) {
             canvas.setFillStyle(CanvasPaint(QColor(190, 200, 215)));
-            canvas.setFont(QStringLiteral("%1pt sans-serif").arg(9));
+            canvas.setFont(kFontSub);
             canvas.fillText(QStringLiteral("文件"), c.x + 14, c.y + 38);
         } else {
             canvas.setFillStyle(CanvasPaint(QColor(190, 200, 215)));
-            canvas.setFont(QStringLiteral("%1pt sans-serif").arg(9));
+            canvas.setFont(kFontSub);
             canvas.fillText(QStringLiteral("符号"), c.x + 14, c.y + 38);
         }
 

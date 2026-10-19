@@ -92,6 +92,8 @@ private:
     Paint m_fill;
     Paint m_stroke;
     QFont m_font;
+    /// 本次绘制里最后一次设的字体串（同串连着来 → 跳过重复设置）。
+    QString m_fontKey;
     QString m_textAlign = QStringLiteral("left");
     double m_lineWidth = 1.0;
     double m_globalAlpha = 1.0;

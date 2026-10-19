@@ -1,6 +1,9 @@
 #include "Canvas2D.h"
 
+#include "../logic/CanvasFont.h"
+
 #include <QFontMetricsF>
+#include <QHash>
 #include <QImage>
 #include <QtMath>
 
@@ -197,7 +200,6 @@ void Canvas2D::arcTo(double x1, double y1, double x2, double y2, double r)
     }
     // 切点与圆心
     const QPointF pA = p1 + u1 * t;
-    const QPointF pB = p1 + u2 * t;
     const QPointF bis = (u1 + u2);
     const double bisLen = std::hypot(bis.x(), bis.y());
     if (bisLen <= 0.0) {
@@ -333,43 +335,38 @@ void Canvas2D::setFillStyle(const CanvasPaint &p)
 
 void Canvas2D::setFont(const QString &f)
 {
-    // Canvas font 简写："<weight> <size>px <family>"（weight 可省）。
-    QFont nf;
-    const QStringList parts = f.split(QLatin1Char(' '), Qt::SkipEmptyParts);
-    int idx = 0;
-    int weight = QFont::Normal;
-    bool hasWeight = false;
-    if (idx < parts.size()) {
-        bool ok = false;
-        const int w = parts.at(idx).toInt(&ok);
-        if (ok && w >= 100 && w <= 900) {
-            weight = w;
-            hasWeight = true;
-            ++idx;
-        }
+    // ⚠ 同一串**连着来**时什么都不用做：热力图每张卡片要设 4 次字体，
+    //   50 张卡 = 每次重绘 200 次 setFont —— 设给 painter 是有代价的
+    //   （QFont 拷贝 + painter 状态变更）。
+    //   Canvas2D 每帧新建（paintEvent 里局部构造），m_fontKey 是实例成员，
+    //   天然「一次绘制一次」—— painter 换了，成员也就换了。
+    if (f == m_fontKey)
+        return;
+    m_fontKey = f;
+
+    // ⚠ 缓存必须**静态**：Canvas2D 每帧新建，实例级缓存等于每帧重建。
+    //   命中时零解析、零 QFont 构造（QFont 隐式共享，拷贝很便宜）。
+    //   GUI 线程专用（Canvas2D 只在绘制时用）。
+    static QHash<QString, QFont> cache;
+    auto it = cache.constFind(f);
+    if (it == cache.constEnd()) {
+        // 解析口径在 logic/CanvasFont（纯函数，可无头判）：
+        // 「px 与 pt 都认」（浏览器 CSS font 简写口径），
+        // 「不认的单位不当成别的单位」。
+        const CanvasFont::Spec spec = CanvasFont::parse(f);
+        QFont nf;
+        if (spec.pixelSize > 0)
+            nf.setPixelSize(spec.pixelSize);
+        if (spec.pointSize > 0)
+            nf.setPointSizeF(spec.pointSize);
+        if (spec.hasWeight)
+            nf.setWeight(static_cast<QFont::Weight>(spec.weight));
+        if (!spec.families.isEmpty())
+            nf.setFamilies(spec.families);
+        it = cache.insert(f, nf);
     }
-    double px = 0;
-    if (idx < parts.size()) {
-        QString s = parts.at(idx);
-        if (s.endsWith(QLatin1String("px"), Qt::CaseInsensitive))
-            s.chop(2);
-        bool ok = false;
-        const double v = s.toDouble(&ok);
-        if (ok) {
-            px = v;
-            ++idx;
-        }
-    }
-    if (px > 0)
-        nf.setPixelSize(static_cast<int>(px));
-    if (hasWeight)
-        nf.setWeight(static_cast<QFont::Weight>(weight));
-    QStringList fam;
-    for (; idx < parts.size(); ++idx)
-        fam << parts.at(idx);
-    if (!fam.isEmpty())
-        nf.setFamilies(fam);
-    m_font = nf;
+    m_font = it.value();
+    m_painter->setFont(m_font);
 }
 
 void Canvas2D::setTextAlign(const QString &a)

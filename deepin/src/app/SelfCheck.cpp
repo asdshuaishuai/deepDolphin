@@ -2,6 +2,7 @@
 #include "EngineCli.h"
 #include "../logic/AgentToolPlan.h"
 #include "../logic/ArchReceipt.h"
+#include "../logic/CanvasFont.h"
 #include "../logic/CodeGraphBuild.h"
 #include "../logic/DashFilter.h"
 #include "../logic/Derived.h"
@@ -2390,6 +2391,54 @@ int SelfCheck::run(QStringList &log)
             check(log, "索引更新：缺 fresh 键时报错（契约漂移不放过）",
                 !bad.ok && !bad.error.isEmpty());
         }
+    }
+
+    // ── Canvas font 简写解析（批 M：性能审计 + pt 单位语义修正）──
+    // 判据盯两处：
+    //   ① **单位口径**：浏览器 CSS font 简写认 `px` 与 `pt` **两者**。
+    //      早期解析器只认 px，把 "11pt" 整段当**字体族名**吞掉 ——
+    //      字号**根本没设上**（渲染成默认字号），界面上看着「字号不太对」，
+    //      但没人知道是单位没被识别。
+    //   ② **不认的单位不当成别的单位**（"11em" 不能悄悄按 11px 算）。
+    {
+        const CanvasFont::Spec card = CanvasFont::parse(QStringLiteral("11pt sans-serif"));
+        check(log, "Canvas 字体：pt 单位被识别（点字号，不是被当成字体族名吞掉）",
+            card.pixelSize == 0 && qFuzzyCompare(card.pointSize, 11.0)
+                && card.families.size() == 1
+                && card.families.at(0) == QStringLiteral("sans-serif"));
+        const CanvasFont::Spec px = CanvasFont::parse(QStringLiteral("11px sans-serif"));
+        check(log, "Canvas 字体：px 单位被识别（像素字号）",
+            px.pixelSize == 11 && px.pointSize == 0
+                && px.families.size() == 1
+                && px.families.at(0) == QStringLiteral("sans-serif"));
+        const CanvasFont::Spec bold = CanvasFont::parse(QStringLiteral("600 12px"));
+        check(log, "Canvas 字体：字重 + 像素字号（family 留空 = 保留接收端自身字体族）",
+            bold.hasWeight && bold.weight == 600 && bold.pixelSize == 12
+                && bold.pointSize == 0 && bold.families.isEmpty());
+        const CanvasFont::Spec noWeight = CanvasFont::parse(QStringLiteral("12px"));
+        check(log, "Canvas 字体：缺字重时不误认（未显式给 = 没有字重）",
+            !noWeight.hasWeight && noWeight.weight == 400 && noWeight.pixelSize == 12);
+        const CanvasFont::Spec fam = CanvasFont::parse(
+            QStringLiteral("600 12px Noto Sans CJK SC"));
+        check(log, "Canvas 字体：多段字体族按空格分开",
+            fam.families.size() == 4 && fam.families.at(0) == QStringLiteral("Noto")
+                && fam.families.at(3) == QStringLiteral("SC"));
+        const CanvasFont::Spec bogus = CanvasFont::parse(QStringLiteral("11em serif"));
+        check(log, "Canvas 字体：不认的单位**不当成别的单位**（11em ≠ 11px）",
+            bogus.pixelSize == 0 && bogus.pointSize == 0
+                && bogus.families.size() == 2
+                && bogus.families.at(0) == QStringLiteral("11em"));
+        // ⚠ 不认识的段**不被当成别的段**：「12」（无单位）既不是字重（12 < 100）
+        //   也不是字号（没单位）→ 不当字重吃掉。错实现若把字重范围放宽到
+        //   「>= 0」，这里就会 hasWeight=true —— 分叉点就在这一条。
+        const CanvasFont::Spec bare = CanvasFont::parse(QStringLiteral("12"));
+        check(log, "Canvas 字体：不认识的段不被当成字重（\"12\" 无单位 → 不是字重）",
+            !bare.hasWeight && bare.weight == 400 && bare.pixelSize == 0
+                && bare.pointSize == 0);
+        const CanvasFont::Spec empty = CanvasFont::parse(QString());
+        check(log, "Canvas 字体：空串不崩（不设字号、不设字重）",
+            empty.pixelSize == 0 && empty.pointSize == 0 && !empty.hasWeight
+                && empty.families.isEmpty());
     }
 
     log << QStringLiteral("──── selfcheck: %1 passed, %2 failed ────").arg(g_pass).arg(g_fail);

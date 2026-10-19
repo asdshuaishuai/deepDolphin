@@ -64,7 +64,7 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | B10 | **仪表盘项目卡片整卡可点** | `DashboardParts.swift` | 🟢 **已对位（台账原记「未开始」有误，批 G 复核时更正）**：`ProjectProgressCard::mouseReleaseEvent` → `goProject`（`Card` 是 QFrame 不吞鼠标事件，事件冒泡到卡片）；另有 mac 同款的「进入管控 →」钮 | ~~P3~~ 已完成 |
 | B11 | **Agent 补齐 18 个图能力工具**（契约检查第 12 组抓到的清单漂移） | `AgentCheck` | 🟢 **已对位（批 E1）**：28 个工具全接（命令形态抽成纯函数表 `logic/AgentToolPlan`，可无头判）；`deepDolphin --agent-tool-names` 出客户端权威清单，contract-check 第 12 组与真引擎 `tools --json` 严格对位（**CI 第 10 门**） | ~~P0~~ 已完成 |
 | B12 | **9 语言语法高亮** | mac 原生 `AttributedString` | 🟢 **已对位（批 H）**：判定层 `logic/SyntaxHighlight`（九语言关键词表 + 单遍扫描 → 关键字/字符串/注释/数字四类 token 段）、涂色层 `ui/CodeHighlighter`（QSyntaxHighlighter，颜色取自 DS 令牌）、接到代码图谱页源码页签（高亮语言跟着选中符号的 `lang` 走）；**九种语言与引擎 `detectLang` 逐条对齐**（契约门第 16 组用真引擎跑九种扩展名比对） | ~~P2~~ 已完成 |
-| B13 | **性能审计**：动画时钟可见性暂停 + formatter 静态化 | `21c7082` | ⬜ 未开始（deepin 有 HasAnimations 纪律但无可见性暂停） | P3 |
+| B13 | **性能审计**：动画时钟可见性暂停 + formatter 静态化 | `21c7082` | 🟢 **批 M 已对位**（且补上 mac 侧没有的项）：**可见性暂停**deepin **本来就有** —— 实测（2026-10-19，Qt 6）**父窗口隐藏会给子控件发 `hideEvent`**，所以架构图与热力图的 `hideEvent → m_anim->stop()` 真的停得住，两处都是 33ms（≈30fps），与 mac 修完后的口径一致；**formatter 静态化**已做（日期格式化走 `Qt::ISODate` 枚举，不建格式串）；**另补 mac 没做的三项**：Canvas font 简写按 CSS 口径解析（`pt` 也不再被吞）、Canvas2D 的 QFont 按串静态缓存 + 同串跳过、热力图三处每帧分配收掉 | ~~P3~~ 已完成 |
 | B14 | **设计系统存量清零**（字号/散值收进 token，基线 87→95） | `e9d6074` | ⬜ deepin 侧 D2 门仍有 4 处存量 | P3 |
 | B15 | **引擎获取链新增 GitHub Releases 自动下载** | `macos/build.sh` | ⬜ deepin `EngineLocator` 无此链 | P2 |
 | B16 | **关系树 / 图谱的导出动作**（查 + 生成 + 导出三件套） | `d62e429` | 🟢 **已对位（台账原记「未开始」有误，批 G 复核时更正）**：架构图页 = 查（`graph arch --format scene`）+ 生成（`arch gen`）+ 导出（`render arch`）；代码图谱页 = 查（`graph tree`/`confidence`/`functions`）+ 生成（`index gen --stats` + `confidence gen`）+ 导出（`render index --confidence`） | ~~P1~~ 已完成 |
@@ -176,6 +176,7 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | 引擎配置的 `ai` 段 | ✅ 批 K：**不解析**（引擎自报 AI 由客户端层负责，`config.ai` 恒为 `{}`） | ⬜ 未接 | ⬜ 未接 | —— 引擎 AI 无关，客户端不许从引擎读 AI 设置（两个真相源） |
 | **持久化索引状态**（引擎 `index overview` / `index update`） | ✅ 批 L：代码图谱页「增量更新」钮 + 索引状态行（代数 / 节点 / 边 / 文件 / 探针时间） | ⬜ **未接** —— `macos/Sources/` 无 `index overview`/`index update` 调用 | ⬜ 未接 | mac 侧后续批次（**本轮次序先搞定 dde**，未改 mac） |
 | 索引状态与页头概览的口径 | ✅ 批 L：两者**不是一回事**且界面分开摆 —— 概览读实时扫描（`graph overview`），索引状态行读持久化索引（`index overview`）。此前「生成」写索引但界面不读它，点完看不到变化 | ⬜ 未接 | ⬜ 未接 | —— |
+| **Canvas font 简写按 CSS 口径解析** | ✅ 批 M：判定层 `logic/CanvasFont`（`px` 与 `pt` 都认）—— 修掉「`11pt` 被当成字体族名吞掉、字号根本没设上」的**移植语义缩水**；平台侧按串静态缓存 QFont + 同串跳过 | ⬜ 未接（mac 侧用浏览器原生 font 简写，无此坑） | ⬜ 未接 | —— |
 | 引擎索引自愈（`selfHealed`） | ✅ 批 L：索引缺失/过期时引擎会**自愈**（实测 2026-10-19：`selfHealed: true`）→ 索引状态行在用户点「生成」前就有内容，并明说「引擎自愈过索引」 | ⬜ 未接 | ⬜ 未接 | —— 条件键，需 present 标志 |
 
 ---
