@@ -9,13 +9,24 @@
 //
 // 【内容不在这里】正文全部来自 `logic/DocPages`（纯函数层）——
 // 窗口只负责「取哪一类 + 怎么渲染」，不持有文案。
+//
+// 【四语言 + 页内切换（批 AA）】本窗**自带语言选择器**（右上角）：
+//   · 语言取值来自 `DocPages::Language`（zhCN / en / zhTW / ja，与 mac 的
+//     `AppLanguage` 一一对齐），选完写进 `Settings` 的 `docs.language` 键；
+//   · 切换语言时，**随语言变的文案一起换**：类目分段名、窗口标题、底部出处、
+//     按钮文字、正文本身 —— 不是只换正文（只换正文会留下「中文标题 + 英文正文」）。
+//   · 存的语言键认不出时：回落到默认语言 + **说一句**（不静默吞掉），
+//     判定在 `DocPages::resolveLanguage`（纯函数），提示语在判定层。
 #pragma once
 #include <DDialog>
 #include <QPointer>
 #include <QString>
 
+#include "../../logic/DocPages.h"
+
 DWIDGET_USE_NAMESPACE
 
+class QComboBox;
 class QLabel;
 class QTextBrowser;
 class FlatButton;
@@ -33,9 +44,22 @@ signals:
 private:
     void showKind(int index);
     void onSegment(int id);
+    void onLanguagePicked(int index);
+
+    /// 把「随语言变」的一切一起换掉（标题 / 分段名 / 按钮 / 正文 / 底部说明）。
+    void applyLanguage();
+
+    /// 底部说明行：语言设置坏掉时显示「已回落」提示，否则显示出处。
+    void updateHint();
 
     SegmentedButton *m_segments = nullptr;
+    QComboBox *m_langBox = nullptr;
     QTextBrowser *m_body = nullptr;
     QLabel *m_hint = nullptr;
     FlatButton *m_repo = nullptr;
+
+    DocPages::Language m_language = DocPages::Language::zhCN;
+    int m_kindIndex = 0;
+    bool m_recovered = false;  ///< 存的语言键认不出，已回落到默认语言
+    QString m_recoveredKey;    ///< 认不出的原值（提示里要把它说出来）
 };

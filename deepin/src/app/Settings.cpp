@@ -85,6 +85,22 @@ void Settings::clearAi()
         m_s->remove(k);
 }
 
+QString Settings::docsLanguageKey() const
+{
+    // ⚠ 缺省**空串**（不是 "zh-CN"）：这里只存「用户选了什么」，
+    //   「没选过 ⇒ 用默认语言」是调用方的判断，不在存储层替他决定。
+    return m_s->value(QStringLiteral("docs.language")).toString();
+}
+
+void Settings::setDocsLanguageKey(const QString &key)
+{
+    if (key.isEmpty()) {
+        m_s->remove(QStringLiteral("docs.language"));
+        return;
+    }
+    m_s->setValue(QStringLiteral("docs.language"), key);
+}
+
 void Settings::sync()
 {
     m_s->sync();

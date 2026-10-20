@@ -963,4 +963,66 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 Y 段门项全绿（deepin 托盘窗口协议）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 AA · 固定文档页四语言 + 页内语言切换 ───────────────────────────
+# 纪律（本批的判据来自这几条）：
+#   · **文案全在判定层**：UI 里一个中文字面量都不许有（否则「四语言」只是
+#     换了个标题，正文和按钮还是中文 ⇒ 中英混杂，比不做更糟）。
+#   · **判定层零 UI 依赖**：`logic/DocPages` 不许碰 QWidget 家族，也不许碰 Settings
+#     （解析在判定层、持久化在设置层、渲染在 UI 层，三层各管各的）。
+#   · **不静默回落**：语言键认不出 ⇒ 判定层返回 nullopt；落地方案在
+#     `resolveLanguage`（回落 + 标记），UI 据此说一句。
+arch_need "$SRC/src/logic/DocPages.h" 'enum class Language' '判定层有文档语言枚举'
+arch_need "$SRC/src/logic/DocPages.h" 'QVector<Language> languages\(\)' '判定层有语言清单（单一真相源）'
+arch_need "$SRC/src/logic/DocPages.h" 'QString languageKey\(' '判定层出语言持久化 key'
+arch_need "$SRC/src/logic/DocPages.h" 'std::optional<Language> languageFromKey\(' '认不出的语言返回 nullopt（不猜）'
+arch_need "$SRC/src/logic/DocPages.h" 'LanguageResolution resolveLanguage\(' '判定层出语言解析方案（回落 + 标记）'
+arch_need "$SRC/src/logic/DocPages.h" 'QString kindTitle\(Kind k, Language' '类目显示名按语言取'
+arch_need "$SRC/src/logic/DocPages.h" 'QString content\(Kind k, Language' '正文按语言取'
+# 16 篇正文常量（4 类 × 4 语言）—— 少了任何一篇，那个语言就是「回落成中文」
+arch_need_count "$SRC/src/logic/DocPages.cpp" 'const char \*const k[A-Za-z]+ = R"MD\(' 16 '判定层有 16 篇正文（4 类 × 4 语言）'
+arch_need_count "$SRC/src/logic/DocPages.cpp" 'const char \*const k[A-Za-z]+ZhCN = R"MD\(' 4 '四篇简体中文正文'
+arch_need_count "$SRC/src/logic/DocPages.cpp" 'const char \*const k[A-Za-z]+En = R"MD\(' 4 '四篇英文正文'
+arch_need_count "$SRC/src/logic/DocPages.cpp" 'const char \*const k[A-Za-z]+ZhTW = R"MD\(' 4 '四篇繁体中文正文'
+arch_need_count "$SRC/src/logic/DocPages.cpp" 'const char \*const k[A-Za-z]+Ja = R"MD\(' 4 '四篇日文正文'
+# 判定层纪律：零 UI 头、零设置层依赖
+arch_forbid "$SRC/src/logic/DocPages.h" 'QWidget|QDialog|DDialog|DtkWidget|QPushButton|QComboBox' '判定层不许引入 UI 头（纯函数层）'
+arch_forbid "$SRC/src/logic/DocPages.cpp" 'QWidget|QDialog|DDialog|QComboBox' '判定层不许碰 UI 控件'
+arch_forbid "$SRC/src/logic/DocPages.cpp" 'Settings::|#include +"[^"]*Settings' '判定层不许碰设置层（解析在判定层、持久化在设置层）'
+# UI 接线：语言选择器 + 按语言取 + 写回设置 + 外壳文案跟着换
+arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'QComboBox' '文档窗有语言选择器'
+arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::languageLabel' '语言项显示名来自判定层'
+arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::resolveLanguage' '语言解析走判定层（UI 不自己判值）'
+arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::content\(k, m_language\)' '正文按当前语言取'
+arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::kindTitle\(all\.at\(i\), m_language\)' '类目分段名按当前语言取'
+arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::windowTitle' '窗口标题按当前语言取'
+arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'setButtonText' '按钮文字按当前语言换（不许留中文按钮）'
+arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::recoveredNotice' '语言键认不出时说一句（不静默吞掉）'
+# ⚠ 写回设置必须**盯在「换语言」这个函数体里**：构造函数里也有一次
+#   `setDocsLanguageKey`（坏值自愈）—— 只盯「出现过」的话，摘掉换语言那次
+#   照样绿（第十一次「同名互相顶替」）。
+arch_need_count_in_fn "$SRC/src/ui/dialogs/DocsDialog.cpp" 'void DocsDialog::onLanguagePicked' 'setDocsLanguageKey' 1 '换语言时写回设置（恰好一处）'
+arch_need_count_in_fn "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocsDialog::DocsDialog\(QWidget \*parent\)' 'docsLanguageKey' 1 '开窗时读设置里的语言（恰好一处）'
+arch_need_count_in_fn "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocsDialog::DocsDialog\(QWidget \*parent\)' 'DocPages::resolveLanguage' 1 '语言解析走判定层（恰好一处）'
+# ⚠ 外壳文案的两处「换」也盯函数体（否则摘掉其中一处，另一处会顶替）
+arch_need_count_in_fn "$SRC/src/ui/dialogs/DocsDialog.cpp" 'void DocsDialog::applyLanguage' 'setButtonText\(0,' 1 '「关闭」按钮文字按语言换（恰好一处）'
+arch_need_count_in_fn "$SRC/src/ui/dialogs/DocsDialog.cpp" 'void DocsDialog::applyLanguage' 'setButtonText\(i,' 1 '类目分段名按语言换（恰好一处）'
+# ⚠ 文案不许写在 UI 里（四语言共用判定层那份）
+arch_forbid "$SRC/src/ui/dialogs/DocsDialog.cpp" 'QStringLiteral\(' '文档窗不许自己写死文案（文案全在判定层）'
+# 设置层：docs.language 键
+arch_need "$SRC/src/app/Settings.cpp" 'docs\.language' '设置层有 docs.language 键'
+arch_need "$SRC/src/app/Settings.h" 'docsLanguageKey' '设置层暴露语言读写接口'
+# 分段按钮要能改档位文字（否则换语言时分段名换不掉）
+arch_need "$SRC/src/ui/common/SegmentedButton.h" 'setButtonText' '分段按钮支持改档位文字（语言切换用）'
+# 判据覆盖
+arch_need "$SRC/src/app/SelfCheck.cpp" 'DocPages::resolveLanguage' 'SelfCheck 覆盖语言解析三态'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'DocPages::languageFromKey' 'SelfCheck 覆盖「认不出 ⇒ nullopt」'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'DocPages::languageKey' 'SelfCheck 覆盖语言 key 稳定性'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'DocPages::kindTitle' 'SelfCheck 覆盖类目显示名按语言取'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 AA 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 AA 段门项全绿（固定文档页四语言）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0

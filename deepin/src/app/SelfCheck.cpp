@@ -2358,6 +2358,215 @@ int SelfCheck::run(QStringList &log)
         }
     }
 
+    // ── 固定文档页的四语言（批 AA）──
+    // 半吊子本地化的典型症状是「**中英混杂**」：一半界面是英文一半是中文，
+    // 用户读到的是碎片。所以判据盯的是「每种语言都真的换了」：
+    //   ① 四语言齐全、顺序固定、key 稳定（持久化值的口径不许飘）
+    //   ② 认不出 ⇒ nullopt（**不许**猜）；resolveLanguage 三态
+    //      （没选过 / 认得出 / 存的值坏了）
+    //   ③ 16 篇正文都非空；同类目四语言**两两不同**（抓「某语言回落成中文」）
+    //   ④ 英文正文**不含汉字**、日文正文**含假名**（回落成中文的直接信号）
+    //   ⑤ 四语言**小节数一致**（抓「某语言残缺」——mac 的 zhTW/ja 就是这么残缺的）
+    //   ⑥ 四语言都写本平台事实（Qt / DDE / deepin），都不含 mac 的平台词
+    //   ⑦ 外壳文案（标题 / 按钮 / 底部说明 / 提示）四语言齐全，且**出口即成品**
+    //      （提示必须真的带上那个值，不留 %1 模板给调用方填）
+    {
+        const QVector<DocPages::Language> langs = DocPages::languages();
+        check(log, "文档页：四种语言齐全且顺序固定（zhCN / en / zhTW / ja）",
+            langs.size() == 4 && langs.at(0) == DocPages::Language::zhCN
+                && langs.at(1) == DocPages::Language::en
+                && langs.at(2) == DocPages::Language::zhTW
+                && langs.at(3) == DocPages::Language::ja);
+
+        {
+            // 持久化 key 必须稳定且互不相同（key 变了 = 老用户的设置全丢）
+            QSet<QString> keys;
+            bool ok = true;
+            for (const DocPages::Language &l : langs) {
+                const QString key = DocPages::languageKey(l);
+                ok = ok && !key.isEmpty() && !keys.contains(key);
+                keys.insert(key);
+            }
+            check(log, "文档页：语言 key 稳定且互不相同（zh-CN / en / zh-TW / ja）",
+                ok && DocPages::languageKey(DocPages::Language::zhCN) == QStringLiteral("zh-CN")
+                    && DocPages::languageKey(DocPages::Language::zhTW) == QStringLiteral("zh-TW")
+                    && DocPages::languageKey(DocPages::Language::ja) == QStringLiteral("ja")
+                    && DocPages::languageKey(DocPages::Language::en) == QStringLiteral("en"));
+        }
+
+        {
+            // ② 认不出 ⇒ nullopt（**不许**猜、不许静默回落成中文）。
+            //   注意大小写：持久化里写 "ZH-CN" 不算数（key 的口径是固定的那四个）。
+            const bool unknown = !DocPages::languageFromKey(QStringLiteral("fr")).has_value()
+                && !DocPages::languageFromKey(QStringLiteral("ZH-CN")).has_value()
+                && !DocPages::languageFromKey(QStringLiteral("zh")).has_value()
+                && !DocPages::languageFromKey(QString()).has_value();
+            check(log, "文档页：认不出的语言标识返回 nullopt（不猜、不回落成中文）", unknown);
+        }
+
+        {
+            // resolveLanguage 三态：
+            //   「没选过」（空串）⇒ 默认语言 + **不算出错**；
+            //   「认得出」    ⇒ 就是它 + 不算出错；
+            //   「存的值坏了」⇒ 回落 + **标记**（UI 据此说一句）。
+            const DocPages::LanguageResolution fresh
+                = DocPages::resolveLanguage(QString());
+            const DocPages::LanguageResolution known
+                = DocPages::resolveLanguage(QStringLiteral("ja"));
+            const DocPages::LanguageResolution broken
+                = DocPages::resolveLanguage(QStringLiteral("fr"));
+            check(log, "文档页：语言解析三态正确（没选过 / 认得出 / 坏值回落并标记）",
+                fresh.language == DocPages::Language::zhCN && !fresh.recovered
+                    && known.language == DocPages::Language::ja && !known.recovered
+                    && broken.language == DocPages::Language::zhCN && broken.recovered);
+        }
+
+        {
+            // ③ 16 篇正文都非空；同类目四语言两两不同。
+            bool allNonEmpty = true;
+            bool allDistinct = true;
+            for (const DocPages::Kind &k : DocPages::kinds()) {
+                QSet<QString> seen;
+                for (const DocPages::Language &l : langs) {
+                    const QString text = DocPages::content(k, l);
+                    allNonEmpty = allNonEmpty && !text.trimmed().isEmpty();
+                    allDistinct = allDistinct && !seen.contains(text);
+                    seen.insert(text);
+                }
+            }
+            check(log, "文档页：四类 × 四语言共 16 篇正文都非空", allNonEmpty);
+            check(log, "文档页：同类目四语言正文两两不同（不许某语言回落成中文）", allDistinct);
+        }
+
+        {
+            // ④ 回落成中文的直接信号：英文正文里不该有汉字；日文正文里该有假名。
+            const QRegularExpression han(QStringLiteral("[\\x{4E00}-\\x{9FFF}]"));
+            const QRegularExpression kana(QStringLiteral("[\\x{3040}-\\x{30FF}]"));
+            bool enHasNoHan = true;
+            bool jaHasKana = true;
+            for (const DocPages::Kind &k : DocPages::kinds()) {
+                enHasNoHan = enHasNoHan
+                    && !DocPages::content(k, DocPages::Language::en).contains(han);
+                jaHasKana = jaHasKana
+                    && DocPages::content(k, DocPages::Language::ja).contains(kana);
+            }
+            check(log, "文档页：英文正文不含任何汉字（回落成中文会立刻露馅）", enHasNoHan);
+            check(log, "文档页：日文正文都含假名（回落成中文会立刻露馅）", jaHasKana);
+        }
+
+        {
+            // ⑤ 四语言小节数一致 —— mac 的 zhTW/ja 就是「比 zhCN 少几节」的残缺译文，
+            //   这里钉死「四语言结构对齐」，防止新写的语言又残缺。
+            bool aligned = true;
+            for (const DocPages::Kind &k : DocPages::kinds()) {
+                QSet<int> sections;
+                for (const DocPages::Language &l : langs)
+                    sections.insert(DocPages::content(k, l).count(QStringLiteral("\n### ")));
+                aligned = aligned && sections.size() == 1;
+            }
+            check(log, "文档页：四语言小节数一致（不许某语言残缺）", aligned);
+        }
+
+        {
+            // ⑥ 四语言都写本平台事实，且都不含 mac 的平台词（说错平台比说错代码更危险）。
+            bool factsOk = true;
+            bool noMacWords = true;
+            for (const DocPages::Language &l : langs) {
+                const QString about = DocPages::content(DocPages::Kind::about, l);
+                factsOk = factsOk && about.contains(QStringLiteral("Qt"))
+                    && about.contains(QStringLiteral("DDE"))
+                    && about.contains(QStringLiteral("deepin"));
+                noMacWords = noMacWords && !about.contains(QStringLiteral("Swift"))
+                    && !about.contains(QStringLiteral("macOS"));
+            }
+            check(log, "文档页：四语言关于页都写本平台事实（Qt / DDE / deepin）", factsOk);
+            check(log, "文档页：四语言关于页都不含 mac 的平台词（Swift / macOS）", noMacWords);
+        }
+
+        {
+            // 类目显示名：每种语言内齐全且互不相同（切换按钮不能有两个「帮助」）。
+            bool ok = true;
+            for (const DocPages::Language &l : langs) {
+                QSet<QString> titles;
+                for (const DocPages::Kind &k : DocPages::kinds()) {
+                    const QString t = DocPages::kindTitle(k, l);
+                    ok = ok && !t.isEmpty() && !titles.contains(t);
+                    titles.insert(t);
+                }
+            }
+            check(log, "文档页：四语言的类目显示名都齐全且各自互不相同", ok);
+            check(log, "文档页：认不出的语言返回空类目名（不回落成中文）",
+                DocPages::kindTitle(DocPages::Kind::about, static_cast<DocPages::Language>(99))
+                    .isEmpty());
+            {
+                // 英文的类目名**不许含汉字** —— 否则「英文模式」的分段按钮写着中文，
+                // 正是「中英混杂」的最小形态。
+                const QRegularExpression han(QStringLiteral("[\\x{4E00}-\\x{9FFF}]"));
+                bool enNoHan = true;
+                for (const DocPages::Kind &k : DocPages::kinds())
+                    enNoHan = enNoHan
+                        && !DocPages::kindTitle(k, DocPages::Language::en).contains(han);
+                check(log, "文档页：英文类目名不含汉字（不许中英混杂）", enNoHan);
+            }
+            {
+                // 语言显示名：四项**互不相同**且都非空（选择器里两个「简体中文」= 选不了）。
+                QSet<QString> labels;
+                bool ok = true;
+                for (const DocPages::Language &l : langs) {
+                    const QString t = DocPages::languageLabel(l);
+                    ok = ok && !t.isEmpty() && !labels.contains(t);
+                    labels.insert(t);
+                }
+                check(log, "文档页：四种语言的显示名齐全且互不相同（选择器不重复）", ok);
+            }
+        }
+
+        {
+            // ⑦ 外壳文案：四语言齐全 + 出口即成品（提示必须真的带上那个值）。
+            const QRegularExpression han(QStringLiteral("[\\x{4E00}-\\x{9FFF}]"));
+            bool allPresent = true;
+            bool enNoHan = true;
+            for (const DocPages::Language &l : langs) {
+                allPresent = allPresent && !DocPages::windowTitle(l).isEmpty()
+                    && !DocPages::closeLabel(l).isEmpty() && !DocPages::repoLabel(l).isEmpty();
+                enNoHan = enNoHan && !DocPages::windowTitle(DocPages::Language::en).contains(han)
+                    && !DocPages::closeLabel(DocPages::Language::en).contains(han)
+                    && !DocPages::repoLabel(DocPages::Language::en).contains(han)
+                    && !DocPages::engineRepoHint(DocPages::Language::en, DocPages::engineRepo())
+                                .contains(han)
+                    && !DocPages::recoveredNotice(QStringLiteral("fr"),
+                        DocPages::Language::en)
+                               .contains(han);
+            }
+            check(log, "文档页：四语言外壳文案齐全（标题 / 关闭 / 仓库按钮）", allPresent);
+            check(log, "文档页：英文外壳文案不含汉字（不许中英混杂）", enNoHan);
+            {
+                // 出口即成品：三条提示**必须真的带上那个值**（留 %1 给调用方填的话，
+                // 调用方忘了填就会把「%1」原样显示给用户）。
+                bool carries = true;
+                for (const DocPages::Language &l : langs) {
+                    const QString hint = DocPages::engineRepoHint(l, DocPages::engineRepo());
+                    carries = carries && !hint.isEmpty()
+                        && hint.contains(DocPages::engineRepo())
+                        && !hint.contains(QStringLiteral("%1"));
+                }
+                check(log, "文档页：底部说明带上了引擎仓库地址（不留 %1 模板）", carries);
+                check(log, "文档页：坏值提示带上了认不出的原值（不留 %1 模板）",
+                    DocPages::recoveredNotice(QStringLiteral("fr"), DocPages::Language::zhCN)
+                        .contains(QStringLiteral("fr"))
+                    && !DocPages::recoveredNotice(QStringLiteral("fr"),
+                        DocPages::Language::zhCN)
+                               .contains(QStringLiteral("%1")));
+                check(log, "文档页：读不到提示带上了类目标识（不留 %1 模板）",
+                    DocPages::unavailableText(DocPages::Kind::about, DocPages::Language::zhCN)
+                        .contains(DocPages::kindKey(DocPages::Kind::about))
+                    && !DocPages::unavailableText(DocPages::Kind::about,
+                        DocPages::Language::zhCN)
+                               .contains(QStringLiteral("%1")));
+            }
+        }
+    }
+
     // ── 语法高亮（9 语言，与引擎 detectLang 对齐）──
     // 判据盯的是「分类对不对」：颜色在界面上只是「怪了点」，分类错了没人会发现。
     //   ① 九种语言齐全且顺序与引擎 detectLang 一致（少一种 = 那种语言的源码是纯色）

@@ -59,8 +59,8 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | B5 | **关系树（`graph tree`）** | `GraphService.loadTree` | 🟢 批 E2 已接（三源之一 → 文件/目录/符号树骨架，排序/汇总/可见行都在 `logic/CodeGraphBuild`） | ~~P1~~ 已完成 |
 | B6 | **函数级图谱 + 置信度**（`graph functions` / `graph confidence`） | `GraphService.loadFunctions` | 🟢 批 E2 已接（函数级疑点归属到符号、置信度孤儿疑点归属到文件、置信度总分与语法树降级说明、详情页「置信度」页签） | ~~P1~~ 已完成 |
 | B7 | **固定文档页** | `DocsPages.swift`（321 行） | 🟢 **已对位（批 G）**：四类目（关于 / 帮助 / 开源感谢 / 更新日志）内容层 `logic/DocPages`（写死在代码里，不取引擎）→ 文档窗 `ui/DocsDialog`（顶部分段切类目 + markdown 渲染）→ 面板菜单「关于 / 帮助」入口；内容按 **deepin 的事实**另写（Qt 6 + DDE / DTK），不抄 mac 的 Swift / macOS 文案 | ~~P2~~ 已完成 |
-| B8 | **四语言本地化（全应用接入）** | `L10n.swift`（2108 行） | ⬜ 未开始（deepin 现无 i18n；引擎侧 CLI 已双语） | P2（量大） |
-| B9 | **原生菜单栏三件套（关于/帮助/设置）+ 设置统一为系统原生窗口** | `DeepDolphinApp.swift` | 🟡 **批 G 已接「关于 / 帮助」**（面板菜单 → 文档窗；DDE 无原生菜单栏对位物，改为面板菜单承载）；**「设置」仍是对话框**（`AiSettingsDialog`，三页签），非「原生独立设置窗口」 | P2（剩设置窗） |
+| B8 | **四语言本地化（全应用接入）** | `L10n.swift`（2108 行） | 🟡 **批 AA 只做了「固定文档页」这一块**（判定层 `logic/DocPages` 扩到 zhCN/en/zhTW/ja 四语言 · 16 篇正文全给全 + 文档窗内语言选择器 + 持久化 `docs.language`）；**全应用 i18n 仍未做**（⚠ 真实规模实测：deepin 用户可见中文串 **1008 个去重 / 1186 次出现**，在 mac `L10n.swift` 的 zh-CN 表（483 键）里**逐字命中仅 155 个（15%）** ⇒ 「搬 mac 译文」这条路基本走不通，**85% 要新写**，尤其中日；台账原记「P2（量大）」**低估**了） | P2（量大，且**需人工翻译**） |
+| B9 | **原生菜单栏三件套（关于/帮助/设置）+ 设置统一为系统原生窗口** | `DeepDolphinApp.swift` | 🟡 **批 G 已接「关于 / 帮助」**（面板菜单 → 文档窗；DDE 无原生菜单栏对位物，改为面板菜单承载）；**「设置」仍是对话框**（`AiSettingsDialog`，三页签），非「原生独立设置窗口」 | ⚠ **批 AA 判定：不做**（实质只是「设置从对话框变独立窗口」；deepin 的 `AiSettingsDialog` 已是 `DDialog` 且**有「关闭」按钮** —— mac 那个 sheet **无关闭按钮**的问题在 DDE 下**不存在** ⇒ 价值低） |
 | B10 | **仪表盘项目卡片整卡可点** | `DashboardParts.swift` | 🟢 **已对位（台账原记「未开始」有误，批 G 复核时更正）**：`ProjectProgressCard::mouseReleaseEvent` → `goProject`（`Card` 是 QFrame 不吞鼠标事件，事件冒泡到卡片）；另有 mac 同款的「进入管控 →」钮 | ~~P3~~ 已完成 |
 | B11 | **Agent 补齐 18 个图能力工具**（契约检查第 12 组抓到的清单漂移） | `AgentCheck` | 🟢 **已对位（批 E1）**：28 个工具全接（命令形态抽成纯函数表 `logic/AgentToolPlan`，可无头判）；`deepDolphin --agent-tool-names` 出客户端权威清单，contract-check 第 12 组与真引擎 `tools --json` 严格对位（**CI 第 10 门**） | ~~P0~~ 已完成 |
 | B12 | **9 语言语法高亮** | mac 原生 `AttributedString` | 🟢 **已对位（批 H）**：判定层 `logic/SyntaxHighlight`（九语言关键词表 + 单遍扫描 → 关键字/字符串/注释/数字四类 token 段）、涂色层 `ui/CodeHighlighter`（QSyntaxHighlighter，颜色取自 DS 令牌）、接到代码图谱页源码页签（高亮语言跟着选中符号的 `lang` 走）；**九种语言与引擎 `detectLang` 逐条对齐**（契约门第 16 组用真引擎跑九种扩展名比对） | ~~P2~~ 已完成 |
@@ -80,12 +80,12 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | `render arch` | 导出交互 HTML（B16） | 🟡 批 D2 已接（架构图页「导出」钮；落盘 HTML 是引擎层交付物，**不是**本平台的渲染路径） |
 | `codegraph_*`（CLI 清单 18 个新工具） | agent 工具循环（B11） | 🟢 批 E1 已接 |
 | `render` 工具 | 渲染交付物 | 🟢 批 D2 已接 `render arch`、批 E2 已接 `render index --confidence`（回执型命令走 Text 契约） |
-| `index_*` 家族 | 代码索引（`graph` 的新家） | 🟡 批 E2 已接 `index gen --stats`（代码图谱页「生成」钮）；**批 L 已接 `index overview`（索引状态行）+ `index update`（增量更新钮）**；`index query` ⬜ **未接 GUI，但「判定不接 GUI」是错的**（批 Z 实测更正，见 E.1i）：它给的是**函数级调用边 + 边的确信度档位 `tier`**（`callers[]`/`callees[]`），而已接的 `graph symbol` 只给**文件级** `referencedBy`、`graph impact` 自报 `granularity: "lexical-file-level"`（**词法级文件粒度**，列出来的其实是同文件的其它函数）⇒ **不是重排，是新维度** ⇒ 列为下一批候选 |
+| `index_*` 家族 | 代码索引（`graph` 的新家） | 🟡 批 E2 已接 `index gen --stats`（代码图谱页「生成」钮）；**批 L 已接 `index overview`（索引状态行）+ `index update`（增量更新钮）**；`index query` ⬜ **判定不接 GUI**（⚠ **批 AA 复核：批 Z 说它是「新维度」是推过头了**，见 E.1i）：实测 `graph functions` 的 `functionEdges` **5274 条、每条带 `tier`**（direct/guessed/resolved），`index query` 的 `callers[]` **也每条带 `tier`** ⇒ **同一维度**（函数级调用边 + 边的确信度档位），只是**取数路径不同**（前者给全项目边列表、后者按符号反查）⇒ 原判据「重叠 ⇒ 接了会造出第二个真相源」**成立** |
 | `doctor --json` | 环境自检（**退出码 1 但 stdout 是合法 JSON**） | 🟢 **批 J 已接**（设置·通用页「环境自检」卡；`result` 是自由文本；`problems` 缺键记「未知」） |
 | `report <项目>` | 进度报告导出（**回执型命令，回执在 stderr**） | 🟢 **批 J 已接**（详情页「导出报告」入口 + 报告卡 + 「打开报告」） |
 | `config list` / `config get` / `config set` | 引擎配置（**策略面**：浅更新分支上限 / 文档备份份数 / 受管文档 / 扫描根） | 🟢 **批 K 已接**（设置·通用页「引擎配置」卡；`config set` 回执也在 stderr） |
 | `confidence query` | 置信度只读快照 | ⬜ **判定不接 GUI** —— 是 `graph confidence` 的**子集**（少了 `findings[]` 逐条疑点），接了反而丢信息；仍可经 agent 工具面用 |
-| `index overview` / `index update` / `index query` | 持久化代码索引 | ⬜ 未接 GUI（`index query` 带调用方/被调方 + `tier`，是 `graph symbol` 之外的**新维度** —— 下一批候选） |
+| `index overview` / `index update` / `index query` | 持久化代码索引 | ⬜ 未接 GUI（⚠ 批 AA 实测复核：`index query` 与已接的 `graph functions` **同维度** —— 两边的边**都带 `tier`** ⇒ 原判据「重叠 ⇒ 不接 GUI」**成立**；差别只在取数形态：它能**按符号反查**） |
 | `arch query` / `arch update` | 架构索引 | ⬜ 未接 GUI（与架构图页的 scene 数据重叠，接了会造出第二个真相源） |
 | `graph db` / `confidence db` | 单文件 SQLite（给 agent 用 SQL 查） | ⬜ **判定不接 GUI** —— 无 GUI 对位物；客户端零业务数据写入的纪律已满足（经引擎写） |
 | `track` / `hook` / `mcp` / `skill` | 钩子 / MCP 宿主 / 教学包 | ⬜ **判定不接 GUI** —— 无 GUI 对位物 |
@@ -147,7 +147,7 @@ agent 工具清单后修正，README 决策 199）：
 | `index gen` | ✅ | 批 E2：代码图谱页「生成」 |
 | `index overview` | ✅ | **批 L**：代码图谱页索引状态行 |
 | `index update` | ✅ | **批 L**：代码图谱页「增量更新」钮 |
-| `index query` | ⬜ **未接 GUI（候选）** | ⚠ **批 Z 实测推翻了原先「判定不接 GUI」的结论**（见 E.1i）：原判据说「与已接的 `graph functions` 高度重叠（`tier`/`findings`/`weight` 两边都有，`defs[]` 只是 `functions[]` 的重排）」—— **三处都不成立**：① `tier` 在 `index query` 里挂在**边**上（`callers[]`/`callees[]` 每条带 `tier`），`graph functions` **根本没有 tier**；② `defs[]` 是**按符号查**（单符号），`functions[]` 是**全项目列表**，不是重排；③ `findings` 在 `index query` 是**计数**（int），在 `graph functions` 是**数组**。实测 `index query chooseBackend` ⇒ `callers[]` 给出 3 个**函数级**调用方（带 `tier: resolved`），而已接的 `graph symbol` 只给**文件级** `referencedBy`、`graph impact` 自报 `granularity: "lexical-file-level"` ⇒ **是真正的新维度**。⚠ 且它**刚被批 Z 的引擎修复解锁**（修前 C++ 符号压根不在索引里 ⇒ 「符号不在索引中」） |
+| `index query` | ⬜ **判定不接 GUI** | ⚠ **批 AA 复核推翻了批 Z 的「推翻」**（见 E.1i）：批 Z 说「`graph functions` 根本没有 tier ⇒ `index query` 是新维度」—— **这半句是错的**。实测 `graph functions` 的 `functionEdges` **5274 条、每条都带 `tier`**（direct/guessed/resolved）⇒ 原判据「`tier` 两边都有」**成立** ⇒ **同一维度**（函数级调用边 + 边的确信度档位），结论「接了会造出第二个真相源」**站得住**。批 Z 说对的两点仍然成立：① `defs[]` 是**按符号查**（单符号），`functions[]` 是**全项目列表**；② `findings` 在 `index query` 是**计数**（int）、在 `graph functions` 是**数组** ⇒ 这是**取数形态**差异，不是**数据维度**差异。⚠ 批 Z 的引擎修复**确实解锁**了它（修前 C++ 符号压根不在索引里 ⇒ 「符号不在索引中」；修后 `index query chooseBackend` 返回 3 个 callers 带 `tier: resolved`）—— 解锁 ≠ 该接 GUI |
 | `confidence gen` | ✅ | 批 E2：置信度生成 |
 | `confidence query` | ⬜ **判定不接 GUI** | 是 `graph confidence` 的**子集**（少了 `findings[]` 逐条疑点，多了 `indexUpdateCount`/`generatedAt`）→ 接了反而丢信息；仍可经 agent 工具面用 |
 | `render arch` | ✅ | 批 D2：架构图导出 HTML（引擎层交付物） |
@@ -606,6 +606,88 @@ C++ **没有 import 机制** ⇒ 标准库/第三方库的名字永远不会出�
 旧版备份 `moongit.bin.bak-20261020`）。
 ⚠ 但**引擎仓与客户端仓是两个仓**：引擎修复要**先合进引擎再发版**，否则客户端
 拿到的还是旧引擎 ⇒ 批 P 那条「引擎 release 带 Linux x64 资产」的需求因此更紧迫。
+
+#### ⚠ 批 AA 勘误：我在批 Z 把 `index query` 说成「新维度」，**推过头了**
+
+批 Z 为了论证「`index query` 该接 GUI」，顺手写了三句「原判据不成立」。
+批 AA 复核时**实测发现其中一句是错的**，并据此**撤回「推翻」**：
+
+| 批 Z 的说法 | 批 AA 实测 | 判定 |
+|---|---|---|
+| ① 「`graph functions` **根本没有 tier**」 | `moongit graph functions ddTest --json` ⇒ `functionEdges` **5274 条，每条都带 `tier`**（值域 direct / guessed / resolved） | ❌ **错** ⇒ 原判据「`tier` 两边都有」**成立** |
+| ② 「`defs[]` 是按符号查，`functions[]` 是全项目列表，不是重排」 | 成立（`index query chooseBackend` 给 1 条 defs + 3 条 callers；`graph functions` 给全项目函数列表） | ✅ 对（但这是**取数形态**差异） |
+| ③ 「`findings` 在 `index query` 是计数、`graph functions` 是数组」 | 成立（`defs[].findings` 是 int） | ✅ 对（同样是**载荷形状**差异） |
+
+⇒ **结论回到原处**：`index query` 与已接的 `graph functions` **同维度**
+（都是「函数级调用边 + 边的确信度档位 tier」），只是**取数路径不同**
+（一个给全项目边列表，一个按符号反查）⇒ 台账原判据「**重叠 ⇒ 判定不接 GUI**
+（接了会造出第二个真相源）」**基本正确**，C 节那两行「未接 GUI（候选）」已改回。
+
+⚠ **批 Z 唯一仍然成立的收获**：引擎修复**解锁**了 `index query` ——
+修前 C++ 符号压根不在索引里（`index query chooseBackend` ⇒ 「符号不在索引中」），
+修后能返回 3 个函数级调用方（带 `tier: resolved`）。
+⇒ **解锁 ≠ 该接 GUI**。
+
+**教训（记在这里，不只记在脑子里）**：我犯的错不是「没查」，是**查了 `index query`
+就以为把 `graph functions` 的载荷也一起量了**。批 Z 里我**没跑 `graph functions`**，
+是拿 `graph symbol`（**文件级** `referencedBy`）和 `graph impact`
+（自报 `granularity: "lexical-file-level"`）去对比 ⇒ 比错了对象。
+⇒ **判据纪律**：要比「重叠」，就得**两侧都实测**；拿**另一个已接能力**去比，
+比出来的「新维度」是假的。
+
+---
+
+### E.1j 固定文档页的四语言（批 AA —— **B8 的第一块**，也是 mac 抄不动的那块的证明）
+
+**批 AA 要干的事**：把 B8（全应用四语言本地化）**整块做完一块** ——
+先做**固定文档页**（关于 / 帮助 / 开源感谢 / 更新日志）：判定层 `logic/DocPages`
+从「只有 zhCN」扩到 **zhCN / en / zhTW / ja**（与 mac 的 `AppLanguage` 一一对齐），
+四类文档各四种语言的正文**全部给全**，文档窗内加**语言选择器**，选完持久化。
+
+**为什么敢先做这一块**：B7（批 G）已经把四类文档页的**类目结构**做完了，
+正文是**写死在代码里**的长文（不取引擎）⇒ 扩语言**只加常量、不改结构**。
+
+**⚠ 三条纪律（本批的判据都从这三条来）**：
+
+1. **不抄 mac 的残缺译文**。mac 的 `DocsPages.swift` 的 zhTW / ja **比 zhCN 少好几节**
+   （它自己就没写全）⇒ 抄过来就是「四语言里两语言是残的」⇒
+   **按 deepin 的中文底本逐篇写全**，事实按 deepin 写对（Qt 6 + DDE / DTK、
+   deepin / UOS 桌面版、仓颉/Cangjie）。
+2. **文案全在判定层**。UI 里**一个中文字面量都不许有**（接线门用 `arch_forbid` 盯）——
+   否则「四语言」只是换了个标题，正文和按钮还是中文 ⇒ **中英混杂，比不做更糟**。
+3. **不静默回落**。语言键认不出 ⇒ 判定层 `languageFromKey` 返回 **`std::nullopt`**
+   （不猜、不回落成中文）；落地方案在 `resolveLanguage`（**回落 + 标记**），
+   UI 据此**说一句**（并把坏键改回落到的语言）。
+
+**实测（四语言正文的自动扫描，脚本量而不是眼估）**：
+
+| 检查 | 结果 |
+|---|---|
+| 16 篇正文（4 类 × 4 语言）齐全、非空 | ✅ |
+| 同类目四语言**两两不同** | ✅ |
+| 英文正文**不含任何汉字**（回落成中文的直接信号） | ✅ |
+| 日文正文**都含假名** | ✅（156–459 个/篇） |
+| 繁中正文**不含简体独有汉字** | ✅ |
+| 四语言**小节数一致**（不许某语言残缺） | ✅（关于 2 / 帮助 6 / 致谢 3 / 日志 2） |
+| 四语言关于页都写本平台事实（Qt / DDE / deepin），都不含 Swift / macOS | ✅ |
+
+**判据**：selfcheck **+18 条**（370/0）、接线门 **+33 项**（451 项全绿）。
+门项里有一条是 `arch_forbid "DocsDialog.cpp" 'QStringLiteral\('` ——
+**文档窗里不许自己写死任何文案**（全在判定层，四语言共用一份）。
+
+**⚠ B8 的真实规模（这一条比上面所有实现都重要）**：
+deepin 用户可见中文串 **1008 个去重 / 1186 次出现**；而 mac `L10n.swift` 的
+zh-CN 表只有 **483 键** ⇒ 把 mac 的译文**逐字**搬过来，只命中 **155 个（15%）**，
+**85% 要新写**，其中中日尤甚 ⇒ 台账原记「P2（量大）」**低估**了。
+⇒ 全应用 i18n **不是一批能做完的活**，要做也得**先解决「谁来翻」**（人工翻译）。
+⇒ 本批只做固定文档页（内容自写、可控），**不铺开**（半吊子本地化会中英混杂）。
+
+**⚠ B9（设置改原生独立窗口）判定：不做** —— 实质只是「设置从对话框变独立窗口」；
+deepin 的 `AiSettingsDialog` 已是 `DDialog` 且**有「关闭」按钮**，
+mac 那个 sheet **无关闭按钮**的问题在 DDE 下**根本不存在** ⇒ 价值低。
+
+**顺带照出的一处台账失真**：批 AA 复核时发现我在批 Z 把 `index query` 说成「新维度」
+是**推过头了** —— 已在本节上方的「批 AA 勘误」里实测更正并**撤回「推翻」**。
 
 ---
 
