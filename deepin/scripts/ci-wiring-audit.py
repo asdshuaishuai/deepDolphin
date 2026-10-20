@@ -205,6 +205,13 @@ def main():
         if not exempt_exists:
             print('豁免基线文件不在：%s' % EXEMPT, file=sys.stderr)
             return 2
+        if failed:
+            # ⚠ **审计器自己有盲区 ⇒ 那些门根本没被审** ⇒ 必须红。
+            #   否则「审不到的门项」就成了逃逸口（批 AR「只声明不编译也算出现」的同构：
+            #   判据写在那里，却没有任何机制保证它**真的被检查**）。
+            print('审计器有盲区：%d 行门项没解析到（行号 %s）⇒ 它们**没被审**'
+                  % (len(failed), ','.join(str(x) for x in failed)), file=sys.stderr)
+            return 2
         for k in outside:
             print(k)
         return 3 if outside else 0
