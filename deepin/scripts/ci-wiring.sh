@@ -1045,11 +1045,15 @@ arch_forbid "$SRC/src/tray/TrayController.cpp" 'QPixmap\s+(pm|barPm)\(' '托盘�
 arch_forbid "$SRC/src/ui/pages/MilestoneRowWidget.cpp" 'QPixmap\s+(pm|barPm)\(' '里程碑图标不许再开 1x 位图'
 arch_forbid "$SRC/src/platform/IconResolver.cpp" 'QPixmap\s+(pm|barPm)\(' '图标兜底通道不许再开 1x 位图'
 # ⚠ **探针必须报出 DPI 事实**（不报 ⇒ 缩放倍率不可见 ⇒ HiDPI 无从断言）
-arch_need "$SRC/src/main.cpp" 'devicePixelRatio=' '平台探针报出当前 devicePixelRatio'
-arch_need "$SRC/src/main.cpp" 'dpiEdgeLevels=' '平台探针报出自绘位图的边缘过渡层数（1x vs dpr 感知）'
+#   ⚠ 盯**格式串**（`%g` / `%d`）而不是裸字段名 —— 裸字段名在**注释与提示语**里也出现
+#   （负控实测：把探针的字段名改掉，接线门照样绿 ⇒ 门被措辞满足了）。
+arch_need "$SRC/src/main.cpp" 'devicePixelRatio=%g' '平台探针报出当前 devicePixelRatio（盯格式串）'
+arch_need "$SRC/src/main.cpp" 'dpiEdgeLevels=legacy:%d' '平台探针报出自绘位图的边缘过渡层数（盯格式串）'
 # ⚠⚠ **「dpr=2 那一跑」不许被删** —— 删了它，边缘层数那条断言就永远跑在 dpr=1 上
 #   （两列必然相同 ⇒ 恒成立 ⇒ 空门）。批 AJ 教训：承诺没有门 = 承诺不存在。
-arch_need "$SRC/scripts/ci-platform-probe.sh" 'QT_SCALE_FACTOR=2' 'HiDPI 的效果断言必须真在 dpr=2 下跑（不许退化成 dpr=1 的空断言）'
+#   ⚠ 盯**命令本身**（`dpi_b_out=…QT_SCALE_FACTOR=2`）而不是裸串 ——
+#   裸串在**错误提示语**里也出现（负控实测：把那一跑改成 1x，接线门照样绿）。
+arch_need "$SRC/scripts/ci-platform-probe.sh" 'dpi_b_out=.*QT_SCALE_FACTOR=2' 'HiDPI 的效果断言必须真在 dpr=2 下跑（不许退化成 dpr=1 的空断言）'
 arch_need "$SRC/scripts/ci-platform-probe.sh" 'dpiEdgeLevels' 'HiDPI 门必须断言边缘过渡层数（dpr>1 时 dpr 感知要更细腻）'
 
 # ── 批 AN · 快照基线「逐字节可重现」：关掉 DTK 标题栏阴影带 ──
