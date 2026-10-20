@@ -64,6 +64,28 @@ WIRING = os.path.join(SRC, 'scripts', 'ci-wiring.sh')
 # ⚠ **纯数据、零注释**（行首 `#` 会被当成 pattern）⇒ 说明写在别的文件里。
 EXEMPT = os.path.join(SRC, 'scripts', 'wiring-multi-hit.exempt')
 
+# ⚠⚠⚠ **门项行数基线**（批 BH）——
+# ⚠ **起因（实测，不是推演）**：把 ci-wiring.sh 里**任意一条门项**改成注释
+#   ⇒ 接线门 **rc=0**、审计器 **rc=0**、**CI 全流程 rc=0** ⇒ **全绿**
+#   ⇒ 「门项被悄悄删」这件事，**没有任何机制会发现**。
+# ⚠ **为什么基线要放在**另一个文件**里（而不是写死在审计器里）：
+#   写死 ⇒ 审计器既是「执行者」又是「裁判」⇒ 改审计器就能同时改标准。
+#   ⇒ 基线放在**独立文件** ⇒ 删基线文件 ⇒ 门与审计器**双双红**。
+GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
+# ⚠⚠⚠ **注意**：这里**不要**再定义 `GATE_LINE` —— 文件下方**已经有一个**
+#   `GATE_LINE`（带捕获组，`check_rx_syntax` 在用）⇒ 同名 ⇒ **后者覆盖前者**
+#   ⇒ 先定义的那个成了**死代码**。
+#   ⚠⚠⚠ **本批自己就踩了这个**（批 AS 起反复出现的那一族：同名互相顶替）——
+#   当时定义的 `GATE_LINE` 被下面的同名定义覆盖 ⇒ 它成了死代码 ⇒
+#   「物理门项行」的口径用不上它（真正用的是下面那个**不撞名**的常量）⇒
+#   ⇒ 差点让**审计器的对拍口径**与实现脱节。
+#   ⇒ 现在有「模块级重名自检」（**模块级赋值名不许重复**）当场抓住。
+#   ⚠ 物理门项行的口径在下面叫另一个名字（**故意不撞**）。
+#   ⚠⚠⚠ **注意**：本文件里的 `#` 注释**也算进** count 族门项的命中数
+#     （strip_comments 对 `.py` 只剥 `//`、**不剥 `#`）
+#     ⇒ ⚠⚠⚠ **注释里千万别重复写被门盯的常量名** ⇒ 期望值会漂
+#     ⇒ ⚠ 本批就因此踩了一次（期望 2、实际 4 ⇒ 门当场报失准）。
+
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -127,7 +149,20 @@ COUNT_IN_STEP_LINE = re.compile(
 COUNT_FAMILY_LINE = re.compile(r'^\s*arch_need_count\w*\s')
 # ⚠ **函数定义行**长得像门项（`arch_need() { # ...`）⇒ 必须排除，
 #   否则审计器把工具自己的定义算成「没解析到的门项」⇒ 假盲区。
-FUNC_DEF_LINE = re.compile(r'^\s*arch_(need|forbid)\w*\s*\(\)\s*\{')
+FUNC_DEF_LINE = re.compile(r'^\s*arch_\w+\s*\(\)\s*\{')
+# ⚠⚠⚠ 批 BH：门型清单 —— 「审计器认出来的门项行数」要能对上「文件里实际的门项行数」
+#   ⇒ **每一种门型都要有一条自己的正则** ⇒ 将来新增一种门型而忘了在审计器里登记
+#   ⇒ 审计器数出来的门项数会**少于**文件里的实际行数 ⇒ **当场红**（覆盖缺口）。
+# ⚠ forbid 家族是**有意不审**（它判「不该有的东西没了」⇒ 目标串出现 >0 本来就红），
+#   但**行数仍然要计入** ⇒ 否则「物理行数」对不上 ⇒ 假红。
+FORBID_FAMILY = {
+    'forbid': re.compile(r'^\s*arch_forbid\s'),
+    'forbid_tree': re.compile(r'^\s*arch_forbid_tree\s'),
+    'forbid_han': re.compile(r'^\s*arch_forbid_han\s'),
+    'forbid_raw': re.compile(r'^\s*arch_forbid_raw\s'),
+    'forbid_ml': re.compile(r'^\s*arch_forbid_ml\s'),
+    'forbid_text_dup': re.compile(r'^\s*arch_forbid_text_dup\s'),
+}
 
 DEFAULT_ANY_GLOB = 'src/app/SelfCheck*.cpp'
 
@@ -272,6 +307,149 @@ class AnyCounter(object):
 
     def get(self, rx, gl):
         return self.values.get(self.pairs.index((rx, gl)))
+
+
+# ⚠⚠⚠ **门型登记处**（批 BH）——「每一种门型一条正则」。
+#   ⇒ 审计器**认领**的门项行数（total）必须 == 文件里**实际**的门项行数（物理行数）
+#   ⇒ 不等 = **有一种门型没被登记** ⇒ 那些门项**根本没被审**（批 AR 说的「审计器自己有盲区」）。
+#   ⇒ ⚠ **将来新增门型时，必须在这里登记一条** ⇒ 忘了登记 ⇒ 当场红。
+#   ⚠ 这 14 条正则**互斥**（门型名后要求空白 ⇒ 家族成员之间不会互相命中），
+#     且**天然排除函数定义行**（定义行里门型名后是 `(` 不是空白）⇒ 不会把工具自己的
+#     定义算成门项。
+GATE_TYPES = [
+    ('need', ANY_NEED_LINE),
+    ('need_ml', ML_LINE),
+    ('need_any_count', ANY_COUNT_LINE),
+    ('need_any_min', ANY_MIN_LINE),
+    ('need_count', COUNT_LINE),
+    ('need_count_in_fn', COUNT_IN_FN_LINE),
+    ('need_count_in_step', COUNT_IN_STEP_LINE),
+    ('need_min', NEED_MIN_LINE),
+] + sorted(FORBID_FAMILY.items())
+
+# ⚠ **物理门项行**的口径：行首（去前导空白）以 `arch_` 开头、**后接空白**
+#   ⇒ 与门型知识**完全无关** ⇒ 这是审计器认领数的**独立对拍口径**。
+GATE_CALL_LINE = re.compile(r'^\s*arch_\w+\s')
+
+
+def count_gate_types(path):
+    """数门项 ⇒ (各门型条数, 审计器认领总数, 物理门项行数)。
+
+    ⚠⚠ **两个数必须相等**：
+      · 「审计器认领总数」= 上面 14 条门型正则各数一遍（互斥 ⇒ 不会重复计数）；
+      · 「物理门项行数」= 用**不认识门型**的口径数一遍（只看「长得像门项」）。
+      ⇒ 不等 ⇒ **有一种门型没被登记** ⇒ 那些门项**没被审**（批 BH 抓的就是这个）。
+    """
+    src = open(path, encoding='utf-8').read()
+    lines = src.split('\n')
+    counts = {}
+    for name, rx in GATE_TYPES:
+        # ⚠⚠ **必须排除函数定义行**（`arch_need() { …}`）：
+        #   `ANY_NEED_LINE`（`arch_need\b`）里 `\b` 允许后接 `(` ⇒ 定义行**会被它命中**
+        #   ⇒ 不排除就把「工具自己的定义」算成门项 ⇒ 与物理行数对不上。
+        #   ⚠ `FUNC_DEF_LINE` 已改成通用版（`arch_\w+`）⇒ 覆盖**所有**门型的定义行。
+        counts[name] = sum(1 for ln in lines
+                           if rx.match(ln) and not FUNC_DEF_LINE.match(ln))
+    total = sum(counts.values())
+    physical = sum(1 for ln in lines if GATE_CALL_LINE.match(ln))
+    return counts, total, physical
+
+
+def read_gate_baseline():
+    """读门项行数基线文件 ⇒ (数字, 错误原因)。
+
+    ⚠⚠ **基线文件里不许写注释**（门项会管）⇒ 这里**直接读原文**，
+      不走 strip_comments ⇒ 门侧（strip_comments）与审计侧（原文）看到的是同一行。
+    """
+    path = GATE_BASELINE
+    if not os.path.isfile(path):
+        return None, '基线文件不存在：%s' % path
+    raw = open(path, encoding='utf-8').read()
+    txt = raw.strip()
+    if not txt:
+        return None, '基线文件是空的'
+    if not txt.isdigit():
+        return None, '基线文件内容不是纯数字：%r' % txt
+    if len(raw.strip().split('\n')) != 1:
+        return None, '基线文件不止一行'
+    return int(txt), None
+
+
+def check_dup_module_names():
+    """模块级赋值名不许重复（同名 ⇒ 后定义覆盖先定义 ⇒ 先那个成了**死代码**）。
+
+    ⚠⚠⚠ **为什么要有这条**（本批自己踩出来的，不是推演）：
+      本批加「物理门项行」口径时用的常量名**撞了**文件下方已有的同名常量
+      ⇒ 后者覆盖前者 ⇒ 前者成了**死代码** ⇒ 差点让**对拍口径**与实现脱节
+      （而且**没有任何门会红** ⇒ 因为「串还在」，只是不生效了）。
+      ⚠ 这一族（「同名互相顶替」）从批 AS 起反复出现 ⇒ 值得让机器盯。
+    ⚠ **只看模块级赋值**（函数内的局部同名是正常的）⇒ 用 ast 精确判定，
+      不用正则（正则分不清「赋值」和「比较」）。
+    """
+    import ast
+    with open(os.path.abspath(__file__), encoding='utf-8') as fh:
+        tree = ast.parse(fh.read())
+    seen = {}
+    dups = []
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for t in node.targets:
+            if not isinstance(t, ast.Name):
+                continue
+            if t.id in seen:
+                dups.append((t.id, seen[t.id], node.lineno))
+            else:
+                seen[t.id] = node.lineno
+    return dups
+
+
+def check_gate_totals():
+    """核门项行数 ⇒ 结果字典。
+
+    ⚠⚠ **判定逻辑只有一份**（批 BF/BG 纪律）：硬门模式与报告模式**都调它**
+      ⇒ 报告里印的数就是硬门判的数 ⇒ 两边不会漂。
+    ⚠⚠ **两条核对，互补**：
+      ① 「审计器认领的门项数」==「文件里实际的门项行数」
+         ⇒ 不等 = **有一种门型没在门型清单里登记** ⇒ 那些门项**根本没被审**
+           （批 AR 说的「审计器自己有盲区」）⇒ 退出码 2（盲区）。
+      ② 「文件里实际的门项行数」==「基线文件里的数字」
+         ⇒ 不等 = **有门项被删了 / 被改成注释了** ⇒ 那些承诺**没人守了**
+           ⇒ 退出码 6（门项总数失配）。
+    """
+    gcounts, gtotal, gphysical = count_gate_types(WIRING)
+    gbase, gwhy = read_gate_baseline()
+    msgs = []
+    blind = False
+    total_bad = False
+    # ⚠⚠⚠ **模块级重名**（本批自己踩出来的洞）⇒ 排在**最前**：
+    #   有重名 ⇒ 那个常量是**死代码** ⇒ 下面的核对可能**用错常量** ⇒
+    #   ⇒ 必须先说「审计器自己有洞」，再说别的。
+    dups = check_dup_module_names()
+    if dups:
+        blind = True
+        for name, first, second in dups:
+            msgs.append('审计器有**重名常量**：`%s` 在第 %d 行与第 %d 行各定义一次'
+                        ' ⇒ 后者覆盖前者 ⇒ **前者是死代码**'
+                        % (name, first, second))
+    if gtotal != gphysical:
+        blind = True
+        msgs.append('审计器有门型盲区：认领 %d 条 vs 文件里实际 %d 条门项行'
+                    ' ⇒ 有门型没登记 ⇒ 那些门项**不会被审**'
+                    % (gtotal, gphysical))
+    if gbase is None:
+        total_bad = True
+        msgs.append('门项行数基线不可用：%s' % gwhy)
+    elif gphysical != gbase:
+        total_bad = True
+        msgs.append('门项行数与基线不符：文件里 %d 条 vs 基线 %d 条'
+                    ' ⇒ **有门项被删了 / 被改成注释了** ⇒ 那些承诺**没人守了**'
+                    % (gphysical, gbase))
+    return {
+        'counts': gcounts, 'claimed': gtotal, 'physical': gphysical,
+        'baseline': gbase, 'baseline_why': gwhy,
+        'blind': blind, 'total_bad': total_bad, 'dups': dups, 'msgs': msgs,
+    }
 
 
 def parse_wiring():
@@ -582,6 +760,25 @@ def main():
         return 0
 
     if want_list:
+        # ⚠⚠⚠ **门项总数核对**（批 BH）——「门项被悄悄删」此前**无人发现**。
+        #   ⚠ 只在**全量**模式下做（--changed 只审新增门项 ⇒ 门项总数本就不全）
+        if base is None:
+            # ⚠⚠⚠ **门项总数核对**（批 BH）——「门项被悄悄删」此前**无人发现**。
+            #   ⚠ 只在**全量**模式下做（--changed 只审新增门项 ⇒ 门项总数本就不全）
+            #   ⚠ 判定逻辑在 `check_gate_totals()` 里（**只有一份** ⇒ 报告与硬门不漂）
+            g = check_gate_totals()
+            if g['dups']:
+                for m in g['msgs']:
+                    print(m, file=sys.stderr)
+                return 7
+            if g['blind']:
+                for m in g['msgs']:
+                    print(m, file=sys.stderr)
+                return 2
+            if g['total_bad']:
+                for m in g['msgs']:
+                    print(m, file=sys.stderr)
+                return 6
         # 硬门模式：只吐**豁免之外**的隐患；有 ⇒ 退出码 3（红）
         if not exempt_exists:
             print('豁免基线文件不在：%s' % EXEMPT, file=sys.stderr)
@@ -669,6 +866,14 @@ def main():
           % totals['count_in_step'])
     print('（arch_forbid 门项 %d 条**有意不审**：它判「不该有的东西没了」，'
           '目标串出现 >0 本来就红，不属于「被别处顶替」的隐患）' % forbid_lines)
+    # ⚠⚠⚠ 门项行总数（批 BH）：三个数摆在一起 ⇒ 差在哪一眼看得出
+    g = check_gate_totals()
+    print('门项行总数：文件里 **%d** 条（审计器认领 %d 条）｜基线 %s'
+          % (g['physical'], g['claimed'],
+             ('%d' % g['baseline']) if g['baseline'] is not None
+             else ('**不可用（%s）**' % g['baseline_why'])))
+    for m in g['msgs']:
+        print('  ⚠ %s' % m)
     if failed:
         print('⚠ **审计器有盲区**：有 %d 行门项没解析到（%s）'
               % (len(failed), ','.join('%d行/%s' % x for x in failed)))
