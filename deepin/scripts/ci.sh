@@ -107,9 +107,19 @@ for theme in light dark; do
     #   （引擎在 ⇒ 落仪表盘）⇒ 以前 docs/snapshots/*-setupguide.png 是**死基线**
     #   （拍不出、没人比）——死基线比没基线更隐蔽：它让人以为「首屏有视觉保障」。
     for sec in dashboard board milestones setupguide; do
-        QT_QPA_PLATFORM=offscreen DEEPDOLPHIN_THEME="$theme" "$BIN" --snapshot \
-            "$SHOT_DIR/${theme}-${sec}.png" --section "$sec" \
-            | tail -1
+        # ⚠⚠ **不要用 `| tail -1`**：管道的退出码是 **tail 的** ⇒ 快照进程失败
+        #   （退出码非 0）会被**静默吞掉** ⇒ 拍出来是半张图也不报。
+        #   ⇒ 改用「先存输出再取最后一行」，并**检查真实退出码**。
+        if ! QT_QPA_PLATFORM=offscreen DEEPDOLPHIN_THEME="$theme" "$BIN" --snapshot \
+                "$SHOT_DIR/${theme}-${sec}.png" --section "$sec" \
+                >"$SHOT_DIR/out.txt" 2>"$SHOT_DIR/err.txt"; then
+            echo "✗ 快照失败：${theme}-${sec}" >&2
+            grep -v "setHighDpiScaleFactorRoundingPolicy\|can not find qm files\|DGuiApplicationHelper:\|This plugin does not support\|DPlatformWindowInterface" \
+                "$SHOT_DIR/err.txt" | sed 's/^/    /' >&2
+            rm -rf "$BASE_DIR" "$SHOT_DIR"
+            exit 1
+        fi
+        tail -1 "$SHOT_DIR/out.txt"
     done
     # 状态色样张（批 R）：把**每一档状态色**都画出来，改色 ⇒ 色卡 diff 红。
     #   （批 T 之前，面板快照拍的是空态 ⇒ 状态点一个都没画进去，对状态色是**空门**；
@@ -152,9 +162,21 @@ echo "✓ 8 张快照与 git 基线逐字节一致（无未提交的视觉改动
 #   ⇒ 两张必然相同 ⇒ 门永远绿 ⇒ 又一个空门（负控实测，第十五次「同名/同形互相顶替」）。
 REPRO_DIR="$(mktemp -d)"
 repro_fail=0
+# ⚠⚠ **失败时必须留下原因**（批 AN 实测踩出来的盲点）：
+#   原来这里是 `>/dev/null 2>&1` ⇒ 快照进程失败时**退出码非 0 但什么也看不见**。
+#   ⇒ 「✗ 重拍失败：xxx」这句话本身不含原因 ⇒ 下一次再遇到只能从头猜
+#   （批 AN 查那个偶发失败查了很久，就是因为这个）。
+#   ⇒ 现在把 stderr 收进临时文件，失败时**原样打出来**。
 repro_shoot() { # repro_shoot <主题> <区块> <输出路径> <TZ>
     TZ="$4" QT_QPA_PLATFORM=offscreen DEEPDOLPHIN_THEME="$1" "$BIN" --snapshot \
-        "$3" --section "$2" >/dev/null 2>&1
+        "$3" --section "$2" >/dev/null 2>"$REPRO_DIR/stderr.txt"
+    rc=$?
+    if [ "$rc" -ne 0 ] && [ -s "$REPRO_DIR/stderr.txt" ]; then
+        # ⚠ 只留**有诊断价值**的行（DTK 的环境告警每次都有 ⇒ 全打等于噪声）
+        grep -v "setHighDpiScaleFactorRoundingPolicy\|can not find qm files\|DGuiApplicationHelper:\|This plugin does not support\|DPlatformWindowInterface" \
+            "$REPRO_DIR/stderr.txt" | sed 's/^/    /' >&2
+    fi
+    return $rc
 }
 for theme in light dark; do
     for sec in dashboard board milestones setupguide; do
@@ -198,9 +220,12 @@ cross_fail=0
 for theme in light dark; do
     for sec in dashboard board milestones setupguide; do
         shot="$CROSS_DIR/${theme}-${sec}.png"
+        # ⚠ 同上：失败时把 stderr 打出来（否则只知道「失败了」，不知道「为什么」）
         if ! TZ=UTC QT_QPA_PLATFORM=offscreen DEEPDOLPHIN_THEME="$theme" "$BIN" --snapshot \
-                "$shot" --section "$sec" >/dev/null 2>&1; then
+                "$shot" --section "$sec" >/dev/null 2>"$CROSS_DIR/stderr.txt"; then
             echo "✗ 跨运行复拍失败：${theme}-${sec}" >&2
+            grep -v "setHighDpiScaleFactorRoundingPolicy\|can not find qm files\|DGuiApplicationHelper:\|This plugin does not support\|DPlatformWindowInterface" \
+                "$CROSS_DIR/stderr.txt" | sed 's/^/    /' >&2
             cross_fail=1
             continue
         fi
