@@ -553,7 +553,8 @@ arch_need "$SRC/src/ui/PanelWindow.cpp" 'm_model->exportReport\b' 'PanelWindow �
 arch_need "$SRC/src/ui/PanelWindow.cpp" '&AppModel::reportExported\b' 'PanelWindow 接了报告回执'
 # 无头 flag：契约门第 18 组拿真载荷/真回执喂客户端，逐条对判定结果。
 arch_need "$SRC/src/main.cpp" '--doctor-parse\b' '无头 flag 能把 doctor 载荷判成档（契约门用）'
-arch_need "$SRC/src/main.cpp" '--receipt-file-path\b' '无头 flag 能从回执抽落盘路径（契约门用）'
+arch_need "$SRC/src/main.cpp" 'rawArgs\.contains\(QStringLiteral\("--receipt-file-path"\)\)' '无头 flag 能从回执抽落盘路径（契约门用）—— 盯**认得这个 flag**那一行'
+arch_need "$SRC/src/main.cpp" 'rawArgs\.indexOf\(QStringLiteral\("--receipt-file-path"\)\)' '无头 flag 真的**取到了** flag 的位置（只认不取 ⇒ 拿到的是空路径）'
 
 # 引擎配置（config list / config set）链路：判定（EngineConfig 纯函数）
 #   → 取数（引擎 config list --json）→ 写（引擎 config set，回执型）
@@ -1057,7 +1058,7 @@ arch_need "$SRC/src/ui/SidebarNav.cpp" 'platform::dpiPixmap\(' '侧栏汇总大�
 arch_need_ml "$SRC/src/tray/TrayPopupWindow.cpp" 'platform::dpiPixmap\(' '托盘弹窗的大点与迷你条走 DPI 助手'
 arch_need "$SRC/src/tray/TrayController.cpp" 'platform::dpiPixmap\(' '托盘图标走 DPI 助手'
 arch_need "$SRC/src/ui/pages/MilestoneRowWidget.cpp" 'platform::dpiPixmap\(' '里程碑五态图标走 DPI 助手'
-arch_need "$SRC/src/platform/IconResolver.cpp" 'platform::dpiPixmap\(' '图标兜底通道（qrc 染色 SVG + 占位圆点）走 DPI 助手'
+arch_need_min "$SRC/src/platform/IconResolver.cpp" 'platform::dpiPixmap\(' 2 '图标兜底通道（qrc 染色 SVG + 占位圆点）**两处**都走 DPI 助手（两处源码相同 ⇒ 行级构造分不开 ⇒ 意图天然是「至少 2 次」；⚠ 这条门不在审计器覆盖内）'
 # ⚠ **1x 位图构造不许复活**（这 9 个文件里，自绘位图**只能**由 DPI 助手开）
 #   ⚠ 例外：`platform/DpiPixmap.cpp` 自己（它就是开位图的地方）、`main.cpp` 探针里的
 #     `legacy` 对照组（**故意**留 1x 当基线）—— 这两处不在这 9 个文件里。
@@ -1080,7 +1081,8 @@ arch_need "$SRC/src/main.cpp" 'dpiEdgeLevels=legacy:%d' '平台探针报出自�
 #   ⚠ 盯**命令本身**（`dpi_b_out=…QT_SCALE_FACTOR=2`）而不是裸串 ——
 #   裸串在**错误提示语**里也出现（负控实测：把那一跑改成 1x，接线门照样绿）。
 arch_need "$SRC/scripts/ci-platform-probe.sh" 'dpi_b_out=.*QT_SCALE_FACTOR=2' 'HiDPI 的效果断言必须真在 dpr=2 下跑（不许退化成 dpr=1 的空断言）'
-arch_need "$SRC/scripts/ci-platform-probe.sh" 'dpiEdgeLevels' 'HiDPI 门必须断言边缘过渡层数（dpr>1 时 dpr 感知要更细腻）'
+arch_need "$SRC/scripts/ci-platform-probe.sh" 'dpiEdgeLevels=legacy:' 'HiDPI 门必须断言边缘过渡层数 —— 盯**解析 legacy 那一列**的那行'
+arch_need "$SRC/scripts/ci-platform-probe.sh" 'dpiEdgeLevels=\.\*aware:' 'HiDPI 门必须断言边缘过渡层数 —— 盯**解析 aware 那一列**的那行（两列都要在 ⇒ 少一列就抓不到「dpr 感知更细腻」）'
 
 # ── 批 AQ · mac 侧引擎下载链：写死的 404 URL + 虚构的产物布局（跨目录盯 macos/）──
 #
@@ -1543,9 +1545,9 @@ arch_need_any 'dockFieldIndex' 'SelfCheck 覆盖 dock 字段偏移'
 arch_need_any 'chooseBackend' 'SelfCheck 覆盖后端选择'
 arch_need_any 'dockSelectionName' 'SelfCheck 覆盖选区名'
 arch_need "$SRC/src/main.cpp" 'deepinTraySelection=' '无头探针报出 deepin 托盘选区状态'
-arch_need "$SRC/scripts/probe-deepin-tray.sh" 'TrayIcons' '端到端探针在（判据放在真机探针）'
-arch_need "$SRC/scripts/probe-deepin-tray.sh" 'WM_NAME' '端到端探针核 X 侧窗口名（不靠 daemon 侧那张表）'
-arch_need "$SRC/scripts/probe-deepin-tray.sh" 'GetName' '端到端探针核 daemon 侧 GetName'
+arch_need "$SRC/scripts/probe-deepin-tray.sh" 'Properties\.Get "\$TRAY_SERVICE" TrayIcons' '端到端探针**真的去读 daemon 的 TrayIcons**（判据放在真机探针）—— 盯那行 D-Bus 调用'
+arch_need "$SRC/scripts/probe-deepin-tray.sh" 'xprop -id "\$WID" WM_NAME' '端到端探针核 X 侧窗口名（不靠 daemon 侧那张表）—— 盯那行 xprop'
+arch_need "$SRC/scripts/probe-deepin-tray.sh" '"\$TRAY_SERVICE\.GetName" "\$WID"' '端到端探针核 daemon 侧 GetName —— 盯那行 D-Bus 调用'
 
 # ── 批 Y 补 · 托盘后端的**强制指定**（测试钩子）────────────────────────
 # ⚠ 背景：DDE 25 上自动选的是 deepin 窗口协议 ⇒ **SNI 那条路走不到**
@@ -1562,7 +1564,7 @@ arch_need "$SRC/src/tray/TrayController.cpp" 'platform::trayBackendOverride\(' '
 arch_need "$SRC/src/tray/TrayController.cpp" '托盘后端 =' '应用自报走的后端（探针盯这一段）'
 arch_need "$SRC/scripts/probe-sni-icon.sh" 'DEEPDOLPHIN_TRAY_BACKEND=sni' 'SNI 探针强制走 SNI 那条路'
 arch_need "$SRC/scripts/probe-sni-icon.sh" '托盘后端 = ' 'SNI 探针核对应用自报的后端（强制没生效 ⇒ 判据红）'
-arch_need "$SRC/scripts/probe-deepin-tray.sh" 'deepin-window' 'deepin 探针核对自动选路的结果'
+arch_need "$SRC/scripts/probe-deepin-tray.sh" '\[ "\$BACKEND" = "deepin-window" \]' 'deepin 探针核对自动选路的结果 —— 盯那行**判定**'
 arch_need_any 'parseBackendOverride' 'SelfCheck 覆盖强制开关的解析'
 # 构建登记：新文件必须编进去（漏登记 = 代码在仓里但没编）
 for f in src/logic/DeepinTray.cpp src/logic/DeepinTray.h src/platform/DeepinTray.cpp src/platform/DeepinTray.h src/platform/TrayBackend.cpp src/platform/TrayBackend.h; do
@@ -1626,7 +1628,9 @@ arch_need_count_in_fn "$SRC/src/ui/dialogs/DocsDialog.cpp" 'void DocsDialog::app
 # ⚠ 文案不许写在 UI 里（四语言共用判定层那份）
 arch_forbid "$SRC/src/ui/dialogs/DocsDialog.cpp" 'QStringLiteral\(' '文档窗不许自己写死文案（文案全在判定层）'
 # 设置层：app.language 键
-arch_need "$SRC/src/app/Settings.cpp" 'app\.language' '设置层有 app.language 键（与 mac UserDefaults 逐字对齐）'
+arch_need "$SRC/src/app/Settings.cpp" 'value\(QStringLiteral\("app\.language"\)\)' '设置层有 app.language 键（与 mac UserDefaults 逐字对齐）—— 盯**读**那一处'
+arch_need "$SRC/src/app/Settings.cpp" 'remove\(QStringLiteral\("app\.language"\)\)' '设置层**能删掉** app.language（删不掉 ⇒ 切语言后旧值还在）—— 盯**删**那一处'
+arch_need "$SRC/src/app/Settings.cpp" 'setValue\(QStringLiteral\("app\.language"\)' '设置层**能写下** app.language（写不进去 ⇒ 切了语言下次启动又回去）—— 盯**写**那一处'
 arch_need "$SRC/src/app/Settings.h" 'appLanguageKey' '设置层暴露语言读写接口'
 # 分段按钮要能改档位文字（否则换语言时分段名换不掉）
 arch_need "$SRC/src/ui/common/SegmentedButton.h" 'setButtonText' '分段按钮支持改档位文字（语言切换用）'
@@ -1641,10 +1645,10 @@ arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'QStringList DocsDialog::probeVal
 arch_need "$SRC/src/ui/dialogs/DocsDialogProbe.h" 'docsLangProbeReport' '探针文件在（机器格式归它，文档窗里不留字面量）'
 arch_need "$SRC/src/ui/dialogs/DocsDialogProbe.cpp" 'box->setCurrentIndex\(i\)' '探针走**真实信号路径**（currentIndexChanged）'
 arch_need "$SRC/src/ui/common/SegmentedButton.h" 'QString buttonText\(int id\) const' '分段按钮能读回档位名（探针要看分段名换了没有）'
-arch_need "$SRC/src/main.cpp" 'headlessDocsLangProbe' 'main 有文档语言探针'
+arch_need "$SRC/src/main.cpp" 'return headlessDocsLangProbe\(argc, argv\);' 'main 有文档语言探针 —— 盯**调用**那一行（盯函数名的话，定义还在、调用被摘了，门照样绿）'
 arch_need "$SRC/src/main.cpp" 'rawArgs.contains\(QStringLiteral\("--docs-lang-probe"\)\)' '无头分支认得 --docs-lang-probe（不然会落进 GUI 常驻，CI 挂死）'
 arch_need "$SRC/src/main.cpp" 'QStandardPaths::setTestModeEnabled\(true\)' '探针隔离设置（切语言会写 app.language ⇒ 不许碰用户真实设置）'
-arch_need "$SRC/scripts/ci-docs-lang-probe.sh" 'docs-lang-probe' '文档语言断言脚本在'
+arch_need "$SRC/scripts/ci-docs-lang-probe.sh" '--docs-lang-probe' '文档语言断言脚本**真的去跑那个探针** —— 盯那行调用（盯「docs-lang-probe」这个词的话，错误消息里也有 ⇒ 改一处骗得过门）'
 arch_need "$SRC/scripts/ci-docs-lang-probe.sh" 'grep -Pq' '断言脚本真查汉字（英文档回落成中文要能抓住）'
 arch_need "$SRC/scripts/ci.sh" 'ci-docs-lang-probe\.sh' 'CI 真跑了这一门（脚本在但不跑 = 没有门）'
 # ── 批 AG · 「文案全在判定层」这条纪律**要有牙**（批 AA 只盯了写法）──
