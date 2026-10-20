@@ -603,6 +603,75 @@ def check_count_gates(count_items):
     return bad
 
 
+# ⚠⚠⚨ 批 BL · 「盯门自己的工具」的门项必须**整行锚定** ────────────────────
+#
+# ⚠⚠⚨ **起因（批 BJ 负控坐实，批 BK 根治了一半）**：
+#   门项盯**串** ⇒ 判定被掏空但**串还在** ⇒ 门照样绿。
+#   例：把 `if bad:` 改成 `if bad or True:` ⇒ 串还在 ⇒ 盯串的门**假绿**
+#   ⇒ 而 `if bad:` 正是**探针「违规 ⇒ 判红」的那一行** ⇒ 掏空它 = 探针集体失效。
+# ⚠⚠⚨ 批 BK 根治了「**注释顶替代码**」（`.py` 也剥 `#`）
+#   ⇒ 但「**判定被掏空、串还在**」这一头仍只靠**整行锚定**挡。
+# ⚠⚠⚨ **为什么只限探针文件**：探针是「**门自己的工具**」
+#   ⇒ 它被掏空 = 门**集体**失效 ⇒ 风险最高 ⇒ 先收进这一处（范围可控）。
+#   ⚠ 全仓逐批推进（已知边界，如实记着）。
+PROBE_GATE_SUFFIX = 'ci-tautology-check.py'
+
+
+def anchoring_violation(rx):
+    """判定一个门项正则**是不是整行锚定**（`^` 开头且 `$` 结尾）。
+
+    ⚠⚠⚨ **判定逻辑只有一份**（批 BF/BG 纪律）⇒ 实扫与自检**都走它**。
+    ⚠⚠⚨ **返回「原因」而不是布尔**（批 BJ 纪律：判定函数返回原因）
+      ⇒ 调用方不再自己算一遍 ⇒ 判定串不会在源码里出现两次
+      ⇒ 门项盯它时不会「命中两次」而对不上期望次数。
+    """
+    if not rx.startswith('^'):
+        return '行首没有 ^ 锚点 ⇒ 盯的是串 ⇒ 判定被掏空但串还在 ⇒ 门假绿'
+    if rx.endswith('\\$'):
+        return '行尾的 $ 是被转义的 ⇒ 不算行尾锚点'
+    if not rx.endswith('$'):
+        return '行尾没有 $ 锚点 ⇒ 盯的是串 ⇒ 判定被掏空但串还在 ⇒ 门假绿'
+    return None
+
+
+def anchoring_selftest():
+    """自检：让门**自己证明自己有牙**（合成样例）。
+
+    ⚠⚠⚨ 样例必须**既含「该判为违规」也含「不该判为违规」**（批 BF 纪律）
+      ⇒ 只有「该违规」的样例 ⇒ 「永远判违规」也能过 ⇒ 自检没牙。
+    ⚠⚠⚨ **自检必须放在最前**（批 BI 纪律）：放在后面 ⇒ 前面的检查一红就 exit
+      ⇒ 自检永远没机会跑 ⇒ 形同虚设。
+    """
+    cases = [
+        (r'def X\(', True),          # 纯盯串 ⇒ 必须判违规
+        (r'^\s+if bad:', True),      # 只有行首 ⇒ 必须判违规
+        (r'^def X\(foo\):$', False),  # 整行锚定 ⇒ 必须判合规
+        (r'^\s+if bad:$', False),     # 整行锚定 ⇒ 必须判合规
+    ]
+    bad = []
+    for rx, should in cases:
+        got = anchoring_violation(rx) is not None
+        if got != should:
+            bad.append((rx, should, got))
+    return bad
+
+
+def check_probe_gate_anchoring(cnt_items):
+    """盯探针文件的 `arch_need_count` 门项必须**整行锚定**。
+
+    ⚠ 只查 `arch_need_count`（单文件、整行匹配）⇒ `arch_need_count_in_fn`
+      / `_in_step` 盯的是**函数体内/步骤内**的标记串（跨行是常态）⇒ 不要求。
+    """
+    bad = []
+    for lineno, f, rx, want in cnt_items:
+        if not f.endswith(PROBE_GATE_SUFFIX):
+            continue
+        why = anchoring_violation(rx)
+        if why:
+            bad.append((lineno, rel(f), rx, why))
+    return bad
+
+
 def check_count_in_fn_gates(cif_items):
     """校准 `arch_need_count_in_fn` 的期望次数（函数体内）。
 
@@ -766,6 +835,27 @@ def main():
         return 0
 
     if want_list:
+        # ⚠⚠⚨ 批 BL · 锚定形态**自检**（放在**最前**：批 BI 纪律——
+        #   自检放在后面 ⇒ 前面的检查一红就 exit ⇒ 自检永远没机会跑 ⇒ 形同虚设）
+        stbad = anchoring_selftest()
+        if stbad:
+            print('锚定形态自检不过（%d 条）⇒ **判定逻辑被掏空了**'
+                  % len(stbad), file=sys.stderr)
+            for rx, should, got in stbad:
+                print('  · 正则=%s  期望判违规=%s  实际判违规=%s'
+                      % (rx, should, got), file=sys.stderr)
+            return 8
+        # ⚠⚠⚨ 批 BL · 盯探针的门项必须**整行锚定**
+        #   （探针是「门自己的工具」⇒ 它被掏空 = 门**集体**失效 ⇒ 风险最高）
+        anchbad = check_probe_gate_anchoring(cnt)
+        if anchbad:
+            print('盯探针文件的门项**不是整行锚定**（%d 条）⇒ 判定被掏空但串还在 ⇒ 门假绿'
+                  % len(anchbad), file=sys.stderr)
+            for lineno, f, rx, why in anchbad:
+                print('  · %s:%d  %s  %s'
+                      % (os.path.basename(WIRING), lineno, f, rx), file=sys.stderr)
+                print('      ⇒ %s' % why, file=sys.stderr)
+            return 8
         # ⚠⚠⚠ **门项总数核对**（批 BH）——「门项被悄悄删」此前**无人发现**。
         #   ⚠ 只在**全量**模式下做（--changed 只审新增门项 ⇒ 门项总数本就不全）
         if base is None:
@@ -895,6 +985,12 @@ def main():
     if base is not None:
         print('（只审 %s..HEAD 的新增门项）' % base)
 
+    # ⚠⚠⚨ 批 BL · 报告段也要说（无参模式只出报告、退出码恒 0 ⇒ 判红必须用 --list）
+    anchrep = check_probe_gate_anchoring(cnt)
+    print('盯探针文件的门项**整行锚定**：%d 条违规' % len(anchrep))
+    for lineno, f, rx, why in anchrep:
+        print('  · %s:%d  %s  %s' % (os.path.basename(WIRING), lineno, f, rx))
+        print('      ⇒ %s' % why)
     print('arch_need 命中 >1 次 ⇒ **改一处骗得过门**：%d 条' % len(multi))
     for lineno, f, rx, n in multi:
         mark = '（已豁免）' if 'need:%s|%s' % (rel(f), rx) in exempt else '**⇒ 硬门会红**'
