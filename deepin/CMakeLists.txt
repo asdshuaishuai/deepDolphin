@@ -55,6 +55,8 @@ add_executable(deepDolphin
     src/main.cpp
     # ── app/：进程级编排 ──
     src/app/AppModel.cpp
+    src/app/AppModelGraph.cpp
+    src/app/AppModelUpdate.cpp
     src/app/EngineCli.cpp
     src/app/EngineInstaller.cpp
     src/app/EngineLocator.cpp

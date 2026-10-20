@@ -67,11 +67,11 @@ arch_need() { # arch_need <文件> <正则> <说明>
 #   ⇒ 判据被搬到分片后，门红 ⇒ 门与结构耦合 ⇒ 逼着人「把代码搬回去」而不是「把门改对」。
 #   ⚠ 强度**不变**：判据集合没变（ci.sh 的 SC_MIN 盯着条数）⇒
 #   真删掉一条判据，这里照样红。
-arch_need_any() { # arch_need_any <正则> <说明>
-    local re="$1" label="$2"
+arch_need_any() { # arch_need_any <正则> <说明> [文件通配（相对 SRC，默认 src/app/SelfCheck*.cpp）]
+    local re="$1" label="$2" glob="${3:-src/app/SelfCheck*.cpp}"
     ARCH_N=$((ARCH_N + 1))
     local hits
-    hits="$(grep -lE -- "$re" "$SRC"/src/app/SelfCheck*.cpp 2>/dev/null | head -3 | sed "s|$SRC/||" | tr '\n' ' ')"
+    hits="$(grep -lE -- "$re" "$SRC"/$glob 2>/dev/null | head -3 | sed "s|$SRC/||" | tr '\n' ' ')"
     if [ -n "$hits" ]; then
         echo "  ✓ $label"
     else
@@ -313,15 +313,15 @@ arch_forbid_text_dup() { # arch_forbid_text_dup <判定层文件> <相对SRC的�
         echo "  ✓ $label"
     fi
 }
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("graph"\).*QStringLiteral\("arch"\)' 'AppModel 调引擎 graph arch 取场景'
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("scene"\)' '场景按 scene 契约格式取（--format scene）'
+arch_need_any 'QStringLiteral\("graph"\).*QStringLiteral\("arch"\)' 'AppModel 调引擎 graph arch 取场景' 'src/app/AppModel*.cpp'
+arch_need_any 'QStringLiteral\("scene"\)' '场景按 scene 契约格式取（--format scene）' 'src/app/AppModel*.cpp'
 arch_need "$SRC/src/app/AppModel.h" '\bloadScene\b' 'AppModel 暴露 loadScene'
 arch_need "$SRC/src/app/AppModel.h" '\bgenArch\b' 'AppModel 暴露 genArch（生成）'
 arch_need "$SRC/src/app/AppModel.h" '\bexportArch\b' 'AppModel 暴露 exportArch（导出）'
 # 生成/导出是**回执型命令**：stdout 是人话不是 JSON → 必须走 Text 契约。
 # 拿 callJson 去收，exit==0 也会被判成「引擎输出不是合法 JSON」——成功报成失败。
-arch_need "$SRC/src/app/AppModel.cpp" 'callText\(\{ *QStringLiteral\("arch"\), *QStringLiteral\("gen"\)' 'genArch 走 Text 契约（callText）'
-arch_need "$SRC/src/app/AppModel.cpp" 'callText\(\{ *QStringLiteral\("render"\), *QStringLiteral\("arch"\)' 'exportArch 走 Text 契约（callText）'
+arch_need_any 'callText\(\{ *QStringLiteral\("arch"\), *QStringLiteral\("gen"\)' 'genArch 走 Text 契约（callText）' 'src/app/AppModel*.cpp'
+arch_need_any 'callText\(\{ *QStringLiteral\("render"\), *QStringLiteral\("arch"\)' 'exportArch 走 Text 契约（callText）' 'src/app/AppModel*.cpp'
 arch_need "$SRC/src/app/EngineCli.h" '\bcallText\b' 'EngineCli 提供文本输出通道'
 arch_need "$SRC/src/logic/ArchViewport.cpp" '\bhitAt\b' '判定层有命中测试'
 arch_need "$SRC/src/logic/ArchReceipt.cpp" '\bhtmlPath\b' '判定层有回执路径提取'
@@ -343,9 +343,9 @@ arch_need "$SRC/src/logic/AgentToolPlan.cpp" '\bknownToolNames\b' '工具表有�
 arch_need "$SRC/src/main.cpp" '--agent-tool-names\b' '客户端能无头打印工具清单（契约对位用）'
 
 # 代码图谱链路：取数（三源）→ 判定（合成 + 可见行）→ 接线（详情页入口 → 面板 → 窗）
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("graph"\), *QStringLiteral\("tree"\)' 'AppModel 调引擎 graph tree 取文件骨架'
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("graph"\), *QStringLiteral\("confidence"\)' 'AppModel 调引擎 graph confidence 取置信度'
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("graph"\), *QStringLiteral\("functions"\)' 'AppModel 调引擎 graph functions 取函数级图谱'
+arch_need_any 'QStringLiteral\("graph"\), *QStringLiteral\("tree"\)' 'AppModel 调引擎 graph tree 取文件骨架' 'src/app/AppModel*.cpp'
+arch_need_any 'QStringLiteral\("graph"\), *QStringLiteral\("confidence"\)' 'AppModel 调引擎 graph confidence 取置信度' 'src/app/AppModel*.cpp'
+arch_need_any 'QStringLiteral\("graph"\), *QStringLiteral\("functions"\)' 'AppModel 调引擎 graph functions 取函数级图谱' 'src/app/AppModel*.cpp'
 arch_need "$SRC/src/app/AppModel.h" '\bloadCodeGraph\b' 'AppModel 暴露 loadCodeGraph'
 arch_need "$SRC/src/app/AppModel.h" '\bgenIndex\b' 'AppModel 暴露 genIndex（生成）'
 arch_need "$SRC/src/app/AppModel.h" '\bexportIndex\b' 'AppModel 暴露 exportIndex（导出）'
@@ -382,9 +382,9 @@ arch_need "$SRC/src/logic/PatchCheck.cpp" '\bparseMerged\b' '判定层有终稿�
 arch_need "$SRC/src/logic/PatchCheck.cpp" '\blowConfidenceEntities\b' '判定层有低置信度筛选'
 arch_need "$SRC/src/logic/PatchCheck.cpp" '\bagentPayload\b' '判定层有裁决载荷生成'
 arch_need "$SRC/src/logic/PatchCheck.cpp" '\bdiffSnippet\b' '判定层有 diff 抽实码'
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("patchconf"\)' 'AppModel 调引擎 patchconf'
-arch_need "$SRC/src/app/AppModel.cpp" '\bworkingDiff\b' 'AppModel 取工作区 diff'
-arch_need "$SRC/src/app/AppModel.cpp" '\bmergePatchCheck\b' 'AppModel 有合并终稿动作'
+arch_need_any 'QStringLiteral\("patchconf"\)' 'AppModel 调引擎 patchconf' 'src/app/AppModel*.cpp'
+arch_need_any '\bworkingDiff\b' 'AppModel 取工作区 diff' 'src/app/AppModel*.cpp'
+arch_need_any '\bmergePatchCheck\b' 'AppModel 有合并终稿动作' 'src/app/AppModel*.cpp'
 arch_need "$SRC/src/ui/dialogs/PatchCheckDialog.cpp" '\bPatchCheck::lowConfidenceEntities\b' '窗经判定层取低置信度实体'
 arch_need "$SRC/src/ui/dialogs/PatchCheckDialog.cpp" '\bPatchCheck::agentPayload\b' '窗经判定层生成裁决载荷'
 arch_need "$SRC/src/ui/dialogs/PatchCheckDialog.cpp" '\bPatchCheck::diffSnippet\b' '窗经判定层抽实码'
@@ -432,9 +432,9 @@ arch_need "$SRC/src/logic/GraphInsight.cpp" '\bsymbolNameFromId\b' '判定层有
 arch_need "$SRC/src/logic/GraphInsight.cpp" '\bparseOverview\b' '判定层有概览解析'
 arch_need "$SRC/src/logic/GraphInsight.cpp" '\bparseSymbol\b' '判定层有符号详情解析'
 arch_need "$SRC/src/logic/GraphInsight.cpp" '\bparseImpact\b' '判定层有影响面解析'
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("overview"\)' 'AppModel 调引擎 graph overview'
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("impact"\)' 'AppModel 调引擎 graph impact'
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("symbol"\)' 'AppModel 调引擎 graph symbol'
+arch_need_any 'QStringLiteral\("overview"\)' 'AppModel 调引擎 graph overview' 'src/app/AppModel*.cpp'
+arch_need_any 'QStringLiteral\("impact"\)' 'AppModel 调引擎 graph impact' 'src/app/AppModel*.cpp'
+arch_need_any 'QStringLiteral\("symbol"\)' 'AppModel 调引擎 graph symbol' 'src/app/AppModel*.cpp'
 # ⚠ 盯**调用点**而不是方法名：方法定义还在时 grep 照样命中（这是第四次同类漏洞）。
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '^[[:space:]]*showImpact\(\);[[:space:]]*$' '关系页签真的调用了影响面（不是只定义了方法）'
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '\bGraphInsight::symbolNameFromId\b' '界面按名字问引擎（不传 id）'
@@ -450,9 +450,9 @@ arch_need "$SRC/src/logic/EngineDoctor.cpp" 'QString summary\b' '判定层有自
 arch_need "$SRC/src/logic/EngineDoctor.cpp" 'Tone toneOf\b' '判定层有自检档位映射'
 arch_need "$SRC/src/app/AppModel.h" '\brunDoctor\b' 'AppModel 暴露 runDoctor'
 arch_need "$SRC/src/app/AppModel.h" '\bdoctorFinished\b' 'AppModel 有自检回执信号'
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("doctor"\)' 'AppModel 调引擎 doctor'
-arch_need "$SRC/src/app/AppModel.cpp" 'EngineDoctor::parse\(res\.payload->object\(\)\)' '自检读**载荷**判成败（不是按退出码）'
-arch_need "$SRC/src/app/AppModel.cpp" 'm_doctor = r\b' '自检结果落到 AppModel 成员'
+arch_need_any 'QStringLiteral\("doctor"\)' 'AppModel 调引擎 doctor' 'src/app/AppModel*.cpp'
+arch_need_any 'EngineDoctor::parse\(res\.payload->object\(\)\)' '自检读**载荷**判成败（不是按退出码）' 'src/app/AppModel*.cpp'
+arch_need_any 'm_doctor = r\b' '自检结果落到 AppModel 成员' 'src/app/AppModel*.cpp'
 # 接线：设置·通用页的「运行自检」钮 —— 盯**构造点**与**调用点**，不是「doctor 这个词出现过」。
 arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'new DPushButton\(QStringLiteral\("运行自检"\)' '设置页真的造了「运行自检」按钮'
 arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'm_model->runDoctor\(\)' '「运行自检」真的调了引擎自检'
@@ -465,13 +465,13 @@ arch_need_any '\bEngineDoctor::parse\b' 'SelfCheck 覆盖自检解析'
 #   → 接线（详情页「导出报告」入口 + 报告卡）。
 arch_need "$SRC/src/app/AppModel.h" '\bexportReport\b' 'AppModel 暴露 exportReport'
 arch_need "$SRC/src/app/AppModel.h" '\breportExported\b' 'AppModel 有报告回执信号'
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("report"\)' 'AppModel 调引擎 report'
-arch_need "$SRC/src/app/AppModel.cpp" 'callText\(\{ *QStringLiteral\("report"\)' 'report 走 Text 契约（callText，不是 callJson）'
+arch_need_any 'QStringLiteral\("report"\)' 'AppModel 调引擎 report' 'src/app/AppModel*.cpp'
+arch_need_any 'callText\(\{ *QStringLiteral\("report"\)' 'report 走 Text 契约（callText，不是 callJson）' 'src/app/AppModel*.cpp'
 # ⚠ 回执通道：引擎的 report 把回执写在 **stderr**（arch gen / render arch 才在 stdout）。
 #   只认 stdout 的客户端会把「报告已生成」判成「引擎没有回执」—— 成功说成失败。
 arch_need "$SRC/src/app/EngineCli.h" '\breceiptText\b' 'EngineCli 有回执通道（stdout 优先，空则 stderr）'
 arch_need "$SRC/src/app/EngineCli.cpp" 'r\.receipt = EngineCli::receiptText\b' '回执走 receiptText（两路兜底）'
-arch_need "$SRC/src/app/AppModel.cpp" 'res\.receipt\b' 'Text 消费点读 receipt（不是 stdOut）'
+arch_need_any 'res\.receipt\b' 'Text 消费点读 receipt（不是 stdOut）' 'src/app/AppModel*.cpp'
 # 引擎回执带 ANSI 颜色码（引擎不认 NO_COLOR）→ 显示前必须剥。
 arch_need "$SRC/src/logic/ArchReceipt.cpp" 'QString plain\b' '判定层有剥 ANSI 的回执净化'
 arch_need_any '\bEngineDoctor::checkLine\b' 'SelfCheck 覆盖自检行文'
@@ -498,16 +498,16 @@ arch_need "$SRC/src/app/AppModel.h" '\bloadEngineConfig\b' 'AppModel 暴露 load
 arch_need "$SRC/src/app/AppModel.h" '\bsetEngineConfig\b' 'AppModel 暴露 setEngineConfig'
 arch_need "$SRC/src/app/AppModel.h" '\bengineConfigChanged\b' 'AppModel 有配置变化信号'
 arch_need "$SRC/src/app/AppModel.h" '\bengineConfigSaved\b' 'AppModel 有配置写入回执信号'
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("config"\), *QStringLiteral\("list"\)' 'AppModel 调引擎 config list'
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("config"\), *QStringLiteral\("set"\)' 'AppModel 调引擎 config set'
+arch_need_any 'QStringLiteral\("config"\), *QStringLiteral\("list"\)' 'AppModel 调引擎 config list' 'src/app/AppModel*.cpp'
+arch_need_any 'QStringLiteral\("config"\), *QStringLiteral\("set"\)' 'AppModel 调引擎 config set' 'src/app/AppModel*.cpp'
 # ⚠ config set 是**回执型命令**（回执在 stderr）→ 必须走 Text 契约。
 #   拿 callJson 去收，exit==0 也会被判成「引擎输出不是合法 JSON」—— 成功报成失败。
-arch_need "$SRC/src/app/AppModel.cpp" 'callText\(\{ *QStringLiteral\("config"\), *QStringLiteral\("set"\)' 'config set 走 Text 契约（callText）'
+arch_need_any 'callText\(\{ *QStringLiteral\("config"\), *QStringLiteral\("set"\)' 'config set 走 Text 契约（callText）' 'src/app/AppModel*.cpp'
 # 键白名单：客户端先拦一道，界面才不会给用户一个引擎根本不认的键。
-arch_need "$SRC/src/app/AppModel.cpp" 'EngineConfig::isWritable\(key\)' 'setEngineConfig 有键白名单'
+arch_need_any 'EngineConfig::isWritable\(key\)' 'setEngineConfig 有键白名单' 'src/app/AppModel*.cpp'
 # ⚠ `res.receipt` 在 AppModel 里有多处（架构图/索引/报告都读它）——
 #   盯泛化的 `res\.receipt` 的话，摘掉配置这一处门照样绿。故盯到本行。
-arch_need "$SRC/src/app/AppModel.cpp" 'emit engineConfigSaved\(true, res\.receipt\);' '配置写入读 receipt（不是 stdOut）'
+arch_need_any 'emit engineConfigSaved\(true, res\.receipt\);' '配置写入读 receipt（不是 stdOut）' 'src/app/AppModel*.cpp'
 # 接线：设置页的「引擎配置」卡 —— 盯构造点与调用点。
 arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'new DPushButton\(QStringLiteral\("读取引擎配置"\)' '设置页真的造了「读取引擎配置」按钮'
 # ⚠ 「读取引擎配置」有**两个**调用点（按钮 / 打开本页自动读）。盯名字会互相顶替：
@@ -541,10 +541,10 @@ arch_need "$SRC/src/app/AppModel.h" '\bloadIndexOverview\b' 'AppModel 暴露 loa
 arch_need "$SRC/src/app/AppModel.h" '\bupdateIndex\b' 'AppModel 暴露 updateIndex'
 arch_need "$SRC/src/app/AppModel.h" '\bindexStatusChanged\b' 'AppModel 有索引状态信号'
 arch_need "$SRC/src/app/AppModel.h" '\bindexUpdated\b' 'AppModel 有索引更新结果信号'
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("index"\), *QStringLiteral\("overview"\)' 'AppModel 调引擎 index overview'
-arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("index"\), *QStringLiteral\("update"\)' 'AppModel 调引擎 index update'
+arch_need_any 'QStringLiteral\("index"\), *QStringLiteral\("overview"\)' 'AppModel 调引擎 index overview' 'src/app/AppModel*.cpp'
+arch_need_any 'QStringLiteral\("index"\), *QStringLiteral\("update"\)' 'AppModel 调引擎 index update' 'src/app/AppModel*.cpp'
 # ⚠ 「已最新」≠「已更新」：fresh 时引擎**什么都没重建**，界面不能说成「更新好了」。
-arch_need "$SRC/src/app/AppModel.cpp" 'if \(u\.fresh\)' '索引更新区分「已最新」与「已重建」'
+arch_need_any 'if \(u\.fresh\)' '索引更新区分「已最新」与「已重建」' 'src/app/AppModel*.cpp'
 # 接线：代码图谱页的「增量更新」钮 + 索引状态行。盯构造点与调用点。
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'QStringLiteral\("增量更新"\)' '代码图谱页真的造了「增量更新」按钮'
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_model->updateIndex\(' '「增量更新」真的调了引擎 index update'
@@ -670,12 +670,12 @@ arch_need "$SRC/scripts/ci.sh" 'build-deb\.sh\b' 'CI 流程构建 deb（D7 达�
 #   （真引擎取数让基线取决于「本机注册了什么项目」——此前拍的是空态，
 #     对状态色/布局全是空门）。
 arch_need "$SRC/src/logic/SnapshotFixture.h" 'namespace SnapshotFixture [{]' '快照夹具有判定层（纯数据）'
-arch_need "$SRC/src/app/AppModel.cpp" 'useSnapshotFixture' 'AppModel 提供夹具注入'
+arch_need_any 'useSnapshotFixture' 'AppModel 提供夹具注入' 'src/app/AppModel*.cpp'
 arch_need "$SRC/src/main.cpp" 'useSnapshotFixture\(\)' '快照走夹具（不走真引擎）'
 # 取数与判定分层：夹具与引擎必须共用**同一段解析**，否则夹具测不到真路径
-arch_need "$SRC/src/app/AppModel.cpp" 'applyStatusPayload' '载荷应用抽成一层（夹具与引擎共用）'
-arch_need "$SRC/src/app/AppModel.cpp" 'applyDashboardPayload' '载荷应用抽成一层（夹具与引擎共用）'
-arch_need "$SRC/src/app/AppModel.cpp" 'applyMilestonesPayload' '载荷应用抽成一层（夹具与引擎共用）'
+arch_need_any 'applyStatusPayload' '载荷应用抽成一层（夹具与引擎共用）' 'src/app/AppModel*.cpp'
+arch_need_any 'applyDashboardPayload' '载荷应用抽成一层（夹具与引擎共用）' 'src/app/AppModel*.cpp'
+arch_need_any 'applyMilestonesPayload' '载荷应用抽成一层（夹具与引擎共用）' 'src/app/AppModel*.cpp'
 # 拍到空态必须响亮失败（否则空图被固化成基线 = 又一个空门）
 arch_need "$SRC/src/main.cpp" '夹具没有项目' '快照拍到空态要响亮失败（别固化空基线）'
 # ⚠ Qt 的 arg 重载陷阱：`arg(QString, int)` 命中 **arg(a1, fieldWidth) 重载**
@@ -690,7 +690,7 @@ arch_forbid "$SRC/src/ui/pages/ProjectProgressCard.cpp" '\.arg\([^;]*?,\s*entrie
 #   ② 里程碑「目标 YYYY-MM-DD」= 绝对日期 ⇒ 锚定固定基准日。
 # ⚠ 正则盯**具体那一句**（不是「出现过 fixedRefreshedMs」）——
 #   拿掉赋值只留声明时，「出现过」照样绿（负控实测，第十四次「同名/子串互相顶替」）。
-arch_need "$SRC/src/app/AppModel.cpp" 'm_lastRefreshedMs = SnapshotFixture::fixedRefreshedMs\(\)' '快照刷新时刻用固定值（不用墙钟）'
+arch_need_any 'm_lastRefreshedMs = SnapshotFixture::fixedRefreshedMs\(\)' '快照刷新时刻用固定值（不用墙钟）' 'src/app/AppModel*.cpp'
 # ⚠ 精确计数：AppModel 里**只有生产取数路径**那 3 处可以用墙钟。
 #   夹具路径多一处 ⇒ 计数变 4 ⇒ 红。
 arch_need_count "$SRC/src/app/AppModel.cpp" 'm_lastRefreshedMs = QDateTime::currentMSecsSinceEpoch\(\)' 3 '墙钟刷新时刻只许出现在生产取数路径（夹具路径不许有）'
@@ -766,8 +766,8 @@ arch_need "$SRC/src/logic/EngineDownload.cpp" 'digestMatches\(const QString &exp
 arch_need "$SRC/src/app/EngineInstaller.cpp" '\bEngineDownload::parseRelease\b' '执行层走判定层挑资产'
 arch_need "$SRC/src/app/EngineInstaller.cpp" '\bEngineDownload::digestMatches\b' '执行层走判定层校验'
 arch_need "$SRC/src/app/EngineInstaller.cpp" '\bEngineDownload::packagedBinName\b' '包内文件名走判定层'
-arch_need "$SRC/src/app/AppModel.cpp" '\bEngineDownload::releaseApiUrl\b' 'AppModel 走判定层取发布信息 URL'
-arch_need "$SRC/src/app/AppModel.cpp" 'void AppModel::downloadEngine\(\)' 'AppModel 暴露下载引擎'
+arch_need_any '\bEngineDownload::releaseApiUrl\b' 'AppModel 走判定层取发布信息 URL' 'src/app/AppModel*.cpp'
+arch_need_any 'void AppModel::downloadEngine\(\)' 'AppModel 暴露下载引擎' 'src/app/AppModel*.cpp'
 arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'm_model->downloadEngine\b' '设置页有下载引擎入口'
 arch_need "$SRC/src/app/EngineLocator.cpp" 'libexec/deepdolphin/moongit\b' '发现链认得下载链装的位置'
 # ⚠ 用**精确计数**（两个调用点都要在）：`--engine-download` 在 main.cpp 出现两次
@@ -884,10 +884,10 @@ arch_need "$SRC/src/logic/EngineHook.h" 'namespace EngineHook [{]' '引擎钩子
 arch_need "$SRC/src/logic/EngineHook.cpp" 'parseStatus\(const QByteArray &json\)' '判定层解析 hook status 载荷'
 arch_need_count "$SRC/src/logic/EngineHook.cpp" 'arr\.at\(0\)\.toBool\(\)' 1 '钩子位置约定：installed[0] = post-commit（恰好一处）'
 arch_need_count "$SRC/src/logic/EngineHook.cpp" 'arr\.at\(1\)\.toBool\(\)' 1 '钩子位置约定：installed[1] = post-merge（恰好一处）'
-arch_need "$SRC/src/app/AppModel.cpp" '\bEngineHook::parseStatus\b' '执行层走判定层解析钩子状态'
-arch_need "$SRC/src/app/AppModel.cpp" 'void AppModel::loadHookStatus\(\)' 'AppModel 暴露查钩子状态'
-arch_need "$SRC/src/app/AppModel.cpp" 'void AppModel::installHooksAll\(\)' 'AppModel 暴露装钩子'
-arch_need "$SRC/src/app/AppModel.cpp" 'void AppModel::uninstallHooksAll\(\)' 'AppModel 暴露卸钩子'
+arch_need_any '\bEngineHook::parseStatus\b' '执行层走判定层解析钩子状态' 'src/app/AppModel*.cpp'
+arch_need_any 'void AppModel::loadHookStatus\(\)' 'AppModel 暴露查钩子状态' 'src/app/AppModel*.cpp'
+arch_need_any 'void AppModel::installHooksAll\(\)' 'AppModel 暴露装钩子' 'src/app/AppModel*.cpp'
+arch_need_any 'void AppModel::uninstallHooksAll\(\)' 'AppModel 暴露卸钩子' 'src/app/AppModel*.cpp'
 arch_need "$SRC/src/ui/dialogs/panes/AutomationPane.cpp" 'm_model->installHooksAll\b' '自动化页有装钩子入口'
 arch_need "$SRC/src/ui/dialogs/panes/AutomationPane.cpp" 'm_model->uninstallHooksAll\b' '自动化页有卸钩子入口'
 arch_need "$SRC/src/main.cpp" '--hook-status-parse"' '无头入口可验钩子判定层'
