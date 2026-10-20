@@ -156,6 +156,51 @@ scripts/client-check.sh
 ⚠ 本批改动**未在无 Swift 工具链的环境里编译过** ⇒ 第一次在 mac 上跑该脚本时，
 请把这四条当作**待验**项，而不是既成事实。
 
+### 布尔旗标解析（批 AS 修好）
+
+AI 工具的开关类参数（`--force` / `--violations` 等）原先只认 `as? Bool`：
+
+```swift
+(params[key] as? Bool) == true
+```
+
+⚠ 而同文件里**本来就写着**「模型给的布尔/数字经 JSONSerialization 可能落成
+Bool/Int/Double/String」—— **说法与实现相反**：注释知道会落成字符串，代码却只认布尔。
+⇒ 模型把旗标写成字符串（`"force": "true"`）时，`as? Bool` 落空 ⇒ 旗标**恒为假** ⇒
+AI 说「强制重跑」，`--force` **静默不生效**（命令照发、旗标没了），界面上还显示「✓ 执行成功」。
+
+现在解析收敛到纯函数 `Sources/deepDolphin/ToolArgs.swift`：
+
+```swift
+static func flag(_ params: [String: Any], _ key: String) -> Bool
+```
+
+口径**逐条照抄** deepin 侧 `deepin/src/logic/AgentToolPlan.cpp` 的 `flag()`：
+
+- `Bool` 本身 → 就是那个值；
+- `Int` / `Double` → **只有 1 为真**（⚠ **不是**「非 0 即真」；`2` 为假）；
+- `String` → `true` / `1` / `yes` / `on`（**先 trim 再 lower** ⇒ `"ON"`、`" true "` 都认）；
+  ⚠ 大小写与首尾空白**算数**，其余字符串为假；
+- 缺省 / `NSNull` / 其它类型 → 假（宁可认不出，也不把「未给」变成「给了」）。
+
+⚠ **为什么数字形态也要管**：deepin 侧**早就修过同一洞**，但那版是「补了字符串分支」——
+而 `QJsonValue::toString()` 对**数字**返回的是**空串**（**不是 `"1"`**）
+⇒ 数字形态在**两端都漏** ⇒ `{"force": 1}` 两端都判假。
+⚠ 数字必须**先判 `isDouble()`**；且 Qt 里 `true`/`false` 存 bool 型、`1`/`0` 存 double 型
+⇒ `isBool()` 也要先判，顺序反了会把 `true` 判成假。
+
+判据：`Tests/AgentCheck/main.swift` 加四条断言（字符串形态 / 数字只有 1 为真 /
+假值与缺省 / 源码 lint 不许退回 `as? Bool`）；`Sources/deepDolphin/ToolArgs.swift`
+**本就在** `scripts/agent-check.sh` 的编译清单里 ⇒ 断言能真的跑到它。
+
+```sh
+scripts/agent-check.sh
+```
+
+⚠⚠ 本批改动**未在无 Swift 工具链的环境里编译过** ⇒ 这四条断言**未在本机跑过**；
+第一次在 mac 上跑 `agent-check.sh` 时，请把这四条当作**待验**项，而不是既成事实。
+⚠ deepin 侧那侧的**同口径行为夹具**（selfcheck 里「数字只有 1 为真」那条）**已在本机跑过**。
+
 ## 代码结构
 
 ```
@@ -223,7 +268,7 @@ Sources/deepDolphin/
   ShortcutMap.swift             纯函数：快捷键唯一声明处 + 撞键判定
   StopDecision.swift            纯函数：停止按钮可用性与文案
   SysOpen.swift                 外部打开（git remote → 浏览器）
-  ToolArgs.swift                纯函数：工具入参解析与必填校验（畸形 ≠ 没有参数）
+  ToolArgs.swift                纯函数：工具入参解析与必填校验（畸形 ≠ 没有参数）＋ 布尔旗标口径（批 AS）
   UpdateOutcome.swift           纯函数：更新结果通知文案（备份路径必须说清）
 ```
 
