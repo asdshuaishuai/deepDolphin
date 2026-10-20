@@ -160,12 +160,16 @@ def changed_lines(base):
 
 
 def read_exempt():
-    """读豁免基线 ⇒ (集合, 文件是否存在, 行数)"""
+    """读豁免基线 ⇒ (集合, 文件是否存在, 行数)
+
+    ⚠ **跳过 `#` 开头的行与空行** ⇒ 基线文件可以带说明注释
+    （否则注释行会被当成 pattern 去 grep 整行匹配 ⇒ 误排除）。
+    """
     if not os.path.isfile(EXEMPT):
         return set(), False, 0
     with open(EXEMPT, encoding='utf-8') as fh:
         lines = [ln.rstrip('\n') for ln in fh]
-    keys = set(ln for ln in lines if ln.strip())
+    keys = set(ln for ln in lines if ln.strip() and not ln.lstrip().startswith('#'))
     return keys, True, len(lines)
 
 

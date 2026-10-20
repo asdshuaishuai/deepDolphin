@@ -1,24 +1,18 @@
-deepin/src/logic/CodeGraphBuild.cpp|\bsymbolId\b
-deepin/src/app/Notifier.cpp|\bNotifications::categoryOf\b
-deepin/src/ui/dialogs/CodeGraphDialog.cpp|\bCodeGraphBuild::visibleRows\b
-deepin/src/logic/EngineConfig.cpp|\bwritableKeys\b
-deepin/src/ui/dialogs/CodeGraphDialog.cpp|m_heat->setData\b
-deepin/src/ui/CodeHighlighter.cpp|\bDS::semColor\b
-deepin/src/tray/TrayController.cpp|m_backend == TraySni::Backend::DeepinWindow
-deepin/src/ui/dialogs/CodeGraphDialog.cpp|\bHeatmapWidget\b
-deepin/src/platform/TraySni.cpp|registerCustomType
-deepin/src/logic/SyntaxHighlight.cpp|\bkeywords\b
-deepin/src/logic/DocPages.cpp|\bkindKey\b
-deepin/src/app/SelfCheckGraph.cpp|已写入：
-deepin/src/logic/CanvasFont.cpp|\bptRe\b
-deepin/src/ui/dialogs/DocsDialog.cpp|QComboBox
-deepin/src/ui/dialogs/CodeGraphDialog.cpp|ArchCanvasWidget|CodeGraphBuild\b
-deepin/src/app/EngineInstaller.cpp|\bEngineDownload::packagedBinName\b
-deepin/src/platform/TraySni.cpp|TraySni::requiredProperties\(\)
-deepin/src/ui/dialogs/DocsDialog.cpp|setButtonText
-deepin/src/ui/HeatmapWidget.cpp|\bCanvas2D\b
-deepin/src/platform/DeepinTray.cpp|xcb_get_selection_owner
-deepin/src/platform/TraySni.cpp|QDBus::Block, 2000
-deepin/src/logic/DocPages.cpp|\bcontent\b
-deepin/src/platform/DeepinTray.cpp|advertisedVisual
-deepin/src/ui/dialogs/CodeGraphDialog.cpp|\bm_leftStack\b
+# 门自审计的豁免基线（键 = `相对路径|正则`，一行一条；`#` 开头是注释）。
+#
+# ⚠ **2026-10-20 起本基线为空**：批 AU 把最后 24 条历史隐患也清完了
+#   ⇒ 全部 `arch_need` 门项的正则在目标文件里都**只出现一次**
+#   ⇒ 「改一处骗得过门」这个洞**一个都不剩**。
+# ⇒ 语义因此变成：**新加的门只要串不唯一，硬门立刻红**（没有基线可躲）。
+#
+# ⚠ 若将来确实出现「**意图天然是多处**」的门（例如同一个构造在多处**一字不差**，
+#   行级构造根本分不开）：
+#   · 那条门应当用 **`arch_need_min`（至少 N 次）** —— 它**不被审计器覆盖**
+#     （审计器只审 `arch_need`），因此**不进本文件**；
+#   · 并在 `deepin/docs/PARITY-LEDGER.md` 的台账里**登记**（写明「意图天然多处」
+#     + 为什么行级构造分不开）—— 不许默默加。
+#
+# ⚠ 审计器的覆盖缺口（如实记着，未补）：
+#   `arch_need_ml` / `arch_need_count_in_fn` / `arch_need_any` / `arch_need_count`
+#   **都不在审计覆盖内** ⇒ 其中 `arch_need_count_in_fn`（收窄到函数体）
+#   本来**可以**是唯一的 ⇒ 这是个待补的缺口。

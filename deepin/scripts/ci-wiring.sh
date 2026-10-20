@@ -416,10 +416,9 @@ arch_need_any 'QStringLiteral\("graph"\), *QStringLiteral\("functions"\)' 'AppMo
 arch_need "$SRC/src/app/AppModel.h" '\bloadCodeGraph\b' 'AppModel 暴露 loadCodeGraph'
 arch_need "$SRC/src/app/AppModel.h" '\bgenIndex\b' 'AppModel 暴露 genIndex（生成）'
 arch_need "$SRC/src/app/AppModel.h" '\bexportIndex\b' 'AppModel 暴露 exportIndex（导出）'
-arch_need "$SRC/src/logic/CodeGraphBuild.cpp" '\bsymbolId\b' '判定层有符号 id 构造式（与引擎同形）'
+arch_need "$SRC/src/logic/CodeGraphBuild.cpp" 'sym\.id = sid\.isEmpty\(\) \? symbolId\(path, sline, sname\)' '判定层**真的用**符号 id 构造式（与引擎同形）—— 盯调用那一行（盯定义的话，调用被摘了门照样绿）'
 arch_need "$SRC/src/logic/CodeGraphBuild.cpp" '\bvisibleRows\b' '判定层有可见行算法（搜索 + 展开态）'
-arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '\bCodeGraphBuild::visibleRows\b' '代码图谱窗的可见性以判定层为准'
-arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'ArchCanvasWidget|CodeGraphBuild\b' '代码图谱窗用代码图谱数据层'
+arch_need_min "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '\bCodeGraphBuild::visibleRows\b' 2 '代码图谱窗的可见性以判定层为准 —— 两处**一字不差**同形 ⇒ 行级构造分不开 ⇒ 意图天然是「至少 2 次」；⚠ 这条门**不在审计器覆盖内**'
 arch_need "$SRC/src/ui/pages/ProjectDetailPage.cpp" '\bcodeGraphRequested\b' '详情页发 codeGraphRequested'
 arch_need "$SRC/src/ui/PanelWindow.cpp" '&ProjectDetailPage::codeGraphRequested\b' 'PanelWindow 接了代码图谱入口'
 arch_need "$SRC/src/ui/PanelWindow.cpp" 'showCodeGraph\(p\);' 'PanelWindow 把「详情页请求代码图谱」**接到**开窗动作上（盯接线那一行）'
@@ -433,12 +432,13 @@ arch_need "$SRC/src/logic/HeatLayout.cpp" '\blayout\b' '判定层有卡片铺排
 arch_need "$SRC/src/logic/HeatLayout.cpp" '\broutes\b' '判定层有边走线'
 arch_need "$SRC/src/ui/HeatmapWidget.cpp" '\bHeatLayout::layout\b' '画布经 HeatLayout 铺排'
 arch_need "$SRC/src/ui/HeatmapWidget.cpp" '\bHeatLayout::routes\b' '画布经 HeatLayout 走线'
-arch_need "$SRC/src/ui/HeatmapWidget.cpp" '\bCanvas2D\b' '画布走 D1 的 Canvas2D 内核（不自己造图形栈）'
-arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '\bHeatmapWidget\b' '代码图谱窗挂了热力图'
+arch_need_min "$SRC/src/ui/HeatmapWidget.cpp" '\bCanvas2D\b' 3 '画布走 D1 的 Canvas2D 内核（不自己造图形栈）—— **三处同形**（`Canvas2D canvas(&p);`）⇒ 行级构造分不开 ⇒ 意图天然是「至少 3 次」；⚠ 这条门**不在审计器覆盖内**'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_heat = new HeatmapWidget\(heatPage\);' '代码图谱窗挂了热力图 —— 盯**造热力图**那一行（之前盯「HeatmapWidget」这个词 ⇒ 信号连接里也有 ⇒ 改一处骗得过门）'
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '&HeatmapWidget::nodeSelected\b' '热力图点选信号接上了（→ 右栏详情）'
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '&HeatmapWidget::drillChanged\b' '热力图下钻信号接上了（面包屑跟着走）'
-arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '\bm_leftStack\b' '左栏是模式切换 + 堆叠页（热力图是左栏的另一种模式）'
-arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_heat->setData\b' '热力图数据源接上了（与树同源）'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_leftStack = new QStackedWidget\(left\);' '左栏是模式切换 + 堆叠页（热力图是左栏的另一种模式）—— 盯**造堆叠页**那一行'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_heat->setData\(nullptr\);' '热力图数据源接上了（与树同源）—— 盯**清空**那一行（没数据时必须清空 ⇒ 否则留上一份旧图）'
+arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_heat->setData\(m_model \? m_model->codeGraphFor\(m_project\) : nullptr\);' '热力图数据源接上了 —— 盯**喂判定层数据**那一行（**同源**是这儿的要害）'
 arch_need_any '\bHeatLayout::layout\b' 'SelfCheck 覆盖铺排'
 arch_need_any '\bHeatLayout::routes\b' 'SelfCheck 覆盖走线'
 
@@ -464,8 +464,8 @@ arch_need_any '\bPatchCheck::diffSnippet\b' 'SelfCheck 覆盖 diff 抽实码'
 
 # 固定文档页链路：内容（DocPages 纯函数，四类目写死在代码里）→ 渲染（DocsDialog，
 #   markdown）→ 接线（面板菜单「关于 / 帮助」）。文档不进引擎 —— 它不是数据。
-arch_need "$SRC/src/logic/DocPages.cpp" '\bkindKey\b' '判定层有类目标识'
-arch_need "$SRC/src/logic/DocPages.cpp" '\bcontent\b' '判定层有文档正文'
+arch_need "$SRC/src/logic/DocPages.cpp" 'const QString id = kindKey\(k\);' '判定层**真的按 kind 取**类目标识 —— 盯调用那一行'
+arch_need "$SRC/src/logic/DocPages.cpp" 'QString content\(Kind k, Language lang\)' '判定层有文档正文 —— 盯**定义**那一行（之前盯「content」这个词，英文错误消息里也有 ⇒ 改一处骗得过门）'
 arch_need "$SRC/src/logic/DocPages.cpp" '\bclientRepo\b' '仓库地址有单一出处'
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" '\bDocPages::content\b' '窗经判定层取正文'
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" '\bsetMarkdown\b' '正文按 markdown 渲染'
@@ -480,10 +480,12 @@ arch_need_any '\bDocPages::content\b' 'SelfCheck 覆盖文档正文'
 # 语法高亮链路：判定（SyntaxHighlight 纯函数，九语言与引擎 detectLang 对齐）→
 #   涂色（CodeHighlighter，颜色取自 DS 令牌）→ 接线（代码图谱页源码页签）
 arch_need "$SRC/src/logic/SyntaxHighlight.cpp" '\blanguages\b' '判定层有语言清单'
-arch_need "$SRC/src/logic/SyntaxHighlight.cpp" '\bkeywords\b' '判定层有关键词表'
+arch_need "$SRC/src/logic/SyntaxHighlight.cpp" 'const QSet<QString> kws = keywords\(lang\);' '判定层**真的取**关键词表 —— 盯调用那一行'
 arch_need "$SRC/src/logic/SyntaxHighlight.cpp" '\bhighlight\b' '判定层有逐行分类'
 arch_need "$SRC/src/ui/CodeHighlighter.cpp" '\bSyntaxHighlight::highlight\b' '涂色层经判定层分类'
-arch_need "$SRC/src/ui/CodeHighlighter.cpp" '\bDS::semColor\b' '颜色取自 DS 令牌（不是契约色）'
+arch_need "$SRC/src/ui/CodeHighlighter.cpp" 'm_keyword\.setForeground\(DS::semColor\(DS::SemColor::deep\)\);' '颜色取自 DS 令牌（不是契约色）—— 盯**关键字**那一行'
+arch_need "$SRC/src/ui/CodeHighlighter.cpp" 'm_string\.setForeground\(DS::semColor\(DS::SemColor::shallow\)\);' '颜色取自 DS 令牌 —— 盯**字符串**那一行'
+arch_need "$SRC/src/ui/CodeHighlighter.cpp" 'm_number\.setForeground\(DS::semColor\(DS::SemColor::yellow\)\);' '颜色取自 DS 令牌 —— 盯**数字**那一行'
 # ⚠ 盯**构造点**（`new CodeHighlighter`）而不是「CodeHighlighter 这个词出现过」——
 #   负控实测：只删掉构造那一行、留着 include 与另一个调用点时，后者照样全绿
 #   （用户看到的源码页签还是一片纯色）。这已是第三回「门盯名字不盯接线点」。
@@ -560,7 +562,7 @@ arch_need "$SRC/src/main.cpp" 'rawArgs\.indexOf\(QStringLiteral\("--receipt-file
 #   → 取数（引擎 config list --json）→ 写（引擎 config set，回执型）
 #   → 接线（设置·通用页「引擎配置」卡）。
 arch_need "$SRC/src/logic/EngineConfig.cpp" 'Config parse\b' '判定层有配置载荷解析'
-arch_need "$SRC/src/logic/EngineConfig.cpp" '\bwritableKeys\b' '判定层有可写键清单（与引擎同一份）'
+arch_need "$SRC/src/logic/EngineConfig.cpp" 'QStringList writableKeys\(\)' '判定层有可写键清单（与引擎同一份）—— 盯**定义**那一行'
 arch_need "$SRC/src/logic/EngineConfig.cpp" '\bisWritable\b' '判定层能判键可不可写'
 arch_need "$SRC/src/app/AppModel.h" '\bloadEngineConfig\b' 'AppModel 暴露 loadEngineConfig'
 arch_need "$SRC/src/app/AppModel.h" '\bsetEngineConfig\b' 'AppModel 暴露 setEngineConfig'
@@ -628,7 +630,7 @@ arch_need_any '\bIndexStatus::parseUpdate\b' 'SelfCheck 覆盖索引更新解析
 # ⚠ Canvas 的 font 简写是**浏览器 CSS 口径**（px 与 pt 都认）——
 #   解析器只认 px 时，"11pt" 会被当成字体族名吞掉，字号根本没设上。
 arch_need "$SRC/src/logic/CanvasFont.cpp" 'Spec parse\b' '判定层有 Canvas font 简写解析'
-arch_need "$SRC/src/logic/CanvasFont.cpp" '\bptRe\b' '字体解析认 pt 单位（CSS 口径）'
+arch_need "$SRC/src/logic/CanvasFont.cpp" 'm = ptRe\.match\(s\);' '字体解析认 pt 单位（CSS 口径）—— 盯**用**它的那一行'
 # 平台层必须**走判定层**解析（不许自己再 split 一份 —— 那会造出第二个真相源）
 arch_need "$SRC/src/platform/Canvas2D.cpp" '\bCanvasFont::parse\b' 'Canvas2D 走判定层解析字体'
 # QFont 缓存：Canvas2D 每帧新建，实例级缓存等于每帧重建 → 必须静态。
@@ -852,7 +854,7 @@ arch_need "$SRC/src/logic/EngineDownload.cpp" 'parseRelease\(const QByteArray &j
 arch_need "$SRC/src/logic/EngineDownload.cpp" 'digestMatches\(const QString &expected\b' '判定层做 sha256 校验'
 arch_need "$SRC/src/app/EngineInstaller.cpp" '\bEngineDownload::parseRelease\b' '执行层走判定层挑资产'
 arch_need "$SRC/src/app/EngineInstaller.cpp" '\bEngineDownload::digestMatches\b' '执行层走判定层校验'
-arch_need "$SRC/src/app/EngineInstaller.cpp" '\bEngineDownload::packagedBinName\b' '包内文件名走判定层'
+arch_need "$SRC/src/app/EngineInstaller.cpp" 'r\.bin = m_installDir \+ QStringLiteral\("/"\) \+ EngineDownload::packagedBinName\(\);' '包内文件名走判定层 —— 盯**真正拼出落盘路径**那一行'
 arch_need_any '\bEngineDownload::releaseApiUrl\b' 'AppModel 走判定层取发布信息 URL' 'src/app/AppModel*.cpp'
 arch_need_any 'void AppModel::downloadEngine\(\)' 'AppModel 暴露下载引擎' 'src/app/AppModel*.cpp'
 arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'm_model->downloadEngine\b' '设置页有下载引擎入口'
@@ -915,7 +917,8 @@ arch_need "$SRC/src/logic/Notifications.h" 'int normalizeTimeoutMs\(int ms\);' '
 arch_need "$SRC/src/logic/Notifications.h" 'QString categoryOf\(const QString &title\);' '判定层判通知类别（状态型）'
 arch_need "$SRC/src/logic/Notifications.h" 'bool replacesPrevious\(const QString &title\);' '判定层判「这条要不要顶替前一条」'
 arch_need "$SRC/src/app/Notifier.cpp" '\bNotifications::replacesPrevious\b' '执行层的顶替判定走判定层'
-arch_need "$SRC/src/app/Notifier.cpp" '\bNotifications::categoryOf\b' '执行层的类别判定走判定层'
+arch_need "$SRC/src/app/Notifier.cpp" 'm_replaceIds\.value\(Notifications::categoryOf\(title\), 0\)' '执行层的类别判定走判定层 —— 盯**查已登记的 id**那一行'
+arch_need "$SRC/src/app/Notifier.cpp" 'm_replaceIds\.insert\(Notifications::categoryOf\(title\), id\)' '执行层的类别判定走判定层 —— 盯**登记 id**那一行（只查不登记 ⇒ 永远查不到 ⇒ 永远合并不了）'
 arch_need "$SRC/src/app/Notifier.cpp" 'Settings::instance\(\)\.notifyTimeoutMs\(\)' '通知时长来自设置（不是硬编码）'
 arch_need "$SRC/src/app/Settings.h" 'int notifyTimeoutMs\(\) const;' '设置层暴露通知时长'
 arch_need "$SRC/src/app/Settings.h" 'void setNotifyTimeoutMs\(int ms\);' '设置层可写通知时长'
@@ -1151,7 +1154,7 @@ arch_need "$ROOT/macos/Tests/ClientCheck/main.swift" 'let p = ArchReceipt\.htmlP
 arch_need "$ROOT/macos/Tests/ClientCheck/main.swift" 'if let p = ArchReceipt\.htmlPath\(text\) \{' 'mac 侧判据必须真的断言「结论行也能抽出路径」—— 盯那条断言'
 arch_need "$ROOT/macos/Tests/ClientCheck/main.swift" 'guard let h = ArchReceipt\.htmlPath\(text\)' 'mac 侧判据必须真的断言「相对路径不认」—— 盯那条断言'
 # ⚠ deepin 侧那条**实跑夹具**也钉住（它是两侧共同的口径来源）
-arch_need "$SRC/src/app/SelfCheckGraph.cpp" '已写入：' 'deepin 侧自检必须钉住**引擎实跑原文**的回执形态（两侧口径共同的事实来源）'
+arch_need "$SRC/src/app/SelfCheckGraph.cpp" 'ArchReceipt::htmlPath\(QStringLiteral\("已写入：' 'deepin 侧自检必须钉住**引擎实跑原文**的回执形态 —— 盯**夹具**那一行（之前盯「已写入：」⇒ 改**说明文字**也会红 ⇒ 盯错了地方）'
 
 # ── 批 AS · mac 侧布尔旗标只认 Bool ⇒ 模型写成字符串时**恒为假**（跨目录盯 macos/）──
 #
@@ -1433,17 +1436,20 @@ arch_need_count_in_fn "$SRC/src/logic/TraySni.cpp" '^[[:space:]]*QStringList hos
 #   平台层若自己再写一份「IconPixmap」字面量，两处迟早走偏 ——
 #   改了一处忘了另一处 ⇒ 宿主按 introspect XML 找不到属性 ⇒ 当场注销我们
 #   （真缺陷，且肉眼看代码极难发现：两个字符串长得一样）。
-arch_need "$SRC/src/platform/TraySni.cpp" 'TraySni::requiredProperties\(\)' '平台层用判定层的必填属性表'
+arch_need "$SRC/src/platform/TraySni.cpp" 'for \(const QString &name : TraySni::requiredProperties\(\)\)' '平台层用判定层的必填属性表 —— 盯**逐个读属性名**那一行'
+arch_need "$SRC/src/platform/TraySni.cpp" 'const QStringList pixProps = TraySni::requiredProperties\(\);' '平台层用判定层的必填属性表 —— 盯**取整张表**那一行'
 arch_forbid "$SRC/src/platform/TraySni.cpp" 'QStringLiteral\("IconPixmap"\)|QStringLiteral\("AttentionIconPixmap"\)|QStringLiteral\("OverlayIconPixmap"\)' '平台层不硬写 pixmap 属性名（真相源唯一）'
 # ⚠ 平台层必须**逐个**暴露这三个属性（宿主读不到就注销）⇒ propertyValue() 里按必填表分发。
 arch_need_count_in_fn "$SRC/src/platform/TraySni.cpp" '^[[:space:]]*bool propertyValue\(' 'pixProps\.contains\(prop\)' 1 '平台层按必填表逐个暴露三个 pixmap 属性（宿主读不到就注销）'
 # introspect XML 必须**按必填表生成**三个 pixmap 声明（宿主按 XML 找属性，缺了直接不读）。
 arch_need_count_in_fn "$SRC/src/platform/TraySni.cpp" '^[[:space:]]*QString introspect\(' 'TraySni::requiredProperties\(\)' 1 '平台层 introspect 按必填表生成三个 pixmap 声明'
 # D-Bus 读必须带超时：`QDBusInterface::property()` 没有超时参数 ⇒ 禁用。
-arch_need "$SRC/src/platform/TraySni.cpp" 'QDBus::Block, 2000' 'watcher 读带 2s 超时（不卡 GUI 线程）'
+arch_need_min "$SRC/src/platform/TraySni.cpp" 'QDBus::Block, 2000' 4 'watcher 读带 2s 超时（不卡 GUI 线程）—— **四处同形** ⇒ 行级构造分不开 ⇒ 意图天然是「至少 4 次」；⚠ 这条门**不在审计器覆盖内**'
 arch_forbid "$SRC/src/platform/TraySni.cpp" 'QDBusInterface::property|\.property\(' 'watcher 读不用无超时的 property()'
 # 结构体签名推不出来 ⇒ 必须显式注册（否则 D-Bus 侧签名是空的）。
-arch_need "$SRC/src/platform/TraySni.cpp" 'registerCustomType' '自定义结构体显式注册 D-Bus 签名'
+arch_need "$SRC/src/platform/TraySni.cpp" 'registerCustomType\(QMetaType::fromType<Pixmap>\(\),' '自定义结构体显式注册 D-Bus 签名 —— 盯**注册 Pixmap**那一行'
+arch_need "$SRC/src/platform/TraySni.cpp" 'registerCustomType\(QMetaType::fromType<QList<Pixmap>>\(\),' '自定义结构体显式注册 D-Bus 签名 —— 盯**注册 Pixmap 列表**那一行'
+arch_need "$SRC/src/platform/TraySni.cpp" 'registerCustomType\(QMetaType::fromType<ToolTip>\(\),' '自定义结构体显式注册 D-Bus 签名 —— 盯**注册 ToolTip**那一行'
 
 # ⚠⚠ **托盘图标绘制必须用 QRect 重载**：`drawEllipse(qreal,qreal,qreal,qreal)` 的
 #   前两个参数是**圆心**不是左上角 ⇒ 旧写法把圆画到画布外 ⇒ **图标一直是空白的**
@@ -1515,7 +1521,7 @@ arch_forbid "$SRC/src/logic/DeepinTray.cpp" 'if \(watcherPresent\) \{\s*return B
 
 # 平台层：窗口 + 报文
 arch_need "$SRC/src/platform/DeepinTray.h" 'DeepinTrayStatus publishDeepinTray\(' 'deepin 托盘发布有唯一入口'
-arch_need "$SRC/src/platform/DeepinTray.cpp" 'xcb_get_selection_owner' '用 XGetSelectionOwner 查选区持有者（xprop 查不到选区）'
+arch_need "$SRC/src/platform/DeepinTray.cpp" 'xcb_get_selection_owner\(conn, atom\)' '用 XGetSelectionOwner 查选区持有者（xprop 查不到选区）—— 盯**真的去查**那一行（之前盯「xcb_get_selection_owner」⇒ 类型名 `xcb_get_selection_owner_reply_t` 里也有 ⇒ 改一处骗得过门）'
 arch_need "$SRC/src/platform/DeepinTray.cpp" '_NET_SYSTEM_TRAY_OPCODE' '用 _NET_SYSTEM_TRAY_OPCODE 发 dock 请求'
 arch_need "$SRC/src/platform/DeepinTray.cpp" 'dockFieldIndex\(TraySni::DockField::Opcode\)' 'opcode 的下标取自判定层（平台层不许写死数字）'
 arch_need "$SRC/src/platform/DeepinTray.cpp" 'dockFieldIndex\(TraySni::DockField::WindowId\)' '窗口 id 的下标取自判定层（平台层不许写死数字）'
@@ -1523,7 +1529,7 @@ arch_forbid "$SRC/src/platform/DeepinTray.cpp" 'data\.l\[0\] = [^0]' 'ClientMess
 # ⚠⚠ **`values[]` 的顺序必须按 mask 位升序** —— 写反了 ⇒ 32 位 ARGB 窗口
 #   「建了却不存在」（GetWindowAttributes 报 BadWindow）⇒ daemon 认不出它。
 arch_need "$SRC/src/platform/DeepinTray.cpp" 'XCB_CW_BORDER_PIXEL \| XCB_CW_EVENT_MASK \| XCB_CW_COLORMAP' '建窗的 value_mask 按位升序（values 顺序错 ⇒ 窗口建不出来）'
-arch_need "$SRC/src/platform/DeepinTray.cpp" 'advertisedVisual' '用 daemon 广告的 _NET_SYSTEM_TRAY_VISUAL（协议要求）'
+arch_need "$SRC/src/platform/DeepinTray.cpp" 'xcb_visualid_t visual = advertisedVisual\(g_x11\.conn, owner\);' '用 daemon 广告的 _NET_SYSTEM_TRAY_VISUAL（协议要求）—— 盯**调用**那一行（盯定义的话，调用被摘了门照样绿）'
 arch_need "$SRC/src/platform/DeepinTray.cpp" 'xcb_send_event' '发 dock 请求（ClientMessage）'
 # 已建过就只重画 ⇒ 不许每次刷新都新建窗口（会攒一堆野窗口 + 反复 dock 请求）
 # ⚠⚠ **第十次「同名多处互相顶替」**：`if (g_x11.window)` 在本文件里**出现两次**
@@ -1538,7 +1544,7 @@ arch_need "$SRC/src/tray/TrayController.cpp" 'TraySni::chooseBackend\(' '托盘�
 arch_need "$SRC/src/tray/TrayController.cpp" 'platform::publishDeepinTray\(' 'deepin 后端经平台层发布'
 arch_need "$SRC/src/tray/TrayController.cpp" 'platform::updateDeepinTrayIcon\(' 'deepin 后端支持换图标'
 # ⚠ **SNI 与窗口协议二选一**：DDE 上绝不能同时建 QSystemTrayIcon（旧协议一个像素都不显示）
-arch_need "$SRC/src/tray/TrayController.cpp" 'm_backend == TraySni::Backend::DeepinWindow' 'deepin 后端单独一个分支（不与 SNI 并存）'
+arch_need_min "$SRC/src/tray/TrayController.cpp" 'm_backend == TraySni::Backend::DeepinWindow' 3 'deepin 后端单独一个分支（不与 SNI 并存）—— **三处同形**判断 ⇒ 行级构造分不开 ⇒ 意图天然是「至少 3 次」；⚠ 这条门**不在审计器覆盖内**'
 
 # 判据/探针可见面
 arch_need_any 'dockFieldIndex' 'SelfCheck 覆盖 dock 字段偏移'
@@ -1607,13 +1613,12 @@ arch_forbid "$SRC/src/logic/DocPages.h" 'QWidget|QDialog|DDialog|DtkWidget|QPush
 arch_forbid "$SRC/src/logic/DocPages.cpp" 'QWidget|QDialog|DDialog|QComboBox' '判定层不许碰 UI 控件'
 arch_forbid "$SRC/src/logic/DocPages.cpp" 'Settings::|#include +"[^"]*Settings' '判定层不许碰设置层（解析在判定层、持久化在设置层）'
 # UI 接线：语言选择器 + 按语言取 + 写回设置 + 外壳文案跟着换
-arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'QComboBox' '文档窗有语言选择器'
+arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'm_langBox = new QComboBox\(content\);' '文档窗有语言选择器 —— 盯**造下拉框**那一行'
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::languageLabel' '语言项显示名来自判定层'
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::resolveLanguage' '语言解析走判定层（UI 不自己判值）'
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::content\(k, m_language\)' '正文按当前语言取'
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::kindTitle\(all\.at\(i\), m_language\)' '类目分段名按当前语言取'
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::windowTitle' '窗口标题按当前语言取'
-arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'setButtonText' '按钮文字按当前语言换（不许留中文按钮）'
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::recoveredNotice' '语言键认不出时说一句（不静默吞掉）'
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'setToolTip\(DocPages::languageSelectorTip' '语言选择器如实说明作用域（不承诺没做到的事）'
 # ⚠ 写回设置必须**盯在「换语言」这个函数体里**：构造函数里也有一次
