@@ -154,4 +154,37 @@ QString stageName(Stage s)
     return QStringLiteral("unknown");
 }
 
+bool isRetryableNetworkError(QNetworkReply::NetworkError err)
+{
+    // ⚠ **白名单**（不是黑名单）：Qt 将来新增的错误码默认**不**重试 ⇒ 保守。
+    //   「漏重试」只是慢一点；「乱重试」是把 404 / 403 重试三遍让用户干等。
+    switch (err) {
+    case QNetworkReply::RemoteHostClosedError: // 服务器提前断开（实测的 Connection closed）
+    case QNetworkReply::TimeoutError:          // 超时（慢网络 / 被卡住）
+    case QNetworkReply::UnknownNetworkError:   // 连接被重置 / HTTP2 stream 中断
+    case QNetworkReply::UnknownServerError:    // 服务端 5xx ⇒ 瞬时故障，可再试
+        return true;
+    default:
+        return false;
+    }
+}
+
+int maxDownloadAttempts()
+{
+    // ⚠ 3 次（不是无限）：够穿过一次实测的瞬断，又不至于让用户干等太久。
+    return 3;
+}
+
+int retryDelayMs(int failedAttempts)
+{
+    // 指数退避：1s → 3s → 9s。
+    // ⚠ 「已经失败几次」从 1 起算；失败次数 ≤ 0 或 > 上限时都按第一档给（防御性）。
+    if (failedAttempts < 1)
+        failedAttempts = 1;
+    if (failedAttempts > 3)
+        failedAttempts = 3;
+    static const int kDelays[3] = { 1000, 3000, 9000 };
+    return kDelays[failedAttempts - 1];
+}
+
 } // namespace EngineDownload

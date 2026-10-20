@@ -886,6 +886,124 @@ EOF
         echo "  ✓ 引擎获取：校验和不匹配时没有落盘"
         pass=$((pass+1))
     fi
+    # ⚠ **网络瞬断 ⇒ 客户端要重试**（行为门）。
+    #   依据：2026-10-20 实测，本机第一次下载引擎 release 直接「下载中断：Connection closed」，
+    #   稍后重试同一个 URL 1.17 秒下完 ⇒ 一次抖动不该让用户手动再点一次。
+    #   打桩：本地 HTTP 服务器，**前 N 次请求直接断开连接**（不发响应 ⇒ 客户端看到
+    #   RemoteHostClosedError），第 N+1 次才正常返回。
+    #   ⚠ release.json 由服务器**自己生成**（端口是运行时才定的 ⇒ 预置的 JSON 里写不对 URL）。
+    if command -v python3 >/dev/null 2>&1; then
+        cat > "$ENG_TMP/fuzzy_server.py" <<'PYEOF'
+import hashlib, http.server, json, os, socket, socketserver, sys
+
+ROOT = sys.argv[1]
+PORTFILE = sys.argv[2]
+FAILS = int(sys.argv[3])
+state = {"n": 0}
+
+
+class H(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def _send(self, name, ctype):
+        body = open(os.path.join(ROOT, name), "rb").read()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path == "/engine.tar.gz":
+            state["n"] += 1
+            if state["n"] <= FAILS:
+                # 直接断开：不发任何响应 ⇒ 客户端看到「Connection closed」
+                self.close_connection = True
+                try:
+                    self.connection.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                self.connection.close()
+                return
+            self._send("engine.tar.gz", "application/gzip")
+        elif self.path == "/release.json":
+            tar = open(os.path.join(ROOT, "engine.tar.gz"), "rb").read()
+            payload = {
+                "tag_name": "v0.0.0-retry",
+                "assets": [{
+                    "name": "moongit-v0.0.0-retry-linux-x64.tar.gz",
+                    "browser_download_url": "http://127.0.0.1:%d/engine.tar.gz" % PORT,
+                    "digest": "sha256:" + hashlib.sha256(tar).hexdigest(),
+                    "size": len(tar),
+                }],
+            }
+            body = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("127.0.0.1", 0), H) as httpd:
+    PORT = httpd.server_address[1]
+    with open(PORTFILE, "w") as f:
+        f.write(str(PORT))
+    httpd.serve_forever()
+PYEOF
+        # ── 场景 1：断连 2 次（少于重试上限）⇒ 必须重试成功 ──
+        python3 "$ENG_TMP/fuzzy_server.py" "$ENG_TMP" "$ENG_TMP/port" 2 >/dev/null 2>&1 &
+        SRV_PID=$!
+        i=0
+        while [ ! -s "$ENG_TMP/port" ] && [ "$i" -lt 60 ]; do sleep 0.1; i=$((i+1)); done
+        PORT="$(cat "$ENG_TMP/port" 2>/dev/null || true)"
+        if [ -n "$PORT" ]; then
+            ENG_RETRY="$("$CLIENT_BIN" --engine-download "http://127.0.0.1:$PORT/release.json" --engine-download-dest "$ENG_TMP/dest-retry" 2>/dev/null)"
+            check "引擎获取：网络瞬断（连断 2 次）⇒ 重试后**仍装成功**（不是一次失败就放弃）" \
+                "d.get('ok') is True and d.get('stage') == 'ok' and d.get('verified') is True" \
+                "$ENG_RETRY"
+            if [ -x "$ENG_TMP/dest-retry/moongit" ]; then
+                echo "  ✓ 引擎获取：重试后落盘的引擎可执行"
+                pass=$((pass+1))
+            else
+                echo "  ✗ 引擎获取：重试后落盘的引擎不存在或不可执行" >&2
+                fail=$((fail+1))
+            fi
+        else
+            echo "  ‣ SKIP 第 21 组之重试场景：打桩服务器没起来（本项**未验证**，不算通过）"
+        fi
+        kill "$SRV_PID" 2>/dev/null
+        wait "$SRV_PID" 2>/dev/null
+        rm -f "$ENG_TMP/port"
+
+        # ── 场景 2：断连次数超过上限 ⇒ 必须**最终失败**（不是无限重试）──
+        python3 "$ENG_TMP/fuzzy_server.py" "$ENG_TMP" "$ENG_TMP/port2" 9 >/dev/null 2>&1 &
+        SRV_PID2=$!
+        i=0
+        while [ ! -s "$ENG_TMP/port2" ] && [ "$i" -lt 60 ]; do sleep 0.1; i=$((i+1)); done
+        PORT2="$(cat "$ENG_TMP/port2" 2>/dev/null || true)"
+        if [ -n "$PORT2" ]; then
+            ENG_DEAD="$("$CLIENT_BIN" --engine-download "http://127.0.0.1:$PORT2/release.json" --engine-download-dest "$ENG_TMP/dest-dead" 2>/dev/null)"
+            check "引擎获取：一直断连 ⇒ 到上限后**最终失败**（不是无限重试）" \
+                "d.get('ok') is False and d.get('stage') == 'downloadFailed'" \
+                "$ENG_DEAD"
+        else
+            echo "  ‣ SKIP 第 21 组之重试上限场景：打桩服务器没起来（本项**未验证**，不算通过）"
+        fi
+        kill "$SRV_PID2" 2>/dev/null
+        wait "$SRV_PID2" 2>/dev/null
+    else
+        echo "  ‣ SKIP 第 21 组之重试场景：没有 python3（本项**未验证**，不算通过）"
+    fi
+
     # 本平台没有资产 → 必须说清「有什么」，而不是笼统失败
     cat > "$ENG_TMP/darwin-only.json" <<EOF
 {"tag_name":"v0.1.0","assets":[{"name":"moongit-v0.1.0-darwin-arm64.tar.gz","browser_download_url":"file://$ENG_TMP/engine.tar.gz","digest":"sha256:$ENG_SHA","size":$ENG_SZ}]}

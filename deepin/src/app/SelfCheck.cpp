@@ -1,3 +1,4 @@
+#include <QNetworkReply>
 #include "SelfCheck.h"
 #include "EngineCli.h"
 #include <QCryptographicHash>
@@ -3318,6 +3319,29 @@ int SelfCheck::run(QStringList &log)
                 && EngineDownload::packagedDirs().contains(QStringLiteral("bin"))
                 && EngineDownload::packagedDirs().contains(QStringLiteral("runtime"))
                 && EngineDownload::packagedDirs().size() >= 2);
+        // 网络韧性：瞬时故障要重试，永久故障不要（实测依据见 logic/EngineDownload.h）。
+        // ⚠ 判据盯**两件事**：① 哪些错误算「瞬时」；② 重试有**上限**且退避**递增**。
+        //   「不重试」的那些必须被明确排除 —— 否则一个 404 会被重试三遍让用户干等。
+        check(log, "引擎下载：可重试的只有瞬时故障（连接被关/超时/未知网络错/服务端 5xx）",
+            EngineDownload::isRetryableNetworkError(QNetworkReply::RemoteHostClosedError)
+            && EngineDownload::isRetryableNetworkError(QNetworkReply::TimeoutError)
+            && EngineDownload::isRetryableNetworkError(QNetworkReply::UnknownNetworkError)
+            && EngineDownload::isRetryableNetworkError(QNetworkReply::UnknownServerError)
+            // 永久故障**不**重试
+            && !EngineDownload::isRetryableNetworkError(QNetworkReply::ContentNotFoundError)
+            && !EngineDownload::isRetryableNetworkError(QNetworkReply::HostNotFoundError)
+            && !EngineDownload::isRetryableNetworkError(QNetworkReply::ConnectionRefusedError)
+            && !EngineDownload::isRetryableNetworkError(QNetworkReply::NoError));
+        check(log, "引擎下载：重试有上限且退避递增（不是无限重试、也不是干等）",
+            EngineDownload::maxDownloadAttempts() >= 2
+            && EngineDownload::maxDownloadAttempts() <= 5
+            && EngineDownload::retryDelayMs(1) > 0
+            && EngineDownload::retryDelayMs(2) > EngineDownload::retryDelayMs(1)
+            && EngineDownload::retryDelayMs(3) > EngineDownload::retryDelayMs(2)
+            // 越界输入要**防御**（不能返回 0 造成「立刻重试」的死循环）
+            && EngineDownload::retryDelayMs(0) > 0
+            && EngineDownload::retryDelayMs(99) > 0);
+
         // 「失败要说清是哪一种」的可验证形式：七种失败各说各的，不许都叫「下载失败」
         const QStringList msgs = {
             EngineDownload::stageMessage(EngineDownload::Stage::networkUnreachable, QStringLiteral("x")),

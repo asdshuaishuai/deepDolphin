@@ -14,6 +14,7 @@
 // 【失败要说清是哪一种】—— 见 Stage 枚举。绝不「下载失败」四个字打发了事。
 #pragma once
 #include <QByteArray>
+#include <QNetworkReply>
 #include <QString>
 #include <QStringList>
 
@@ -91,5 +92,30 @@ QString stageMessage(Stage s, const QString &detail = QString());
 
 /// 失败分类的**机器可读名**（契约门断言用；别拿它当界面文案）。
 QString stageName(Stage s);
+
+// ── 网络韧性：瞬时故障要重试，永久故障不要 ──
+//
+// 【为什么要有】**实测（2026-10-20）**：本机第一次下载引擎 release 直接
+//   `{"ok":false,"stage":"downloadFailed","message":"下载中断：Connection closed"}`
+//   —— 同时 curl 也卡死 90 秒无数据；**稍后重试**同一个 URL 1.17 秒下完 7.5MB。
+//   ⇒ 网络瞬断是**常态**，不是「没网」⇒ 一次失败就放弃，等于把可恢复的故障
+//   变成「用户必须手动再点一次」。
+//
+// ⚠ **重试要有边界**：① 只重试**再试一次可能成**的故障（连接被关 / 超时 /
+//   未知网络错 / 服务端 5xx）；② **HTTP 4xx 与校验和不匹配不重试**
+//   （重试只会让用户多等）；③ 次数与退避是**有上限的**（不是无限重试）。
+// ⚠ 判定用**白名单**而不是黑名单：Qt 将来新增的错误码默认**不**重试（保守）——
+//   「漏重试」只是慢一点，「乱重试」是把 404 重试三遍。
+
+/// 这个网络错误**值得重试**吗（瞬时故障类）。
+bool isRetryableNetworkError(QNetworkReply::NetworkError err);
+
+/// 最多尝试几次（**含**第一次）。
+int maxDownloadAttempts();
+
+/// 第 `failedAttempts` 次失败后，等多久再试（毫秒；指数退避）。
+///
+/// ⚠ `failedAttempts` 是「**已经失败了几次**」（1 = 第一次失败后要等的时长）。
+int retryDelayMs(int failedAttempts);
 
 } // namespace EngineDownload

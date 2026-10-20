@@ -68,8 +68,16 @@ void EngineInstaller::start(const QString &apiUrl, const QString &installDir)
         return;
     }
 
+    m_apiAttempt = 0;
+    m_assetAttempt = 0;
     emit progress(QStringLiteral("正在查询引擎发布信息…"));
+    fetchRelease();
+}
 
+// 查询发布信息（**可重入**：重试时再调一次）。
+void EngineInstaller::fetchRelease()
+{
+    ++m_apiAttempt;
     QNetworkRequest req(m_apiUrl);
     req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("deepDolphin"));
     // GitHub 的 browser_download_url 是 302 直链 → 必须跟随重定向。
@@ -91,20 +99,35 @@ void EngineInstaller::onReleaseReady()
         return;
     QNetworkReply *reply = m_reply;
     m_reply = nullptr;
+    // ⚠ 先把错误**取出来**再 deleteLater —— 重试分支要用它们，
+    //   而且 deleteLater 之后再碰 reply 是不该依赖的写法。
+    const QNetworkReply::NetworkError err = reply->error();
+    const QString errText = reply->errorString();
+    const int code = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     reply->deleteLater();
 
-    if (reply->error() != QNetworkReply::NoError) {
+    if (err != QNetworkReply::NoError) {
+        // ⚠ **瞬时故障先重试**（实测：GitHub 侧连接被关/超时是常态，见
+        //   logic/EngineDownload.h 的「网络韧性」段）—— 永久故障（404/403 等）
+        //   才直接报错，免得让用户干等三遍。
+        if (EngineDownload::isRetryableNetworkError(err)
+            && m_apiAttempt < EngineDownload::maxDownloadAttempts()) {
+            emit progress(QStringLiteral("发布服务器没响应，正在重试（%1/%2）…")
+                .arg(m_apiAttempt + 1).arg(EngineDownload::maxDownloadAttempts()));
+            QTimer::singleShot(EngineDownload::retryDelayMs(m_apiAttempt), this,
+                &EngineInstaller::fetchRelease);
+            return;
+        }
         // ⚠ 网络层错误**细分**：连不上主机 vs HTTP 错误码 —— 前者是「没网」，
         //   后者是「GitHub 说了什么」（404 / 限流 / 仓库不存在）。两者对用户是不同的话。
-        const int code = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        if (reply->error() == QNetworkReply::HostNotFoundError
-            || reply->error() == QNetworkReply::ConnectionRefusedError
-            || reply->error() == QNetworkReply::TimeoutError
-            || reply->error() == QNetworkReply::RemoteHostClosedError) {
-            fail(EngineDownload::Stage::networkUnreachable, reply->errorString());
+        if (err == QNetworkReply::HostNotFoundError
+            || err == QNetworkReply::ConnectionRefusedError
+            || err == QNetworkReply::TimeoutError
+            || err == QNetworkReply::RemoteHostClosedError) {
+            fail(EngineDownload::Stage::networkUnreachable, errText);
         } else {
             fail(EngineDownload::Stage::releaseUnreadable,
-                QStringLiteral("HTTP %1（%2）").arg(code).arg(reply->errorString()));
+                QStringLiteral("HTTP %1（%2）").arg(code).arg(errText));
         }
         return;
     }
@@ -133,12 +156,19 @@ void EngineInstaller::onReleaseReady()
 
     m_downloadUrl = m_release.asset.url;
     m_digest = m_release.asset.digest;
+    m_assetAttempt = 0;
     emit progress(QStringLiteral("正在下载引擎 %1（%2）…")
                      .arg(m_release.asset.name,
                          m_release.asset.size > 0
                              ? QStringLiteral("%1 MB").arg(m_release.asset.size / 1024 / 1024)
                              : QStringLiteral("大小未知")));
+    fetchAsset();
+}
 
+// 下载资产（**可重入**：重试时再调一次；复用 m_downloadUrl / m_digest）。
+void EngineInstaller::fetchAsset()
+{
+    ++m_assetAttempt;
     QNetworkRequest req(m_downloadUrl);
     req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("deepDolphin"));
     // GitHub 的 browser_download_url 是 302 直链 → 必须跟随重定向。
@@ -159,10 +189,28 @@ void EngineInstaller::onAssetReady()
         return;
     QNetworkReply *reply = m_reply;
     m_reply = nullptr;
+    // ⚠ 先取错误再 deleteLater（重试分支要用；deleteLater 后再碰 reply 是坏写法）。
+    const QNetworkReply::NetworkError err = reply->error();
+    const QString errText = reply->errorString();
     reply->deleteLater();
 
-    if (reply->error() != QNetworkReply::NoError) {
-        fail(EngineDownload::Stage::downloadFailed, reply->errorString());
+    if (err != QNetworkReply::NoError) {
+        // ⚠ **瞬时故障先重试**：实测（2026-10-20）本机第一次下载直接
+        //   「下载中断：Connection closed」，稍后重试同一个 URL 1.17 秒就下完。
+        //   ⇒ 一次抖动不该让用户手动再点一次。
+        if (EngineDownload::isRetryableNetworkError(err)
+            && m_assetAttempt < EngineDownload::maxDownloadAttempts()) {
+            emit progress(QStringLiteral("下载中断，正在重试（%1/%2）…")
+                .arg(m_assetAttempt + 1).arg(EngineDownload::maxDownloadAttempts()));
+            QTimer::singleShot(EngineDownload::retryDelayMs(m_assetAttempt), this,
+                &EngineInstaller::fetchAsset);
+            return;
+        }
+        // ⚠ 重试到头仍失败 ⇒ 说清「已经试过几次」（用户不该只看到一句「下载失败」）。
+        fail(EngineDownload::Stage::downloadFailed,
+            m_assetAttempt > 1
+                ? QStringLiteral("%1（已重试 %2 次仍失败）").arg(errText).arg(m_assetAttempt)
+                : errText);
         return;
     }
     m_payload = reply->readAll();

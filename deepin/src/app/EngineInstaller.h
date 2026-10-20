@@ -39,6 +39,10 @@ signals:
     void finished(const EngineInstaller::Result &r);
 
 private:
+    /// 查发布信息（**可重入**：网络瞬断时重试）。
+    void fetchRelease();
+    /// 下载资产（**可重入**：网络瞬断时重试）。
+    void fetchAsset();
     void onReleaseReady();
     void onAssetReady();
     void onExtracted();
@@ -59,6 +63,10 @@ private:
     QString m_downloadUrl;
     QString m_digest;
     bool m_verified = false;
+    /// 已尝试次数（**分阶段各计**：查询与下载各一轮重试）。
+    /// ⚠ 判据在 logic/EngineDownload.h：可重试的错误类型、最多几次、退避多久。
+    int m_apiAttempt = 0;
+    int m_assetAttempt = 0;
 };
 
 Q_DECLARE_METATYPE(EngineInstaller::Result)
