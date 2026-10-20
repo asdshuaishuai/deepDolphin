@@ -394,11 +394,11 @@ arch_need "$SRC/src/logic/ArchViewport.cpp" '\bhitAt\b' '判定层有命中测�
 arch_need "$SRC/src/logic/ArchReceipt.cpp" '\bhtmlPath\b' '判定层有回执路径提取'
 arch_need "$SRC/src/ui/ArchCanvasWidget.cpp" '\bSceneRender::render\b' '画布经 SceneRender 渲染'
 arch_need "$SRC/src/ui/ArchCanvasWidget.cpp" '\bArchViewport::hitAt\b' '画布经 ArchViewport 命中'
-arch_need "$SRC/src/ui/dialogs/ArchDialog.cpp" '\bArchCanvasWidget\b' '架构图窗挂了画布'
+arch_need "$SRC/src/ui/dialogs/ArchDialog.cpp" 'new ArchCanvasWidget\(' '架构图窗**真的造了画布**（盯构造点，不盯类名 —— 类名在 include/成员/信号三处都出现 ⇒ 盯名字会被别处顶替）'
 arch_need "$SRC/src/ui/pages/ProjectDetailPage.cpp" '\barchRequested\b' '详情页发 archRequested'
 arch_need "$SRC/src/ui/PanelWindow.cpp" '&ProjectDetailPage::archRequested\b' 'PanelWindow 接了详情页入口'
-arch_need "$SRC/src/ui/PanelWindow.cpp" '\bshowArch\b' 'PanelWindow 有开窗动作'
-arch_need "$SRC/src/ui/PanelWindow.cpp" '\bArchDialog\b' 'PanelWindow 用的是架构图窗'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'showArch\(p\);' 'PanelWindow 把「详情页请求架构图」**接到**开窗动作上（盯接线那一行）'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'new ArchDialog\(' 'PanelWindow **真的造了**架构图窗（盯构造点）'
 # 回执按项目路由：两个项目的架构图窗可以同时开着，回执不带项目名就会串台
 #（在错误的窗口里显示回执、甚至触发重载）。
 arch_need "$SRC/src/app/AppModel.h" 'archActionFinished\(bool ok, const QString &project\b' '回执信号带项目名'
@@ -422,8 +422,8 @@ arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '\bCodeGraphBuild::visibleRo
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'ArchCanvasWidget|CodeGraphBuild\b' '代码图谱窗用代码图谱数据层'
 arch_need "$SRC/src/ui/pages/ProjectDetailPage.cpp" '\bcodeGraphRequested\b' '详情页发 codeGraphRequested'
 arch_need "$SRC/src/ui/PanelWindow.cpp" '&ProjectDetailPage::codeGraphRequested\b' 'PanelWindow 接了代码图谱入口'
-arch_need "$SRC/src/ui/PanelWindow.cpp" '\bshowCodeGraph\b' 'PanelWindow 有开代码图谱窗的动作'
-arch_need "$SRC/src/ui/PanelWindow.cpp" '\bCodeGraphDialog\b' 'PanelWindow 用的是代码图谱窗'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'showCodeGraph\(p\);' 'PanelWindow 把「详情页请求代码图谱」**接到**开窗动作上（盯接线那一行）'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'new CodeGraphDialog\(' 'PanelWindow **真的造了**代码图谱窗（盯构造点）'
 
 # 热力图链路：判定（作用域切分 / 铺排 / 走线）→ 渲染（HeatmapWidget + Canvas2D）
 #   → 接线（左栏模式切换 + 堆叠页 + 下钻 + 点选）。
@@ -457,8 +457,8 @@ arch_need "$SRC/src/ui/dialogs/PatchCheckDialog.cpp" '\bPatchCheck::agentPayload
 arch_need "$SRC/src/ui/dialogs/PatchCheckDialog.cpp" '\bPatchCheck::diffSnippet\b' '窗经判定层抽实码'
 arch_need "$SRC/src/ui/pages/ProjectDetailPage.cpp" '\bpatchCheckRequested\b' '详情页发 patchCheckRequested'
 arch_need "$SRC/src/ui/PanelWindow.cpp" '&ProjectDetailPage::patchCheckRequested\b' 'PanelWindow 接了补丁体检入口'
-arch_need "$SRC/src/ui/PanelWindow.cpp" '\bshowPatchCheck\b' 'PanelWindow 有开补丁体检窗的动作'
-arch_need "$SRC/src/ui/PanelWindow.cpp" '\bPatchCheckDialog\b' 'PanelWindow 用的是补丁体检窗'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'showPatchCheck\(p\);' 'PanelWindow 把「详情页请求补丁体检」**接到**开窗动作上（盯接线那一行）'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'new PatchCheckDialog\(' 'PanelWindow **真的造了**补丁体检窗（盯构造点）'
 arch_need_any '\bPatchCheck::parseLayer1\b' 'SelfCheck 覆盖 Layer1 解析'
 arch_need_any '\bPatchCheck::diffSnippet\b' 'SelfCheck 覆盖 diff 抽实码'
 
@@ -469,8 +469,8 @@ arch_need "$SRC/src/logic/DocPages.cpp" '\bcontent\b' '判定层有文档正文'
 arch_need "$SRC/src/logic/DocPages.cpp" '\bclientRepo\b' '仓库地址有单一出处'
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" '\bDocPages::content\b' '窗经判定层取正文'
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" '\bsetMarkdown\b' '正文按 markdown 渲染'
-arch_need "$SRC/src/ui/PanelWindow.cpp" '\bshowDocs\b' 'PanelWindow 有开文档窗的动作'
-arch_need "$SRC/src/ui/PanelWindow.cpp" '\bDocsDialog\b' 'PanelWindow 用的是文档窗'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'showDocs\(0\);' 'PanelWindow 把「面板菜单『关于』」**接到**文档窗上（盯接线那一行；「帮助」入口另有一条门盯 addAction）'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'new DocsDialog\(' 'PanelWindow **真的造了**文档窗（盯构造点）'
 # 入口级检查：光有 showDocs 方法不算数 —— 菜单里没人调它，用户就永远打不开
 # （负控实测：只删菜单两行、留着方法，上面两条照样全绿）。
 arch_need "$SRC/src/ui/PanelWindow.cpp" 'addAction\(QStringLiteral\("关于 deepDolphin"\)\)' '面板菜单有「关于」入口'
@@ -1209,6 +1209,18 @@ else
     fi
     rm -f "$AUDIT_OUT" "$AUDIT_ERR"
 fi
+
+# ── 批 AT · 豁免基线清账（第一轮）：把「盯名字」的门改成「盯接线点」──
+#
+# ⚠ 门自审计（批 AS）报出 **53 条**「同一串在目标文件里命中 >1 次」的历史门
+#   ⇒ 它们的形态都是**盯名字不盯接线点** ⇒ 改一处骗得过门。
+# ⚠ 仓库里其实**早就有**这个认识（语法高亮那段注释写着「这已是第三回『门盯名字不盯接线点』」）
+#   ⇒ 批 AT 把它**逐条**补齐：每条改成盯**唯一**的构造点/接线点。
+# ⚠ 改法有两种，**取「改」不取「另加」**：
+#   「改」   = 弱门本身改成盯接线点 ⇒ 门项数不变、意图**更强**（存在 ⇒ 必有构造点）、
+#              且**豁免基线能缩小**（不再命中 >1）；
+#   「另加」 = 弱门留着 + 新增强门 ⇒ 门项 +1、基线**不缩**（弱门仍在暗处）。
+# ⚠ 每改一条都要配一条**负控**：证明收紧后的门**仍能抓住**「把那一行改坏」。
 
 # ── 批 AN · 快照基线「逐字节可重现」：关掉 DTK 标题栏阴影带 ──
 #
