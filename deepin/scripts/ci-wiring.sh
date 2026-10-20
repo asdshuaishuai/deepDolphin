@@ -1731,9 +1731,28 @@ arch_need "$SRC/scripts/ci-divider-probe.sh" '--divider-probe' '分隔线断言�
 arch_need "$SRC/scripts/ci-divider-probe.sh" 'field inkWidth' '断言脚本真量墨迹宽（不量就证明不了「1 逻辑像素」这条）—— 盯**取值那一行**（裸盯 `inkWidth` 的话，缺字段的**错误消息**里也有 ⇒ 改一处骗得过门）'
 arch_need "$SRC/scripts/ci.sh" 'ci-divider-probe\.sh' 'CI 真跑了这一门（脚本在但不跑 = 没有门）'
 
+# ── 批 AX · M3c「图标名 / 动效」收口：把**实测结论**钉成门（不许退化）──
+# ⚠ 起因：M3c 剩「图标名 / 动效」两项 ⇒ 本批先**只读实测**（全树扫），再决定做不做。
+# ⚠⚠ **实测结论**（探针扫全 `src/`）：
+#   ① **图标名零绕过** —— 全树 `QIcon::fromTheme("…")` **0 处**、`QIcon("…")` **0 处**
+#      ⇒ 图标名真的只走 `logic/IconNames` 这一个出处（批 U 做的事没退化）。
+#   ② 清单 **27 个**逻辑图标：**零使用 0 个**、清单外使用 **0 个**。
+#   ③ **动效全项目只有一处**：`AgentDialog.cpp` 的新消息自动滚动
+#      （`new QPropertyAnimation(` 命中 1 处、`QVariantAnimation`/`QAnimationGroup` 全树 0 处）
+#      ⇒ 时长走 `DS::MotionStandardMs`、缓动 `QEasingCurve::InOutQuad`。
+# ⇒ 下面这些门把上面三条**钉住**（承诺没有门 = 承诺不存在）。
+arch_forbid_tree 'QIcon::fromTheme\(\s*(QStringLiteral\()?"' '图标名只许在 `logic/IconNames` 清单里（不许绕过唯一出处直接写主题名 ⇒ 换主题要改 N 处）—— 正则**两种形态都盖**：`fromTheme("x")` 与 `fromTheme(QStringLiteral("x"))`'
+arch_forbid_tree 'QIcon\(\s*(QStringLiteral\()?"' '图标名只许在 `logic/IconNames` 清单里（`QIcon("…")` 形态同样绕过；⚠ 正则**两种形态都盖**）'
+arch_forbid_tree 'new QPropertyAnimation\(' '全项目只有一处动画（AgentDialog 新消息自动滚动）—— 要加动效先问「为什么不能并进去」' 'src/ui/dialogs/AgentDialog.cpp'
+arch_forbid_tree 'setDuration\(\s*[0-9]' '动画时长必须走 DS token（散写数字 = 多个真相源）—— ⚠ **不许用 `\d`**（GNU grep -E 不认 ⇒ 门永远匹配不到 ⇒ 形同虚设；批 AX 实测）'
+arch_forbid_tree 'QVariantAnimation|QAnimationGroup' '只用一种动画机制（不许再引入第二种而不统一）'
+arch_need "$SRC/src/ui/dialogs/AgentDialog.cpp" 'anim->setDuration\(DS::MotionStandardMs\);' '那唯一一处动画的时长走 DS token'
+arch_need "$SRC/src/ui/dialogs/AgentDialog.cpp" 'anim->setEasingCurve\(QEasingCurve::InOutQuad\);' '那唯一一处动画的缓动统一（不各写各的）'
+arch_need "$SRC/src/ui/DesignTokens.h" 'constexpr int MotionStandardMs = 200;' '动效时长档 = **200ms**（全项目唯一出处的**唯一取值** —— 散写 200 就是第二个真相源；改档位只改这一处）'
+
 if [ "$ARCH_FAIL" -ne 0 ]; then
-    echo "✗ 接线门失败：批 AW 段有门项红（上面带 ✗ 的行）" >&2
+    echo "✗ 接线门失败：批 AX 段有门项红（上面带 ✗ 的行）" >&2
     exit 1
 fi
-echo "✓ 批 AW 段门项全绿（分隔线是真线）；门项合计 ${ARCH_N} 项（含前段）"
+echo "✓ 批 AX 段门项全绿（M3c 图标名/动效已达成）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0

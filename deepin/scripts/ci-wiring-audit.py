@@ -523,6 +523,31 @@ def main():
             print('审计器有盲区：%d 行门项没解析到（%s）⇒ 它们**没被审**'
                   % (len(failed), ','.join('%d行/%s' % x for x in failed)), file=sys.stderr)
             return 2
+        # ⚠⚠⚠ **门项正则的写法体检**（批 AX）：正则里写了 GNU grep -E **不认**的转义
+        #   （`\d` / `\D`）⇒ 那条门**永远匹配不到任何东西** ⇒ **门形同虚设**。
+        #   ⚠ 对 `arch_forbid` 门这是**静默**失效（forbid 本来就常年绿 ⇒ 写坏了跟没写一样）。
+        rxsyn = check_rx_syntax()
+        if rxsyn:
+            print('门项正则里有 grep -E **不认**的转义（%d 条）⇒ 这些门**永远匹配不到**'
+                  % len(rxsyn), file=sys.stderr)
+            for lineno, kind, rx, be in rxsyn:
+                print('  · %s:%d  [%s] 正则=%s  危险转义=%s'
+                      % (os.path.basename(WIRING), lineno, kind, rx,
+                         ','.join(t for _, t in be)), file=sys.stderr)
+            print('  ⇒ 改用 POSIX 写法：`\\d` → `[0-9]`、`\\D` → `[^0-9]`', file=sys.stderr)
+            return 5
+        # ⚠⚠ **「命中 0 次」也是红**（批 AX 补的第二个盲区）：
+        #   `arch_need` / `arch_need_ml` 的语义是「**必须存在**这个串」
+        #   ⇒ 命中 0 次 = 门永远匹配不到 = 门是空的。
+        #   （这两类门在 ci-wiring.sh 里自己就会红 ⇒ 不是静默失效；
+        #     但在**提交前**由审计器明确指出「哪条门是空的」比让 CI 报一堆 ✗ 更好。）
+        if zero:
+            print('有门项**命中 0 次**（%d 条）⇒ 那些门**永远匹配不到**（形同虚设）'
+                  % len(zero), file=sys.stderr)
+            for lineno, f, rx, why in zero:
+                print('  · %s:%d  %s  %s | %s'
+                      % (os.path.basename(WIRING), lineno, why, rel(f), rx), file=sys.stderr)
+            return 5
         # ⚠ 次数门的**配准校准**（下限/期望 必须 == 实际命中数）
         minbad = []
         for lineno, f, rx, want in parse_min_gates():
@@ -575,6 +600,14 @@ def main():
         print('⚠ **审计器有盲区**：有 %d 行门项没解析到（%s）'
               % (len(failed), ','.join('%d行/%s' % x for x in failed)))
         print('   ⇒ 这些门**审不到**（写法变了？）⇒ 审计器本身要改，不能静默漏审')
+    rxsyn = check_rx_syntax()
+    print('门项正则写法体检（grep -E 认不认）：%d 条危险' % len(rxsyn))
+    for lineno, kind, rx, be in rxsyn:
+        print('  · %s:%d  [%s] 正则=%s  危险转义=%s'
+              % (os.path.basename(WIRING), lineno, kind, rx,
+                 ','.join(t for _, t in be)))
+    if rxsyn:
+        print('   ⇒ 这些门**永远匹配不到**（形同虚设）⇒ 改用 POSIX 写法（`\\d` → `[0-9]`）')
     if base is not None:
         print('（只审 %s..HEAD 的新增门项）' % base)
 
@@ -644,6 +677,106 @@ def parse_min_gates():
         if m:
             out.append((i, resolve(m.group(1)), m.group(2), int(m.group(3))))
     return out
+
+
+# ⚠⚠⚠ **门项正则的「写法体检」**（批 AX）——
+# ⚠ **起因（本批实测抓到）**：门是用 `grep -E` 匹配的 ⇒ 只有 **GNU grep -E 认的**
+#   转义才有效。实测（GNU grep 3.11）：
+#     `\s` `\S` `\w` `\W` `\b` **都有效**（GNU 扩展），
+#     ⚠⚠ **`\d` / `\D` 无效**（那是 `grep -P` 的 Perl 扩展）⇒
+#     写了 `\d` 的门 **永远匹配不到任何东西** ⇒ **门形同虚设**。
+# ⚠⚠ **为什么这是「静默」失效（比批 AS 那种更隐蔽）**：
+#   · `arch_need` 门写坏了 ⇒ 匹配不到 ⇒ **门自己会红** ⇒ CI 能发现（不算静默）；
+#   · ⚠ **`arch_forbid` 门写坏了 ⇒ 永远零命中 ⇒ 永远绿** ⇒
+#     **没有任何信号** ⇒ 而 forbid 门判的正是「不该有的东西没了」⇒
+#     这类门**本来就是绿的** ⇒ 写坏了跟没写一样 ⇒ **静默**。
+#     （本批实测：仓里现有 forbid 门**一条都没写坏** ⇒ 批 AP 那 11 条
+#      「不许再开 1x 位图」的门**是真门**，不是空门。）
+# ⇒ 下面这项检查把「写坏了」当场抓出来。
+#
+# ⚠ **只列实测确认无效的**（`\s`/`\S`/`\w`/`\W`/`\b` 都有效 ⇒ 不许误报）。
+BAD_ESCAPES = ('d', 'D')
+
+
+def split_args(rest):
+    """把门项行的参数部分切成列表（支持 '…' 与 "…" 两种引号；引号本身不入参）。"""
+    args, cur, i, q = [], '', 0, None
+    while i < len(rest):
+        c = rest[i]
+        if q:
+            if c == q:
+                q = None
+            else:
+                cur += c
+        else:
+            if c in "'\"":
+                q = c
+            elif c.isspace():
+                if cur:
+                    args.append(cur)
+                    cur = ''
+            else:
+                cur += c
+        i += 1
+    if cur:
+        args.append(cur)
+    return args
+
+
+# 门型 → **正则参数**在参数列表里的下标（0-based）。
+# ⚠ `arch_forbid_han`（盯内容不看写法）与 `arch_forbid_text_dup`（盯重复文本）没有正则参数。
+RX_ARG_IDX = {
+    'arch_need': 1, 'arch_need_ml': 1, 'arch_need_min': 1,
+    'arch_need_count': 1, 'arch_need_count_in_fn': 2,
+    'arch_need_any_count': 0, 'arch_need_any_min': 0,
+    'arch_forbid': 1, 'arch_forbid_ml': 1, 'arch_forbid_raw': 1,
+    'arch_forbid_tree': 0,
+}
+GATE_LINE = re.compile(r'^\s*(arch_[a-z_]+)\s+(.*)$')
+
+
+def bad_escapes(rx):
+    """找出「**单个**反斜杠 + d/D」的位置 —— GNU grep -E 不认 ⇒ 门永远匹配不到。
+
+    ⚠ `\\\\d`（**两个**反斜杠）是「字面反斜杠 + d」⇒ 合法，不算。
+    ⇒ 判据 = 「连续反斜杠数为**奇数**」⇒ 最后一个反斜杠是转义符。
+    """
+    out = []
+    i = 0
+    while i < len(rx):
+        if rx[i] == '\\':
+            j = i
+            while j < len(rx) and rx[j] == '\\':
+                j += 1
+            n = j - i
+            if j < len(rx) and rx[j] in BAD_ESCAPES and n % 2 == 1:
+                out.append((i, '\\' + rx[j]))
+            i = j
+        else:
+            i += 1
+    return out
+
+
+def check_rx_syntax():
+    """体检**所有**门项的正则参数 ⇒ [(行号, 门型, 正则, 危险转义)]"""
+    bad = []
+    src = open(WIRING, encoding='utf-8').read()
+    for i, ln in enumerate(src.split('\n'), 1):
+        m = GATE_LINE.match(ln)
+        if not m:
+            continue
+        kind, rest = m.group(1), m.group(2)
+        idx = RX_ARG_IDX.get(kind)
+        if idx is None:
+            continue
+        args = split_args(rest)
+        if len(args) <= idx:
+            continue
+        rx = args[idx]
+        be = bad_escapes(rx)
+        if be:
+            bad.append((i, kind, rx, be))
+    return bad
 
 
 if __name__ == '__main__':
