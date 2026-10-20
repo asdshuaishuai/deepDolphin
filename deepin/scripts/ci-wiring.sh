@@ -1768,6 +1768,17 @@ arch_need "$SRC/src/ui/dialogs/AgentDialog.cpp" 'anim->setDuration\(DS::MotionSt
 arch_need "$SRC/src/ui/dialogs/AgentDialog.cpp" 'anim->setEasingCurve\(QEasingCurve::InOutQuad\);' '那唯一一处动画的缓动统一（不各写各的）'
 arch_need "$SRC/src/ui/DesignTokens.h" 'constexpr int MotionStandardMs = 200;' '动效时长档 = **200ms**（全项目唯一出处的**唯一取值** —— 散写 200 就是第二个真相源；改档位只改这一处）'
 
+# ⚠⚠ **批 AX 段自己的收尾块**（批 AZ 加段时曾把它顶掉 ⇒ 本批修回）：
+#   每段都该有自己的「红了就 exit 1 + 报本段项数」收尾 ⇒ 段被摘掉时能看出是哪一段。
+#   ⚠ 这里**不能带末尾的 `exit 0`**（原批 AX 段是最后一段才带）——
+#   后面还有批 AZ 段 ⇒ 带了就等于把后面的段跳过。
+#   口径与批 X / 批 Y 段一致。
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 AX 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 AX 段门项全绿（M3c 图标名/动效已达成）；门项合计 ${ARCH_N} 项（含前段）"
+
 # ── 批 AZ · CI 的两个**真实检查盲区** + 崩点可诊断性 ─────────────────────
 # ⚠⚠⚠ **这一段盯的是 ci.sh 本身** —— 前面的门盯的是「源码里的接线在不在」，
 #   而这一段盯的是「**门自己**还活着吗」。
@@ -1819,4 +1830,51 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 AZ 段门项全绿（CI 自测步不许吞退出码 / agent 自测三断言 / 崩点可诊断）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 BA · CI 的**每一步**都必须有门（12 步逐个钉）──────────────────────
+# ⚠⚠⚠ **起因（实测，不是推演）**：批 AZ 给 ci.sh 的**内部**加了门，
+#   但**「ci.sh 一共有哪 12 步」这件事本身没有任何门** ⇒
+#   ⇒ **删掉一整步 ⇒ 所有门照样全绿** ⇒ **CI 静默少做一件事**。
+#
+# ⚠⚠⚠ **实测取证（批 BA）**：写脚本**逐个删掉** ci.sh 的 12 步，每删一步跑一遍
+#   接线门 + 审计器 ⇒ 结果是 **12 步里有 6 步删了门照样全绿**：
+#     第 3 步 desktop/metainfo 校验、第 7 步 verify 接线扫描、
+#     第 8 步 图谱 Canvas 契约清单、第 9 步 **接线门**、第 10 步 引擎契约门、
+#     第 12 步 deb 布局验收。
+#   ⇒ ⚠ **最刺眼的是第 9 步**：把「接线门」这一步从 ci.sh 里删掉，**门还是绿的**
+#     ⇒ 门把自己的存在也丢了，没人管。
+#   ⇒ 另外 6 步之所以被抓住，是**别的段落的门恰好**盯到了它们的串（**偶然**，不是「每步都有门」）。
+# ⇒ **这正是「承诺没有门 = 承诺不存在」**：CI 清单上写着 12 步，
+#   少做一步却没有任何信号。
+#
+# ⚠ **本段的门盯什么**：每一步的**正文里一个「全文件唯一」的串**，
+#   用 `arch_need_count` 钉成**恰好 1 次** ⇒
+#   ① 删掉整步 ⇒ 命中数变 0 ⇒ 红；
+#   ② 把那个串挪到别的步 ⇒ 命中数仍是 1 ⇒ **不红**（⚠ 已知边界，与全仓其它门同款：
+#      本段保证「这一步还在」，不保证「这一步的代码没被挪走」）——
+#      要更强的保证得让门**认识步骤边界**（新门型 ⇒ 审计器也要跟着扩），
+#      本批不做，**如实记着**。
+# ⚠ **串的选择口径**（批 AP/AQ/AR/AS/AX 连续六次同形状的纪律）：
+#   必须**只出现在那一步里**（全文件命中数 == 本步内命中数），
+#   否则会被**别处顶替**（改一处骗得过门）。
+arch_need_count "$SRC/scripts/ci.sh" '--selfcheck' 1 '第 1 步 selfcheck 的动作还在（删掉这一步 ⇒ CI 少跑一次自测 ⇒ 必须红）'
+arch_need_count "$SRC/scripts/ci.sh" '--color-sample' 1 '第 2 步 截图矩阵（8 张快照 + 状态色样张）的动作还在'
+arch_need_count "$SRC/scripts/ci.sh" 'cn\.deepdolphin\.app\.desktop' 1 '第 3 步 desktop/metainfo 校验的动作还在'
+arch_need_count "$SRC/scripts/ci.sh" 'ci-platform-probe\.sh' 1 '第 4 步 无头探针（平台探针）的动作还在'
+arch_need_count "$SRC/scripts/ci.sh" 'ci-d2\.sh' 1 '第 5 步 D2 散值门（DS::* 单点真相源）的动作还在'
+arch_need_count "$SRC/scripts/ci.sh" '--agent-selftest' 1 '第 6 步 agent 自测的动作还在'
+arch_need_count "$SRC/scripts/ci.sh" 'QStringLiteral\\\("verify"\\\)' 1 '第 7 步 verify 接线扫描的动作还在（盯那条 wire_need 的正则 —— 它是本步唯一的「verify 入口」证据）'
+arch_need_count "$SRC/scripts/ci.sh" 'CANVAS_METHODS=' 1 '第 8 步 图谱 Canvas 契约清单的动作还在（26 个方法的清单在本步唯一定义）'
+arch_need_count "$SRC/scripts/ci.sh" 'ci-wiring\.sh' 1 '第 9 步 **接线门**的动作还在（⚠⚠ 门自己被删了，门也得红 —— 批 BA 实测：本步删掉时**其余门全绿**）'
+arch_need_count "$SRC/scripts/ci.sh" 'contract-check\.sh' 1 '第 10 步 引擎契约门（真引擎沙箱）的动作还在'
+arch_need_count "$SRC/scripts/ci.sh" 'build-deb\.sh' 1 '第 11 步 deb 打包的动作还在（D7 达标的必经：能出包装进 deepin）'
+arch_need_count "$SRC/scripts/ci.sh" 'check-deb-layout\.sh' 1 '第 12 步 deb 布局验收的动作还在（D7 的**准**验收：装完能不能用）'
+arch_need_count "$SRC/scripts/ci.sh" '› [0-9]+/12 ' 12 'ci.sh 的步骤打点**恰好 12 个**（多一步/少一步都红；且分母统一是 12 ⇒ 散写分母也红）'
+arch_need_ml "$SRC/scripts/ci.sh" '› 1/12 .*› 2/12 .*› 3/12 .*› 4/12 .*› 5/12 .*› 6/12 .*› 7/12 .*› 8/12 .*› 9/12 .*› 10/12 .*› 11/12 .*› 12/12 ' 'ci.sh 的 12 个步骤打点**编号连续**（压行后匹配 ⇒ 跨行也算）⇒ 跳号/重号/乱序都红'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 BA 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 BA 段门项全绿（ci.sh 的 12 步每一步都有门）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0
