@@ -69,12 +69,24 @@ ANY_FORBID_LINE = re.compile(r'^\s*arch_forbid\b')
 FUNC_DEF_LINE = re.compile(r'^\s*arch_(need|forbid)\w*\s*\(\)\s*\{')
 
 
-def strip_comments(path, text):
-    """复刻 ci-wiring.sh 的 strip_comments（按文件类型分派）。"""
+def strip_comments(path):
+    """剥注释 —— ⚠ **直接调 ci-wiring.sh 用的同一条 perl/sed**，不复刻。
+
+    ⚠⚠ **为什么必须用同一条命令**（本批实测踩出来的）：
+    审计器一开始用 **Python 正则复刻**了 `ci-wiring.sh` 的 `strip_comments`
+    ⇒ **两套实现** ⇒ 迟早漂移。
+    漂移的后果很隐蔽：审计器说「唯一」而门说「多处」（或反之）⇒ **豁免基线判错**
+    ⇒ 而且**报告里的次数不可信** ⇒ 人会据此做错判断
+    （本次实测：临时工具报「命中 2 次」，而手测与 shell 口径都是 4 次
+      ⇒ 差点据此以为「4 行 vs 2 次」是矛盾）。
+    ⇒ 复刻 = 两套口径 ⇒ **一律改成调同一条命令**。
+    """
     if path.endswith('.sh') or path.endswith('.txt'):
-        return '\n'.join(re.sub(r'^\s*#.*$', '', ln) for ln in text.split('\n'))
-    # perl: s{(?<!:)(//)(?!:).*$}{}
-    return re.sub(r'(?<!:)(//)(?!:).*$', '', text, flags=re.M)
+        cmd = ["sed", "-e", r's/^[[:space:]]*#.*$//']
+    else:
+        cmd = ["perl", "-pe", r's{(?<!:)(//)(?!:).*$}{}']
+    out = subprocess.run(cmd + [path], capture_output=True, text=True)
+    return out.stdout
 
 
 def resolve(p):
@@ -91,11 +103,9 @@ def rel(path):
 
 def count_hits(path, rx):
     """用 grep -oE 数命中次数（与 arch_need_count 的口径一致）。"""
-    try:
-        text = open(path, encoding='utf-8').read()
-    except OSError:
+    if not os.path.isfile(path):
         return None
-    text = strip_comments(path, text)
+    text = strip_comments(path)
     try:
         out = subprocess.run(['grep', '-oE', '--', rx], input=text,
                              capture_output=True, text=True)
