@@ -66,6 +66,22 @@ ERROR = '✗ '
 # ⚠ 判定层文件名前缀（**单一出处** —— 门要盯的就是这一行）
 JUDGEMENT_PREFIX = 'SelfCheck'
 
+# ⚠⚠⚨ **扫描范围基线**（批 BP 新增）——「这个探针扫哪些文件」必须被钉住。
+# ⚠⚠⚨ **为什么要有它**（批 BP 实测坐实，不是推演）：
+#   把「扫 `.sh` 脚本」那一行改掉 ⇒ **所有 shell 脚本的 if 条件都不再被查恒真**
+#   ⇒ 而本探针**自己没有条数基线** ⇒ 少扫了它也照样输出「✓」并 rc=0
+#   ⇒ ⇒ 探针**静默变成半个空门** ⇒ 批 BJ 建立的「脚本侧捷径」那一整类洞**失守**
+#   ⇒ 而 CI **只跑这一个入口** ⇒ 没人会发现。
+#   ⇒ 所以「扫到几个文件」必须有基线，且必须是**恰好**（批 BB 口径：
+#     「不少于」天生带余量 ⇒ 少一个还绿 ⇒ 没牙）。
+# ⚠⚠⚨ **基线是自锚的**（批 BH 纪律的关键差别）：
+#   期望值写在**独立文件**里，实际值来自**文件系统** ⇒ 改基线单独就红
+#   ⇒ 裁判改不了标准（除非同时改文件系统）。
+SCOPE_BASELINE = 'ci-tautology-scope.baseline'
+
+# ⚠ 扫描范围的三个口径（**键 = 基线文件里的行序** ⇒ 少一行就红）
+SCOPE_KEYS = ('judgement', 'shell', 'python')
+
 # ── 断言函数实参里的判据（批 BG 新增）────────────────────────────────────
 # ⚠ **形态（实测，不是猜）**：contract-check.sh 里
 #     check <名称> <python表达式（stdin 为 JSON 文本）> [json]
@@ -533,6 +549,30 @@ def self_test():
     return bad
 
 
+def read_scope_baseline(scripts):
+    """读「扫描范围基线」⇒ {口径: 期望文件数}。
+
+    ⚠⚠⚨ **基线是独立文件**（批 BH 纪律：基线不许写死在裁判手里）。
+    ⚠ **行序 = 口径序**（`SCOPE_KEYS`）⇒ 少一行 / 多一行 / 坏行 ⇒ **返回 None**
+      ⇒ 探针当场红（fail closed）⇒ 不许「读不到就当没有基线」。
+    ⚠ **只认纯数字行**（别的行当坏行）⇒ 基线文件里塞别的东西 ⇒ 也要红。
+    """
+    path = os.path.join(scripts, SCOPE_BASELINE)
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding='utf-8') as fh:
+        raw = [ln.strip() for ln in fh.read().split('\n')]
+    rows = [ln for ln in raw if ln]
+    if len(rows) != len(SCOPE_KEYS):
+        return None
+    out = {}
+    for key, row in zip(SCOPE_KEYS, rows):
+        if not row.isdigit():
+            return None
+        out[key] = int(row)
+    return out
+
+
 def main():
     if len(sys.argv) < 2:
         print('用法：ci-tautology-check.py <源码根目录>', file=sys.stderr)
@@ -549,11 +589,22 @@ def main():
               file=sys.stderr)
         return 1
 
-    # ① 判定层 C++：check(…) 的条件不许恒真
+    # ⚠ ① 判定层 C++：check(…) 的条件不许恒真
     appdir = os.path.join(root, 'src', 'app')
+    scripts = os.path.join(root, 'scripts')
+    # ⚠⚠⚨ **扫描目录不存在 ⇒ 明确报错**（不许崩成 traceback）
+    #   ⇒ 崩掉的退出码也是 1 ⇒ CI 照样红，但**看不出是哪一步坏了**
+    #   ⇒ 排障会被带偏（批 AZ 纪律：不按原因说 ⇒ 排障会被带偏）
+    #   ⚠ **用变量、不另写字面量** ⇒ 两套口径必然漂（改一处就不同步 ⇒ 新造一个洞）
+    for d in (appdir, scripts):
+        if not os.path.isdir(d):
+            print('%s扫描目录不存在：%s' % (ERROR, d), file=sys.stderr)
+            bad += 1
+    n_judge_files = 0
     for fn in sorted(os.listdir(appdir)):
         if not (fn.startswith(JUDGEMENT_PREFIX) and fn.endswith('.cpp')):
             continue
+        n_judge_files += 1
         path = os.path.join(appdir, fn)
         text = open(path, encoding='utf-8').read()
         for line, cond in extract_check_conds(text):
@@ -566,10 +617,11 @@ def main():
             bad += 1
 
     # ② shell 断言脚本：if 的条件不许恒真/恒假，**也不许有恒真捷径**
-    scripts = os.path.join(root, 'scripts')
+    n_sh_files = 0
     for fn in sorted(os.listdir(scripts)):
         if not fn.endswith('.sh'):
             continue
+        n_sh_files += 1
         path = os.path.join(scripts, fn)
         for line, cond in shell_if_conds(path):
             n_if += 1
@@ -609,9 +661,11 @@ def main():
 
     # ③ python 工具脚本：if 的条件不许恒真/恒假（`if True:` 这类）
     #    ⚠ python 的 if 用**冒号**收尾 ⇒ 单独一条正则口径（不与 shell 混用）。
+    n_py_files = 0
     for fn in sorted(os.listdir(scripts)):
         if not fn.endswith('.py'):
             continue
+        n_py_files += 1
         path = os.path.join(scripts, fn)
         text = open(path, encoding='utf-8').read()
         for i, ln in enumerate(text.split('\n'), 1):
@@ -661,13 +715,34 @@ def main():
                       % (ERROR, fn, line, helper, why, arg[:100]), file=sys.stderr)
                 bad += 1
 
+    # ⚠⚠⚨ 批 BP · **扫描范围不许被改窄**（基线在 scripts/ci-tautology-scope.baseline）
+    #   ⚠ **fail closed**：基线读不到 / 坏行 ⇒ 照红（不许「读不到就当没有基线」）
+    #   ⇒ 否则范围一被改窄 ⇒ 本探针就静默变成半个空门 ⇒ 它管的那些判据没人查了
+    scope_expect = read_scope_baseline(scripts)
+    if scope_expect is None:
+        print('%s扫描范围基线读不到或坏了：scripts/%s'
+              % (ERROR, SCOPE_BASELINE), file=sys.stderr)
+        bad += 1
+    else:
+        got_scope = {'judgement': n_judge_files, 'shell': n_sh_files,
+                     'python': n_py_files}
+        for key in SCOPE_KEYS:
+            want = scope_expect[key]
+            if got_scope[key] != want:
+                print('%s扫描范围不对：%s 扫到 %d 个文件，基线要求 %d 个'
+                      '（⚠ 范围被改窄 ⇒ 那批文件的判据**不再被查** ⇒ 探针静默失守）'
+                      % (ERROR, key, got_scope[key], want), file=sys.stderr)
+                bad += 1
+
     if bad:
         print('%s判据恒真检查失败：%d 处条件被掏空（这些判据永远不会红）'
               % (ERROR, bad), file=sys.stderr)
         return 1
     print('✓ 判据非恒真：判定层 %d 条判据的条件都含被测标识符；'
           'shell 与 python 脚本 %d 个 if 条件都非恒真；'
-          '断言函数实参里 %d 条判据都非恒真' % (n_check, n_if, n_assert))
+          '断言函数实参里 %d 条判据都非恒真；'
+          '扫描范围 判定层 %d / shell %d / python %d 个文件（与基线一致）'
+          % (n_check, n_if, n_assert, n_judge_files, n_sh_files, n_py_files))
     return 0
 
 

@@ -2577,6 +2577,39 @@ arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid_raw\(\)' '^\s+pr
 arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid_tree\(\)' '^\s+probe_scan_report_many ' 1 '**arch_forbid_tree** 必须**转发给上报函数**（函数体内恰好 1 次调用 `probe_scan_report_many`）—— ⚠ forbid 族的失败**不自己上报** ⇒ 转发关系被摘掉 ⇒ **这个门型的失败全部静默** ⇒ 而它自己不报错 ⇒ 谁都看不出来'
 
 
+# ── 批 BP · 恒真探针自己的「扫描范围」不许被改窄 ─────────────────────────────
+#
+# ⚠⚠⚨ **为什么要有这一段**（批 BP **实测坐实**，不是推演）：
+#   恒真探针（`ci-tautology-check.py`）是「**判据不许被掏空成恒真**」那一整类洞的
+#   **唯一执行者** ⇒ 它的**扫描范围**就是那一整类洞的**覆盖面**。
+#   ⇒ 实测：把「扫 `.sh` 脚本」那一行改掉 ⇒ **所有 shell 脚本的 if 条件都不再被查**
+#     ⇒ 而探针**自己没有条数基线** ⇒ 少扫了它也照样输出「✓」并 **rc=0**
+#     ⇒ ⇒ 探针**静默变成半个空门** ⇒ 批 BJ 建立的「脚本侧捷径」那一整类洞**失守**
+#     ⇒ 而 CI **只跑这一个入口** ⇒ 没人会发现。
+# ⚠⚠⚨ **修法（两层）**：
+#   ① **范围行逐条钉住**（4 条 + 判定层那 2 条已在批 BJ 段）⇒ 改范围常量 ⇒ 必红
+#   ② **扫到的文件数必须有基线**（`scripts/ci-tautology-scope.baseline`）
+#      ⇒ ⚠ **恰好**（批 BB 口径：「不少于」天生带余量 ⇒ 少一个还绿 ⇒ 没牙）
+#      ⇒ ⚠ **fail closed**：基线读不到 / 坏行 ⇒ 照红（不许「读不到就当没有基线」）
+#      ⇒ ⚠ **基线是自锚的**（批 BH 纪律的关键差别）：期望值写在**独立文件**里，
+#        实际值来自**文件系统** ⇒ 改基线单独就红 ⇒ 裁判改不了标准。
+# ⚠⚠⚨ **判据要避开自引**（批 BI 纪律）：正则参数**行首锚定** ⇒ 门项行自己不会被数进去。
+# ⚠⚠⚨ **引号位置写 `.`**（批 BL 既有约定）：门项正则**不能含字面单引号**
+#   ⇒ 代码里 `fn.endswith('.sh')` 的引号只能写 `.`（实测 GNU grep 3.11 的 `-E`
+#   不认 `[\x27]`、不认 `\047`）⇒ ⚠ 整行锚定已把这个弱点大幅削弱。
+
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+appdir = os\.path\.join\(root, .src., .app.\)$' 1 '恒真探针的**判定层目录**必须在（⚠ **整行锚定**：改目录 ⇒ 扫不到判定文件 ⇒ 那一整类判据**不再被查恒真** ⇒ 探针静默变成半个空门）｜⚠⚠⚨ **批 BP**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+scripts = os\.path\.join\(root, .scripts.\)$' 1 '恒真探针的**脚本目录**必须在（⚠ **整行锚定**：改目录 ⇒ shell/python 脚本的 if 条件**不再被查恒真** ⇒ 批 BJ 那一整类洞失守）｜⚠⚠⚨ **批 BP**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if not fn\.endswith\(.\.sh.\):$' 1 '恒真探针的 **shell 脚本范围**必须在（⚠ **整行锚定**；⚠ 引号位置只能写 `.` ⇒ 正则参数不许含字面单引号）—— 改扩展名 ⇒ 所有 .sh 的 if 条件**不再被查恒真** ⇒ **静默**（改前实测：探针照样输出「✓」并 rc=0）｜⚠⚠⚨ **批 BP**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if not fn\.endswith\(.\.py.\):$' 1 '恒真探针的 **python 脚本范围**必须在（⚠ **整行锚定**；⚠ 引号位置只能写 `.`）—— 改扩展名 ⇒ 所有 .py 的 if 条件**不再被查恒真** ⇒ **静默**｜⚠⚠⚨ **批 BP**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^SCOPE_BASELINE = .ci-tautology-scope\.baseline.$' 1 '恒真探针的**扫描范围基线文件**路径常量必须在（⚠ **整行锚定**：基线放**独立文件** ⇒ 裁判改不了标准；⚠ **单一出处**）｜⚠⚠⚨ **批 BP**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^def read_scope_baseline\(scripts\):$' 1 '扫描范围基线的**读取函数**必须在（⚠ 少一行 / 坏行 ⇒ 必须**返回 None** ⇒ fail closed ⇒ 不许「读不到就当没有基线」）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+scope_expect = read_scope_baseline\(scripts\)$' 1 '扫描范围基线**必须被读取**（定义了不读 ⇒ 基线是摆设 ⇒ 范围随便改 ⇒ 探针静默失守）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if scope_expect is None:$' 1 '基线**读不到**必须**fail closed**（照红）—— 不许「读不到就当没有基线」⇒ 否则删掉基线文件 ⇒ 范围检查整个消失 ⇒ 探针静默失守｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if got_scope\[key\] != want:$' 1 '**扫到的文件数**必须与基线**完全相等**（⚠ **恰好** ⇒ 少一个就红；「不少于」天生带余量 ⇒ 少一个还绿 ⇒ 没牙 —— 批 BB 口径）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+want = scope_expect\[key\]$' 1 '基线里那个口径的**期望值**必须真的取出来用（⚠ 取错了 ⇒ 比的是别的 ⇒ 范围检查名存实亡）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-tautology-scope.baseline" '^[0-9]+$' 3 '扫描范围基线文件**恰好 3 行纯数字**（判定层 / shell / python 各一行）—— ⚠ 行数变了 ⇒ 口径错位 ⇒ 范围检查名存实亡 ⇒ **基线自己也要被守**（批 BH 纪律）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if not os\.path\.isdir\(d\):$' 1 '恒真探针的**扫描目录不存在**必须**明确报错**（不许崩成 traceback ⇒ 崩掉的退出码也是 1 ⇒ CI 照样红，但**看不出是哪一步坏了** ⇒ 排障会被带偏 —— 批 AZ 纪律）｜⚠⚠⚨ **批 BP**｜⚠⚠⚨ **整行锚定**'
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BH/BI 段有门项红（上面带 ✗ 的行）" >&2
     exit 1
@@ -2588,4 +2621,5 @@ echo "✓ 批 BK 段门项全绿（剥注释覆盖 .py ⇒ 注释顶替不了真
 echo "✓ 批 BL 段门项全绿（盯门自己的工具的门项必须整行锚定；判定被掏空但串还在 ⇒ 门假绿）；门项合计 ${ARCH_N} 项（含前段）"
 echo "✓ 批 BN 段门项全绿（整行锚定的豁免机制：双向配准 ⇒ 豁免表 ≡ 非锚定门项集合；改名漏改有静态兜底）；门项合计 ${ARCH_N} 项（含前段）"
 echo "✓ 批 BO 段门项全绿（接线门脚本自己的失败上报路径：per-函数 + 总数 + 注册表 ⇒ 少了上报 = 必红）；门项合计 ${ARCH_N} 项（含前段）"
+echo "✓ 批 BP 段门项全绿（恒真探针自己的扫描范围：范围行逐条钉住 + 文件数基线恰好相等 ⇒ 范围被改窄 = 必红）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0
