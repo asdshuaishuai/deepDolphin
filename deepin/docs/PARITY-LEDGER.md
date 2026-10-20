@@ -1976,7 +1976,42 @@ selfcheck **395/0**、ci.sh **12/12**、契约门 **120/0**、ci-d2 **0/0**、�
 解析不到的门项 = 那些门**根本没被审** ⇒ 只打印警告就是留了逃逸口
 （与批 AR「只声明不编译也算出现」同构）⇒ 盲区存在时硬门红。
 
-**⑩ 剩余**：豁免基线里**还有 44 条**未清（判定层 / 脚本 / 平台层 / mac 侧）。
+**⑩ 第二轮（脚本类 / mac 侧 / 平台层，10 条）** ——
+第一轮清完 9 条后基线里还有 44 条 ⇒ 本轮清**脚本类**与 **mac 侧**那批。
+
+⚠⚠ **本轮的新发现：「命中次数」口径下还有一种隐患** ——
+**同一行里出现两次**也算「>1」（例：`build-deb.sh` 的 `rpath|runpath` 就在**同一行**）
+⇒ 收紧时必须用**行级构造**（把整行的独特部分作为正则），不能只盯一个词。
+
+| 门 | 原来盯 | 现在盯 |
+| --- | --- | --- |
+| `build-deb.sh` | `rpath|runpath` | 那行 `readelf -d … \| grep -qiE "rpath\|runpath"` |
+| `ci.sh` | `stderr\.txt` | `2>"$REPRO_DIR/stderr\.txt"`（**落盘**那一行） |
+| `fetch-engine.sh` | `browser_download_url` | 改 `arch_need_min`（**至少 2 次**：「取 + 洗」两处都要在） |
+| `fetch-engine.sh` | `bin/moongit-cli` | `[ -x "$pkg_root/bin/moongit-cli" ]`（**验可执行**那一行） |
+| `fetch-engine.sh` | `runtime/lib` | 拆两条：「验目录存在」+「验非空」 |
+| `engine-fetch-check.sh` | `moongit-cli` | `[ -x "$DEST/bin/moongit-cli" ]` |
+| `engine-fetch-check.sh` | `runtime/lib` | `if [ -d "$DEST/runtime/lib" ] &&`（**存在且非空**那一行） |
+| `macos/build.sh` | `ENGINE_ROOT/bin/moongit-cli` | `cp "$ENGINE_ROOT/bin/moongit-cli"`（**拷贝**那一行，不是「判断形状」那一行） |
+| mac 判据 | `ArchReceipt\.htmlPath\(` | 拆三条，各盯一条断言（实跑原文 / 结论行 / 相对路径不认） |
+| `probe-sni-icon.sh` | `IconPixmap` | `Properties.Get org.kde.StatusNotifierItem IconPixmap`（**D-Bus 调用**那一行） |
+
+⇒ 门项 600 → **603**（两条各拆成多行 ⇒ 净增 3）、豁免基线 44 → **34**、
+门自审计硬门 **rc=0**（豁免外隐患 0 条）。
+**负控 13/13 真红**（累计 **115/115**）。
+
+**⑪ 元教训 6：⚠⚠ 审计器是「**门视角**」，不是「文件视角」** ——
+它只检查**门项的正则**在目标文件里是否唯一，**不检查**「文件里有没有别处也有这个词」。
+⇒ 这正是我们要的（要盯的是「门盯的串唯一」）；
+⇒ 但也意味着**把弱门换成行级门后，那个词在文件里出现几次就不再有人管** ——
+好在行级门抓的是**结构**（那一行还在不在），比抓词强 ✓。
+
+**⑫ 元教训 7：⚠ 拆成多条行级门时，门项数会变** ——
+本轮 10 条门改完变成 13 条（603 项）⇒ **门项数不是目标，门强度才是**。
+⚠ 但**别忘了同步**：审计器的「已失效」清单要用**审计器自己算出来的键**去清
+（`scripts/ci-wiring-audit.py` 的 `read_exempt` + `parse_wiring`）⇒ **不手抄** ⇒ 不会抄错。
+
+**⑬ 剩余**：豁免基线里**还有 34 条**未清（判定层 / UI 层 / 平台层 / 托盘探针）。
 清账要**逐条读代码**才能确定「干活的那一行」⇒ 分批做，不赶。
 
 ---
