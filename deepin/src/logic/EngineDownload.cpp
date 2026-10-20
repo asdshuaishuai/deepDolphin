@@ -78,6 +78,50 @@ bool digestMatches(const QString &expected, const QByteArray &data)
     return actual == hex.toLatin1();
 }
 
+QString installHint()
+{
+    // ⚠ **旧文案是过时的**：原来让用户「运行 moonGit/scripts/install.sh」——
+    //   那是**仓库里**的脚本，拿到 deb 的普通用户**根本没有那个仓库**
+    //   ⇒ 指了一条走不通的路。而客户端**自己就有下载链**
+    //   （设置·通用页的「下载并安装引擎」⇒ 判定层 logic/EngineDownload 这条链）。
+    // ⇒ 先说「应用内就能装」，再给两条备选（离线/内网场景）。
+    // ⚠ 措辞保持**中性**（不提「上面/下面」）：判定层不知道界面长什么样。
+    return QStringLiteral(
+        "可以从 GitHub Releases 下载并安装引擎（装到用户目录，不需要 sudo）；"
+        "也可以自己装：把环境变量 DEEPGIT_BIN 指向引擎二进制，或把 moongit 放进 ~/.local/bin。");
+}
+
+QString downloadActionLabel()
+{
+    return QStringLiteral("下载并安装引擎");
+}
+
+QString downloadActionTooltip()
+{
+    // ⚠ 首屏与设置页**逐字抄过同一句**（各写一遍）⇒ 改一处漏一处。
+    //   现在只有这里一份，两处都从判定层取。
+    return QStringLiteral("从 GitHub Releases 下载并安装引擎（moongit）到用户目录");
+}
+
+QString downloadBusyLabel()
+{
+    return QStringLiteral("正在下载…");
+}
+
+QString downloadStatusText(bool found, bool pending, bool downloading)
+{
+    // ⚠ **下载中优先于「没找到」**：下载期间引擎确实还不在，
+    //   但说「没找到」会让用户以为按钮没生效 ⇒ 先说在下载。
+    if (downloading)
+        return QStringLiteral("正在下载并安装引擎，请稍候…");
+    if (found)
+        return QStringLiteral("已找到引擎，可正常使用。");
+    if (pending)
+        return QStringLiteral("正在查找引擎…");
+    return QStringLiteral("没有找到引擎。点右侧按钮可从 GitHub Releases 下载并安装"
+                          "（装到用户目录，不需要管理员权限）。");
+}
+
 QString installDir()
 {
     // 用户目录，**不碰系统目录**。与「改名字不改身份」的纪律一致：

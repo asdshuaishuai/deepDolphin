@@ -20,6 +20,7 @@
 #include "../models/GitOpResponse.h"
 #include "../logic/CodeGraphBuild.h"
 #include "../logic/EngineConfig.h"
+#include "../logic/EngineDownload.h"
 #include "../logic/EngineHook.h"
 #include "../logic/EngineDoctor.h"
 #include "../logic/GraphInsight.h"
@@ -87,6 +88,20 @@ public:
     bool engineDownloading() const { return m_engineDownloading; }
     /// 最近一次引擎下载的结论（成功/失败的具体说法）。
     QString engineDownloadMessage() const { return m_engineDownloadMessage; }
+    // ── 引擎下载动作的**文案**（判定层真相源，界面只取不改）──
+    // ⚠ 为什么经 AppModel 转发而不是界面直接调判定层：
+    //   既有纪律「界面不自己读判定层，结论经 AppModel 传上来」
+    //   （接线门 arch_forbid 盯着 GeneralPane 不许出现 EngineDownload::）。
+    //   首屏 SetupGuidePage 同样不许直接读判定层。
+    QString engineDownloadActionLabel() const { return EngineDownload::downloadActionLabel(); }
+    QString engineDownloadActionTooltip() const { return EngineDownload::downloadActionTooltip(); }
+    QString engineDownloadBusyLabel() const { return EngineDownload::downloadBusyLabel(); }
+    /// 设置页「引擎」卡的状态说明（按当前引擎状态取判定层的四态文案）。
+    QString engineStatusText() const
+    {
+        return EngineDownload::downloadStatusText(
+            m_engineFound, m_enginePending, m_engineDownloading);
+    }
     const std::vector<ProjectStatus> &projects() const { return m_projects; }
     const std::optional<ProjectStatus> project(const QString &name) const;
     const std::optional<EngineSummary> &summary() const { return m_summary; }

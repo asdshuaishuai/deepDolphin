@@ -205,6 +205,75 @@ arch_forbid_han() { # arch_forbid_han <文件> <说明>
         echo "  ✓ $label"
     fi
 }
+# arch_forbid_text_dup：盯「**判定层已有的文案，界面层不许再抄一遍**」。
+#
+# ⚠ 为什么要有这道门（批 AH 实测）：同一个动作标签「下载并安装引擎」在
+#   **三处**各写了一遍（首屏 1 + 设置页 2），悬停说明还**逐字**抄了两遍。
+#   ⇒ 同一句话有两个真相源 ⇒ 改一处漏一处（批 AG 写的原话）。
+#   ⚠ 盯**内容**（字面量逐字相同），不是盯 API 名字 —— 与批 AG 同款道理。
+#
+# ⚠ 清单来源是**判定层**（唯一真相源）：判定层改了文案，界面层的副本自动进清单
+#   ⇒ 不需要手工维护名单（手工名单会漏，漏了就等于没门）。
+# ⚠ 范围要写清：清单只取 `src/logic/EngineDownload.cpp`（本批的下载文案真相源），
+#   且长度门槛 ≥4 个字符 ⇒ 短词（如「引擎」）不进清单，避免误伤。
+#   其它判定层的中文串（失败分类文案等）**不在**本门范围里。
+arch_forbid_text_dup() { # arch_forbid_text_dup <判定层文件> <相对SRC的目录> <说明>
+    local srcf="$1" dir="$2" label="$3"
+    ARCH_N=$((ARCH_N + 1))
+    if [ ! -f "$srcf" ]; then
+        echo "  ✗ $label：文件不存在 $srcf" >&2
+        ARCH_FAIL=1
+        return
+    fi
+    if [ ! -d "$SRC/$dir" ]; then
+        echo "  ✗ $label：目录不存在 $SRC/$dir" >&2
+        ARCH_FAIL=1
+        return
+    fi
+    if ! command -v perl >/dev/null 2>&1; then
+        # ⚠ 没有 perl ⇒ 取不出字面量清单 ⇒ 硬跑等于**假绿** ⇒ 显式 SKIP（不算通过）
+        echo "  ‣ SKIP $label：没有 perl（取不出字面量清单，跑就是假绿）"
+        return
+    fi
+    local tmp hits
+    tmp="$(mktemp)"
+    # 取判定层里所有**含中文**的字符串字面量（≥4 字符）
+    perl -0777 -Mopen=':std,:encoding(UTF-8)' -ne \
+        'while (/"([^"\n]{4,})"/g) { my $t = $1; print "$t\n" if $t =~ /[\x{3000}-\x{9fff}]/; }' \
+        "$srcf" >"$tmp" 2>/dev/null || true
+    if [ ! -s "$tmp" ]; then
+        rm -f "$tmp"
+        echo "  ✗ $label：判定层里没取到任何中文字面量（清单为空 = 门形同虚设）" >&2
+        ARCH_FAIL=1
+        return
+    fi
+    # 扫界面层：先剥**块注释 + 行注释**（注释里提到这句话不算抄）
+    hits="$(perl -e '
+        use strict; use warnings;
+        my $listfile = shift @ARGV;
+        open(my $lf, "<:encoding(UTF-8)", $listfile) or exit 0;
+        my @texts = grep { length($_) >= 4 } map { chomp; $_ } <$lf>;
+        close $lf;
+        binmode(STDOUT, ":encoding(UTF-8)");
+        for my $f (@ARGV) {
+            open(my $fh, "<:encoding(UTF-8)", $f) or next;
+            local $/; my $body = <$fh>; close $fh;
+            $body =~ s{/\*.*?\*/}{}gs;
+            $body =~ s{(?<!:)(//)(?!:)[^\n]*}{}g;
+            for my $t (@texts) {
+                next unless index($body, $t) >= 0;
+                print "$f\t$t\n";
+            }
+        }' "$tmp" $(find "$SRC/$dir" \( -name '*.cpp' -o -name '*.h' \) | sort) 2>/dev/null || true)"
+    rm -f "$tmp"
+    if [ -n "$hits" ]; then
+        echo "  ✗ $label：界面层抄了判定层的文案（同一句话两个真相源）——" >&2
+        printf '%s\n' "$hits" | sed 's/^/      /' >&2
+        ARCH_FAIL=1
+    else
+        echo "  ✓ $label"
+    fi
+}
 arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("graph"\).*QStringLiteral\("arch"\)' 'AppModel 调引擎 graph arch 取场景'
 arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("scene"\)' '场景按 scene 契约格式取（--format scene）'
 arch_need "$SRC/src/app/AppModel.h" '\bloadScene\b' 'AppModel 暴露 loadScene'
@@ -674,6 +743,38 @@ arch_need "$SRC/src/app/SelfCheck.cpp" '\bEngineDownload::parseRelease\b' 'SelfC
 arch_forbid "$SRC/src/app/EngineInstaller.cpp" 'api\.github\.com\b' '执行层不自己写发布信息 URL'
 arch_forbid "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" '\bEngineInstaller\b' '界面不绕过 AppModel 直接用执行层'
 arch_forbid "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" '\bEngineDownload::\b' '界面不自己读判定层（结论经 AppModel 传上来）'
+
+# ── 批 AH · 引擎缺失首屏接上下载入口 + 安装指引文案归判定层 ──
+#
+# ⚠ 起因（实测）：引擎缺失时用户**第一眼**看到的是首屏，而下载链只在设置页
+#   ⇒ 用户得先知道「设置里有」才用得上；首屏的提示还让人去跑仓库里的 install.sh
+#   （拿 deb 的普通用户**没有那个仓库**）⇒ 指了一条走不通的路。
+# ⚠ 这段盯四件事：
+#   ① 判定层持有**全部**下载文案（真相源一处）；
+#   ② AppModel 转发（界面不自己读判定层 —— 与 GeneralPane 同一纪律）；
+#   ③ 首屏**真的有**下载入口且**接上了**下载链；
+#   ④ 界面层**不许再抄**判定层的文案（同一句话两个真相源）。
+arch_need "$SRC/src/logic/EngineDownload.h" 'QString installHint\(\);' '判定层持有引擎缺失时的安装指引文案'
+arch_need "$SRC/src/logic/EngineDownload.h" 'QString downloadActionLabel\(\);' '判定层持有下载动作标签'
+arch_need "$SRC/src/logic/EngineDownload.h" 'QString downloadActionTooltip\(\);' '判定层持有下载动作悬停说明'
+arch_need "$SRC/src/logic/EngineDownload.h" 'QString downloadBusyLabel\(\);' '判定层持有下载中按钮文案'
+arch_need "$SRC/src/logic/EngineDownload.h" 'QString downloadStatusText\(bool found, bool pending, bool downloading\);' '判定层持有引擎状态四态文案'
+arch_need "$SRC/src/app/AppModel.h" 'QString engineDownloadActionLabel\(\) const' 'AppModel 转发下载动作标签'
+arch_need "$SRC/src/app/AppModel.h" 'QString engineDownloadActionTooltip\(\) const' 'AppModel 转发下载动作悬停说明'
+arch_need "$SRC/src/app/AppModel.h" 'QString engineDownloadBusyLabel\(\) const' 'AppModel 转发下载中按钮文案'
+arch_need "$SRC/src/app/AppModel.h" 'QString engineStatusText\(\) const' 'AppModel 转发引擎状态说明'
+arch_need "$SRC/src/app/AppModel.h" '\bEngineDownload::downloadStatusText\b' 'AppModel 的状态说明走判定层四态'
+# ⚠ 首屏**真的有**下载入口：光有文案不算，用户得有地方点。
+arch_need "$SRC/src/ui/pages/SetupGuidePage.cpp" 'new DPushButton\(downloadLabel' '首屏真的造了「下载并安装引擎」主操作按钮'
+arch_need "$SRC/src/ui/pages/SetupGuidePage.h" 'void downloadClicked\(\);' '首屏发得出「点了下载」这个信号'
+arch_need "$SRC/src/ui/PanelWindow.cpp" '&SetupGuidePage::downloadClicked' '面板接了首屏的下载点击'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'm_model->downloadEngine\(\)' '首屏下载点下去真的跑下载链'
+arch_need "$SRC/src/ui/PanelWindow.cpp" 'engineDownloadActionLabel\(\)' '面板把判定层文案传给首屏（首屏不自己写）'
+# ⚠ 首屏**不许**直接读判定层：与设置页同一纪律（结论经 AppModel 传上来）。
+arch_forbid "$SRC/src/ui/pages/SetupGuidePage.cpp" '\bEngineDownload::\b' '首屏不自己读判定层（文案经 AppModel 传上来）'
+arch_forbid "$SRC/src/ui/pages/SetupGuidePage.h" '\bEngineDownload::\b' '首屏头文件不自己读判定层'
+# ⚠ **同一句话不许有两个真相源**（本批实测三处重复标签 + 两处逐字重复悬停说明）。
+arch_forbid_text_dup "$SRC/src/logic/EngineDownload.cpp" 'src/ui' '界面层不许抄判定层的下载文案（标签/悬停/状态）'
 
 # 批 Q · 引擎钩子（post-commit / post-merge 托管块）：判定层出结论，
 #   执行层只管跑，界面只读结论。⚠ 卸载**只删托管块**（用户的钩子逻辑留着）——

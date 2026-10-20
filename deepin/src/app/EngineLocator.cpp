@@ -1,4 +1,5 @@
 #include "EngineLocator.h"
+#include "../logic/EngineDownload.h"
 #include <DStandardPaths>
 #include <QCoreApplication>
 #include <QDir>
@@ -123,9 +124,12 @@ EngineLocator::Result EngineLocator::locate()
 
 QString EngineLocator::installHint()
 {
-    return QString::fromUtf8(
-        "请运行 moonGit/scripts/install.sh 安装引擎（安装到 ~/.local/bin/moongit），"
-        "或设置环境变量 DEEPGIT_BIN 指向引擎二进制，然后点击「重新检测引擎」。");
+    // ⚠ **文案在判定层**（logic/EngineDownload::installHint）——
+    //   同一句指引会被首屏 / 面板状态栏 / AppModel 多处用
+    //   ⇒ 放 app 层就要复制多份 ⇒ 改一处漏两处。
+    //   ⚠ 旧文案让用户去跑 `moonGit/scripts/install.sh` ⇒ **过时**
+    //   （拿 deb 的普通用户没有那个仓库），而客户端自己就有下载链。
+    return EngineDownload::installHint();
 }
 
 namespace {

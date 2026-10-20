@@ -53,7 +53,10 @@ echo "› 2/12 截图矩阵（离屏）"
 #   注意：第 4 步的平台探针**要**真实 backend，故那里不强制 offscreen。
 mkdir -p "$SRC/docs/snapshots"
 for theme in light dark; do
-    for sec in dashboard board milestones; do
+    # ⚠ setupguide = **引擎缺失首屏**（批 AH）：那个界面在正常启动时根本不出现
+    #   （引擎在 ⇒ 落仪表盘）⇒ 以前 docs/snapshots/*-setupguide.png 是**死基线**
+    #   （拍不出、没人比）——死基线比没基线更隐蔽：它让人以为「首屏有视觉保障」。
+    for sec in dashboard board milestones setupguide; do
         QT_QPA_PLATFORM=offscreen DEEPDOLPHIN_THEME="$theme" "$BIN" --snapshot \
             "$SRC/docs/snapshots/${theme}-${sec}.png" --section "$sec" \
             | tail -1
@@ -87,7 +90,7 @@ repro_shoot() { # repro_shoot <主题> <区块> <输出路径> <TZ>
         "$3" --section "$2" >/dev/null 2>&1
 }
 for theme in light dark; do
-    for sec in dashboard board milestones; do
+    for sec in dashboard board milestones setupguide; do
         again="$REPRO_DIR/${theme}-${sec}.png"
         if ! repro_shoot "$theme" "$sec" "$again" "UTC"; then
             echo "✗ 重拍失败：${theme}-${sec}" >&2
@@ -116,7 +119,7 @@ if [ "$repro_fail" -ne 0 ]; then
     echo "✗ 基线不可重现 —— 基线带墙钟就等于没有基线" >&2
     exit 1
 fi
-echo "✓ 6 张面板快照两次重拍逐字节一致，且换宿主时区后仍一致（基线可重现）"
+echo "✓ 8 张快照两次重拍逐字节一致，且换宿主时区后仍一致（基线可重现）"
 
 echo "› 3/12 desktop / metainfo 校验（缺工具显式 SKIP）"
 if command -v desktop-file-validate >/dev/null 2>&1; then

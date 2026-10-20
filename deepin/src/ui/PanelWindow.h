@@ -51,6 +51,11 @@ public:
     void applyRoute(const LaunchRoute &route); // 二实例深链转发
     void attachTray(TrayController *tray);     // 托盘信号接线（main 持有托盘）
 
+    /// 当前显示的是不是「引擎缺失首屏」。
+    /// ⚠ 为什么要有：无头快照用它**断言**拍到的确实是首屏 ——
+    ///   否则「文件名叫 setupguide、图里其实是仪表盘」也能过门 ⇒ 又一个空门。
+    bool showingSetupGuide() const;
+
 signals:
     void traySnapshotChanged(); // main 借此刷托盘（fillSnapshot 由本类提供）
 

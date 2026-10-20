@@ -201,7 +201,10 @@ void PanelWindow::openScanDialog(const QString &presetPath)
 
 void PanelWindow::wirePages()
 {
-    m_setupPage = new SetupGuidePage(m_engine.problems.join(QStringLiteral("；")), m_stack);
+    // ⚠ 文案由**上层传入**（判定层真相源经 AppModel 转来）——
+    //   首屏与设置页共用同一份说法，不会两处漂移。
+    m_setupPage = new SetupGuidePage(m_engine.problems.join(QStringLiteral("；")),
+        m_model->engineDownloadActionLabel(), m_model->engineDownloadActionTooltip(), m_stack);
     m_dashboard = new DashboardPage(m_stack);
     m_board = new BoardPage(m_stack);
     m_milestonesPage = new MilestonesPage(m_stack);
@@ -320,6 +323,24 @@ void PanelWindow::wirePages()
             if (ConfirmDialog::confirm(this, spec))
                 m_model->removeMilestone(p, n);
         });
+
+    // ── 引擎缺失首屏：把下载链接进来（批 AH）──
+    // ⚠ 引擎缺失时用户**第一眼**看到的就是这块屏幕 ⇒ 用户唯一的出路必须在这。
+    //   原来下载链只在设置页（GeneralPane）⇒ 用户得先知道「设置里有」才用得上，
+    //   而首屏的提示还让用户去跑仓库里的 install.sh（拿 deb 的人根本没那个仓库）。
+    connect(m_setupPage, &SetupGuidePage::downloadClicked, this, [this] {
+        if (!m_model)
+            return;
+        m_model->downloadEngine();
+    });
+    // ⚠ 下载态与结论**原样**透给首屏（文案由判定层生成，UI 不自己写第二份）。
+    connect(m_model, &AppModel::engineDownloadingChanged, this, [this] {
+        m_setupPage->setDownloadState(m_model->engineDownloading(),
+            m_model->engineDownloadMessage());
+    });
+    connect(m_model, &AppModel::engineDownloadFinished, this, [this](bool, const QString &text) {
+        m_setupPage->setDownloadState(false, text);
+    });
 
     connect(m_setupPage, &SetupGuidePage::redetectClicked, this, [this] {
         // 异步发现链（M0-2）：探活在 worker 跑，按钮不冻结；期间 SetupGuidePage 走忙态
@@ -508,6 +529,11 @@ void PanelWindow::refreshChrome()
         return;
     }
     navigate(m_model->selection());
+}
+
+bool PanelWindow::showingSetupGuide() const
+{
+    return m_stack && m_stack->currentIndex() == PageSetupGuide;
 }
 
 void PanelWindow::navigate(Selection sel)

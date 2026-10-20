@@ -25,7 +25,8 @@ namespace Route {
 
 LaunchRoute parseArgs(const QStringList &args); // args 含程序自身路径（QApplication::arguments() 原样）
 
-// `--section` 取值归一：milestones/board/dashboard 之外一律落 dashboard（默认视图）
+// `--section` 取值归一：milestones/board/dashboard/setupguide 之外一律落 dashboard（默认视图）
+// ⚠ setupguide = 引擎缺失首屏（**只在无头快照里用**：正常启动时引擎在 ⇒ 那一页不出现）。
 QString resolveSection(const QString &raw);
 
 // `--agent-selftest` 没带问句时的缺省问句（与 mac 保持一致）

@@ -56,6 +56,31 @@ bool assetMatches(const QString &assetName, const QString &suffix);
 ///   上层必须据此把「未校验」如实说给用户（不能冒充已校验）。
 bool digestMatches(const QString &expected, const QByteArray &data);
 
+/// 引擎缺失时给用户的安装指引（**中性措辞**，不绑定具体界面位置）。
+///
+/// ⚠ 为什么放判定层：同一句指引会被**多处**用
+///   （首屏 SetupGuidePage / 面板状态栏 PanelWindow / AppModel 的 engineProblem）
+///   ⇒ 放 app 层就得复制多份 ⇒ 改一处漏两处。
+/// ⚠ 为什么**不提「点上面的按钮」**：判定层不知道调用方界面长什么样
+///   ⇒ 「上面/下面」在换位置后会说错 ⇒ 方位词由界面自己补。
+QString installHint();
+
+/// 「下载并安装引擎」这个动作按钮的标签（首屏与设置页共用一份，避免两处写法不一致）。
+QString downloadActionLabel();
+
+/// 同一个动作按钮的**悬停说明**（首屏与设置页共用一份）。
+/// ⚠ 之前首屏与设置页**逐字抄了同一句**（两处各写一遍）⇒ 改一处漏一处。
+///   凡是**同一个动作**要说的话，都归判定层，界面只取不改。
+QString downloadActionTooltip();
+
+/// 下载进行中时按钮上的文字（下载中要看得见，否则用户以为没反应）。
+QString downloadBusyLabel();
+
+/// 设置页「引擎」卡的**状态说明**（四态：已找到 / 正在查找 / 正在下载 / 没找到）。
+/// ⚠ 为什么不放界面层：这句话说的是**引擎的客观状态**，
+///   属于判定层职责；界面层自己写 ⇒ 换个界面就换一套说法。
+QString downloadStatusText(bool found, bool pending, bool downloading);
+
 /// 落盘位置：用户目录，**不碰系统目录**（不要 sudo，不要往 /usr/local/bin 写）。
 QString installDir();
 

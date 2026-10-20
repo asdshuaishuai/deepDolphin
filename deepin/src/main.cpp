@@ -198,7 +198,7 @@ static int headlessAgentSelftest(int argc, char *argv[], const QString &question
 }
 
 // ── 无头快照（mac scripts/render-harness 对位：离屏渲染整窗 PNG，布局可自动验证）──
-// 用法：deepDolphin --snapshot <out.png> [--section dashboard|board|milestones] [--project <名>]
+// 用法：deepDolphin --snapshot <out.png> [--section dashboard|board|milestones|setupguide] [--project <名>]
 // 配合 QT_QPA_PLATFORM=offscreen 使用；等数据首轮落地后抓整窗、写文件即退。
 // 退出码：0 = 已写文件；1 = 抓取/写盘失败（headless 测试必须响亮失败）。
 static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, const QString &outPath)
@@ -213,9 +213,28 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
     if (!DS::paletteIsThemeConsistent())
         app.setPalette(DS::applicationPaletteFallback());
 
-    const EngineLocator::Result engine = EngineLocator::locate();
-    if (!engine.found)
-        qWarning() << "引擎未找到:" << engine.problems.join(QStringLiteral("; "));
+    // ⚠ **setupguide 段 = 引擎缺失首屏**（批 AH）：
+    //   那个界面在正常启动时**根本不出现**（引擎在 ⇒ 落仪表盘），
+    //   ⇒ 以前 docs/snapshots/*-setupguide.png 是**死基线**（拍不出、没人比）。
+    //   死基线比没基线更隐蔽：它让人以为「首屏有视觉保障」。
+    const bool setupGuide = route.section == QLatin1String("setupguide");
+
+    EngineLocator::Result engine;
+    if (setupGuide) {
+        // ⚠ **不调 locate()**：它的结果**依赖本机环境**（装没装引擎、DEEPGIT_BIN 指向）
+        //   ⇒ 基线不可逐字节重现。这里显式构造**通用缺失态**
+        //   （与 EngineLocator::locate() 失败时同款：一条「没找到」+ 一条安装指引）。
+        engine.found = false;
+        engine.pending = false;
+        engine.problems << QStringLiteral(
+            "在 DEEPGIT_BIN、开发构建目录、~/.local/bin、/usr/local/bin 与 PATH 上"
+            "都没有找到可用的 moongit/deepgit。");
+        engine.problems << EngineLocator::installHint();
+    } else {
+        engine = EngineLocator::locate();
+        if (!engine.found)
+            qWarning() << "引擎未找到:" << engine.problems.join(QStringLiteral("; "));
+    }
 
     EngineCli cli;
     if (engine.found)
@@ -227,7 +246,10 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
     //   对状态色/布局全是空门：改界面它不红）。夹具走**同一段解析路径**。
     //   夹具是同步喂的 ⇒ 放在 show() 之后，让 UI 一定收到信号再拍。
     panel.show();
-    model.useSnapshotFixture();
+    // ⚠ setupguide 段**不喂夹具**：要拍的正是「没有引擎、没有项目」的样子
+    //   ⇒ 喂了夹具就变成「有项目但引擎缺失」，那不是用户会看到的画面。
+    if (!setupGuide)
+        model.useSnapshotFixture();
     int rc = 1;
     // 等 UI 稳定再抓（M0-7）：以前写死 2500ms，引擎慢时拍到 loading 态且退出码仍 0。
     // 现在轮询"数据到位 / 状态已定（引擎未找到 → setup guide 就是终态）"，上限 15s，
@@ -241,11 +263,15 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
     auto *poll = new QTimer(&panel);
     poll->setInterval(100);
     QObject::connect(poll, &QTimer::timeout, &panel,
-        [&panel, &model, outPath, &rc, poll, settle, &cycleDone] {
+        [&panel, &model, outPath, &rc, poll, settle, &cycleDone, setupGuide] {
         // 「该拍了」= 数据落地 / 一轮刷新已收尾（含空数据与失败）/ 引擎未找到
         //      （setup guide 即终态）/ 探活仍在飞（pending 也是稳定画面：忙态页）。
-        const bool settled = model.hasLoadedProjectsOnce() || model.lastRefreshedMs() > 0
-            || cycleDone || !model.engineFound() || model.enginePending();
+        // ⚠ setupguide 段没有数据可等 ⇒ 改成**等一小会儿让布局落定**（300ms），
+        //   免得拍到还没排好版的半成品。
+        const bool settled = setupGuide
+            ? settle.elapsed() >= 300
+            : (model.hasLoadedProjectsOnce() || model.lastRefreshedMs() > 0
+                || cycleDone || !model.engineFound() || model.enginePending());
         if (!settled && settle.elapsed() < 15000)
             return;
         poll->stop();
@@ -261,7 +287,16 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
         // ⚠ **拍到空态 = 响亮失败**（批 T）：夹具没生效 / 夹具被改坏 ⇒ 画面是空的
         //   ⇒ 提交进去的基线又变成「空门」（改界面它不红，说「视觉已评审」是假的）。
         //   宁可构建失败，也不能把空图固化成基线。
-        if (rc == 0 && model.projects().empty()) {
+        // ⚠ setupguide 段**必然没有项目**（没引擎没夹具）⇒ 这道检查对它不适用，
+        //   改用「拍到的**确实是首屏**」来防空门（否则文件名叫 setupguide、
+        //   图里其实是仪表盘也能过门）。
+        if (rc == 0 && setupGuide) {
+            if (!panel.showingSetupGuide()) {
+                fprintf(stderr, "[snapshot] setupguide 段却没停在首屏 —— 拍到的不是引擎缺失首屏\n");
+                QFile::remove(outPath);
+                rc = 1;
+            }
+        } else if (rc == 0 && model.projects().empty()) {
             fprintf(stderr, "[snapshot] 夹具没有项目 —— 拍出来是空态，基线会变成空门\n");
             QFile::remove(outPath); // 别把那张空图留在盘上（会被当成基线改动）
             rc = 1;
@@ -843,7 +878,7 @@ int main(int argc, char *argv[])
         // 缺参必须响亮失败：以前会带着一个无意义参数把 GUI 拉起来（headless 测试藏在成功里）
         if (snapIdx + 1 >= rawArgs.size()) {
             fprintf(stderr, "用法：deepDolphin --snapshot <out.png> "
-                            "[--section dashboard|board|milestones] [--project <名>]\n");
+                            "[--section dashboard|board|milestones|setupguide] [--project <名>]\n");
             return 2;
         }
         return headlessSnapshot(argc, argv, preRoute, rawArgs.at(snapIdx + 1));

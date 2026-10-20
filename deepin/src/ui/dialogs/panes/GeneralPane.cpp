@@ -48,33 +48,39 @@ GeneralPane::GeneralPane(AppModel *model, QWidget *parent)
 
     // ── 引擎卡（引擎缺失时**唯一的出路**：下载并安装）──
     // ⚠ 为什么放第一张：引擎没装，客户端其他一切都是空的 —— 用户先看到的应该是这件事。
-    auto *engineCard = new QWidget(this);
-    auto *engineRow = new QHBoxLayout(engineCard);
-    engineRow->setSpacing(DS::Spacing::md);
-    auto *engineCol = new QVBoxLayout;
-    auto *engineTitle = new QLabel(QStringLiteral("引擎"), engineCard);
-    engineTitle->setFont(DS::font(DS::FontT::cardTitle));
-    engineCol->addWidget(engineTitle);
-    m_engineStatus = new SecondaryLabel(engineCard);
-    m_engineStatus->setFont(DS::font(DS::FontT::label));
-    m_engineStatus->setWordWrap(true);
-    engineCol->addWidget(m_engineStatus);
-    m_engineDownloadMsg = new QLabel(engineCard);
-    m_engineDownloadMsg->setFont(DS::font(DS::FontT::label));
-    m_engineDownloadMsg->setWordWrap(true);
-    m_engineDownloadMsg->hide();
-    engineCol->addWidget(m_engineDownloadMsg);
-    engineRow->addLayout(engineCol, 1);
-    m_engineDownloadButton = new DPushButton(QStringLiteral("下载并安装引擎"), engineCard);
-    m_engineDownloadButton->setToolTip(
-        QStringLiteral("从 GitHub Releases 下载并安装引擎（moongit）到用户目录"));
-    connect(m_engineDownloadButton, &DPushButton::clicked, this, [this] {
-        if (!m_model)
-            return;
-        m_model->downloadEngine();
-    });
-    engineRow->addWidget(m_engineDownloadButton);
-    v->addWidget(engineCard);
+    // ⚠ **整块只在有 model 时才建**：没有 model 就没有引擎状态可说，
+    //   而下面要在**构造期**取判定层文案（裸解 m_model->）⇒ m_model 为 null 时会崩
+    //   在启动路径上。判空不建卡 ⇒ 那个按钮与状态位一律不出现。
+    if (m_model) {
+        auto *engineCard = new QWidget(this);
+        auto *engineRow = new QHBoxLayout(engineCard);
+        engineRow->setSpacing(DS::Spacing::md);
+        auto *engineCol = new QVBoxLayout;
+        auto *engineTitle = new QLabel(QStringLiteral("引擎"), engineCard);
+        engineTitle->setFont(DS::font(DS::FontT::cardTitle));
+        engineCol->addWidget(engineTitle);
+        m_engineStatus = new SecondaryLabel(engineCard);
+        m_engineStatus->setFont(DS::font(DS::FontT::label));
+        m_engineStatus->setWordWrap(true);
+        engineCol->addWidget(m_engineStatus);
+        m_engineDownloadMsg = new QLabel(engineCard);
+        m_engineDownloadMsg->setFont(DS::font(DS::FontT::label));
+        m_engineDownloadMsg->setWordWrap(true);
+        m_engineDownloadMsg->hide();
+        engineCol->addWidget(m_engineDownloadMsg);
+        engineRow->addLayout(engineCol, 1);
+        // ⚠ 标签与悬停说明取**判定层真相源**（经 AppModel 转来）——
+        //   首屏与这里共用同一份说法，不两处各写一遍。
+        m_engineDownloadButton = new DPushButton(m_model->engineDownloadActionLabel(), engineCard);
+        m_engineDownloadButton->setToolTip(m_model->engineDownloadActionTooltip());
+        connect(m_engineDownloadButton, &DPushButton::clicked, this, [this] {
+            if (!m_model)
+                return;
+            m_model->downloadEngine();
+        });
+        engineRow->addWidget(m_engineDownloadButton);
+        v->addWidget(engineCard);
+    }
 
     // 日志卡片（M0-9）：报障时要能自己拿到日志——日志目录一键定位，不再让用户去猜
     auto *logCard = new QWidget(this);
@@ -447,19 +453,11 @@ void GeneralPane::applyEngineState()
         return;
     const bool downloading = m_model->engineDownloading();
     m_engineDownloadButton->setEnabled(!downloading);
-    m_engineDownloadButton->setText(downloading ? QStringLiteral("正在下载…")
-                                                : QStringLiteral("下载并安装引擎"));
-    QString status;
-    if (m_model->engineFound())
-        status = QStringLiteral("已找到引擎，可正常使用。");
-    else if (m_model->enginePending())
-        status = QStringLiteral("正在查找引擎…");
-    else
-        status = QStringLiteral("没有找到引擎。点右侧按钮可从 GitHub Releases 下载并安装"
-                                "（装到用户目录，不需要管理员权限）。");
-    if (downloading)
-        status = QStringLiteral("正在下载并安装引擎，请稍候…");
-    m_engineStatus->setText(status);
+    // ⚠ 下载中按钮要**看得见**在动（否则用户以为没反应）⇒ 换成忙态文案。
+    m_engineDownloadButton->setText(downloading ? m_model->engineDownloadBusyLabel()
+                                                : m_model->engineDownloadActionLabel());
+    // ⚠ 状态说明走判定层四态（已找到/正在查找/正在下载/没找到）——界面不自己写。
+    m_engineStatus->setText(m_model->engineStatusText());
 }
 
 void GeneralPane::reloadEngineConfig()

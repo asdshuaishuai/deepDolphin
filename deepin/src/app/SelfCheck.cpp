@@ -3458,6 +3458,40 @@ int SelfCheck::run(QStringList &log)
         const QSet<QString> uniq(msgs.begin(), msgs.end());
         check(log, "引擎下载：八种失败各说各的（不许都叫「下载失败」）",
             msgs.size() == 8 && uniq.size() == 8 && !msgs.isEmpty());
+
+        // ── 批 AH：安装指引文案（引擎缺失时用户**唯一**看到的那句话）──
+        // ⚠ **旧文案让人去跑 `moonGit/scripts/install.sh`** —— 那是**仓库里**的脚本，
+        //   拿 deb 的普通用户根本没有那个仓库 ⇒ 指了一条走不通的路。
+        //   判据钉死：指引里不许再出现 install.sh，且必须给得出**可执行**的下一步。
+        // ⚠ 判据要与错误实现**分叉**：旧文案含 "install.sh" ⇒ 这里立刻红。
+        const QString hint = EngineDownload::installHint();
+        check(log, "引擎缺失指引：不再指向走不通的路，且给得出可执行的下一步",
+            !hint.isEmpty()
+                && !hint.contains(QStringLiteral("install.sh"))
+                && hint.contains(QStringLiteral("DEEPGIT_BIN"))
+                && hint.contains(QStringLiteral("~/.local/bin")));
+        // ⚠ 动作文案必须**齐备**且**互不相同**：
+        //   标签/悬停/忙态各说各的（忙态不是标签的复读，否则下载中看不出在动）。
+        const QString dLabel = EngineDownload::downloadActionLabel();
+        const QString dTip = EngineDownload::downloadActionTooltip();
+        const QString dBusy = EngineDownload::downloadBusyLabel();
+        check(log, "引擎下载：动作标签/悬停说明/忙态文案齐备且互不相同",
+            !dLabel.isEmpty() && !dTip.isEmpty() && !dBusy.isEmpty()
+                && dLabel != dBusy && dTip != dLabel && dTip != dBusy);
+        // 状态四态（已找到/正在查找/正在下载/没找到）**互不相同**：
+        //   撞车 = 两种情况说同一句话 = 用户分不清发生了什么。
+        // ⚠ 下载中**优先**于「没找到」：下载期间引擎确实不在，
+        //   但说「没找到」会让用户以为按钮没生效。
+        const QString stFound = EngineDownload::downloadStatusText(true, false, false);
+        const QString stPending = EngineDownload::downloadStatusText(false, true, false);
+        const QString stDown = EngineDownload::downloadStatusText(false, false, true);
+        const QString stNone = EngineDownload::downloadStatusText(false, false, false);
+        check(log, "引擎状态说明：四态互不相同，且下载中不说「没找到」",
+            !stFound.isEmpty() && !stPending.isEmpty() && !stDown.isEmpty() && !stNone.isEmpty()
+                && stFound != stPending && stFound != stDown && stFound != stNone
+                && stPending != stDown && stPending != stNone && stDown != stNone
+                && !stDown.contains(QStringLiteral("没有找到"))
+                && !stDown.contains(QStringLiteral("正在查找")));
     }
 
     // ── 引擎钩子（post-commit / post-merge 托管块）判定层 ──
