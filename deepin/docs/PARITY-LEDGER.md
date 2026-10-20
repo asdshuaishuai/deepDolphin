@@ -2011,7 +2011,40 @@ selfcheck **395/0**、ci.sh **12/12**、契约门 **120/0**、ci-d2 **0/0**、�
 ⚠ 但**别忘了同步**：审计器的「已失效」清单要用**审计器自己算出来的键**去清
 （`scripts/ci-wiring-audit.py` 的 `read_exempt` + `parse_wiring`）⇒ **不手抄** ⇒ 不会抄错。
 
-**⑬ 剩余**：豁免基线里**还有 34 条**未清（判定层 / UI 层 / 平台层 / 托盘探针）。
+**⑬ 第三轮（托盘探针 / 脚本 / 平台层，10 条）** ——
+清完第二轮后基线里还有 34 条 ⇒ 本轮清**托盘探针**与**脚本/平台层**那批：
+
+| 门 | 原来盯 | 现在盯 |
+| --- | --- | --- |
+| `probe-deepin-tray.sh` | `TrayIcons` | `Properties.Get "$TRAY_SERVICE" TrayIcons`（**D-Bus 调用**那一行） |
+| `probe-deepin-tray.sh` | `WM_NAME` | `xprop -id "$WID" WM_NAME` |
+| `probe-deepin-tray.sh` | `GetName` | `"$TRAY_SERVICE.GetName" "$WID"` |
+| `probe-deepin-tray.sh` | `deepin-window` | `[ "$BACKEND" = "deepin-window" ]`（**判定**那一行） |
+| `ci-platform-probe.sh` | `dpiEdgeLevels` | 拆两条：解析 **legacy 列** / 解析 **aware 列** |
+| `ci-docs-lang-probe.sh` | `docs-lang-probe` | `--docs-lang-probe`（**真的去跑那个探针**那一行） |
+| `main.cpp` | `headlessDocsLangProbe` | `return headlessDocsLangProbe(argc, argv);`（**调用**那一行） |
+| `main.cpp` | `--receipt-file-path\b` | 拆两条：**认得**这个 flag / **取到**它的位置 |
+| `Settings.cpp` | `app\.language` | 拆三条：**读** / **删** / **写** |
+| `IconResolver.cpp` | `platform::dpiPixmap\(` | ⚠ **两处源码完全相同** ⇒ 行级构造分不开 ⇒ 改 `arch_need_min`（至少 2 次） |
+
+⇒ 门项 604 → **608**、豁免基线 34 → **24**、门自审计硬门 **rc=0**。
+**负控 14/14 真红**（累计 **129/129**）。
+
+**⑭ 元教训 8：⚠ 意图天然是「多处」的门，只能用「至少 N 次」** ——
+`IconResolver` 的两处 `platform::dpiPixmap(size);` **源码一字不差** ⇒ 行级构造**分不开**
+⇒ 只能用 `arch_need_min`（至少 2 次）。
+⚠ **代价要说清**：`arch_need_min` **不被审计器覆盖**（审计器只审 `arch_need`），
+且「删一处 + 在别处加一处」**骗得过**它 ⇒ 这条门比其它清过的门**弱一档**。
+⇒ 台账/提交信息里都写明，不假装它跟别的一样强。
+
+**⑮ 元教训 9：⚠⚠ 「子串顶替」在负控里也会咬人（第二轮就撞过，第三轮又撞到 3 条）** ——
+把 `TrayIcons` 改成 `TrayIcons_DISABLED` ⇒ **目标串仍是新串的前缀** ⇒
+grep 照样匹配 ⇒ **命中数没变** ⇒ 门不红。
+⚠ **第一版断言（目标串「消失」）抓不到这个**（目标串确实不再出现，只是**匹配**还在）
+⇒ 会误判成「门没牙」⇒ 白查一轮。
+⇒ **第二版断言（命中次数必须减少）当场抓住** ⇒ 这就是「断言要盯门依赖的那个量」的价值。
+
+**⑯ 剩余**：豁免基线里**还有 24 条**未清（判定层 / UI 层 / 平台层 / 托盘探针剩下的）。
 清账要**逐条读代码**才能确定「干活的那一行」⇒ 分批做，不赶。
 
 ---
