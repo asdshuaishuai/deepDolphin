@@ -2276,12 +2276,12 @@ echo "✓ 批 BE 段门项全绿（ci.sh 每一步的标记串**不许被挪到�
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'def tautology_reason\(' 1 '恒真检查的**统一判定入口**必须在（实扫与自检必须走同一条路径 ⇒ 否则自检测的不是真判定 ⇒ 假的保证；⚠ **带左括号** ⇒ 改名躲不过：批 BG 负控 B10 实测「改成 `def tautology_reason_x`」子串门照样绿 ⇒ 门形同虚设）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'why = tautology_reason\(cond\)' 1 '实扫必须走**统一判定入口**（不许另写一份判定 ⇒ 两套口径必然漂）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if not meaningful_idents\(cond\):' 1 '判定规则 1 必须在（条件里**至少一个被测标识符** ⇒ 抓 `true` / `1 == 1` / `"a" == "a"`）'
-arch_need_count "$SRC/scripts/ci-tautology-check.py" 'SHORTCUT\.search\(cond\)' 1 '判定规则 2 必须在（禁「\|\| true / && false」捷径 ⇒ 条件里带恒真项 ⇒ 整条判据被短路）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if SHORTCUT\.search\(cond\):$' 1 '判定规则 2 必须在（禁「\|\| true / && false / and False / or True」捷径 ⇒ 条件里带恒真项 ⇒ 整条判据被短路）｜⚠⚠⚨ **批 BJ 升级为整行锚定**：⚠ **盯串会被注释里的同名串顶替**（实测：把真代码换成 `pass  # skip.add(k)` ⇒ 计数仍是 1 ⇒ 门假绿 ⇒ 批 BH 教训的**反面**：注释能替代码 ⇒ 关键判定必须**整行锚定**（含缩进与行尾）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if SH_CONST\.match\(cond\):' 1 'shell 侧的恒真条件判定必须在（`if true;` / `if false;` / `if :;`）'
-arch_need_count "$SRC/scripts/ci-tautology-check.py" 'PY_CONST_IF\.match\(ln\)' 1 'python 侧的恒真条件判定必须在（`if True:` / `if False:`）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+m = PY_CONST_IF\.match\(ln\)$' 2 'python 侧的恒真条件判定必须在（`if True:` / `if False:`）｜⚠ **两处**：.py 顶层 + **heredoc 内嵌 python** ⇒ 同一份判定走两处 ⇒ 改一处不会漏另一处｜⚠ **整行锚定** ⇒ 注释顶不住（批 BJ 实测）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'st_bad = self_test\(\)' 1 '探针的**自检**必须在（门自己证明自己有牙 ⇒ 判定逻辑被掏空时当场红）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if st_bad:' 1 '自检失败必须**判红**（自检不过还继续跑 ⇒ 等于没有自检）'
-arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.*,\s*(True|False)\),$' 16 '自检样例表**不许被掏空**（16 条：既含「该判为恒真」也含「不该判为恒真」的样例 ⇒ 只测一边 ⇒ 判反了也能过；⚠ 批 BG 起加了 6 条「断言函数实参」样例 + 1 条「实参解析器」样例）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.*,\s*(True|False)\),$' 28 '自检样例表**不许被掏空**（28 条：既含「该判为恒真」也含「不该判为恒真」的样例 ⇒ 只测一边 ⇒ 判反了也能过；⚠ 批 BG 起加了 6 条「断言函数实参」样例 + 1 条「实参解析器」样例；⚠ 批 BJ 起加了 **12 条「脚本侧捷径」样例**）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'JUDGEMENT_PREFIX' 2 '判定层文件名前缀**有且只有两处**（定义 + 使用）—— 散在别处 ⇒ 改一处就废掉另一处 ⇒ 门跟着松'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if bad:' 1 '探针的**违规 ⇒ 判红**判定必须在（没有它 ⇒ 探针只报告不拦 ⇒ 等于没门）'
 
@@ -2423,6 +2423,27 @@ arch_need_count "$SRC/scripts/ci-wiring.sh" '^probe_scan_state_of\w*\(\) \{' 1 '
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^probe_scan_find\w*\(\) \{' 1 '公共查找只允许有一个函数定义（不许复制出第二份）'
 arch_need_min "$SRC/scripts/ci-wiring.sh" '^ +probe_scan_find ' 7 '公共查找的调用点（四个走 grep 路线的 forbid 门 + 自检三处）'
 
+# ── 批 BJ · 恒真探针要看得见「脚本侧捷径」与「heredoc 内嵌脚本」────────────
+# ⚠⚠⚨ **起因（批 BJ 实测，不是推演）**：批 BF 的捷径规则（`|| true` / `&& false`）
+#   **只用在判定层 C++** ⇒ 脚本侧**全都漏判**：
+#   · shell 的 `if cmd || true; then` / `if cmd && false; then`
+#   · python 的 `if x and False:` / `if x or True:`
+#   ⇒ 恒真/恒假的条件 ⇒ **断言永不执行**（恒假方向）⇒ 那条判据从此不会红。
+# ⚠⚠⚨ **另一半**：heredoc 里常嵌着**别的语言**的脚本（python / awk）⇒
+#   ① 里面的 `if` 被**误当** shell 条件（实测 2 处误判）
+#   ② 里面的**真判据**（恒真/捷径）现有探针**根本扫不到**（漏判）
+#   ⇒ 必须先把 heredoc 体**摘出来**，再用 python / shell 两套规则各扫一遍
+#      （python 收尾是 `:`、shell 收尾是 `then` ⇒ 天然不冲突 ⇒ 不用判语言）。
+# ⚠⚠⚨ **自护门要盯「判定只有一份」**（批 BF/BG 纪律）：
+#   四种场景（判定层 / shell / python / heredoc 内嵌）**全部**走同一个入口
+#   ⇒ 不许各自写一遍 ⇒ 复制两份迟早漂 ⇒ 一份坏了门还是绿。
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^def shortcut_reason\(cond\):$' 1 '脚本侧捷径的**统一判定入口**必须在（四种场景都走它 ⇒ 判定逻辑只许有一份）｜⚠ **整行锚定**（含缩进与行尾）⇒ 注释顶不住'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+why = shortcut_reason\(' 4 '四个实扫点（判定层 / shell / heredoc 内 python / python）都必须走统一入口 ⇒ 少一处说明有场景没接上｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+got = shortcut_reason\(' 1 '**自检**也必须走同一个入口（自检与实扫分家 ⇒ 自检测的不是真判定 ⇒ 假的保证）｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^def heredoc_spans\(lines\):$' 1 '**heredoc 感知的实现**必须在（内嵌脚本的判据不许漏判 ⇒ 不摘出来就扫不到）｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^def python_if_conds\(text, first_line=1\):$' 1 '**python 条件提取器**必须在（跨行 + heredoc 内嵌都靠它 ⇒ 只按行匹配会漏）｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+skip\.add\(k\)$' 1 'shell 条件扫描**必须跳过 heredoc 体**（否则内嵌 python 的 if 被误当 shell 条件 ⇒ 误判）｜⚠⚠⚨ **整行锚定**：批 BJ 负控实测「把真代码换成 `pass  # skip.add(k)`」⇒ 盯串的话计数仍是 1 ⇒ **门假绿** ⇒ 注释能替代码 ⇒ 关键判定必须整行锚定'
+
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BH/BI 段有门项红（上面带 ✗ 的行）" >&2
@@ -2430,4 +2451,5 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
 fi
 echo "✓ 批 BH 段门项全绿（门项总数不许被悄悄删；审计器门型覆盖对拍也在）；门项合计 ${ARCH_N} 项（含前段）"
 echo "✓ 批 BI 段门项全绿（forbid 门族不许静默变绿；工具坏了 ⇒ 红，不是绿）；门项合计 ${ARCH_N} 项（含前段）"
+echo "✓ 批 BJ 段门项全绿（恒真探针看得见脚本侧捷径与 heredoc 内嵌脚本）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0

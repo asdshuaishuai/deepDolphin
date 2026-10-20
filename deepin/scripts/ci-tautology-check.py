@@ -39,7 +39,20 @@ KEYWORDS = {
 }
 
 # ⚠「捷径」：条件里带一个恒真项 ⇒ 整条判据被短路
-SHORTCUT = re.compile(r'\|\|\s*true\b|&&\s*false\b|\bor\s+true\b|\band\s+false\b')
+# ⚠⚠⚠ **批 BJ 扩展：原来只覆盖判定层 C++ 的写法** ⇒ 脚本侧
+#   （shell 的 `if cmd || true` / python 的 `if x and False`）**全都漏判**。
+#   ⚠ 四种退化方向都要禁：
+#     · `|| true`  / `|| false`   ⇒ 条件恒真 ⇒ 体**总**执行
+#     · `&& false` / `&& true`    ⇒ 条件恒假 ⇒ 体**永不**执行（⇒ 断言永不跑！）
+#     · `or True` / `or False` / `and False` / `and True`（python）
+#     · `or true` / `and false`（C++）
+# ⚠⚠ **匹配前必须先剥字符串字面量**（`strip_literals`）：
+#   否则 `[ "$x" = "true" ]` 里的 `"true"` 会被当成捷径 ⇒ 假红；
+#   剥掉后只剩 `[      =      ]` ⇒ 干净。
+SHORTCUT = re.compile(
+    r'\|\|\s*true\b|\|\|\s*false\b|&&\s*false\b|&&\s*true\b'
+    r'|\bor\s+true\b|\bor\s+True\b|\bor\s+False\b'
+    r'|\band\s+false\b|\band\s+False\b|\band\s+True\b')
 
 # ⚠ shell 侧的恒真条件（只有这三个是「无条件成立/不成立」）
 SH_CONST = re.compile(r'^\s*(true|false|:)\s*$')
@@ -152,31 +165,149 @@ def extract_check_conds(text):
     return out
 
 
-def shell_if_conds(path):
-    """抽出 shell 脚本里每个 `if` 的条件（⚠ 跨行续行要拼起来）。"""
-    out = []
-    lines = open(path, encoding='utf-8').read().split('\n')
+def heredoc_spans(lines):
+    """找出 shell 脚本里所有 **heredoc 体**的行区间 ⇒ [(首行号0基, 末行号0基)]。
+
+    ⚠⚠⚠ **为什么必须有它（批 BJ 实测）**：
+      heredoc 里常常嵌着**别的语言**的脚本（python / awk）⇒
+      ① 里面的 `if` 会被**误当** shell 的 `if` 条件（实测 2 处误判）
+      ② 而里面的**真判据**（恒真/捷径）现有探针**根本扫不到**（漏判）
+      ⇒ 必须先把 heredoc 体**摘出来单独处理**。
+    ⚠ 识别办法：找 `<<WORD` / `<<'WORD'` / `<<-WORD` ⇒ 下一行开始，
+      到**单独一行**等于 WORD（`<<-` 允许前导 tab）为止。
+      ⚠ **误判自然被排除**：`a << b` 这种不是 heredoc ⇒ 后面不会有一行正好是 `b`
+      ⇒ 找不到定界行 ⇒ 不算 heredoc。
+    """
+    spans = []
+    pat = re.compile(r'<<-?\s*([\'"]?)([A-Za-z_][A-Za-z0-9_]*)\1')
     i = 0
     while i < len(lines):
-        s = lines[i].strip()
-        if s.startswith('if ') or s == 'if':
-            cond = s[3:] if s.startswith('if ') else ''
-            j = i
-            while j < len(lines):
-                if ';' in cond:
-                    break
-                j += 1
-                if j >= len(lines):
-                    break
-                cond += ' ' + lines[j].strip()
-            # 条件 = 第一个 `;` 之前（含续行）
-            cut = cond.find(';')
-            if cut >= 0:
-                cond = cond[:cut]
-            out.append((i + 1, cond.strip()))
-            i = j + 1
+        m = pat.search(lines[i])
+        if not m:
+            i += 1
+            continue
+        word = m.group(2)
+        j = i + 1
+        end = None
+        while j < len(lines):
+            if lines[j].strip() == word:
+                end = j
+                break
+            j += 1
+        if end is None:
+            i += 1
+            continue
+        spans.append((i + 1, end - 1))   # 体是 [i+1, end-1]
+        i = end + 1
+    return spans
+
+
+def _shell_cond_at(lines, i, kwlen):
+    """从第 i 行起抽一个 shell 条件（⚠ 跨行续行要拼起来）⇒ (行号, 条件) 或 None。"""
+    s = lines[i].strip()
+    cond = s[kwlen:]
+    j = i
+    while j < len(lines):
+        if ';' in cond:
+            break
+        j += 1
+        if j >= len(lines):
+            break
+        cond += ' ' + lines[j].strip()
+    cut = cond.find(';')
+    if cut >= 0:
+        cond = cond[:cut]
+    return (i + 1, cond.strip())
+
+
+def shell_if_conds(path):
+    """抽出 shell 脚本里每个条件的文本 ⇒ [(行号, 条件)]。
+
+    ⚠⚠⚠ **批 BJ 改了三处**（都是实测逼出来的）：
+      ① **heredoc 体被摘出去**（`heredoc_spans`）⇒ 里面的 `if` 不再被
+         误当 shell 条件（实测 2 处误判）；heredoc 体由 `python_if_conds`
+         / 另一路 shell 扫描**单独**处理（⇒ 里面的真判据也能被抓到）。
+      ② **`elif` 也要算条件**（`elif` 的条件同样是条件 ⇒ 同样会退化）。
+      ③ **`while` / `until` 也要算条件**（体永不执行 ⇒ 断言永不跑）。
+    """
+    out = []
+    lines = open(path, encoding='utf-8').read().split('\n')
+    skip = set()
+    for s0, e0 in heredoc_spans(lines):
+        for k in range(s0, e0 + 1):
+            skip.add(k)
+    i = 0
+    while i < len(lines):
+        if i in skip:
+            i += 1
+            continue
+        st = lines[i].strip()
+        got = None
+        if st.startswith('if ') or st == 'if':
+            got = _shell_cond_at(lines, i, 3)
+        elif st.startswith('elif ') or st == 'elif':
+            got = _shell_cond_at(lines, i, 5)
+        elif st.startswith('while ') or st == 'while':
+            got = _shell_cond_at(lines, i, 6)
+        elif st.startswith('until ') or st == 'until':
+            got = _shell_cond_at(lines, i, 6)
+        if got:
+            out.append(got)
+            # 续行已被 _shell_cond_at 吃掉 ⇒ 跳到条件结束处之后
+            i += 1
+            while i < len(lines) and ';' not in lines[i] and i not in skip:
+                i += 1
             continue
         i += 1
+    return out
+
+
+def python_if_conds(text, first_line=1):
+    """抽出 python 文本里每个 `if` 的条件 ⇒ [(行号, 条件)]。
+
+    ⚠⚠⚠ **为什么要单独做（批 BJ 实测）**：
+      ① **heredoc 里嵌的 python**（`python3 - <<'PY' … PY`）现有探针
+         **完全扫不到** ⇒ 里面的恒真判据 ⇒ 漏判；
+      ② python 的 `if` 条件**可以跨行** ⇒ 只按行匹配会漏；
+      ⇒ 这里用**括号配平 + 引号感知**（与 `extract_check_conds` 同款思路）来抽。
+    ⚠ 与 shell 的 `if … then` 形态**天然不冲突**（python 收尾是 `:`）⇒
+      同一段文本用两套规则各扫一遍是安全的（不用判「这是哪种语言」）。
+    """
+    out = []
+    for m in re.finditer(r'(?m)^[ \t]*if\b', text):
+        i = m.end()
+        depth = 0
+        cur = ''
+        in_str = None
+        esc = False
+        while i < len(text):
+            c = text[i]
+            if in_str:
+                cur += c
+                if esc:
+                    esc = False
+                elif c == '\\':
+                    esc = True
+                elif c == in_str:
+                    in_str = None
+                i += 1
+                continue
+            if c in '\'"':
+                in_str = c
+                cur += c
+            elif c in '([{':
+                depth += 1
+                cur += c
+            elif c in ')]}':
+                depth -= 1
+                cur += c
+            elif c == ':' and depth <= 0:
+                line = text.count('\n', 0, m.start()) + first_line
+                out.append((line, cur.strip()))
+                break
+            else:
+                cur += c
+            i += 1
     return out
 
 
@@ -301,6 +432,20 @@ def find_assert_calls(path, helpers):
     return out
 
 
+def shortcut_reason(cond):
+    """这条判据条件里是不是有「**恒真/恒假捷径项**」？是的话**返回原因**。
+
+    ⚠⚠⚠ **判定只有这一份**（批 BF/BG 纪律）：
+      判定层 C++、shell 脚本、python 脚本、**heredoc 内嵌脚本**
+      **全部**走本函数 ⇒ 不许各自写一遍 ⇒ 两份迟早漂 ⇒ 一份坏了门还是绿。
+    ⚠ `cond` 必须是**已剥字符串字面量**的文本（调用方负责剥）
+      ⇒ 否则 `[ "$x" = "true" ]` 里的 `"true"` 会被当成捷径 ⇒ 假红。
+    """
+    if SHORTCUT.search(cond):
+        return '含恒真捷径（|| true / && false / and False / or True）'
+    return None
+
+
 def tautology_reason(cond):
     """这条判据条件是不是「恒真」？是的话**返回原因**，不是就返回 None。
 
@@ -313,8 +458,9 @@ def tautology_reason(cond):
     """
     if not meaningful_idents(cond):
         return '恒真/纯字面量'
-    if SHORTCUT.search(cond):
-        return '含恒真捷径（|| true / && false）'
+    why = shortcut_reason(strip_literals(cond))
+    if why:
+        return why
     return None
 
 
@@ -345,6 +491,21 @@ SELF_TEST_CASES = [
     #   ⇒ **恒真的空 ERE 被判成合法** ⇒ 漏判。
     #   ⇒ 这条样例直接盯「空实参**在不在**」⇒ 解析器被改坏 ⇒ 自检当场红。
     ('shell_scan', ('check "名" \'\' "$J"', ['check', '名', '', '$J']), True),
+    # ⚠⚠⚨ **批 BJ 新增：脚本侧的「捷径」**（shell / python）
+    #   ⇒ 原来捷径规则**只管判定层 C++** ⇒ 脚本侧全漏判（实测坐实）
+    # ⚠ 必须**同时**含「该判为捷径」与「不该判为捷径」⇒ 只测一边 ⇒ 判反了也能过
+    ('shortcut', 'ok || true', True),
+    ('shortcut', 'ok && false', True),
+    ('shortcut', 'ok || false', True),
+    ('shortcut', 'ok && true', True),
+    ('shortcut', 'ok or True', True),
+    ('shortcut', 'ok and False', True),
+    ('shortcut', 'ok or False', True),
+    ('shortcut', 'ok and True', True),
+    ('shortcut', 'ok and Trueish', False),
+    ('shortcut', 'ok || truthful', False),
+    ('shortcut', 'ok and Falsey', False),
+    ('shortcut', 'ok and other', False),
 ]
 
 
@@ -354,6 +515,9 @@ def self_test():
     for kind, inp, want in SELF_TEST_CASES:
         if kind == 'cond':
             got = tautology_reason(inp) is not None
+        elif kind == 'shortcut':
+            # ⚠ 走**同一条**判定路径（自检与实扫必须调同一个 shortcut_reason）
+            got = shortcut_reason(strip_literals(inp)) is not None
         elif kind == 'shell_scan':
             # ⚠ 走**同一条**解析路径（自检与实扫必须调同一个 scan_shell）
             text, exp = inp
@@ -401,7 +565,7 @@ def main():
                   % (ERROR, fn, line, why, cond[:100]), file=sys.stderr)
             bad += 1
 
-    # ② shell 断言脚本：if 的条件不许恒真/恒假
+    # ② shell 断言脚本：if 的条件不许恒真/恒假，**也不许有恒真捷径**
     scripts = os.path.join(root, 'scripts')
     for fn in sorted(os.listdir(scripts)):
         if not fn.endswith('.sh'):
@@ -413,6 +577,35 @@ def main():
                 print('%sscripts/%s:%d if 的条件是恒真/恒假：%s'
                       % (ERROR, fn, line, cond[:80]), file=sys.stderr)
                 bad += 1
+                continue
+            why = shortcut_reason(strip_literals(cond))
+            if why:
+                print('%sscripts/%s:%d 条件的%s：%s'
+                      % (ERROR, fn, line, why, cond[:100]), file=sys.stderr)
+                bad += 1
+        # ⚠⚠⚨ **heredoc 里的内嵌脚本**（批 BJ 新增）：
+        #   里面的 `if` 会被误当 shell 条件（⇒ 误判），里面的**真判据**又扫不到
+        #   （⇒ 漏判）⇒ 必须**单独**拿出来，用两套规则各扫一遍
+        #   （python 收尾是 `:`、shell 收尾是 `then` ⇒ 天然不冲突）。
+        lines = open(path, encoding='utf-8').read().split('\n')
+        for s0, e0 in heredoc_spans(lines):
+            body = '\n'.join(lines[s0:e0 + 1])
+            for line, cond in python_if_conds(body, first_line=s0 + 1):
+                n_if += 1
+                why = shortcut_reason(strip_literals(cond))
+                if why:
+                    print('%sscripts/%s:%d heredoc 内 python 条件的%s：%s'
+                          % (ERROR, fn, line, why, cond[:100]), file=sys.stderr)
+                    bad += 1
+                else:
+                    # ⚠ python 的恒真/恒假字面量（`if True:` / `if False:`）
+                    #   ⇒ **与 .py 顶层走同一条判定**（同一个 PY_CONST_IF）
+                    ln = 'if ' + cond + ':'
+                    m = PY_CONST_IF.match(ln)
+                    if m:
+                        print('%sscripts/%s:%d heredoc 内 python 条件是恒真/恒假：%s'
+                              % (ERROR, fn, line, cond[:80]), file=sys.stderr)
+                        bad += 1
 
     # ③ python 工具脚本：if 的条件不许恒真/恒假（`if True:` 这类）
     #    ⚠ python 的 if 用**冒号**收尾 ⇒ 单独一条正则口径（不与 shell 混用）。
@@ -420,13 +613,23 @@ def main():
         if not fn.endswith('.py'):
             continue
         path = os.path.join(scripts, fn)
-        for i, ln in enumerate(open(path, encoding='utf-8').read().split('\n'), 1):
+        text = open(path, encoding='utf-8').read()
+        for i, ln in enumerate(text.split('\n'), 1):
             m = PY_CONST_IF.match(ln)
             if m:
                 print('%sscripts/%s:%d if 的条件是恒真/恒假：%s'
                       % (ERROR, fn, i, m.group(1)), file=sys.stderr)
                 bad += 1
                 n_if += 1
+        # ⚠⚠⚨ **捷径**（批 BJ 新增）：python 侧的 `if x and False:` / `if x or True:`
+        #   ⇒ 恒假/恒真 ⇒ 体永不执行 / 总是执行 ⇒ 判据形同虚设
+        for line, cond in python_if_conds(text):
+            n_if += 1
+            why = shortcut_reason(strip_literals(cond))
+            if why:
+                print('%sscripts/%s:%d python 条件的%s：%s'
+                      % (ERROR, fn, line, why, cond[:100]), file=sys.stderr)
+                bad += 1
 
     # ④ **断言函数实参里的判据**（批 BG 新增）：`check` / `check_text` 的第二个实参
     #    ⚠ 判据就藏在实参里 ⇒ ①②③ 三类扫描**都管不到**（实测：掏空成 `True`
