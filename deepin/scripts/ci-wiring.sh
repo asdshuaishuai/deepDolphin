@@ -1879,7 +1879,7 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
 fi
 echo "✓ 批 AZ 段门项全绿（CI 自测步不许吞退出码 / agent 自测三断言 / 崩点可诊断）；门项合计 ${ARCH_N} 项（含前段）"
 
-# ── 批 BA · CI 的**每一步**都必须有门（批 BA 时 12 步，批 BD 起 14 步）────────
+# ── 批 BA · CI 的**每一步**都必须有门（批 BA 时 12 步，批 BD 起 14 步，批 BF 起 15 步）──
 # ⚠⚠⚠ **起因（实测，不是推演）**：批 AZ 给 ci.sh 的**内部**加了门，
 #   但**「ci.sh 一共有哪 12 步」这件事本身没有任何门** ⇒
 #   ⇒ **删掉一整步 ⇒ 所有门照样全绿** ⇒ **CI 静默少做一件事**。
@@ -1919,14 +1919,15 @@ arch_need_count "$SRC/scripts/ci.sh" 'build-deb\.sh' 1 '第 11 步 deb 打包的
 arch_need_count "$SRC/scripts/ci.sh" 'check-deb-layout\.sh' 1 '第 12 步 deb 布局验收的动作还在（D7 的**准**验收：装完能不能用）'
 arch_need_count "$SRC/scripts/ci.sh" 'sh "\$SRC/scripts/probe-agent-tool-surface\.sh"' 1 '第 13 步 agent 工具面收敛的动作还在（批 BD 实测：这个探针以前**根本不在 CI 里** ⇒ 它的 9 条断言没人执行）—— ⚠ 盯的是**调用点**那串，不是文件名：文件名在 ci.sh 的注释里也出现过（讲这个洞的来由）⇒ 盯短名会命中 2 次而恒红'
 arch_need_count "$SRC/scripts/ci.sh" 'sh "\$SRC/scripts/ci-orphan-probe\.sh"' 1 '第 14 步 无游离断言脚本的动作还在（批 BD：这是「CI 自己在漏什么」的那一道）—— ⚠ 同上，盯**调用点**'
-arch_need_count "$SRC/scripts/ci.sh" '› [0-9]+/14 ' 14 'ci.sh 的步骤打点**恰好 14 个**（多一步/少一步都红；且分母统一是 14 ⇒ 散写分母也红）'
-arch_need_ml "$SRC/scripts/ci.sh" '› 1/14 .*› 2/14 .*› 3/14 .*› 4/14 .*› 5/14 .*› 6/14 .*› 7/14 .*› 8/14 .*› 9/14 .*› 10/14 .*› 11/14 .*› 12/14 .*› 13/14 .*› 14/14 ' 'ci.sh 的 14 个步骤打点**编号连续**（压行后匹配 ⇒ 跨行也算）⇒ 跳号/重号/乱序都红'
+arch_need_count "$SRC/scripts/ci.sh" 'python3 "\$SRC/scripts/ci-tautology-check\.py"' 1 '第 15 步 判据不许被掏空成恒真的动作还在（批 BF：条数基线门抓不到「条件被掏空」）'
+arch_need_count "$SRC/scripts/ci.sh" '› [0-9]+/15 ' 15 'ci.sh 的步骤打点**恰好 15 个**（多一步/少一步都红；且分母统一是 15 ⇒ 散写分母也红）'
+arch_need_ml "$SRC/scripts/ci.sh" '› 1/15 .*› 2/15 .*› 3/15 .*› 4/15 .*› 5/15 .*› 6/15 .*› 7/15 .*› 8/15 .*› 9/15 .*› 10/15 .*› 11/15 .*› 12/15 .*› 13/15 .*› 14/15 .*› 15/15 ' 'ci.sh 的 15 个步骤打点**编号连续**（压行后匹配 ⇒ 跨行也算）⇒ 跳号/重号/乱序都红'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BA 段有门项红（上面带 ✗ 的行）" >&2
     exit 1
 fi
-echo "✓ 批 BA 段门项全绿（ci.sh 的 14 步每一步都有门）；门项合计 ${ARCH_N} 项（含前段）"
+echo "✓ 批 BA 段门项全绿（ci.sh 的 15 步每一步都有门）；门项合计 ${ARCH_N} 项（含前段）"
 
 # ── 批 BB · 判据条数基线：**必须相等**，不是「不少于」────────────────────
 # ⚠⚠⚠ **起因（实测，不是推演）**：批 AJ 立的门是「判据数**不少于** `SC_MIN`」
@@ -2060,10 +2061,51 @@ arch_need_count_in_step "$SRC/scripts/ci.sh" 11 'build-deb\.sh' 1 '第 11 步 de
 arch_need_count_in_step "$SRC/scripts/ci.sh" 12 'check-deb-layout\.sh' 1 '第 12 步 deb 布局验收的动作**还在这一步里**（D7 的**准**验收：装完能不能用）'
 arch_need_count_in_step "$SRC/scripts/ci.sh" 13 'sh "\$SRC/scripts/probe-agent-tool-surface\.sh"' 1 '第 13 步 agent 工具面收敛的动作**还在这一步里**'
 arch_need_count_in_step "$SRC/scripts/ci.sh" 14 'sh "\$SRC/scripts/ci-orphan-probe\.sh"' 1 '第 14 步 无游离断言脚本的动作**还在这一步里**'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 15 'python3 "\$SRC/scripts/ci-tautology-check\.py"' 1 '第 15 步 判据不许被掏空成恒真的动作**还在这一步里**'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BE 段有门项红（上面带 ✗ 的行）" >&2
     exit 1
 fi
 echo "✓ 批 BE 段门项全绿（ci.sh 每一步的标记串**不许被挪到别的步**）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 BF · 判据不许被「掏空成恒真」（条数基线门抓不到的那一类）────────
+# ⚠⚠⚠ **起因（实测，不是推演）**：批 BB/BC 的门盯的是「**判据条数**」
+#   （selfcheck 的 `SC_MIN`、各断言脚本的条数基线）⇒
+#   ⚠⚠⚠ **实测：把一条判据的条件改成 `true`** ⇒
+#     · selfcheck 仍 **395 passed, 0 failed**（条数**没变**）
+#     · 批 BB 的「判据数 == SC_MIN」判定**不红**（它只看条数）
+#     · 接线门 **rc=0（全绿）**
+#   ⇒ 而那条判据**从此永远不会红** ⇒ 判据被悄悄削弱**无人知晓**。
+#   ⇒ 这就是批 BC 记下的那条已知边界（「条数基线挡不住把断言掏空成恒真」）。
+#
+# ⚠ **修法（新增 scripts/ci-tautology-check.py，ci.sh 第 15 步）**：
+#   ① **判定层 C++**（`src/app/SelfCheck*.cpp`）：`check(…)` 的**条件**不许是恒真/纯字面量
+#      —— 判据 = 条件里**去掉字面量与关键字后至少剩一个被测标识符**
+#      ⇒ 抓 `true` / `false` / `1 == 1` / `"a" == "a"`；
+#      另禁「捷径」写法 `|| true` / `&& false`（条件里带恒真项 ⇒ 整条判据被短路）。
+#   ② **shell 断言脚本**：`if` 的条件不许是 `true` / `false` / `:`。
+#   ③ **python 工具脚本**：`if True:` / `if False:` 这类恒真条件。
+#
+# ⚠⚠ **本段守的是「**门自己不许被掏空**」**（这是本批的另一半价值）：
+#   · 探针**自带自检**（每次运行先拿合成样例验一遍自己的判定逻辑 ⇒ 判定被改坏 ⇒ 当场红）
+#     ⇒ **门自己证明自己有牙**，比静态门更硬（静态门只能盯「那行代码在不在」）。
+#   · 下面这些门钉住自检与四条判定逻辑**都在** ⇒ 有人把它们掏空，门也会红。
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'def tautology_reason' 1 '恒真检查的**统一判定入口**必须在（实扫与自检必须走同一条路径 ⇒ 否则自检测的不是真判定 ⇒ 假的保证）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'why = tautology_reason\(cond\)' 1 '实扫必须走**统一判定入口**（不许另写一份判定 ⇒ 两套口径必然漂）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if not meaningful_idents\(cond\):' 1 '判定规则 1 必须在（条件里**至少一个被测标识符** ⇒ 抓 `true` / `1 == 1` / `"a" == "a"`）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'SHORTCUT\.search\(cond\)' 1 '判定规则 2 必须在（禁「\|\| true / && false」捷径 ⇒ 条件里带恒真项 ⇒ 整条判据被短路）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if SH_CONST\.match\(cond\):' 1 'shell 侧的恒真条件判定必须在（`if true;` / `if false;` / `if :;`）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'PY_CONST_IF\.match\(ln\)' 1 'python 侧的恒真条件判定必须在（`if True:` / `if False:`）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'st_bad = self_test\(\)' 1 '探针的**自检**必须在（门自己证明自己有牙 ⇒ 判定逻辑被掏空时当场红）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if st_bad:' 1 '自检失败必须**判红**（自检不过还继续跑 ⇒ 等于没有自检）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.*,\s*(True|False)\),$' 9 '自检样例表**不许被掏空**（9 条：既含「该判为恒真」也含「不该判为恒真」的样例 ⇒ 只测一边 ⇒ 判反了也能过）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'JUDGEMENT_PREFIX' 2 '判定层文件名前缀**有且只有两处**（定义 + 使用）—— 散在别处 ⇒ 改一处就废掉另一处 ⇒ 门跟着松'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if bad:' 1 '探针的**违规 ⇒ 判红**判定必须在（没有它 ⇒ 探针只报告不拦 ⇒ 等于没门）'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 BF 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 BF 段门项全绿（判据不许被掏空成恒真；探针自带自检 ⇒ 门自己证明自己有牙）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0
