@@ -66,13 +66,49 @@ echo "› 2/12 截图矩阵（离屏）"
 #   视觉 diff 门被环境牵着走。离屏才是「同机位」的可复现前提。
 #   注意：第 4 步的平台探针**要**真实 backend，故那里不强制 offscreen。
 mkdir -p "$SRC/docs/snapshots"
+# ⚠⚠ **本批（批 AN）改的关键一处**：基线必须来自 **git 里已提交的版本**，
+#   不能是「本次跑出来的产物」。
+#   原来这里直接拍进 `docs/snapshots/*.png`（**覆盖**基线），
+#   后面两道门再拿「刚覆盖完的基线」跟新拍的一张比 ⇒ **自己跟自己比** ⇒ 恒绿。
+#   ⚠ 后果：基线漂了（今天拍 A、昨天拍 B）这道门也抓不到 ——
+#   因为它比的是「本次产物 vs 本次产物」。实测（批 AN）同机并发能拍出 4 种字节，
+#   而旧门一道都没红 ⇒ 「基线必须逐字节可重现」这句承诺**当时是假的**。
+#   ⇒ 现在：**先取 git 里的基线**（`git show HEAD:...`）到临时目录，
+#   所有比对都用它；本次产物另存到临时目录，两者比。
+#   ⚠ 「本次产物 vs git 基线」不一致时**报错退出**（视觉改动必须有人看过并提交），
+#     而不是默默把新图写回工作区让人自己看 diff。
+BASE_DIR="$(mktemp -d)"
+SHOT_DIR="$(mktemp -d)"
+base_available=1
+for theme in light dark; do
+    for sec in dashboard board milestones setupguide; do
+        rel="docs/snapshots/${theme}-${sec}.png"
+        if git -C "$SRC" cat-file -e "HEAD:deepin/$rel" 2>/dev/null; then
+            git -C "$SRC" show "HEAD:deepin/$rel" > "$BASE_DIR/${theme}-${sec}.png"
+        else
+            base_available=0
+        fi
+    done
+    rel="docs/snapshots/${theme}-colors.png"
+    if git -C "$SRC" cat-file -e "HEAD:deepin/$rel" 2>/dev/null; then
+        git -C "$SRC" show "HEAD:deepin/$rel" > "$BASE_DIR/${theme}-colors.png"
+    else
+        base_available=0
+    fi
+done
+if [ "$base_available" -eq 0 ]; then
+    echo "✗ 取不到 git 里的基线（首次提交前跑 ci.sh 会这样）" >&2
+    echo "  ⇒ 先提交一次快照基线，再跑 CI；本次产物留在 $SHOT_DIR" >&2
+    rm -rf "$BASE_DIR"
+    exit 1
+fi
 for theme in light dark; do
     # ⚠ setupguide = **引擎缺失首屏**（批 AH）：那个界面在正常启动时根本不出现
     #   （引擎在 ⇒ 落仪表盘）⇒ 以前 docs/snapshots/*-setupguide.png 是**死基线**
     #   （拍不出、没人比）——死基线比没基线更隐蔽：它让人以为「首屏有视觉保障」。
     for sec in dashboard board milestones setupguide; do
         QT_QPA_PLATFORM=offscreen DEEPDOLPHIN_THEME="$theme" "$BIN" --snapshot \
-            "$SRC/docs/snapshots/${theme}-${sec}.png" --section "$sec" \
+            "$SHOT_DIR/${theme}-${sec}.png" --section "$sec" \
             | tail -1
     done
     # 状态色样张（批 R）：把**每一档状态色**都画出来，改色 ⇒ 色卡 diff 红。
@@ -80,8 +116,25 @@ for theme in light dark; do
     #     批 T 起用夹具后面板快照已有真实内容，但这张色卡仍留着 ——
     #     它是**逐档**的，面板快照只覆盖夹具里恰好出现的那几档。）
     QT_QPA_PLATFORM=offscreen DEEPDOLPHIN_THEME="$theme" "$BIN" --color-sample \
-        "$SRC/docs/snapshots/${theme}-colors.png" | tail -1
+        "$SHOT_DIR/${theme}-colors.png" | tail -1
 done
+# ⚠ 本次产物 vs **git 基线**：不一致 = 界面改了 ⇒ 必须有人看过并提交。
+#   （原来这一步不存在：产物直接覆盖了基线 ⇒ 永远「一致」⇒ 视觉 diff 门是空门。）
+visual_changed=0
+for f in "$SHOT_DIR"/*.png; do
+    name=$(basename "$f")
+    if ! cmp -s "$BASE_DIR/$name" "$f"; then
+        echo "✗ 视觉变了：$name 与 git 基线不同（请人工确认后提交基线）" >&2
+        visual_changed=1
+    fi
+done
+if [ "$visual_changed" -ne 0 ]; then
+    echo "✗ 视觉改动未提交 —— 基线必须与代码同版本，否则 diff 门是空门" >&2
+    echo "  本次产物在 $SHOT_DIR（确认无误后 cp 过去再提交）" >&2
+    rm -rf "$BASE_DIR"
+    exit 1
+fi
+echo "✓ 8 张快照与 git 基线逐字节一致（无未提交的视觉改动）"
 
 # ⚠ **重拍比字节**（批 T）—— 基线必须**逐字节可重现**。
 #   为什么这道门是硬的：基线一旦带墙钟（侧栏「上次刷新 HH:mm」是本地时区渲染），
@@ -111,7 +164,7 @@ for theme in light dark; do
             repro_fail=1
             continue
         fi
-        if ! cmp -s "$SRC/docs/snapshots/${theme}-${sec}.png" "$again"; then
+        if ! cmp -s "$BASE_DIR/${theme}-${sec}.png" "$again"; then
             echo "✗ 快照不可重现：${theme}-${sec}.png 两次拍出不同字节（基线会天天漂）" >&2
             repro_fail=1
         fi
@@ -134,6 +187,40 @@ if [ "$repro_fail" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 8 张快照两次重拍逐字节一致，且换宿主时区后仍一致（基线可重现）"
+
+# ⚠ **跨运行复拍**（批 AN）：上一段只在**单次运行内**比两次 ⇒ 抓不到「有时拍出
+#   另一种字节」的漂移。实测那正是真发生过的：同一份代码在并发下会拍出 4 种字节
+#   （根因 = DTK `DShadowLine` 的 SVG 渐变带渲染不确定）。
+#   ⇒ 这里在**新进程**里再拍一轮，与已提交的基线比 —— 跨运行漂移才抓得到。
+#   ⚠ 门数刻意保持小：8 段 × 2 主题 = 16 次进程启动，约 20s。
+CROSS_DIR="$(mktemp -d)"
+cross_fail=0
+for theme in light dark; do
+    for sec in dashboard board milestones setupguide; do
+        shot="$CROSS_DIR/${theme}-${sec}.png"
+        if ! TZ=UTC QT_QPA_PLATFORM=offscreen DEEPDOLPHIN_THEME="$theme" "$BIN" --snapshot \
+                "$shot" --section "$sec" >/dev/null 2>&1; then
+            echo "✗ 跨运行复拍失败：${theme}-${sec}" >&2
+            cross_fail=1
+            continue
+        fi
+        if ! cmp -s "$BASE_DIR/${theme}-${sec}.png" "$shot"; then
+            echo "✗ 快照跨运行不可重现：${theme}-${sec}.png 新进程拍出的字节与基线不同" >&2
+            cross_fail=1
+        fi
+    done
+done
+rm -rf "$CROSS_DIR"
+if [ "$cross_fail" -ne 0 ]; then
+    echo "✗ 基线跨运行会漂 —— 漂了就是「没有基线」（改了界面它不红）" >&2
+    exit 1
+fi
+echo "✓ 8 张快照跨运行（新进程）复拍仍与基线逐字节一致"
+
+# ⚠ 临时目录收尾（批 AN）：$BASE_DIR 是 git 基线、$SHOT_DIR 是本次产物。
+#   两者在上面的门里都用过了 ⇒ 这里清掉。
+#   ⚠ 失败路径（exit 1）会提前退出 ⇒ 临时目录留在 /tmp，由系统回收，不污染仓库。
+rm -rf "$BASE_DIR" "$SHOT_DIR"
 
 echo "› 3/12 desktop / metainfo 校验（缺工具显式 SKIP）"
 if command -v desktop-file-validate >/dev/null 2>&1; then
@@ -321,4 +408,4 @@ else
     exit 1
 fi
 
-echo "✓ CI 门通过：请 git diff docs/snapshots 人工确认视觉变化符合预期"
+echo "✓ CI 门通过：快照与 git 基线逐字节一致（无未提交的视觉改动）"

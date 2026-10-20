@@ -706,12 +706,18 @@ arch_need_count "$SRC/src/logic/SnapshotFixture.cpp" '"projectId":"p_atlas"' 1 '
 arch_need_any '绝对日期锚定基准日' 'SelfCheck 钉住绝对日期锚定（跨天也抓得住）'
 arch_need_any '刷新时刻固定' 'SelfCheck 钉住刷新时刻固定'
 # 「重拍比字节」这道门盯的是**行为**（两次拍出同一张图），不是文件里的字样。
-# ⚠ 精确计数：ci.sh 里 `cmp -s` 出现**两处**（比基线 / 比换时区那张）——
+# ⚠ 精确计数：ci.sh 里 `cmp -s` 出现**三处**（批 AN 加了「跨运行复拍」那一处）：
+#   ① 比基线 / ② 比换时区那张 / ③ **跨运行**（新进程再拍一次，比已提交的基线）。
 #   只拿掉一处时「出现过」照样绿 ⇒ 门被骗过（负控实测，第十五次「同名互相顶替」）。
-arch_need_count "$SRC/scripts/ci.sh" 'cmp -s' 2 'CI 有「重拍比字节」门（基线必须可重现）'
+#   ⚠ 第三处是批 AN 加的：前两处都在**同一次运行内**比 ⇒ 抓不到「有时拍出另一种字节」
+#   的漂移（实测真发生过：同机并发下 4 种字节）⇒ 必须有跨进程那一处。
+arch_need_count "$SRC/scripts/ci.sh" 'cmp -s' 3 'CI 有「重拍比字节」门（基线必须可重现，含跨运行复拍）'
 # ⚠ 换时区那张必须挑**两个互相不同**的时区：拿「宿主时区」当其中一个时，
 #   宿主恰好就是那个时区 ⇒ 两张必然相同 ⇒ 门永远绿（负控实测：宿主就是 Asia/Shanghai）。
 arch_need "$SRC/scripts/ci.sh" 'America/New_York' 'CI 的跨时区对比用两个互不相同的时区'
+# ⚠ **跨运行复拍**这一段必须留着（批 AN）：前两处 `cmp` 都在**同一次运行内**比，
+#   抓不到「有时拍出另一种字节」的漂移 ⇒ 少了这一处，门就退回「只能抓单次运行内的漂」。
+arch_need "$SRC/scripts/ci.sh" '跨运行复拍' 'CI 有「跨运行复拍」段（新进程再拍一次比基线）'
 
 # 批 U · M1-2 图标统一入口：图标名**只许**在判定层 `logic/IconNames` 里出现一次。
 # ⚠ 这两道门是**多文件**扫描（UI 下有十几个文件）—— 单文件的 arch_forbid 覆盖不到。
@@ -898,6 +904,33 @@ arch_forbid_raw "$SRC/src/ui/pages/DashboardPage.cpp" '由 resizeEvent 折' 'Das
 #   侧栏项目名原来只 `setMaximumWidth(120)` ⇒ QLabel 默认**直接切掉后半截**（半个字、无提示）。
 arch_need "$SRC/src/ui/SidebarNav.cpp" 'elidedText\(' '侧栏项目名定宽截断用省略号（不硬裁）'
 arch_need "$SRC/src/ui/SidebarNav.cpp" 'setToolTip\(p\.name\)' '被省略的完整项目名可从 tooltip 看到'
+
+# ── 批 AN · 快照基线「逐字节可重现」：关掉 DTK 标题栏阴影带 ──
+#
+# ⚠ 起因（实测照出「基线这道门其实形同虚设」）：
+#   同一份代码在同机跑，**并发混主题**时 setupguide 段会拍出 **4 种字节**，
+#   串行也有 ≈0.5% 概率出变体 ⇒ docs/snapshots 的基线会**悄悄漂**，
+#   而 ci.sh 的「两次重拍逐字节一致」只在**单次运行内**比 ⇒ 跨运行的漂移它抓不到。
+#
+#   根因（逐层实测，不是猜的）：
+#     ① 两张变体图逐像素 diff ⇒ 差异 **100% 集中在 y[50..69]**（带外 0 行不同）；
+#     ② 那 20px 正是 DTK `DShadowLine` 画的**标题栏下沿阴影带**
+#        （`DShadowLine::paintEvent` 读内嵌 SVG `titlebar_shadow_20px.svg`，
+#          渐变 stop-opacity .1 → 0）；实测关掉阴影带后该区域变成纯背景色 ⇒ 坐实；
+#     ③ SVG 渐变带在不同负载下**铺开的高度不同**（整条渐变被压短/拉长）
+#        ⇒ 不是「还没画完」，是**渲染结果本身不确定** ⇒ 等多久都没用。
+#
+#   修法：快照路径调 `DMainWindow::setTitlebarShadowEnabled(false)`
+#        （**公开** API：dmainwindow.h:108 public 段，不是私有符号 ⇒ DTK 升级不会断）。
+#   为什么可以关：阴影带是**标题栏的装饰**，不承载任何信息；
+#        基线的价值在「界面改了它会红」，装饰带的像素抖动只会制造**假红**。
+#   ⚠ 门盯的是**「快照路径必须显式关掉它」**，不是「某个文件里有这句话」——
+#     关的动作一旦被人删掉，基线立刻又开始漂 ⇒ 门必须红。
+arch_need "$SRC/src/main.cpp" 'setTitlebarShadowEnabled\(false\)' '快照必须关掉标题栏阴影带（DTK 的 SVG 渐变渲染不确定 ⇒ 基线会漂）'
+# ⚠ 拍前条件必须是「已停在首屏」而不是「等够 300ms」——
+#   以前只在**拍完**才断言 showingSetupGuide()，偶发没切过去时报的是「重拍失败」
+#   （假红），而本可以继续等它切过去 ⇒ 判据前移到拍前。
+arch_need "$SRC/src/main.cpp" 'settle\.elapsed\(\) >= 300 && panel\.showingSetupGuide\(\)' 'setupguide 段拍前就要求「已停在首屏」（拍后断言保留作最后一道）'
 
 # 批 Q · 引擎钩子（post-commit / post-merge 托管块）：判定层出结论，
 #   执行层只管跑，界面只读结论。⚠ 卸载**只删托管块**（用户的钩子逻辑留着）——

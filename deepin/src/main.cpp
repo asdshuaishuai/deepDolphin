@@ -241,6 +241,17 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
         cli.setEngineBin(engine.bin);
     AppModel model(engine, &cli);
     PanelWindow panel(route, engine, &model);
+    // ⚠ **快照必须关掉标题栏阴影带**（批 AN）：那条 20px 渐变带由 DTK 的
+    //   `DShadowLine` 用内嵌 SVG（`titlebar_shadow_20px.svg`）画，**渲染结果不确定**：
+    //   实测同一份代码在同机并发下会拍出两种字节（带内整条渐变高度不同），
+    //   串行也有 ≈0.5% 概率出变体 ⇒ 基线天天漂 ⇒ 「逐字节可重现」这道门形同虚设。
+    //   根因证据：两张变体图的差异 **100% 集中在 y[50..69]**（带外 0 行不同），
+    //   且关掉阴影带后该区域变成纯背景色 ⇒ 确认是 DShadowLine。
+    //   为什么可以关：阴影带是**标题栏的装饰**，不承载任何信息；
+    //   而基线的价值在于「界面改了它会红」——装饰带的像素抖动只会制造假红。
+    //   ⚠ `setTitlebarShadowEnabled` 是 DMainWindow 的**公开** API（dmainwindow.h:108，
+    //   public 段），不是私有符号 ⇒ 不依赖 DTK 内部实现，升级不会断。
+    panel.setTitlebarShadowEnabled(false);
     // ⚠ 快照**走夹具**（批 T），不走真引擎 —— 真引擎取数会让基线取决于
     //   「本机注册了什么项目」，**不可重现**（此前 4 页快照拍的是空态，
     //   对状态色/布局全是空门：改界面它不红）。夹具走**同一段解析路径**。
@@ -268,8 +279,13 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
         //      （setup guide 即终态）/ 探活仍在飞（pending 也是稳定画面：忙态页）。
         // ⚠ setupguide 段没有数据可等 ⇒ 改成**等一小会儿让布局落定**（300ms），
         //   免得拍到还没排好版的半成品。
+        // ⚠ **再加一条「已停在首屏」**（批 AN）：以前只在**拍完**才断言
+        //   `showingSetupGuide()` ⇒ 万一那一刻还没切到首屏，报的是「重拍失败」，
+        //   而**本可以**继续等它切过去 —— 偶发失败就变成了无谓的假红。
+        //   现在把判据**前移到拍前**：还没停在首屏就继续等（上限 15s），
+        //   拍后再断言**保留**（那是防空门的最后一道，不是等位替代）。
         const bool settled = setupGuide
-            ? settle.elapsed() >= 300
+            ? (settle.elapsed() >= 300 && panel.showingSetupGuide())
             : (model.hasLoadedProjectsOnce() || model.lastRefreshedMs() > 0
                 || cycleDone || !model.engineFound() || model.enginePending());
         if (!settled && settle.elapsed() < 15000)
@@ -277,7 +293,10 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
         poll->stop();
         poll->deleteLater();
         if (!settled) {
-            fprintf(stdout, "[snapshot] 超时：15s 内数据未落地（引擎慢/未响应）\n");
+            // ⚠ 两种超时要说不同的话（批 AN）：setupguide 段等的是「停在首屏」，
+            //   其余段等的是「数据落地」——混成一句就成了「不知道哪儿超时了」。
+            fprintf(stdout, "[snapshot] 超时：15s 内%s\n",
+                setupGuide ? "仍未停在引擎缺失首屏" : "数据未落地（引擎慢/未响应）");
             fflush(stdout);
             QCoreApplication::quit();
             return;
