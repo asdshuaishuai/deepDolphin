@@ -730,7 +730,7 @@ arch_need "$SRC/scripts/deb-deps.txt" 'dde-qt6xcb-plugin\b' 'DTK xcb 插件包�
 #   `not found` 在脚本里出现两次（这一行 + die 消息里那句），
 #   只改这一行时「出现过」照样绿（同名多处互相顶替，负控实测）。
 arch_need "$SRC/scripts/build-deb.sh" 'grep -c .not found\b' 'deb 构建校验解包后无缺失库（D7 核心）'
-arch_need "$SRC/scripts/build-deb.sh" 'rpath|runpath' 'deb 构建检查包内二进制无 RPATH'
+arch_need "$SRC/scripts/build-deb.sh" 'readelf -d "\$PKG/usr/bin/deepDolphin" \| grep -qiE "rpath\|runpath"' 'deb 构建**真的查了**包内二进制的 RPATH（盯那行 readelf 检查 —— 盯「rpath\|runpath」这个串，它在**同一行出现两次** ⇒ 改一处骗得过门）'
 arch_need "$SRC/scripts/ci.sh" 'build-deb\.sh\b' 'CI 流程构建 deb（D7 达标必经）'
 
 # 批 T · 面板快照夹具：基线要**可重现** ⇒ 快照走固定夹具，不走真引擎
@@ -797,7 +797,7 @@ arch_need "$SRC/scripts/ci.sh" '跨运行复拍' 'CI 有「跨运行复拍」段
 #   ⚠ 正则里的 `|` 在 grep -E 里是**或**、不是字面量 ⇒ 写成 `[|]`。
 #   ⚠ 门项正则一律**单引号**（仓里的既有纪律：形式不许混）。
 arch_forbid_ml "$SRC/scripts/ci.sh" '--(snapshot|color-sample)[^;]*[|] *tail' '快照/色卡命令不许接「| tail -1」（管道退出码是 tail 的 ⇒ 失败被吞）'
-arch_need "$SRC/scripts/ci.sh" 'stderr\.txt' '快照失败时 stderr 要落盘并打出来（否则只知道「失败」不知道「为什么」）'
+arch_need "$SRC/scripts/ci.sh" '2>"\$REPRO_DIR/stderr\.txt"' '快照失败时 stderr 要**落盘**（盯重定向那一行 —— 盯「stderr.txt」这个串，它在多处出现 ⇒ 改一处骗得过门）'
 
 # 批 U · M1-2 图标统一入口：图标名**只许**在判定层 `logic/IconNames` 里出现一次。
 # ⚠ 这两道门是**多文件**扫描（UI 下有十几个文件）—— 单文件的 arch_forbid 覆盖不到。
@@ -1107,16 +1107,17 @@ arch_need "$SRC/scripts/ci-platform-probe.sh" 'dpiEdgeLevels' 'HiDPI 门必须�
 arch_forbid "$ROOT/macos/build.sh" 'releases/latest/download/moongit-' 'mac build.sh 不许再写死 latest/download 的引擎 URL（资产名带版本号 ⇒ 必然 404）'
 arch_need "$ROOT/macos/build.sh" 'fetch-engine\.sh' 'mac build.sh 的下载走 fetch-engine.sh（查 API 挑资产 + 整包落盘）'
 arch_forbid "$ROOT/macos/scripts/fetch-engine.sh" 'releases/latest/download' 'fetch-engine.sh 也不许写死 latest/download（同样必然 404）'
-arch_need "$ROOT/macos/scripts/fetch-engine.sh" 'browser_download_url' 'fetch-engine.sh 从 API 的资产列表里按后缀挑 URL'
-arch_need "$ROOT/macos/scripts/fetch-engine.sh" 'bin/moongit-cli' 'fetch-engine.sh 认得真二进制的真实位置（bin/ 下，不是包根）'
-arch_need "$ROOT/macos/scripts/fetch-engine.sh" 'runtime/lib' 'fetch-engine.sh 认得仓颉运行时的真实位置（runtime/lib/）'
-arch_need "$ROOT/macos/scripts/engine-fetch-check.sh" 'moongit-cli' '引擎下载链判据验「三样齐全」（缺一就是装了个跑不起来的引擎）'
-arch_need "$ROOT/macos/scripts/engine-fetch-check.sh" 'runtime/lib' '引擎下载链判据验仓颉运行时非空'
+arch_need_min "$ROOT/macos/scripts/fetch-engine.sh" 'browser_download_url' 2 'fetch-engine.sh 从 API 的资产列表里按后缀挑 URL（**取 + 洗**两处都要在 ⇒ 至少 2 次）'
+arch_need "$ROOT/macos/scripts/fetch-engine.sh" '\[ -x "\$pkg_root/bin/moongit-cli" \]' 'fetch-engine.sh 认得真二进制的真实位置（bin/ 下，不是包根）—— 盯那行**验它可执行**的检查'
+arch_need "$ROOT/macos/scripts/fetch-engine.sh" '\[ -d "\$pkg_root/runtime/lib" \]' 'fetch-engine.sh 认得仓颉运行时的真实位置（runtime/lib/）—— 盯那行**验目录存在**的检查'
+arch_need "$ROOT/macos/scripts/fetch-engine.sh" '\[ -n "\$\(ls -A "\$pkg_root/runtime/lib" 2>/dev/null\)" \]' 'fetch-engine.sh 还**验 runtime/lib 非空**（目录在但空 ⇒ 引擎照样起不来）'
+arch_need "$ROOT/macos/scripts/engine-fetch-check.sh" '\[ -x "\$DEST/bin/moongit-cli" \]' '引擎下载链判据验「三样齐全」（缺一就是装了个跑不起来的引擎）—— 盯那行**验真二进制可执行**的检查'
+arch_need "$ROOT/macos/scripts/engine-fetch-check.sh" 'if \[ -d "\$DEST/runtime/lib" \] &&' '引擎下载链判据验仓颉运行时**存在且非空** —— 盯那行判定'
 # ⚠ 盯**干活的那一行**（把包里的 dylib 拷进 Frameworks），不是盯「runtime/lib」这个串 ——
 #   负控实测：只删掉那句拷贝，`runtime/lib` 仍然出现在**形状判定**那行 ⇒ 门照样绿。
 #   （批 AP 的同一条纪律：门必须盯「真正干活的那行」，不能盯一个碰巧出现的串。）
 arch_need "$ROOT/macos/build.sh" 'cp .*ENGINE_ROOT/runtime/lib/.*dylib' 'mac build.sh 内嵌引擎时把包自带的运行库一起拷进 Frameworks（缺它 ⇒ 内嵌引擎起不来）'
-arch_need "$ROOT/macos/build.sh" 'ENGINE_ROOT/bin/moongit-cli' 'mac build.sh 内嵌的是包里的**真二进制**（内嵌进 bundle 的必须是 Mach-O，rpath 重写与补签才对它有意义）'
+arch_need "$ROOT/macos/build.sh" 'cp "\$ENGINE_ROOT/bin/moongit-cli"' 'mac build.sh 内嵌的是包里的**真二进制**（内嵌进 bundle 的必须是 Mach-O，rpath 重写与补签才对它有意义）—— 盯**拷贝**那一行，不是盯「判断形状」那一行'
 
 # ── 批 AR · mac 侧「导出后打不开」：回执里的路径抽不出来（跨目录盯 macos/）──
 #
@@ -1143,7 +1144,9 @@ arch_forbid "$ROOT/macos/Sources/deepDolphin/CodeGraphPage.swift" 'private func 
 arch_need "$ROOT/macos/Sources/deepDolphin/ArchPage.swift" 'ArchReceipt\.htmlPath\(' 'ArchPage 走共享的纯函数'
 arch_need "$ROOT/macos/Sources/deepDolphin/CodeGraphPage.swift" 'ArchReceipt\.htmlPath\(' 'CodeGraphPage 走共享的纯函数'
 arch_need "$ROOT/macos/scripts/client-check.sh" 'swiftc .*\$ARCHRECEIPT' 'mac 侧判据必须**在 swiftc 那行**编译 ArchReceipt.swift（只声明不编 ⇒ 那四条断言永远绿、永远抓不到东西）'
-arch_need "$ROOT/macos/Tests/ClientCheck/main.swift" 'ArchReceipt\.htmlPath\(' 'mac 侧判据必须真的断言「引擎真实回执形态抽得出路径」'
+arch_need "$ROOT/macos/Tests/ClientCheck/main.swift" 'let p = ArchReceipt\.htmlPath\(realArchReceipt\)' 'mac 侧判据必须真的断言「引擎真实回执形态抽得出路径」—— 盯**实跑原文**那条断言'
+arch_need "$ROOT/macos/Tests/ClientCheck/main.swift" 'if let p = ArchReceipt\.htmlPath\(text\) \{' 'mac 侧判据必须真的断言「结论行也能抽出路径」—— 盯那条断言'
+arch_need "$ROOT/macos/Tests/ClientCheck/main.swift" 'guard let h = ArchReceipt\.htmlPath\(text\)' 'mac 侧判据必须真的断言「相对路径不认」—— 盯那条断言'
 # ⚠ deepin 侧那条**实跑夹具**也钉住（它是两侧共同的口径来源）
 arch_need "$SRC/src/app/SelfCheckGraph.cpp" '已写入：' 'deepin 侧自检必须钉住**引擎实跑原文**的回执形态（两侧口径共同的事实来源）'
 
@@ -1470,7 +1473,7 @@ arch_need_any 'typeToSignature' 'SelfCheck 覆盖 D-Bus 签名声明（不声明
 #   ⇒ 没有总线；且 `QDBusArgument` 一旦写入就是**只写**的 ⇒ 同一份数据读不回来
 #   ⇒ 放 selfcheck 里只会得到一个「永远红/永远绿」的假判据。
 #   ⇒ 探针必须**从总线另一端**（外部进程 gdbus）读 IconPixmap。
-arch_need "$SRC/scripts/probe-sni-icon.sh" 'IconPixmap' '端到端探针脚本在（字节级判据放真机探针）'
+arch_need "$SRC/scripts/probe-sni-icon.sh" 'Properties\.Get org\.kde\.StatusNotifierItem IconPixmap' '端到端探针**真的去读 IconPixmap 属性**（字节级判据放真机探针）—— 盯那行 D-Bus 调用，不是盯「IconPixmap」这个词'
 # ⚠ 探针必须统计**整张图**的非零字节 —— 只看开头几行会误判：
 #   圆形图标的**边缘像素本来就是透明的**（实测踩过：据此误判成「整张全 0」）。
 arch_need "$SRC/scripts/probe-sni-icon.sh" '非零字节' '探针统计整张图非零字节（不靠肉眼看开头几行）'
