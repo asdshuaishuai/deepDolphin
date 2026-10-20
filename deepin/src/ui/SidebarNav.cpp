@@ -3,6 +3,7 @@
 #include "../logic/DashFilter.h"
 #include "../logic/Derived.h"
 #include "../platform/IconResolver.h"
+#include "../platform/DpiPixmap.h"
 #include "DesignTokens.h"
 #include "common/BusyRow.h"
 #include "common/CountLabel.h"
@@ -322,7 +323,8 @@ void SidebarNav::setStatusStrip(const QString &text, Liveness dot, bool busy)
     m_statusBusy->setBusy(busy); // 忙态转圈（BusyRow 单点）；关动画时退化为静态弧
     const QColor c = Derived::livenessColor(dot);
     // 汇总态大点 = dotLg（M3-5）；行内点已统一 8px（StatusDot）
-    QPixmap pm(DS::Height::dotLg, DS::Height::dotLg);
+    // ⚠ **HiDPI 感知**（批 AP · M3c）：按 dpr 放大后画 ⇒ 缩放下不发虚。
+    QPixmap pm = platform::dpiPixmap(QSize(DS::Height::dotLg, DS::Height::dotLg));
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);

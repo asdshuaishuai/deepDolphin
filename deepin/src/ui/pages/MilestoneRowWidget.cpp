@@ -1,6 +1,7 @@
 #include "MilestoneRowWidget.h"
 #include <DWarningButton>
 #include "../../logic/Derived.h"
+#include "../../platform/DpiPixmap.h"
 #include "../DesignTokens.h"
 #include "../common/Chip.h"
 #include "../common/FlatButton.h"
@@ -20,7 +21,8 @@ namespace {
 // 图标五态（unknown 是橙 **?**，不是进行中的蓝； overdue 红！）。
 QPixmap stateIcon(const Milestone &m, int size = 14)
 {
-    QPixmap pm(size, size);
+    // ⚠ **HiDPI 感知**（批 AP · M3c）：按 dpr 放大后画。
+    QPixmap pm = platform::dpiPixmap(QSize(size, size));
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);

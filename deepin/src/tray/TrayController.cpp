@@ -5,6 +5,7 @@
 #include "../logic/DeepinTray.h"
 #include "../platform/Backend.h"
 #include "../platform/DeepinTray.h"
+#include "../platform/DpiPixmap.h"
 #include "../platform/TrayBackend.h"
 #include <QApplication>
 #include <QDebug>
@@ -26,7 +27,9 @@ QIcon tintedIcon(const QColor &tint, bool alert)
     const int canvas = TrayGeometry::iconCanvas;
     const int ringD = canvas - 2 * TrayGeometry::iconRingInset;
     const int coreD = canvas - 2 * TrayGeometry::iconCoreInset;
-    QPixmap pm(canvas, canvas);
+    // ⚠ **HiDPI 感知**（批 AP · M3c）：托盘图标在 125%/150%/200% 下会发虚
+    //   （原来只有 canvas×canvas **设备**像素）。
+    QPixmap pm = platform::dpiPixmap(QSize(canvas, canvas));
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);

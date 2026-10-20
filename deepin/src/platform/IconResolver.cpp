@@ -13,6 +13,7 @@
 
 #include "../logic/IconNames.h"
 #include "../logic/SemColors.h"
+#include "DpiPixmap.h"
 
 #include <QDebug>
 #include <QFile>
@@ -66,7 +67,7 @@ QIcon tintedSvg(const QString &qrcPath, const QColor &tint, const QSize &size)
     QSvgRenderer renderer(svg);
     if (!renderer.isValid())
         return QIcon();
-    QPixmap pm(size);
+    QPixmap pm = platform::dpiPixmap(size);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     renderer.render(&p, QRectF(0, 0, size.width(), size.height()));
@@ -97,7 +98,9 @@ QIcon fromDci(const QString &name, const QSize &size)
 /// ④ 占位：tint 色圆点（未知显形为占位，不假装是某个具体符号）。
 QIcon placeholderDot(const QColor &tint, const QSize &size)
 {
-    QPixmap pm(size);
+    // ⚠ **HiDPI 感知**（批 AP · M3c）：占位圆点也是**自绘**位图 ⇒ 必须按 dpr 放大，
+    //   否则缩放到 125%/150%/200% 时这个「占位」本身发虚。
+    QPixmap pm = platform::dpiPixmap(size);
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);

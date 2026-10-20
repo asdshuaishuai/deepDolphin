@@ -1,6 +1,7 @@
 #include "ProjectProgressCard.h"
 #include "../../logic/CommitTypeComposition.h"
 #include "../../logic/Derived.h"
+#include "../../platform/DpiPixmap.h"
 #include "../DesignTokens.h"
 #include "../common/Chip.h"
 #include "../common/LegendRow.h"
@@ -94,7 +95,8 @@ void ProjectProgressCard::setProject(const ProjectStatus &p, const DashFilter &f
 
     const Derived::StateWord sw = Derived::stateWord(p);
     auto *dot = new QLabel(card);
-    QPixmap pm(DS::Height::dot, DS::Height::dot); // 状态点统一 8px（M3-5）
+    // ⚠ **HiDPI 感知**（批 AP · M3c）：按 dpr 放大后画 ⇒ 125%/150%/200% 下不发虚。
+    QPixmap pm = platform::dpiPixmap(QSize(DS::Height::dot, DS::Height::dot)); // 状态点统一 8px（M3-5）
     pm.fill(Qt::transparent);
     QPainter dp(&pm);
     dp.setRenderHint(QPainter::Antialiasing);

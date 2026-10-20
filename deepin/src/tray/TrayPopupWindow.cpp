@@ -2,6 +2,7 @@
 #include "TrayGeometry.h"
 #include "../logic/SemColors.h"
 #include "../platform/Backend.h"
+#include "../platform/DpiPixmap.h"
 #include "../ui/DesignTokens.h"
 #include "../ui/common/BusyRow.h"
 #include "../ui/common/FlatButton.h"
@@ -175,7 +176,9 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
         h->setContentsMargins(0, TrayGeometry::rowMarginV, 0, TrayGeometry::rowMarginV);
         h->setSpacing(TrayGeometry::rowSpacing);
         auto *dot = new QLabel(line);
-        QPixmap pm(DS::Height::dotLg, DS::Height::dotLg); // 托盘汇总行大点 = dotLg（M3-5）
+        // ⚠ **HiDPI 感知**（批 AP · M3c）：按 dpr 放大后画 ⇒ 125%/150%/200% 下不发虚
+        //   （原来 `QPixmap pm(w, h)` 只有 w×h **设备**像素，被控件放大 ⇒ 锯齿）。
+        QPixmap pm = platform::dpiPixmap(QSize(DS::Height::dotLg, DS::Height::dotLg)); // 托盘汇总行大点 = dotLg（M3-5）
         pm.fill(Qt::transparent);
         QPainter p(&pm);
         p.setRenderHint(QPainter::Antialiasing);
@@ -226,7 +229,8 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
             bar->setFixedSize(TrayGeometry::miniBarWidth, DS::Height::barMini); // 迷你条（M3-5/M3-7）
             h->addWidget(bar);
             // 迷你进度条（一次性画成 pixmap）
-            QPixmap barPm(TrayGeometry::miniBarWidth, DS::Height::barMini);
+            // ⚠ **HiDPI 感知**（批 AP · M3c）：迷你条同理，按 dpr 放大后画。
+            QPixmap barPm = platform::dpiPixmap(QSize(TrayGeometry::miniBarWidth, DS::Height::barMini));
             barPm.fill(Qt::transparent);
             QPainter bp(&barPm);
             bp.setRenderHint(QPainter::Antialiasing);

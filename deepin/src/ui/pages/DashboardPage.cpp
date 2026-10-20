@@ -5,6 +5,7 @@
 #include "../../logic/CommitTypeComposition.h"
 #include "../../logic/DashboardScope.h"
 #include "../../logic/Derived.h"
+#include "../../platform/DpiPixmap.h"
 #include "../../logic/LanguageCoverage.h"
 #include "../../logic/MilestoneCardTitle.h"
 #include "../DesignTokens.h"
@@ -397,7 +398,8 @@ QWidget *DashboardPage::buildActiveCard()
         h->setContentsMargins(0, 0, 0, 0);
         h->setSpacing(DS::Spacing::sm);
         auto *dot = new QLabel(row);
-        QPixmap pm(DS::Height::dot, DS::Height::dot); // 状态点统一 8px（M3-5）
+        // ⚠ **HiDPI 感知**（批 AP · M3c）：按 dpr 放大后画。
+        QPixmap pm = platform::dpiPixmap(QSize(DS::Height::dot, DS::Height::dot)); // 状态点统一 8px（M3-5）
         pm.fill(Qt::transparent);
         QPainter p(&pm);
         p.setRenderHint(QPainter::Antialiasing);

@@ -1004,6 +1004,54 @@ arch_need "$SRC/src/tray/TrayPopupWindow.cpp" 'setToolTip\(row\.name\)' '被省�
 #   （`setMaximumWidth` 不加省略号）⇒ 侧栏那行不许再这么写。
 arch_forbid_raw "$SRC/src/ui/SidebarNav.cpp" '带省略号为预期行为' '侧栏固定行注释不许再写「带省略号」（setMaximumWidth 不加省略号；且那行不是项目名）'
 
+# ── 批 AP · M3c HiDPI：自绘位图必须按 dpr 放大（否则 125%/150%/200% 下发虚）──
+#
+# ⚠ **起因**：PLAN §3c 点名了 9 处 1x 自绘，但它那份名单**写在 IconResolver 存在之前**
+#   （`IconLoader.cpp` 早已被批 AI 当死代码删掉）⇒ 照 PLAN 做会漏。
+#   ⇒ 本批**实测扫全**（grep 所有 `QPixmap` 构造 + 所有 `QPainter` 用法），分成两类：
+#   ① **离屏画到 pixmap**（11 处）⇒ 必须走 `platform::dpiPixmap()`：
+#      状态点 5（LegendRow / ProjectProgressCard / DashboardPage / ProjectDetailPage /
+#      SidebarNav 汇总点）、托盘 3（TrayPopupWindow 大点 + 迷你条 + TrayController 图标）、
+#      里程碑五态图标 1、IconResolver 2（qrc 染色 SVG + 占位圆点）。
+#   ② **直接画在控件上**（`QPainter p(this)`，8 处：StatusDot / SegmentedBar / FlatButton /
+#      Card / ArchCanvasWidget / HeatmapWidget / ColorSampleSheet / TrayPopupWindow 自己的
+#      paintEvent）⇒ **本来就对**：控件的画布已是 dpr 分辨率 ⇒ 不许也不需要改。
+#      （Canvas2D 的阴影是按**设备像素**画的（`dev->width()` + 继承 transform）⇒ 也是对的。）
+#
+# ⚠ **为什么这层要有门**：结构事实由**探针**断言（`dpiPixmap=` 那行：缓冲区必须
+#   = logical × dpr），效果事实由 **dpr=2 那一跑**断言（边缘过渡层数必须多于 1x）。
+#   但探针只能证明**助手**对 ⇒ 11 个**调用点**有没有真的用它，靠下面这些门盯住。
+arch_need "$SRC/src/platform/DpiPixmap.cpp" 'setDevicePixelRatio' 'DPI 助手必须设 devicePixelRatio（不设 ⇒ 位图仍按 1x 画 ⇒ 发虚）'
+arch_need_ml "$SRC/src/platform/DpiPixmap.cpp" 'QPixmap pm\(logicalSize \* dpr\)' 'DPI 助手的缓冲区必须按 logicalSize × dpr 开（不放大 ⇒ 控件再放大一遍 ⇒ 发虚）'
+arch_need "$SRC/src/ui/common/LegendRow.h" 'platform::dpiPixmap\(' '图例小点走 DPI 助手'
+arch_need "$SRC/src/ui/pages/ProjectProgressCard.cpp" 'platform::dpiPixmap\(' '项目卡状态点走 DPI 助手'
+arch_need "$SRC/src/ui/pages/DashboardPage.cpp" 'platform::dpiPixmap\(' '活跃项目状态点走 DPI 助手'
+arch_need "$SRC/src/ui/pages/ProjectDetailPage.cpp" 'platform::dpiPixmap\(' '分支状态点走 DPI 助手'
+arch_need "$SRC/src/ui/SidebarNav.cpp" 'platform::dpiPixmap\(' '侧栏汇总大点走 DPI 助手'
+arch_need_ml "$SRC/src/tray/TrayPopupWindow.cpp" 'platform::dpiPixmap\(' '托盘弹窗的大点与迷你条走 DPI 助手'
+arch_need "$SRC/src/tray/TrayController.cpp" 'platform::dpiPixmap\(' '托盘图标走 DPI 助手'
+arch_need "$SRC/src/ui/pages/MilestoneRowWidget.cpp" 'platform::dpiPixmap\(' '里程碑五态图标走 DPI 助手'
+arch_need "$SRC/src/platform/IconResolver.cpp" 'platform::dpiPixmap\(' '图标兜底通道（qrc 染色 SVG + 占位圆点）走 DPI 助手'
+# ⚠ **1x 位图构造不许复活**（这 9 个文件里，自绘位图**只能**由 DPI 助手开）
+#   ⚠ 例外：`platform/DpiPixmap.cpp` 自己（它就是开位图的地方）、`main.cpp` 探针里的
+#     `legacy` 对照组（**故意**留 1x 当基线）—— 这两处不在这 9 个文件里。
+arch_forbid "$SRC/src/ui/common/LegendRow.h" 'QPixmap\s+(pm|barPm)\(' '图例小点不许再开 1x 位图'
+arch_forbid "$SRC/src/ui/pages/ProjectProgressCard.cpp" 'QPixmap\s+(pm|barPm)\(' '项目卡状态点不许再开 1x 位图'
+arch_forbid "$SRC/src/ui/pages/DashboardPage.cpp" 'QPixmap\s+(pm|barPm)\(' '活跃项目状态点不许再开 1x 位图'
+arch_forbid "$SRC/src/ui/pages/ProjectDetailPage.cpp" 'QPixmap\s+(pm|barPm)\(' '分支状态点不许再开 1x 位图'
+arch_forbid "$SRC/src/ui/SidebarNav.cpp" 'QPixmap\s+(pm|barPm)\(' '侧栏汇总大点不许再开 1x 位图'
+arch_forbid "$SRC/src/tray/TrayPopupWindow.cpp" 'QPixmap\s+(pm|barPm)\(' '托盘弹窗不许再开 1x 位图'
+arch_forbid "$SRC/src/tray/TrayController.cpp" 'QPixmap\s+(pm|barPm)\(' '托盘图标不许再开 1x 位图'
+arch_forbid "$SRC/src/ui/pages/MilestoneRowWidget.cpp" 'QPixmap\s+(pm|barPm)\(' '里程碑图标不许再开 1x 位图'
+arch_forbid "$SRC/src/platform/IconResolver.cpp" 'QPixmap\s+(pm|barPm)\(' '图标兜底通道不许再开 1x 位图'
+# ⚠ **探针必须报出 DPI 事实**（不报 ⇒ 缩放倍率不可见 ⇒ HiDPI 无从断言）
+arch_need "$SRC/src/main.cpp" 'devicePixelRatio=' '平台探针报出当前 devicePixelRatio'
+arch_need "$SRC/src/main.cpp" 'dpiEdgeLevels=' '平台探针报出自绘位图的边缘过渡层数（1x vs dpr 感知）'
+# ⚠⚠ **「dpr=2 那一跑」不许被删** —— 删了它，边缘层数那条断言就永远跑在 dpr=1 上
+#   （两列必然相同 ⇒ 恒成立 ⇒ 空门）。批 AJ 教训：承诺没有门 = 承诺不存在。
+arch_need "$SRC/scripts/ci-platform-probe.sh" 'QT_SCALE_FACTOR=2' 'HiDPI 的效果断言必须真在 dpr=2 下跑（不许退化成 dpr=1 的空断言）'
+arch_need "$SRC/scripts/ci-platform-probe.sh" 'dpiEdgeLevels' 'HiDPI 门必须断言边缘过渡层数（dpr>1 时 dpr 感知要更细腻）'
+
 # ── 批 AN · 快照基线「逐字节可重现」：关掉 DTK 标题栏阴影带 ──
 #
 # ⚠ 起因（实测照出「基线这道门其实形同虚设」）：

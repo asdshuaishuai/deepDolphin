@@ -137,6 +137,8 @@ add_executable(deepDolphin
     src/platform/AutostartManager.cpp
     src/platform/Backend.cpp
     src/platform/DdePanel.cpp
+    src/platform/DpiPixmap.cpp
+    src/platform/DpiPixmap.h
     src/platform/Canvas2D.cpp
     src/platform/CrashHandler.cpp
     src/platform/IconResolver.cpp

@@ -34,6 +34,7 @@
 #include "logic/Liveness.h"
 #include "logic/Route.h"
 #include "platform/DdePanel.h"
+#include "platform/DpiPixmap.h"
 #include "tray/TrayController.h"
 #include "tray/TrayGeometry.h"
 #include "ui/ColorSampleSheet.h"
@@ -53,6 +54,9 @@
 #include <QEventLoop>
 #include <QProcess>
 #include <QScreen>
+#include <QSet>
+#include <QPainter>
+#include <QPixmap>
 #include <QSystemTrayIcon>
 #include <QThread>
 #include <QTimer>
@@ -378,6 +382,30 @@ static int headlessColorSample(int argc, char *argv[], const QString &outPath)
 //                                               DS::font 档位实际像素（T4..T8，
 //                                               DesignTokens.cpp:182 同一根系）——真机
 //                                               改控制中心字号档位后重跑，这些值应整体变大
+//   devicePixelRatio=<dpr>                     当前缩放倍率（100%=1；125%=1.25…）
+//   dpiPixmap=logical:WxH buffer:BxB dpr:D     自绘位图的结构事实（批 AP · M3c HiDPI）
+//   dpiEdgeLevels=legacy:N aware:M             同尺寸圆点的边缘过渡层数（1x vs dpr 感知）
+// ⚠ **HiDPI 自检**（批 AP · M3c）：把「1x 自绘」与「dpr 感知自绘」画成同一个
+//   8×8 **逻辑**圆点，量两件事：
+//   ① 缓冲区尺寸（结构事实）——dpr 感知那张必须是 logical × dpr 的**设备**像素；
+//   ② 边缘的**半透明过渡层数**（观感事实）——层数越多边缘越平滑、越不发虚。
+//   ⚠ 只报告不断言：断言归 CI 门（`scripts/ci-platform-probe.sh`）——
+//     它得在 **dpr>1** 下跑（`QT_SCALE_FACTOR=2`）才有意义，dpr=1 时两列必然相同。
+//   返回值：过渡层数（0 = 图是空的）。
+static int countEdgeTransitionLevels(const QPixmap &pm)
+{
+    const QImage img = pm.toImage();
+    QSet<int> levels;
+    for (int y = 0; y < img.height(); ++y) {
+        for (int x = 0; x < img.width(); ++x) {
+            const int a = qAlpha(img.pixel(x, y));
+            if (a > 0 && a < 255)
+                levels.insert(a);
+        }
+    }
+    return levels.size();
+}
+
 static int headlessPlatformProbe(int argc, char *argv[])
 {
     int rc = 0;
@@ -390,6 +418,39 @@ static int headlessPlatformProbe(int argc, char *argv[])
         app.setOrganizationName(QStringLiteral("deepin"));
 
         fprintf(stdout, "backend=%s\n", qPrintable(QGuiApplication::platformName()));
+
+        // ⚠ **HiDPI 事实**（批 AP · M3c）：当前 dpr + 自绘位图的实际缓冲区。
+        //   控制中心把缩放调到 125%/150%/200% 时 dpr 变成 1.25/1.5/2 ⇒
+        //   自绘图形必须按 dpr 放大后画，否则被控件放大 ⇒ **发虚**。
+        //   `dpiPixmap=` 那行是**结构事实**（缓冲区该多大、有没有设 dpr）——
+        //   断言归 CI 门；这里只报告。
+        {
+            const qreal dpr = platform::devicePixelRatio();
+            fprintf(stdout, "devicePixelRatio=%g\n", dpr);
+
+            // 8×8 逻辑的圆点：一条走旧路（1x 缓冲区），一条走新路（dpr 感知）。
+            const int logical = 8;
+            const auto paintDot = [](QPixmap &pm) {
+                pm.fill(Qt::transparent);
+                QPainter p(&pm);
+                p.setRenderHint(QPainter::Antialiasing);
+                p.setPen(Qt::NoPen);
+                // ⚠ 色值走 **DS 单一真相源**（D2 门：src/ 下不许有色值字面量）。
+                //   颜色本身与测量无关（只看 alpha 覆盖），但纪律不因「只是探针」而破。
+                p.setBrush(DS::semColor(DS::SemColor::accent));
+                p.drawEllipse(0, 0, 8, 8);
+                p.end();
+            };
+            QPixmap legacy(logical, logical); // 旧路：只有 logical×logical 设备像素
+            paintDot(legacy);
+            QPixmap aware = platform::dpiPixmap(QSize(logical, logical)); // 新路
+            paintDot(aware);
+
+            fprintf(stdout, "dpiPixmap=logical:%dx%d buffer:%dx%d dpr:%g\n", logical, logical,
+                aware.width(), aware.height(), aware.devicePixelRatio());
+            fprintf(stdout, "dpiEdgeLevels=legacy:%d aware:%d\n",
+                countEdgeTransitionLevels(legacy), countEdgeTransitionLevels(aware));
+        }
 
         // 后端分档（批 V · M1-7）：平台名 → X11 / Wayland / Other。
         // ⚠ 只报告不断言（离屏是 offscreen ⇒ other）：断言归 CI 门与 SelfCheck。

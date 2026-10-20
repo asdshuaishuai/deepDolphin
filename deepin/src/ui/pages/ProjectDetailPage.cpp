@@ -2,6 +2,7 @@
 #include "../../logic/IconNames.h"
 #include "../../logic/ArchReceipt.h"
 #include "../../platform/IconResolver.h"
+#include "../../platform/DpiPixmap.h"
 #include "../../logic/CommitTypeComposition.h"
 #include "../../logic/Derived.h"
 #include "../../logic/DestructiveGuard.h"
@@ -629,7 +630,8 @@ QWidget *ProjectDetailPage::buildBranchesCard(const ProjectStatus &p)
         h->setContentsMargins(0, 0, 0, 0);
         h->setSpacing(DS::Spacing::xs);
         auto *dot = new QLabel(row1);
-        QPixmap pm(DS::Height::dot, DS::Height::dot); // 状态点统一 8px（M3-5）
+        // ⚠ **HiDPI 感知**（批 AP · M3c）：按 dpr 放大后画。
+        QPixmap pm = platform::dpiPixmap(QSize(DS::Height::dot, DS::Height::dot)); // 状态点统一 8px（M3-5）
         pm.fill(Qt::transparent);
         QPainter dp(&pm);
         dp.setRenderHint(QPainter::Antialiasing);

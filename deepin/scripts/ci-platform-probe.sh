@@ -17,9 +17,6 @@ if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
 fi
 PROBE_RC=0
 PROBE_OUT="$("$BIN" --platform-probe)" || PROBE_RC=$?
-
-PROBE_RC=0
-PROBE_OUT="$("$BIN" --platform-probe)" || PROBE_RC=$?
 printf '%s\n' "$PROBE_OUT"
 if [ "$PROBE_RC" -ne 0 ]; then
     echo "✗ platform-probe 退出码 $PROBE_RC（要求 0）" >&2
@@ -95,6 +92,93 @@ if ! printf '%s\n' "$SCREEN_RECT $TARGET_RECT" | awk '
     echo "✗ 托盘弹窗落点不在屏幕内（弹窗会开在用户看不见的地方）" >&2
     exit 1
 fi
+# ⚠⚠ HiDPI 自绘位图（批 AP · M3c）：**结构事实** + **缩放下的效果事实**，两层都要。
+#
+# 【为什么探针要报这些】我们有 9 处用 QPainter **自己画**小图形（状态点 / 迷你条 /
+#   托盘图标 / 里程碑图标）。原来它们都开 `QPixmap pm(8, 8)` —— 8×8 **设备**像素。
+#   ⇒ 缩放到 125%/150%/200% 时，这张图被控件放大 ⇒ **发虚**。
+#   实测（dpr=2）：1x 圆点的边缘只有 **6 层**半透明过渡，dpr 感知的是 **11 层**。
+#
+# 【两层断言】
+#   ① **结构事实**（任何 dpr 下都成立）：缓冲区必须 = logical × dpr，
+#      且 pixmap 的 devicePixelRatio 必须等于应用 dpr
+#      ⇒ 这就是「不发虚」的充要结构条件。
+#   ② **效果事实**（**只在 dpr>1 下有意义**）：dpr 感知的圆点边缘过渡层数必须
+#      **多于** 1x 圆点 ⇒ 实测真的更细腻。
+#      ⚠ dpr=1 时两列必然相同（同一张 8×8 图）⇒ 上面那一跑**不比较**；
+#        下面**另外用 QT_SCALE_FACTOR=2 再跑一次**（dpr=2）来执行这一条
+#        —— 否则这条断言永远是空的（批 AJ 教训：承诺没有门 = 承诺不存在）。
+
+# dpi_struct_assert <probe 输出>：断言 dpiPixmap= 那行的结构事实。
+dpi_struct_assert() {
+    dpi_a_dpr="$(printf '%s\n' "$1" | sed -n 's/^devicePixelRatio=//p')"
+    if ! printf '%s' "$dpi_a_dpr" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+        echo "✗ platform-probe 输出缺 devicePixelRatio= 行（缩放倍率不可见 ⇒ HiDPI 无从断言）" >&2
+        return 1
+    fi
+    dpi_a_nums="$(printf '%s\n' "$1" | sed -n 's/^dpiPixmap=//p' | awk '{
+        for (i = 1; i <= NF; i++) {
+            if (split($i, a, ":") < 2) continue;
+            if (a[1] == "logical") { split(a[2], b, "x"); printf "%s %s ", b[1], b[2] }
+            else if (a[1] == "buffer") { split(a[2], b, "x"); printf "%s %s ", b[1], b[2] }
+            else if (a[1] == "dpr") printf "%s ", a[2]
+        }
+    }')"
+    # shellcheck disable=SC2086
+    set -- $dpi_a_nums
+    if [ $# -lt 5 ]; then
+        echo "✗ platform-probe 的 dpiPixmap= 行形状不对（要 logical:WxH buffer:BxB dpr:D）" >&2
+        return 1
+    fi
+    dpi_a_lw="$1"; dpi_a_lh="$2"; dpi_a_bw="$3"; dpi_a_bh="$4"; dpi_a_pd="$5"
+    dpi_a_err="$(awk -v lw="$dpi_a_lw" -v lh="$dpi_a_lh" -v bw="$dpi_a_bw" -v bh="$dpi_a_bh" \
+        -v pd="$dpi_a_pd" -v dpr="$dpi_a_dpr" 'BEGIN {
+        if (lw + 0 <= 0 || lh + 0 <= 0) { print "logical 尺寸非法"; exit 1 }
+        if (pd + 0 <= 0) { print "dpr 非法"; exit 1 }
+        if (bw + 0 != int(lw * pd + 0.5) || bh + 0 != int(lh * pd + 0.5)) {
+            printf "缓冲区 %sx%s ≠ logical %sx%s × dpr %s（自绘位图没按 dpr 放大 ⇒ 缩放下发虚）", bw, bh, lw, lh, pd
+            exit 1
+        }
+        if (pd + 0 != dpr + 0) {
+            printf "pixmap 的 devicePixelRatio %s ≠ 应用 dpr %s", pd, dpr
+            exit 1
+        }
+    }')"
+    dpi_a_rc=$?
+    if [ "$dpi_a_rc" -ne 0 ]; then
+        echo "✗ HiDPI 结构断言失败：${dpi_a_err}" >&2
+        return 1
+    fi
+    return 0
+}
+
+dpi_struct_assert "$PROBE_OUT" || exit 1
+
+# ── 第二跑：强制 200% 缩放（dpr=2），执行「效果事实」那一条 ──
+dpi_b_out="$(QT_SCALE_FACTOR=2 "$BIN" --platform-probe 2>/dev/null)"
+dpi_b_rc=$?
+if [ "$dpi_b_rc" -ne 0 ]; then
+    echo "✗ QT_SCALE_FACTOR=2 下 platform-probe 退出码 $dpi_b_rc（要求 0）" >&2
+    exit 1
+fi
+dpi_b_dpr="$(printf '%s\n' "$dpi_b_out" | sed -n 's/^devicePixelRatio=//p')"
+if ! printf '%s' "$dpi_b_dpr" | awk '{ if ($1 + 0 >= 2) exit 0; exit 1 }'; then
+    echo "✗ QT_SCALE_FACTOR=2 没生效（devicePixelRatio=${dpi_b_dpr:-空}）⇒ HiDPI 的效果断言跑不到缩放档，等于空门" >&2
+    exit 1
+fi
+dpi_struct_assert "$dpi_b_out" || exit 1
+dpi_b_legacy="$(printf '%s\n' "$dpi_b_out" | sed -n 's/^dpiEdgeLevels=legacy:\([0-9]*\).*/\1/p')"
+dpi_b_aware="$(printf '%s\n' "$dpi_b_out" | sed -n 's/^dpiEdgeLevels=.*aware:\([0-9]*\).*/\1/p')"
+if [ -z "$dpi_b_legacy" ] || [ -z "$dpi_b_aware" ]; then
+    echo "✗ platform-probe 缺 dpiEdgeLevels= 行（边缘锐度不可见 ⇒ 发虚没人知道）" >&2
+    exit 1
+fi
+if [ "$dpi_b_aware" -le "$dpi_b_legacy" ]; then
+    echo "✗ dpr=2 下 dpr 感知自绘的边缘过渡层数（$dpi_b_aware）不多于 1x 自绘（$dpi_b_legacy）⇒ 自绘位图没按 dpr 放大（发虚）" >&2
+    exit 1
+fi
+echo "✓ HiDPI 自绘位图：结构（buffer=logical×dpr）与效果（dpr=2 边缘层数 $dpi_b_legacy → $dpi_b_aware）都对"
+
 # ⚠ 图标解析（批 U · M1-2）：**有图标主题时**，每个逻辑图标都必须解析得到。
 #   解析不到 = 候选链没覆盖该主题的名字 ⇒ 界面上那个位置是占位圆点 ⇒ 得加候选。
 #   没有图标主题时（offscreen / 极简环境）一律报 `none` 不报 `missing`，

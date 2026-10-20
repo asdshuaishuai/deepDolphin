@@ -359,7 +359,7 @@ fi
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 # ⚠ 必须**整词**匹配：`grep -qF "$f"` 是子串匹配，把登记项改成
 #   `src/logic/GraphToken.cpp.disabled` 照样命中 —— 门绿着，文件却没编进去。
-for f in src/logic/GraphToken.cpp src/logic/SceneRender.cpp src/models/GraphScene.cpp src/platform/Canvas2D.cpp; do
+for f in src/logic/GraphToken.cpp src/logic/SceneRender.cpp src/models/GraphScene.cpp src/platform/Canvas2D.cpp src/platform/DpiPixmap.cpp; do
     if ! grep -qE "(^|[[:space:]])$f([[:space:]]|$)" "$SRC/CMakeLists.txt"; then
         echo "  ✗ 构建未登记：$f" >&2
         CANVAS_FAIL=1
