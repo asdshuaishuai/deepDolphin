@@ -30,7 +30,8 @@ export LD_LIBRARY_PATH="$HOME/.local/dd-sysroot/usr/lib/x86_64-linux-gnu${LD_LIB
 export QT_PLUGIN_PATH="$HOME/.local/dd-sysroot/usr/lib/x86_64-linux-gnu/qt6/plugins${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 
-echo "› 1/12 selfcheck（断言 0 failed 且 ≥58 passed）"
+SC_MIN=393
+echo "› 1/12 selfcheck（断言 0 failed 且 ≥58 passed 且 ≥$SC_MIN 条判据不许被删）"
 SELFCHECK_OUT="$("$BIN" --selfcheck || true)"
 printf '%s\n' "$SELFCHECK_OUT" | tail -1
 SC_PASSED="$(printf '%s\n' "$SELFCHECK_OUT" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+' || true)"
@@ -41,6 +42,19 @@ if [ -z "$SC_PASSED" ] || [ -z "$SC_FAILED" ]; then
 fi
 if [ "$SC_FAILED" -ne 0 ] || [ "$SC_PASSED" -lt 58 ]; then
     echo "✗ selfcheck 未达标：${SC_PASSED} passed / ${SC_FAILED} failed（要求 0 failed 且 ≥58 passed）" >&2
+    exit 1
+fi
+# ⚠⚠ **判据只许增不许减**（批 AJ）：以前只断言「≥58 passed」——
+#   58 是 2024 年的老数字 ⇒ **删掉 300 条判据照样全绿**。
+#   ⇒ 判据是「契约的牙齿」，删一条就少一颗牙，而门看不见。
+# ⚠ 口径 = **判据条数**（passed 数）。抓不到「删一条又加一条」那种换名操作（少见）。
+# ⚠ **基线写死在本脚本里**（与上面「≥58」同一做法）⇒ 改基线 = 改脚本 = 评审看得见。
+#   刻意**不**用单独的基线文件：那个文件会被顺手改小 ⇒ 门跟着一起松 ⇒ 等于没门。
+# ⚠ 加判据时**同步把 SC_MIN 加一**（加判据是好事，忘了加只是门偏严，不会偏松 ⇒ 安全方向）。
+if [ "$SC_PASSED" -lt "$SC_MIN" ]; then
+    echo "✗ selfcheck 判据数 ${SC_PASSED} < 基线 ${SC_MIN} ⇒ **有判据被删了**" >&2
+    echo "  （判据是契约的牙齿：删一条就少一颗牙，而门本该看见）" >&2
+    echo "  若确实要删，请同时把 scripts/ci.sh 里的 SC_MIN 调小并在提交信息里写明理由。" >&2
     exit 1
 fi
 echo "✓ selfcheck ${SC_PASSED} passed, ${SC_FAILED} failed"

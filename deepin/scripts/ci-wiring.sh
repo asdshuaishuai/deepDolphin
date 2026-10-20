@@ -60,6 +60,25 @@ arch_need() { # arch_need <文件> <正则> <说明>
         ARCH_FAIL=1
     fi
 }
+# arch_need_any：盯「**任一** selfcheck 分片里都有这条判据」。
+# ⚠ 为什么需要它（批 AJ 实测）：拆 SelfCheck.cpp 时，44 条门项红了 ——
+#   它们盯的是「判据在 **SelfCheck.cpp 这个文件**里」，
+#   而这些门项的**意图**是「**判据覆盖了某个判定层**」⇒ 与文件位置无关。
+#   ⇒ 判据被搬到分片后，门红 ⇒ 门与结构耦合 ⇒ 逼着人「把代码搬回去」而不是「把门改对」。
+#   ⚠ 强度**不变**：判据集合没变（ci.sh 的 SC_MIN 盯着条数）⇒
+#   真删掉一条判据，这里照样红。
+arch_need_any() { # arch_need_any <正则> <说明>
+    local re="$1" label="$2"
+    ARCH_N=$((ARCH_N + 1))
+    local hits
+    hits="$(grep -lE -- "$re" "$SRC"/src/app/SelfCheck*.cpp 2>/dev/null | head -3 | sed "s|$SRC/||" | tr '\n' ' ')"
+    if [ -n "$hits" ]; then
+        echo "  ✓ $label"
+    else
+        echo "  ✗ $label：SelfCheck*.cpp 里都找不到 $re" >&2
+        ARCH_FAIL=1
+    fi
+}
 # arch_need_count：盯「**恰好出现 N 次**」。
 # ⚠ 为什么需要它：arch_need 盯的是「这个 token 出现过」—— 但同名 token 在一个文件里
 #   常出现多处（`SemColors::shallow()` 在 Derived.cpp 有 2 处、`FixedColors::iconFallback()`
@@ -353,8 +372,8 @@ arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '&HeatmapWidget::nodeSelecte
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '&HeatmapWidget::drillChanged\b' '热力图下钻信号接上了（面包屑跟着走）'
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '\bm_leftStack\b' '左栏是模式切换 + 堆叠页（热力图是左栏的另一种模式）'
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_heat->setData\b' '热力图数据源接上了（与树同源）'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bHeatLayout::layout\b' 'SelfCheck 覆盖铺排'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bHeatLayout::routes\b' 'SelfCheck 覆盖走线'
+arch_need_any '\bHeatLayout::layout\b' 'SelfCheck 覆盖铺排'
+arch_need_any '\bHeatLayout::routes\b' 'SelfCheck 覆盖走线'
 
 # 补丁体检链路：判定（PatchCheck 纯函数）→ 取数（工作区 diff + 引擎 patchconf）
 #   → 接线（详情页入口 → 独立窗 → 人工裁决 → 合并终稿）
@@ -373,8 +392,8 @@ arch_need "$SRC/src/ui/pages/ProjectDetailPage.cpp" '\bpatchCheckRequested\b' '�
 arch_need "$SRC/src/ui/PanelWindow.cpp" '&ProjectDetailPage::patchCheckRequested\b' 'PanelWindow 接了补丁体检入口'
 arch_need "$SRC/src/ui/PanelWindow.cpp" '\bshowPatchCheck\b' 'PanelWindow 有开补丁体检窗的动作'
 arch_need "$SRC/src/ui/PanelWindow.cpp" '\bPatchCheckDialog\b' 'PanelWindow 用的是补丁体检窗'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bPatchCheck::parseLayer1\b' 'SelfCheck 覆盖 Layer1 解析'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bPatchCheck::diffSnippet\b' 'SelfCheck 覆盖 diff 抽实码'
+arch_need_any '\bPatchCheck::parseLayer1\b' 'SelfCheck 覆盖 Layer1 解析'
+arch_need_any '\bPatchCheck::diffSnippet\b' 'SelfCheck 覆盖 diff 抽实码'
 
 # 固定文档页链路：内容（DocPages 纯函数，四类目写死在代码里）→ 渲染（DocsDialog，
 #   markdown）→ 接线（面板菜单「关于 / 帮助」）。文档不进引擎 —— 它不是数据。
@@ -389,7 +408,7 @@ arch_need "$SRC/src/ui/PanelWindow.cpp" '\bDocsDialog\b' 'PanelWindow 用的是�
 # （负控实测：只删菜单两行、留着方法，上面两条照样全绿）。
 arch_need "$SRC/src/ui/PanelWindow.cpp" 'addAction\(QStringLiteral\("关于 deepDolphin"\)\)' '面板菜单有「关于」入口'
 arch_need "$SRC/src/ui/PanelWindow.cpp" 'addAction\(QStringLiteral\("帮助"\)\)' '面板菜单有「帮助」入口'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bDocPages::content\b' 'SelfCheck 覆盖文档正文'
+arch_need_any '\bDocPages::content\b' 'SelfCheck 覆盖文档正文'
 
 # 语法高亮链路：判定（SyntaxHighlight 纯函数，九语言与引擎 detectLang 对齐）→
 #   涂色（CodeHighlighter，颜色取自 DS 令牌）→ 接线（代码图谱页源码页签）
@@ -404,7 +423,7 @@ arch_need "$SRC/src/ui/CodeHighlighter.cpp" '\bDS::semColor\b' '颜色取自 DS 
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'new CodeHighlighter\b' '代码图谱源码页签真的 new 了一个高亮器'
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_highlighter->setLanguage\b' '高亮语言跟着选中项走'
 arch_need "$SRC/src/main.cpp" 'syntax-languages\b' '无头 flag 暴露语言清单（契约门第 16 组用）'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bSyntaxHighlight::highlight\b' 'SelfCheck 覆盖高亮分类'
+arch_need_any '\bSyntaxHighlight::highlight\b' 'SelfCheck 覆盖高亮分类'
 
 # 图谱三件套链路：判定（GraphInsight：id→名字 / overview / symbol / impact）→
 #   取数（引擎 graph overview / symbol / impact）→ 接线（代码图谱页关系页签 + 页头概览）
@@ -420,7 +439,7 @@ arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("symbol"\)' 'AppModel 调
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '^[[:space:]]*showImpact\(\);[[:space:]]*$' '关系页签真的调用了影响面（不是只定义了方法）'
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '\bGraphInsight::symbolNameFromId\b' '界面按名字问引擎（不传 id）'
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '\bloadOverview\b' '页头接了项目级概览'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bGraphInsight::symbolNameFromId\b' 'SelfCheck 覆盖 id→名字'
+arch_need_any '\bGraphInsight::symbolNameFromId\b' 'SelfCheck 覆盖 id→名字'
 
 # 引擎自检（doctor）链路：判定（EngineDoctor 纯函数）→ 取数（引擎 doctor --json）
 #   → 接线（设置·通用页「环境自检」卡）。
@@ -440,7 +459,7 @@ arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'm_model->runDoctor\(\)' '
 arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" '&AppModel::doctorFinished\b' '设置页接了自检回执'
 arch_need "$SRC/src/ui/dialogs/AiSettingsDialog.cpp" 'new GeneralPane\(model,' '设置窗把模型传给了通用页'
 arch_need "$SRC/src/ui/PanelWindow.cpp" 'new AiSettingsDialog\(m_model,' '面板把模型传给了设置窗'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bEngineDoctor::parse\b' 'SelfCheck 覆盖自检解析'
+arch_need_any '\bEngineDoctor::parse\b' 'SelfCheck 覆盖自检解析'
 
 # 进度报告（report）链路：取数（引擎 report，回执型命令）→ 回执路径提取
 #   → 接线（详情页「导出报告」入口 + 报告卡）。
@@ -455,8 +474,8 @@ arch_need "$SRC/src/app/EngineCli.cpp" 'r\.receipt = EngineCli::receiptText\b' '
 arch_need "$SRC/src/app/AppModel.cpp" 'res\.receipt\b' 'Text 消费点读 receipt（不是 stdOut）'
 # 引擎回执带 ANSI 颜色码（引擎不认 NO_COLOR）→ 显示前必须剥。
 arch_need "$SRC/src/logic/ArchReceipt.cpp" 'QString plain\b' '判定层有剥 ANSI 的回执净化'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bEngineDoctor::checkLine\b' 'SelfCheck 覆盖自检行文'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bEngineCli::receiptText\b' 'SelfCheck 覆盖回执通道'
+arch_need_any '\bEngineDoctor::checkLine\b' 'SelfCheck 覆盖自检行文'
+arch_need_any '\bEngineCli::receiptText\b' 'SelfCheck 覆盖回执通道'
 # 接线：详情页的「导出报告」入口 → 面板 → 引擎。盯构造点与调用点。
 arch_need "$SRC/src/ui/pages/ProjectDetailPage.cpp" '\breportExportRequested\b' '详情页发 reportExportRequested'
 arch_need "$SRC/src/ui/pages/ProjectDetailPage.cpp" 'QStringLiteral\("导出报告"\)' '详情页真的造了「导出报告」入口'
@@ -509,8 +528,8 @@ arch_need "$SRC/src/main.cpp" '--receipt-plain\b' '无头 flag 能把回执净�
 # 用户手改输入框后，重读**不得回填**（否则点「应用」写回第一个键会触发重读，
 # 把用户刚填的第二个还没写回的值冲掉 → 用户以为「改了没用」而反复点）。
 arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'if \(!m_configInputsDirty\)' '手改未写回的输入框不被重读冲掉'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bEngineConfig::parse\b' 'SelfCheck 覆盖配置解析'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bEngineConfig::writableKeys\b' 'SelfCheck 覆盖可写键清单'
+arch_need_any '\bEngineConfig::parse\b' 'SelfCheck 覆盖配置解析'
+arch_need_any '\bEngineConfig::writableKeys\b' 'SelfCheck 覆盖可写键清单'
 
 # 持久化代码索引的状态（index overview / index update）链路：
 #   判定（IndexStatus 纯函数）→ 取数（引擎 index overview / index update）
@@ -533,8 +552,8 @@ arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_model->loadIndexOverview\
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '&AppModel::indexStatusChanged\b' '代码图谱页接了索引状态信号'
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '&AppModel::indexUpdated\b' '代码图谱页接了索引更新结果'
 arch_need "$SRC/src/main.cpp" '--index-status-parse\b' '无头 flag 能把索引概览判成值（契约门用）'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bIndexStatus::parseOverview\b' 'SelfCheck 覆盖索引概览解析'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bIndexStatus::parseUpdate\b' 'SelfCheck 覆盖索引更新解析'
+arch_need_any '\bIndexStatus::parseOverview\b' 'SelfCheck 覆盖索引概览解析'
+arch_need_any '\bIndexStatus::parseUpdate\b' 'SelfCheck 覆盖索引更新解析'
 
 # 批 M · 性能审计：Canvas 字体路径（解析在判定层 + QFont 缓存 + 同串跳过）
 #   与热力图每帧分配（索引缓存 / 静态字体串 / 成员比较）。
@@ -560,7 +579,7 @@ arch_need "$SRC/src/ui/HeatmapWidget.cpp" 'const QHash<QString, const HeatLayout
 arch_need "$SRC/src/ui/HeatmapWidget.cpp" 'm_cacheW != width\(\)' '热力图缓存判据逐项比较成员（不是拼字符串键）'
 # formatter 静态化（mac 性能审计 21c7082 同款）
 arch_need "$SRC/src/ui/dialogs/AddMilestoneDialog.cpp" 'toString\(Qt::ISODate\)' '日期格式化走 ISODate 枚举（不建格式串）'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bCanvasFont::parse\b' 'SelfCheck 覆盖字体解析'
+arch_need_any '\bCanvasFont::parse\b' 'SelfCheck 覆盖字体解析'
 
 # 批 N · 设计系统存量清零（DS 单一真相源）：四处散值收进 token，
 #   D2 门上限降到 0，且门独立成 scripts/ci-d2.sh（负控能精确打）。
@@ -569,13 +588,13 @@ arch_need "$SRC/src/ui/DualTrackButtons.cpp" '\bDS::FontPx::badge\b' '胶囊徽�
 arch_need "$SRC/src/ui/common/Chip.h" '\bDS::FontPx::badge\b' '小标签字号走 token'
 arch_need "$SRC/src/ui/common/MarkdownView.h" '\.arg\(DS::MD_H3\);' 'Markdown h4-h6 与 h3 同档（走 token）'
 arch_need "$SRC/src/ui/pages/ProjectProgressCard.cpp" '\bDS::FontPx::code\b' '等宽项目名字号走 token'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bDS::FontPx::badge\b' 'SelfCheck 钉住 token 值'
+arch_need_any '\bDS::FontPx::badge\b' 'SelfCheck 钉住 token 值'
 
 # 批 N · 透明度入 token（色进了 DS 而 alpha 没进 = 同一语义散成 N 个真相源）
 arch_need "$SRC/src/ui/DesignTokens.h" 'namespace Alpha\b' 'DS 有透明度 token'
 arch_need "$SRC/src/ui/DesignTokens.h" '\baccentTintRgba\b' 'DS 提供 rgba 拼装（调用方不拼字面量）'
 arch_need "$SRC/src/ui/dialogs/AgentDialog.cpp" '\bDS::accentTintRgba\b' '用户气泡底色走 token 拼装'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bDS::Alpha::accentTint\b' 'SelfCheck 钉住透明度 token'
+arch_need_any '\bDS::Alpha::accentTint\b' 'SelfCheck 钉住透明度 token'
 
 # 批 N · 底轨遮罩 + 热力图画布色收口（原散在 HeatmapWidget 的 7 处）
 arch_need "$SRC/src/ui/DesignTokens.h" '\btrackMask\b' 'DS 有底轨遮罩色'
@@ -601,7 +620,7 @@ arch_need_count "$SRC/src/logic/Derived.cpp" 'SemColors::shallow\(\)' 2 '判定�
 arch_need_count "$SRC/src/tray/TrayController.cpp" 'SemColors::stale\(\)' 1 '托盘状态色走唯一出处（恰好 1 处）'
 arch_need_count "$SRC/src/tray/TrayPopupWindow.cpp" 'FixedColors::trayAccent\(\)' 1 '托盘强调色走唯一出处（恰好 1 处）'
 arch_need_count "$SRC/src/platform/IconResolver.cpp" 'FixedColors::iconFallback\(\)' 2 '图标兜底色走唯一出处（恰好 2 处）'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'SemColors::stale\(\)' 'SelfCheck 钉住唯一出处的值'
+arch_need_any 'SemColors::stale\(\)' 'SelfCheck 钉住唯一出处的值'
 # 「不该有的东西没了」：写死的色值又写回去 → 必须红（正向条目抓不到这种回退）
 arch_forbid "$SRC/src/logic/Derived.cpp" 'QColor\(0[xX][0-9A-Fa-f]' '判定层不再自己写字面色值'
 arch_forbid "$SRC/src/tray/TrayController.cpp" 'QColor\(0[xX][0-9A-Fa-f]' '托盘不再自己写字面色值'
@@ -684,8 +703,8 @@ arch_need_count "$SRC/src/logic/SnapshotFixture.cpp" 'currentDateTimeUtc\(\)' 2 
 # 里程碑是「同一个对象」⇒ 两处载荷只许有一份文本（之前各写一份，cygnus 的
 #   targetDate 一边有日期一边空 ⇒ 同一件事两套说法）。
 arch_need_count "$SRC/src/logic/SnapshotFixture.cpp" '"projectId":"p_atlas"' 1 '里程碑条目只写一份（dashboard 与 milestone list 共用）'
-arch_need "$SRC/src/app/SelfCheck.cpp" '绝对日期锚定基准日' 'SelfCheck 钉住绝对日期锚定（跨天也抓得住）'
-arch_need "$SRC/src/app/SelfCheck.cpp" '刷新时刻固定' 'SelfCheck 钉住刷新时刻固定'
+arch_need_any '绝对日期锚定基准日' 'SelfCheck 钉住绝对日期锚定（跨天也抓得住）'
+arch_need_any '刷新时刻固定' 'SelfCheck 钉住刷新时刻固定'
 # 「重拍比字节」这道门盯的是**行为**（两次拍出同一张图），不是文件里的字样。
 # ⚠ 精确计数：ci.sh 里 `cmp -s` 出现**两处**（比基线 / 比换时区那张）——
 #   只拿掉一处时「出现过」照样绿 ⇒ 门被骗过（负控实测，第十五次「同名互相顶替」）。
@@ -755,7 +774,7 @@ arch_need "$SRC/src/app/EngineLocator.cpp" 'libexec/deepdolphin/moongit\b' '发�
 #   （contains 与 indexOf），只盯「出现过」时变异改掉其中一处门照样绿
 #   （负控实测，第九次「同名/子串互相顶替」）。
 arch_need_count "$SRC/src/main.cpp" 'QStringLiteral\("--engine-download"\)' 2 '无头入口可端到端验下载链（两个调用点都在）'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bEngineDownload::parseRelease\b' 'SelfCheck 覆盖下载判定层'
+arch_need_any '\bEngineDownload::parseRelease\b' 'SelfCheck 覆盖下载判定层'
 # 「同一件事只许一个出处」：发布信息 URL 只在判定层写一次。
 # ⚠ 曾经给「界面」和「发现链」也加了同款 forbid —— 那是**空门**：
 #   这两处根本没有写 URL 的机会（界面拿不到执行层、发现链不碰下载），
@@ -815,14 +834,38 @@ arch_need "$SRC/src/app/Settings.h" 'int notifyTimeoutMs\(\) const;' '设置层�
 arch_need "$SRC/src/app/Settings.h" 'void setNotifyTimeoutMs\(int ms\);' '设置层可写通知时长'
 arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'm_notifyTimeout = new DComboBox' '设置·通用页有通知时长选择器'
 arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'setNotifyTimeoutMs\(' '通知时长选择器真的写回设置'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bNotifications::normalizeTimeoutMs\b' 'SelfCheck 覆盖通知时长归一'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bNotifications::replacesPrevious\b' 'SelfCheck 覆盖通知顶替规则'
+arch_need_any '\bNotifications::normalizeTimeoutMs\b' 'SelfCheck 覆盖通知时长归一'
+arch_need_any '\bNotifications::replacesPrevious\b' 'SelfCheck 覆盖通知顶替规则'
 # ⚠ 时长不许再硬编码 5000（设置驱动）。
 arch_forbid "$SRC/src/app/Notifier.cpp" '\.timeOut\(5000\)' '通知时长不许硬编码（由设置驱动）'
 # ⚠ **过时说法不许复活**（头注释曾写「互不顶替、不用 replaceId」，与实现相反）。
 #   ⚠ 这道门**不剥注释**（用 arch_forbid_raw）：过时说法住在注释里，
 #   剥了就永远绿 ⇒ 又一个空门（空门比没门更糟）。
 arch_forbid_raw "$SRC/src/app/Notifier.h" '不用 replaceId' 'Notifier 头注释不许再写「不用 replaceId」（与实现相反）'
+
+# ── 批 AJ · 判据只许增不许减 + 拆掉 3800 行大函数（M4a 的第一步）──
+#
+# ⚠ 起因：① 「判据不许被删」这句话**从来没有门** —— ci.sh 只断言「≥58 passed」
+#   ⇒ 删掉 300 条判据照样全绿；② `SelfCheck.cpp` 是**一个 3800 多行的函数**。
+# ⚠ 拆分的**验收标准是「条数不变」，不是「编译通过」**（编译通过只证明没搬坏语法）。
+#   ⇒ 拆分必须配一条「条数不许少」的门，两者一起才是完整验收。
+arch_need "$SRC/scripts/ci.sh" 'SC_MIN=' 'ci.sh 有判据条数基线（判据只许增不许减）'
+arch_need "$SRC/scripts/ci.sh" '有判据被删了' 'ci.sh 的判据基线**真会红**（不是摆设）'
+# ⚠ 拆分基础设施：「记一条判据」**必须只有一份实现** ——
+#   各分片各写一份 check() ⇒ 计数各数各的 ⇒ 汇总出来是错的
+#   ⇒ 而且是「同名两处互相顶替」的老坑。
+arch_need "$SRC/src/app/SelfCheckInternal.h" 'inline void check\(' '判据记录只有一份实现（共享底座）'
+arch_need "$SRC/src/app/SelfCheckInternal.h" 'inline int g_pass' '判据计数是共享的（inline 变量，不各数各的）'
+arch_forbid "$SRC/src/app/SelfCheckDocs.cpp" 'void check\(' '分片不许自己写一份 check（计数会各数各的）'
+arch_forbid "$SRC/src/app/SelfCheckEngine.cpp" 'void check\(' '分片不许自己写一份 check（计数会各数各的）'
+arch_need "$SRC/src/app/SelfCheckInternal.h" 'void checkDocs\(QStringList &log\);' '共享底座声明了文档页分片'
+arch_need "$SRC/src/app/SelfCheckInternal.h" 'void checkEngine\(QStringList &log\);' '共享底座声明了引擎分片'
+arch_need "$SRC/src/app/SelfCheckDocs.cpp" 'void checkDocs\(QStringList &log\)' '文档页分片真的实现了'
+arch_need "$SRC/src/app/SelfCheckEngine.cpp" 'void checkEngine\(QStringList &log\)' '引擎分片真的实现了'
+arch_need_any 'SelfCheckInternal::checkDocs\(log\)' '主片调用了文档页分片（不是把代码搬走就忘接）'
+arch_need_any 'SelfCheckInternal::checkEngine\(log\)' '主片调用了引擎分片'
+arch_need "$SRC/CMakeLists.txt" 'src/app/SelfCheckDocs\.cpp' '文档页分片已登记构建'
+arch_need "$SRC/CMakeLists.txt" 'src/app/SelfCheckEngine\.cpp' '引擎分片已登记构建'
 
 # 批 Q · 引擎钩子（post-commit / post-merge 托管块）：判定层出结论，
 #   执行层只管跑，界面只读结论。⚠ 卸载**只删托管块**（用户的钩子逻辑留着）——
@@ -838,7 +881,7 @@ arch_need "$SRC/src/app/AppModel.cpp" 'void AppModel::uninstallHooksAll\(\)' 'Ap
 arch_need "$SRC/src/ui/dialogs/panes/AutomationPane.cpp" 'm_model->installHooksAll\b' '自动化页有装钩子入口'
 arch_need "$SRC/src/ui/dialogs/panes/AutomationPane.cpp" 'm_model->uninstallHooksAll\b' '自动化页有卸钩子入口'
 arch_need "$SRC/src/main.cpp" '--hook-status-parse"' '无头入口可验钩子判定层'
-arch_need "$SRC/src/app/SelfCheck.cpp" '\bEngineHook::parseStatus\b' 'SelfCheck 覆盖钩子判定层'
+arch_need_any '\bEngineHook::parseStatus\b' 'SelfCheck 覆盖钩子判定层'
 arch_forbid "$SRC/src/ui/dialogs/panes/AutomationPane.cpp" '\bEngineCli\b' '界面不自己调引擎（经 AppModel）'
 
 # ── 批 V · M1-7 平台层（后端分档 / 窗口激活 / 托盘弹窗定位 / 任务栏几何）─────
@@ -886,10 +929,10 @@ arch_need_count "$SRC/src/tray/TrayPopupWindow.cpp" 'platform::activate\(' 1 '�
 arch_forbid_tree '[^_a-zA-Z]raise\(\);' 'raise 不再散落在界面代码里（叠放次序归平台层）' src/platform/Backend.cpp
 
 # 判据/探针可见面：结论可离线测、平台事实有可见面。
-arch_need "$SRC/src/app/SelfCheck.cpp" 'Backend::classify\(' 'SelfCheck 覆盖后端分档判定'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'Backend::activationFor\(' 'SelfCheck 覆盖激活动作计划'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'Backend::placePopup\(' 'SelfCheck 覆盖托盘弹窗落点'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'Backend::reservedInsets\(' 'SelfCheck 覆盖任务栏边距'
+arch_need_any 'Backend::classify\(' 'SelfCheck 覆盖后端分档判定'
+arch_need_any 'Backend::activationFor\(' 'SelfCheck 覆盖激活动作计划'
+arch_need_any 'Backend::placePopup\(' 'SelfCheck 覆盖托盘弹窗落点'
+arch_need_any 'Backend::reservedInsets\(' 'SelfCheck 覆盖任务栏边距'
 arch_need "$SRC/src/main.cpp" 'backendKind=' '无头探针报出后端分档（平台事实可见）'
 
 # ── 批 W · M1-8 Wayland 分支 + DDE 面板真几何 ──────────────────────
@@ -925,8 +968,8 @@ arch_need "$SRC/src/tray/TrayPopupWindow.cpp" 'qobject_cast<QGuiApplication \*>'
 arch_need "$SRC/src/main.cpp" 'panelRect=' '无头探针报出面板矩形'
 arch_need "$SRC/src/main.cpp" 'panelEdge=' '无头探针报出面板所在边'
 arch_need "$SRC/src/main.cpp" 'trayPopupTarget=' '无头探针报出托盘弹窗落点'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'PanelGeometry::usableArea\(' 'SelfCheck 覆盖面板可用区'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'usedPanelGeometry' 'SelfCheck 覆盖面板感知落点'
+arch_need_any 'PanelGeometry::usableArea\(' 'SelfCheck 覆盖面板可用区'
+arch_need_any 'usedPanelGeometry' 'SelfCheck 覆盖面板感知落点'
 
 # 新文件必须进了构建（漏登记 = 代码在仓里但没编进去）
 for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToolPlan.cpp \
@@ -1034,12 +1077,12 @@ arch_need "$SRC/src/tray/TrayController.cpp" 'platform::publishTraySni\(' 'SNI �
 arch_need "$SRC/src/platform/TraySni.h" 'TraySniStatus publishTraySni\(' 'SNI 发布有唯一入口'
 
 # 判据/探针可见面
-arch_need "$SRC/src/app/SelfCheck.cpp" 'TraySni::classifyHost\(' 'SelfCheck 覆盖 host 变体判定'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'TraySni::encodeArgb32NetworkOrder\(' 'SelfCheck 覆盖像素编码'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'TraySni::requiredProperties\(' 'SelfCheck 覆盖必填属性表'
+arch_need_any 'TraySni::classifyHost\(' 'SelfCheck 覆盖 host 变体判定'
+arch_need_any 'TraySni::encodeArgb32NetworkOrder\(' 'SelfCheck 覆盖像素编码'
+arch_need_any 'TraySni::requiredProperties\(' 'SelfCheck 覆盖必填属性表'
 arch_need "$SRC/src/main.cpp" 'sniWatcher=' '无头探针报出 SNI watcher 状态'
 arch_need "$SRC/src/main.cpp" 'sniHost=' '无头探针报出 host 变体'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'typeToSignature' 'SelfCheck 覆盖 D-Bus 签名声明（不声明宿主会按 av 解）'
+arch_need_any 'typeToSignature' 'SelfCheck 覆盖 D-Bus 签名声明（不声明宿主会按 av 解）'
 
 # ⚠⚠ **字节级判据只能放真机端到端探针**：`--selfcheck` 跑在 QApplication 构造之前
 #   ⇒ 没有总线；且 `QDBusArgument` 一旦写入就是**只写**的 ⇒ 同一份数据读不回来
@@ -1110,9 +1153,9 @@ arch_need "$SRC/src/tray/TrayController.cpp" 'platform::updateDeepinTrayIcon\(' 
 arch_need "$SRC/src/tray/TrayController.cpp" 'm_backend == TraySni::Backend::DeepinWindow' 'deepin 后端单独一个分支（不与 SNI 并存）'
 
 # 判据/探针可见面
-arch_need "$SRC/src/app/SelfCheck.cpp" 'dockFieldIndex' 'SelfCheck 覆盖 dock 字段偏移'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'chooseBackend' 'SelfCheck 覆盖后端选择'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'dockSelectionName' 'SelfCheck 覆盖选区名'
+arch_need_any 'dockFieldIndex' 'SelfCheck 覆盖 dock 字段偏移'
+arch_need_any 'chooseBackend' 'SelfCheck 覆盖后端选择'
+arch_need_any 'dockSelectionName' 'SelfCheck 覆盖选区名'
 arch_need "$SRC/src/main.cpp" 'deepinTraySelection=' '无头探针报出 deepin 托盘选区状态'
 arch_need "$SRC/scripts/probe-deepin-tray.sh" 'TrayIcons' '端到端探针在（判据放在真机探针）'
 arch_need "$SRC/scripts/probe-deepin-tray.sh" 'WM_NAME' '端到端探针核 X 侧窗口名（不靠 daemon 侧那张表）'
@@ -1134,7 +1177,7 @@ arch_need "$SRC/src/tray/TrayController.cpp" '托盘后端 =' '应用自报走�
 arch_need "$SRC/scripts/probe-sni-icon.sh" 'DEEPDOLPHIN_TRAY_BACKEND=sni' 'SNI 探针强制走 SNI 那条路'
 arch_need "$SRC/scripts/probe-sni-icon.sh" '托盘后端 = ' 'SNI 探针核对应用自报的后端（强制没生效 ⇒ 判据红）'
 arch_need "$SRC/scripts/probe-deepin-tray.sh" 'deepin-window' 'deepin 探针核对自动选路的结果'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'parseBackendOverride' 'SelfCheck 覆盖强制开关的解析'
+arch_need_any 'parseBackendOverride' 'SelfCheck 覆盖强制开关的解析'
 # 构建登记：新文件必须编进去（漏登记 = 代码在仓里但没编）
 for f in src/logic/DeepinTray.cpp src/logic/DeepinTray.h src/platform/DeepinTray.cpp src/platform/DeepinTray.h src/platform/TrayBackend.cpp src/platform/TrayBackend.h; do
     if ! grep -qE "(^|[[:space:]])$f([[:space:]]|$)" "$SRC/CMakeLists.txt"; then
@@ -1202,10 +1245,10 @@ arch_need "$SRC/src/app/Settings.h" 'appLanguageKey' '设置层暴露语言读�
 # 分段按钮要能改档位文字（否则换语言时分段名换不掉）
 arch_need "$SRC/src/ui/common/SegmentedButton.h" 'setButtonText' '分段按钮支持改档位文字（语言切换用）'
 # 判据覆盖
-arch_need "$SRC/src/app/SelfCheck.cpp" 'DocPages::resolveLanguage' 'SelfCheck 覆盖语言解析三态'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'DocPages::languageFromKey' 'SelfCheck 覆盖「认不出 ⇒ nullopt」'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'DocPages::languageKey' 'SelfCheck 覆盖语言 key 稳定性'
-arch_need "$SRC/src/app/SelfCheck.cpp" 'DocPages::kindTitle' 'SelfCheck 覆盖类目显示名按语言取'
+arch_need_any 'DocPages::resolveLanguage' 'SelfCheck 覆盖语言解析三态'
+arch_need_any 'DocPages::languageFromKey' 'SelfCheck 覆盖「认不出 ⇒ nullopt」'
+arch_need_any 'DocPages::languageKey' 'SelfCheck 覆盖语言 key 稳定性'
+arch_need_any 'DocPages::kindTitle' 'SelfCheck 覆盖类目显示名按语言取'
 # ── 批 AA 补 · 文档语言**行为**探针（接线门是源码扫描，证不了「界面真换了」）──
 arch_need "$SRC/src/ui/dialogs/DocsDialog.h" 'QStringList probeValues\(\) const' '文档窗有只读呈现出口（探针要看实际呈现）'
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'QStringList DocsDialog::probeValues\(\) const' '呈现出口有实现'
