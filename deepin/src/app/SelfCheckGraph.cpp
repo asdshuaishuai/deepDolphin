@@ -467,6 +467,27 @@ void checkGraph(QStringList &log)
                 forced.argv.contains(QStringLiteral("--force"))
                     && !notForced.argv.contains(QStringLiteral("--force")));
 
+            // ⚠⚠ **共享口径必须钉死**（批 AS）：mac 侧的 `ToolArgs.flag` 是这份实现的
+            //   **对位实现**，两端对**同一个模型参数**必须给出**同一个开关** ——
+            //   否则同一个请求在两端行为不同 ⇒ 排障时互相甩锅。
+            //   钉住三件容易分叉的事：
+            //   ① 「on」也是真（deepin 侧认，mac 侧起初漏了）；
+            //   ② 数字**只有 1 为真**（「2」为假 —— **不是**「非 0 即真」，
+            //      因为 deepin 侧走 `v.toString()` 后只认 true/1/yes/on）；
+            //   ③ 大小写与首尾空白**不算数**（" TRUE " 仍是真）。
+            const auto planWithForce = [](const QJsonValue &v) {
+                return AgentToolPlan::planFor(QStringLiteral("arch_update"),
+                    QJsonObject { { QStringLiteral("name"), QStringLiteral("atlas") },
+                        { QStringLiteral("force"), v } });
+            };
+            check(log, "agent 工具表：开关口径——「on」为真、大小写与空白不算数、"
+                       "数字只有 1 为真（mac 侧对位实现必须同口径）",
+                planWithForce(QStringLiteral("on")).argv.contains(QStringLiteral("--force"))
+                    && planWithForce(QStringLiteral(" TRUE ")).argv.contains(QStringLiteral("--force"))
+                    && planWithForce(1).argv.contains(QStringLiteral("--force"))
+                    && !planWithForce(2).argv.contains(QStringLiteral("--force"))
+                    && !planWithForce(0).argv.contains(QStringLiteral("--force")));
+
             // 数值型参数：不是数就不给（缺省交给引擎），不把垃圾递给引擎让它报错
             const AgentToolPlan::Plan badDepth
                 = AgentToolPlan::planFor(QStringLiteral("codegraph_tree"),

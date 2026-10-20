@@ -1123,6 +1123,25 @@ arch_need "$ROOT/macos/Tests/ClientCheck/main.swift" 'ArchReceipt\.htmlPath\(' '
 # ⚠ deepin 侧那条**实跑夹具**也钉住（它是两侧共同的口径来源）
 arch_need "$SRC/src/app/SelfCheckGraph.cpp" '已写入：' 'deepin 侧自检必须钉住**引擎实跑原文**的回执形态（两侧口径共同的事实来源）'
 
+# ── 批 AS · mac 侧布尔旗标只认 Bool ⇒ 模型写成字符串时**恒为假**（跨目录盯 macos/）──
+#
+# ⚠ **起因**：`AgentCore.swift` 里那句注释本来就写着「模型给的布尔/数字经
+#   JSONSerialization 可能落成 Bool/Int/Double/String」——
+#   而**实现只有 `as? Bool`** ⇒ **说法与实现相反**（批 AI 的教训：
+#   说法与实现相反比说法缺失更危险）。
+#   ⇒ 只认 Bool 时：模型把旗标写成**字符串**（`"force": "true"`）
+#   或非 0/1 的数（`2`）⇒ `as? Bool` 落空 ⇒ 旗标**恒为假**
+#   ⇒ 症状：AI 说「强制重跑」，`render arch --force` / `arch gen --force`
+#   **静默不生效**（命令照发、旗标没了），界面上还显示「✓ 执行成功」。
+#   ⇒ 修法：抽成纯函数 `ToolArgs.flag`（该文件**本就在** agent-check 的编译清单里
+#   ⇒ 判据脚手架现成），`AgentCore` 改调它。
+arch_forbid "$ROOT/macos/Sources/deepDolphin/AgentCore.swift" 'as\? Bool\) == true' 'AgentCore 不许再只用 `as? Bool` 判旗标（模型写成字符串/非 0/1 的数时恒假 ⇒ --force 静默不生效）'
+arch_need "$ROOT/macos/Sources/deepDolphin/AgentCore.swift" 'ToolArgs\.flag\(' 'AgentCore 的旗标解析走共享纯函数'
+arch_need "$ROOT/macos/Sources/deepDolphin/ToolArgs.swift" 'static func flag\(' 'ToolArgs 必须提供纯函数版的旗标解析（能进 agent-check 的编译清单 ⇒ 才测得到）'
+arch_need "$ROOT/macos/Sources/deepDolphin/ToolArgs.swift" '"true"' '旗标必须认**字符串**形态的 true（模型把布尔写成字符串是真实形状）'
+arch_need "$ROOT/macos/scripts/agent-check.sh" 'swiftc .*"\$ARGS"' 'mac 侧判据必须**在 swiftc 那行**编译 ToolArgs.swift（只声明不编 ⇒ 断言永远绿）'
+arch_need "$ROOT/macos/Tests/AgentCheck/main.swift" 'ToolArgs\.flag\(' 'mac 侧判据必须真的断言旗标的多种形态'
+
 # ── 批 AN · 快照基线「逐字节可重现」：关掉 DTK 标题栏阴影带 ──
 #
 # ⚠ 起因（实测照出「基线这道门其实形同虚设」）：

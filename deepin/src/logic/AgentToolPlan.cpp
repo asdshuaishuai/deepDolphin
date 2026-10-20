@@ -27,14 +27,24 @@ QString num(const QJsonObject &params, const QString &key)
     return re.match(v).hasMatch() ? v : QString();
 }
 
-/// 开关型参数：模型给的可能是布尔 true，也可能是字符串 "true"/"1"/"yes"。
+/// 开关型参数：模型给的可能是布尔 true，也可能是字符串 "true"/"1"/"yes"/"on"，
+/// 还可能是数字 1。
 /// 引擎把 params 声明成**全 string 型必填**，所以模型多半发字符串 ——
 /// 只认布尔会让 flag 永远不生效（--force / --violations 形同虚设）。
+///
+/// ⚠⚠ **数字形态以前也漏了**（批 AS 实测）：`QJsonValue::toString()` 对**数字**
+///   返回的是**空串**（不是 "1"）⇒ 走字符串分支必然落空 ⇒ JSON `{"force": 1}`
+///   判**假**。⇒ 补上数字分支：**只有 1 为真**（2 之类一律假 —— 不是「非 0 即真」，
+///   那是另一套约定；这里跟 mac 侧 `ToolArgs.flag` 必须**同口径**）。
+///   ⚠ `isBool()` 要**先**判：Qt 里 `true`/`false` 存成 bool 型、`1`/`0` 存成 double 型，
+///   两者在 `isDouble()` 上不重叠（`isDouble()` 只对数字为真）。
 bool flag(const QJsonObject &params, const QString &key)
 {
     const QJsonValue v = params.value(key);
     if (v.isBool())
         return v.toBool();
+    if (v.isDouble())
+        return v.toDouble() == 1.0;
     const QString s = v.toString().trimmed().toLower();
     return s == QLatin1String("true") || s == QLatin1String("1")
         || s == QLatin1String("yes") || s == QLatin1String("on");

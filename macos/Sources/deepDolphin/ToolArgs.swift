@@ -45,6 +45,38 @@ enum ToolArgs {
         return .object(dict)
     }
 
+    /// 布尔旗标的解析：**认出模型可能给出的所有形态**。
+    ///
+    /// ⚠ 原来这里只有 `(params[key] as? Bool) == true`（内联在 `AgentCore`
+    ///   的闭包里）—— 而**那句注释本来就写着**「模型给的布尔/数字经
+    ///   JSONSerialization 可能落成 Bool/Int/Double/String」
+    ///   ⇒ **说法与实现相反**（批 AI 的教训：说法与实现相反比说法缺失更危险）。
+    ///   ⇒ 只认 Bool 时，模型把旗标写成**字符串**（`"force": "true"`）
+    ///   ⇒ `as? Bool` 落空 ⇒ 旗标**恒为假**
+    ///   ⇒ 症状：AI 说「强制重跑」，`render arch --force` / `arch gen --force`
+    ///     **静默不生效**（命令照发，旗标没了）—— 界面上还显示「✓ 执行成功」。
+    ///   ⚠ deepin 侧**早就修过**同一个洞（`deepin/src/logic/AgentToolPlan.cpp`
+    ///   的 `flag()`，注释原话：「只认布尔会让 flag 永远不生效
+    ///   （--force / --violations 形同虚设）」）⇒ 本函数是它的**对位实现**。
+    ///
+    /// 口径**逐条照抄 deepin 侧**（两端必须同口径，否则同一个模型参数
+    /// 在两端得到不同的开关 ⇒ 排障时会互相甩锅）：
+    ///   · Bool            → 本身
+    ///   · 数字            → **只有 1 为真**（2 之类一律假；⚠ 不是「非 0 即真」）
+    ///   · 字符串          → "true" / "1" / "yes" / "on"（**忽略大小写与首尾空白**）为真
+    ///   其余（缺失、NSNull、空串、"false"/"0"/"no"、其它字符串）⇒ 假。
+    ///   ⚠ 宁可**认不出**也不**乱认**：认不出的形态一律当假，
+    ///     不会把「未给」变成「给了」。
+    static func flag(_ params: [String: Any], _ key: String) -> Bool {
+        guard let value = params[key], !(value is NSNull) else { return false }
+        if let b = value as? Bool { return b }
+        if let i = value as? Int { return i == 1 }
+        if let d = value as? Double { return d == 1 }
+        let s = (value as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return s == "true" || s == "1" || s == "yes" || s == "on"
+    }
+
     /// 必填参数里缺了哪些。**空白等同于缺**（`{"name": "  "}` 与没给一样危险）。
     static func missing(params: [String: Any], required: [String]) -> [String] {
         var out: [String] = []

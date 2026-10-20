@@ -396,6 +396,89 @@ do {
         return "required 取自同一份契约"
     }
 
+    // ---- 布尔旗标：不能只认 Bool（批 AS）-----------------------------------
+    // ⚠ 原来 `flag` 是 `(params[key] as? Bool) == true`（内联在 AgentCore 的闭包里），
+    //   而**上一行那句注释本来就写着**「模型给的布尔/数字经 JSONSerialization
+    //   可能落成 Bool/Int/Double/String」⇒ **说法与实现相反**。
+    //   ⇒ 只认 Bool 时：模型把旗标写成**字符串**（`"force": "true"`）或非 0/1 的数
+    //   ⇒ 落空 ⇒ 旗标**恒为假** ⇒ `render arch --force` / `arch gen --force`
+    //   **静默不生效**，界面上还显示「✓ 执行成功」。
+    check("旗标：字符串形态「true/1/yes/on」也要认（模型把布尔写成字符串时恒假）") {
+        let truthy: [[String: Any]] = [
+            ["force": "true"],
+            ["force": "TRUE"],
+            ["force": " true "],
+            ["force": "1"],
+            ["force": "yes"],
+            ["force": "Yes"],
+            ["force": "on"],
+            ["force": "ON"],
+        ]
+        var missed: [String] = []
+        for p in truthy where !ToolArgs.flag(p, "force") {
+            missed.append("\(p["force"]!)")
+        }
+        guard missed.isEmpty else {
+            throw fail("这些形态被当成了假：\(missed.joined(separator: " / "))")
+        }
+        return "\(truthy.count) 种字符串形态全部认得出"
+    }
+
+    check("旗标：数字形态**只有 1 为真**（与 deepin 侧同口径：不是「非 0 即真」）") {
+        guard ToolArgs.flag(["force": 1], "force") else { throw fail("1 不算真") }
+        guard ToolArgs.flag(["force": 1.0], "force") else { throw fail("1.0 不算真") }
+        guard !ToolArgs.flag(["force": 0], "force") else { throw fail("0 被当成了真") }
+        // ⚠ 2 为**假**：deepin 侧 `AgentToolPlan.cpp` 的 `flag()` 走
+        //   `v.toString()` 后只认 "true"/"1"/"yes"/"on" ⇒ 「2」不在其中。
+        //   两端口径必须一致 ⇒ 同一个模型参数在两端得到同一个开关。
+        guard !ToolArgs.flag(["force": 2], "force") else {
+            throw fail("2 被当成了真（deepin 侧为假 ⇒ 两端口径分叉了）")
+        }
+        return "1/1.0 为真，0/2 为假"
+    }
+
+    check("旗标：假值与缺省一律为假（宁可认不出，也不把「未给」变成「给了」）") {
+        let falsy: [[String: Any]] = [
+            ["force": false],
+            ["force": "false"],
+            ["force": "0"],
+            ["force": "no"],
+            ["force": ""],
+            ["force": "   "],
+            ["force": "maybe"],
+            ["force": NSNull()],
+            [:],
+        ]
+        var wrong: [String] = []
+        for p in falsy where ToolArgs.flag(p, "force") {
+            wrong.append("\(p["force"] ?? "<缺>")")
+        }
+        guard wrong.isEmpty else {
+            throw fail("这些形态被当成了真：\(wrong.joined(separator: " / "))")
+        }
+        return "\(falsy.count) 种假值/缺省全部为假"
+    }
+
+    check("旗标：走的是共享纯函数，不是 AgentCore 里内联的 as? Bool（lint）") {
+        let pkg = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let url = pkg.appendingPathComponent("Sources/deepDolphin/AgentCore.swift")
+        let src = code((try? String(contentsOf: url, encoding: .utf8)) ?? "")
+        guard src.contains("AgentCore") else {
+            throw fail("读不到 AgentCore.swift（\(url.path)）—— 本条会静默空转")
+        }
+        guard !src.contains("as? Bool) == true") else {
+            throw fail("AgentCore 还在用 `as? Bool) == true` —— 旗标又退回只认 Bool"
+                       + "（模型写成字符串时恒假 ⇒ --force 静默不生效）")
+        }
+        guard src.contains("ToolArgs.flag") else {
+            throw fail("AgentCore 没走 ToolArgs.flag —— 解析判定被内联回去了")
+        }
+        return "已收敛到 ToolArgs.flag"
+    }
+
     // ---- 源 lint：拦审定在执行之前，且不许退回 `?? [:]` --------------------
     check("AgentCore 必须在执行前拦下畸形入参，且不得再用 `?? [:]`（lint）") {
         let pkg = URL(fileURLWithPath: #filePath)

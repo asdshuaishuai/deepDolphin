@@ -104,7 +104,11 @@ enum AgentCore {
         }
         func str(_ key: String) -> String { params[key] as? String ?? "" }
         // 模型给的布尔/数字经 JSONSerialization 可能落成 Bool/Int/Double/String
-        func flag(_ key: String) -> Bool { (params[key] as? Bool) == true }
+        // ⚠️ 所以旗标**不能**只认 Bool：只认 Bool 时，模型把旗标写成字符串
+        //   （`"force": "true"`）或非 0/1 的数（`2`）⇒ 落空 ⇒ **恒为假**
+        //   ⇒ AI 说「强制重跑」而 `--force` 静默不生效（批 AS）。
+        //   统一口径与 `num` 一致（都把 Int/Double/String 认出来）⇒ ToolArgs.flag。
+        func flag(_ key: String) -> Bool { ToolArgs.flag(params, key) }
         func num(_ key: String) -> String {
             if let v = params[key] as? Int { return String(v) }
             if let v = params[key] as? Double { return String(Int(v)) }
