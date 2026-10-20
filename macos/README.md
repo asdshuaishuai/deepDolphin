@@ -122,6 +122,40 @@ bash scripts/engine-fetch-check.sh --full   # 真下载 + 解包 + 验三样 + �
 `Contents/Frameworks/`；形状 A **不用** SDK 那份运行库（两个版本的
 `libcangjie-runtime.dylib` 混在同一目录里，后拷的会盖掉先拷的 ⇒ 版本对不上 ⇒ 起来就崩）。
 
+### 引擎回执里的路径（批 AR 修好）
+
+架构页与代码图谱页的「打开导出文件」入口，路径是从**引擎回执**里抽的。引擎回执的
+**真实形态**（2026-10-20 实跑 `moongit render arch` 取得，原文照抄）：
+
+```
+已写入：/home/superShuai/.deepgit/store/p_f80de38f6095/render/arch.html · 共 0 个文件，0 个函数（语法未通过则不计入）
+```
+
+路径与文案之间是**全角冒号**（**没有空格**）。原来那两份同名复制按**空格**切词
+⇒ 切出「已写入：/path/arch.html」这种粘连块 ⇒ 纯路径取不出来 ⇒
+**「打开」入口始终不出现**（死按钮）。
+
+现在这段解析是纯函数 `Sources/deepDolphin/ArchReceipt.swift`（零 SwiftUI/AppKit 依赖），
+口径与 deepin 侧 `deepin/src/logic/ArchReceipt.cpp` 逐条对位：
+
+- 边界 = 空白 + **全角冒号**「：」+ **中点**「·」（deepin 侧正则是 `(?<=[\s：·])`）；
+- 只认**绝对路径**（相对路径打不开 ⇒ 宁可不给入口，也不要坏按钮）；
+- 后缀由调用方给（`.html` / `.md`）；
+- **不缓存**任何按后缀构造的东西 ⇒ 不会踩 deepin 侧踩过的坑
+  （正则放在函数级 `static` 里 ⇒「第一次调用用哪个后缀，模式就焊死成哪个」
+  ⇒ 之后传 `.md` 也按 `.html` 找，报告路径永远抽不到）。
+
+判据在 `scripts/client-check.sh`（本文件已进它的编译清单）与
+`Tests/ClientCheck/main.swift`（四条断言：引擎实跑形态 / 结论行 / 相对路径不认 /
+后缀不同的两次抽取互不污染）：
+
+```sh
+scripts/client-check.sh
+```
+
+⚠ 本批改动**未在无 Swift 工具链的环境里编译过** ⇒ 第一次在 mac 上跑该脚本时，
+请把这四条当作**待验**项，而不是既成事实。
+
 ## 代码结构
 
 ```
