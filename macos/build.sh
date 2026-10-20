@@ -99,24 +99,28 @@ for CANDIDATE in \
 done
 
 # 本地没有 → 从 GitHub Releases 下载最新版
+#
+# ⚠⚠⚠ **原来这条路径从来没成功过**（批 AQ 实测照出三个叠在一起的错）：
+#   ① URL 写死 `releases/latest/download/moongit-darwin-arm64.tar.gz`
+#      —— release 的资产名**带版本号**（`moongit-v0.2.1-darwin-arm64.tar.gz`），
+#      而 `latest/download` 要求**资产名精确匹配** ⇒ **必然 404**；
+#   ② 找的是「包根的 `moongit-cli`」—— 真实包里**没有**那个文件
+#      （真二进制在 `bin/moongit-cli`，包根是**启动器** `moongit`）⇒ 就算 URL 修好也**找不到**；
+#   ③ 只复制那一个文件、**把 `runtime/lib/` 丢掉** ⇒ 装下来的引擎**根本起不来**
+#      （缺仓颉运行时）。deepin 侧早就踩过同一族坑，见
+#      `deepin/src/logic/EngineDownload.h`。
+# ⇒ 改用 `scripts/fetch-engine.sh`：查 API 按**后缀**挑资产（不写死版本号）
+#   → 整包下载 → 整包解包 → 验三样（启动器 / bin/ / runtime/）齐全。
+#   判据：`scripts/engine-fetch-check.sh`（不依赖 macOS，Linux 上也能跑）。
+ENGINE_HOME="$HOME/.local/share/deepDolphin/engine"
 if [ -z "$ENGINE_PICKED" ]; then
-  GH_URL="https://github.com/asdshuaishuai/moongit/releases/latest/download/moongit-darwin-arm64.tar.gz"
   echo "› 本地无引擎，从 GitHub Releases 下载…"
-  if curl -fsSL "$GH_URL" -o /tmp/moongit-dl.tar.gz 2>/dev/null; then
-    mkdir -p "$HOME/.local/bin"
-    tar xzf /tmp/moongit-dl.tar.gz -C /tmp/moongit-dl 2>/dev/null || {
-      mkdir -p /tmp/moongit-dl
-      tar xzf /tmp/moongit-dl.tar.gz -C /tmp/moongit-dl
-    }
-    if [ -f /tmp/moongit-dl/moongit-cli ]; then
-      cp /tmp/moongit-dl/moongit-cli "$HOME/.local/bin/moongit"
-      chmod +x "$HOME/.local/bin/moongit"
-      ENGINE_PICKED="$HOME/.local/bin/moongit"
-      echo "  ✓ 引擎已下载安装到 ~/.local/bin/moongit"
-    fi
-    rm -rf /tmp/moongit-dl /tmp/moongit-dl.tar.gz
+  if FETCH_OUT="$(sh "$DIR/scripts/fetch-engine.sh" "$ENGINE_HOME" 2>&1)"; then
+    ENGINE_PICKED="$FETCH_OUT"
+    echo "  ✓ 引擎已下载并整包安装到 $ENGINE_HOME"
   else
-    echo "  ⚠ GitHub Releases 下载失败，将使用系统已安装的引擎"
+    echo "  ⚠ GitHub Releases 下载失败，将使用系统已安装的引擎" >&2
+    printf '%s\n' "$FETCH_OUT" | sed 's/^/    /' >&2
   fi
 fi
 
@@ -137,7 +141,8 @@ for CANDIDATE in \
   "$(command -v moongit 2>/dev/null || true)" \
   "$(command -v deepgit 2>/dev/null || true)" \
   "$HOME/.local/bin/moongit" \
-  "$HOME/.local/bin/deepgit"; do
+  "$HOME/.local/bin/deepgit" \
+  "$ENGINE_HOME/moongit"; do
   if [ -n "$CANDIDATE" ] && [ -x "$CANDIDATE" ]; then
     case "$CANDIDATE" in
       */moonGit/target/*) ENGINE_IS_REPO=1 ;;
@@ -148,8 +153,27 @@ for CANDIDATE in \
   fi
 done
 
+# ⚠⚠ 引擎有两种**形状**，不能一把梭（批 AQ）：
+#   A. **发布包**（`moongit` 启动器 + `bin/moongit-cli` + `runtime/lib/`）
+#      —— 下载来的就是它；启动器按**自身所在目录**找后两样。
+#   B. **裸二进制**（仓内 cjpm 产物 / 手工装的 CLI）—— 只有一个可执行文件。
+# ⚠ **内嵌进 bundle 的必须是 Mach-O**：下面的 rpath 重写与补签都只对 Mach-O 有意义
+#   （`otool -l` 对 shell 脚本直接失败 ⇒ 会误报「rpath 被清空了却没写回来」）。
+#   ⇒ 形状 A 内嵌**真二进制** `bin/moongit-cli`（它才是 Mach-O），
+#     并把它自带的仓颉运行库一起放进 `Contents/Frameworks/`
+#     （rpath 里有 `@executable_path/../Frameworks` ⇒ 找得到）。
+ENGINE_SHAPE="none"
 if [ -n "$ENGINE_PICKED" ]; then
-  cp "$ENGINE_PICKED" "$APP_BUNDLE/Contents/Resources/moongit"
+  ENGINE_ROOT="$(dirname "$ENGINE_PICKED")"
+  if [ -x "$ENGINE_ROOT/bin/moongit-cli" ] && [ -d "$ENGINE_ROOT/runtime/lib" ]; then
+    ENGINE_SHAPE="package"
+    cp "$ENGINE_ROOT/bin/moongit-cli" "$APP_BUNDLE/Contents/Resources/moongit"
+    mkdir -p "$APP_BUNDLE/Contents/Frameworks"
+    cp "$ENGINE_ROOT/runtime/lib/"*.dylib "$APP_BUNDLE/Contents/Frameworks/" 2>/dev/null || true
+  else
+    ENGINE_SHAPE="bare"
+    cp "$ENGINE_PICKED" "$APP_BUNDLE/Contents/Resources/moongit"
+  fi
   if [ "$ENGINE_IS_REPO" = "1" ]; then
     echo "   已内嵌引擎（仓内 release）：$ENGINE_PICKED"
   else
@@ -163,7 +187,10 @@ fi
 # 内嵌引擎所需的仓颉运行时（若存在），使 app 可独立运行
 CJ_HOME="${CANGJIE_HOME:-$HOME/.local/share/cangjie/current}"
 CJ_RUNTIME="$CJ_HOME/runtime/lib/darwin_aarch64_cjnative"
-if [ -d "$CJ_RUNTIME" ]; then
+# ⚠ 形状 A（发布包）**自带**运行库 ⇒ 不用 SDK 那份：
+#   两个版本的 libcangjie-runtime.dylib 混在同一个 Frameworks 目录里，
+#   后拷的会盖掉先拷的 ⇒ 引擎与运行库版本对不上 ⇒ 起来就崩。
+if [ "$ENGINE_SHAPE" != "package" ] && [ -d "$CJ_RUNTIME" ]; then
   mkdir -p "$APP_BUNDLE/Contents/Frameworks"
   cp "$CJ_RUNTIME/"*.dylib "$APP_BUNDLE/Contents/Frameworks/" 2>/dev/null || true
   # 让内嵌引擎**只**从 app 自己的 Frameworks 目录加载运行时，

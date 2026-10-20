@@ -10,6 +10,8 @@
 # 用法：scripts/ci-wiring.sh [源码根目录]（默认脚本所在目录的上一级）
 set -uo pipefail
 SRC="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
+# ⚠ 仓根（`macos/` 与 `deepin/` 同仓）—— 跨目录盯 mac 侧的源码门用它。
+ROOT="$(cd "$SRC/.." && pwd)"
 
 # 剥注释再匹配：注释里出现的字样不算接线（否则加一行注释就能骗过门）。
 # ⚠ **按文件类型分派**：C++ 源文件是 `//`，shell 脚本是 `#`。
@@ -1055,6 +1057,38 @@ arch_need "$SRC/src/main.cpp" 'dpiEdgeLevels=legacy:%d' '平台探针报出自�
 #   裸串在**错误提示语**里也出现（负控实测：把那一跑改成 1x，接线门照样绿）。
 arch_need "$SRC/scripts/ci-platform-probe.sh" 'dpi_b_out=.*QT_SCALE_FACTOR=2' 'HiDPI 的效果断言必须真在 dpr=2 下跑（不许退化成 dpr=1 的空断言）'
 arch_need "$SRC/scripts/ci-platform-probe.sh" 'dpiEdgeLevels' 'HiDPI 门必须断言边缘过渡层数（dpr>1 时 dpr 感知要更细腻）'
+
+# ── 批 AQ · mac 侧引擎下载链：写死的 404 URL + 虚构的产物布局（跨目录盯 macos/）──
+#
+# ⚠ **起因**：mac 侧 `build.sh` 的下载路径有**三个**叠在一起的错，
+#   而它们**从未被发现**（因为那条路径从来没成功过 ⇒ 没人见过它成功的样子）：
+#   ① URL 写死 `releases/latest/download/moongit-darwin-arm64.tar.gz`
+#      —— release 资产名**带版本号**（`moongit-v0.2.1-darwin-arm64.tar.gz`），
+#      而 `latest/download` 要求**资产名精确匹配** ⇒ **必然 404**；
+#   ② 找「包根的 `moongit-cli`」—— 真实包里**没有**那个文件
+#      （包根是**启动器** `moongit`，真二进制在 `bin/moongit-cli`）⇒ 找不到；
+#   ③ 只复制那一个文件、**把 `runtime/lib/` 丢掉** ⇒ 装下来的引擎**根本起不来**
+#      （缺仓颉运行时）。deepin 侧早已踩过同一族坑，见
+#      `deepin/src/logic/EngineDownload.h`。
+# ⇒ 修法：`macos/scripts/fetch-engine.sh`（查 API 按**后缀**挑资产 → 整包下载 →
+#   整包解包 → 验「启动器 / bin/moongit-cli / runtime/lib」三样齐全）。
+#   行为判据：`macos/scripts/engine-fetch-check.sh`（**不依赖 macOS**，Linux 上可跑）。
+#
+# ⚠ 下面这些是**静态门**：它们进 deepin 的 CI（每次都跑、无网络依赖），
+#   行为判据（真下载）需要网络，手工跑 —— 两者互补。
+# ⚠ 用 `arch_forbid`（**剥注释**）而不是 `arch_forbid_raw`：
+#   注释里**提到**那个旧 URL 是正常的（要解释它为什么坏）⇒ 措辞不该算数，
+#   只有**代码里真的用它**才算数。批 AP 的教训换了个方向：门盯的串
+#   必须**只被代码满足**（否则门既会被措辞骗过、也会被措辞误伤）。
+arch_forbid "$ROOT/macos/build.sh" 'releases/latest/download/moongit-' 'mac build.sh 不许再写死 latest/download 的引擎 URL（资产名带版本号 ⇒ 必然 404）'
+arch_need "$ROOT/macos/build.sh" 'fetch-engine\.sh' 'mac build.sh 的下载走 fetch-engine.sh（查 API 挑资产 + 整包落盘）'
+arch_forbid "$ROOT/macos/scripts/fetch-engine.sh" 'releases/latest/download' 'fetch-engine.sh 也不许写死 latest/download（同样必然 404）'
+arch_need "$ROOT/macos/scripts/fetch-engine.sh" 'browser_download_url' 'fetch-engine.sh 从 API 的资产列表里按后缀挑 URL'
+arch_need "$ROOT/macos/scripts/fetch-engine.sh" 'bin/moongit-cli' 'fetch-engine.sh 认得真二进制的真实位置（bin/ 下，不是包根）'
+arch_need "$ROOT/macos/scripts/fetch-engine.sh" 'runtime/lib' 'fetch-engine.sh 认得仓颉运行时的真实位置（runtime/lib/）'
+arch_need "$ROOT/macos/scripts/engine-fetch-check.sh" 'moongit-cli' '引擎下载链判据验「三样齐全」（缺一就是装了个跑不起来的引擎）'
+arch_need "$ROOT/macos/scripts/engine-fetch-check.sh" 'runtime/lib' '引擎下载链判据验仓颉运行时非空'
+arch_need "$ROOT/macos/build.sh" 'runtime/lib' 'mac build.sh 内嵌引擎时把包自带的运行库一起带上（缺它 ⇒ 内嵌引擎起不来）'
 
 # ── 批 AN · 快照基线「逐字节可重现」：关掉 DTK 标题栏阴影带 ──
 #
