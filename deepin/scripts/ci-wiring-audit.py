@@ -611,10 +611,11 @@ def check_count_gates(count_items):
 #   ⇒ 而 `if bad:` 正是**探针「违规 ⇒ 判红」的那一行** ⇒ 掏空它 = 探针集体失效。
 # ⚠⚠⚨ 批 BK 根治了「**注释顶替代码**」（`.py` 也剥 `#`）
 #   ⇒ 但「**判定被掏空、串还在**」这一头仍只靠**整行锚定**挡。
-# ⚠⚠⚨ **为什么只限探针文件**：探针是「**门自己的工具**」
-#   ⇒ 它被掏空 = 门**集体**失效 ⇒ 风险最高 ⇒ 先收进这一处（范围可控）。
-#   ⚠ 全仓逐批推进（已知边界，如实记着）。
-PROBE_GATE_SUFFIX = 'ci-tautology-check.py'
+# ⚠⚠⚨ **适用范围 = 「门自己的工具」**（批 BM 扩到审计器自身）：
+#   探针与审计器都是「**门自己的工具**」⇒ 它被掏空 = 门**集体**失效
+#   ⇒ 风险最高 ⇒ 收进这两处（范围可控）。
+#   ⚠ 全仓其余门项仍逐批推进（已知边界，如实记着）。
+GATE_TOOL_SUFFIXES = ('ci-tautology-check.py', 'ci-wiring-audit.py')
 
 
 def anchoring_violation(rx):
@@ -656,15 +657,17 @@ def anchoring_selftest():
     return bad
 
 
-def check_probe_gate_anchoring(cnt_items):
-    """盯探针文件的 `arch_need_count` 门项必须**整行锚定**。
+def check_gate_tool_anchoring(cnt_items):
+    """盯「门自己的工具」（探针 + 审计器）的 `arch_need_count` 门项必须**整行锚定**。
 
     ⚠ 只查 `arch_need_count`（单文件、整行匹配）⇒ `arch_need_count_in_fn`
       / `_in_step` 盯的是**函数体内/步骤内**的标记串（跨行是常态）⇒ 不要求。
+    ⚠⚠⚨ **适用范围由 `GATE_TOOL_SUFFIXES` 一个常量说了算**（单一真相源）
+      ⇒ 改一处就废掉另一处 ⇒ 那条门项守着它。
     """
     bad = []
     for lineno, f, rx, want in cnt_items:
-        if not f.endswith(PROBE_GATE_SUFFIX):
+        if not f.endswith(GATE_TOOL_SUFFIXES):
             continue
         why = anchoring_violation(rx)
         if why:
@@ -847,7 +850,7 @@ def main():
             return 8
         # ⚠⚠⚨ 批 BL · 盯探针的门项必须**整行锚定**
         #   （探针是「门自己的工具」⇒ 它被掏空 = 门**集体**失效 ⇒ 风险最高）
-        anchbad = check_probe_gate_anchoring(cnt)
+        anchbad = check_gate_tool_anchoring(cnt)
         if anchbad:
             print('盯探针文件的门项**不是整行锚定**（%d 条）⇒ 判定被掏空但串还在 ⇒ 门假绿'
                   % len(anchbad), file=sys.stderr)
@@ -883,8 +886,18 @@ def main():
             # ⚠ **审计器自己有盲区 ⇒ 那些门根本没被审** ⇒ 必须红。
             #   否则「审不到的门项」就成了逃逸口（批 AR「只声明不编译也算出现」的同构：
             #   判据写在那里，却没有任何机制保证它**真的被检查**）。
+            # ⚠⚠⚨ **一个退出码有两种原因**（批 BM 负控 H2 实测撞出）：
+            #   ① 真的**有门项没解析到**（盲区）；
+            #   ② **门型对拍的判定被掏空**（`if gtotal != gphysical:` 变成
+            #      `if gtotal != gphysical or True:` ⇒ 恒真 ⇒ **恒走 blind 分支**
+            #      ⇒ 明明没有盲区也报「盲区」）。
+            #   ⇒ 两者**现象相同**（都走这一支）⇒ **不能只报一种** ⇒ 会带偏排障。
             print('审计器有盲区：%d 行门项没解析到（%s）⇒ 它们**没被审**'
                   % (len(failed), ','.join('%d行/%s' % x for x in failed)), file=sys.stderr)
+            print('  ⚠⚠⚨ 注意：也可能是「**门型对拍的判定被掏空**」（`if gtotal != gphysical:` '
+                  '被改成 `… or True:` ⇒ 恒真 ⇒ 恒走这一支 ⇒ **明明没有盲区也报盲区**）'
+                  ' ⇒ 这时看的是**次数门配准**那条（rc=4，指名道姓是哪条门项命中 0）',
+                  file=sys.stderr)
             return 2
         # ⚠⚠⚠ **门项正则的写法体检**（批 AX）：正则里写了 GNU grep -E **不认**的转义
         #   （`\d` / `\D`）⇒ 那条门**永远匹配不到任何东西** ⇒ **门形同虚设**。

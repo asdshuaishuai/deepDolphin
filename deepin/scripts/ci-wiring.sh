@@ -1499,7 +1499,7 @@ else
         #   ⚠ 实测（批 AZ 负控）：把新加的 `arch_need_count` 目标串删掉 ⇒
         #     审计器报的是「命中 0 次 ⇒ 门恒红」(rc=4)，而旧消息说的是「串不唯一」⇒ **两回事**。
         case "$_audit_rc" in
-            2) _audit_why="审计器自己有盲区（有门项没解析到 ⇒ 它们**根本没被审**）" ;;
+            2) _audit_why="审计器自己有盲区（有门项没解析到 ⇒ 它们**根本没被审**）｜⚠ **也可能是门型对拍的判定被掏空**（恒真 ⇒ 恒走这一支 ⇒ 明明没盲区也报盲区）⇒ 这时看 rc=4（次数门配准，指名道姓是哪条门项命中 0）" ;;
             3) _audit_why="豁免基线之外有「串不唯一」的隐患（改一处骗得过门）" ;;
             4) _audit_why="次数门配准失准（期望次数 ≠ 实际命中数 ⇒ 门没牙或恒红）" ;;
             5) _audit_why="正则写法体检不过，或**有门项命中 0 次**（门永远匹配不到）" ;;
@@ -2392,13 +2392,17 @@ echo "✓ 批 BG 段门项全绿（断言函数实参里的判据也不许恒真
 #   ⚠⚠ **两条防线是互补的**：审计器里的「总数核对」抓「**删门项**」；
 #   而**把核对逻辑从审计器里删掉** ⇒ 审计器变绿 ⇒ 但下面这些静态门会红。
 arch_need_count "$SRC/scripts/ci-wiring-gates.baseline" '^[0-9]+$' 1 '门项行数**基线文件**必须在，且**只有一行、且是纯数字**（⚠ 基线文件里不许写注释 ⇒ 门侧 strip_comments 与审计侧读原文看到的是同一行）'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" 'GATE_BASELINE' 2 '审计器**必须读基线文件**（定义 + 读取）'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" 'GATE_CALL_LINE' 2 '审计器的**物理行数口径**必须在（定义 + 使用）'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" 'GATE_TYPES' 2 '审计器的**门型登记处**必须在（定义 + 使用）⇒ 漏登记一种门型 ⇒ 认领数 != 物理行数 ⇒ 当场红'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" 'FORBID_FAMILY' 2 'forbid 家族的**逐门型登记**必须在（⚠ forbid 门**有意不审**，但行数仍要计入 ⇒ 否则物理行数对不上 ⇒ 假红）'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" 'gtotal != gphysical' 1 '**门型覆盖对拍**必须在（认领数 != 物理行数 ⇒ 有门型没登记 ⇒ 那些门项没被审）'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" 'gphysical != gbase' 1 '**门项总数核对**必须在（物理行数 != 基线 ⇒ 有门项被删了 / 被改成注释了）'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" 'return 6' 1 '审计器的**第 6 种失败态**必须在（门项总数失配 ⇒ 与「盲区(2)/豁免外(3)/次数失准(4)/正则坏(5)」区分开 ⇒ 不然排障会被带偏）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_BASELINE = os\.path\.join\(SRC, .scripts., .ci-wiring-gates\.baseline.\)$' 1 '审计器**基线文件路径**的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 一条整行正则罩不住 ⇒ 拆成两条）｜⚠ **引号位置写 `.`**（正则参数用单引号包裹 ⇒ 不能含字面单引号 ⇒ 截断 ⇒ 门型盲区）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+path = GATE_BASELINE$' 1 '审计器**基线文件路径**的**使用点**必须在（⚠ 散在别处 ⇒ 改一处就废掉另一处 ⇒ 范围悄悄变了没人知道）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_CALL_LINE = re\.compile\(r.\^\\s\*arch_\\w\+\\s.\)$' 1 '审计器的**物理行数口径**的**定义**必须在（⚠ **整行锚定**：整条正则原样写出来 ⇒ 口径被改（压行后计数变）立即红）｜⚠ `\s` 是**偶数**个反斜杠 ⇒ 「字面反斜杠 + s」⇒ 合法 ⇒ 不会被正则体检误报'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+physical = sum\(1 for ln in lines if GATE_CALL_LINE\.match\(ln\)\)$' 1 '审计器的**物理行数口径**的**使用点**必须在｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_TYPES = \[$' 1 '审计器的**门型登记处**的**定义**必须在（⚠ 漏登记一种门型 ⇒ 认领数 != 物理行数 ⇒ 当场红）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+for name, rx in GATE_TYPES:$' 1 '审计器的**门型登记处**的**使用点**必须在｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^FORBID_FAMILY = \{$' 1 'forbid 家族的**逐门型登记**的**定义**必须在（⚠ forbid 门**有意不审**，但行数仍要计入 ⇒ 否则物理行数对不上 ⇒ 假红）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\] \+ sorted\(FORBID_FAMILY\.items\(\)\)$' 1 'forbid 家族的**逐门型登记**的**使用点**必须在｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if gtotal != gphysical:$' 1 '**门型覆盖对拍**的判定必须**是那一行原样**（⚠ 只盯「串在不在」⇒ 判定被掏空成 `and False` 就躲过了 ⇒ 没人发现）｜⚠⚠⚨ **整行锚定**（⚠ 批 BH 已有一条同口径的门 ⇒ 本条是**冗余但无害**的第二道）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+elif gphysical != gbase:$' 1 '**门项总数核对**的判定必须**是那一行原样**（⚠ 同上）｜⚠⚠⚨ **整行锚定**（⚠ 同上：批 BH 已有一条同口径的门 ⇒ 冗余但无害）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return 6$' 1 '审计器的**第 6 种失败态**必须在（门项总数失配 ⇒ 与「盲区(2)/豁免外(3)/次数失准(4)/正则坏(5)」区分开 ⇒ 不然排障会被带偏）｜⚠⚠⚨ **整行锚定**'
 # ⚠⚠⚠ **「盯串」不够，还要「盯整行」**（批 BH 负控实测撞出来的洞）：
 #   ⚠ 把上面那两条判定**掏空但保留判定串**（`elif gphysical != gbase and False:`）
 #   ⇒ 判定串还在 ⇒ 上面那些「恰好 1 次」的门**照样绿**
@@ -2413,8 +2417,9 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^    elif gphysical != gbase:
 #   本批加「物理门项行」口径时用的常量名**撞了**文件下方已有的同名常量
 #   ⇒ 后者覆盖前者 ⇒ 前者成了**死代码** ⇒ **没有任何门会红**（串还在，只是不生效了）
 #   ⇒ 这一族（「同名互相顶替」）从批 AS 起反复出现 ⇒ 交给机器盯。
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" 'check_dup_module_names' 2 '审计器的**模块级重名自检**必须在（定义 + 被总核对调用）⇒ 同名常量 ⇒ 后者覆盖前者 ⇒ 前者是死代码 ⇒ 判定可能压根没生效'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" 'return 7' 1 '审计器的**第 7 种失败态**必须在（重名常量 ⇒ 与「盲区(2)/豁免外(3)/次数失准(4)/正则坏(5)/总数失配(6)」区分开 ⇒ 不然排障会被带偏）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_dup_module_names\(\):$' 1 '审计器的**模块级重名自检**的**定义**必须在（⚠ **带左括号** ⇒ 改名躲不过）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+dups = check_dup_module_names\(\)$' 1 '审计器的**模块级重名自检**的**使用点**必须在（⚠ 只定义不调用 ⇒ 重名常量检查形同虚设）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return 7$' 1 '审计器的**第 7 种失败态**必须在（重名常量 ⇒ 与其它失败态区分开）｜⚠⚠⚨ **整行锚定**'
 
 
 # ── 批 BI · forbid 门族不许「静默变绿」（实测坐实的洞）────────────────────
@@ -2470,7 +2475,7 @@ arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+skip\.add\(k\)$' 1 'sh
 #   ⇒ 不一致 ⇒ 审计器的配准校准当场失准 ⇒ 会被抓到（这本身也是一层自护）。
 # ⚠⚠⚨ **附带修掉**：python 的 `//` 是整除运算符 ⇒ 原来被当注释剥掉。
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+\*\.sh\|\*\.txt\|\*\.py\)$' 1 '门侧的剥注释**必须覆盖 .py**（⇒ 注释里的串顶替不了真代码 ⇒ 这一整类洞根治）｜⚠ **两侧必须同步**（审计器也用同一条命令）⇒ 不一致 ⇒ 配准校准失准 ⇒ 会被抓到'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" 'endswith.*\.py' 1 '审计器的剥注释**也必须覆盖 .py**（⚠ 两侧口径必须一致 ⇒ 否则同一串在两侧算得不一样 ⇒ 校准失准）｜⚠ **正则参数必须用单引号**：审计器的 `COUNT_LINE` 只认单引号形式 ⇒ 用双引号 ⇒ 解析不到 ⇒ 落进 count-family 兜底 ⇒ **门型盲区**（批 BH 的门型对拍当场抓到）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if path\.endswith\(.\.sh.\) or path\.endswith\(.\.txt.\) or path\.endswith\(.\.py.\):$' 1 '审计器的剥注释**必须覆盖 .py**（⚠ 两侧口径必须一致 ⇒ 否则同一串在两侧算得不一样 ⇒ 校准失准）｜⚠⚠⚨ **整行锚定**：盯串的话「`or path.endswith(引号位置)` 被换掉」照样命中 ⇒ **口径悄悄变了没人知道**｜⚠ **引号位置写 `.`**（正则参数用单引号包裹 ⇒ 不能含字面单引号）'
 
 # ── 批 BL · 盯「门自己的工具」的门项必须**整行锚定**（根治「判定被掏空但串还在」）──
 # ⚠⚠⚨ **起因**：门项盯**串** ⇒ 判定被掏空但**串还在** ⇒ 门照样绿。
@@ -2486,10 +2491,11 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" 'endswith.*\.py' 1 '审计器�
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def anchoring_violation\(rx\):$' 1 '锚定形态的**判定函数**必须在（⚠ 判定逻辑只许有一份 ⇒ 实扫与自检都走它 ⇒ 两套口径必然漂）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def anchoring_selftest\(\):$' 1 '锚定形态的**自检**必须在（门自己证明自己有牙 ⇒ 判定被掏空时当场红）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+stbad = anchoring_selftest\(\)$' 1 '锚定形态的**自检必须被调用**（只定义不调用 ⇒ 自检形同虚设 ⇒ 没人会发现判定被掏空）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_probe_gate_anchoring\(cnt_items\):$' 1 '锚定形态的**实扫**必须在（探针是门自己的工具 ⇒ 它的门项必须整行锚定）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+anchbad = check_probe_gate_anchoring\(cnt\)$' 1 '锚定形态的**实扫必须被调用**（定义了不调 ⇒ 没人发现探针门项被改回盯串）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_gate_tool_anchoring\(cnt_items\):$' 1 '锚定形态的**实扫**必须在（探针是门自己的工具 ⇒ 它的门项必须整行锚定）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+anchbad = check_gate_tool_anchoring\(cnt\)$' 1 '锚定形态的**实扫必须被调用**（定义了不调 ⇒ 没人发现探针门项被改回盯串）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return 8$' 2 '审计器的**第 8 种失败态**必须在（⚠ **两处**：锚定形态**自检**不过 + 实扫出违规 ⇒ 两种失败要分开 ⇒ 不然排障会被带偏）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" 'PROBE_GATE_SUFFIX' 2 '审计器的**锚定形态适用范围常量**有且只有两处（定义 + 使用）—— 散在别处 ⇒ 改一处就废掉另一处 ⇒ 范围悄悄变了没人知道｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_TOOL_SUFFIXES = \(.ci-tautology-check\.py., .ci-wiring-audit\.py.\)$' 1 '审计器的**锚定形态适用范围常量**的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 拆成两条）｜⚠⚠⚨ **适用范围必须同时含探针与审计器自身**（两者都是「门自己的工具」⇒ 被掏空 = 门集体失效）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if not f\.endswith\(GATE_TOOL_SUFFIXES\):$' 1 '审计器的**锚定形态适用范围常量**的**使用点**必须在（⚠ 散在别处 ⇒ 改一处就废掉另一处 ⇒ 范围悄悄变了没人知道）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+8\) _audit_why=.*$' 1 '接线门必须**按审计器的第 8 种失败态说原因**（⚠ 批 AZ 实测：不按退出码说原因 ⇒ 排障会被带偏）｜⚠⚠⚨ **整行锚定**'
 
 
