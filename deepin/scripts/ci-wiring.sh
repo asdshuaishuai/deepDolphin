@@ -146,6 +146,30 @@ arch_need_count() { # arch_need_count <文件> <正则> <期望次数> <说明>
         ARCH_FAIL=1
     fi
 }
+# arch_need_min：盯「**至少**出现 N 次」。
+# ⚠ 为什么需要它（批 AS 实测踩出来的，**第四次同一形状**）：
+#   arch_need_count 盯的是「**恰好** N 次」⇒ 语义是「不许增不许减」——
+#   将来**正常加一条断言**，这条门反而会红 ⇒ 门会被人随手调数字 ⇒ 门就废了。
+#   而「**至少 N 次**」才是这类门该有的语义：
+#   **削减**（把断言掏空 / 删掉）⇒ 红；**增加**（补新断言）⇒ 绿。
+arch_need_min() { # arch_need_min <文件> <正则> <下限次数> <说明>
+    local f="$1" re="$2" want="$3" label="$4"
+    ARCH_N=$((ARCH_N + 1))
+    if [ ! -f "$f" ]; then
+        echo "  ✗ $label：文件不存在 $f" >&2
+        ARCH_FAIL=1
+        return
+    fi
+    local got
+    got="$(strip_comments "$f" | grep -oE -- "$re" | grep -c . || true)"
+    got="${got:-0}"
+    if [ "$got" -ge "$want" ]; then
+        echo "  ✓ $label"
+    else
+        echo "  ✗ $label：$f 里 $re 出现 $got 次（至少要 $want 次）" >&2
+        ARCH_FAIL=1
+    fi
+}
 # arch_need_count_in_fn：盯「**某个函数体内**恰好出现 N 次」。
 # ⚠ 为什么还需要它（批 X 踩到，第九次「同名/子串互相顶替」）：
 #   同一批属性名在一个文件里**合法地出现多处** ——
@@ -1140,7 +1164,51 @@ arch_need "$ROOT/macos/Sources/deepDolphin/AgentCore.swift" 'ToolArgs\.flag\(' '
 arch_need "$ROOT/macos/Sources/deepDolphin/ToolArgs.swift" 'static func flag\(' 'ToolArgs 必须提供纯函数版的旗标解析（能进 agent-check 的编译清单 ⇒ 才测得到）'
 arch_need "$ROOT/macos/Sources/deepDolphin/ToolArgs.swift" '"true"' '旗标必须认**字符串**形态的 true（模型把布尔写成字符串是真实形状）'
 arch_need "$ROOT/macos/scripts/agent-check.sh" 'swiftc .*"\$ARGS"' 'mac 侧判据必须**在 swiftc 那行**编译 ToolArgs.swift（只声明不编 ⇒ 断言永远绿）'
-arch_need "$ROOT/macos/Tests/AgentCheck/main.swift" 'ToolArgs\.flag\(' 'mac 侧判据必须真的断言旗标的多种形态'
+# ⚠ **第四次同一形状**（批 AP 被注释满足 / 批 AQ 在无关的另一行也出现 /
+#   批 AR 只声明不编译也算出现 / **批 AS：测试文件里同一个 `ToolArgs.flag(` 出现 8 处**，
+#   负控的变异只动其中 1 处 ⇒ 门不红 ⇒ 被负控当场抓到）
+#   ⇒ **门盯的串必须只出现在干活的那一行** ⇒ 这里改成盯**每条断言独有的调用构造**
+#   （实测每个构造在 macos/ 下都**只命中 1 次**），
+#   再加一条「调用点不许被削减」的计数门（掏空任一条断言 ⇒ 少一处调用 ⇒ 红）。
+arch_need_min "$ROOT/macos/Tests/AgentCheck/main.swift" 'ToolArgs\.flag\(' 6 'mac 侧判据的旗标断言**调用点不许被削减**（掏空任一条断言 ⇒ 少一处调用 ⇒ 本门红）'
+arch_need "$ROOT/macos/Tests/AgentCheck/main.swift" 'where !ToolArgs\.flag\(p, "force"\)' 'mac 侧判据必须真的跑过**字符串形态的真值表**（掏空成恒真 ⇒ 本门红）'
+arch_need "$ROOT/macos/Tests/AgentCheck/main.swift" 'where ToolArgs\.flag\(p, "force"\)' 'mac 侧判据必须真的跑过**假值/缺省表**（掏空成恒假 ⇒ 本门红）'
+arch_need "$ROOT/macos/Tests/AgentCheck/main.swift" 'ToolArgs\.flag\(\["force": 1\], "force"\)' 'mac 侧判据必须钉「数字 1 为真」'
+arch_need "$ROOT/macos/Tests/AgentCheck/main.swift" '!ToolArgs\.flag\(\["force": 2\], "force"\)' 'mac 侧判据必须钉「数字**只有 1 为真**（2 为假 ⇒ 与 deepin 侧同口径）」'
+
+# ── 批 AS · **门自审计**：门盯的串必须**只出现在干活的那一行** ──
+#
+# ⚠ **第四次同一形状**（批 AP 被注释满足 / 批 AQ 在无关的另一行也出现 /
+#   批 AR 只声明不编译也算出现 / **批 AS：测试文件里 8 处同形调用，
+#   负控只动其中 1 处 ⇒ 门不红 ⇒ 被负控当场抓到**）
+#   ⇒ 接线门判的是「某个串在不在」⇒ **同一串出现 >1 次时，
+#     「改掉其中一处」就骗得过门**（别处还顶着呢）。
+#   ⇒ 前三次都是**事后人工发现** ⇒ 这里让**机器当场审**：
+#   `ci-wiring-audit.py` 逐条数每个 arch_need 门项的正则在目标文件里命中几次，
+#   **豁免基线之外**只要还有一条命中 >1 ⇒ 本门红。
+# ⚠ 豁免基线 = `scripts/wiring-multi-hit.exempt`（**纯数据、零注释**）：
+#   历史 53 条已知隐患**显式入账**（不再藏在暗处）⇒ **新加的门不许落进去**。
+#   某条门收紧到唯一构造后 ⇒ 审计器会报「豁免基线里已失效」⇒ 可以清掉。
+# ⚠ **有意不审的两种门**（审计器自己说明，别当漏审）：
+#   · arch_forbid（判「不该有的东西没了」⇒ 目标串出现 >0 本来就红）；
+#   · arch_need_min（判「**至少** N 次」⇒ 命中 >1 本来就是它的语义）。
+ARCH_N=$((ARCH_N + 1))
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "  ✗ 门自审计跑不起来：没有 python3（这条门不许 SKIP —— SKIP 等于没门）" >&2
+    ARCH_FAIL=1
+else
+    AUDIT_OUT="$(mktemp)"
+    AUDIT_ERR="$(mktemp)"
+    if python3 "$SRC/scripts/ci-wiring-audit.py" --list >"$AUDIT_OUT" 2>"$AUDIT_ERR"; then
+        echo "  ✓ 门自审计：豁免基线之外的「串不唯一」隐患 0 条"
+    else
+        echo "  ✗ 门自审计没过：**新加的门盯的串不唯一** ⇒ 改一处骗得过门" >&2
+        sed 's/^/      /' "$AUDIT_ERR" >&2
+        sed 's/^/      /' "$AUDIT_OUT" >&2
+        ARCH_FAIL=1
+    fi
+    rm -f "$AUDIT_OUT" "$AUDIT_ERR"
+fi
 
 # ── 批 AN · 快照基线「逐字节可重现」：关掉 DTK 标题栏阴影带 ──
 #
