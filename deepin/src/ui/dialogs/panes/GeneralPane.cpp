@@ -209,6 +209,9 @@ GeneralPane::GeneralPane(AppModel *model, QWidget *parent)
     editRow->addWidget(new SecondaryLabel(QStringLiteral("浅更新分支上限"), configCard));
     m_shallowInput = new DLineEdit(configCard);
     m_shallowInput->setPlaceholderText(QStringLiteral("分支数"));
+    // ⚠ **不用改省略号**（批 AO 实测核对）：QLineEdit 系（QLineEdit / DLineEdit）
+    //   超宽时是**横向滚动**（光标带着滚），不是硬裁 ⇒ 加省略号反而是倒退。
+    //   ⇒ 「定宽截断改 elidedText」只针对 **QLabel**。
     m_shallowInput->setMaximumWidth(90);
     editRow->addWidget(m_shallowInput);
     editRow->addWidget(new SecondaryLabel(QStringLiteral("文档备份份数"), configCard));

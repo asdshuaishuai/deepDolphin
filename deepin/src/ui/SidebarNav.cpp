@@ -52,7 +52,13 @@ QWidget *countedRow(const QIcon &icon, const QString &text, QWidget *parent)
     h->addWidget(ic);
     auto *name = new QLabel(text, w);
     name->setAttribute(Qt::WA_TransparentForMouseEvents);
-    name->setMaximumWidth(120); // 单行截断（60 字项目名在最窄窗口截断带省略号为预期行为）
+    // ⚠ 这里只放**固定视图名**（仪表盘 / 看板 / 里程碑，文本短 ⇒ 永不溢出）
+    //   ⇒ `setMaximumWidth(120)` 是**兜底上限**，不是「项目名截断」。
+    // ⚠ **原注释是错的**（批 AO 订正）：它把这行说成「项目名」、并说宽度限制会自动加省略号——
+    //     ① 这行**不是项目名**（项目名在下面 `rebuildProjectRows`，批 AM 已改省略号）；
+    //     ② `setMaximumWidth` **不会**加省略号（Qt 默认是硬裁，批 AM 实测）。
+    //   ⇒ 按实际行为写：短文本 + 兜底上限。
+    name->setMaximumWidth(kProjectNameMaxPx);
     h->addWidget(name);
     h->addStretch(1);
     auto *count = new CountLabel(w);

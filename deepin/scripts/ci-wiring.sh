@@ -82,6 +82,25 @@ arch_forbid_ml() { # arch_forbid_ml <文件> <正则> <说明>
     fi
 }
 
+# arch_need_ml：**跨行**匹配的 arch_need（剥完注释后把换行压成一行再匹配）。
+#   ⚠ 为什么需要它（批 AO 实测踩出来的）：grep -E **按行**匹配 ⇒ 代码折行时
+#   `elidedText(` 与参数不在同一行 ⇒ 门**匹配不到** ⇒ 门没牙（负控实测）。
+arch_need_ml() { # arch_need_ml <文件> <正则> <说明>
+    local f="$1" re="$2" label="$3"
+    ARCH_N=$((ARCH_N + 1))
+    if [ ! -f "$f" ]; then
+        echo "  ✗ $label：文件不存在 $f" >&2
+        ARCH_FAIL=1
+        return
+    fi
+    if strip_comments "$f" | tr '\n' ' ' | grep -E -- "$re" >/dev/null; then
+        echo "  ✓ $label"
+    else
+        echo "  ✗ $label：$f 里找不到 $re" >&2
+        ARCH_FAIL=1
+    fi
+}
+
 # arch_need_any：盯「**任一** selfcheck 分片里都有这条判据」。
 # ⚠ 为什么需要它（批 AJ 实测）：拆 SelfCheck.cpp 时，44 条门项红了 ——
 #   它们盯的是「判据在 **SelfCheck.cpp 这个文件**里」，
@@ -939,6 +958,51 @@ arch_forbid_raw "$SRC/src/ui/pages/DashboardPage.cpp" '由 resizeEvent 折' 'Das
 #   侧栏项目名原来只 `setMaximumWidth(120)` ⇒ QLabel 默认**直接切掉后半截**（半个字、无提示）。
 arch_need "$SRC/src/ui/SidebarNav.cpp" 'elidedText\(' '侧栏项目名定宽截断用省略号（不硬裁）'
 arch_need "$SRC/src/ui/SidebarNav.cpp" 'setToolTip\(p\.name\)' '被省略的完整项目名可从 tooltip 看到'
+
+# ── 批 AO · PLAN §3c 点名的另几处定宽截断：逐处核对后按**实际行为**处理 ──
+#
+# ⚠ 起因：批 AM 把 PLAN §3c 点名的 4 处留给后续（行号已漂移）⇒ 本批逐处**实测核对**。
+#   ⚠ 结论不是「4 处都改」——**4 处的行为各不相同**（一刀切会改错）：
+#   ① `ProjectProgressCard`（在 `src/ui/pages/`，**不在** `src/ui/` —— PLAN 路径也漂了）：
+#      原来**同时**有「手工掐中间（按字符数 24）」+「`setMaximumWidth(220)`（按像素）」
+#      两条截断 ⇒ **互相打架** ⇒ 实测 24 个**中文**字手工掐完仍 268px > 220px
+#      ⇒ 照样**硬裁**（半个字）⇒ 缺陷**只在中文名下出现**（纯 ASCII 164px 不超宽）。
+#      ⇒ 删掉手工截断，只留**按像素**的 `elidedText(ElideMiddle, …)` + 完整名 tooltip。
+#   ② `DashboardPage` 的活跃项目 headline：来自**引擎**（长度不受控）
+#      ⇒ 原来 `setMaximumWidth(300)` 是真硬裁 ⇒ 改省略号 + tooltip。
+#   ③ `TrayPopupWindow` 的项目名：托盘弹窗宽固定、项目名长度不受控
+#      ⇒ 原来 `setFixedWidth(120)` 是真硬裁 ⇒ 改省略号 + tooltip。
+#   ④ `SidebarNav` 的**固定视图行**（仪表盘/看板/里程碑）：文本短、**永不溢出**
+#      ⇒ 它的 `setMaximumWidth(120)` 是兜底上限，**不用改**；
+#      ⚠ 但它的**原注释是错的**（写着「60 字项目名…带省略号」——① 不是项目名；
+#        ② `setMaximumWidth` **不会**加省略号）⇒ 已订正（批 AI 教训：说法与实现相反更危险）。
+#   ⚠ **不用改的 3 处也留了注释**（`WorkBar` 的 DComboBox / `GeneralPane` 与
+#     `MilestonesPage` 的 DLineEdit）：它们分别是「控件自带省略号」与「超宽横向滚动」
+#     ⇒ **不是硬裁** ⇒ 加省略号反而是倒退 ⇒ 注明原因，免得下次误改。
+#   ⚠ `elidedText(` 与它的参数**跨行**（代码折行了）⇒ grep -E 按行匹配 ⇒ 匹配不到
+#   ⇒ 用批 AO 新加的跨行门 `arch_need_ml`（压成一行再匹配）。
+arch_need_ml "$SRC/src/ui/pages/ProjectProgressCard.cpp" 'elidedText\([^)]*p\.name, Qt::ElideMiddle' '项目名按**像素**中段省略（不是按字符数切——两条截断会打架，中文名仍被硬裁）'
+arch_need "$SRC/src/ui/pages/ProjectProgressCard.cpp" 'setToolTip\(p\.name\)' '被中段省略的完整项目名可从 tooltip 看到'
+# ⚠ **手工按字符数截断**不许复活（它与像素限宽打架 ⇒ 中文名溢出成半个字）
+arch_forbid "$SRC/src/ui/pages/ProjectProgressCard.cpp" 'shown\.size\(\) > ' '项目名不许再按字符数手工截断（实测 24 个中文字仍 268px > 220px ⇒ 照样硬裁）'
+# ⚠⚠ **「限宽 + 拉伸」这个组合不许复活**（批 AO 实测踩出来的布局坑）：
+#   名字标签若既 `setMaximumWidth(...)` 又 `addWidget(name, 1)`（拉伸项），
+#   Qt 会把**多出来的空间塞给下一个 Preferred 标签** ⇒ 那个 8px 的状态点标签被撑成
+#   88px 宽（pixmap 画在它左边）⇒ 视觉上「●」与状态词之间裂开 ~86px 的缝，
+#   且整组没贴到卡内右缘（实测 408px 行：name w=220 / dot w=**88** / state x=320）。
+#   ⇒ 删掉限宽后 name 吃掉全部余量（w=364 / dot w=**8** / state x=384）⇒ 贴右，
+#     与 mac 侧 `DashboardParts.swift:247-258`（`Text` + `Spacer`）一致。
+#   ⚠ 视觉层由**仪表盘快照基线**兜底（重放这处改动 ⇒ 仪表盘快照变 ⇒ 视觉 diff 门红），
+#     这里这两道门是**源码层**的提前拦截（快照门要跑完整 CI 才看得到）。
+arch_forbid "$SRC/src/ui/pages/ProjectProgressCard.cpp" 'name->setMaximumWidth' '项目名标签不许再限宽（限宽 + 拉伸 ⇒ 余量被塞给状态点标签 ⇒ 状态词脱离圆点、整组不贴右）'
+arch_need "$SRC/src/ui/pages/ProjectProgressCard.cpp" 'row1->addWidget\(name, 1\)' '项目名标签仍是拉伸项（它吃掉余量 ⇒ 状态点 + 状态词贴到卡内右缘）'
+arch_need "$SRC/src/ui/pages/DashboardPage.cpp" 'elidedText\(' '活跃项目 headline 定宽截断用省略号（内容来自引擎、长度不受控）'
+arch_need "$SRC/src/ui/pages/DashboardPage.cpp" 'setToolTip\(a\.headline\)' '被省略的完整 headline 可从 tooltip 看到'
+arch_need "$SRC/src/tray/TrayPopupWindow.cpp" 'elidedText\(' '托盘弹窗项目名定宽截断用省略号（弹窗宽固定、项目名长度不受控）'
+arch_need "$SRC/src/tray/TrayPopupWindow.cpp" 'setToolTip\(row\.name\)' '被省略的完整项目名可从 tooltip 看到'
+# ⚠ **过时说法不许复活**（raw：不剥注释 ⇒ 有牙）：「带省略号为预期行为」这句话是错的
+#   （`setMaximumWidth` 不加省略号）⇒ 侧栏那行不许再这么写。
+arch_forbid_raw "$SRC/src/ui/SidebarNav.cpp" '带省略号为预期行为' '侧栏固定行注释不许再写「带省略号」（setMaximumWidth 不加省略号；且那行不是项目名）'
 
 # ── 批 AN · 快照基线「逐字节可重现」：关掉 DTK 标题栏阴影带 ──
 #

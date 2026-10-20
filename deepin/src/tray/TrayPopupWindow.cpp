@@ -185,7 +185,14 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
         dot->setPixmap(pm);
         h->addWidget(dot);
         auto *name = new QLabel(row.name, line);
-        name->setFixedWidth(TrayGeometry::nameWidth);
+        // ⚠ **省略号，不是硬裁**（批 AO）：托盘弹窗宽固定（`TrayGeometry::popupWidth`），
+        //   项目名却**长度不受控**（用户可注册任意长的目录名）⇒ 原来 `setFixedWidth(120)`
+        //   是**直接切掉后半截**（半个字、无提示）⇒ 用户认不出是哪个项目。
+        //   ⇒ 按可用宽度算省略号，**完整名进 tooltip**（悬停能看全）。
+        //   ⚠ 与侧栏项目名（`SidebarNav` 的 kProjectNameMaxPx）同一口径。
+        name->setText(name->fontMetrics().elidedText(
+            row.name, Qt::ElideRight, TrayGeometry::nameWidth));
+        name->setToolTip(row.name);
         h->addWidget(name);
         // ●N 橙 chip（userDirtyCount>0）
         if (row.dirty > 0) {

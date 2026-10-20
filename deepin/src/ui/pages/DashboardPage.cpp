@@ -25,6 +25,13 @@
 
 DWIDGET_USE_NAMESPACE
 
+namespace {
+// ⚠ **活跃项目摘要的定宽上限**（批 AO）：headline 来自引擎，长度不受控。
+//   原来这个 300 是**裸字面量**写在调用点（且是「硬裁」而非省略号）。
+//   ⇒ 提到本地常量并与省略号口径绑在一起（同 SidebarNav 的 kProjectNameMaxPx 做法）。
+constexpr int kActiveHeadlineMaxPx = 300;
+} // namespace
+
 DashboardPage::DashboardPage(QWidget *parent)
     : QWidget(parent)
 {
@@ -405,7 +412,16 @@ QWidget *DashboardPage::buildActiveCard()
         h->addWidget(ago);
         h->addStretch(1);
         auto *headline = new SecondaryLabel(a.headline, row);
-        headline->setMaximumWidth(300);
+        // ⚠ **省略号，不是硬裁**（批 AO）：headline 来自**引擎**（`DocumentIntegrity::headline`）
+        //   ⇒ 长度不受我们控制（实测可到「状态读不出来」这种整句，也可能更长）；
+        //   原来只 `setMaximumWidth(300)` ⇒ QLabel 默认**直接切掉后半截**（半个字、无提示）
+        //   ⇒ 用户看到「一切正」不知道后面是什么。
+        //   ⇒ 按可用宽度算省略号，**完整文进 tooltip**（鼠标悬停能看全）。
+        //   ⚠ mac 侧对位 `DashboardParts.swift` 用的是 `Text(...)`（SwiftUI 自动截断 + 可悬停）
+        //   ⇒ 「省略号 + 完整可查」是**两边一致**的口径。
+        headline->setText(headline->fontMetrics().elidedText(
+            a.headline, Qt::ElideRight, kActiveHeadlineMaxPx));
+        headline->setToolTip(a.headline);
         v->addWidget(row);
     }
     return card;

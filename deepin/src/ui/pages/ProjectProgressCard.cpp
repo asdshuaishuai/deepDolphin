@@ -17,6 +17,11 @@
 #include <QPushButton>
 
 namespace {
+// ⚠ **项目名的定宽上限**（批 AO）：原来这个 220 是裸字面量写在调用点，
+//   且与「按字符数手工截断」**同时**存在（两条截断互相打架 ⇒ 中文名仍被硬裁）。
+//   ⇒ 提到本地常量，只留**一条按像素**的省略号（口径同 SidebarNav 的 kProjectNameMaxPx）。
+constexpr int kProjectNameMaxPx = 220;
+
 // 「这条项目该显示哪个分支」三级回退：primaryBranch → currentBranch 字符串 → 「无分支记录」。
 // 分支数组是**追踪数组**，空 ≠ 没有分支（无远端基线的仓库它恒空）。
 QString branchDisplayName(const ProjectStatus &p)
@@ -58,15 +63,33 @@ void ProjectProgressCard::setProject(const ProjectStatus &p, const DashFilter &f
     mono.setWeight(QFont::DemiBold);
     mono.setPixelSize(DS::FontPx::code);
     name->setFont(mono);
-    name->setMaximumWidth(220);
     name->setTextInteractionFlags(Qt::NoTextInteraction);
-    // 中段截断：名称过长时掐中间（/path/to/project 的尾部是目录名，比掐尾部更有用）
-    QString shown = p.name;
-    if (shown.size() > 24) {
-        const int keep = 10;
-        shown = shown.left(keep) + QStringLiteral("…") + shown.right(keep);
-    }
-    name->setText(shown);
+    // ⚠ **按像素**中段省略，不是按字符数切（批 AO 实测订正）：
+    //   原来同时有两条截断：① 手工「掐中间」（按**字符数** 24）② `setMaximumWidth(220)`（按**像素**）。
+    //   ⚠ **两条会打架** —— 实测（13px monospace DemiBold）：24 个**中文**字手工掐完仍 **268px**
+    //   > 220px ⇒ ② 照样**硬裁** ⇒ 中文名看到的是半个字（不是省略号）。
+    //   纯 ASCII 时 164px 不超宽 ⇒ 所以这个缺陷**只在中文名下出现**（中文项目名很常见）。
+    //   ⇒ 删掉手工截断，只留**一条按像素**的 `elidedText(ElideMiddle, …)`：
+    //     ① 中段省略的意图保留（/path/to/project 的尾部目录名比掐尾部更有用）；
+    //     ② 按**像素**算 ⇒ 任何文字（中文/ASCII/emoji）都不会溢出成半个字。
+    //   ⚠ 完整名进 tooltip（原来手工截断后**看不到全名**）。
+    // ⚠⚠ **删掉 `setMaximumWidth(220)` 还顺带修好了一个旧的布局缺陷**（批 AO 实测发现）：
+    //   原来 name 既是 stretch=1 的项、又带 `setMaximumWidth(220)` ⇒ Qt 把**多出来的空间**
+    //   塞给了**下一个 Preferred 标签**（那个 8px 的状态点标签被撑成 88px 宽，
+    //   而 pixmap 画在它**左边**）⇒ 视觉上「●」和状态词之间裂开 ~86px 的缝，
+    //   且整组没贴到卡内右缘。
+    //   实测（最小复现 `/tmp/rowgap.cpp`，408px 行宽）：
+    //     有 maxWidth(220)：name w=220 / dot w=**88** / state x=320（组未贴右）
+    //     无 maxWidth   ：name w=364 / dot w=**8**  / state x=384（贴右）
+    //   ⇒ 现在 name 吃掉全部余量（stretch=1），dot+state 自然贴右。
+    //   ⚠ mac 侧对位 `DashboardParts.swift:247-258` = `Text(...).truncationMode(.middle)`
+    //     + `Spacer(minLength:)` ⇒ 状态词**本来就该贴右** ⇒ 改后与 mac 一致。
+    //   ⚠ 代价：省略宽度 220 是**按像素**的固定值，依赖卡片定宽 440
+    //     （`DashboardPage` 的 `FlowLayout::setItemFixedWidth(440)`）⇒
+    //     将来卡片若改响应式，这个 220 要改成按可用宽度算，否则会出现二次硬裁。
+    name->setText(name->fontMetrics().elidedText(
+        p.name, Qt::ElideMiddle, kProjectNameMaxPx));
+    name->setToolTip(p.name);
     row1->addWidget(name, 1);
 
     const Derived::StateWord sw = Derived::stateWord(p);

@@ -33,6 +33,8 @@ MilestonesPage::MilestonesPage(QWidget *parent)
     auto *search = new DLineEdit(this);
     search->setPlaceholderText(QStringLiteral("搜索里程碑名称"));
     search->setClearButtonEnabled(true);
+    // ⚠ **不用改省略号**（批 AO 实测核对）：DLineEdit 超宽是**横向滚动**，不是硬裁
+    //   ⇒ 加省略号反而是倒退（「定宽截断改 elidedText」只针对 QLabel）。
     search->setMaximumWidth(280);
     connect(search, &DLineEdit::textChanged, this, [this](const QString &t) {
         m_query = t;
