@@ -2091,7 +2091,7 @@ echo "✓ 批 BE 段门项全绿（ci.sh 每一步的标记串**不许被挪到�
 #   · 探针**自带自检**（每次运行先拿合成样例验一遍自己的判定逻辑 ⇒ 判定被改坏 ⇒ 当场红）
 #     ⇒ **门自己证明自己有牙**，比静态门更硬（静态门只能盯「那行代码在不在」）。
 #   · 下面这些门钉住自检与四条判定逻辑**都在** ⇒ 有人把它们掏空，门也会红。
-arch_need_count "$SRC/scripts/ci-tautology-check.py" 'def tautology_reason' 1 '恒真检查的**统一判定入口**必须在（实扫与自检必须走同一条路径 ⇒ 否则自检测的不是真判定 ⇒ 假的保证）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'def tautology_reason\(' 1 '恒真检查的**统一判定入口**必须在（实扫与自检必须走同一条路径 ⇒ 否则自检测的不是真判定 ⇒ 假的保证；⚠ **带左括号** ⇒ 改名躲不过：批 BG 负控 B10 实测「改成 `def tautology_reason_x`」子串门照样绿 ⇒ 门形同虚设）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'why = tautology_reason\(cond\)' 1 '实扫必须走**统一判定入口**（不许另写一份判定 ⇒ 两套口径必然漂）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if not meaningful_idents\(cond\):' 1 '判定规则 1 必须在（条件里**至少一个被测标识符** ⇒ 抓 `true` / `1 == 1` / `"a" == "a"`）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'SHORTCUT\.search\(cond\)' 1 '判定规则 2 必须在（禁「\|\| true / && false」捷径 ⇒ 条件里带恒真项 ⇒ 整条判据被短路）'
@@ -2099,7 +2099,7 @@ arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if SH_CONST\.match\(cond\)
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'PY_CONST_IF\.match\(ln\)' 1 'python 侧的恒真条件判定必须在（`if True:` / `if False:`）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'st_bad = self_test\(\)' 1 '探针的**自检**必须在（门自己证明自己有牙 ⇒ 判定逻辑被掏空时当场红）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if st_bad:' 1 '自检失败必须**判红**（自检不过还继续跑 ⇒ 等于没有自检）'
-arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.*,\s*(True|False)\),$' 9 '自检样例表**不许被掏空**（9 条：既含「该判为恒真」也含「不该判为恒真」的样例 ⇒ 只测一边 ⇒ 判反了也能过）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.*,\s*(True|False)\),$' 16 '自检样例表**不许被掏空**（16 条：既含「该判为恒真」也含「不该判为恒真」的样例 ⇒ 只测一边 ⇒ 判反了也能过；⚠ 批 BG 起加了 6 条「断言函数实参」样例 + 1 条「实参解析器」样例）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'JUDGEMENT_PREFIX' 2 '判定层文件名前缀**有且只有两处**（定义 + 使用）—— 散在别处 ⇒ 改一处就废掉另一处 ⇒ 门跟着松'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if bad:' 1 '探针的**违规 ⇒ 判红**判定必须在（没有它 ⇒ 探针只报告不拦 ⇒ 等于没门）'
 
@@ -2108,4 +2108,63 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 BF 段门项全绿（判据不许被掏空成恒真；探针自带自检 ⇒ 门自己证明自己有牙）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 BG · 断言函数**实参里**的判据也不许恒真（契约门那 93 条）────────
+# ⚠⚠⚠ **起因（实测，不是推演）**：批 BF 把「判据掏空成恒真」管住了
+#   （判定层 C++ 的 `check(…)` 条件 + shell 的 `if` 条件 + python 的 `if`）⇒
+#   ⚠⚠⚠ **但契约门的判据根本不在 `if` 条件里** —— 它的形态是
+#     check <名称> <python表达式（stdin 为 JSON 文本）> [json]
+#     check_text <名称> <ERE> <文本>
+#   ⇒ **判据就藏在第二个实参里** ⇒ 批 BF 的三类扫描**一条都够不着**。
+#   ⚠⚠⚠ **实测取证（修前）**：把其中一条 check 的 python 表达式掏空成 `True`
+#     ⇒ 契约门仍 **120 passed, 0 failed**（rc=0）
+#     ⇒ 批 BC 的「93 处 check 调用不许被删」**不红**（调用点数没变）
+#     ⇒ 接线门**全绿**（rc=0）⇒ 那条断言**从此永远不会红**。
+#
+# ⚠ **修法**：恒真探针（ci-tautology-check.py）新增第 ④ 类扫描：
+#   · `check` 的 python 表达式**必须引用 `d`**（被测 JSON）
+#     ⇒ 抓 `True` / `1 == 1` / `'a' == 'a'`（压根没碰被测数据）
+#   · `check_text` 的 ERE**必须含至少一个字面字符**
+#     ⇒ 抓 `.*` / `^$` / 空串（匹配一切）
+#
+# ⚠⚠ **本段守的是「**新规则自己不许被掏空**」**：
+#   · 实参**解析器**必须在 —— ⚠ 不能用正则抽实参（实测：contract-check.sh:555
+#     的描述里含 `==\"OK\"` ⇒ 正则会把描述与表达式粘成一块 ⇒ 判据抽错 ⇒ 门判错）。
+#   · **条数交叉校验**必须在 ⇒ ① 解析器漂了（悄悄少看几条）⇒ 当场红；
+#     ② 断言被增删 ⇒ 当场红（完全相等口径，批 BB）。
+#
+# ⚠⚠⚠ **本段在负控里又撞出两个洞（都是「门形同虚设」的经典形态）**：
+#   ⚠ **洞 1：盯函数名的门挡不住「改名」**（B10 实测）——
+#     `arch_need_count … 'def assertion_arg_is_tautology' 1` 是**子串**匹配
+#     ⇒ 把它改成 `def assertion_arg_is_tautology_disabled` ⇒ **命中仍是 1** ⇒ 门照样绿
+#     ⇒ **凡是以函数名做判据的门，都必须带左括号**（`def X\(`）⇒ 改名就红。
+#     ⚠ 这不是批 BG 独有：批 BF 段的 `def tautology_reason` 同样中招 ⇒ 一并改紧。
+#   ⚠ **洞 2：实参解析器把「空实参」吞了 ⇒ 判据错位**（B4 实测）——
+#     判据是「**第二个**实参」⇒ 若 `''` 被吞掉 ⇒ `tokens[2]` 变成**第三个**实参
+#     ⇒ 判据抽成别的东西 ⇒ **恒真的空 ERE 被判成合法** ⇒ 漏判。
+#     ⇒ 解析器必须区分「没开始一个 token」与「token 内容为空」（`started` 标志）
+#     ⇒ 且**自检里要有合成样例**证明它（不是靠注释保证）。
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'def assertion_arg_is_tautology\(' 1 '断言实参的**恒真判定入口**必须在（⚠ **带左括号** ⇒ 改名躲不过，批 BG 负控 B10 实测）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '= assertion_arg_is_tautology\(' 1 '自检必须走**薄封装**（自检与实扫同一条判定路径 ⇒ 否则自检测的不是真判定 ⇒ 假的保证）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'def assert_arg_reason\(' 1 '断言实参的**真正判定函数**必须在（薄封装只是壳 ⇒ 判定逻辑只许有一份，批 BF 纪律）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '= assert_arg_reason\(' 1 '实扫必须走**同一个**判定函数（自检与实扫分家 ⇒ 自检测的不是真判定 ⇒ 假的保证）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if helper == .check.:' 1 '`check` 的规则必须在（python 表达式**必须引用 d** ⇒ 抓 `True` / `1 == 1`）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if helper == .check_text.:' 1 '`check_text` 的规则必须在（ERE 必须含字面字符 ⇒ 抓 `.*` / 空串）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'LITERAL_CHAR\.search\(arg\)' 1 'ERE 的**字面字符**判定必须在（没有字面字符的 ERE 匹配一切）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'def scan_shell\(' 1 'shell **实参解析器**必须在（⚠ 不用正则：描述里含转义引号会把实参抽错；⚠ 带左括号 ⇒ 改名躲不过）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '= scan_shell\(' 3 '实参解析器的**调用点**必须在（找调用点 2 + 自检 1 ⇒ 少一处就断了一条路）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'if started:' 2 '实参解析器**必须保留空实参**（⚠ 批 BG 负控 B4 实测：空实参被吞 ⇒ 判据错位到下一个实参 ⇒ 恒真的空 ERE 漏判）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'def find_assert_calls\(' 1 '断言**调用点扫描**必须在（⚠ 带左括号 ⇒ 改名躲不过）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '= find_assert_calls\(' 1 '调用点扫描必须被真正调用'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'ASSERT_CALL_BASELINE' 2 '断言调用**条数基线表**有且只有两处（定义 + 使用）—— 散在别处 ⇒ 改一处就废掉另一处'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '.check.: 93' 1 '基线里 `check` 的条数必须钉死（93 处；⚠ 与批 BC 段的「93 处 check 调用」是**两份独立基线** ⇒ 一份被改而另一份没改 ⇒ 交叉校验当场红）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '.check_text.: 6' 1 '基线里 `check_text` 的条数必须钉死（6 处）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" 'got_n != want_n' 1 '**条数交叉校验**必须在（解析器漂了 / 断言被增删 ⇒ 当场红）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.assert_arg.,' 6 '自检样例里**断言实参**那组不许被掏空（6 条）'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 BG 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 BG 段门项全绿（断言函数实参里的判据也不许恒真；实参解析器 + 条数交叉校验都在）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0
