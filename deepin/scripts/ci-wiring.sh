@@ -432,7 +432,7 @@ arch_need "$SRC/src/logic/HeatLayout.cpp" '\blayout\b' '判定层有卡片铺排
 arch_need "$SRC/src/logic/HeatLayout.cpp" '\broutes\b' '判定层有边走线'
 arch_need "$SRC/src/ui/HeatmapWidget.cpp" '\bHeatLayout::layout\b' '画布经 HeatLayout 铺排'
 arch_need "$SRC/src/ui/HeatmapWidget.cpp" '\bHeatLayout::routes\b' '画布经 HeatLayout 走线'
-arch_need_min "$SRC/src/ui/HeatmapWidget.cpp" '\bCanvas2D\b' 3 '画布走 D1 的 Canvas2D 内核（不自己造图形栈）—— **三处同形**（`Canvas2D canvas(&p);`）⇒ 行级构造分不开 ⇒ 意图天然是「至少 3 次」；⚠ 这条门**不在审计器覆盖内**'
+arch_need_min "$SRC/src/ui/HeatmapWidget.cpp" '\bCanvas2D\b' 4 '画布走 D1 的 Canvas2D 内核（不自己造图形栈）—— **三处同形**（`Canvas2D canvas(&p);`）⇒ 行级构造分不开 ⇒ 意图天然是「至少 N 次」；⚠ **下限是 4 不是 3**（文件里 `Canvas2D` 命中 4 次 = include + 3 处构造）—— 下限定低了门**没牙**（删一处构造仍剩 3 ⇒ 不红），负控实测抓到的；⚠ 这条门**不在审计器覆盖内**'
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" 'm_heat = new HeatmapWidget\(heatPage\);' '代码图谱窗挂了热力图 —— 盯**造热力图**那一行（之前盯「HeatmapWidget」这个词 ⇒ 信号连接里也有 ⇒ 改一处骗得过门）'
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '&HeatmapWidget::nodeSelected\b' '热力图点选信号接上了（→ 右栏详情）'
 arch_need "$SRC/src/ui/dialogs/CodeGraphDialog.cpp" '&HeatmapWidget::drillChanged\b' '热力图下钻信号接上了（面包屑跟着走）'

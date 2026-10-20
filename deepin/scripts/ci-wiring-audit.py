@@ -64,6 +64,14 @@ NEED_RE_DQ = re.compile(
 )
 ANY_NEED_LINE = re.compile(r'^\s*arch_need\b')
 ANY_FORBID_LINE = re.compile(r'^\s*arch_forbid\b')
+# ⚠ `arch_need_min`（至少 N 次）：**天然**多点 ⇒ 不查「串是否唯一」，
+#   但要**校准下限**：下限必须 == 当前命中数。
+#   · 下限 < 命中数 ⇒ **门没牙**（删一处仍够 ⇒ 不红）—— 批 AU 实测踩到：
+#     `Canvas2D` 在 HeatmapWidget.cpp 里命中 4 次（include + 3 处构造），
+#     而下限写的是 3 ⇒ 删掉一处构造仍剩 3 ⇒ 门照样绿。
+#   · 下限 > 命中数 ⇒ **门恒红**。
+NEED_MIN_LINE = re.compile(
+    r'^\s*arch_need_min\s+"([^"]+)"\s+\'([^\']*)\'\s+(\d+)\s+')
 # ⚠ **函数定义行**长得像门项（`arch_need() { # ...`）⇒ 必须排除，
 #   否则审计器把工具自己的定义算成「没解析到的门项」⇒ 假盲区。
 FUNC_DEF_LINE = re.compile(r'^\s*arch_(need|forbid)\w*\s*\(\)\s*\{')
@@ -170,7 +178,43 @@ def read_exempt():
     with open(EXEMPT, encoding='utf-8') as fh:
         lines = [ln.rstrip('\n') for ln in fh]
     keys = set(ln for ln in lines if ln.strip() and not ln.lstrip().startswith('#'))
-    return keys, True, len(lines)
+    return keys, True, len(keys)
+
+
+def parse_min_gates():
+    """解析所有 `arch_need_min` 门项 ⇒ [(行号, 文件, 正则, 下限)]"""
+    out = []
+    src = open(WIRING, encoding='utf-8').read()
+    for i, ln in enumerate(src.split('\n'), 1):
+        m = NEED_MIN_LINE.match(ln)
+        if m:
+            out.append((i, resolve(m.group(1)), m.group(2), int(m.group(3))))
+    return out
+
+
+def check_min_gates():
+    """校准 `arch_need_min` 的下限：必须 **== 当前命中数**。
+
+    ⚠ 下限 < 命中数 ⇒ **门没牙**（删一处仍够 ⇒ 不红）——
+      批 AU 实测踩到：`Canvas2D` 在 HeatmapWidget.cpp 里命中 4 次
+      （include + 3 处构造），下限写 3 ⇒ 删掉一处构造仍剩 3 ⇒ 门照样绿。
+    ⚠ 下限 > 命中数 ⇒ **门恒红**。
+    ⇒ 这条校准把「`arch_need_min` 不在审计覆盖内」那个缺口补上了一半：
+      它的「串不唯一」是**语义允许**的，但**下限必须配得准**。
+    """
+    bad = []
+    for lineno, f, rx, want in parse_min_gates():
+        if not os.path.isfile(f):
+            bad.append((lineno, f, rx, want, None, '文件不存在'))
+            continue
+        got = count_hits(f, rx)
+        if got is None:
+            continue
+        if got != want:
+            bad.append((lineno, f, rx, want, got,
+                        '下限 %d ≠ 实际命中 %d ⇒ %s'
+                        % (want, got, '门没牙（删一处仍够）' if got > want else '门恒红')))
+    return bad
 
 
 def main():
@@ -226,6 +270,16 @@ def main():
             print('审计器有盲区：%d 行门项没解析到（行号 %s）⇒ 它们**没被审**'
                   % (len(failed), ','.join(str(x) for x in failed)), file=sys.stderr)
             return 2
+        # ⚠ `arch_need_min` 的**下限校准**：下限必须 == 当前命中数
+        #   （定低了 ⇒ 门没牙；定高了 ⇒ 门恒红）
+        minbad = check_min_gates()
+        if minbad:
+            print('arch_need_min 下限没配准（%d 条）：' % len(minbad), file=sys.stderr)
+            for lineno, f, rx, want, got, why in minbad:
+                print('  · %s:%d  %s | %s ⇒ %s'
+                      % (os.path.basename(WIRING), lineno, rel(f), rx, why),
+                      file=sys.stderr)
+            return 4
         for k in outside:
             print(k)
         return 3 if outside else 0
@@ -255,6 +309,11 @@ def main():
     print('豁免之外（**新加的门不许落进这里**）：%d 条' % len(outside))
     for k in outside:
         print('  · %s' % k)
+    minbad = check_min_gates()
+    print('arch_need_min 下限校准（须 == 实际命中数）：%d 条失准' % len(minbad))
+    for lineno, f, rx, want, got, why in minbad:
+        print('  · %s:%d  %s | %s ⇒ %s'
+              % (os.path.basename(WIRING), lineno, rel(f), rx, why))
     if stale:
         print('豁免基线里**已失效**（门已收紧，可以清掉）：%d 条' % len(stale))
         for k in stale:
