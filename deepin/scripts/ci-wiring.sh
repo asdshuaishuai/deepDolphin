@@ -2535,6 +2535,46 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return 9$' 4 '审计器�
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return \(kind, relpath, rx\.rstrip\(\)\) in exempt$' 1 '豁免**判定的那一行**必须在（⚠ 只盯调用点**盯不住判定体** ⇒ 判定被掏空成「恒真」⇒ **所有**门项都被豁免 ⇒ 门集体失效 ⇒ 比没豁免还糟）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if \(kind, path, rx\.rstrip\(\)\) not in need_exempt:$' 1 '反向配准的**判定那一行**必须在（⚠ 只盯调用点**盯不住判定体** ⇒ 判定被掏空 ⇒ 豁免表可以**无限变长** ⇒ 「不许悄悄变长」就废了）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+9\) _audit_why=.*$' 1 '接线门必须**按审计器的第 9 种失败态说原因**（⚠ 批 AZ 实测：不按退出码说原因 ⇒ 排障会被带偏）｜⚠⚠⚨ **整行锚定**'
+# ── 批 BO · 接线门脚本自己的「失败上报路径」必须有门 ────────────────────────────
+#
+# ⚠⚠⚨ **为什么要有这一段**（批 BO 实测坐实，不是推演）：
+#   `ARCH_FAIL=1` 是「**门型判定失败 → 整道门红**」的**唯一通路**
+#   ⇒ 把它改成 `ARCH_FAIL=0` ⇒ **那个门型的所有失败都静默**
+#   ⇒ 而审计器**自己重算命中数**（次数配准）⇒ 期望与实际仍然一致 ⇒ **审计器也抓不到**
+#   ⇒ ⇒ 这是「**判定被掏空、串还在**」的最严重形态（而且是**批量**的）：
+#     改一处 ⇒ 一个门型的全部承诺同时失效。
+# ⚠⚠⚨ **实测盘子**（门侧同口径量，**重新数**，不照抄二手数）：
+#   全文失败上报 **35** 处（**28** 处在 16 个门型/上报函数体内，**7** 处在顶层）；
+#   `arch_` 门型函数 **14** 个（**10** 个直接写上报、**4** 个 forbid 族转发给上报函数）。
+# ⚠⚠⚨ **三层钉法**（不用新门型 ⇒ 审计器零改动）：
+#   ① **per-函数**（16 条）：每个门型/上报函数体内**到底有几处上报** ⇒ **指名道姓**
+#      ⇒ 用现成的 `arch_need_count_in_fn`（它**认识函数体结构** ⇒ 批 BE 纪律）
+#      ⇒ ⚠ 转发型门型盯的是「**必须调用上报函数**」⇒ 转发关系被摘掉也红。
+#   ② **总数**（1 条）：全文 **35** 处 ⇒ 覆盖**顶层**那 7 处
+#      ⇒ ⚠ 顶层块**没有花括号** ⇒ `arch_need_count_in_fn` 提不出「函数体」⇒ 只能靠总数兜。
+#   ③ **注册表**（1 条）：`arch_` 门型函数**恰好 14 个** ⇒ 新增门型 ⇒ 必须改基线
+#      ⇒ 改的时候就会看到「**新门型也得有失败上报**」⇒ 集合层把新成员挡住。
+# ⚠⚠⚨ **判据要避开自引**（批 BI 纪律）：总数与注册表的正则都**行首锚定**
+#   ⇒ 门项行自己不会被数进去 ⇒ 期望值里不混着「自己」。
+
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^arch_\w*\(\) \{' 14 '`arch_` **门型函数的注册表**（恰好 14 个）—— 新增门型 ⇒ 必须改这条基线 ⇒ 改的时候就会看到「**新门型也得有失败上报**」 ⇒ 集合层把新成员挡住（⚠ **行首锚定**：门项行自己不会被数进去 ⇒ 不自引）'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_FAIL=1( ;;)?$' 35 '**全文失败上报的总数**（恰好 35 处）—— ⚠⚠⚨ 它是「门型判定失败 → 整道门红」的**唯一通路** ⇒ 改成别值 ⇒ **那个门型的所有失败都静默** ⇒ 而审计器**自己重算命中数** ⇒ **也抓不到** ⇒ 这条门把「静默失效」变成「必红」（⚠ **行首锚定** ⇒ 门项行不自引）'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^probe_scan_report\(\)' '^\s+ARCH_FAIL=1' 3 '**probe_scan_report** 的失败上报（函数体内恰好 3 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^probe_scan_report_many\(\)' '^\s+ARCH_FAIL=1' 2 '**probe_scan_report_many** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_need\(\)' '^\s+ARCH_FAIL=1' 2 '**arch_need** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_need_ml\(\)' '^\s+ARCH_FAIL=1' 2 '**arch_need_ml** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_need_any_count\(\)' '^\s+ARCH_FAIL=1' 1 '**arch_need_any_count** 的失败上报（函数体内恰好 1 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_need_any_min\(\)' '^\s+ARCH_FAIL=1' 1 '**arch_need_any_min** 的失败上报（函数体内恰好 1 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_need_count\(\)' '^\s+ARCH_FAIL=1' 2 '**arch_need_count** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_need_min\(\)' '^\s+ARCH_FAIL=1' 2 '**arch_need_min** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_need_count_in_fn\(\)' '^\s+ARCH_FAIL=1' 3 '**arch_need_count_in_fn** 的失败上报（函数体内恰好 3 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_need_count_in_step\(\)' '^\s+ARCH_FAIL=1' 2 '**arch_need_count_in_step** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid_han\(\)' '^\s+ARCH_FAIL=1' 2 '**arch_forbid_han** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid_text_dup\(\)' '^\s+ARCH_FAIL=1' 6 '**arch_forbid_text_dup** 的失败上报（函数体内恰好 6 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid\(\)' '^\s+probe_scan_report ' 1 '**arch_forbid** 必须**转发给上报函数**（函数体内恰好 1 次调用 `probe_scan_report`）—— ⚠ forbid 族的失败**不自己上报** ⇒ 转发关系被摘掉 ⇒ **这个门型的失败全部静默** ⇒ 而它自己不报错 ⇒ 谁都看不出来'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid_ml\(\)' '^\s+probe_scan_report ' 1 '**arch_forbid_ml** 必须**转发给上报函数**（函数体内恰好 1 次调用 `probe_scan_report`）—— ⚠ forbid 族的失败**不自己上报** ⇒ 转发关系被摘掉 ⇒ **这个门型的失败全部静默** ⇒ 而它自己不报错 ⇒ 谁都看不出来'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid_raw\(\)' '^\s+probe_scan_report ' 1 '**arch_forbid_raw** 必须**转发给上报函数**（函数体内恰好 1 次调用 `probe_scan_report`）—— ⚠ forbid 族的失败**不自己上报** ⇒ 转发关系被摘掉 ⇒ **这个门型的失败全部静默** ⇒ 而它自己不报错 ⇒ 谁都看不出来'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid_tree\(\)' '^\s+probe_scan_report_many ' 1 '**arch_forbid_tree** 必须**转发给上报函数**（函数体内恰好 1 次调用 `probe_scan_report_many`）—— ⚠ forbid 族的失败**不自己上报** ⇒ 转发关系被摘掉 ⇒ **这个门型的失败全部静默** ⇒ 而它自己不报错 ⇒ 谁都看不出来'
 
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
@@ -2547,4 +2587,5 @@ echo "✓ 批 BJ 段门项全绿（恒真探针看得见脚本侧捷径与 hered
 echo "✓ 批 BK 段门项全绿（剥注释覆盖 .py ⇒ 注释顶替不了真代码）；门项合计 ${ARCH_N} 项（含前段）"
 echo "✓ 批 BL 段门项全绿（盯门自己的工具的门项必须整行锚定；判定被掏空但串还在 ⇒ 门假绿）；门项合计 ${ARCH_N} 项（含前段）"
 echo "✓ 批 BN 段门项全绿（整行锚定的豁免机制：双向配准 ⇒ 豁免表 ≡ 非锚定门项集合；改名漏改有静态兜底）；门项合计 ${ARCH_N} 项（含前段）"
+echo "✓ 批 BO 段门项全绿（接线门脚本自己的失败上报路径：per-函数 + 总数 + 注册表 ⇒ 少了上报 = 必红）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0
