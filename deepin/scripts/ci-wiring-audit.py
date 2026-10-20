@@ -191,7 +191,13 @@ def strip_comments(path):
       ⇒ 差点据此以为「4 行 vs 2 次」是矛盾）。
     ⇒ 复刻 = 两套口径 ⇒ **一律改成调同一条命令**。
     """
-    if path.endswith('.sh') or path.endswith('.txt'):
+    # ⚠⚠⚨ **`.py` 也要剥 `#` 注释**（批 BK）：python 的注释是 `#`
+    #   ⇒ 不剥 ⇒ **注释里的串会顶替真代码** ⇒ 盯串的门项**假绿**
+    #   （实测：真代码换成 `pass  # 串` ⇒ 命中数不变 ⇒ 门照样绿）。
+    # ⚠⚠⚨ **两侧必须同步**（门侧 `ci-wiring.sh` 的 `strip_comments` 同款）
+    #   ⇒ 不一致 ⇒ 同一串两侧算得不一样 ⇒ 配准校准失准。
+    # ⚠ **行首锚定** ⇒ 字符串里的 `#` 不受影响 ⇒ 安全。
+    if path.endswith('.sh') or path.endswith('.txt') or path.endswith('.py'):
         cmd = ["sed", "-e", r's/^[[:space:]]*#.*$//']
     else:
         cmd = ["perl", "-pe", r's{(?<!:)(//)(?!:).*$}{}']
