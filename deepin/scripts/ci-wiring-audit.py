@@ -113,6 +113,18 @@ COUNT_LINE = re.compile(
 #   ⚠ 期望值校准要复刻「切函数体」那段 awk ⇒ **从 ci-wiring.sh 里抽取原文**（零漂移）。
 COUNT_IN_FN_LINE = re.compile(
     r'^\s*arch_need_count_in_fn\s+"([^"]+)"\s+\'([^\']*)\'\s+\'([^\']*)\'\s+(\d+)\s+')
+# ⚠ `arch_need_count_in_step`（**某一步的正文里**恰好 N 次）：批 BE 新门型。
+#   它盯的是「这个标记串**还在这一步里**」⇒ 文件级门盯不到的「被挪到别处」由它抓。
+#   ⚠ **新门型必须进审计覆盖**（批 AR/AV 纪律：「审计器自己有盲区 ⇒ 那些门根本没被审」）
+#   ⇒ 这里加解析 + 配准校准；切步骤正文用的 awk **从 ci-wiring.sh 原文抽取**（零漂移）。
+COUNT_IN_STEP_LINE = re.compile(
+    r'^\s*arch_need_count_in_step\s+"([^"]+)"\s+(\d+)\s+\'([^\']*)\'\s+(\d+)\s+')
+# ⚠⚠ **count 族的兜底盲区检测**（批 BE）：
+#   `ANY_NEED_LINE`（`arch_need\b`）**匹配不到** count 族（`_` 是单词字符 ⇒ 没有词边界）⇒
+#   以前一条**写坏**的 `arch_need_count*` 门项会**静默被忽略** ⇒
+#   **审计器审不到它 ⇒ 没人知道它没被审**（批 AR 说的「审计器自己有盲区」）。
+#   ⇒ 这里加兜底：凡是 count 族、却没被上面任何一个门型解析到 ⇒ 记成盲区 ⇒ 硬门红。
+COUNT_FAMILY_LINE = re.compile(r'^\s*arch_need_count\w*\s')
 # ⚠ **函数定义行**长得像门项（`arch_need() { # ...`）⇒ 必须排除，
 #   否则审计器把工具自己的定义算成「没解析到的门项」⇒ 假盲区。
 FUNC_DEF_LINE = re.compile(r'^\s*arch_(need|forbid)\w*\s*\(\)\s*\{')
@@ -199,6 +211,19 @@ def extract_fn_body_awk():
     return m.group(1) if m else None
 
 
+def extract_step_awk():
+    """从 `arch_need_count_in_step` 原文里抠出那段 awk 程序（切**步骤正文**用）。
+
+    ⚠⚠ **必须抽取，不许复刻**（批 AV 起的纪律）：审计器自己写一套切段逻辑
+      ⇒ 两套口径 ⇒ 迟早漂移 ⇒ 审计器报的次数不可信 ⇒ 人会据此做错判断。
+    """
+    fn = extract_shell_func('arch_need_count_in_step')
+    if not fn:
+        return None
+    m = re.search(r"awk -v step=\"\$step\" '(.*?)'\)", fn, re.S)
+    return m.group(1) if m else None
+
+
 class AnyCounter(object):
     """批量数「glob 范围内**总命中数**」—— 口径 = ci-wiring.sh 的 `any_hits`（抽取原文）。"""
 
@@ -251,12 +276,13 @@ class AnyCounter(object):
 
 def parse_wiring():
     """解析 ci-wiring.sh ⇒ (need 门项, ml 门项, any_count 门项, any_min 门项,
-    count 门项, count_in_fn 门项, 各门型行数, 解析失败行号, arch_forbid 行数)"""
+    count 门项, count_in_fn 门项, count_in_step 门项, 各门型行数,
+    解析失败行号, arch_forbid 行数)"""
     src = open(WIRING, encoding='utf-8').read()
     lines = src.split('\n')
-    need, ml, anyc, anym, cnt, cif = [], [], [], [], [], []
+    need, ml, anyc, anym, cnt, cif, cis = [], [], [], [], [], [], []
     totals = {'need': 0, 'ml': 0, 'any_count': 0, 'any_min': 0,
-              'count': 0, 'count_in_fn': 0}
+              'count': 0, 'count_in_fn': 0, 'count_in_step': 0}
     failed, forbid_lines = [], 0
     for i, ln in enumerate(lines, 1):
         if ANY_FORBID_LINE.match(ln) and not FUNC_DEF_LINE.match(ln):
@@ -291,12 +317,22 @@ def parse_wiring():
             m = COUNT_LINE.match(ln)
             cnt.append((i, resolve(m.group(1)), m.group(2), int(m.group(3))))
             continue
+        if COUNT_IN_STEP_LINE.match(ln):
+            totals['count_in_step'] += 1
+            m = COUNT_IN_STEP_LINE.match(ln)
+            cis.append((i, resolve(m.group(1)), int(m.group(2)), m.group(3), int(m.group(4))))
+            continue
         if COUNT_IN_FN_LINE.match(ln):
             totals['count_in_fn'] += 1
             m = COUNT_IN_FN_LINE.match(ln)
             cif.append((i, resolve(m.group(1)), m.group(2), m.group(3), int(m.group(4))))
             continue
-    return need, ml, anyc, anym, cnt, cif, totals, failed, forbid_lines
+        if COUNT_FAMILY_LINE.match(ln):
+            # ⚠⚠ 走到这里 = 这一行**没被任何 count 门型解析到** ⇒ 审计器有盲区
+            #   （批 BE：写坏的 count 族门项以前是**静默忽略** ⇒ 没人知道它没被审）
+            failed.append((i, 'count-family'))
+            continue
+    return need, ml, anyc, anym, cnt, cif, cis, totals, failed, forbid_lines
 
 
 def changed_lines(base):
@@ -413,6 +449,39 @@ def check_count_in_fn_gates(cif_items):
     return bad
 
 
+def check_count_in_step_gates(cis_items):
+    """校准 `arch_need_count_in_step` 的期望次数：必须 == **该步正文里**的实际命中数。
+
+    ⚠⚠ **切步骤正文的那段 awk 从 ci-wiring.sh 原文抽取** ⇒ 零漂移
+      （门侧改了切段口径，审计侧自动跟着变 ⇒ 不会两套口径打架）。
+    ⚠ 期望值被改大来躲变异（例如 1 改成 2）⇒ 这里立刻报「没配准」⇒ 红。
+    """
+    awk_src = extract_step_awk()
+    if awk_src is None:
+        return []
+    bad = []
+    for lineno, f, step, rx, want in cis_items:
+        if not os.path.isfile(f):
+            bad.append((lineno, f, rx, want, None, '文件不存在'))
+            continue
+        out = subprocess.run(
+            ['awk', '-v', 'step=%d' % step, awk_src],
+            input=strip_comments(f), capture_output=True, text=True)
+        body = out.stdout
+        if not body.strip():
+            bad.append((lineno, f, rx, want, None,
+                        '抽不出第 %d 步的正文（打点行没找到？）' % step))
+            continue
+        r = subprocess.run(['grep', '-oE', '--', rx], input=body,
+                           capture_output=True, text=True)
+        got = len([x for x in r.stdout.split('\n') if x])
+        if got != want:
+            bad.append((lineno, f, rx, want, got,
+                        '第 %d 步正文里期望 %d ≠ 实际 %d ⇒ %s'
+                        % (step, want, got, '门没牙（挪走仍够）' if got > want else '门恒红')))
+    return bad
+
+
 def check_any_gates(anyc_items, anym_items, counter):
     """校准跨文件的两个门型：
       · `arch_need_any_count`：实际总命中 == 期望
@@ -450,7 +519,7 @@ def main():
         i = args.index('--changed')
         base = args[i + 1] if i + 1 < len(args) else 'HEAD~1'
 
-    (need, ml, anyc, anym, cnt, cif,
+    (need, ml, anyc, anym, cnt, cif, cis,
      totals, failed, forbid_lines) = parse_wiring()
 
     if base is not None:
@@ -464,6 +533,7 @@ def main():
         anym = [x for x in anym if x[0] in nums]
         cnt = [x for x in cnt if x[0] in nums]
         cif = [x for x in cif if x[0] in nums]
+        cis = [x for x in cis if x[0] in nums]
 
     # ⚠ 跨文件命中数：一次批量算（口径 = 抽取自 ci-wiring.sh 的 any_hits）
     pairs = [(rx, gl) for _, rx, _, gl in anyc] + [(rx, gl) for _, rx, _, gl in anym]
@@ -563,8 +633,9 @@ def main():
                                % (want, got, '门没牙（删一处仍够）' if got > want else '门恒红')))
         cntbad = check_count_gates(cnt)
         cifbad = check_count_in_fn_gates(cif)
+        cisbad = check_count_in_step_gates(cis)
         anybad = check_any_gates(anyc, anym, counter)
-        bad_all = minbad + cntbad + cifbad + anybad
+        bad_all = minbad + cntbad + cifbad + cisbad + anybad
         if bad_all:
             print('次数门没配准（%d 条）：' % len(bad_all), file=sys.stderr)
             for b in bad_all:
@@ -594,6 +665,8 @@ def main():
                                         totals['any_count'], totals['any_min']))
     print('  arch_need_count %d 条 / arch_need_count_in_fn %d 条'
           % (totals['count'], totals['count_in_fn']))
+    print('  arch_need_count_in_step %d 条（批 BE 新门型：盯「标记串**还在这一步里**」）'
+          % totals['count_in_step'])
     print('（arch_forbid 门项 %d 条**有意不审**：它判「不该有的东西没了」，'
           '目标串出现 >0 本来就红，不属于「被别处顶替」的隐患）' % forbid_lines)
     if failed:
@@ -649,6 +722,13 @@ def main():
     for lineno, f, sig, rx, want, got, why in cifbad:
         print('  · %s:%d  %s  fn=%s | %s ⇒ %s'
               % (os.path.basename(WIRING), lineno, rel(f), sig, rx, why))
+
+    cisbad = check_count_in_step_gates(cis)
+    print('arch_need_count_in_step 期望校准（须 == **该步正文里**实际次数）：%d 条失准'
+          % len(cisbad))
+    for lineno, f, rx, want, got, why in cisbad:
+        print('  · %s:%d  %s | %s ⇒ %s'
+              % (os.path.basename(WIRING), lineno, rel(f), rx, why))
 
     anybad = check_any_gates(anyc, anym, counter)
     print('arch_need_any_count / arch_need_any_min 配准校准：%d 条失准' % len(anybad))
@@ -728,6 +808,8 @@ def split_args(rest):
 RX_ARG_IDX = {
     'arch_need': 1, 'arch_need_ml': 1, 'arch_need_min': 1,
     'arch_need_count': 1, 'arch_need_count_in_fn': 2,
+    # ⚠ 批 BE 新门型：<文件> <步号> <正则> <期望次数> ⇒ 正则在第 3 个参数（index 2）
+    'arch_need_count_in_step': 2,
     'arch_need_any_count': 0, 'arch_need_any_min': 0,
     'arch_forbid': 1, 'arch_forbid_ml': 1, 'arch_forbid_raw': 1,
     'arch_forbid_tree': 0,

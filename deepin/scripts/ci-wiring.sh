@@ -252,6 +252,49 @@ arch_need_count_in_fn() { # arch_need_count_in_fn <文件> <签名正则> <正�
         ARCH_FAIL=1
     fi
 }
+# arch_need_count_in_step：盯「**某一步的正文里**」有没有那个动作（批 BE 新门型）。
+# ⚠⚠⚠ **为什么必须新门型（批 BE 实测取证，不是推演）**：
+#   批 BA 的 per-step 门盯的是「该串在**整个文件**里恰好出现 1 次」⇒
+#   ⚠⚠⚠ **实测：把第 8 步的标记串 `CANVAS_METHODS=` 整行挪到第 12 步，
+#     命中数仍是 1 ⇒ 接线门照样全绿（rc=0）** ⇒
+#   那道门只能证明「**这个串还在**」，**证明不了「它还在这一步里**」。
+#   ⇒ 本门型按打点行把文件切段，**在第 N 步的正文里**数 ⇒ 挪走就红。
+#   ⚠ **与已有的文件级门互补，两个都要**：
+#     文件级「恰好 1 次」⇒ 抓「被**复制**到别处」；步内「恰好 1 次」⇒ 抓「被**挪**到别处」。
+# ⚠ **打点行的识别口径（实测）**：`^echo "› [0-9]+/[0-9]+ `
+#   —— ⚠ 宽松写法（`^echo "[^"]*[0-9]+/[0-9]+ `）会**误匹配**普通行
+#     （实测 `echo "普通行 3/4 不是打点"` 也会命中）⇒ 必须紧锚定 `› `。
+#   —— ⚠ 本机 awk 是 **mawk 1.3.4**（实测认得多字节 `›` 的正则与 sub）。
+arch_need_count_in_step() { # arch_need_count_in_step <文件> <步号> <正则> <期望次数> <说明>
+    local f="$1" step="$2" re="$3" want="$4" label="$5"
+    ARCH_N=$((ARCH_N + 1))
+    if [ ! -f "$f" ]; then
+        echo "  ✗ $label：文件不存在 $f" >&2
+        ARCH_FAIL=1
+        return
+    fi
+    local body got
+    body="$(strip_comments "$f" | awk -v step="$step" '
+        /^echo "› [0-9]+\/[0-9]+ / {
+            s = $0
+            sub(/^echo "› /, "", s)
+            n = s
+            sub(/\/.*$/, "", n)
+            cur = n + 0
+            if (cur == step) in_seg = 1
+            else if (in_seg) exit
+        }
+        in_seg { print }
+    ')"
+    got="$(printf "%s\n" "$body" | grep -oE -- "$re" | grep -c . || true)"
+    got="${got:-0}"
+    if [ "$got" = "$want" ]; then
+        echo "  ✓ $label"
+    else
+        echo "  ✗ $label：$f 的第 $step 步正文里 $re 出现 $got 次（期望 $want 次）" >&2
+        ARCH_FAIL=1
+    fi
+}
 # arch_forbid：盯「**不该有的东西没了**」—— 收敛类改动光靠 arch_need（查「在」）
 # 看不出来：把写死的色值又写回去，「它还在」这件事没有正向条目能抓。
 arch_forbid() { # arch_forbid <文件> <正则> <说明>
@@ -1985,4 +2028,42 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 BD 段门项全绿（断言脚本不许游离在 CI 之外；白名单 4 条，每条带理由且都确实不在 CI 里）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 BE · per-step 门要认识**步骤边界**（标记串被挪到别处也要红）──────
+# ⚠⚠⚠ **起因（实测，不是推演）**：批 BA 立了 12 条 per-step 门（批 BD 扩到 14 条），
+#   盯的是「每一步的标记串在**整个 ci.sh** 里恰好出现 1 次」⇒
+#   ⚠⚠⚠ **实测：把第 8 步的标记串 `CANVAS_METHODS=` 整行挪到第 12 步**，
+#   **命中数仍是 1** ⇒ 跑接线门 ⇒ **rc=0（全绿）** ⇒
+#   ⇒ 那道门只能证明「**这个串还在**」，**证明不了「它还在这一步里**」。
+#   ⇒ 批 BA 当时把这个边界**如实记着**（「要更强的保证得让门**认识步骤边界**」）——
+#     本批就把它补上。
+#
+# ⚠ **新门型**：`arch_need_count_in_step <文件> <步号> <正则> <期望次数> <说明>`
+#   ⇒ 按打点行（`^echo "› N/M `）把文件切段，**在第 N 步的正文里**数那个串。
+# ⚠⚠ **新门型 ⇒ 审计器必须跟着扩**（批 AR/AV 的纪律：「审计器自己有盲区 ⇒
+#   那些门**根本没被审**」）⇒ `ci-wiring-audit.py` 已加 `arch_need_count_in_step`
+#   的解析与**配准校准**；且切段用的 awk 是**从本函数原文抽取**的（零漂移）。
+# ⚠ **与已有的文件级门互补，两个都要**：
+#   文件级「恰好 1 次」⇒ 抓「被**复制**到别处」；步内「恰好 1 次」⇒ 抓「被**挪**到别处」。
+#   ⚠ 二者合起来才是完整的：「这个串**全文件只有一处**」**且**「**那 一处就在这一步里**」。
+arch_need_count_in_step "$SRC/scripts/ci.sh" 1 '--selfcheck' 1 '第 1 步 selfcheck 的动作**还在这一步里**（批 BE：文件级门只保证「串还在」，不保证「串没被挪到别的步」）'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 2 '--color-sample' 1 '第 2 步 截图矩阵（8 张快照 + 状态色样张）的动作**还在这一步里**'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 3 'cn\.deepdolphin\.app\.desktop' 1 '第 3 步 desktop/metainfo 校验的动作**还在这一步里**'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 4 'ci-platform-probe\.sh' 1 '第 4 步 无头探针（平台探针）的动作**还在这一步里**'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 5 'ci-d2\.sh' 1 '第 5 步 D2 散值门（DS::* 单点真相源）的动作**还在这一步里**'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 6 '--agent-selftest' 1 '第 6 步 agent 自测的动作**还在这一步里**'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 7 'QStringLiteral\\\("verify"\\\)' 1 '第 7 步 verify 接线扫描的动作**还在这一步里**（盯那条 wire_need 的正则 —— 它是本步唯一的「verify 入口」证据）'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 8 'CANVAS_METHODS=' 1 '第 8 步 图谱 Canvas 契约清单的动作**还在这一步里**（26 个方法的清单在本步唯一定义）—— ⚠ 这条正是批 BE 取证时被挪走的那一条'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 9 'ci-wiring\.sh' 1 '第 9 步 **接线门**的动作**还在这一步里**（⚠⚠ 门自己被删了，门也得红）'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 10 'contract-check\.sh' 1 '第 10 步 引擎契约门（真引擎沙箱）的动作**还在这一步里**'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 11 'build-deb\.sh' 1 '第 11 步 deb 打包的动作**还在这一步里**（D7 达标的必经：能出包装进 deepin）'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 12 'check-deb-layout\.sh' 1 '第 12 步 deb 布局验收的动作**还在这一步里**（D7 的**准**验收：装完能不能用）'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 13 'sh "\$SRC/scripts/probe-agent-tool-surface\.sh"' 1 '第 13 步 agent 工具面收敛的动作**还在这一步里**'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 14 'sh "\$SRC/scripts/ci-orphan-probe\.sh"' 1 '第 14 步 无游离断言脚本的动作**还在这一步里**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 BE 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 BE 段门项全绿（ci.sh 每一步的标记串**不许被挪到别的步**）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0
