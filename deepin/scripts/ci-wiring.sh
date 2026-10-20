@@ -1051,7 +1051,10 @@ arch_need_any_min '刷新时刻固定' 1 'SelfCheck 钉住刷新时刻固定'
 #   只拿掉一处时「出现过」照样绿 ⇒ 门被骗过（负控实测，第十五次「同名互相顶替」）。
 #   ⚠ 第四处是批 AN 加的：前三处都在**同一次运行内**比 ⇒ 抓不到「有时拍出另一种字节」
 #   的漂移（实测真发生过：同机并发下 4 种字节）⇒ 必须有跨进程那一处。
-arch_need_count "$SRC/scripts/ci.sh" 'cmp -s' 4 'CI 有「重拍比字节」门（基线必须可重现，含跨运行复拍）'
+arch_need_count "$SRC/scripts/ci.sh" '^    if ! cmp -s "\$BASE_DIR/\$name" "\$f"; then$' 1 'CI 有「重拍比字节」门（基线必须可重现，含跨运行复拍）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^        if ! cmp -s "\$BASE_DIR/\$\{theme\}-\$\{sec\}\.png" "\$again"; then$' 1 'CI 有「重拍比字节」门（基线必须可重现，含跨运行复拍）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^        if ! cmp -s "\$again" "\$other"; then$' 1 'CI 有「重拍比字节」门（基线必须可重现，含跨运行复拍）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^        if ! cmp -s "\$BASE_DIR/\$\{theme\}-\$\{sec\}\.png" "\$shot"; then$' 1 'CI 有「重拍比字节」门（基线必须可重现，含跨运行复拍）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 # ⚠ 换时区那张必须挑**两个互相不同**的时区：拿「宿主时区」当其中一个时，
 #   宿主恰好就是那个时区 ⇒ 两张必然相同 ⇒ 门永远绿（负控实测：宿主就是 Asia/Shanghai）。
 arch_need "$SRC/scripts/ci.sh" 'America/New_York' 'CI 的跨时区对比用两个互不相同的时区'
@@ -1487,7 +1490,7 @@ else
         _audit_rc=$?
         # ⚠⚠ **按审计器的退出码说原因**（批 AZ 实测查出来的失准）：
         #   原来这一行**只说一种原因**（「新加的门盯的串不唯一」），
-        #   可审计器有 **8 种**失败态（见 ci-wiring-audit.py 的 main()）：
+        #   可审计器有 **9 种**失败态（见 ci-wiring-audit.py 的 main()）：
         #     2 = 审计器自己有盲区（有门项没解析到 ⇒ 它们**根本没被审**）
         #     3 = 豁免基线之外有「串不唯一」的隐患
         #     4 = 次数门配准失准（期望次数 ≠ 实际命中数 ⇒ 门没牙或恒红）
@@ -1495,6 +1498,8 @@ else
         #     6 = **门项行数与基线不符**（批 BH：门项被删了 / 被改成注释了）
         #     7 = **审计器自己有重名常量**（批 BH：后定义覆盖先定义 ⇒ 先那个是死代码）
         #     8 = **盯探针的门项不是整行锚定**（批 BL：判定被掏空但串还在 ⇒ 门假绿）
+        #     9 = **审计器引用了未定义的名字**（批 BN：改名漏改调用点 ⇒ 那条路径没人跑
+        #         ⇒ 崩了没人发现）或**锚定豁免基线有坏行**（豁免表写坏了 ⇒ 豁免判定失准）
         #   ⇒ 真实原因不是「串不唯一」时，那句话**指错了方向**（排障会被带偏）。
         #   ⚠ 实测（批 AZ 负控）：把新加的 `arch_need_count` 目标串删掉 ⇒
         #     审计器报的是「命中 0 次 ⇒ 门恒红」(rc=4)，而旧消息说的是「串不唯一」⇒ **两回事**。
@@ -1506,6 +1511,7 @@ else
             6) _audit_why="**门项行数与基线不符**（有门项被删了 / 被改成注释了 ⇒ 那些承诺没人守了）" ;;
             7) _audit_why="**审计器自己有重名常量**（后定义覆盖先定义 ⇒ 先那个是死代码 ⇒ 判定可能压根没生效）" ;;
             8) _audit_why="盯探针的门项**不是整行锚定**（判定被掏空但串还在 ⇒ 门假绿；或锚定形态的**自检**不过 ⇒ 判定本身被掏空）" ;;
+            9) _audit_why="审计器引用了**未定义的名字**（改名漏改调用点 ⇒ 那条路径没人跑 ⇒ 崩了没人发现）或**锚定豁免基线有坏行**（豁免表写坏了 ⇒ 豁免判定失准 ⇒ 审计器自己失准）" ;;
             *) _audit_why="未知的失败码" ;;
         esac
         echo "  ✗ 门自审计没过（退出码 $_audit_rc）：$_audit_why" >&2
@@ -2055,16 +2061,18 @@ echo "✓ 批 AX 段门项全绿（M3c 图标名/动效已达成）；门项合�
 #   ⇒ 正则一律**只匹配唯一一处**，错误消息里重复出现的词**不算**（靠 `grep -q` 前缀锚定）。
 arch_forbid_ml "$SRC/scripts/ci.sh" '--selfcheck[^;|]*\|\| true' 'selfcheck 的退出码**不许被 `|| true` 吞掉**（⚠ `|| true` 在命令替换内部 ⇒ 崩在汇总行**之后**时解析照样成功 ⇒ 门放行；批 AZ 实测复现：旧逻辑判绿）'
 arch_forbid_ml "$SRC/scripts/ci.sh" '--agent-selftest[^;|]*\| *tail' 'agent-selftest 的输出**不许再被管道截断**（批 AY 的教训：段错误回栈被 `| tail -2` 截掉 ⇒ 白丢线索；落盘才能排障）'
-arch_need_count "$SRC/scripts/ci.sh" 'SELFCHECK_RC=\$\?' 1 'selfcheck 的退出码**有且只有一个**收集点（`|| SELFCHECK_RC=$?`；这是上一条 forbid 的**对位**：只禁 `|| true` 不够 ⇒ 必须有一条「真的收了」的正面证据）'
-arch_need_count "$SRC/scripts/ci.sh" 'AGENT_RC=\$\?' 1 'agent-selftest 的退出码**有且只有一个**收集点'
-arch_need_count "$SRC/scripts/ci.sh" '-ge 128' 2 '**信号退出必须显式判红**（128+n = 被信号 n 杀死；selfcheck 与 agent-selftest 各一处 —— ⚠ 恰好的 2 次：将来加第三个子进程检查时门会红 ⇒ 逼人回来补这条门，而不是默默多一个不判信号的调用点）'
-arch_need_count "$SRC/scripts/ci.sh" 'kill -l ' 2 '崩了要说清**是什么信号**（`kill -l` 查信号名；两处各一次）—— 只报「退出码 139」没人知道那是 SEGV 还是别的'
-arch_need_count "$SRC/scripts/ci.sh" 'grep -q .*FINAL:' 1 'agent-selftest 必须断言 **`[selftest] FINAL:` 标记**（盯**那条 grep**：错误消息里也提到 FINAL ⇒ 裸盯词会被顶替）'
-arch_need_count "$SRC/scripts/ci.sh" 'grep -q .*selftest-done' 1 'agent-selftest 必须断言**收尾标记 `[selftest-done]`**（盯**那条 grep**：错误消息里也提到该标记 ⇒ 裸盯词会被顶替）'
-arch_need_count "$SRC/scripts/ci.sh" 'mkdir -p "\$CRASH_DIR"' 1 'core 目录必须**先建出来**（core_pattern 是相对名 ⇒ core 落在崩溃进程的 cwd ⇒ 没有专用目录就没有 core 可查）'
-arch_need_count "$SRC/scripts/ci.sh" 'ulimit -c ' 1 'core dump 必须**开着**（不设 `ulimit -c` ⇒ 崩了**压根没有 core** ⇒ 「留 core 供下次查」这句话是空的）'
-arch_need_count "$SRC/scripts/ci.sh" 'cd "\$CRASH_DIR" && "\$BIN" --selfcheck' 1 'selfcheck 必须在**专用目录**里跑（core 落 cwd ⇒ 不 cd 进 CRASH_DIR ⇒ core 落在仓库目录 ⇒ 弄脏工作区且没人知道去哪儿找）'
-arch_need_count "$SRC/scripts/ci.sh" 'BUILD="\$\(cd "\$BUILD"' 1 'BUILD 必须**绝对化**（一旦 cd 进 core 目录，相对路径的 $BIN 就找不到了 ⇒ 自测步直接起不来）'
+arch_need_count "$SRC/scripts/ci.sh" '^\( cd "\$CRASH_DIR" && "\$BIN" --selfcheck 2>"\$BUILD/selfcheck\.err" \) >"\$BUILD/selfcheck\.out" \|\| SELFCHECK_RC=\$\?$' 1 'selfcheck 的退出码**有且只有一个**收集点（`|| SELFCHECK_RC=$?`；这是上一条 forbid 的**对位**：只禁 `|| true` 不够 ⇒ 必须有一条「真的收了」的正面证据）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^\( cd "\$CRASH_DIR" && "\$BIN" --agent-selftest \) >"\$BUILD/agent-selftest\.out" 2>"\$BUILD/agent-selftest\.err" \|\| AGENT_RC=\$\?$' 1 'agent-selftest 的退出码**有且只有一个**收集点｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^if \[ "\$SELFCHECK_RC" -ge 128 \]; then$' 1 '**信号退出必须显式判红**（128+n = 被信号 n 杀死；selfcheck 与 agent-selftest 各一处 —— ⚠ 恰好的 2 次：将来加第三个子进程检查时门会红 ⇒ 逼人回来补这条门，而不是默默多一个不判信号的调用点）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^if \[ "\$AGENT_RC" -ge 128 \]; then$' 1 '**信号退出必须显式判红**（128+n = 被信号 n 杀死；selfcheck 与 agent-selftest 各一处 —— ⚠ 恰好的 2 次：将来加第三个子进程检查时门会红 ⇒ 逼人回来补这条门，而不是默默多一个不判信号的调用点）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^    SC_SIG_NAME="\$\(kill -l "\$SC_SIG" 2>/dev/null \|\| echo "信号\$SC_SIG"\)"$' 1 '崩了要说清**是什么信号**（`kill -l` 查信号名；两处各一次）—— 只报「退出码 139」没人知道那是 SEGV 还是别的｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^    AG_SIG_NAME="\$\(kill -l "\$AG_SIG" 2>/dev/null \|\| echo "信号\$AG_SIG"\)"$' 1 '崩了要说清**是什么信号**（`kill -l` 查信号名；两处各一次）—— 只报「退出码 139」没人知道那是 SEGV 还是别的｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^if ! grep -q .\^\\\[selftest\\\] FINAL:. "\$BUILD/agent-selftest\.out"; then$' 1 'agent-selftest 必须断言 **`[selftest] FINAL:` 标记**（盯**那条 grep**：错误消息里也提到 FINAL ⇒ 裸盯词会被顶替）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^if ! grep -q .\^\\\[selftest-done\\\]\$. "\$BUILD/agent-selftest\.out"; then$' 1 'agent-selftest 必须断言**收尾标记 `[selftest-done]`**（盯**那条 grep**：错误消息里也提到该标记 ⇒ 裸盯词会被顶替）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^mkdir -p "\$CRASH_DIR"$' 1 'core 目录必须**先建出来**（core_pattern 是相对名 ⇒ core 落在崩溃进程的 cwd ⇒ 没有专用目录就没有 core 可查）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^ulimit -c 262144 2>/dev/null \|\| true$' 1 'core dump 必须**开着**（不设 `ulimit -c` ⇒ 崩了**压根没有 core** ⇒ 「留 core 供下次查」这句话是空的）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^\( cd "\$CRASH_DIR" && "\$BIN" --selfcheck 2>"\$BUILD/selfcheck\.err" \) >"\$BUILD/selfcheck\.out" \|\| SELFCHECK_RC=\$\?$' 1 'selfcheck 必须在**专用目录**里跑（core 落 cwd ⇒ 不 cd 进 CRASH_DIR ⇒ core 落在仓库目录 ⇒ 弄脏工作区且没人知道去哪儿找）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^BUILD="\$\(cd "\$BUILD" 2>/dev/null && pwd \|\| echo "\$BUILD"\)"$' 1 'BUILD 必须**绝对化**（一旦 cd 进 core 目录，相对路径的 $BIN 就找不到了 ⇒ 自测步直接起不来）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 AZ 段有门项红（上面带 ✗ 的行）" >&2
@@ -2098,21 +2106,21 @@ echo "✓ 批 AZ 段门项全绿（CI 自测步不许吞退出码 / agent 自测
 # ⚠ **串的选择口径**（批 AP/AQ/AR/AS/AX 连续六次同形状的纪律）：
 #   必须**只出现在那一步里**（全文件命中数 == 本步内命中数），
 #   否则会被**别处顶替**（改一处骗得过门）。
-arch_need_count "$SRC/scripts/ci.sh" '--selfcheck' 1 '第 1 步 selfcheck 的动作还在（删掉这一步 ⇒ CI 少跑一次自测 ⇒ 必须红）'
+arch_need_count "$SRC/scripts/ci.sh" '^\( cd "\$CRASH_DIR" && "\$BIN" --selfcheck 2>"\$BUILD/selfcheck\.err" \) >"\$BUILD/selfcheck\.out" \|\| SELFCHECK_RC=\$\?$' 1 '第 1 步 selfcheck 的动作还在（删掉这一步 ⇒ CI 少跑一次自测 ⇒ 必须红）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '--color-sample' 1 '第 2 步 截图矩阵（8 张快照 + 状态色样张）的动作还在'
-arch_need_count "$SRC/scripts/ci.sh" 'cn\.deepdolphin\.app\.desktop' 1 '第 3 步 desktop/metainfo 校验的动作还在'
-arch_need_count "$SRC/scripts/ci.sh" 'ci-platform-probe\.sh' 1 '第 4 步 无头探针（平台探针）的动作还在'
-arch_need_count "$SRC/scripts/ci.sh" 'ci-d2\.sh' 1 '第 5 步 D2 散值门（DS::* 单点真相源）的动作还在'
-arch_need_count "$SRC/scripts/ci.sh" '--agent-selftest' 1 '第 6 步 agent 自测的动作还在'
-arch_need_count "$SRC/scripts/ci.sh" 'QStringLiteral\\\("verify"\\\)' 1 '第 7 步 verify 接线扫描的动作还在（盯那条 wire_need 的正则 —— 它是本步唯一的「verify 入口」证据）'
-arch_need_count "$SRC/scripts/ci.sh" 'CANVAS_METHODS=' 1 '第 8 步 图谱 Canvas 契约清单的动作还在（26 个方法的清单在本步唯一定义）'
-arch_need_count "$SRC/scripts/ci.sh" 'ci-wiring\.sh' 1 '第 9 步 **接线门**的动作还在（⚠⚠ 门自己被删了，门也得红 —— 批 BA 实测：本步删掉时**其余门全绿**）'
-arch_need_count "$SRC/scripts/ci.sh" 'contract-check\.sh' 1 '第 10 步 引擎契约门（真引擎沙箱）的动作还在'
-arch_need_count "$SRC/scripts/ci.sh" 'build-deb\.sh' 1 '第 11 步 deb 打包的动作还在（D7 达标的必经：能出包装进 deepin）'
-arch_need_count "$SRC/scripts/ci.sh" 'check-deb-layout\.sh' 1 '第 12 步 deb 布局验收的动作还在（D7 的**准**验收：装完能不能用）'
-arch_need_count "$SRC/scripts/ci.sh" 'sh "\$SRC/scripts/probe-agent-tool-surface\.sh"' 1 '第 13 步 agent 工具面收敛的动作还在（批 BD 实测：这个探针以前**根本不在 CI 里** ⇒ 它的 9 条断言没人执行）—— ⚠ 盯的是**调用点**那串，不是文件名：文件名在 ci.sh 的注释里也出现过（讲这个洞的来由）⇒ 盯短名会命中 2 次而恒红'
-arch_need_count "$SRC/scripts/ci.sh" 'sh "\$SRC/scripts/ci-orphan-probe\.sh"' 1 '第 14 步 无游离断言脚本的动作还在（批 BD：这是「CI 自己在漏什么」的那一道）—— ⚠ 同上，盯**调用点**'
-arch_need_count "$SRC/scripts/ci.sh" 'python3 "\$SRC/scripts/ci-tautology-check\.py"' 1 '第 15 步 判据不许被掏空成恒真的动作还在（批 BF：条数基线门抓不到「条件被掏空」）'
+arch_need_count "$SRC/scripts/ci.sh" '^    desktop-file-validate "\$SRC/data/cn\.deepdolphin\.app\.desktop" && echo "✓ desktop 合法"$' 1 '第 3 步 desktop/metainfo 校验的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^if ! sh "\$SRC/scripts/ci-platform-probe\.sh" "\$BIN"; then$' 1 '第 4 步 无头探针（平台探针）的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^if ! sh "\$SRC/scripts/ci-d2\.sh" "\$SRC"; then$' 1 '第 5 步 D2 散值门（DS::* 单点真相源）的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^\( cd "\$CRASH_DIR" && "\$BIN" --agent-selftest \) >"\$BUILD/agent-selftest\.out" 2>"\$BUILD/agent-selftest\.err" \|\| AGENT_RC=\$\?$' 1 '第 6 步 agent 自测的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^wire_need "\$SRC/src/app/AppModel\.cpp" .QStringLiteral\\\("verify"\\\). .AppModel 调引擎 verify 命令.$' 1 '第 7 步 verify 接线扫描的动作还在（盯那条 wire_need 的正则 —— 它是本步唯一的「verify 入口」证据）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^CANVAS_METHODS="setTransform fillRect strokeRect rect beginPath moveTo lineTo arcTo closePath arc bezierCurveTo fill stroke fillText createLinearGradient addColorStop setLineDash setLineDashOffset setShadowBlur setShadowColor setGlobalAlpha setLineWidth setStrokeStyle setFillStyle setFont setTextAlign"$' 1 '第 8 步 图谱 Canvas 契约清单的动作还在（26 个方法的清单在本步唯一定义）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^if sh "\$SRC/scripts/ci-wiring\.sh" "\$SRC"; then$' 1 '第 9 步 **接线门**的动作还在（⚠⚠ 门自己被删了，门也得红 —— 批 BA 实测：本步删掉时**其余门全绿**）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^    if DEEPGIT_CLIENT_BIN="\$BIN" sh "\$SRC/scripts/contract-check\.sh" > "\$_cc_log" 2>&1; then$' 1 '第 10 步 引擎契约门（真引擎沙箱）的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^    if sh "\$SRC/scripts/build-deb\.sh" "\$BUILD/deb" > "\$BUILD/build-deb\.log" 2>&1; then$' 1 '第 11 步 deb 打包的动作还在（D7 达标的必经：能出包装进 deepin）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^elif sh "\$SRC/scripts/check-deb-layout\.sh" "\$DEB_OUT"; then$' 1 '第 12 步 deb 布局验收的动作还在（D7 的**准**验收：装完能不能用）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^sh "\$SRC/scripts/probe-agent-tool-surface\.sh" "\$BIN" \|\| ATS_RC=\$\?$' 1 '第 13 步 agent 工具面收敛的动作还在（批 BD 实测：这个探针以前**根本不在 CI 里** ⇒ 它的 9 条断言没人执行）—— ⚠ 盯的是**调用点**那串，不是文件名：文件名在 ci.sh 的注释里也出现过（讲这个洞的来由）⇒ 盯短名会命中 2 次而恒红｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^if ! sh "\$SRC/scripts/ci-orphan-probe\.sh" "\$SRC"; then$' 1 '第 14 步 无游离断言脚本的动作还在（批 BD：这是「CI 自己在漏什么」的那一道）—— ⚠ 同上，盯**调用点**｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^if ! python3 "\$SRC/scripts/ci-tautology-check\.py" "\$SRC"; then$' 1 '第 15 步 判据不许被掏空成恒真的动作还在（批 BF：条数基线门抓不到「条件被掏空」）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '› [0-9]+/15 ' 15 'ci.sh 的步骤打点**恰好 15 个**（多一步/少一步都红；且分母统一是 15 ⇒ 散写分母也红）'
 arch_need_ml "$SRC/scripts/ci.sh" '› 1/15 .*› 2/15 .*› 3/15 .*› 4/15 .*› 5/15 .*› 6/15 .*› 7/15 .*› 8/15 .*› 9/15 .*› 10/15 .*› 11/15 .*› 12/15 .*› 13/15 .*› 14/15 .*› 15/15 ' 'ci.sh 的 15 个步骤打点**编号连续**（压行后匹配 ⇒ 跨行也算）⇒ 跳号/重号/乱序都红'
 
@@ -2138,9 +2146,9 @@ echo "✓ 批 BA 段门项全绿（ci.sh 的 15 步每一步都有门）；门�
 # ⇒ 修法：判定改成**完全相等** ⇒ **余量恒为 0**：
 #   加判据忘了同步 ⇒ 红；删判据 ⇒ 红；基线被调小 ⇒ 红。
 # ⇒ **下面这两条门盯的正是「这个判定本身」** —— 判定被改回「小于」，余量就又回来了。
-arch_need_count "$SRC/scripts/ci.sh" 'SC_PASSED" -ne "\$SC_MIN' 1 '判据条数基线的判定必须是**完全相等**（`-ne`）—— 改成 `-lt`（不少于）⇒ 余量又回来 ⇒ 可删的判据数 = 基线与实际的差（批 BB 实测：曾有 2 条余量，删 2 条照样绿）'
-arch_need_count "$SRC/scripts/ci.sh" 'SC_MIN=[0-9]+' 1 '判据条数基线**有且只有一处**（`SC_MIN=<数字>`）—— 基线散在两处 ⇒ 改一处就废掉另一处 ⇒ 门跟着松'
-arch_need_count "$SRC/scripts/ci.sh" 'SC_FAILED" -ne 0' 1 '判据**一条都不能失败**（`failed` 必须恒为 0）—— 这条是「牙还在不在」的前提'
+arch_need_count "$SRC/scripts/ci.sh" '^if \[ "\$SC_PASSED" -ne "\$SC_MIN" \]; then$' 1 '判据条数基线的判定必须是**完全相等**（`-ne`）—— 改成 `-lt`（不少于）⇒ 余量又回来 ⇒ 可删的判据数 = 基线与实际的差（批 BB 实测：曾有 2 条余量，删 2 条照样绿）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^SC_MIN=395$' 1 '判据条数基线**有且只有一处**（`SC_MIN=<数字>`）—— 基线散在两处 ⇒ 改一处就废掉另一处 ⇒ 门跟着松｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^if \[ "\$SC_FAILED" -ne 0 \] \|\| \[ "\$SC_PASSED" -lt 58 \]; then$' 1 '判据**一条都不能失败**（`failed` 必须恒为 0）—— 这条是「牙还在不在」的前提｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BB 段有门项红（上面带 ✗ 的行）" >&2
@@ -2491,12 +2499,42 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if path\.endswith\(.\.sh.
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def anchoring_violation\(rx\):$' 1 '锚定形态的**判定函数**必须在（⚠ 判定逻辑只许有一份 ⇒ 实扫与自检都走它 ⇒ 两套口径必然漂）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def anchoring_selftest\(\):$' 1 '锚定形态的**自检**必须在（门自己证明自己有牙 ⇒ 判定被掏空时当场红）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+stbad = anchoring_selftest\(\)$' 1 '锚定形态的**自检必须被调用**（只定义不调用 ⇒ 自检形同虚设 ⇒ 没人会发现判定被掏空）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_gate_tool_anchoring\(cnt_items\):$' 1 '锚定形态的**实扫**必须在（探针是门自己的工具 ⇒ 它的门项必须整行锚定）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+anchbad = check_gate_tool_anchoring\(cnt\)$' 1 '锚定形态的**实扫必须被调用**（定义了不调 ⇒ 没人发现探针门项被改回盯串）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_anchor_scope\(cnt_items, exempt\):$' 1 '锚定形态的**实扫**必须在（探针是门自己的工具 ⇒ 它的门项必须整行锚定）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+anchbad, anchor_need = check_anchor_scope\(cnt, anchor_exempt\)$' 1 '锚定形态的**实扫必须被调用**（定义了不调 ⇒ 没人发现探针门项被改回盯串）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **第二返回值 = 「需要豁免」的集合**（豁免表的唯一合法来源）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return 8$' 2 '审计器的**第 8 种失败态**必须在（⚠ **两处**：锚定形态**自检**不过 + 实扫出违规 ⇒ 两种失败要分开 ⇒ 不然排障会被带偏）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_TOOL_SUFFIXES = \(.ci-tautology-check\.py., .ci-wiring-audit\.py.\)$' 1 '审计器的**锚定形态适用范围常量**的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 拆成两条）｜⚠⚠⚨ **适用范围必须同时含探针与审计器自身**（两者都是「门自己的工具」⇒ 被掏空 = 门集体失效）'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if not f\.endswith\(GATE_TOOL_SUFFIXES\):$' 1 '审计器的**锚定形态适用范围常量**的**使用点**必须在（⚠ 散在别处 ⇒ 改一处就废掉另一处 ⇒ 范围悄悄变了没人知道）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^ANCHOR_SCOPE_SUFFIXES = \(.ci-tautology-check\.py., .ci-wiring-audit\.py., .ci\.sh.\)$' 1 '审计器的**锚定形态适用范围常量**的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 拆成两条）｜⚠⚠⚨ **适用范围必须同时含探针与审计器自身**（两者都是「门自己的工具」⇒ 被掏空 = 门集体失效）｜⚠⚠⚨ **批 BN：范围扩到 `ci.sh`**（CI 入口的门项同样是「门自己的工具」）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if not f\.endswith\(ANCHOR_SCOPE_SUFFIXES\):$' 1 '审计器的**锚定形态适用范围常量**的**使用点**必须在（⚠ 散在别处 ⇒ 改一处就废掉另一处 ⇒ 范围悄悄变了没人知道）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **批 BN：范围判定只此一处**（正向扫描与豁免反向配准共用它算出的「需要豁免」集合 ⇒ 两边口径天然一致 ⇒ 不许各判各的）'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+8\) _audit_why=.*$' 1 '接线门必须**按审计器的第 8 种失败态说原因**（⚠ 批 AZ 实测：不按退出码说原因 ⇒ 排障会被带偏）｜⚠⚠⚨ **整行锚定**'
+
+# ── 批 BN · 「整行锚定」的**豁免机制** + 改名漏改的**静态兜底** ───────────────────
+#
+# ⚠⚠⚨ **为什么必须有豁免**：批 BN 把 `ci.sh` 纳入「整行锚定」的适用范围
+#   ⇒ 实测有 **6 条**门项**不能**整行锚定（锚了会把语义**改窄**）
+#   ⇒ 必须有**显式豁免** ⇒ 豁免 = 「**允许弱化的门项**」白名单
+#   ⇒ 每一行都要写**理由**、**坏行不豁免**（fail closed）。
+# ⚠⚠⚨ **豁免表不许悄悄变长** ⇒ 靠**双向配准**钉死（不是另写一个条数基线）：
+#   ① 正向（`check_anchor_scope`）：适用范围内的门项若不锚定 ⇒ **必须**在豁免表里
+#   ② 反向（`check_anchor_exempt_reconcile`）：豁免表里每一行 ⇒ **必须**对得上一条现存门项
+#   ⇒ 两者合起来 ⇒ **豁免表 ≡ 适用范围内的「非锚定门项」集合**（一一对应）
+#   ⇒ 条数是**推导出来的**（⇒ 少一处可以被人偷偷改的地方）。
+# ⚠⚠⚨ **改名漏改的静态兜底**（批 BN **实测坐实**的真 bug，不是推演）：
+#   批 BM 改名 `check_probe_gate_anchoring` → `check_gate_tool_anchoring` 时
+#   **漏改了报告模式（无参）那处调用点** ⇒ 报告模式一跑就 `NameError` 崩掉
+#   ⇒ 而 CI **只跑 `--list`** ⇒ 这条路径**根本没人跑** ⇒ 崩了**没人发现**
+#   ⇒ 一路带到了已推送的 HEAD ⇒ 现在加 `check_undefined_names()`（symtable 静态抓）。
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^ANCHOR_EXEMPT = os\.path\.join\(SRC, .scripts., .ci-wiring-anchor\.exempt.\)$' 1 '锚定豁免基线的**路径常量**必须在（⚠ **整行锚定**：路径改到别处 ⇒ 豁免表读的是另一个文件 ⇒ 豁免机制**静默换人**）｜⚠⚠⚨ **单一真相源**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def read_anchor_exempt\(\):$' 1 '豁免表的**读取函数**必须在（⚠ 键 = 门型 + 路径 + 正则 ⇒ 三者合起来才唯一 ⇒ 少一个就会**跨门型漏豁免**）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+read_anchor_exempt\(\)$' 1 '豁免表的**读取必须被调用**（定义了不调 ⇒ 豁免表是**摆设** ⇒ 所有人都以为弱化点被管住了）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def is_anchor_exempted\(kind, relpath, rx, exempt\):$' 1 '豁免的**判定函数**必须在（⚠ **判定逻辑只许有一份** ⇒ 实扫与别处不许各判各的 ⇒ 两套口径必然漂）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if is_anchor_exempted\(key\[0\], key\[1\], key\[2\], exempt\):$' 1 '豁免的**判定必须真的在判定路径上**（⚠ 判定被掏空成「恒真」⇒ **所有**门项都被豁免 ⇒ 门集体失效 ⇒ 比没豁免还糟）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_undefined_names\(\):$' 1 '审计器**引用了未定义的名字**的静态检查必须在（批 BN 实测坐实：改名漏改调用点 ⇒ 那条路径没人跑 ⇒ 崩了没人发现 ⇒ 一路带到已推送的 HEAD）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+undef = check_undefined_names\(\)$' 1 '未定义名的静态检查**必须被调用**（定义了不调 ⇒ 这类洞**原样回来** ⇒ 等于没修）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_anchor_exempt_reconcile\(need_exempt, exempt\):$' 1 '豁免表的**反向配准**必须在（豁免表 = 弱化点白名单 ⇒ 弱化点必须**有对应物** ⇒ 否则要么门项被删却忘了清豁免（承诺悄悄消失），要么塞了空豁免，要么给已锚定的门项白占一行（豁免表在悄悄变长））｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **对标的是「非锚定门项」而不是「任何门项」**（只对标「任何门项」⇒ 给已锚定门项加豁免照样混过去 ⇒ 这道门没牙）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+dead = check_anchor_exempt_reconcile\(anchor_need, anchor_exempt\)$' 1 '豁免表的**反向配准必须被调用**（定义了不调 ⇒ 反向配准形同虚设 ⇒ 豁免表可以**无限变长**）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **必须用正向扫描算出的「需要豁免」集合**（自己另算一套 ⇒ 两套口径必然漂）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return 9$' 4 '审计器的**第 9 种失败态**必须在（⚠ **四处**：未定义名 + 豁免坏行 + 豁免文件不在 + 豁免对不上门项 ⇒ 四种失败要分开 ⇒ 不然排障会被带偏）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return \(kind, relpath, rx\.rstrip\(\)\) in exempt$' 1 '豁免**判定的那一行**必须在（⚠ 只盯调用点**盯不住判定体** ⇒ 判定被掏空成「恒真」⇒ **所有**门项都被豁免 ⇒ 门集体失效 ⇒ 比没豁免还糟）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if \(kind, path, rx\.rstrip\(\)\) not in need_exempt:$' 1 '反向配准的**判定那一行**必须在（⚠ 只盯调用点**盯不住判定体** ⇒ 判定被掏空 ⇒ 豁免表可以**无限变长** ⇒ 「不许悄悄变长」就废了）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+9\) _audit_why=.*$' 1 '接线门必须**按审计器的第 9 种失败态说原因**（⚠ 批 AZ 实测：不按退出码说原因 ⇒ 排障会被带偏）｜⚠⚠⚨ **整行锚定**'
 
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
@@ -2508,4 +2546,5 @@ echo "✓ 批 BI 段门项全绿（forbid 门族不许静默变绿；工具坏�
 echo "✓ 批 BJ 段门项全绿（恒真探针看得见脚本侧捷径与 heredoc 内嵌脚本）；门项合计 ${ARCH_N} 项（含前段）"
 echo "✓ 批 BK 段门项全绿（剥注释覆盖 .py ⇒ 注释顶替不了真代码）；门项合计 ${ARCH_N} 项（含前段）"
 echo "✓ 批 BL 段门项全绿（盯门自己的工具的门项必须整行锚定；判定被掏空但串还在 ⇒ 门假绿）；门项合计 ${ARCH_N} 项（含前段）"
+echo "✓ 批 BN 段门项全绿（整行锚定的豁免机制：双向配准 ⇒ 豁免表 ≡ 非锚定门项集合；改名漏改有静态兜底）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0

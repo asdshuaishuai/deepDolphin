@@ -45,6 +45,9 @@ arch_forbid 判的是「**不该有的东西没了**」⇒ 它的目标串出现
   python3 ci-wiring-audit.py --changed HEAD~1 # 只审 base..HEAD 里**新增**的门项
 退出码：
   0 绿 / 2 审计器有盲区或缺文件 / 3 豁免外隐患（命中 >1）/ 4 次数门没配准
+  5 正则写法体检不过 / 6 门项总数与基线不符 / 7 审计器自己有重名常量
+  8 锚定形态违规（含自检不过）
+  9 审计器引用了未定义的名字（改名漏改调用点）/ 锚定豁免基线有坏行
 """
 import os
 import re
@@ -63,6 +66,13 @@ WIRING = os.path.join(SRC, 'scripts', 'ci-wiring.sh')
 #   类型 ∈ {need, ml}（只有这两类会出「命中 >1」的隐患）
 # ⚠ **纯数据、零注释**（行首 `#` 会被当成 pattern）⇒ 说明写在别的文件里。
 EXEMPT = os.path.join(SRC, 'scripts', 'wiring-multi-hit.exempt')
+
+# ⚠⚠⚨ 批 BN · 「整行锚定」的**豁免基线**（独立文件）——
+# ⚠ **键格式 = `<门型>\t<目标相对路径>\t<门项正则>\t<理由>`**（**TAB** 分隔）
+#   ⇒ 门项正则里**含 `|`**（如 `(sh|bash|python3) …`）⇒ 不能用 `|` 分隔 ⇒ 用 TAB。
+# ⚠ **理由不许为空** ⇒ 空理由 = 无声地豁免一道门 ⇒ 坏行 ⇒ 该门项**不被豁免**
+#   ⇒ 照样报红（**fail closed**：坏豁免只会被发现得**更早**，不会更晚）。
+ANCHOR_EXEMPT = os.path.join(SRC, 'scripts', 'ci-wiring-anchor.exempt')
 
 # ⚠⚠⚠ **门项行数基线**（批 BH）——
 # ⚠ **起因（实测，不是推演）**：把 ci-wiring.sh 里**任意一条门项**改成注释
@@ -603,7 +613,7 @@ def check_count_gates(count_items):
     return bad
 
 
-# ⚠⚠⚨ 批 BL · 「盯门自己的工具」的门项必须**整行锚定** ────────────────────
+# ⚠⚠⚨ 批 BL/BM/BN · 「整行锚定」的**适用范围**（单一真相源）──────────────────
 #
 # ⚠⚠⚨ **起因（批 BJ 负控坐实，批 BK 根治了一半）**：
 #   门项盯**串** ⇒ 判定被掏空但**串还在** ⇒ 门照样绿。
@@ -611,11 +621,18 @@ def check_count_gates(count_items):
 #   ⇒ 而 `if bad:` 正是**探针「违规 ⇒ 判红」的那一行** ⇒ 掏空它 = 探针集体失效。
 # ⚠⚠⚨ 批 BK 根治了「**注释顶替代码**」（`.py` 也剥 `#`）
 #   ⇒ 但「**判定被掏空、串还在**」这一头仍只靠**整行锚定**挡。
-# ⚠⚠⚨ **适用范围 = 「门自己的工具」**（批 BM 扩到审计器自身）：
-#   探针与审计器都是「**门自己的工具**」⇒ 它被掏空 = 门**集体**失效
-#   ⇒ 风险最高 ⇒ 收进这两处（范围可控）。
+# ⚠⚠⚨ **适用范围 = 「哪些文件的门项必须整行锚定」**（批 BM 扩到审计器自身，
+#   **批 BN 再扩到 `ci.sh`**）：
+#   · `ci-tautology-check.py` / `ci-wiring-audit.py` —— 「门自己的工具」
+#     ⇒ 它被掏空 = 门**集体**失效 ⇒ 风险最高。
+#   · `ci.sh` —— **CI 入口本体** ⇒ 它的判定被掏空 ⇒ CI 整条流水线失信
+#     ⇒ 风险与「门自己的工具」同级。
 #   ⚠ 全仓其余门项仍逐批推进（已知边界，如实记着）。
-GATE_TOOL_SUFFIXES = ('ci-tautology-check.py', 'ci-wiring-audit.py')
+# ⚠⚠⚨ **改名记录**（批 BN）：`GATE_TOOL_SUFFIXES` → `ANCHOR_SCOPE_SUFFIXES`
+#   ⇒ 名字里的 `GATE_TOOL` 已经不副实（范围不再只是「门自己的工具」）
+#   ⇒ ⚠ **改名必须连带改掉所有引用点**（批 BM 就是漏了一处 ⇒ 报告模式崩
+#   ⇒ 见 `check_undefined_names` 的说明）⇒ 所以本批同时加了那道静态检查。
+ANCHOR_SCOPE_SUFFIXES = ('ci-tautology-check.py', 'ci-wiring-audit.py', 'ci.sh')
 
 
 def anchoring_violation(rx):
@@ -657,22 +674,146 @@ def anchoring_selftest():
     return bad
 
 
-def check_gate_tool_anchoring(cnt_items):
-    """盯「门自己的工具」（探针 + 审计器）的 `arch_need_count` 门项必须**整行锚定**。
+def read_anchor_exempt():
+    """读「整行锚定」的豁免基线 ⇒ (键集合, 文件是否存在, 条数, 坏行列表)
+
+    ⚠⚠⚨ **键 = (门型, 相对路径, 正则)** —— 三者合起来才唯一：
+      只用「路径+正则」不够 ⇒ 同一个正则可能被**不同门型**用（如 `arch_need`
+      与 `arch_need_count` 都盯 `--color-sample`）⇒ 豁免会**跨门型漏过去**。
+    ⚠⚠⚨ **比较时 rstrip**（正则**尾部空格**在文本文件里极难保持）
+      ⇒ 豁免文件里写 `› [0-9]+/15`（无尾空格）也要能命中门项里的
+      `› [0-9]+/15 `（有尾空格）⇒ **两边都 rstrip 后再比**。
+    ⚠ **纯数据、零注释**（行首 `#` 会被当成 pattern）⇒ 说明写在别的文件里。
+    ⚠ **理由不许为空** ⇒ 空理由 ⇒ 坏行 ⇒ **不豁免**（fail closed）。
+    """
+    if not os.path.isfile(ANCHOR_EXEMPT):
+        return set(), False, 0, []
+    keys = set()
+    bad = []
+    with open(ANCHOR_EXEMPT, encoding='utf-8') as fh:
+        for lineno, raw in enumerate(fh, 1):
+            ln = raw.rstrip('\n')
+            if not ln.strip() or ln.lstrip().startswith('#'):
+                continue
+            parts = ln.split('\t')
+            if len(parts) != 4:
+                bad.append((lineno, '字段数 %d（应为 4：门型<TAB>路径<TAB>正则<TAB>理由）'
+                            % len(parts)))
+                continue
+            kind, path, rx, why = parts[0].strip(), parts[1].strip(), parts[2], parts[3].strip()
+            if not kind or not path or not rx.strip():
+                bad.append((lineno, '门型/路径/正则不许为空'))
+                continue
+            if not why:
+                bad.append((lineno, '**豁免理由不许为空**'))
+                continue
+            # ⚠ **只 rstrip，不 strip** ⇒ 正则的**前导空格是有意义的**
+            #   （`^ foo` 与 `foo` 是两条不同的正则）⇒ 不能顺手 strip 掉。
+            keys.add((kind, path, rx.rstrip()))
+    return keys, True, len(keys), bad
+
+
+def is_anchor_exempted(kind, relpath, rx, exempt):
+    """这条门项是否在「整行锚定」的豁免基线里。
+
+    ⚠ **rstrip 后比较**（见 `read_anchor_exempt` 的说明）。
+    """
+    return (kind, relpath, rx.rstrip()) in exempt
+
+
+def check_anchor_exempt_reconcile(need_exempt, exempt):
+    """豁免表里的每一条都必须对得上**一条「需要豁免」的门项**（反向配准）。
+
+    ⚠⚠⚨ **为什么要有这条**（豁免表 = 「**被允许弱化的门项**」白名单）：
+      表里的一行 = 一个**弱化点** ⇒ 弱化点必须**有对应物**。
+      ⇒ 出现一条**对不上**的行，只有三种可能，**都要红**：
+        (a) 门项被删了 / 被改写了，**却忘了清豁免** ⇒ 那个承诺**悄悄消失**
+            （⚠ 批 BH 的洞：门项被删 ⇒ 没人守了 ⇒ 但门项总数基线只能挡「总数」，
+              挡不住「删一条 + 换一条等量的」）；
+        (b) 有人塞了条**空豁免**（对不上任何需要豁免的门项）⇒ 豁免表在说谎
+            ⇒ 以后谁看到「表里有 N 条」会以为「有 N 个弱化点」⇒ **误判覆盖率**；
+        (c) 有人给一条**已经锚定**的门项加了豁免 ⇒ 这条豁免**不弱化任何东西**
+            ⇒ 却是白占一行 ⇒ 豁免表在**悄悄变长** ⇒ 「表里的条数 = 弱化点数」
+            这条等式被破坏 ⇒ **必须红**（否则「不许悄悄变长」就没钉死）。
+    ⚠⚠⚨ **对标的是「非锚定门项」而不是「任何门项」** ⇒ (c) 才抓得住
+      （若只对标「任何门项」⇒ 给已锚定门项加豁免照样混过去 ⇒ 这道门没牙）。
+    """
+    dead = []
+    for kind, path, rx in sorted(exempt):
+        if (kind, path, rx.rstrip()) not in need_exempt:
+            dead.append((kind, path, rx))
+    return dead
+
+
+def check_undefined_names():
+    """查「**引用了但没定义**」的名字（改名漏改调用点 ⇒ NameError）。
+
+    ⚠⚠⚨ **为什么要有这条**（批 BN 实测坐实，**不是推演**）：
+      批 BM 把 `check_probe_gate_anchoring` 改名成 `check_gate_tool_anchoring`
+      ⇒ **漏改了报告模式（无参）那处调用点** ⇒ 报告模式一跑就 `NameError` 崩掉。
+      ⚠ 而 CI **只跑 `--list`** ⇒ 报告模式**根本没人跑** ⇒ 这个崩**没人发现**
+      ⇒ 一路带到了已推送的 HEAD。
+      ⇒ 静态上「**引用了未定义的名字**」是**能抓到的**（symtable 实测能抓到那个名字）。
+    ⚠ 只查**模块级未定义名**（函数内的局部名不算）⇒ 用 `symtable` 精确判定。
+    ⚠ **只查「函数里引用的全局名」** ⇒ 模块顶层的引用在 import 时就会炸 ⇒ 不必查。
+    """
+    import symtable
+    path = os.path.abspath(__file__)
+    with open(path, encoding='utf-8') as fh:
+        src = fh.read()
+    top = symtable.symtable(src, path, 'exec')
+    defined = set(top.get_identifiers())
+    import builtins
+    builtins_set = set(dir(builtins))
+    missing = []
+
+    def walk(tbl):
+        for sym in tbl.get_symbols():
+            name = sym.get_name()
+            if (sym.is_global() and not sym.is_assigned()
+                    and name not in defined and name not in builtins_set):
+                missing.append((tbl.get_name(), name))
+        for child in tbl.get_children():
+            walk(child)
+
+    walk(top)
+    return missing
+
+
+def check_anchor_scope(cnt_items, exempt):
+    """盯**适用范围**内的 `arch_need_count` 门项必须**整行锚定**（或被显式豁免）。
 
     ⚠ 只查 `arch_need_count`（单文件、整行匹配）⇒ `arch_need_count_in_fn`
       / `_in_step` 盯的是**函数体内/步骤内**的标记串（跨行是常态）⇒ 不要求。
-    ⚠⚠⚨ **适用范围由 `GATE_TOOL_SUFFIXES` 一个常量说了算**（单一真相源）
+    ⚠⚠⚨ **也不查裸 `arch_need`**（「至少 1 次」门）—— **不是漏掉，是语义不许**：
+      `arch_need` 的语义是「这个串**出现在任何位置**」⇒ 整行锚定会把它
+      **改窄**成「这个串出现在这一种整行形态」⇒ 语义被改窄 = 门变弱
+      ⇒ 与「期望 0 次」的白名单门**同一类**（见豁免基线里的理由）。
+      ⇒ 且 `ci.sh` 上每条 `arch_need` 都已有**对位的 `arch_need_count` 整行锚定门**
+      ⇒ 覆盖面不丢。
+    ⚠⚠⚨ **适用范围由 `ANCHOR_SCOPE_SUFFIXES` 一个常量说了算**（单一真相源）
       ⇒ 改一处就废掉另一处 ⇒ 那条门项守着它。
+    ⚠ **豁免是「显式列举 + 必须写理由 + 坏行不豁免」** ⇒ 不是「随便放过」。
+    ⚠⚠⚨ 返回 **(违规列表, 「需要豁免」的集合)**：
+      「需要豁免」= 适用范围内**没锚定**的门项键（门型, 路径, 正则）
+      ⇒ 它就是**豁免表的唯一合法来源** ⇒ 正向（不豁免就红）与反向（豁免对不上就红）
+      双向配准 ⇒ **豁免表 ≡「非锚定门项」集合** ⇒ 条数是**推导出来的**
+      （⇒ 少一处可以被人偷偷改的地方 ⇒ 也不必另写一个条数基线）。
     """
     bad = []
+    need_exempt = set()
     for lineno, f, rx, want in cnt_items:
-        if not f.endswith(GATE_TOOL_SUFFIXES):
+        if not f.endswith(ANCHOR_SCOPE_SUFFIXES):
             continue
         why = anchoring_violation(rx)
-        if why:
-            bad.append((lineno, rel(f), rx, why))
-    return bad
+        if not why:
+            continue
+        key = ('arch_need_count', rel(f), rx.rstrip())
+        need_exempt.add(key)
+        if is_anchor_exempted(key[0], key[1], key[2], exempt):
+            continue
+        bad.append((lineno, rel(f), rx, why))
+    return bad, need_exempt
 
 
 def check_count_in_fn_gates(cif_items):
@@ -778,6 +919,10 @@ def main():
     (need, ml, anyc, anym, cnt, cif, cis,
      totals, failed, forbid_lines) = parse_wiring()
 
+    # ⚠⚠⚨ 批 BN · 「整行锚定」的豁免基线（**先读** ⇒ 后面两处判定共用同一份）
+    anchor_exempt, anchor_exempt_exists, anchor_exempt_rows, anchor_exempt_bad = \
+        read_anchor_exempt()
+
     if base is not None:
         nums = changed_lines(base)
         if nums is None:
@@ -838,6 +983,32 @@ def main():
         return 0
 
     if want_list:
+        # ⚠⚠⚨ 批 BN · 审计器**自己**引用了未定义的名字 ⇒ **改名漏改调用点**
+        #   ⚠ 放在**最前**：这是「审计器自身能不能跑」的前置条件
+        #     ⇒ 它坏了 ⇒ 后面所有检查的结果都不可信。
+        undef = check_undefined_names()
+        if undef:
+            print('审计器**引用了未定义的名字**（%d 处）⇒ **改名漏改了调用点**'
+                  % len(undef), file=sys.stderr)
+            for scope, name in undef:
+                print('  · 作用域 %s ⇒ %s' % (scope, name), file=sys.stderr)
+            print('  ⇒ 改名时**所有**引用点都要一起改；本批的 `check_undefined_names` '
+                  '就是为「漏改」而设的', file=sys.stderr)
+            return 9
+        # ⚠⚠⚨ 批 BN · 豁免基线**坏行**必须红（理由为空 / 字段数不对）
+        #   ⚠ **fail closed**：坏行 ⇒ **不豁免** ⇒ 对应门项照红
+        #   ⇒ 但坏行本身也要报出来 ⇒ 否则人只会看到「门红」而不知道「豁免文件坏了」
+        if anchor_exempt_bad:
+            print('锚定豁免基线里有**坏行**（%d 条）⇒ 这些行**没有豁免任何门项**'
+                  % len(anchor_exempt_bad), file=sys.stderr)
+            for lineno, why in anchor_exempt_bad:
+                print('  · %s 第 %d 行：%s'
+                      % (os.path.relpath(ANCHOR_EXEMPT, REPO), lineno, why),
+                      file=sys.stderr)
+            return 9
+        if not anchor_exempt_exists:
+            print('锚定豁免基线文件不在：%s' % ANCHOR_EXEMPT, file=sys.stderr)
+            return 9
         # ⚠⚠⚨ 批 BL · 锚定形态**自检**（放在**最前**：批 BI 纪律——
         #   自检放在后面 ⇒ 前面的检查一红就 exit ⇒ 自检永远没机会跑 ⇒ 形同虚设）
         stbad = anchoring_selftest()
@@ -848,17 +1019,32 @@ def main():
                 print('  · 正则=%s  期望判违规=%s  实际判违规=%s'
                       % (rx, should, got), file=sys.stderr)
             return 8
-        # ⚠⚠⚨ 批 BL · 盯探针的门项必须**整行锚定**
-        #   （探针是「门自己的工具」⇒ 它被掏空 = 门**集体**失效 ⇒ 风险最高）
-        anchbad = check_gate_tool_anchoring(cnt)
+        # ⚠⚠⚨ 批 BL/BN · 适用范围（含 `ci.sh`）内的门项必须**整行锚定**
+        #   （探针与审计器是「门自己的工具」⇒ 它被掏空 = 门**集体**失效）
+        #   ⚠ 第二返回值 = 「需要豁免」的门项集合（= 豁免表的唯一合法来源）
+        anchbad, anchor_need = check_anchor_scope(cnt, anchor_exempt)
         if anchbad:
-            print('盯探针文件的门项**不是整行锚定**（%d 条）⇒ 判定被掏空但串还在 ⇒ 门假绿'
+            print('适用范围内的门项**不是整行锚定**（%d 条）⇒ 判定被掏空但串还在 ⇒ 门假绿'
                   % len(anchbad), file=sys.stderr)
             for lineno, f, rx, why in anchbad:
                 print('  · %s:%d  %s  %s'
                       % (os.path.basename(WIRING), lineno, f, rx), file=sys.stderr)
                 print('      ⇒ %s' % why, file=sys.stderr)
             return 8
+        # ⚠⚠⚨ 批 BN · 豁免表**反向配准**（正向在上面的 `check_anchor_scope` 里：
+        #   适用范围内的非锚定门项若没被豁免 ⇒ 照红 ⇒ rc=8）
+        #   ⚠ 只在**全量**模式下做（`--changed` 只审新增门项 ⇒ 「需要豁免」的集合
+        #     不全 ⇒ 反向配准会**误报**「对不上」⇒ 与门项总数核对同一口径）
+        if base is None:
+            dead = check_anchor_exempt_reconcile(anchor_need, anchor_exempt)
+            if dead:
+                print('锚定豁免基线里有**对不上「需要豁免」的门项**的条目（%d 条）⇒ '
+                      '要么门项被删/被改写却忘了清豁免（承诺悄悄消失），'
+                      '要么塞了空豁免，要么给已锚定的门项白占了行（豁免表在悄悄变长）'
+                      % len(dead), file=sys.stderr)
+                for kind, path, rx in dead:
+                    print('  · %s  %s  %s' % (kind, path, rx), file=sys.stderr)
+                return 9
         # ⚠⚠⚠ **门项总数核对**（批 BH）——「门项被悄悄删」此前**无人发现**。
         #   ⚠ 只在**全量**模式下做（--changed 只审新增门项 ⇒ 门项总数本就不全）
         if base is None:
@@ -998,12 +1184,32 @@ def main():
     if base is not None:
         print('（只审 %s..HEAD 的新增门项）' % base)
 
-    # ⚠⚠⚨ 批 BL · 报告段也要说（无参模式只出报告、退出码恒 0 ⇒ 判红必须用 --list）
-    anchrep = check_probe_gate_anchoring(cnt)
-    print('盯探针文件的门项**整行锚定**：%d 条违规' % len(anchrep))
+    # ⚠⚠⚨ 批 BL/BN · 报告段也要说（无参模式只出报告、退出码恒 0 ⇒ 判红必须用 --list）
+    # ⚠⚠⚨ 批 BN · ⚠ **这里曾是一个真 bug**（批 BM 改名 `check_probe_gate_anchoring`
+    #   → `check_gate_tool_anchoring` 时**漏改了这一处**）⇒ 无参模式一跑就
+    #   `NameError` 崩掉 ⇒ 而 CI **只跑 `--list`** ⇒ 这条路径**没人跑**
+    #   ⇒ 崩了**没人发现** ⇒ 一路带到了已推送的 HEAD。
+    #   ⇒ 现在：① 这里用**同一个**函数名（不再各写各的）；② 加了
+    #   `check_undefined_names()` **静态**抓「改名漏改」（见该函数说明）。
+    anchrep, anchor_need_rep = check_anchor_scope(cnt, anchor_exempt)
+    print('适用范围内的门项**整行锚定**：%d 条违规（豁免基线 %d 条）'
+          % (len(anchrep), anchor_exempt_rows))
     for lineno, f, rx, why in anchrep:
         print('  · %s:%d  %s  %s' % (os.path.basename(WIRING), lineno, f, rx))
         print('      ⇒ %s' % why)
+    undefrep = check_undefined_names()
+    print('审计器**引用了未定义的名字**：%d 处' % len(undefrep))
+    for scope, name in undefrep:
+        print('  · 作用域 %s ⇒ %s' % (scope, name))
+    if anchor_exempt_bad:
+        print('锚定豁免基线**坏行**：%d 条（这些行没有豁免任何门项）'
+              % len(anchor_exempt_bad))
+        for lineno, why in anchor_exempt_bad:
+            print('  · 第 %d 行：%s' % (lineno, why))
+    deadrep = check_anchor_exempt_reconcile(anchor_need_rep, anchor_exempt)
+    print('锚定豁免基线**对不上「需要豁免」的门项**的条目：%d 条' % len(deadrep))
+    for kind, path, rx in deadrep:
+        print('  · %s  %s  %s' % (kind, path, rx))
     print('arch_need 命中 >1 次 ⇒ **改一处骗得过门**：%d 条' % len(multi))
     for lineno, f, rx, n in multi:
         mark = '（已豁免）' if 'need:%s|%s' % (rel(f), rx) in exempt else '**⇒ 硬门会红**'
