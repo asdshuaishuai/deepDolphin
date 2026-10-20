@@ -3215,6 +3215,53 @@ selfcheck **395/0**、ci.sh **12/12**、契约门 **120/0**、ci-d2 **0/0**、�
 
 **视觉变化**：无（只动判据层；快照零变化）。
 
+### 批 AU：豁免基线**清到 0** —— 「改一处骗得过门」这个洞一个不剩
+
+**① 起因**：批 AT 三轮清完 29 条后基线里还剩 **24 条**（判定层 / app 层 / UI 层 / 平台层 /
+CodeGraphDialog）⇒ 本轮**一次清完**。
+
+**② 手法**（比前几轮多了三种新形态）：
+- **盯调用/构造那一行**：`symbolId`、`keywords`、`kindKey`、`categoryOf`（读/写两处）、
+  `packagedBinName`（拼落盘路径那行）、`DS::semColor`（三种语法元素三条）、
+  `QComboBox`、`m_leftStack`、`m_heat->setData`（清空/喂数据两处）、
+  `requiredProperties`（读名/取表两处）、`registerCustomType`（三种类型三条）、
+  `xcb_get_selection_owner`、`advertisedVisual`、`HeatmapWidget`；
+- **盯定义那一行**（意图本就是「有这个函数」）：`writableKeys`、`content`
+  （⚠ 之前盯「content」这个词，**英文错误消息里也有** ⇒ 改一处骗得过门）；
+- **盯夹具那一行**：引擎实跑原文（⚠ 之前盯「已写入：」⇒ 改**说明文字**也会红 ⇒ 盯错了地方）；
+- **意图天然是多处**（同一构造**一字不差** ⇒ 行级构造分不开）⇒ 改用 `arch_need_min`
+  （`Canvas2D`/`visibleRows`/`QDBus::Block`/`m_backend`）⇒ ⚠ 这几条**不在审计覆盖内**；
+- **删掉两条弱门**（意图已被更强的门覆盖）：`DocsDialog.cpp` 的 `setButtonText`
+  （已被两条 `arch_need_count_in_fn` 覆盖）、`CodeGraphDialog.cpp` 的
+  `ArchCanvasWidget|CodeGraphBuild`（已被 `visibleRows` + `setData` 从两个方向覆盖）。
+
+**③ ⚠⚠⚠ 抓到一个真问题：`arch_need_min` 的下限定低了 ⇒ 门没牙** ——
+`Canvas2D` 那条下限写 **3**，而该串在 `HeatmapWidget.cpp` 里命中 **4** 次
+（1 处 `include` + 3 处构造）⇒ **删掉一处构造仍剩 3** ⇒ 门照样绿。
+⇒ 改成 4（= 实际命中数）；并给审计器加**下限校准**（必须 == 当前命中数）
+⇒ 硬门失准 ⇒ **退出码 4**（红）。实测有牙：改回 3 ⇒ rc=4 并指出「门没牙」。
+
+**④ 成果**：
+- 门自审计「**命中 >1**」从 11 条降到 **0 条**
+  ⇒ 全部 `arch_need` 门项的正则在目标文件里**只出现一次**；
+- 豁免基线 **24 → 0 条**（文件保留，改为带说明的空基线）
+  ⇒ **今后新加的门只要串不唯一，硬门立刻红**（没有基线可躲）；
+- 接线门 610 → **613** 项全绿、selfcheck **395/0**、ci.sh **12/12**、
+  契约门 **120/0**、ci-d2 **0/0**、快照**零变化**；
+- **负控 29/29 真红**（累计 **158/158**）。
+
+**⑤ 教训**：
+- ⚠⚠ **「至少 N 次」的下限必须 == 当前命中数** —— 否则要么没牙、要么恒红；
+  这类门**不被「串唯一」检查覆盖** ⇒ 必须**另加校准**才有牙。
+- ⚠⚠ 要让**计数类**门红，必须让那个**模式串整体不再出现** ——
+  改成「原串 + 后缀」**没用**（grep 照样匹配前缀）⇒ 变异必须**打断模式串本身**。
+
+**⑥ 遗留**：审计器**不覆盖** `arch_need_ml` / `arch_need_count_in_fn` /
+`arch_need_any` / `arch_need_count` ⇒ 其中 `arch_need_count_in_fn`（范围已收窄）
+本**可以**是唯一的 ⇒ **待补**（批 AV）。
+
+**视觉变化**：无（只动判据层；快照零变化）。
+
 ## 分层纪律（后续阶段必须延续）
 
 - `models/`、`logic/` **不 include 任何 QWidget 头**，全部可被 QtTest 单测；
