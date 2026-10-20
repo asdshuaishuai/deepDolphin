@@ -51,5 +51,6 @@ inline QJsonObject JO(const QString &json)
 /// 分片入口（主片按顺序调用）。
 void checkDocs(QStringList &log);
 void checkEngine(QStringList &log);
+void checkGraph(QStringList &log);
 
 } // namespace SelfCheckInternal

@@ -63,6 +63,7 @@ add_executable(deepDolphin
     src/app/SelfCheck.cpp
     src/app/SelfCheckDocs.cpp
     src/app/SelfCheckEngine.cpp
+    src/app/SelfCheckGraph.cpp
     src/app/Settings.cpp
     # ── models/：JSON 契约层（键名逐字对齐 CONTRACT）──
     src/models/ContextEnvelope.cpp

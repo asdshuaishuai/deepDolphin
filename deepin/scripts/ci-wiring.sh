@@ -858,6 +858,7 @@ arch_need "$SRC/src/app/SelfCheckInternal.h" 'inline void check\(' '判据记录
 arch_need "$SRC/src/app/SelfCheckInternal.h" 'inline int g_pass' '判据计数是共享的（inline 变量，不各数各的）'
 arch_forbid "$SRC/src/app/SelfCheckDocs.cpp" 'void check\(' '分片不许自己写一份 check（计数会各数各的）'
 arch_forbid "$SRC/src/app/SelfCheckEngine.cpp" 'void check\(' '分片不许自己写一份 check（计数会各数各的）'
+arch_forbid "$SRC/src/app/SelfCheckGraph.cpp" 'void check\(' '分片不许自己写一份 check（计数会各数各的）'
 arch_need "$SRC/src/app/SelfCheckInternal.h" 'void checkDocs\(QStringList &log\);' '共享底座声明了文档页分片'
 arch_need "$SRC/src/app/SelfCheckInternal.h" 'void checkEngine\(QStringList &log\);' '共享底座声明了引擎分片'
 arch_need "$SRC/src/app/SelfCheckDocs.cpp" 'void checkDocs\(QStringList &log\)' '文档页分片真的实现了'
@@ -866,6 +867,15 @@ arch_need_any 'SelfCheckInternal::checkDocs\(log\)' '主片调用了文档页分
 arch_need_any 'SelfCheckInternal::checkEngine\(log\)' '主片调用了引擎分片'
 arch_need "$SRC/CMakeLists.txt" 'src/app/SelfCheckDocs\.cpp' '文档页分片已登记构建'
 arch_need "$SRC/CMakeLists.txt" 'src/app/SelfCheckEngine\.cpp' '引擎分片已登记构建'
+
+# ── 批 AK · M4a 第二步：图谱/热力图/补丁体检再拆一片（主文件降到 ~1450 行）──
+arch_need "$SRC/src/app/SelfCheckInternal.h" 'void checkGraph\(QStringList &log\);' '共享底座声明了图谱分片'
+arch_need "$SRC/src/app/SelfCheckGraph.cpp" 'void checkGraph\(QStringList &log\)' '图谱分片真的实现了'
+arch_need "$SRC/src/app/SelfCheck.cpp" 'SelfCheckInternal::checkGraph\(log\)' '主片调用了图谱分片（不是把代码搬走就忘接）'
+arch_need "$SRC/CMakeLists.txt" 'src/app/SelfCheckGraph\.cpp' '图谱分片已登记构建'
+# ⚠ 判据夹具的**期望色值**在分片里 ⇒ D2 散值门必须**逐条登记豁免**（路径写错 ⇒ 门红），
+#   否则「判据夹具豁免」这个约定会在拆分时静默失效（批 AJ 实测踩过）。
+arch_need "$SRC/scripts/ci-d2.sh" 'src/app/SelfCheckGraph\.cpp\|keep' '图谱分片的判据夹具已登记 D2 豁免'
 
 # 批 Q · 引擎钩子（post-commit / post-merge 托管块）：判定层出结论，
 #   执行层只管跑，界面只读结论。⚠ 卸载**只删托管块**（用户的钩子逻辑留着）——

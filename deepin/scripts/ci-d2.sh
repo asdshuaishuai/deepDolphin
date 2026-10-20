@@ -56,6 +56,7 @@ src/ui/DesignTokens.cpp|keep|令牌定义处：色值/字号的唯一出处
 src/app/SelfCheck.cpp|keep|判据夹具：必须写期望字面量（否则「期望值随手改」无从发现）
 src/app/SelfCheckDocs.cpp|keep|判据夹具（批 AJ 拆分出的分片）：必须写期望字面量（否则「期望值随手改」无从发现）
 src/app/SelfCheckEngine.cpp|keep|判据夹具（批 AJ 拆分出的分片）：必须写期望字面量（否则「期望值随手改」无从发现）
+src/app/SelfCheckGraph.cpp|keep|判据夹具（批 AK 拆分出的分片）：必须写期望字面量（否则「期望值随手改」无从发现）
 src/platform/Canvas2D.cpp|keep|Canvas 契约层：12px 是契约层内部兜底，不是设计令牌
 src/logic/SemColors.h|keep|固定色唯一出处（判定层纯色：语义色 + 固定色，DS::semColor 也转发它）
 src/logic/GraphToken.cpp|keep|引擎契约色透传 + 洋红兜底（契约色不是 DS 令牌）
