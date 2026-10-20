@@ -1,4 +1,5 @@
 #include "Settings.h"
+#include "../logic/Notifications.h"
 #include <QSettings>
 #include <QVariant>
 
@@ -23,6 +24,19 @@ int Settings::autoUpdateHours() const
 void Settings::setAutoUpdateHours(int hours)
 {
     m_s->setValue(QStringLiteral("update.autoHours"), hours);
+}
+
+int Settings::notifyTimeoutMs() const
+{
+    // ⚠ 归一在判定层（唯一真相源）—— 0 在 D-Bus 语义里是「永不消失」，
+    //   越界值会让用户看到的时长与设定的不一致。
+    return Notifications::normalizeTimeoutMs(
+        m_s->value(QStringLiteral("notify.timeoutMs"), Notifications::kDefaultTimeoutMs).toInt());
+}
+
+void Settings::setNotifyTimeoutMs(int ms)
+{
+    m_s->setValue(QStringLiteral("notify.timeoutMs"), Notifications::normalizeTimeoutMs(ms));
 }
 
 bool Settings::modelsDevRefreshed() const

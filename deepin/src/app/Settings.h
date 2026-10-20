@@ -16,6 +16,10 @@
 //                                （mac L10n.swift:2042）—— 当前**只有固定文档页**跟它走
 //                                （台账 B8 的全应用 i18n 未做）；全应用化之后是**同一个键**，
 //                                不必迁移，也不会出现两个「语言设置」打架。
+//   · notify.timeoutMs         —— 通知显示时长（毫秒；批 AI 新增）。
+//                                ⚠ **mac 侧无对位**：mac 的 UNNotificationRequest 没有超时
+//                                概念（通知常驻通知中心）⇒ 这个键是 **deepin 自有**，
+//                                不存在「与 mac 逐字对齐」一说。
 #pragma once
 #include <QObject>
 #include <QString>
@@ -30,6 +34,13 @@ public:
     // ── update.autoHours ──
     int autoUpdateHours() const;               // 缺省 0 = 关闭
     void setAutoUpdateHours(int hours);
+
+    // ── notify.timeoutMs ──
+    /// 通知显示时长（毫秒，**已归一**：越界夹进范围、非正取缺省 5s）。
+    /// ⚠ 归一在判定层 `logic/Notifications::normalizeTimeoutMs` ——
+    ///   D-Bus 语义里 0 = 「永不消失」⇒ 不能原样传给通知服务器。
+    int notifyTimeoutMs() const;
+    void setNotifyTimeoutMs(int ms);
 
     // ── models-dev.refreshed ──
     bool modelsDevRefreshed() const;           // 缺省 false

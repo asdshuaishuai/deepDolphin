@@ -21,6 +21,7 @@ namespace Dtk {
 namespace Widget {
 class DSwitchButton;
 class DLineEdit;
+class DComboBox;
 }
 }
 
@@ -65,6 +66,10 @@ private:
     QWidget *m_configBody = nullptr;    ///< 只读项逐行容器（由 applyEngineConfig 重建）
     Dtk::Widget::DLineEdit *m_shallowInput = nullptr; ///< 浅更新分支上限（可改）
     Dtk::Widget::DLineEdit *m_backupInput = nullptr;  ///< 文档备份份数（可改）
+    /// 通知显示时长（下拉；M1-4 收尾）。
+    Dtk::Widget::DComboBox *m_notifyTimeout = nullptr;
+    /// 回填中（回填会触发 currentIndexChanged ⇒ 不该在那时写回设置）。
+    bool m_syncingTimeout = false;
     /// 用户**手改过**输入框（还没写回引擎）。
     /// ⚠ 不记这个的话：点「应用」写回第一个键 → 引擎配置重读 → 把用户刚填的
     ///   **第二个还没写回去的值冲掉** → 用户以为「改了没用」而反复点。

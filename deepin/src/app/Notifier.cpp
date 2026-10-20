@@ -1,4 +1,6 @@
 #include "Notifier.h"
+#include "Settings.h"
+#include "../logic/Notifications.h"
 #include <DNotifySender>
 #include <QDBusConnection>
 #include <QDBusMessage>
@@ -52,11 +54,15 @@ void Notifier::send(const QString &title, const QString &body, const QStringList
                       .appName(QStringLiteral("deepDolphin 面板"))
                       .appBody(body)
                       .hints(hints)
-                      .timeOut(5000);
+                      // ⚠ 显示时长**由设置驱动**（M1-4 的最后一项）；
+                      //   归一在判定层（logic/Notifications）—— 0 在 D-Bus 语义里是
+                      //   「永不消失」⇒ 绝不能原样传出去。
+                      .timeOut(Settings::instance().notifyTimeoutMs());
     // 同类语义的通知**按类别顶替**（replaceId），失败/停滞这类"状态型"通知不该在通知中心
     // 堆成一摞；mac 侧同样是"一条槽位随状态刷新"（SPEC §3.2）。彼此不同类的通知互不顶替。
-    const uint replaceId = m_replaceIds.value(categoryOf(title), 0);
-    if (replaceId != 0)
+    // ⚠ 「算不算状态型」的判定在**判定层**（logic/Notifications）⇒ 无头可测。
+    const uint replaceId = m_replaceIds.value(Notifications::categoryOf(title), 0);
+    if (replaceId != 0 && Notifications::replacesPrevious(title))
         sender = sender.replaceId(replaceId);
     if (!actions.isEmpty())
         sender = sender.actions(actions);
@@ -68,19 +74,10 @@ void Notifier::send(const QString &title, const QString &body, const QStringList
             const uint id = reply.arguments().first().toUInt();
             m_knownIds.insert(id);
             // 记住这条 id 作为该类别下一次的 replaceId（下一条同类别通知顶替它）
-            m_replaceIds.insert(categoryOf(title), id);
+            m_replaceIds.insert(Notifications::categoryOf(title), id);
         }
         w->deleteLater();
     });
-}
-
-// 通知类别（决定 replaceId 归属）："状态型"通知同一类别互相顶替，
-// 其余（更新完成/定时简报）按标题天然区分，不需要顶替。
-QString Notifier::categoryOf(const QString &title) const
-{
-    if (title.contains(QStringLiteral("失败")) || title.contains(QStringLiteral("停滞")))
-        return QStringLiteral("state");
-    return QString();
 }
 
 void Notifier::onActionInvoked(uint id, const QString &actionKey)

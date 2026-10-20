@@ -1,16 +1,20 @@
 #include "GeneralPane.h"
 #include "../../../app/AppModel.h"
+#include "../../../app/Settings.h"
 #include "../../../logic/ClientDecisions.h"
 #include "../../../logic/ArchReceipt.h"
 #include "../../../logic/EngineDoctor.h"
+#include "../../../logic/Notifications.h"
 #include "../../../platform/AutostartManager.h"
 #include "../../../platform/SysOpen.h"
 #include "../../DesignTokens.h"
 #include "../../common/SecondaryLabel.h"
+#include <DComboBox>
 #include <DLineEdit>
 #include <DLog>
 #include <DPushButton>
 #include <DSwitchButton>
+#include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QVBoxLayout>
@@ -81,6 +85,41 @@ GeneralPane::GeneralPane(AppModel *model, QWidget *parent)
         engineRow->addWidget(m_engineDownloadButton);
         v->addWidget(engineCard);
     }
+
+    // ── 通知卡（显示时长可配；M1-4 收尾）──
+    // ⚠ 为什么要有：通知在桌面上停留多久**该由用户定**（缺省 5s）。
+    //   硬编码 5000 的话，想细看失败原因的用户只能干瞪眼。
+    // ⚠ 时长归一在判定层（logic/Notifications）—— D-Bus 语义里 0 = 「永不消失」，
+    //   越界值会让「设定的」与「看到的」不一致。
+    {
+        auto *notifyCard = new QWidget(this);
+        auto *notifyRow = new QHBoxLayout(notifyCard);
+        notifyRow->setSpacing(DS::Spacing::md);
+        auto *notifyCol = new QVBoxLayout;
+        auto *notifyTitle = new QLabel(QStringLiteral("通知"), notifyCard);
+        notifyTitle->setFont(DS::font(DS::FontT::cardTitle));
+        notifyCol->addWidget(notifyTitle);
+        auto *notifySub = new SecondaryLabel(
+            QStringLiteral("通知在桌面上停留多久。失败/停滞这类通知会顶替上一条，不会堆成一摞。"),
+            notifyCard);
+        notifySub->setFont(DS::font(DS::FontT::label));
+        notifySub->setWordWrap(true);
+        notifyCol->addWidget(notifySub);
+        notifyRow->addLayout(notifyCol, 1);
+        m_notifyTimeout = new DComboBox(notifyCard);
+        m_notifyTimeout->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+        for (int s : { 5, 10, 30, 60 })
+            m_notifyTimeout->addItem(QStringLiteral("%1 秒").arg(s), s * 1000);
+        notifyRow->addWidget(m_notifyTimeout);
+        v->addWidget(notifyCard);
+        connect(m_notifyTimeout, &DComboBox::currentIndexChanged, this, [this](int) {
+            // ⚠ 回填时不写回（否则「打开这一页」本身就会改设置）。
+            if (!m_notifyTimeout || m_syncingTimeout)
+                return;
+            Settings::instance().setNotifyTimeoutMs(m_notifyTimeout->currentData().toInt());
+        });
+    }
+
 
     // 日志卡片（M0-9）：报障时要能自己拿到日志——日志目录一键定位，不再让用户去猜
     auto *logCard = new QWidget(this);
@@ -445,6 +484,20 @@ void GeneralPane::showEvent(QShowEvent *event)
     // 每次打开这一页都重读一次，别让用户看着一份过期的值做决定。
     reloadEngineConfig();
     applyEngineState();
+    // 通知时长：回填当前设置（打开这一页就能看到并改）。
+    // ⚠ 设置里的值**可能不在下拉档位里**（手工改过配置文件）⇒ 如实加一项显示它，
+    //   绝不「显示 5 秒、实际是别的」—— 那是在骗用户。
+    if (m_notifyTimeout) {
+        const int cur = Settings::instance().notifyTimeoutMs();
+        int idx = m_notifyTimeout->findData(cur);
+        if (idx < 0) {
+            m_notifyTimeout->addItem(QStringLiteral("%1 秒").arg(cur / 1000), cur);
+            idx = m_notifyTimeout->count() - 1;
+        }
+        m_syncingTimeout = true;
+        m_notifyTimeout->setCurrentIndex(idx);
+        m_syncingTimeout = false;
+    }
 }
 
 void GeneralPane::applyEngineState()

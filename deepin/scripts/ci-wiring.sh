@@ -217,6 +217,26 @@ arch_forbid_han() { # arch_forbid_han <文件> <说明>
 # ⚠ 范围要写清：清单只取 `src/logic/EngineDownload.cpp`（本批的下载文案真相源），
 #   且长度门槛 ≥4 个字符 ⇒ 短词（如「引擎」）不进清单，避免误伤。
 #   其它判定层的中文串（失败分类文案等）**不在**本门范围里。
+# arch_forbid_raw：盯「**连注释里也不许有的字样**」。
+# ⚠ 为什么需要单独一个：arch_forbid 用 strip_comments（**剥行注释**）⇒
+#   住在**注释里**的过时说法它永远看不见 ⇒ 门永远绿 ⇒ **空门**
+#   （空门比没门更糟：给人虚假的安全感）。
+#   ⇒ 盯「注释里的旧说法」时必须用这道**不剥注释**的门。
+arch_forbid_raw() { # arch_forbid_raw <文件> <正则> <说明>
+    local f="$1" re="$2" label="$3"
+    ARCH_N=$((ARCH_N + 1))
+    if [ ! -f "$f" ]; then
+        echo "  ✗ $label：文件不存在 $f" >&2
+        ARCH_FAIL=1
+        return
+    fi
+    if grep -E -- "$re" "$f" >/dev/null; then
+        echo "  ✗ $label：$f 里仍有 $re（连注释里也不许留）" >&2
+        ARCH_FAIL=1
+    else
+        echo "  ✓ $label"
+    fi
+}
 arch_forbid_text_dup() { # arch_forbid_text_dup <判定层文件> <相对SRC的目录> <说明>
     local srcf="$1" dir="$2" label="$3"
     ARCH_N=$((ARCH_N + 1))
@@ -775,6 +795,34 @@ arch_forbid "$SRC/src/ui/pages/SetupGuidePage.cpp" '\bEngineDownload::\b' '首�
 arch_forbid "$SRC/src/ui/pages/SetupGuidePage.h" '\bEngineDownload::\b' '首屏头文件不自己读判定层'
 # ⚠ **同一句话不许有两个真相源**（本批实测三处重复标签 + 两处逐字重复悬停说明）。
 arch_forbid_text_dup "$SRC/src/logic/EngineDownload.cpp" 'src/ui' '界面层不许抄判定层的下载文案（标签/悬停/状态）'
+
+# ── 批 AI · M1-4 收尾（通知显示时长可配）+ 通知顶替规则下沉判定层 ──
+#
+# ⚠ 起因：PLAN M1-4 的四个子项里三个已做（desktop-entry hint / image-path /
+#   replaceId 顶替），只剩「timeOut 由 Settings 驱动」⇒ 硬编码 5000。
+# ⚠ 顺带照出一处**说法与实现相反**：`Notifier.h` 头注释写着「每条通知独立送达、
+#   互不顶替、**不用 replaceId**」—— 而实现一直**用着** replaceId 顶替状态型通知。
+#   ⇒ 头注释是过时的（照批 AG 的教训：说法要与实现对齐，否则下一个人会照注释改代码）。
+# ⚠ 顶替规则原来写在执行层（要 D-Bus 会话才跑得到 ⇒ 无头测不到）⇒ 下沉到判定层。
+arch_need "$SRC/src/logic/Notifications.h" 'namespace Notifications [{]' '通知有判定层（顶替规则与时长归一一处）'
+arch_need "$SRC/src/logic/Notifications.h" 'int normalizeTimeoutMs\(int ms\);' '判定层归一通知时长（0 = 永不消失，不能原样传）'
+arch_need "$SRC/src/logic/Notifications.h" 'QString categoryOf\(const QString &title\);' '判定层判通知类别（状态型）'
+arch_need "$SRC/src/logic/Notifications.h" 'bool replacesPrevious\(const QString &title\);' '判定层判「这条要不要顶替前一条」'
+arch_need "$SRC/src/app/Notifier.cpp" '\bNotifications::replacesPrevious\b' '执行层的顶替判定走判定层'
+arch_need "$SRC/src/app/Notifier.cpp" '\bNotifications::categoryOf\b' '执行层的类别判定走判定层'
+arch_need "$SRC/src/app/Notifier.cpp" 'Settings::instance\(\)\.notifyTimeoutMs\(\)' '通知时长来自设置（不是硬编码）'
+arch_need "$SRC/src/app/Settings.h" 'int notifyTimeoutMs\(\) const;' '设置层暴露通知时长'
+arch_need "$SRC/src/app/Settings.h" 'void setNotifyTimeoutMs\(int ms\);' '设置层可写通知时长'
+arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'm_notifyTimeout = new DComboBox' '设置·通用页有通知时长选择器'
+arch_need "$SRC/src/ui/dialogs/panes/GeneralPane.cpp" 'setNotifyTimeoutMs\(' '通知时长选择器真的写回设置'
+arch_need "$SRC/src/app/SelfCheck.cpp" '\bNotifications::normalizeTimeoutMs\b' 'SelfCheck 覆盖通知时长归一'
+arch_need "$SRC/src/app/SelfCheck.cpp" '\bNotifications::replacesPrevious\b' 'SelfCheck 覆盖通知顶替规则'
+# ⚠ 时长不许再硬编码 5000（设置驱动）。
+arch_forbid "$SRC/src/app/Notifier.cpp" '\.timeOut\(5000\)' '通知时长不许硬编码（由设置驱动）'
+# ⚠ **过时说法不许复活**（头注释曾写「互不顶替、不用 replaceId」，与实现相反）。
+#   ⚠ 这道门**不剥注释**（用 arch_forbid_raw）：过时说法住在注释里，
+#   剥了就永远绿 ⇒ 又一个空门（空门比没门更糟）。
+arch_forbid_raw "$SRC/src/app/Notifier.h" '不用 replaceId' 'Notifier 头注释不许再写「不用 replaceId」（与实现相反）'
 
 # 批 Q · 引擎钩子（post-commit / post-merge 托管块）：判定层出结论，
 #   执行层只管跑，界面只读结论。⚠ 卸载**只删托管块**（用户的钩子逻辑留着）——

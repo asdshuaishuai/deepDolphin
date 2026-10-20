@@ -120,6 +120,7 @@ add_executable(deepDolphin
     src/logic/IndexStatus.cpp
     src/logic/EngineDoctor.cpp
     src/logic/EngineDownload.cpp
+    src/logic/Notifications.cpp
     src/logic/EngineHook.cpp
     src/logic/IconNames.cpp
     src/logic/SnapshotFixture.cpp

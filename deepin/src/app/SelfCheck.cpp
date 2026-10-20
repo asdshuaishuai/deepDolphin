@@ -20,6 +20,7 @@
 #include "../logic/EngineHook.h"
 #include "../logic/IconNames.h"
 #include "../logic/Liveness.h"
+#include "../logic/Notifications.h"
 #include "../logic/SemColors.h"
 #include "../logic/SnapshotFixture.h"
 #include "../logic/DocPages.h"
@@ -3492,6 +3493,33 @@ int SelfCheck::run(QStringList &log)
                 && stPending != stDown && stPending != stNone && stDown != stNone
                 && !stDown.contains(QStringLiteral("没有找到"))
                 && !stDown.contains(QStringLiteral("正在查找")));
+    }
+
+    // ── 通知（显示时长归一 + 顶替规则）判定层 ──
+    {
+        // ⚠ D-Bus 的 `expire_timeout` 语义：0 = **永不消失**、-1 = 服务器缺省
+        //   ⇒ 0 绝不能原样传出去（用户会看到通知赖在通知中心不走）。
+        check(log, "通知：显示时长归一（越界夹紧、非正取缺省）",
+            Notifications::normalizeTimeoutMs(5000) == 5000
+                && Notifications::normalizeTimeoutMs(0) == Notifications::kDefaultTimeoutMs
+                && Notifications::normalizeTimeoutMs(-1) == Notifications::kDefaultTimeoutMs
+                && Notifications::normalizeTimeoutMs(1) == Notifications::kMinTimeoutMs
+                && Notifications::normalizeTimeoutMs(999999999) == Notifications::kMaxTimeoutMs
+                && Notifications::kDefaultTimeoutMs > Notifications::kMinTimeoutMs
+                && Notifications::kMaxTimeoutMs > Notifications::kDefaultTimeoutMs);
+        // ⚠ 顶替规则：只有「状态型」顶替；**两个不同的状态型归同一类**
+        //   （否则「更新失败」与「项目停滞」各占一槽 ⇒ 通知中心照样会堆）。
+        check(log, "通知：状态型顶替、其余并存（两个状态型归同一类）",
+            Notifications::categoryOf(QStringLiteral("更新失败")) == QLatin1String("state")
+                && Notifications::categoryOf(QStringLiteral("项目停滞")) == QLatin1String("state")
+                && Notifications::categoryOf(QStringLiteral("更新完成")).isEmpty()
+                && Notifications::categoryOf(QStringLiteral("定时更新简报")).isEmpty()
+                && Notifications::replacesPrevious(QStringLiteral("更新失败"))
+                && Notifications::replacesPrevious(QStringLiteral("项目停滞"))
+                && !Notifications::replacesPrevious(QStringLiteral("更新完成"))
+                && !Notifications::replacesPrevious(QStringLiteral("定时更新简报"))
+                && Notifications::categoryOf(QStringLiteral("更新失败"))
+                    == Notifications::categoryOf(QStringLiteral("项目停滞")));
     }
 
     // ── 引擎钩子（post-commit / post-merge 托管块）判定层 ──
