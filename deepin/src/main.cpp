@@ -116,24 +116,32 @@ static int headlessAgentToolSurface(int argc, char *argv[])
     QStringList validated;
     for (auto it = paramsByTool.constBegin(); it != paramsByTool.constEnd(); ++it)
         validated << it.key();
-    // 引擎**原始**清单里带 deprecated 标记的工具有几个 ——
+    // 引擎**原始**清单里带 deprecated 标记的工具有哪些 ——
     // ⚠ 必须看原始清单：客户端给模型的清单**已经收敛**（别名被剔掉了），
     //   在那里找标记永远找不到 ⇒ 探针会误判「引擎太老」而 SKIP。
-    int engineDeprecated = 0;
+    // ⚠ **解析 JSON 取名字**，不用「数 `"deprecated": true` 出现次数」——
+    //   计数只给个数、不给**是哪些**，断言脚本就得把别名名单硬编码在脚本里
+    //   ⇒ 引擎增减别名时那道门就跟不上真相（漏检），或名单过期时假红。
+    //   名字必须**来自引擎**，脚本才知道该断言谁。
+    QStringList engineDeprecatedNames;
     {
         QProcess eng;
         eng.setProgram(engine.bin);
         eng.setArguments({ QStringLiteral("tools"), QStringLiteral("--json") });
         eng.start();
         if (eng.waitForFinished(30000)) {
-            const QString raw = QString::fromUtf8(eng.readAllStandardOutput());
-            // ⚠ 两种形态都数：仓颉 Json 序列化出来是 `"deprecated": true`（冒号后有空格），
-            //   紧凑序列化是 `"deprecated":true`（无空格）—— 只认一种会漏判。
-            engineDeprecated = raw.count(QStringLiteral("\"deprecated\": true"))
-                    + raw.count(QStringLiteral("\"deprecated\":true"));
+            const QJsonDocument doc = QJsonDocument::fromJson(eng.readAllStandardOutput());
+            const QJsonArray arr = doc.object().value(QStringLiteral("tools")).toArray();
+            for (const QJsonValue &v : arr) {
+                const QJsonObject o = v.toObject();
+                if (o.value(QStringLiteral("deprecated")).toBool(false))
+                    engineDeprecatedNames << o.value(QStringLiteral("name")).toString();
+            }
         }
     }
-    fprintf(stdout, "engine_deprecated=%d\n", engineDeprecated);
+    fprintf(stdout, "engine_deprecated=%d\n", int(engineDeprecatedNames.size()));
+    fprintf(stdout, "engine_deprecated_names=%s\n",
+        qPrintable(engineDeprecatedNames.join(QLatin1Char(','))));
     fprintf(stdout, "model=%s\n", qPrintable(modelNames.join(QLatin1Char(','))));
     fprintf(stdout, "validated=%s\n", qPrintable(validated.join(QLatin1Char(','))));
     fprintf(stdout, "prompt=%s\n", qPrintable(toolsText));

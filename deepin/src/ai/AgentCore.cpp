@@ -11,6 +11,7 @@
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSet>
 #include <QTemporaryDir>
 #include <memory>
 
@@ -60,6 +61,14 @@ bool AgentCore::loadToolManifest(QVector<ToolDef> *defs, QMap<QString, QString> 
     const QJsonDocument doc = QJsonDocument::fromJson(raw.toUtf8());
     if (doc.isObject()) {
         if (const auto env = ToolsEnvelope::fromJson(doc.object())) {
+            // ⚠ 收敛口径的**单一真相源**在判定层（`ToolsEnvelope::activeTools`）：
+            //   模型可见面与系统提示词**都**按它来 ⇒ 两处口径不会漂。
+            //   （原来模型面自己又写了一遍 `!t.deprecated`，提示词却用 `activeJson()`
+            //     —— **两处实现、碰巧一致**：将来改了一处忘了另一处，模型就会去调
+            //     「提示词里有、工具表里没有」的名字，或反过来。）
+            QSet<QString> activeNames;
+            for (const ToolSpec &t : env->activeTools())
+                activeNames.insert(t.name);
             for (const ToolSpec &t : env->tools) {
                 ToolDef d;
                 d.name = t.name;
@@ -85,7 +94,9 @@ bool AgentCore::loadToolManifest(QVector<ToolDef> *defs, QMap<QString, QString> 
                     paramsByTool->insert(d.name, QString::fromUtf8(paramsDoc.toJson(QJsonDocument::Compact)));
                 // ⚠ 但**模型可调用的工具面**只给非废弃的：引擎标了「旧名别名，
                 //   将移除」的那些就别再推荐给模型了（工具面收敛）。
-                if (!t.deprecated && defs)
+                //   ⚠ 判据用判定层的 activeNames（不是自己再写一遍 `!t.deprecated`）——
+                //     与下面的提示词清单**同一口径**。
+                if (activeNames.contains(t.name) && defs)
                     defs->append(d);
             }
             // 系统提示词里的清单 = **收敛后**的（与上面的工具面同一口径）——
