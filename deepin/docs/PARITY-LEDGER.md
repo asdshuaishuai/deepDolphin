@@ -302,10 +302,10 @@ deepin 用 **tailwind 固定色值**（`#10B981` / `#F59E0B` / `#9CA3AF` …）�
 | M1-7 | `platform/Backend` 平台层 | ✅ **批 V 已做**：判定层 `logic/Backend`（纯结论：`enum class Kind {X11,Wayland,Other}` + `classify()` **带 token 边界** / `activationFor()` / `reservedInsets()` / `placePopup()` / `trayGeometryUsable()`）+ 平台层 `platform/Backend`（`activate()` / `availableGeometryAt()` / `taskbarInsetsAt()` / `trayIconGeometry()` / `trayPopupTarget()`）；**8 处**散落的 `show/raise/activateWindow` 收编成**一个入口**；**修掉真缺陷**：`show()` 不恢复最小化窗口（实测）⇒ 最小化态从托盘叫不醒面板；托盘弹窗**右/上两边**旧实现不夹紧 ⇒ 右上角托盘时溢出屏幕 |
 | M1-8 | Wayland 分支 | ✅ **批 W 已做**（本机无 Wayland 会话 ⇒ Wayland 侧未实跑）：判定层 `logic/PanelGeometry` + 取数层 `platform/DdePanel`（D-Bus 读 `org.deepin.ds.Dock` 的 `geometry`/`position`）；`placePopup()` 加面板参数（面板在下 ⇒ 弹窗落面板上方右对齐）；托盘坐标不可用时按**光标所在屏**；失焦收起加 `applicationStateChanged` 兜底。**修掉真缺陷**：DDE 上 `QSystemTrayIcon::geometry()` 恒无效 ⇒ 弹窗飞到离托盘很远的屏幕右上（实测 (1523,32) → (1524,731)）。⚠ **批 Y 更正这里的因**：批 W 写「DDE 托盘是 SNI ⇒ 坐标恒无效」，**说反了**——DDE 托盘画的是**应用自绘的 X11 窗口**（批 Y 查明，见 E.1h），`QSystemTrayIcon` 在 DDE 上**根本没有宿主**；坐标取不到不是因为「SNI 没位置字段」，而是**压根没有旧协议托盘可问** |
 | M2-5 | i18n | ⬜（与 B8 合并做更省） |
-| M2-7 | deb 打包 | 🟡 **批 S 已做**（`scripts/build-deb.sh` + 依赖清单 `scripts/deb-deps.txt` + **依赖清单↔二进制实际 DT_NEEDED 双向校验** + CI 第 11 门）；⚠ **真机 clean deepin 25 容器验收未跑**（本机无 docker/podman）—— D7 的最终验收仍待真机 |
+| M2-7 | deb 打包 | 🟡 **批 S 已做**（`scripts/build-deb.sh` + 依赖清单 `scripts/deb-deps.txt` + **依赖清单↔二进制实际 DT_NEEDED 双向校验** + CI 第 11 门）；⚠ **真机 clean deepin 25 容器验收未跑**（本机无 docker/podman）—— D7 的最终验收仍待真机 |｜⚠ **批 AD 补了 D7 的「准验收」**（新门 `scripts/check-deb-layout.sh`，CI 第 12 门）—— 当场抓出真 bug：D-Bus service 的 `Exec=deepDolphin --dbus-service`（裸名 ⇒ dbus 激活不做 PATH 搜索；`--dbus-service` 客户端根本不认识）⇒ **点图标起不来**；已修为绝对路径 + 打包期校验｜⚠ **批 AE 再补一层**：「依赖包在 **apt 仓库**里存在」的校验（原先只验「本机装着」⇒ 不等于「目标机装得上」）；实测 17 个依赖包在 deepin 25 仓库候选齐全
 | M2-8 | 安装后零环境变量 | ✅ **批 S 实测达标**：二进制**无 RPATH/RUNPATH**、`DT_NEEDED` 全是 soname；宿主自带 Qt6/DTK6 ⇒ 裸环境 `--selfcheck` 269/0、**deb 解包后的二进制**裸环境同样 269/0 且能拍快照。⚠ README 原写「运行库在 sysroot 里，环境变量缺一不可」是**失真描述**，已改 |
-| M3c | 清第二套色板 + 一致性 / HiDPI / 动效收尾 | ⬜（与 B13/B14 同批更省） |
-| M1a / M0-8 / M3b / M4a / M4b | 容器批 / 干净容器 / KPI 骨架屏 / 拆分 / deb 矩阵 | ◐ 部分落地 |
+| M3c | 一致性 / HiDPI / 动效收尾（⚠ **批 AD 实测订正**：「清第二套色板、两种红/两种蓝」**已过时** —— D2 门的 `fix` 豁免清单**已空**＝色值散值归零；且 `logic/SemColors.h` 里**两档红是有意区分的**（`red`=危险/读不出来、`stale`=停滞告警/托盘专用，注释明写「不是笔误」）⇒ 合并反而丢语义） | ⬜ 剩：图标名 / 动效 / 响应式 / HiDPI / 分隔线 / 托盘 busy 态（⚠ 托盘 busy 态：deepin 托盘是**自创**的 —— **mac 侧根本没有托盘** ⇒ 无对位可抄；且托盘**弹窗**的 busy 态已有 `BusyRow` 转圈 ⇒ 排在有对位的项之后） |
+| M1a / M0-8 / M3b / M4a / M4b | 容器批 / 干净容器 / KPI 骨架屏 / 拆分 / deb 矩阵 | ◐ 部分落地（⚠ **批 AE 实测核对**：**M3b 组件化主体已全部完成**（`src/ui/common/` 17 个组件、散落的次级标签样式 **0 处**、`SegmentedButton` **只一份**）⇒ 只剩 KPI 骨架屏 + 真机目检；**M4b 的「deb 构建未做」已过时** ⇒ 现在 ci.sh **12 门**（第 11 门 deb 构建、第 12 门 deb 布局验收），只剩「系统 Qt6/DTK6 矩阵」那一步） |
 
 ### E.1b 图标资源的真实使用情况（批 U 照出 —— **PLAN M2-6 的描述是失真的**）
 
@@ -847,6 +847,45 @@ M3c 写着「清第二套色板、两种红/两种蓝」，但 **D2 门的 `fix`
 `macos/Sources/deepDolphin/` 里无任何 `NSStatusItem`/`NSStatusBar` 引用）
 ⇒ 没有 mac 对位可抄，也不是用户提过的需求；而托盘**弹窗**里的 busy 态**已经有了**
 （`BusyRow` 转圈 + 「读取中…」）。⇒ 排在真正有 mac 对位/用户提过的项之后。
+
+### E.1n D7 的另一半「装得上」+ **PLAN 入口校准**（批 AE —— 校准比做事更要紧）
+
+**① D7 的另一半：D7 的「准验收」（批 AD）只覆盖了「产物自洽」，没覆盖「目标机装得上」**：
+`build-deb.sh` 原有的 **2f** 验的是「依赖清单里的包**本机装着**」（`dpkg-query`）——
+⚠ 那**不等于**「**目标机装得上**」：开发机装着的包可能来自私有源、或已从源里移除
+⇒ 目标机（干净 deepin 25）会「找不到包」⇒ **deb 装了却用不了**。
+⇒ 新增 **2h**：「依赖清单里的每个包在 **apt 仓库**里都有候选（`Candidate:` 不是 `(none)`）」。
+⇒ 实测：本机 deepin 25 源里 **17 个依赖包候选齐全，缺失 0** ✓（含 `dde-qt6integration` /
+`dde-qt6xcb-plugin` / `libdtk6*` / `libqt6*` / `libsecret-1-0` / `libxcb1`）。
+⚠ **2h 与 2f 的分工**（别以为 2h 能单独抓包名错误）：
+2f 抓「包名写错 / 本机没装」；2h 抓「本机装着、但目标机源里没有」。
+⚠ 「apt 查不到该包」会输出**空**（与「本机没配源/离线」无法区分）⇒ 那种情况 2h 判 SKIP
+（不误红）⇒ 由 **2f** 兜住。
+
+**⚠⚠ 踩坑：apt 的输出是「本地化」的**（本机是中文「候选：」而不是 `Candidate:`）——
+只按英文写脚本，换台机器/换 locale 就**全部误判成缺失**。
+⚠ 实测踩过：17 个明明存在的包全被判「查不到」。
+⇒ 判据脚本里凡碰 apt 输出，**必须 `LC_ALL=C`**（同理适用于任何按英文关键字匹配的输出）。
+
+**② PLAN 入口校准（5 条，每条附实测证据）** ——
+⚠ **台账是对的、PLAN 是错的**（M1-3 那条台账早就写明「正解不是迁 SNI」，PLAN 标题还写着
+「托盘迁移 SNI」）⇒ **照 PLAN 做事会走错方向** ⇒ 入口失真必须定期核对：
+
+| 条目 | 校准 | 实测证据 |
+|---|---|---|
+| M0-11 固定文档页四语言 | [~] → **[x]** | 16 篇正文齐全/同类目两两不同/英文无汉字/日文有假名/小节数一致；接线门 466 项；四语言**行为**探针本轮重跑仍绿 ⇒ 主体已全部完成（全应用 i18n 属 M2-5，不在这条） |
+| M1-3 托盘 | **方向订正**：deepin 走**托盘窗口协议**，不是 SNI | 批 Y 实测 + 本轮读到 `m_sniMode` 分支；**mac 侧根本没有托盘**（`macos/Sources/deepDolphin/` 无 `NSStatusItem`/`NSStatusBar` 引用）⇒ 无对位可抄 |
+| M3b 组件化 | 标注**主体已全部完成**，只剩 KPI 骨架屏 + 真机目检 | 本轮实测：`src/ui/common/` **17 个组件**、散落的次级标签样式 **0 处**、`SegmentedButton` **只一份** |
+| M4b `ci.sh` | 「deb 构建未做」**已过时** | 本轮实测：ci.sh **12 门**（第 11 门 deb 构建、第 12 门 deb 布局验收），全绿；只剩「系统 Qt6/DTK6 矩阵」那一步 |
+| M2-7 deb 打包 | 补批 AD 的准验收与批 AE 的 2h | 见 E.1m 与本节 ① |
+
+⇒ 负控 **3/3 真红**（2h 判成「源里没有」⇒ 构建失败；禁用 2h ⇒ 那行输出消失；复原后恢复）。
+⇒ 累计负控 **27/27 真红**。
+
+**③ 元教训**：**台账与 PLAN 是两个入口，谁错了都会带偏下一批** ——
+台账 E.1b 早就照出「PLAN M2-6 的描述是失真的」，本轮又照出「PLAN M1-3 的方向与台账相反」
+⇒ 纪律：**每批动手前先核 PLAN 那一行的现状**（用代码/门实测，不是凭记忆），
+并把核对结果**写回 PLAN**（否则下一批还会照着过时描述做）。
 
 ---
 

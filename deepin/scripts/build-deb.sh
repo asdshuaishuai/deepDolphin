@@ -111,6 +111,42 @@ for plugin in /usr/lib/x86_64-linux-gnu/qt6/plugins/styles/libchameleon.so \
     → 缺了不会报错，只会静默降级（DTK 样式丢失 = 纯 Qt 感）"
 done
 
+# 2h. 依赖清单里的包必须在 **apt 仓库**里能装到（不只是「本机已装」）
+#   ⚠⚠ **与 2f 的分工**（别以为 2h 能单独抓包名错误）：
+#   · 2f 抓「**包名写错 / 本机没装**」⇒ dpkg-query 直接红；
+#   · 2h 抓「**本机装着、但目标机源里没有**」⇒ 典型场景：开发机装的是私有源/已从源里
+#     移除的版本 ⇒ 本机 `dpkg-query` 说「装着」⇒ 目标机却**装不上**。
+#   ⚠ **「apt 查不到该包」会输出空**（与「本机没配源/离线」无法区分）⇒ 那种情况
+#     本检查判为 SKIP（不误红）⇒ 由 **2f** 兜住（包名写错 ⇒ 本机也没装 ⇒ 2f 红）。
+#   ⚠ 2f 验的是「**本机装着**」—— 那**不等于**「**目标机装得上**」：
+#   本机装着的包可能已经不在源里（被移除 / 从别处装的 / 私有源），
+#   ⇒ 目标机（干净 deepin 25）会「找不到包」⇒ **deb 装了却用不了**。
+#   ⇒ 这一条是 D7「装得上」那一半里**不依赖容器**就能做的那部分。
+# ⚠⚠ **必须 LC_ALL=C**：apt 的输出是**本地化**的 —— 本机是中文「候选：」而不是
+#   `Candidate:` ⇒ 只按英文写脚本，换台机器/换 locale 就**全部误判成缺失**
+#   （实测踩过：17 个明明存在的包全被判「查不到」）。
+if command -v apt-cache >/dev/null 2>&1; then
+    MISSING_PKG=""
+    NO_CAND=0
+    for p in $(cat "$TMP/deps.list"); do
+        CAND="$(LC_ALL=C apt-cache policy "$p" 2>/dev/null | sed -n 's/^  Candidate: //p')"
+        if [ -z "$CAND" ]; then
+            NO_CAND=1
+            break
+        fi
+        [ "$CAND" = "(none)" ] && MISSING_PKG="$MISSING_PKG $p"
+    done
+    if [ "$NO_CAND" -eq 1 ]; then
+        echo "‣ SKIP：apt 查不到候选版本（本机可能没配源 / 离线）—— 这一项**未验证**，不算通过"
+    elif [ -n "$MISSING_PKG" ]; then
+        die "依赖清单里这些包在 apt 仓库里**查不到**（目标机装不上）：$MISSING_PKG"
+    else
+        step "依赖包在 apt 仓库里都存在 ✓（$(wc -l < "$TMP/deps.list") 个，目标机装得上）"
+    fi
+else
+    echo "‣ SKIP：没有 apt-cache —— 这一项**未验证**，不算通过"
+fi
+
 step "依赖清单自洽 ✓（$(wc -l < "$TMP/deps.list") 个包，无缺无多）"
 
 # ── 3. 组装目录树 ───────────────────────────────────────────
