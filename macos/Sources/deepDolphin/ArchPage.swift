@@ -29,23 +29,11 @@ final class ArchPageVM: ObservableObject {
     @Published var genStatus: String?
     @Published var exportedPath: String?
 
-    private func receipt(_ text: String) -> String? {
-        for line in text.split(separator: "\n").reversed() {
-            let t = line.trimmingCharacters(in: .whitespaces)
-            if !t.isEmpty { return t }
-        }
-        return nil
-    }
-
-    private func extractHTMLPath(_ text: String) -> String? {
-        for line in text.split(separator: "\n") {
-            for token in line.split(separator: " ") {
-                let t = token.trimmingCharacters(in: .whitespaces)
-                if t.hasSuffix(".html") && t.hasPrefix("/") { return t }
-            }
-        }
-        return nil
-    }
+    // ⚠ 回执解析已收敛到纯函数 `ArchReceipt`（批 AR）：原来这里是**两份同名复制**
+    //   （本文件 + CodeGraphPage），各写各的 ⇒ 改一处漏一处、也**测不到**。
+    //   而且那份复制按**空格**切词 —— 引擎真实回执里路径是粘在**全角冒号**后的
+    //   （「已写入：/path/arch.html · …」）⇒ 路径**永远抽不出来**
+    //   ⇒ 导出后「打开」入口**始终不出现**（死按钮）。
 
     /// 生成架构（写 arch.json，探针对账决定首版/版本号），完成后重载画布。
     func generate() async {
@@ -55,7 +43,7 @@ final class ArchPageVM: ObservableObject {
         do {
             let r = try await EngineCLI.shared.runData(
                 ["arch", "gen", projectName], timeout: 600)
-            genStatus = receipt(String(data: r, encoding: .utf8) ?? "")
+            genStatus = ArchReceipt.receipt(String(data: r, encoding: .utf8) ?? "")
             await load()
         } catch {
             genStatus = EngineError.userMessage(for: error)
@@ -71,8 +59,8 @@ final class ArchPageVM: ObservableObject {
             let out = try await EngineCLI.shared.runData(
                 ["render", "arch", projectName], timeout: 600)
             let text = String(data: out, encoding: .utf8) ?? ""
-            exportedPath = extractHTMLPath(text)
-            genStatus = receipt(text)
+            exportedPath = ArchReceipt.htmlPath(text)
+            genStatus = ArchReceipt.receipt(text)
         } catch {
             genStatus = EngineError.userMessage(for: error)
         }

@@ -5637,6 +5637,46 @@ do {
     print("  ✓ 生成能力齐全：代码图谱 = index+confidence gen + render 导出；架构页 = arch gen + render 导出")
 }
 
+// ── 批 AR：引擎回执里的路径提取 ──────────────────────────────────────────────
+// ⚠ **引擎真实回执形态**（2026-10-20 实跑 `moongit render arch` 取得，原样保留）：
+//   路径与文案之间是**全角冒号**，**没有空格** ⇒ 按空格切词切不出纯路径。
+let realArchReceipt = "已写入：/home/superShuai/.deepgit/store/p_f80de38f6095/render/arch.html · 共 0 个文件，0 个函数（语法未通过则不计入）"
+
+check("引擎真实回执形态（全角冒号粘连）能抽出 .html 绝对路径") {
+    let p = ArchReceipt.htmlPath(realArchReceipt)
+    guard let p else {
+        throw fail("抽不出路径 ⇒ 导出后「打开」入口始终不出现（死按钮）")
+    }
+    guard p == "/home/superShuai/.deepgit/store/p_f80de38f6095/render/arch.html" else {
+        throw fail("抽出来的路径不对：\(p)")
+    }
+    return p
+}
+
+check("回执结论行取最后一行非空行（前面几行是明细）") {
+    let text = "正在写入…\n已写入：/tmp/x/render/arch.html · 共 1 个文件"
+    guard let r = ArchReceipt.receipt(text) else { throw fail("取不到结论行") }
+    guard r.hasPrefix("已写入：") else { throw fail("结论行取错了：\(r)") }
+    return r
+}
+
+check("相对路径不认（打不开的路径等于坏按钮）") {
+    let text = "已写入：render/arch.html · 共 1 个文件"
+    if let p = ArchReceipt.htmlPath(text) {
+        throw fail("抽出了相对路径：\(p)")
+    }
+    return ""
+}
+
+check("后缀不同的两次抽取互不污染（deepin 侧踩过：正则按后缀缓存会把模式焊死）") {
+    let text = "已写入：/tmp/x/render/arch.html · 共 1 个文件；报告：/tmp/x/render/report.md"
+    guard let h = ArchReceipt.htmlPath(text) else { throw fail("html 路径抽不出") }
+    guard let m = ArchReceipt.filePath(text, suffix: ".md") else { throw fail("md 路径抽不出") }
+    guard h.hasSuffix(".html") else { throw fail("html 后缀被污染：\(h)") }
+    guard m.hasSuffix(".md") else { throw fail("md 后缀被污染：\(m)") }
+    return "html=\(h) md=\(m)"
+}
+
 print("")
 if failures.isEmpty {
     print("✅ 客户端检查通过：\(checks) 项")

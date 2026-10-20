@@ -144,23 +144,11 @@ final class CodeGraphVM: ObservableObject {
     /// 导出的交互 HTML 路径（render 回执提取）
     @Published var exportedPath: String?
 
-    private func receipt(_ text: String) -> String? {
-        for line in text.split(separator: "\n").reversed() {
-            let t = line.trimmingCharacters(in: .whitespaces)
-            if !t.isEmpty { return t }
-        }
-        return nil
-    }
-
-    private func extractHTMLPath(_ text: String) -> String? {
-        for line in text.split(separator: "\n") {
-            for token in line.split(separator: " ") {
-                let t = token.trimmingCharacters(in: .whitespaces)
-                if t.hasSuffix(".html") && t.hasPrefix("/") { return t }
-            }
-        }
-        return nil
-    }
+    // ⚠ 回执解析已收敛到纯函数 `ArchReceipt`（批 AR）：原来这里是**两份同名复制**
+    //   （本文件 + CodeGraphPage），各写各的 ⇒ 改一处漏一处、也**测不到**。
+    //   而且那份复制按**空格**切词 —— 引擎真实回执里路径是粘在**全角冒号**后的
+    //   （「已写入：/path/arch.html · …」）⇒ 路径**永远抽不出来**
+    //   ⇒ 导出后「打开」入口**始终不出现**（死按钮）。
 
     /// 生成索引 + 置信度（写 codegraph.db / index.json / confidence.json），
     /// 完成后重载页面数据——GUI 直接消化引擎的生成能力，不只读不写。
@@ -173,8 +161,8 @@ final class CodeGraphVM: ObservableObject {
                 ["index", "gen", projectName, "--stats"], timeout: 600)
             let r2 = try await EngineCLI.shared.runData(
                 ["confidence", "gen", projectName], timeout: 600)
-            genStatus = receipt(String(data: r2, encoding: .utf8) ?? "")
-                ?? receipt(String(data: r1, encoding: .utf8) ?? "")
+            genStatus = ArchReceipt.receipt(String(data: r2, encoding: .utf8) ?? "")
+                ?? ArchReceipt.receipt(String(data: r1, encoding: .utf8) ?? "")
             heatGridCache = nil   // 生成后数据全换，网格缓存失效
             await load()
         } catch {
@@ -191,8 +179,8 @@ final class CodeGraphVM: ObservableObject {
             let out = try await EngineCLI.shared.runData(
                 ["render", "index", projectName, "--confidence"], timeout: 600)
             let text = String(data: out, encoding: .utf8) ?? ""
-            exportedPath = extractHTMLPath(text)
-            genStatus = receipt(text)
+            exportedPath = ArchReceipt.htmlPath(text)
+            genStatus = ArchReceipt.receipt(text)
         } catch {
             genStatus = EngineError.userMessage(for: error)
         }

@@ -381,6 +381,15 @@ void checkGraph(QStringList &log)
         check(log, "回执：路径与文案用全角冒号粘连时也抽得出（引擎真实回执形态）",
             ArchReceipt::htmlPath(QStringLiteral("已重绘：/tmp/x/store/p_1/render/arch.html · 第 1 版"))
                 == QStringLiteral("/tmp/x/store/p_1/render/arch.html"));
+        // ⚠ 这条夹具是**实跑**出来的（2026-10-20 真跑 `moongit render arch`，
+        //   原文照抄）：引擎真实回执里路径粘在**全角冒号**后、后面跟**中点**，
+        //   两个分隔符**都在**，且尾部还跟着一句统计 ⇒ 两个分隔符都得认。
+        //   批 AR 照这条实跑形态发现 mac 侧的同名实现抽不出路径（死按钮）。
+        check(log, "回执：引擎实跑原文的形态也抽得出（已写入：<路径> · 共 N 个文件）",
+            ArchReceipt::htmlPath(QStringLiteral("已写入：/home/superShuai/.deepgit/store/"
+                                                 "p_f80de38f6095/render/arch.html · 共 0 个文件，"
+                                                 "0 个函数（语法未通过则不计入）"))
+                == QStringLiteral("/home/superShuai/.deepgit/store/p_f80de38f6095/render/arch.html"));
         check(log, "回执：相对路径不认（宁可不给「打开」入口，也不给坏按钮）",
             ArchReceipt::htmlPath(QStringLiteral("已重绘：render/arch.html")).isEmpty());
 

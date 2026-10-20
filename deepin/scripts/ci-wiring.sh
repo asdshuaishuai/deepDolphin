@@ -1094,6 +1094,35 @@ arch_need "$ROOT/macos/scripts/engine-fetch-check.sh" 'runtime/lib' '引擎下�
 arch_need "$ROOT/macos/build.sh" 'cp .*ENGINE_ROOT/runtime/lib/.*dylib' 'mac build.sh 内嵌引擎时把包自带的运行库一起拷进 Frameworks（缺它 ⇒ 内嵌引擎起不来）'
 arch_need "$ROOT/macos/build.sh" 'ENGINE_ROOT/bin/moongit-cli' 'mac build.sh 内嵌的是包里的**真二进制**（内嵌进 bundle 的必须是 Mach-O，rpath 重写与补签才对它有意义）'
 
+# ── 批 AR · mac 侧「导出后打不开」：回执里的路径抽不出来（跨目录盯 macos/）──
+#
+# ⚠ **起因**：deepin 侧 `logic/ArchReceipt.cpp` 的注释里**早就写着**这个 mac 缺陷
+#   （「mac 的 extractHTMLPath 就栽在这里，导出后「打开」入口始终不出现」），
+#   但**一直没修**。批 AR 用**引擎实跑**把形态坐实了：
+#   `moongit render arch` 的真实回执是
+#     已写入：<绝对路径> · 共 N 个文件，N 个函数（…）
+#   —— 路径与文案之间是**全角冒号**（**没有空格**）。
+#   ⇒ mac 侧那份同名实现按**空格**切词 ⇒ 切出「已写入：/path/arch.html」这种粘连块
+#   ⇒ `hasPrefix("/")` 恒假 ⇒ **抽不出路径** ⇒ 「打开」入口**始终不出现**（死按钮）。
+#   ⚠ 而且它是**两份同名复制**（ArchPage + CodeGraphPage）⇒ 改一处漏一处、也测不到。
+#
+# ⚠ **本机没有 Swift 工具链** ⇒ mac 的 Swift 代码**编不了、也测不了**。
+#   ⇒ 这批把可判的部分全做成**跨目录静态门**（每次 deepin CI 都跑），
+#     行为侧由 mac 侧 `scripts/client-check.sh` 的纯函数判据承担
+#     （本文件已进它的编译清单 + `Tests/ClientCheck/main.swift` 已加四条断言）。
+arch_need "$ROOT/macos/Sources/deepDolphin/ArchReceipt.swift" 'enum ArchReceipt' 'mac 侧的回执解析必须是**纯函数**（能进 client-check 的编译清单 ⇒ 才测得到）'
+arch_need "$ROOT/macos/Sources/deepDolphin/ArchReceipt.swift" 'u\{FF1A\}' '路径边界必须认**全角冒号**（引擎真实回执就靠它把路径和文案粘在一起；漏了 ⇒ 抽不出路径）'
+arch_need "$ROOT/macos/Sources/deepDolphin/ArchReceipt.swift" 'u\{00B7\}' '路径边界必须认**中点**（引擎真实回执里路径后面跟的就是它）'
+arch_need "$ROOT/macos/Sources/deepDolphin/ArchReceipt.swift" 'hasPrefix\("/"\)' '只认**绝对路径**（相对路径打不开 ⇒ 宁可不给「打开」入口）'
+arch_forbid "$ROOT/macos/Sources/deepDolphin/ArchPage.swift" 'private func extractHTMLPath' 'ArchPage 不许再自带一份回执解析（同名复制会漂移）'
+arch_forbid "$ROOT/macos/Sources/deepDolphin/CodeGraphPage.swift" 'private func extractHTMLPath' 'CodeGraphPage 不许再自带一份回执解析（同名复制会漂移）'
+arch_need "$ROOT/macos/Sources/deepDolphin/ArchPage.swift" 'ArchReceipt\.htmlPath\(' 'ArchPage 走共享的纯函数'
+arch_need "$ROOT/macos/Sources/deepDolphin/CodeGraphPage.swift" 'ArchReceipt\.htmlPath\(' 'CodeGraphPage 走共享的纯函数'
+arch_need "$ROOT/macos/scripts/client-check.sh" 'ArchReceipt\.swift' 'mac 侧判据必须编译 ArchReceipt.swift（不编 ⇒ 那四条断言永远绿、永远抓不到东西）'
+arch_need "$ROOT/macos/Tests/ClientCheck/main.swift" 'ArchReceipt\.htmlPath\(' 'mac 侧判据必须真的断言「引擎真实回执形态抽得出路径」'
+# ⚠ deepin 侧那条**实跑夹具**也钉住（它是两侧共同的口径来源）
+arch_need "$SRC/src/app/SelfCheckGraph.cpp" '已写入：' 'deepin 侧自检必须钉住**引擎实跑原文**的回执形态（两侧口径共同的事实来源）'
+
 # ── 批 AN · 快照基线「逐字节可重现」：关掉 DTK 标题栏阴影带 ──
 #
 # ⚠ 起因（实测照出「基线这道门其实形同虚设」）：
