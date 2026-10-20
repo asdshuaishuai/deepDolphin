@@ -1836,7 +1836,7 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
 fi
 echo "✓ 批 AZ 段门项全绿（CI 自测步不许吞退出码 / agent 自测三断言 / 崩点可诊断）；门项合计 ${ARCH_N} 项（含前段）"
 
-# ── 批 BA · CI 的**每一步**都必须有门（12 步逐个钉）──────────────────────
+# ── 批 BA · CI 的**每一步**都必须有门（批 BA 时 12 步，批 BD 起 14 步）────────
 # ⚠⚠⚠ **起因（实测，不是推演）**：批 AZ 给 ci.sh 的**内部**加了门，
 #   但**「ci.sh 一共有哪 12 步」这件事本身没有任何门** ⇒
 #   ⇒ **删掉一整步 ⇒ 所有门照样全绿** ⇒ **CI 静默少做一件事**。
@@ -1874,14 +1874,16 @@ arch_need_count "$SRC/scripts/ci.sh" 'ci-wiring\.sh' 1 '第 9 步 **接线门**�
 arch_need_count "$SRC/scripts/ci.sh" 'contract-check\.sh' 1 '第 10 步 引擎契约门（真引擎沙箱）的动作还在'
 arch_need_count "$SRC/scripts/ci.sh" 'build-deb\.sh' 1 '第 11 步 deb 打包的动作还在（D7 达标的必经：能出包装进 deepin）'
 arch_need_count "$SRC/scripts/ci.sh" 'check-deb-layout\.sh' 1 '第 12 步 deb 布局验收的动作还在（D7 的**准**验收：装完能不能用）'
-arch_need_count "$SRC/scripts/ci.sh" '› [0-9]+/12 ' 12 'ci.sh 的步骤打点**恰好 12 个**（多一步/少一步都红；且分母统一是 12 ⇒ 散写分母也红）'
-arch_need_ml "$SRC/scripts/ci.sh" '› 1/12 .*› 2/12 .*› 3/12 .*› 4/12 .*› 5/12 .*› 6/12 .*› 7/12 .*› 8/12 .*› 9/12 .*› 10/12 .*› 11/12 .*› 12/12 ' 'ci.sh 的 12 个步骤打点**编号连续**（压行后匹配 ⇒ 跨行也算）⇒ 跳号/重号/乱序都红'
+arch_need_count "$SRC/scripts/ci.sh" 'sh "\$SRC/scripts/probe-agent-tool-surface\.sh"' 1 '第 13 步 agent 工具面收敛的动作还在（批 BD 实测：这个探针以前**根本不在 CI 里** ⇒ 它的 9 条断言没人执行）—— ⚠ 盯的是**调用点**那串，不是文件名：文件名在 ci.sh 的注释里也出现过（讲这个洞的来由）⇒ 盯短名会命中 2 次而恒红'
+arch_need_count "$SRC/scripts/ci.sh" 'sh "\$SRC/scripts/ci-orphan-probe\.sh"' 1 '第 14 步 无游离断言脚本的动作还在（批 BD：这是「CI 自己在漏什么」的那一道）—— ⚠ 同上，盯**调用点**'
+arch_need_count "$SRC/scripts/ci.sh" '› [0-9]+/14 ' 14 'ci.sh 的步骤打点**恰好 14 个**（多一步/少一步都红；且分母统一是 14 ⇒ 散写分母也红）'
+arch_need_ml "$SRC/scripts/ci.sh" '› 1/14 .*› 2/14 .*› 3/14 .*› 4/14 .*› 5/14 .*› 6/14 .*› 7/14 .*› 8/14 .*› 9/14 .*› 10/14 .*› 11/14 .*› 12/14 .*› 13/14 .*› 14/14 ' 'ci.sh 的 14 个步骤打点**编号连续**（压行后匹配 ⇒ 跨行也算）⇒ 跳号/重号/乱序都红'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BA 段有门项红（上面带 ✗ 的行）" >&2
     exit 1
 fi
-echo "✓ 批 BA 段门项全绿（ci.sh 的 12 步每一步都有门）；门项合计 ${ARCH_N} 项（含前段）"
+echo "✓ 批 BA 段门项全绿（ci.sh 的 14 步每一步都有门）；门项合计 ${ARCH_N} 项（含前段）"
 
 # ── 批 BB · 判据条数基线：**必须相等**，不是「不少于」────────────────────
 # ⚠⚠⚠ **起因（实测，不是推演）**：批 AJ 立的门是「判据数**不少于** `SC_MIN`」
@@ -1939,4 +1941,48 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 BC 段门项全绿（CI 里跑的 5 个断言脚本，清单都不许被删）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 BD · 断言脚本不许游离在 CI 之外 ──────────────────────────────────
+# ⚠⚠⚠ **起因（实测，不是推演）**：批 BC 给「CI 里跑的脚本」加了条数基线门，
+#   顺手查「CI 里到底跑了哪些脚本」⇒ 撞出同一族的洞，而且是**最后一块**：
+#   `scripts/probe-agent-tool-surface.sh`（9 条断言）**根本不在 CI 里**。
+#   ⚠⚠⚠ **实测取证（批 BD）**：把这个脚本**整个从仓库删掉** ⇒
+#     接线门 rc=0、审计器 rc=0 ⇒ **两个都全绿** ⇒
+#     **「仓库里少了一份断言」这件事，没有任何门会说一个字。**
+#   ⚠ 对照实测（用来定位洞的位置，不是拍脑袋）：
+#     · 删掉**已经接进 CI** 的脚本（ci-docs-lang-probe.sh / ci-divider-probe.sh）
+#       ⇒ 门**红**（rc=1）⇒ 洞不在「已接管的」，在「**没接管的**」；
+#     · 删掉 ci.sh 里对某个探针的**调用** ⇒ 门**红** ⇒ 调用点本身是有门的。
+# ⇒ **修法**（两处，缺一不可）：
+#   ① `probe-agent-tool-surface.sh` **接进 CI**（ci.sh 第 13 步）——
+#      它的 9 条断言（引擎标的废弃别名不得留在模型可见面/系统提示词里，
+#      但**仍要留在必填校验表**里）从此有人执行。
+#   ② 新增 `scripts/ci-orphan-probe.sh`（ci.sh 第 14 步）——
+#      从**集合**这一层堵：scripts/ 下每个断言脚本，要么在 CI 里**可达**
+#      （ci.sh 直接调用，或被 CI 可达的脚本调用），要么在**带理由的白名单**里。
+#      ⇒ 「多了一份没人跑的断言」与「少了一份断言」两头都被堵住。
+#
+# ⚠ **本段守的是「门自己不许被掏空」**（三层）：
+#   ① 探针自己的断言清单不许被删（批 BC 口径：数报错行）。
+#   ② 探针**判定「什么算断言脚本」的那行**必须在 —— ⚠⚠ 少了它 ⇒ 探针扫到 0 个
+#      断言脚本 ⇒ 报「0 个，全部可达」⇒ **空转恒绿**（与批 BC 记的已知边界同形状）。
+#   ③ 探针**排除门项行**的规则必须在 —— 少了它 ⇒ 门项字符串（长得像调用）被当成
+#      真调用 ⇒ 可达集合被夸大 ⇒ 探针失准。
+# ⚠ **白名单不许收纳「已经在 CI 里」的脚本**（逐条钉，期望次数 0）：
+#   否则有人可以把一个**已接管的**脚本塞进白名单 ⇒ 它随时能被踢出 CI 而无人知晓。
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '✗ ' 7 '无游离门自己的断言清单**不许被删**（⚠ 口径：7 = **6 条断言的报错行** + **1 处「什么算断言脚本」的判定行里带的同一个标记** ⇒ 删掉任意一条断言、或删掉那条判定行，都会掉到 6 ⇒ 红）'
+arch_need_count "$SRC/scripts/probe-agent-tool-surface.sh" '✗ ' 9 'agent 工具面探针的断言清单**不许被删**（9 条报错）—— ⚠⚠ **这条门是「文件被整个删掉」的唯一防线**：无游离门扫的是**目录里现存的文件** ⇒ 文件没了它就**扫不到**、也就不会报 ⇒ 必须另有一条「盯文件本身」的条数基线门（删文件 ⇒ 门报「文件不存在」⇒ 红）'
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" 'grep -q .✗ .' 1 '无游离门**判定「什么算断言脚本」的那行**必须在（⚠⚠ 少了它 ⇒ 扫到 0 个 ⇒ 报「全部可达」⇒ **空转恒绿**）'
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" 'arch_\[a-z_\]\+' 1 '无游离门**排除门项行**的规则必须在（⚠ 少了它 ⇒ 门项字符串被当成真调用 ⇒ 可达集合被夸大 ⇒ 探针失准）'
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^[A-Za-z0-9._-]+\.sh\|' 4 '白名单**条数**基线（恰好 4 条）—— 增删白名单条目必须同步改这里 ⇒ 改动是显式的、可 review 的（⚠ 期望 == 实际 ⇒ 余量恒为 0，批 BB 口径）'
+arch_need_count "$SRC/scripts/ci.sh" '(sh|bash|python3) +"?[^"]*/scripts/ci\.sh' 0 '白名单条目 ci.sh **不许被 CI 调用**（它就是 CI 入口本身）—— 期望 0 次：一旦它出现在调用点里 ⇒ 这条白名单就是开后门'
+arch_need_count "$SRC/scripts/ci.sh" '(sh|bash|python3) +"?[^"]*/scripts/smoke\.sh' 0 '白名单条目 smoke.sh **不许被 CI 调用**（它是本地冒烟入口，不是 CI 入口）'
+arch_need_count "$SRC/scripts/ci.sh" '(sh|bash|python3) +"?[^"]*/scripts/probe-deepin-tray\.sh' 0 '白名单条目 probe-deepin-tray.sh **不许被 CI 调用**（需真机：图形会话 + deepin 托盘 daemon）'
+arch_need_count "$SRC/scripts/ci.sh" '(sh|bash|python3) +"?[^"]*/scripts/probe-sni-icon\.sh' 0 '白名单条目 probe-sni-icon.sh **不许被 CI 调用**（需真机：图形会话 + 会话总线）'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 BD 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 BD 段门项全绿（断言脚本不许游离在 CI 之外；白名单 4 条，每条带理由且都确实不在 CI 里）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0

@@ -1,20 +1,30 @@
 #!/usr/bin/env bash
 # ci.sh — deepin 客户端本地 CI 门（DDE-INTEGRATION-PLAN.md §4.1/§4.3）。
 #
+# ⚠ **这份清单必须与下面的步骤打点一一对应**（批 BA：12 步逐个钉了门；
+#   批 BD 起扩到 14 步）⇒ 改步骤就改这份清单，也改门。
 # 1. --selfcheck：断言「0 failed 且 ≥58 passed」（例数只增不减）
 # 2. 截图矩阵（亮/暗 × 4 页）→ docs/snapshots，落盘后人工 diff 基线
 # 3. desktop / metainfo 校验：desktop-file-validate / appstream-util 缺工具显式 SKIP
 #    （SKIP 不算失败——工具随 deepin 打包环境到位，硬门随之生效）
-# 4. --platform-probe 正式断言：exit 0 且输出含 backend= 行
+# 4. 无头探针三件套：ci-platform-probe.sh（--platform-probe 正式断言：exit 0 且输出含
+#    backend= 行）+ ci-docs-lang-probe.sh（四语言切换真跑）+ ci-divider-probe.sh（分隔线真渲染）
 # 5. D2 grep 门：DS::*（DesignTokens）之外出现色值/px 字号即缺陷 —— 独立成
 #    scripts/ci-d2.sh（可单独跑，负控能精确打）。批 N 已把 M3-3 登记的 4 处存量
 #    全收进 token，上限降到 0（只减不增）
-# 6. --agent-selftest（恒走 mock 渠道）
+# 6. --agent-selftest（恒走 mock 渠道）：退出码 + FINAL 标记 + 收尾标记三断言
 # 7. verify 接线源扫描门：引擎 verify 的判定层与接线点必须都在（判定不许藏回视图）
-# 8. 图谱 Canvas 契约门：Canvas2D 覆盖契约清单 24 个方法 + logic/models 零 QWidget 头
+# 8. 图谱 Canvas 契约门：Canvas2D 覆盖契约清单 26 个方法 + logic/models 零 QWidget 头
 #  9. 架构图接线门：取数（graph arch --format scene）→ 判定（视口/命中/回执）→
-#     渲染（SceneRender）→ 接线（详情页入口 → 面板 → 架构图窗 → 画布）四段都在；
+#     渲染（SceneRender → Canvas2D）→ 接线（详情页入口 → 面板 → 架构图窗 → 画布）四段都在；
 #     生成/导出必须走 Text 契约（回执型命令，stdout 是人话不是 JSON）
+# 10. 引擎契约门：scripts/contract-check.sh（真引擎沙箱；引擎缺席显式 SKIP 且不算通过）
+# 11. deb 打包：scripts/build-deb.sh（依赖清单双向校验 + 产物零环境变量下无缺失库）
+# 12. deb 布局验收：scripts/check-deb-layout.sh（装完能不能用：service/desktop/图标/metainfo）
+# 13. agent 工具面收敛：scripts/probe-agent-tool-surface.sh（引擎标的废弃别名不得留在
+#     模型可见面/系统提示词里，但仍留在必填校验表里；引擎缺席/太老 ⇒ 显式 SKIP）
+# 14. 无游离断言脚本：scripts/ci-orphan-probe.sh（scripts/ 下每个断言脚本都必须在 CI
+#     里可达，否则进**带理由的白名单** ⇒ 「少了一份断言」不可能再悄无声息）
 #
 # 用法：scripts/ci.sh [build目录]（默认 build/）
 set -euo pipefail
@@ -68,7 +78,7 @@ latest_core() {
 }
 
 SC_MIN=395
-echo "› 1/12 selfcheck（断言 0 failed 且 ≥58 passed 且判据数 == $SC_MIN 条不许被删）"
+echo "› 1/14 selfcheck（断言 0 failed 且 ≥58 passed 且判据数 == $SC_MIN 条不许被删）"
 # ⚠⚠⚠ **不许用 `|| true` 吞掉 selfcheck 的退出码**（批 AZ 实测出来的真洞）：
 #   原来这行是 `SELFCHECK_OUT="$("$BIN" --selfcheck || true)"` ⇒ **退出码被丢弃**。
 #   ⚠⚠ **要分清两种「吞退出码」**（批 AY 的「`| tail` 吞退出码」在这里**不成立**）：
@@ -155,7 +165,7 @@ if [ "$SC_PASSED" -ne "$SC_MIN" ]; then
 fi
 echo "✓ selfcheck ${SC_PASSED} passed, ${SC_FAILED} failed"
 
-echo "› 2/12 截图矩阵（离屏）"
+echo "› 2/14 截图矩阵（离屏）"
 # ⚠ 这一步**强制** offscreen，不继承环境里的 QT_QPA_PLATFORM。
 #   理由（决策 86）：基线是离屏拍的；若宿主已设 QT_QPA_PLATFORM=dxcb;xcb，
 #   快照会带 DTK 原生窗口装饰与 chameleon 样式 —— 同一份代码拍出另一张脸，
@@ -351,7 +361,7 @@ echo "✓ 8 张快照跨运行（新进程）复拍仍与基线逐字节一致"
 #   ⚠ 失败路径（exit 1）会提前退出 ⇒ 临时目录留在 /tmp，由系统回收，不污染仓库。
 rm -rf "$BASE_DIR" "$SHOT_DIR"
 
-echo "› 3/12 desktop / metainfo 校验（缺工具显式 SKIP）"
+echo "› 3/14 desktop / metainfo 校验（缺工具显式 SKIP）"
 if command -v desktop-file-validate >/dev/null 2>&1; then
     desktop-file-validate "$SRC/data/cn.deepdolphin.app.desktop" && echo "✓ desktop 合法"
 else
@@ -364,7 +374,7 @@ else
     echo "SKIP: appstream-util 未安装（README 决策 69 的硬门随工具到位生效）"
 fi
 
-echo "› 4/12 无头探针（平台探针 + 固定文档页四语言探针 + 分隔线探针）"
+echo "› 4/14 无头探针（平台探针 + 固定文档页四语言探针 + 分隔线探针）"
 # 探针断言独立成 scripts/ci-platform-probe.sh：可单独跑，负控也能精确打它。
 if ! sh "$SRC/scripts/ci-platform-probe.sh" "$BIN"; then
     echo "✗ 平台探针门失败" >&2
@@ -393,14 +403,14 @@ strip_comments() {
     fi
 }
 
-echo "› 5/12 D2 grep 门（DS::* 单点真相源；散值上限 0，存量已清零）"
+echo "› 5/14 D2 grep 门（DS::* 单点真相源；散值上限 0，存量已清零）"
 # 散值门独立成 scripts/ci-d2.sh：可单独跑，负控也能精确打它。
 if ! sh "$SRC/scripts/ci-d2.sh" "$SRC"; then
     echo "✗ 设计系统散值门失败：src/ 下出现色值/硬编码 px 字号" >&2
     exit 1
 fi
 
-echo "› 6/12 agent 自测（mock 渠道）"
+echo "› 6/14 agent 自测（mock 渠道）"
 # ⚠⚠⚠ **这一门原来没有断言**（批 AZ 实测查出来的第二个真洞）：
 #   原来是 `"$BIN" --agent-selftest | tail -2` ⇒ **只打两行输出，零断言**：
 #   · agent 链路**整条坏掉**（工具循环断了、模型不回应、进程早退）时，
@@ -452,7 +462,7 @@ if ! grep -q '^\[selftest-done\]$' "$BUILD/agent-selftest.out"; then
 fi
 tail -2 "$BUILD/agent-selftest.out"
 
-echo "› 7/12 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
+echo "› 7/14 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
 # 剥注释再匹配：注释里出现的字样不算接线（否则加一行注释就能骗过门）。
 WIRING_HITS=0
 WIRING_FAIL=0
@@ -485,7 +495,7 @@ if [ "$WIRING_FAIL" -ne 0 ]; then
 fi
 echo "✓ verify 接线完整（$WIRING_HITS 项）"
 
-echo "› 8/12 图谱 Canvas 契约清单齐（章程 §3.5：方法清单就是移植验收清单）"
+echo "› 8/14 图谱 Canvas 契约清单齐（章程 §3.5：方法清单就是移植验收清单）"
 # 契约清单（引擎 docs/graph-scene-schema.md 的渲染契约层）：26 个标准 Canvas2D 方法。
 # 「少实现一项，渲染器就跑不完」——本门逐个核 Canvas2D 是否声明为 override。
 CANVAS_METHODS="setTransform fillRect strokeRect rect beginPath moveTo lineTo arcTo closePath arc bezierCurveTo fill stroke fillText createLinearGradient addColorStop setLineDash setLineDashOffset setShadowBlur setShadowColor setGlobalAlpha setLineWidth setStrokeStyle setFillStyle setFont setTextAlign"
@@ -523,7 +533,7 @@ if [ "$CANVAS_FAIL" -ne 0 ]; then
 fi
 echo "✓ Canvas2D 覆盖契约清单 ${CANVAS_N}/26 个方法；logic/ 与 models/ 零 QWidget 头；新文件均已登记构建"
 
-echo "› 9/12 接线门（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
+echo "› 9/14 接线门（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
 # 接线门独立成 scripts/ci-wiring.sh：可单独跑，负控也能精确打它。
 if sh "$SRC/scripts/ci-wiring.sh" "$SRC"; then
     :
@@ -532,7 +542,7 @@ else
     exit 1
 fi
 
-echo "› 10/12 引擎契约门（真引擎沙箱；引擎缺席显式 SKIP 且不算通过）"
+echo "› 10/14 引擎契约门（真引擎沙箱；引擎缺席显式 SKIP 且不算通过）"
 # contract-check.sh 之前是**游离脚本** —— CI 从来没跑过它，契约漂移不会被拦。
 # 接进 CI 后：引擎在 → 真跑（32 条）；引擎不在 → 脚本自己 SKIP 并如实说明
 # 「本组未验证」（不是静默通过）。
@@ -553,7 +563,7 @@ else
     echo "‣ 本组**未验证**，不算通过"
 fi
 
-echo "› 11/12 deb 打包（D7 达标的必经：能出包装进 deepin，且装后零环境变量）"
+echo "› 11/14 deb 打包（D7 达标的必经：能出包装进 deepin，且装后零环境变量）"
 # PLAN §「CI 流程」明确列了「⑥ deb 构建」—— 这一门以前根本不存在，
 # 于是「能不能出包装进 deepin」从没被验证过。
 # build-deb.sh 自带**依赖清单双向校验**（清单 ↔ 二进制实际 DT_NEEDED）：
@@ -574,7 +584,7 @@ else
     echo "‣ 本组**未验证**，不算通过"
 fi
 
-echo "› 12/12 deb 布局验收（D7 的**准**验收：装完能不能用）"
+echo "› 12/14 deb 布局验收（D7 的**准**验收：装完能不能用）"
 # ⚠ D7 的最终验收是「干净 deepin 25 容器里 dpkg -i + 启动」—— 本机**没有容器
 #   运行时**（无 docker/podman）⇒ 那一段做不了。
 #   ⇒ 这里做「不依赖容器的那一半」：把 deb **解包**到临时目录（不装进系统），
@@ -590,6 +600,40 @@ elif sh "$SRC/scripts/check-deb-layout.sh" "$DEB_OUT"; then
     echo "✓ deb 布局验收通过（装完能不能用：service/desktop/图标/metainfo/空环境启动）"
 else
     echo "✗ deb 布局验收失败" >&2
+    exit 1
+fi
+
+echo "› 13/14 agent 工具面收敛（旧名别名必须从模型可见面剔掉，但仍可执行）"
+# ⚠⚠⚠ **这个探针以前根本不在 CI 里**（批 BD 实测查出来的）：
+#   ① 它有 9 条断言（引擎标的废弃别名不得出现在模型可见面/系统提示词里，
+#      但**仍要留在必填校验表**里 —— 收敛的是「推荐谁」，不是「还能不能用」）；
+#   ② 而 `probe-agent-tool-surface.sh` **整个从仓库删掉，接线门与审计器都全绿**
+#      （实测 rc=0 / rc=0）⇒ 一份断言可以悄悄消失而无人知晓。
+#   ⇒ 现在它接进 CI（批 BD）；第 14 步再从「集合」这一层把同类问题堵上。
+#
+# ⚠ 退出码语义（探针自己定的，别猜）：0=通过 / 1=失败 / 2=用法错 /
+#   **3=SKIP**（引擎缺席，或引擎 < 0.2.0 没有 deprecated 标记 ⇒ 本门**未验证**，
+#   **不算通过** —— 与第 10 步契约门同款口径）。
+# ⚠⚠ **别写成 `if ! cmd; then $?`**：`!` 会把退出码**取反** ⇒ then 分支里的 `$?`
+#   恒为 0 ⇒ 分不清「SKIP」和「失败」。必须先原样收下退出码。
+ATS_RC=0
+sh "$SRC/scripts/probe-agent-tool-surface.sh" "$BIN" || ATS_RC=$?
+if [ "$ATS_RC" -eq 3 ]; then
+    echo "‣ SKIP agent 工具面门：引擎缺席或版本太老（无 deprecated 标记）"
+    echo "‣ 本组**未验证**，不算通过"
+elif [ "$ATS_RC" -ne 0 ]; then
+    echo "✗ agent 工具面门失败（退出码 $ATS_RC；1=断言红，2=用法错）" >&2
+    exit 1
+fi
+
+echo "› 14/14 无游离断言脚本（每个断言脚本都必须在 CI 里可达）"
+# ⚠ 这一步查的是「**CI 自己在漏什么**」：
+#   批 BD 实测：`probe-agent-tool-surface.sh`（9 条断言）整个从仓库删掉，
+#   接线门与审计器**都全绿** ⇒ 「少了一份断言」这件事**没有任何门会说一个字**。
+#   ⇒ 新增 scripts/ci-orphan-probe.sh：scripts/ 下每个断言脚本要么在 CI 里可达
+#     （ci.sh 直接调用，或被 CI 可达的脚本调用），要么在**带理由的白名单**里。
+if ! sh "$SRC/scripts/ci-orphan-probe.sh" "$SRC"; then
+    echo "✗ 有断言脚本游离在 CI 之外（CI 从来不跑它 ⇒ 它的断言没人执行）" >&2
     exit 1
 fi
 
