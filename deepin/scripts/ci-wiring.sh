@@ -60,6 +60,28 @@ arch_need() { # arch_need <文件> <正则> <说明>
         ARCH_FAIL=1
     fi
 }
+# arch_forbid_ml：**跨行**匹配的 arch_forbid。
+#   ⚠ 为什么需要它（批 AN 实测踩出来的）：grep -E 是**按行**匹配的 ⇒
+#   shell 里的**续行**写法（`--snapshot \` 换行 `... \` 换行 `| tail -1`）
+#   在「同一行正则」下**匹配不到** ⇒ 门在变异后**照样绿** ⇒ 门没牙（负控实测）。
+#   ⇒ 这里把（剥完注释的）内容**换行压成一行**再匹配 ⇒ 跨行才算。
+#   ⚠ 正则里要用 `[^;]*` 之类**不跨分号**的片段 ⇒ 免得一处违规把整份脚本都算进去。
+arch_forbid_ml() { # arch_forbid_ml <文件> <正则> <说明>
+    local f="$1" re="$2" label="$3"
+    ARCH_N=$((ARCH_N + 1))
+    if [ ! -f "$f" ]; then
+        echo "  ✗ $label：文件不存在 $f" >&2
+        ARCH_FAIL=1
+        return
+    fi
+    if strip_comments "$f" | tr '\n' ' ' | grep -E -- "$re" >/dev/null; then
+        echo "  ✗ $label：$f 里仍有 $re（该收敛的又写回去了）" >&2
+        ARCH_FAIL=1
+    else
+        echo "  ✓ $label"
+    fi
+}
+
 # arch_need_any：盯「**任一** selfcheck 分片里都有这条判据」。
 # ⚠ 为什么需要它（批 AJ 实测）：拆 SelfCheck.cpp 时，44 条门项红了 ——
 #   它们盯的是「判据在 **SelfCheck.cpp 这个文件**里」，
@@ -729,7 +751,7 @@ arch_need "$SRC/scripts/ci.sh" '跨运行复拍' 'CI 有「跨运行复拍」段
 #   ⇒ 门盯两件事：脚本里**不许**再用 `| tail -1` 接快照命令；**必须**有 stderr 落盘。
 #   ⚠ 正则里的 `|` 在 grep -E 里是**或**、不是字面量 ⇒ 写成 `[|]`。
 #   ⚠ 门项正则一律**单引号**（仓里的既有纪律：形式不许混）。
-arch_forbid "$SRC/scripts/ci.sh" '--snapshot.*[|] *tail' '快照命令不许用「| tail -1」（管道退出码是 tail 的 ⇒ 失败被吞）'
+arch_forbid_ml "$SRC/scripts/ci.sh" '--(snapshot|color-sample)[^;]*[|] *tail' '快照/色卡命令不许接「| tail -1」（管道退出码是 tail 的 ⇒ 失败被吞）'
 arch_need "$SRC/scripts/ci.sh" 'stderr\.txt' '快照失败时 stderr 要落盘并打出来（否则只知道「失败」不知道「为什么」）'
 
 # 批 U · M1-2 图标统一入口：图标名**只许**在判定层 `logic/IconNames` 里出现一次。

@@ -125,8 +125,16 @@ for theme in light dark; do
     #   （批 T 之前，面板快照拍的是空态 ⇒ 状态点一个都没画进去，对状态色是**空门**；
     #     批 T 起用夹具后面板快照已有真实内容，但这张色卡仍留着 ——
     #     它是**逐档**的，面板快照只覆盖夹具里恰好出现的那几档。）
-    QT_QPA_PLATFORM=offscreen DEEPDOLPHIN_THEME="$theme" "$BIN" --color-sample \
-        "$SHOT_DIR/${theme}-colors.png" | tail -1
+    #   ⚠ 同上：色卡也不许用管道接 tail（失败会被吞）
+    if ! QT_QPA_PLATFORM=offscreen DEEPDOLPHIN_THEME="$theme" "$BIN" --color-sample \
+            "$SHOT_DIR/${theme}-colors.png" >"$SHOT_DIR/out.txt" 2>"$SHOT_DIR/err.txt"; then
+        echo "✗ 色卡失败：${theme}-colors" >&2
+        grep -v "setHighDpiScaleFactorRoundingPolicy\|can not find qm files\|DGuiApplicationHelper:\|This plugin does not support\|DPlatformWindowInterface" \
+            "$SHOT_DIR/err.txt" | sed 's/^/    /' >&2
+        rm -rf "$BASE_DIR" "$SHOT_DIR"
+        exit 1
+    fi
+    tail -1 "$SHOT_DIR/out.txt"
 done
 # ⚠ 本次产物 vs **git 基线**：不一致 = 界面改了 ⇒ 必须有人看过并提交。
 #   （原来这一步不存在：产物直接覆盖了基线 ⇒ 永远「一致」⇒ 视觉 diff 门是空门。）
