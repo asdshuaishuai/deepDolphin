@@ -30,7 +30,7 @@ export LD_LIBRARY_PATH="$HOME/.local/dd-sysroot/usr/lib/x86_64-linux-gnu${LD_LIB
 export QT_PLUGIN_PATH="$HOME/.local/dd-sysroot/usr/lib/x86_64-linux-gnu/qt6/plugins${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 
-echo "› 1/11 selfcheck（断言 0 failed 且 ≥58 passed）"
+echo "› 1/12 selfcheck（断言 0 failed 且 ≥58 passed）"
 SELFCHECK_OUT="$("$BIN" --selfcheck || true)"
 printf '%s\n' "$SELFCHECK_OUT" | tail -1
 SC_PASSED="$(printf '%s\n' "$SELFCHECK_OUT" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+' || true)"
@@ -45,7 +45,7 @@ if [ "$SC_FAILED" -ne 0 ] || [ "$SC_PASSED" -lt 58 ]; then
 fi
 echo "✓ selfcheck ${SC_PASSED} passed, ${SC_FAILED} failed"
 
-echo "› 2/11 截图矩阵（离屏）"
+echo "› 2/12 截图矩阵（离屏）"
 # ⚠ 这一步**强制** offscreen，不继承环境里的 QT_QPA_PLATFORM。
 #   理由（决策 86）：基线是离屏拍的；若宿主已设 QT_QPA_PLATFORM=dxcb;xcb，
 #   快照会带 DTK 原生窗口装饰与 chameleon 样式 —— 同一份代码拍出另一张脸，
@@ -118,7 +118,7 @@ if [ "$repro_fail" -ne 0 ]; then
 fi
 echo "✓ 6 张面板快照两次重拍逐字节一致，且换宿主时区后仍一致（基线可重现）"
 
-echo "› 3/11 desktop / metainfo 校验（缺工具显式 SKIP）"
+echo "› 3/12 desktop / metainfo 校验（缺工具显式 SKIP）"
 if command -v desktop-file-validate >/dev/null 2>&1; then
     desktop-file-validate "$SRC/data/cn.deepdolphin.app.desktop" && echo "✓ desktop 合法"
 else
@@ -131,7 +131,7 @@ else
     echo "SKIP: appstream-util 未安装（README 决策 69 的硬门随工具到位生效）"
 fi
 
-echo "› 4/11 无头探针（平台探针 + 固定文档页四语言探针）"
+echo "› 4/12 无头探针（平台探针 + 固定文档页四语言探针）"
 # 探针断言独立成 scripts/ci-platform-probe.sh：可单独跑，负控也能精确打它。
 if ! sh "$SRC/scripts/ci-platform-probe.sh" "$BIN"; then
     echo "✗ 平台探针门失败" >&2
@@ -153,17 +153,17 @@ strip_comments() {
     fi
 }
 
-echo "› 5/11 D2 grep 门（DS::* 单点真相源；散值上限 0，存量已清零）"
+echo "› 5/12 D2 grep 门（DS::* 单点真相源；散值上限 0，存量已清零）"
 # 散值门独立成 scripts/ci-d2.sh：可单独跑，负控也能精确打它。
 if ! sh "$SRC/scripts/ci-d2.sh" "$SRC"; then
     echo "✗ 设计系统散值门失败：src/ 下出现色值/硬编码 px 字号" >&2
     exit 1
 fi
 
-echo "› 6/11 agent 自测（mock 渠道）"
+echo "› 6/12 agent 自测（mock 渠道）"
 "$BIN" --agent-selftest | tail -2
 
-echo "› 7/11 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
+echo "› 7/12 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
 # 剥注释再匹配：注释里出现的字样不算接线（否则加一行注释就能骗过门）。
 WIRING_HITS=0
 WIRING_FAIL=0
@@ -196,7 +196,7 @@ if [ "$WIRING_FAIL" -ne 0 ]; then
 fi
 echo "✓ verify 接线完整（$WIRING_HITS 项）"
 
-echo "› 8/11 图谱 Canvas 契约清单齐（章程 §3.5：方法清单就是移植验收清单）"
+echo "› 8/12 图谱 Canvas 契约清单齐（章程 §3.5：方法清单就是移植验收清单）"
 # 契约清单（引擎 docs/graph-scene-schema.md 的渲染契约层）：26 个标准 Canvas2D 方法。
 # 「少实现一项，渲染器就跑不完」——本门逐个核 Canvas2D 是否声明为 override。
 CANVAS_METHODS="setTransform fillRect strokeRect rect beginPath moveTo lineTo arcTo closePath arc bezierCurveTo fill stroke fillText createLinearGradient addColorStop setLineDash setLineDashOffset setShadowBlur setShadowColor setGlobalAlpha setLineWidth setStrokeStyle setFillStyle setFont setTextAlign"
@@ -234,7 +234,7 @@ if [ "$CANVAS_FAIL" -ne 0 ]; then
 fi
 echo "✓ Canvas2D 覆盖契约清单 ${CANVAS_N}/26 个方法；logic/ 与 models/ 零 QWidget 头；新文件均已登记构建"
 
-echo "› 9/11 接线门（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
+echo "› 9/12 接线门（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
 # 接线门独立成 scripts/ci-wiring.sh：可单独跑，负控也能精确打它。
 if sh "$SRC/scripts/ci-wiring.sh" "$SRC"; then
     :
@@ -243,7 +243,7 @@ else
     exit 1
 fi
 
-echo "› 10/11 引擎契约门（真引擎沙箱；引擎缺席显式 SKIP 且不算通过）"
+echo "› 10/12 引擎契约门（真引擎沙箱；引擎缺席显式 SKIP 且不算通过）"
 # contract-check.sh 之前是**游离脚本** —— CI 从来没跑过它，契约漂移不会被拦。
 # 接进 CI 后：引擎在 → 真跑（32 条）；引擎不在 → 脚本自己 SKIP 并如实说明
 # 「本组未验证」（不是静默通过）。
@@ -264,7 +264,7 @@ else
     echo "‣ 本组**未验证**，不算通过"
 fi
 
-echo "› 11/11 deb 打包（D7 达标的必经：能出包装进 deepin，且装后零环境变量）"
+echo "› 11/12 deb 打包（D7 达标的必经：能出包装进 deepin，且装后零环境变量）"
 # PLAN §「CI 流程」明确列了「⑥ deb 构建」—— 这一门以前根本不存在，
 # 于是「能不能出包装进 deepin」从没被验证过。
 # build-deb.sh 自带**依赖清单双向校验**（清单 ↔ 二进制实际 DT_NEEDED）：
@@ -283,6 +283,25 @@ if command -v dpkg-deb >/dev/null 2>&1; then
 else
     echo "‣ SKIP deb 构建：没有 dpkg-deb"
     echo "‣ 本组**未验证**，不算通过"
+fi
+
+echo "› 12/12 deb 布局验收（D7 的**准**验收：装完能不能用）"
+# ⚠ D7 的最终验收是「干净 deepin 25 容器里 dpkg -i + 启动」—— 本机**没有容器
+#   运行时**（无 docker/podman）⇒ 那一段做不了。
+#   ⇒ 这里做「不依赖容器的那一半」：把 deb **解包**到临时目录（不装进系统），
+#     按**包内真实布局**逐项查「装完之后点图标能不能起来」。
+# ⚠ 这一门**抓到过真 bug**：D-Bus service 文件原来写 `Exec=deepDolphin --dbus-service`
+#   —— ① 裸名（dbus 激活**不做 PATH 搜索**，实测裸名 `true` 也 Spawn.ExecFailed）
+#   ② `--dbus-service` 这个 flag **客户端根本不认识**（全项目 grep 无此 flag）
+#   ⇒ 两处合起来 = **从启动器点图标激活失败、应用起不来**。
+DEB_OUT="$(ls -t "$BUILD"/deb/*.deb 2>/dev/null | head -1)"
+if [ -z "$DEB_OUT" ]; then
+    echo "‣ SKIP deb 布局验收：没有 deb 产物（本组**未验证**，不算通过）"
+elif sh "$SRC/scripts/check-deb-layout.sh" "$DEB_OUT"; then
+    echo "✓ deb 布局验收通过（装完能不能用：service/desktop/图标/metainfo/空环境启动）"
+else
+    echo "✗ deb 布局验收失败" >&2
+    exit 1
 fi
 
 echo "✓ CI 门通过：请 git diff docs/snapshots 人工确认视觉变化符合预期"

@@ -2104,6 +2104,46 @@ mtime **比 `.o` 旧** ⇒ `make` 按 mtime 判「无需重编」⇒ **跳过了
 
 **视觉变化**：无（判定层 + 执行层，界面未动；只有下载过程中的 progress 文案多了「正在重试（2/3）…」）。
 
+### 批 AD：D7 的**准**验收 —— deb 产物的「装完能不能用」（照出一个真 bug）
+
+D7 的最终验收是「干净 deepin 25 容器里 `dpkg-deb -b` + 安装 + 启动」，本机**没有容器
+运行时**（无 docker/podman）⇒ 那一段做不了。但「装完能不能用」里**不依赖容器**的那一半
+可以做：把 deb **解包**到临时目录（**不装进系统、不污染本机**），按**包内的真实布局**
+逐项查「装完之后点图标能不能起来」。
+
+**⚠ 这一门第一跑就抓到一个真 bug（两条叠在一起）**：
+`data/cn.deepdolphin.app.service` 原来写的是 `Exec=deepDolphin --dbus-service` ——
+① **裸命令名**：**实测**（本机 dbus 1.16.2）dbus-daemon 激活服务时**不做 PATH 搜索** ——
+   裸名 `true`（明明在 `/usr/bin` 里）也报 `Spawn.ExecFailed: No such file or directory`，
+   而绝对路径 `/bin/false` 能 exec 成功（报的是 `ChildExited`）
+   ⇒ **从启动器点图标 ⇒ 总线 exec 不到 ⇒ 激活失败、应用起不来**；
+② **`--dbus-service` 这个 flag 客户端根本不认识**（全项目 grep 无此 flag）。
+⇒ 两条合起来 = **deb 装上、图标在启动器里、点了没反应**。
+
+**修**：`Exec=/usr/bin/deepDolphin`（**绝对路径**、**无参数**）—— D-Bus 激活 = 正常启动客户端，
+它在 GUI 主路径里自己注册 `cn.deepdolphin.app`（`AppService::registerOnBus`）。
+⚠ 绝对路径与安装路径必须一致 ⇒ `scripts/build-deb.sh` **打包期校验**：路径不一致、或 Exec 带了参数
+⇒ **直接构建失败**（不让两处悄悄漂）。
+
+**新门** `scripts/check-deb-layout.sh`（**ci.sh 第 12 门**），10 项：
+可执行在包内且可执行 / service 的 Exec 是绝对路径 / service 的 Exec 指向的可执行在包内存在 /
+service 的 Exec 不带参数 / desktop 的 Exec 指向的可执行在包内存在 / desktop 的 Icon 在包内有图标 /
+`DBusActivatable=true` ⇒ service 文件存在 / metainfo 的 `<id>` 与 desktop 文件名一致 /
+可执行在**空环境**下能跑 `--version` / 包内图标都非空。
+⇒ 负控 **6/6 真红**（service 裸名 / 带假 flag / 指向不存在的可执行 —— 三条都被**打包期校验**拦住；
+**绕过**校验后门 12 **自己**也能抓住 ⇒ 两道防线；Icon 指向不存在的图标 / 零字节图标 —— 门 12 抓住）。
+⇒ 累计负控 **24/24 真红**。
+
+**⚠ 顺带订正 M3c 的一处过时描述**（实测，非推测）：M3c 写着「清第二套色板、两种红/两种蓝」，
+但 **D2 门的 `fix` 豁免清单已经空了**（只剩 `keep`）⇒ **色值散值已归零**；且
+`logic/SemColors.h` 里那**两档红是有意区分的**（`red` #DC2626 = 危险/读不出来；
+`stale` = 停滞告警、托盘专用），注释里**明写「不是笔误」** ⇒ 「修两种红」是**过时**的要求，
+真合并反而丢语义。⇒ M3c 剩下真正未做的是：图标名 / 动效 / 响应式 / HiDPI / 分隔线 / 托盘 busy 态。
+（**托盘 busy 态暂不做**：deepin 托盘是**自创**的 —— **mac 侧根本没有托盘**（无 `NSStatusItem` 引用）
+⇒ 无对位可抄；且托盘**弹窗**里的 busy 态**已经有了**（`BusyRow` 转圈）。）
+
+**视觉变化**：无（打包与验收层，界面未动）。
+
 ## 分层纪律（后续阶段必须延续）
 
 - `models/`、`logic/` **不 include 任何 QWidget 头**，全部可被 QtTest 单测；

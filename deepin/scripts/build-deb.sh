@@ -124,7 +124,33 @@ mkdir -p "$PKG/DEBIAN" \
          "$PKG/usr/share/icons/hicolor/scalable/apps" \
          "$PKG/usr/share/icons/hicolor/symbolic/apps"
 
-install -m 0755 "$BIN" "$PKG/usr/bin/deepDolphin"
+# ⚠⚠ **可执行的安装路径是唯一真相源**（DEST_BIN）——
+#   D-Bus service 文件里的 `Exec=` **必须**写绝对路径（dbus 激活不做 PATH 搜索，
+#   实测见 data/cn.deepdolphin.app.service 的注释）⇒ 那条路径要跟这里一致。
+#   ⇒ 装之前先**校验**：不一致直接构建失败，不让两处悄悄漂。
+DEST_BIN="/usr/bin/deepDolphin"
+SERVICE_SRC="$SRC/data/cn.deepdolphin.app.service"
+SERVICE_EXEC="$(sed -n 's/^Exec=//p' "$SERVICE_SRC" | head -1 | awk '{print $1}')"
+if [ "$SERVICE_EXEC" != "$DEST_BIN" ]; then
+    die "D-Bus service 的 Exec（$SERVICE_EXEC）与实际安装路径（$DEST_BIN）不一致！\
+     dbus 激活不做 PATH 搜索，路径写错 ⇒ 从启动器点图标会激活失败。"
+fi
+# ⚠ service 的 Exec **不许带参数**：激活 = 正常启动客户端，它自己在 GUI 主路径里
+#   注册总线名（main.cpp 的 AppService::registerOnBus）。
+#   ⚠ 原来写的 `--dbus-service` 这个 flag **客户端根本不认识**（全项目 grep 无此 flag）。
+# ⚠ `${SEXEC#* }` 在**没有空格**时会原样返回（没匹配到 `* `）⇒ 会把
+#   「无参数」误判成「有参数」⇒ 这里显式分两种情况取。
+SERVICE_LINE="$(sed -n 's/^Exec=//p' "$SERVICE_SRC" | head -1)"
+case "$SERVICE_LINE" in
+    *\ *) SERVICE_ARGS="${SERVICE_LINE#* }" ;;
+    *)   SERVICE_ARGS="" ;;
+esac
+if [ -n "$SERVICE_ARGS" ]; then
+    die "D-Bus service 的 Exec 不该带参数（当前：$SERVICE_ARGS）——\
+     客户端没有对应的 flag，带了会被忽略。"
+fi
+
+install -m 0755 "$BIN" "$PKG${DEST_BIN}"
 install -m 0644 "$SRC/data/cn.deepdolphin.app.desktop" \
                 "$PKG/usr/share/applications/cn.deepdolphin.app.desktop"
 install -m 0644 "$SRC/data/cn.deepdolphin.app.service" \
