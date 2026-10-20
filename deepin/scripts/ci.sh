@@ -268,7 +268,7 @@ else
     echo "SKIP: appstream-util 未安装（README 决策 69 的硬门随工具到位生效）"
 fi
 
-echo "› 4/12 无头探针（平台探针 + 固定文档页四语言探针）"
+echo "› 4/12 无头探针（平台探针 + 固定文档页四语言探针 + 分隔线探针）"
 # 探针断言独立成 scripts/ci-platform-probe.sh：可单独跑，负控也能精确打它。
 if ! sh "$SRC/scripts/ci-platform-probe.sh" "$BIN"; then
     echo "✗ 平台探针门失败" >&2
@@ -279,6 +279,13 @@ fi
 #   「换语言后按钮真的变了」⇒ 这一门补的是**行为**证据。
 if ! sh "$SRC/scripts/ci-docs-lang-probe.sh" "$BIN"; then
     echo "✗ 文档语言探针门失败（换语言后界面没跟着换）" >&2
+    exit 1
+fi
+# ⚠ 分隔线探针（批 AW）：**真渲染**一次分隔线，量墨迹。
+#   详情页**不在快照矩阵里** ⇒ 快照抓不到它 ⇒ 这一门是它唯一的**行为**证据。
+#   静态门守「页面用的是真线组件」，这一门守「组件真的是 1 逻辑像素宽的线」。
+if ! sh "$SRC/scripts/ci-divider-probe.sh" "$BIN"; then
+    echo "✗ 分隔线探针门失败（分隔线不是 1 逻辑像素的真线）" >&2
     exit 1
 fi
 

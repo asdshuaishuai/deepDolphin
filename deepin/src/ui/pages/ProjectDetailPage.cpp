@@ -21,6 +21,7 @@
 #include "../common/MarkdownView.h"
 #include "../common/SecondaryLabel.h"
 #include "../common/SegmentedBar.h"
+#include "../common/VDivider.h"
 #include "../pages/MilestoneRowWidget.h"
 #include "../../models/ProjectStatus.h"
 #include <DSpinner>
@@ -58,6 +59,18 @@ QLabel *smallLabel(const QString &text, QWidget *parent, const QColor &color)
     l->setStyleSheet(QStringLiteral("color: %1;").arg(color.name()));
     l->setWordWrap(true);
     return l;
+}
+
+// 竖分隔线 —— **唯一构造点**（批 AW）。
+// ⚠ 旧写法是 `new QLabel(QStringLiteral("|"))`（用**文字**冒充线）：
+//   实测 sizeHint = 4×18 逻辑像素 ⇒ 宽 4px、高 18px，且是**字形**
+//   （HiDPI dpr=2 时实测占 8×36 物理像素），颜色还是 QSS 写死的构建时快照。
+//   ⇒ 改走 `VDivider`（自绘**真线**：1 逻辑像素宽、高 14，对位 mac `Divider().frame(height: 14)`）。
+// ⚠ **唯一构造点**的原因：分隔线一旦在两处各写一遍 `new VDivider(...)`，
+//   宽度/高度/颜色三处口径就会分叉 ⇒ 收成一处（判据也只盯这一行）。
+VDivider *vDivider(QWidget *parent)
+{
+    return new VDivider(parent);
 }
 } // namespace
 
@@ -323,16 +336,14 @@ QWidget *ProjectDetailPage::buildHeader(const ProjectStatus &p)
     addGit(QStringLiteral("push"), IconNames::Id::gitPush, QStringLiteral("推送（git push）"));
     addGit(QStringLiteral("fetch"), IconNames::Id::refresh,
         QStringLiteral("抓取（git fetch）"));
-    auto *div1 = new QLabel(QStringLiteral("|"), header);
-    div1->setStyleSheet(QStringLiteral("color: %1;").arg(DS::surfaceBorder().name()));
+    auto *div1 = vDivider(header);
     actions->addWidget(div1);
     addGit(QStringLiteral("stash"), IconNames::Id::gitStash,
         QStringLiteral("暂存（git stash）"));
     addGit(QStringLiteral("unstash"), IconNames::Id::gitUnstash,
         QStringLiteral("恢复（git stash pop）"));
 
-    auto *div2 = new QLabel(QStringLiteral("|"), header);
-    div2->setStyleSheet(QStringLiteral("color: %1;").arg(DS::surfaceBorder().name()));
+    auto *div2 = vDivider(header);
     actions->addWidget(div2);
     auto *update = iconButton(IconNames::Id::refresh, QStringLiteral("更新"),
         QStringLiteral("浅更新 / 深更新（会改写托管文档）"), header);

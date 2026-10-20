@@ -1706,9 +1706,34 @@ arch_forbid_han "$SRC/src/ui/dialogs/DocsDialog.h" '文档窗头文件不许有�
 arch_forbid_han "$SRC/src/ui/dialogs/DocsDialogProbe.cpp" '文档窗探针不许有中文字面量（机器格式）'
 arch_forbid_han "$SRC/src/ui/dialogs/DocsDialogProbe.h" '文档窗探针头不许有中文字面量'
 
+# ── 批 AW · 分隔线是**真线**（1 逻辑像素宽），不是用文字冒充 ──
+# ⚠ 起因：详情页那两处分隔线是 `new QLabel(QStringLiteral("|"))` —— 用**文字**冒充线。
+#   实测（批 AW 探针）：QLabel("|") 的 sizeHint = **4 × 18 逻辑像素**
+#   ⇒ 宽 4px（QLabel 带文本边距）而不是 1px、高 18px（字体高）而不是 14px、
+#     它是**字形**（dpr=2 时实测占 8×36 物理像素）、颜色还是 QSS 写死的**构建时快照**
+#     ⇒ 切主题后不更新。
+# ⚠⚠ 实测还否掉了一个想当然的修法：`QFrame::VLine` + `QFrame::Plain`
+#   画出来的是 **`QPalette::Text` 色**（实测 #ff000000）**不是** Mid
+#   ⇒ 深色主题下是一条**看不见的黑线** ⇒ 只能自绘（颜色取 DS::surfaceBorder() = Mid 口径）。
+# ⚠ 对位：mac 侧 `DetailViews.swift` 用 SwiftUI 原生 `Divider().frame(height: 14)`
+#   ⇒ 1pt 宽、限高 14 的真线 ⇒ deepin 侧逐条对位。
+arch_need "$SRC/src/ui/DesignTokens.h" 'constexpr int divider = 14;' '分隔线高度档（对位 mac `Divider().frame(height: 14)`）—— 单一真相源，不许散写数字'
+arch_need "$SRC/src/ui/common/VDivider.h" 'setFixedWidth\(1\);' '分隔线宽 1 **逻辑**像素（文字版 QLabel("|") 实测是 4）'
+arch_need "$SRC/src/ui/common/VDivider.h" 'setFixedHeight\(DS::Height::divider\);' '分隔线高度走 DS token（不写死数字）'
+arch_need "$SRC/src/ui/common/VDivider.h" 'p\.setBrush\(DS::surfaceBorder\(\)\);' '分隔线颜色走 DS token（写死颜色 ⇒ 切主题不跟随）'
+arch_need "$SRC/src/ui/common/VDivider.h" 'QEvent::ThemeChange' '主题变化时重绘（颜色是运行期取的 ⇒ 不重绘就停在旧色）'
+arch_need "$SRC/src/ui/pages/ProjectDetailPage.cpp" 'VDivider \*vDivider\(QWidget \*parent\)' '分隔线**唯一构造点**（盯定义那一行；两处各写一遍 ⇒ 宽/高/色三处口径会分叉）'
+arch_need_count "$SRC/src/ui/pages/ProjectDetailPage.cpp" 'vDivider\(' 3 '详情页两处分隔线都走唯一构造点（定义 + 2 处调用 ⇒ 恰好 3 次；改一处即红）'
+arch_forbid_tree 'QStringLiteral\("\|"\)' '不许用**文字**当分隔线（QLabel("|") 实测宽 4 高 18 ⇒ 那不是线）'
+arch_need "$SRC/src/main.cpp" 'return headlessDividerProbe\(argc, argv\);' 'main 有分隔线探针 —— 盯**调用**那一行（盯函数名的话，定义还在、调用被摘了，门照样绿）'
+arch_need "$SRC/src/main.cpp" 'rawArgs.contains\(QStringLiteral\("--divider-probe"\)\)' '无头分支认得 --divider-probe（不然会落进 GUI 常驻，CI 挂死）'
+arch_need "$SRC/scripts/ci-divider-probe.sh" '--divider-probe' '分隔线断言脚本**真的去跑那个探针** —— 盯那行调用（盯「--divider-probe」这个词的话，错误消息里也有 ⇒ 改一处骗得过门）'
+arch_need "$SRC/scripts/ci-divider-probe.sh" 'field inkWidth' '断言脚本真量墨迹宽（不量就证明不了「1 逻辑像素」这条）—— 盯**取值那一行**（裸盯 `inkWidth` 的话，缺字段的**错误消息**里也有 ⇒ 改一处骗得过门）'
+arch_need "$SRC/scripts/ci.sh" 'ci-divider-probe\.sh' 'CI 真跑了这一门（脚本在但不跑 = 没有门）'
+
 if [ "$ARCH_FAIL" -ne 0 ]; then
-    echo "✗ 接线门失败：批 AA 段有门项红（上面带 ✗ 的行）" >&2
+    echo "✗ 接线门失败：批 AW 段有门项红（上面带 ✗ 的行）" >&2
     exit 1
 fi
-echo "✓ 批 AA 段门项全绿（固定文档页四语言）；门项合计 ${ARCH_N} 项（含前段）"
+echo "✓ 批 AW 段门项全绿（分隔线是真线）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0

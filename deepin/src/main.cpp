@@ -42,6 +42,7 @@
 #include "ui/PanelWindow.h"
 #include "ui/dialogs/DocsDialog.h"
 #include "ui/dialogs/DocsDialogProbe.h"
+#include "ui/common/VDividerProbe.h"
 #include <DApplication>
 #include <DGuiApplicationHelper>
 #include <DLog>
@@ -610,6 +611,30 @@ static int headlessDocsLangProbe(int argc, char *argv[])
     ::_exit(0);
 }
 
+// ── 无头分隔线探针（批 AW）：分隔线**真渲染**一次，量几何与颜色 ──
+// 用法：deepDolphin --divider-probe（配合 QT_QPA_PLATFORM=offscreen 亦可用）。
+// ⚠ **为什么必须自己构造 DApplication**：`--selfcheck` 分支在 GUI 应用构造**之前**
+//   就 return ⇒ 那个模式下**没有 QApplication** ⇒ 建 QWidget 会崩
+//   ⇒ 几何这类「要真渲染才量得到」的判据只能走本探针（与 --docs-lang-probe 同款）。
+// ⚠ 只报告不断言（断言归 scripts/ci-divider-probe.sh）。
+static int headlessDividerProbe(int argc, char *argv[])
+{
+    DApplication app(argc, argv);
+    app.setApplicationName(QStringLiteral("deepDolphin"));
+    app.setOrganizationName(QStringLiteral("deepin"));
+
+    const QString report = dividerProbeReport();
+    if (report.isEmpty()) {
+        fprintf(stderr, "✗ 分隔线探针没有输出（无从断言）\n");
+        fflush(stderr);
+        ::_exit(1);
+    }
+    fprintf(stdout, "%s\n", qPrintable(report));
+    fflush(stdout);
+    // 同上：走 ::_exit 跳过静态析构（DTK/DBus 全局单例收尾会挂死）。
+    ::_exit(0);
+}
+
 static int headlessEngineDownload(int argc, char *argv[], const QString &apiUrl, const QString &dest)
 {
     // 无头跑一遍「查发布信息 → 下载 → 校验 → 解压 → 落盘 → 探活」全链，
@@ -882,6 +907,12 @@ int main(int argc, char *argv[])
         // 必须留在无头分支：否则未知 flag 落进 GUI 主路径单实例常驻，ci.sh 步骤 4 挂死
         //（M1a 期实测）。M1-9 起返回探针事实，不再快速失败。
         return headlessPlatformProbe(argc, argv);
+    }
+    if (rawArgs.contains(QStringLiteral("--divider-probe"))) {
+        // 分隔线**真渲染**一次，量几何与颜色（批 AW）：详情页不在快照矩阵里
+        // ⇒ 快照抓不到它 ⇒ 这一门是它唯一的判据。
+        // 同样必须留在无头分支（否则会落进 GUI 主路径常驻，CI 挂死）。
+        return headlessDividerProbe(argc, argv);
     }
     if (rawArgs.contains(QStringLiteral("--docs-lang-probe"))) {
         // 固定文档页的四语言切换**真跑**一遍（批 AA）：报文档窗的实际呈现。

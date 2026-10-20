@@ -35,6 +35,10 @@ constexpr int bar = 6;     // 进度条/分段条统一高度（DProgressBar/Seg
 constexpr int barMini = 4; // 迷你进度条（托盘行内 44×barMini）
 constexpr int dot = 8;     // 状态圆点统一尺寸（页面/卡片/侧栏行）
 constexpr int dotLg = 10;  // 大号圆点（侧栏状态条/托盘行等汇总态指示）
+// 竖分隔线高度 —— ⚠ **对位 mac**：`DetailViews.swift` 的
+// `Divider().frame(height: 14)`（SwiftUI Divider 本身是 1pt 宽的真线）。
+// 放 DS 是因为「分隔线长什么样」是设计 token，不该由调用点各写各的。
+constexpr int divider = 14;
 } // namespace Height
 
 // ── 圆角（DSRadius；chip/control/card 三档 + pill，window/frame 接 DTK 运行期 metric）──
