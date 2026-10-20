@@ -39,7 +39,170 @@ strip_comments() {
     esac
 }
 
+
+# ⚠ 剥注释工具的存活状态（懒探测 ⇒ 第一次用到时探一次）。
+# ⚠ **不带引号赋值** ⇒ 不会混进「三态赋值只有一份」那条门的计数里。
+PROBE_STRIP_ALIVE=1
+PROBE_STRIP_CHECKED=0
+
+# ⚠⚠⚠ probe_scan_find / probe_scan_state_of / probe_scan_report：
+#   forbid 家族共用的「查找 + 三态判定」（**判定只有一份**）。
+#
+# 【为什么要有它 —— 实测取证，不是推演（批 BI）】
+#   forbid 门判的是「**不该有的东西没了**」⇒ 目标串出现 >0 本来就红
+#   ⇒ ⚠⚠⚠ **「没找到」是常态、是绿** ⇒ **工具坏了也长成「没找到」的样子**
+#   ⇒ 工具一坏 ⇒ 门**静默变绿** ⇒ 门形同虚设（比没门更糟：给人虚假的安全感）。
+#   ⚠ **实测（批 BI 可复现）**：把「剥注释」的 perl 改成语法错误
+#     ⇒ 被盯的文件里**确实有中文** ⇒ 门仍输出「✓」⇒ 接线门 rc=0 ⇒ CI 全绿。
+#
+# 【三态】
+#   found  = 找到了 ⇒ forbid ⇒ **红**
+#   absent = 没找到 ⇒ **绿**
+#   broken = **工具坏了** ⇒ **红**（⚠ 绝不能绿：工具坏了 ≠ 没找到）
+#   missing = 文件不存在 ⇒ **红**
+#
+# 【为什么叫 probe_ 而不是 arch_】
+#   `arch_` 开头的是**门项** ⇒ 审计器按行首 `arch_` 数门项的**物理行数**
+#   ⇒ 辅助代码里若出现 `arch_xxx ` 就会被**算成门项** ⇒ 门项总数基线漂。
+#   ⇒ 辅助函数一律用 `probe_` 前缀。
+#
+# ⚠ **退出码口径统一成 grep/perl 的同一套**：0 = 命中；1 = 没命中；其它 = 工具坏了。
+#   ⇒ 6 个 forbid 门（连同走 perl 的中文门与文案重门）都能走同一套判定。
+probe_scan_state_of() { # probe_scan_state_of <退出码> ⇒ 设 PROBE_SCAN_STATE
+    case "$1" in
+    0) PROBE_SCAN_STATE="found" ;;
+    1) PROBE_SCAN_STATE="absent" ;;
+    *) PROBE_SCAN_STATE="broken" ;;
+    esac
+}
+
+# probe_scan_find：查一个文件（可剥注释、可压行）⇒ 设 PROBE_SCAN_STATE。
+# 用法：probe_scan_find <文件> <正则> <ml:0|1> <raw:0|1>
+# probe_strip_alive：剥注释工具（perl 那一支）**自己还活着吗**？
+# ⚠ 为什么需要它（批 BI 的实测结论）：
+#   管道里**看不见**剥注释工具的退出码 ⇒ 工具坏了 ⇒ 输出为空 ⇒ 看着像「没找到」
+#   ⇒ **静默绿**。而落盘写法虽能看见退出码，却比管道慢 20 倍（实测 30ms vs 1.5ms）
+#   ⇒ 2511 次调用 ⇒ 84 秒 ⇒ CI 不可接受 ⇒ 只能走管道 ⇒ 用探测兜住。
+# ⚠ 探测用**同一个** strip_comments ⇒ 有人把剥注释的正则改坏 ⇒ 探测当场失败。
+probe_strip_alive() { # probe_strip_alive ⇒ 0 = 活着
+    local d f
+    d="$(mktemp -d)"
+    f="$d/probe.cpp"
+    printf 'int x; // c\n' >"$f"
+    if strip_comments "$f" >/dev/null 2>&1; then
+        rm -f "$f"
+        rmdir "$d" 2>/dev/null
+        return 0
+    fi
+    rm -f "$f"
+    rmdir "$d" 2>/dev/null
+    return 1
+}
+probe_scan_find() { # probe_scan_find <文件> <正则> <ml> <raw>
+    local f="$1" re="$2" ml="$3" raw="$4"
+    local rc
+    PROBE_SCAN_STATE=missing
+    if [ ! -f "$f" ]; then
+        return
+    fi
+    # ⚠⚠⚠ **剥注释工具的存活探测**（批 BI 性能修正后的补丁）：
+    #   管道下**看不见**剥注释工具的退出码（管道退出码 = 最右命令的）
+    #   ⇒ 剥注释工具坏了 ⇒ 输出为空 ⇒ 「没找到」⇒ **静默绿**（批 BI 的洞）。
+    #   ⇒ 这里**懒探测一次**：脚本是短命的 ⇒ 一次探测覆盖全脚本。
+    #   ⚠⚠ **实测**：落盘到 tmpfs 比管道慢 20 倍（30ms vs 1.5ms/次）
+    #   ⇒ 2511 次调用 ⇒ 84 秒 ⇒ CI 不可接受 ⇒ 只能走管道 ⇒ 只能靠探测兜。
+    if [ "$raw" != "1" ] && [ "$PROBE_STRIP_CHECKED" != "1" ]; then
+        PROBE_STRIP_CHECKED=1
+        if ! probe_strip_alive; then
+            PROBE_STRIP_ALIVE=0
+        fi
+    fi
+    if [ "$raw" != "1" ] && [ "$PROBE_STRIP_ALIVE" != "1" ]; then
+        PROBE_SCAN_STATE=broken
+        return
+    fi
+    if [ "$raw" = "1" ]; then
+        grep -E -- "$re" "$f" >/dev/null 2>&1
+        rc=$?
+    elif [ "$ml" = "1" ]; then
+        strip_comments "$f" | tr '\n' ' ' | grep -E -- "$re" >/dev/null 2>&1
+        rc=$?
+    else
+        strip_comments "$f" | grep -E -- "$re" >/dev/null 2>&1
+        rc=$?
+    fi
+    probe_scan_state_of "$rc"
+}
+
+# probe_scan_report：单文件版呈现（**三态 ⇒ 结论的翻译只有一份**）。
+# 用法：probe_scan_report <状态> <文件> <正则> <说明> <命中时的补充说明>
+probe_scan_report() { # probe_scan_report <状态> <文件> <正则> <说明> <补充>
+    local st="$1" f="$2" re="$3" label="$4" extra="$5"
+    case "$st" in
+    found)
+        echo "  ✗ $label：$f 里仍有 $re（$extra）" >&2
+        ARCH_FAIL=1 ;;
+    absent)
+        echo "  ✓ $label" ;;
+    missing)
+        echo "  ✗ $label：文件不存在 $f" >&2
+        ARCH_FAIL=1 ;;
+    *)
+        echo "  ✗ $label：查找工具在 $f 上失败（工具坏了 ≠ 没找到）" >&2
+        ARCH_FAIL=1 ;;
+    esac
+}
+
+# probe_scan_report_many：聚合版呈现（forbid_tree 一次扫一棵树）。
+# 用法：probe_scan_report_many <命中文件列表> <坏工具文件列表> <正则> <说明>
+probe_scan_report_many() { # probe_scan_report_many <命中列表> <坏工具列表> <正则> <说明>
+    local hit="$1" broken="$2" re="$3" label="$4"
+    if [ -n "$broken" ]; then
+        echo "  ✗ $label：查找工具在这些文件上失败（工具坏了 ≠ 没找到）——$broken" >&2
+        ARCH_FAIL=1
+        return
+    fi
+    if [ -n "$hit" ]; then
+        echo "  ✗ $label：这些文件里还有 $re ——$hit" >&2
+        ARCH_FAIL=1
+    else
+        echo "  ✓ $label"
+    fi
+}
+
+# probe_scan_selftest：三态判定**自己证明自己有牙**（批 BF 纪律）。
+# ⚠ 合成样例必须**同时**含「该判为命中」与「该判为没命中」
+#   ⇒ 只测前者 ⇒ 全判成命中也能过；只测后者 ⇒ 全判成没命中也能过。
+# ⚠ 还要含「工具坏了」这一档 ⇒ 否则「工具坏了一律当没命中」也能过。
+probe_scan_selftest() { # probe_scan_selftest ⇒ 0 = 自检过
+    local bad=0 tmp
+    tmp="$(mktemp -d)"
+    printf 'ascii only here\n' >"$tmp/plain.txt"
+    printf 'hit me\n' >"$tmp/marked.txt"
+    probe_scan_find "$tmp/marked.txt" 'hit me' 0 1
+    if [ "$PROBE_SCAN_STATE" != "found" ]; then
+        echo "  ✗ 公共查找自检失败：该判为 found，实得 $PROBE_SCAN_STATE" >&2
+        bad=1
+    fi
+    probe_scan_find "$tmp/plain.txt" 'hit me' 0 1
+    if [ "$PROBE_SCAN_STATE" != "absent" ]; then
+        echo "  ✗ 公共查找自检失败：该判为 absent，实得 $PROBE_SCAN_STATE" >&2
+        bad=1
+    fi
+    probe_scan_find "$tmp/plain.txt" '[unclosed' 0 1
+    if [ "$PROBE_SCAN_STATE" != "broken" ]; then
+        echo "  ✗ 公共查找自检失败：该判为 broken，实得 $PROBE_SCAN_STATE" >&2
+        bad=1
+    fi
+    rm -f "$tmp/plain.txt" "$tmp/marked.txt"
+    rmdir "$tmp" 2>/dev/null
+    return $bad
+}
+
 echo "› 接线门：架构图 / agent 工具表 / 代码图谱+热力图 / 补丁体检 / 固定文档页 / 引擎自检+进度报告接线在（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
+# ⚠⚠⚠ **自检放在最前**（批 BI 修的坑）：判定逻辑坏了 ⇒ 立刻红；
+#   且**不被前面某段的 exit 短路**（批 BG 教训：审计器先跑会短路后面段落的门项）
+#   ⇒ 自检若放在段末尾 ⇒ 前面的门一红就退出 ⇒ 自检永远没机会跑 ⇒ 自检形同虚设。
 # 架构图链路分四段，任一段被摘掉都必须红：
 #   引擎取数（AppModel 调 graph arch --format scene）
 #   → 判定层（ArchViewport 视口/命中、ArchReceipt 回执提取）
@@ -47,6 +210,16 @@ echo "› 接线门：架构图 / agent 工具表 / 代码图谱+热力图 / 补
 #   → 接线层（详情页入口 → PanelWindow → ArchDialog → 画布）
 ARCH_FAIL=0
 ARCH_N=0
+# ⚠⚠⚠ **自检放在门项之前**（批 BI 修的坑，两个理由）：
+#   ① 判定逻辑坏了 ⇒ 立刻红；
+#   ② **不被前面某段的 exit 短路**（批 BG 教训：审计器先跑会短路后面段落的门项）
+#      ⇒ 自检若放在段末尾 ⇒ 前面的门一红就退出 ⇒ 自检永远没机会跑 ⇒ 自检形同虚设。
+#   ⚠ 必须在 ARCH_FAIL 初始化**之后** ⇒ 否则自检设的红会被重置掉。
+# ⚠ 自检：三态判定自己证明自己有牙（合成样例 ⇒ 判定逻辑坏了当场红）。
+if ! probe_scan_selftest; then
+    echo "  ✗ 公共查找自检失败：三态判定没有牙（这道门不可信）" >&2
+    ARCH_FAIL=1
+fi
 arch_need() { # arch_need <文件> <正则> <说明>
     local f="$1" re="$2" label="$3"
     ARCH_N=$((ARCH_N + 1))
@@ -71,17 +244,8 @@ arch_need() { # arch_need <文件> <正则> <说明>
 arch_forbid_ml() { # arch_forbid_ml <文件> <正则> <说明>
     local f="$1" re="$2" label="$3"
     ARCH_N=$((ARCH_N + 1))
-    if [ ! -f "$f" ]; then
-        echo "  ✗ $label：文件不存在 $f" >&2
-        ARCH_FAIL=1
-        return
-    fi
-    if strip_comments "$f" | tr '\n' ' ' | grep -E -- "$re" >/dev/null; then
-        echo "  ✗ $label：$f 里仍有 $re（该收敛的又写回去了）" >&2
-        ARCH_FAIL=1
-    else
-        echo "  ✓ $label"
-    fi
+    probe_scan_find "$f" "$re" 1 0
+    probe_scan_report "$PROBE_SCAN_STATE" "$f" "$re" "$label" '该收敛的又写回去了'
 }
 
 # arch_need_ml：**跨行**匹配的 arch_need（剥完注释后把换行压成一行再匹配）。
@@ -300,17 +464,8 @@ arch_need_count_in_step() { # arch_need_count_in_step <文件> <步号> <正则>
 arch_forbid() { # arch_forbid <文件> <正则> <说明>
     local f="$1" re="$2" label="$3"
     ARCH_N=$((ARCH_N + 1))
-    if [ ! -f "$f" ]; then
-        echo "  ✗ $label：文件不存在 $f" >&2
-        ARCH_FAIL=1
-        return
-    fi
-    if strip_comments "$f" | grep -E -- "$re" >/dev/null; then
-        echo "  ✗ $label：$f 里仍有 $re（该收敛的又写回去了）" >&2
-        ARCH_FAIL=1
-    else
-        echo "  ✓ $label"
-    fi
+    probe_scan_find "$f" "$re" 0 0
+    probe_scan_report "$PROBE_SCAN_STATE" "$f" "$re" "$label" '该收敛的又写回去了'
 }
 # arch_forbid_tree：盯「**整个源码树**里不该有的东西」。
 # ⚠ 为什么不能只用单文件版 arch_forbid：同一个散落模式会出现在**另一个文件**里
@@ -321,19 +476,16 @@ arch_forbid_tree() { # arch_forbid_tree <正则> <说明> <允许存在的文件
     local re="$1" label="$2"; shift 2
     ARCH_N=$((ARCH_N + 1))
     local allow=" $* "
-    local bad=""
+    local hit="" broken="" f
     for f in $(cd "$SRC" && find src \( -name '*.cpp' -o -name '*.h' \) | sort); do
         case "$allow" in *" $f "*) continue ;; esac
-        if strip_comments "$SRC/$f" | grep -E -- "$re" >/dev/null; then
-            bad="$bad $f"
-        fi
+        probe_scan_find "$SRC/$f" "$re" 0 0
+        case "$PROBE_SCAN_STATE" in
+        found) hit="$hit $f" ;;
+        broken) broken="$broken $f" ;;
+        esac
     done
-    if [ -n "$bad" ]; then
-        echo "  ✗ $label：这些文件里还有 $re ——$bad" >&2
-        ARCH_FAIL=1
-    else
-        echo "  ✓ $label"
-    fi
+    probe_scan_report_many "$hit" "$broken" "$re" "$label"
 }
 # arch_forbid_han：盯「**文件里不许有中文**」（汉字与中文标点）。
 #
@@ -362,14 +514,26 @@ arch_forbid_han() { # arch_forbid_han <文件> <说明>
         echo "  ‣ SKIP $label：没有 perl（剥不掉块注释，跑就是假红）"
         return
     fi
+    # ⚠ 剥块注释 + 剥行注释 + 查中文，**一次 perl 做完** ⇒ 只有一个工具 ⇒ 只有一个失败点。
+    #   退出码：0 = 有中文；1 = 没中文；其它 = perl 坏了 ⇒ 门必须红（**不是绿**）。
     # ⚠ 字节范围 U+3000–U+9FFF（中文标点 + 汉字 + 假名）：UTF-8 里是 E3–E9 开头
-    if perl -0777 -pe 's{/\*.*?\*/}{}gs; s{(?<!:)(//)(?!:)[^\n]*}{}g' "$f" \
-        | grep -q -P '[\x{3000}-\x{9fff}]'; then
-        echo "  ✗ $label：$f 里还有中文（文案必须走判定层）" >&2
+    local err rc
+    err="$(mktemp)"
+    perl -CSD -0777 -ne '
+        s{/\*.*?\*/}{}gs;
+        s{(?<!:)(//)(?!:)[^\n]*}{}g;
+        exit(/[\x{3000}-\x{9fff}]/ ? 0 : 1);
+    ' "$f" >/dev/null 2>"$err"
+    rc=$?
+    probe_scan_state_of "$rc"
+    if [ "$PROBE_SCAN_STATE" = "broken" ]; then
+        echo "  ✗ $label：查中文的 perl 失败（工具坏了 ≠ 没找到）——$(head -2 "$err" 2>/dev/null | tr '\n' ' ')" >&2
+        rm -f "$err"
         ARCH_FAIL=1
-    else
-        echo "  ✓ $label"
+        return
     fi
+    rm -f "$err"
+    probe_scan_report "$PROBE_SCAN_STATE" "$f" '中文字符' "$label" '文案必须走判定层'
 }
 # arch_forbid_text_dup：盯「**判定层已有的文案，界面层不许再抄一遍**」。
 #
@@ -391,17 +555,8 @@ arch_forbid_han() { # arch_forbid_han <文件> <说明>
 arch_forbid_raw() { # arch_forbid_raw <文件> <正则> <说明>
     local f="$1" re="$2" label="$3"
     ARCH_N=$((ARCH_N + 1))
-    if [ ! -f "$f" ]; then
-        echo "  ✗ $label：文件不存在 $f" >&2
-        ARCH_FAIL=1
-        return
-    fi
-    if grep -E -- "$re" "$f" >/dev/null; then
-        echo "  ✗ $label：$f 里仍有 $re（连注释里也不许留）" >&2
-        ARCH_FAIL=1
-    else
-        echo "  ✓ $label"
-    fi
+    probe_scan_find "$f" "$re" 0 1
+    probe_scan_report "$PROBE_SCAN_STATE" "$f" "$re" "$label" '连注释里也不许留'
 }
 arch_forbid_text_dup() { # arch_forbid_text_dup <判定层文件> <相对SRC的目录> <说明>
     local srcf="$1" dir="$2" label="$3"
@@ -421,26 +576,36 @@ arch_forbid_text_dup() { # arch_forbid_text_dup <判定层文件> <相对SRC的�
         echo "  ‣ SKIP $label：没有 perl（取不出字面量清单，跑就是假绿）"
         return
     fi
-    local tmp hits
+    local tmp hitsf err rc
     tmp="$(mktemp)"
+    hitsf="$(mktemp)"
+    err="$(mktemp)"
     # 取判定层里所有**含中文**的字符串字面量（≥4 字符）
-    perl -0777 -Mopen=':std,:encoding(UTF-8)' -ne \
+    # ⚠⚠ perl 失败必须**红**：工具坏了 ≠ 判定层没文案 ⇒ 两件事要分开。
+    if ! perl -0777 -Mopen=':std,:encoding(UTF-8)' -ne \
         'while (/"([^"\n]{4,})"/g) { my $t = $1; print "$t\n" if $t =~ /[\x{3000}-\x{9fff}]/; }' \
-        "$srcf" >"$tmp" 2>/dev/null || true
+        "$srcf" >"$tmp" 2>"$err"; then
+        echo "  ✗ $label：取判定层文案的 perl 失败（工具坏了 ≠ 没找到）——$(head -2 "$err" | tr '\n' ' ')" >&2
+        rm -f "$tmp" "$hitsf" "$err"
+        ARCH_FAIL=1
+        return
+    fi
     if [ ! -s "$tmp" ]; then
-        rm -f "$tmp"
+        rm -f "$tmp" "$hitsf" "$err"
         echo "  ✗ $label：判定层里没取到任何中文字面量（清单为空 = 门形同虚设）" >&2
         ARCH_FAIL=1
         return
     fi
     # 扫界面层：先剥**块注释 + 行注释**（注释里提到这句话不算抄）
-    hits="$(perl -e '
+    # ⚠⚠ perl 退出码：0 = 抄了；1 = 没抄；其它 = 扫描器坏了 ⇒ 必须红（**不是绿**）。
+    perl -e '
         use strict; use warnings;
         my $listfile = shift @ARGV;
-        open(my $lf, "<:encoding(UTF-8)", $listfile) or exit 0;
+        open(my $lf, "<:encoding(UTF-8)", $listfile) or exit 2;
         my @texts = grep { length($_) >= 4 } map { chomp; $_ } <$lf>;
         close $lf;
         binmode(STDOUT, ":encoding(UTF-8)");
+        my $found = 0;
         for my $f (@ARGV) {
             open(my $fh, "<:encoding(UTF-8)", $f) or next;
             local $/; my $body = <$fh>; close $fh;
@@ -449,14 +614,27 @@ arch_forbid_text_dup() { # arch_forbid_text_dup <判定层文件> <相对SRC的�
             for my $t (@texts) {
                 next unless index($body, $t) >= 0;
                 print "$f\t$t\n";
+                $found = 1;
             }
-        }' "$tmp" $(find "$SRC/$dir" \( -name '*.cpp' -o -name '*.h' \) | sort) 2>/dev/null || true)"
-    rm -f "$tmp"
-    if [ -n "$hits" ]; then
+        }
+        exit($found ? 0 : 1);
+    ' "$tmp" $(find "$SRC/$dir" \( -name '*.cpp' -o -name '*.h' \) | sort) >"$hitsf" 2>"$err"
+    rc=$?
+    probe_scan_state_of "$rc"
+    rm -f "$tmp" "$err"
+    if [ "$PROBE_SCAN_STATE" = "broken" ]; then
+        echo "  ✗ $label：扫界面层的 perl 失败（工具坏了 ≠ 没找到）" >&2
+        rm -f "$hitsf"
+        ARCH_FAIL=1
+        return
+    fi
+    if [ -s "$hitsf" ]; then
         echo "  ✗ $label：界面层抄了判定层的文案（同一句话两个真相源）——" >&2
-        printf '%s\n' "$hits" | sed 's/^/      /' >&2
+        sed 's/^/      /' "$hitsf" >&2
+        rm -f "$hitsf"
         ARCH_FAIL=1
     else
+        rm -f "$hitsf"
         echo "  ✓ $label"
     fi
 }
@@ -2224,9 +2402,32 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^    elif gphysical != gbase:
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" 'check_dup_module_names' 2 '审计器的**模块级重名自检**必须在（定义 + 被总核对调用）⇒ 同名常量 ⇒ 后者覆盖前者 ⇒ 前者是死代码 ⇒ 判定可能压根没生效'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" 'return 7' 1 '审计器的**第 7 种失败态**必须在（重名常量 ⇒ 与「盲区(2)/豁免外(3)/次数失准(4)/正则坏(5)/总数失配(6)」区分开 ⇒ 不然排障会被带偏）'
 
+
+# ── 批 BI · forbid 门族不许「静默变绿」（实测坐实的洞）────────────────────
+# ⚠⚠⚠ **为什么要有这一段**（批 BI 实测，不是推演）：
+#   forbid 门判的是「不该有的东西没了」⇒ 「没找到」是常态、是绿
+#   ⇒ 工具坏了也长成「没找到」的样子 ⇒ 门**静默变绿**。
+#   ⚠ 实测：把剥注释的 perl 改成语法错误 ⇒ 被盯文件里**确实有中文**
+#     ⇒ 门仍输出「✓」⇒ 接线门 rc=0 ⇒ CI 全绿 ⇒ 这道门形同虚设。
+#   ⇒ 修法：6 个 forbid 门全部走**公共三态判定**（命中/没命中/工具坏了）
+#     ⇒ 工具坏了 ⇒ 红 ⇒ 门不会静默变绿。
+#
+# ⚠⚠⚠ **自护门要盯「判定只有一份」**（批 BF/BG 纪律）：
+#   若三态映射被复制成两份 ⇒ 两份迟早漂 ⇒ 一份坏了门还是绿。
+#   ⚠ **判据要避开自引**（批 BH 教训）：盯的串若就写在门项行里
+#     ⇒ 门项自己给自己贡献一次命中 ⇒ 期望值里混着「自己」
+#     ⇒ 改一处就要重算 ⇒ 容易改漏。
+#   ⇒ 这里用**行首锚定**（`^函数名() {`）⇒ 门项行以 `arch_` 开头 ⇒ 天然不匹配自己。
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^probe_scan_state_of\(\)' 'PROBE_SCAN_STATE=' 3 '三态映射只有一份（三个赋值全在同一个函数里 ⇒ 复制不出第二份判定）'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^probe_scan_state_of\w*\(\) \{' 1 '三态映射只允许有一个函数定义（复制出第二份 ⇒ 两份迟早漂 ⇒ 一份坏了门还是绿）'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^probe_scan_find\w*\(\) \{' 1 '公共查找只允许有一个函数定义（不许复制出第二份）'
+arch_need_min "$SRC/scripts/ci-wiring.sh" '^ +probe_scan_find ' 7 '公共查找的调用点（四个走 grep 路线的 forbid 门 + 自检三处）'
+
+
 if [ "$ARCH_FAIL" -ne 0 ]; then
-    echo "✗ 接线门失败：批 BH 段有门项红（上面带 ✗ 的行）" >&2
+    echo "✗ 接线门失败：批 BH/BI 段有门项红（上面带 ✗ 的行）" >&2
     exit 1
 fi
 echo "✓ 批 BH 段门项全绿（门项总数不许被悄悄删；审计器门型覆盖对拍也在）；门项合计 ${ARCH_N} 项（含前段）"
+echo "✓ 批 BI 段门项全绿（forbid 门族不许静默变绿；工具坏了 ⇒ 红，不是绿）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0
