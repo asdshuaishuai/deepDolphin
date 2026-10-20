@@ -20,24 +20,47 @@ arch_forbid 判的是「**不该有的东西没了**」⇒ 它的目标串出现
 【审计器自报盲区】
 解析 ci-wiring.sh 时若漏掉门项（写法变了、参数换了引号），那部分门就**审不到**
 ⇒ 审计器自己有洞 ⇒ 比「门被骗过」更隐蔽。
-⇒ 本工具比对「文件里 arch_need/arch_forbid 的行数」与「解析成功的条数」，
+⇒ 本工具比对「文件里各门型的行数」与「解析成功的条数」，
    不等就把差额报出来（**不许静默漏审**）。
+
+【批 AV 扩了覆盖面】
+原来只审 `arch_need`（单文件、「出现过即可」）。批 AU 给 `arch_need_min`
+（单文件、「至少 N 次」）配了「下限必须 == 实际命中数」校准。
+批 AV 把它**扩到全部剩下的门型**：
+  · `arch_need_ml` —— 单文件、压行后匹配 ⇒ 现在查「压行后命中 >1」
+  · `arch_need_any_count` —— glob 范围、**恰好** N 次 ⇒ 校准「实际 == 期望」
+  · `arch_need_any_min` —— glob 范围、**至少** N 次 ⇒ 校准「下限 == 实际命中数」
+  · `arch_need_count` —— 单文件、**恰好** N 次 ⇒ 校准「实际 == 期望」
+⇒ 至此**五类「要出现」的门全部在校** ⇒ 覆盖缺口清零。
+
+【⚠ 绝不复刻口径 —— 一律「抽取 ci-wiring.sh 的原文来跑」】
+批 AS 实测教训：审计器一开始用 **Python 正则复刻**了 `strip_comments`
+⇒ **两套实现** ⇒ 迟早漂移 ⇒ 报告里的次数不可信 ⇒ 人会据此做错判断。
+⇒ 这里的做法是**从 ci-wiring.sh 里 `sed` 抽出函数原文**，
+   拼成临时脚本再调 ⇒ 改门侧口径时审计侧**自动跟着变** ⇒ 零漂移。
 
 用法：
   python3 ci-wiring-audit.py                 # 全量：人读的报告
   python3 ci-wiring-audit.py --list          # 机器可读：`相对路径|正则`（每行一条）
   python3 ci-wiring-audit.py --changed HEAD~1 # 只审 base..HEAD 里**新增**的门项
+退出码：
+  0 绿 / 2 审计器有盲区或缺文件 / 3 豁免外隐患（命中 >1）/ 4 次数门没配准
 """
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))   # deepin/scripts
 SRC = os.path.dirname(HERE)                        # deepin/（客户端源根）
 REPO = os.path.dirname(SRC)                        # 仓根（macos/ 与 deepin/ 同仓）
 WIRING = os.path.join(SRC, 'scripts', 'ci-wiring.sh')
-# 豁免基线：已知「串不唯一」的历史门项，一行一条，键 = `相对路径|正则`。
+# 豁免基线：已知「串不唯一」的历史门项，一行一条。
+# ⚠ 键格式 = `<类型>:<相对路径或glob>|<正则>`
+#   类型 ∈ {need, ml}（只有这两类会出「命中 >1」的隐患）
 # ⚠ **纯数据、零注释**（行首 `#` 会被当成 pattern）⇒ 说明写在别的文件里。
 EXEMPT = os.path.join(SRC, 'scripts', 'wiring-multi-hit.exempt')
 
@@ -72,15 +95,47 @@ ANY_FORBID_LINE = re.compile(r'^\s*arch_forbid\b')
 #   · 下限 > 命中数 ⇒ **门恒红**。
 NEED_MIN_LINE = re.compile(
     r'^\s*arch_need_min\s+"([^"]+)"\s+\'([^\']*)\'\s+(\d+)\s+')
+# ⚠ `arch_need_ml`（单文件、**压行后**匹配）：批 AV 起纳入覆盖
+#   —— 压行后命中 >1 ⇒ 改一处骗得过门（实测：`platform::dpiPixmap(` 压行后 2 次）。
+ML_LINE = re.compile(
+    r'^\s*arch_need_ml\s+"([^"]+)"\s+\'([^\']*)\'\s+')
+# ⚠ `arch_need_any_count`（glob 范围、**恰好** N 次）/ `arch_need_any_min`（**至少** N 次）
+#   —— 批 AV 起纳入覆盖（它们是「跨文件」门 ⇒ 命中数是**所有匹配文件加总**）。
+ANY_COUNT_LINE = re.compile(
+    r'^\s*arch_need_any_count\s+\'([^\']*)\'\s+(\d+)\s+\'([^\']*)\'(?:\s+\'([^\']*)\')?\s*$')
+ANY_MIN_LINE = re.compile(
+    r'^\s*arch_need_any_min\s+\'([^\']*)\'\s+(\d+)\s+\'([^\']*)\'(?:\s+\'([^\']*)\')?\s*$')
+# ⚠ `arch_need_count`（单文件、**恰好** N 次）：批 AV 起纳入校准。
+COUNT_LINE = re.compile(
+    r'^\s*arch_need_count\s+"([^"]+)"\s+\'([^\']*)\'\s+(\d+)\s+')
+# ⚠ `arch_need_count_in_fn`（**函数体内**恰好 N 次）：它**自己数次数** ⇒ 天然有牙，
+#   但「把期望从 1 改成 2 来躲变异」这种手法没人盯 ⇒ 批 AV 起也校准。
+#   ⚠ 期望值校准要复刻「切函数体」那段 awk ⇒ **从 ci-wiring.sh 里抽取原文**（零漂移）。
+COUNT_IN_FN_LINE = re.compile(
+    r'^\s*arch_need_count_in_fn\s+"([^"]+)"\s+\'([^\']*)\'\s+\'([^\']*)\'\s+(\d+)\s+')
 # ⚠ **函数定义行**长得像门项（`arch_need() { # ...`）⇒ 必须排除，
 #   否则审计器把工具自己的定义算成「没解析到的门项」⇒ 假盲区。
 FUNC_DEF_LINE = re.compile(r'^\s*arch_(need|forbid)\w*\s*\(\)\s*\{')
+
+DEFAULT_ANY_GLOB = 'src/app/SelfCheck*.cpp'
+
+
+def resolve(p):
+    p = p.replace('$ROOT', REPO).replace('$SRC', SRC)
+    return p.strip('"')
+
+
+def rel(path):
+    try:
+        return os.path.relpath(path, REPO)
+    except ValueError:
+        return path
 
 
 def strip_comments(path):
     """剥注释 —— ⚠ **直接调 ci-wiring.sh 用的同一条 perl/sed**，不复刻。
 
-    ⚠⚠ **为什么必须用同一条命令**（本批实测踩出来的）：
+    ⚠⚠ **为什么必须用同一条命令**（批 AS 实测踩出来的）：
     审计器一开始用 **Python 正则复刻**了 `ci-wiring.sh` 的 `strip_comments`
     ⇒ **两套实现** ⇒ 迟早漂移。
     漂移的后果很隐蔽：审计器说「唯一」而门说「多处」（或反之）⇒ **豁免基线判错**
@@ -95,18 +150,6 @@ def strip_comments(path):
         cmd = ["perl", "-pe", r's{(?<!:)(//)(?!:).*$}{}']
     out = subprocess.run(cmd + [path], capture_output=True, text=True)
     return out.stdout
-
-
-def resolve(p):
-    p = p.replace('$ROOT', REPO).replace('$SRC', SRC)
-    return p.strip('"')
-
-
-def rel(path):
-    try:
-        return os.path.relpath(path, REPO)
-    except ValueError:
-        return path
 
 
 def count_hits(path, rx):
@@ -124,24 +167,136 @@ def count_hits(path, rx):
     return len([ln for ln in out.stdout.split('\n') if ln])
 
 
+def count_hits_ml(path, rx):
+    """数**压行后**的命中次数（与 arch_need_ml 的口径一致：先剥注释再压成一行）。"""
+    if not os.path.isfile(path):
+        return None
+    text = strip_comments(path).replace('\n', ' ')
+    try:
+        out = subprocess.run(['grep', '-oE', '--', rx], input=text,
+                             capture_output=True, text=True)
+    except OSError:
+        return None
+    if out.returncode not in (0, 1):
+        return None
+    return len([ln for ln in out.stdout.split('\n') if ln])
+
+
+# ⚠⚠ **抽取而非复刻**（批 AV 起）：把 ci-wiring.sh 里的 shell 函数**原文**抠出来，
+#   拼成临时脚本再调 ⇒ 门侧改了口径，审计侧自动跟着变 ⇒ 零漂移。
+def extract_shell_func(name):
+    """从 ci-wiring.sh 里 `sed` 抽出名为 <name> 的 shell 函数原文。"""
+    out = subprocess.run(
+        ['sed', '-n', '/^%s() {/,/^}/p' % re.escape(name), WIRING],
+        capture_output=True, text=True)
+    return out.stdout
+
+
+def extract_fn_body_awk():
+    """从 `arch_need_count_in_fn` 原文里抠出那段 awk 程序（切函数体用）。"""
+    fn = extract_shell_func('arch_need_count_in_fn')
+    m = re.search(r"awk -v sig=\"\$sig\" '(.*?)'\)\"", fn, re.S)
+    return m.group(1) if m else None
+
+
+class AnyCounter(object):
+    """批量数「glob 范围内**总命中数**」—— 口径 = ci-wiring.sh 的 `any_hits`（抽取原文）。"""
+
+    def __init__(self, pairs):
+        """pairs = [(rx, glob), ...]"""
+        self.pairs = list(pairs)
+        self.values = {}
+        self._run()
+
+    def _script(self):
+        parts = ["#!/bin/bash", "SRC=%s" % shlex.quote(SRC)]
+        for fn in ('strip_comments', 'any_hits'):
+            body = extract_shell_func(fn)
+            if not body:
+                raise RuntimeError('抽不出 ci-wiring.sh 里的 %s() ⇒ 口径会漂移' % fn)
+            parts.append(body)
+        for i, (rx, gl) in enumerate(self.pairs):
+            parts.append("printf '%d\\t%%s\\n' \"$(any_hits %s %s)\""
+                         % (i, shlex.quote(rx), shlex.quote(gl)))
+        return '\n'.join(parts) + '\n'
+
+    def _run(self):
+        if not self.pairs:
+            return
+        tmpd = tempfile.mkdtemp(prefix='wiring-audit-')
+        try:
+            path = os.path.join(tmpd, 'count.sh')
+            with open(path, 'w', encoding='utf-8') as fh:
+                fh.write(self._script())
+            out = subprocess.run(['bash', path], capture_output=True, text=True)
+            if out.returncode != 0:
+                raise RuntimeError('any_hits 批量计数失败：%s' % out.stderr.strip()[:400])
+            for ln in out.stdout.split('\n'):
+                if '\t' not in ln:
+                    continue
+                idx, cnt = ln.split('\t', 1)
+                try:
+                    self.values[int(idx)] = int(cnt.strip())
+                except ValueError:
+                    continue
+            missing = [i for i in range(len(self.pairs)) if i not in self.values]
+            if missing:
+                raise RuntimeError('any_hits 批量计数少 %d 条 ⇒ 对不上' % len(missing))
+        finally:
+            shutil.rmtree(tmpd, ignore_errors=True)
+
+    def get(self, rx, gl):
+        return self.values.get(self.pairs.index((rx, gl)))
+
+
 def parse_wiring():
-    """解析 ci-wiring.sh ⇒ (门项列表, arch_need 行数, 解析失败行号, arch_forbid 行数)"""
+    """解析 ci-wiring.sh ⇒ (need 门项, ml 门项, any_count 门项, any_min 门项,
+    count 门项, count_in_fn 门项, 各门型行数, 解析失败行号, arch_forbid 行数)"""
     src = open(WIRING, encoding='utf-8').read()
     lines = src.split('\n')
-    items, total_lines, failed, forbid_lines = [], 0, [], 0
+    need, ml, anyc, anym, cnt, cif = [], [], [], [], [], []
+    totals = {'need': 0, 'ml': 0, 'any_count': 0, 'any_min': 0,
+              'count': 0, 'count_in_fn': 0}
+    failed, forbid_lines = [], 0
     for i, ln in enumerate(lines, 1):
         if ANY_FORBID_LINE.match(ln) and not FUNC_DEF_LINE.match(ln):
             forbid_lines += 1
-        if not ANY_NEED_LINE.match(ln) or FUNC_DEF_LINE.match(ln):
+        if FUNC_DEF_LINE.match(ln):
             continue
-        total_lines += 1
-        m = NEED_RE.match(ln) or NEED_RE_SQ.match(ln) or NEED_RE_DQ.match(ln)
-        if not m:
-            failed.append(i)
+        if ANY_NEED_LINE.match(ln):
+            totals['need'] += 1
+            m = NEED_RE.match(ln) or NEED_RE_SQ.match(ln) or NEED_RE_DQ.match(ln)
+            if not m:
+                failed.append((i, 'need'))
+                continue
+            need.append((i, resolve(m.group(1)), m.group(2)))
             continue
-        path, rx = m.group(1), m.group(2)
-        items.append((i, resolve(path), rx))
-    return items, total_lines, failed, forbid_lines
+        if ML_LINE.match(ln):
+            totals['ml'] += 1
+            m = ML_LINE.match(ln)
+            ml.append((i, resolve(m.group(1)), m.group(2)))
+            continue
+        if ANY_COUNT_LINE.match(ln):
+            totals['any_count'] += 1
+            m = ANY_COUNT_LINE.match(ln)
+            anyc.append((i, m.group(1), int(m.group(2)), m.group(4) or DEFAULT_ANY_GLOB))
+            continue
+        if ANY_MIN_LINE.match(ln):
+            totals['any_min'] += 1
+            m = ANY_MIN_LINE.match(ln)
+            anym.append((i, m.group(1), int(m.group(2)), m.group(4) or DEFAULT_ANY_GLOB))
+            continue
+        if COUNT_LINE.match(ln):
+            totals['count'] += 1
+            m = COUNT_LINE.match(ln)
+            cnt.append((i, resolve(m.group(1)), m.group(2), int(m.group(3))))
+            continue
+        if COUNT_IN_FN_LINE.match(ln):
+            totals['count_in_fn'] += 1
+            m = COUNT_IN_FN_LINE.match(ln)
+            cif.append((i, resolve(m.group(1)), m.group(2), m.group(3), int(m.group(4))))
+            continue
+    return need, ml, anyc, anym, cnt, cif, totals, failed, forbid_lines
 
 
 def changed_lines(base):
@@ -181,18 +336,7 @@ def read_exempt():
     return keys, True, len(keys)
 
 
-def parse_min_gates():
-    """解析所有 `arch_need_min` 门项 ⇒ [(行号, 文件, 正则, 下限)]"""
-    out = []
-    src = open(WIRING, encoding='utf-8').read()
-    for i, ln in enumerate(src.split('\n'), 1):
-        m = NEED_MIN_LINE.match(ln)
-        if m:
-            out.append((i, resolve(m.group(1)), m.group(2), int(m.group(3))))
-    return out
-
-
-def check_min_gates():
+def check_min_gates(min_items):
     """校准 `arch_need_min` 的下限：必须 **== 当前命中数**。
 
     ⚠ 下限 < 命中数 ⇒ **门没牙**（删一处仍够 ⇒ 不红）——
@@ -203,7 +347,7 @@ def check_min_gates():
       它的「串不唯一」是**语义允许**的，但**下限必须配得准**。
     """
     bad = []
-    for lineno, f, rx, want in parse_min_gates():
+    for lineno, f, rx, want in min_items:
         if not os.path.isfile(f):
             bad.append((lineno, f, rx, want, None, '文件不存在'))
             continue
@@ -212,6 +356,86 @@ def check_min_gates():
             continue
         if got != want:
             bad.append((lineno, f, rx, want, got,
+                        '下限 %d ≠ 实际命中 %d ⇒ %s'
+                        % (want, got, '门没牙（删一处仍够）' if got > want else '门恒红')))
+    return bad
+
+
+def check_count_gates(count_items):
+    """校准 `arch_need_count` 的期望次数：必须 **== 当前命中数**。
+
+    ⚠ 期望 < 实际 ⇒ 门**没牙**（删一处仍够 ⇒ 不红）；
+      期望 > 实际 ⇒ 门**恒红**。
+    ⚠ 这条门自己数次数 ⇒ 天然有牙，但「把期望改大来躲变异」没人盯 ⇒ 这里补上。
+    """
+    bad = []
+    for lineno, f, rx, want in count_items:
+        if not os.path.isfile(f):
+            bad.append((lineno, f, rx, want, None, '文件不存在'))
+            continue
+        got = count_hits(f, rx)
+        if got is None:
+            continue
+        if got != want:
+            bad.append((lineno, f, rx, want, got,
+                        '期望 %d ≠ 实际命中 %d ⇒ %s'
+                        % (want, got, '门没牙（删一处仍够）' if got > want else '门恒红')))
+    return bad
+
+
+def check_count_in_fn_gates(cif_items):
+    """校准 `arch_need_count_in_fn` 的期望次数（函数体内）。
+
+    ⚠ 切函数体的那段 awk **从 ci-wiring.sh 原文抽取** ⇒ 零漂移。
+    """
+    awk_src = extract_fn_body_awk()
+    if awk_src is None:
+        return []
+    bad = []
+    for lineno, f, sig, rx, want in cif_items:
+        if not os.path.isfile(f):
+            bad.append((lineno, f, sig, rx, want, None, '文件不存在'))
+            continue
+        out = subprocess.run(
+            ['awk', '-v', 'sig=' + sig, awk_src],
+            input=strip_comments(f), capture_output=True, text=True)
+        body = out.stdout
+        if not body.strip():
+            bad.append((lineno, f, sig, rx, want, None, '找不到函数体'))
+            continue
+        r = subprocess.run(['grep', '-oE', '--', rx], input=body,
+                           capture_output=True, text=True)
+        got = len([x for x in r.stdout.split('\n') if x])
+        if got != want:
+            bad.append((lineno, f, sig, rx, want, got,
+                        '期望 %d ≠ 函数体内实际 %d ⇒ %s'
+                        % (want, got, '门没牙（删一处仍够）' if got > want else '门恒红')))
+    return bad
+
+
+def check_any_gates(anyc_items, anym_items, counter):
+    """校准跨文件的两个门型：
+      · `arch_need_any_count`：实际总命中 == 期望
+      · `arch_need_any_min`：下限 == 实际总命中（否则门没牙/恒红）
+
+    ⚠ **总命中数** = glob 范围内**所有**匹配文件命中数**加总**
+      —— 跨文件多现**同样是洞**（批 AV 实测的老 `arch_need_any` 洞就在这）。
+    """
+    bad = []
+    for lineno, rx, want, gl in anyc_items:
+        got = counter.get(rx, gl)
+        if got is None:
+            continue
+        if got != want:
+            bad.append((lineno, 'any_count', gl, rx, want, got,
+                        '期望 %d ≠ 实际命中 %d ⇒ %s'
+                        % (want, got, '门没牙（删一处仍够）' if got > want else '门恒红')))
+    for lineno, rx, want, gl in anym_items:
+        got = counter.get(rx, gl)
+        if got is None:
+            continue
+        if got != want:
+            bad.append((lineno, 'any_min', gl, rx, want, got,
                         '下限 %d ≠ 实际命中 %d ⇒ %s'
                         % (want, got, '门没牙（删一处仍够）' if got > want else '门恒红')))
     return bad
@@ -226,17 +450,31 @@ def main():
         i = args.index('--changed')
         base = args[i + 1] if i + 1 < len(args) else 'HEAD~1'
 
-    items, total_lines, failed, forbid_lines = parse_wiring()
+    (need, ml, anyc, anym, cnt, cif,
+     totals, failed, forbid_lines) = parse_wiring()
 
     if base is not None:
         nums = changed_lines(base)
         if nums is None:
             print('审计失败：git diff %s 拿不到' % base, file=sys.stderr)
             return 2
-        items = [it for it in items if it[0] in nums]
+        need = [x for x in need if x[0] in nums]
+        ml = [x for x in ml if x[0] in nums]
+        anyc = [x for x in anyc if x[0] in nums]
+        anym = [x for x in anym if x[0] in nums]
+        cnt = [x for x in cnt if x[0] in nums]
+        cif = [x for x in cif if x[0] in nums]
+
+    # ⚠ 跨文件命中数：一次批量算（口径 = 抽取自 ci-wiring.sh 的 any_hits）
+    pairs = [(rx, gl) for _, rx, _, gl in anyc] + [(rx, gl) for _, rx, _, gl in anym]
+    try:
+        counter = AnyCounter(pairs)
+    except RuntimeError as e:
+        print('审计失败：%s' % e, file=sys.stderr)
+        return 2
 
     multi, zero = [], []
-    for lineno, f, rx in items:
+    for lineno, f, rx in need:
         if not os.path.isfile(f):
             zero.append((lineno, f, rx, '文件不存在'))
             continue
@@ -248,7 +486,22 @@ def main():
         elif n > 1:
             multi.append((lineno, f, rx, n))
 
-    keys = ['%s|%s' % (rel(f), rx) for _, f, rx, _ in multi]
+    mlmulti = []
+    for lineno, f, rx in ml:
+        if not os.path.isfile(f):
+            zero.append((lineno, f, rx, '文件不存在'))
+            continue
+        n = count_hits_ml(f, rx)
+        if n is None:
+            continue
+        if n == 0:
+            zero.append((lineno, f, rx, '命中 0 次'))
+        elif n > 1:
+            mlmulti.append((lineno, f, rx, n))
+
+    # 豁免键：`<类型>:<相对路径|glob>|<正则>`
+    keys = ['need:%s|%s' % (rel(f), rx) for _, f, rx, _ in multi]
+    keys += ['ml:%s|%s' % (rel(f), rx) for _, f, rx, _ in mlmulti]
     exempt, exempt_exists, exempt_rows = read_exempt()
     outside = [k for k in keys if k not in exempt]
     stale = [k for k in exempt if k not in set(keys)]
@@ -267,41 +520,77 @@ def main():
             # ⚠ **审计器自己有盲区 ⇒ 那些门根本没被审** ⇒ 必须红。
             #   否则「审不到的门项」就成了逃逸口（批 AR「只声明不编译也算出现」的同构：
             #   判据写在那里，却没有任何机制保证它**真的被检查**）。
-            print('审计器有盲区：%d 行门项没解析到（行号 %s）⇒ 它们**没被审**'
-                  % (len(failed), ','.join(str(x) for x in failed)), file=sys.stderr)
+            print('审计器有盲区：%d 行门项没解析到（%s）⇒ 它们**没被审**'
+                  % (len(failed), ','.join('%d行/%s' % x for x in failed)), file=sys.stderr)
             return 2
-        # ⚠ `arch_need_min` 的**下限校准**：下限必须 == 当前命中数
-        #   （定低了 ⇒ 门没牙；定高了 ⇒ 门恒红）
-        minbad = check_min_gates()
-        if minbad:
-            print('arch_need_min 下限没配准（%d 条）：' % len(minbad), file=sys.stderr)
-            for lineno, f, rx, want, got, why in minbad:
-                print('  · %s:%d  %s | %s ⇒ %s'
-                      % (os.path.basename(WIRING), lineno, rel(f), rx, why),
-                      file=sys.stderr)
+        # ⚠ 次数门的**配准校准**（下限/期望 必须 == 实际命中数）
+        minbad = []
+        for lineno, f, rx, want in parse_min_gates():
+            if not os.path.isfile(f):
+                minbad.append((lineno, f, rx, want, None, '文件不存在'))
+                continue
+            got = count_hits(f, rx)
+            if got is None:
+                continue
+            if got != want:
+                minbad.append((lineno, f, rx, want, got,
+                               '下限 %d ≠ 实际命中 %d ⇒ %s'
+                               % (want, got, '门没牙（删一处仍够）' if got > want else '门恒红')))
+        cntbad = check_count_gates(cnt)
+        cifbad = check_count_in_fn_gates(cif)
+        anybad = check_any_gates(anyc, anym, counter)
+        bad_all = minbad + cntbad + cifbad + anybad
+        if bad_all:
+            print('次数门没配准（%d 条）：' % len(bad_all), file=sys.stderr)
+            for b in bad_all:
+                if b[1] == 'any_count' or b[1] == 'any_min':
+                    _, kind, gl, rx, want, got, why = b
+                    print('  · %s:%d  [%s] %s | %s ⇒ %s'
+                          % (os.path.basename(WIRING), _, kind, gl, rx, why),
+                          file=sys.stderr)
+                elif len(b) == 6:
+                    lineno, f, rx, want, got, why = b
+                    print('  · %s:%d  %s | %s ⇒ %s'
+                          % (os.path.basename(WIRING), lineno, rel(f), rx, why),
+                          file=sys.stderr)
+                else:
+                    lineno, f, sig, rx, want, got, why = b
+                    print('  · %s:%d  %s  fn=%s | %s ⇒ %s'
+                          % (os.path.basename(WIRING), lineno, rel(f), sig, rx, why),
+                          file=sys.stderr)
             return 4
         for k in outside:
             print(k)
         return 3 if outside else 0
 
-    print('门自审计：ci-wiring.sh 里 arch_need 门项 %d 条（解析成功 %d 条）'
-          % (total_lines, len(items)))
+    print('门自审计：ci-wiring.sh 里的门项')
+    print('  arch_need %d 条 / arch_need_ml %d 条 / arch_need_any_count %d 条 / '
+          'arch_need_any_min %d 条' % (totals['need'], totals['ml'],
+                                        totals['any_count'], totals['any_min']))
+    print('  arch_need_count %d 条 / arch_need_count_in_fn %d 条'
+          % (totals['count'], totals['count_in_fn']))
     print('（arch_forbid 门项 %d 条**有意不审**：它判「不该有的东西没了」，'
           '目标串出现 >0 本来就红，不属于「被别处顶替」的隐患）' % forbid_lines)
     if failed:
-        print('⚠ **审计器有盲区**：有 %d 行门项没解析到（行号 %s）'
-              % (len(failed), ','.join(str(x) for x in failed)))
+        print('⚠ **审计器有盲区**：有 %d 行门项没解析到（%s）'
+              % (len(failed), ','.join('%d行/%s' % x for x in failed)))
         print('   ⇒ 这些门**审不到**（写法变了？）⇒ 审计器本身要改，不能静默漏审')
     if base is not None:
         print('（只审 %s..HEAD 的新增门项）' % base)
 
-    print('命中 >1 次 ⇒ **改一处骗得过门**：%d 条'
-          % (len(multi) if base is None else len([k for k in keys if k in exempt or k in outside])))
+    print('arch_need 命中 >1 次 ⇒ **改一处骗得过门**：%d 条' % len(multi))
     for lineno, f, rx, n in multi:
-        mark = '（已豁免）' if '%s|%s' % (rel(f), rx) in exempt else '**⇒ 硬门会红**'
+        mark = '（已豁免）' if 'need:%s|%s' % (rel(f), rx) in exempt else '**⇒ 硬门会红**'
         print('  · %s:%d  命中 %d 次  %s  %s'
               % (os.path.basename(WIRING), lineno, n, rel(f), mark))
         print('      正则：%s' % rx)
+    print('arch_need_ml 压行后命中 >1 次 ⇒ **改一处骗得过门**：%d 条' % len(mlmulti))
+    for lineno, f, rx, n in mlmulti:
+        mark = '（已豁免）' if 'ml:%s|%s' % (rel(f), rx) in exempt else '**⇒ 硬门会红**'
+        print('  · %s:%d  命中 %d 次  %s  %s'
+              % (os.path.basename(WIRING), lineno, n, rel(f), mark))
+        print('      正则：%s' % rx)
+
     print('豁免基线：%d 条（文件：%s）'
           % (len(exempt), os.path.relpath(EXEMPT, REPO) if exempt_exists else '**缺失**'))
     if not exempt_exists:
@@ -309,11 +598,32 @@ def main():
     print('豁免之外（**新加的门不许落进这里**）：%d 条' % len(outside))
     for k in outside:
         print('  · %s' % k)
-    minbad = check_min_gates()
+
+    minbad = check_min_gates(parse_min_gates())
     print('arch_need_min 下限校准（须 == 实际命中数）：%d 条失准' % len(minbad))
     for lineno, f, rx, want, got, why in minbad:
         print('  · %s:%d  %s | %s ⇒ %s'
               % (os.path.basename(WIRING), lineno, rel(f), rx, why))
+
+    cntbad = check_count_gates(cnt)
+    print('arch_need_count 期望校准（须 == 实际命中数）：%d 条失准' % len(cntbad))
+    for lineno, f, rx, want, got, why in cntbad:
+        print('  · %s:%d  %s | %s ⇒ %s'
+              % (os.path.basename(WIRING), lineno, rel(f), rx, why))
+
+    cifbad = check_count_in_fn_gates(cif)
+    print('arch_need_count_in_fn 期望校准（须 == 函数体内实际次数）：%d 条失准' % len(cifbad))
+    for lineno, f, sig, rx, want, got, why in cifbad:
+        print('  · %s:%d  %s  fn=%s | %s ⇒ %s'
+              % (os.path.basename(WIRING), lineno, rel(f), sig, rx, why))
+
+    anybad = check_any_gates(anyc, anym, counter)
+    print('arch_need_any_count / arch_need_any_min 配准校准：%d 条失准' % len(anybad))
+    for b in anybad:
+        _, kind, gl, rx, want, got, why = b
+        print('  · %s:%d  [%s] %s | %s ⇒ %s'
+              % (os.path.basename(WIRING), _, kind, gl, rx, why))
+
     if stale:
         print('豁免基线里**已失效**（门已收紧，可以清掉）：%d 条' % len(stale))
         for k in stale:
@@ -323,6 +633,17 @@ def main():
         print('  · %s:%d  %s  %s' % (os.path.basename(WIRING), lineno, why, rel(f)))
         print('      正则：%s' % rx)
     return 0
+
+
+def parse_min_gates():
+    """解析所有 `arch_need_min` 门项 ⇒ [(行号, 文件, 正则, 下限)]"""
+    out = []
+    src = open(WIRING, encoding='utf-8').read()
+    for i, ln in enumerate(src.split('\n'), 1):
+        m = NEED_MIN_LINE.match(ln)
+        if m:
+            out.append((i, resolve(m.group(1)), m.group(2), int(m.group(3))))
+    return out
 
 
 if __name__ == '__main__':
