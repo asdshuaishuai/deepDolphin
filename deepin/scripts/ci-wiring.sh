@@ -1088,7 +1088,11 @@ arch_need "$ROOT/macos/scripts/fetch-engine.sh" 'bin/moongit-cli' 'fetch-engine.
 arch_need "$ROOT/macos/scripts/fetch-engine.sh" 'runtime/lib' 'fetch-engine.sh 认得仓颉运行时的真实位置（runtime/lib/）'
 arch_need "$ROOT/macos/scripts/engine-fetch-check.sh" 'moongit-cli' '引擎下载链判据验「三样齐全」（缺一就是装了个跑不起来的引擎）'
 arch_need "$ROOT/macos/scripts/engine-fetch-check.sh" 'runtime/lib' '引擎下载链判据验仓颉运行时非空'
-arch_need "$ROOT/macos/build.sh" 'runtime/lib' 'mac build.sh 内嵌引擎时把包自带的运行库一起带上（缺它 ⇒ 内嵌引擎起不来）'
+# ⚠ 盯**干活的那一行**（把包里的 dylib 拷进 Frameworks），不是盯「runtime/lib」这个串 ——
+#   负控实测：只删掉那句拷贝，`runtime/lib` 仍然出现在**形状判定**那行 ⇒ 门照样绿。
+#   （批 AP 的同一条纪律：门必须盯「真正干活的那行」，不能盯一个碰巧出现的串。）
+arch_need "$ROOT/macos/build.sh" 'cp .*ENGINE_ROOT/runtime/lib/.*dylib' 'mac build.sh 内嵌引擎时把包自带的运行库一起拷进 Frameworks（缺它 ⇒ 内嵌引擎起不来）'
+arch_need "$ROOT/macos/build.sh" 'ENGINE_ROOT/bin/moongit-cli' 'mac build.sh 内嵌的是包里的**真二进制**（内嵌进 bundle 的必须是 Mach-O，rpath 重写与补签才对它有意义）'
 
 # ── 批 AN · 快照基线「逐字节可重现」：关掉 DTK 标题栏阴影带 ──
 #
