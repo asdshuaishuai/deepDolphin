@@ -169,6 +169,42 @@ arch_forbid_tree() { # arch_forbid_tree <正则> <说明> <允许存在的文件
         echo "  ✓ $label"
     fi
 }
+# arch_forbid_han：盯「**文件里不许有中文**」（汉字与中文标点）。
+#
+# ⚠ 为什么不能只盯「某种写法」（arch_forbid 'QStringLiteral\('）：
+#   盯**写法**能被 QString::fromUtf8("中文") / tr("中文") / 直接字面量绕开
+#   ⇒ 门必须盯**内容**（字符本身），不是盯 API 名字。
+#   ⚠ 教训：批 AA 的文档写「接线门盯 UI 里一个中文字面量都不许有」，
+#     实际那道门盯的是 `QStringLiteral(` —— **说法比门宽** ⇒ 门有洞。
+#
+# ⚠ 必须剥**块注释**：单行版 strip_comments 只剥行注释（perl -pe 逐行）
+#   ⇒ 块注释里的中文说明会**假红**（门一加就红 ⇒ 门会被当成噪音关掉）。
+#
+# ⚠ 范围要写清：这条门只管**文档窗**（四语言的那一块）。
+#   其它 UI 里的中文属 M2-5（全应用 i18n，1008 串要人工翻译）——
+#   ⚠ 不许拿「全应用禁中文」当已达成，那不是事实。
+arch_forbid_han() { # arch_forbid_han <文件> <说明>
+    local f="$1" label="$2"
+    ARCH_N=$((ARCH_N + 1))
+    if [ ! -f "$f" ]; then
+        echo "  ✗ $label：文件不存在 $f" >&2
+        ARCH_FAIL=1
+        return
+    fi
+    if ! command -v perl >/dev/null 2>&1; then
+        # ⚠ 没有 perl ⇒ 剥不掉块注释 ⇒ 硬跑会假红 ⇒ 显式 SKIP（不算通过）
+        echo "  ‣ SKIP $label：没有 perl（剥不掉块注释，跑就是假红）"
+        return
+    fi
+    # ⚠ 字节范围 U+3000–U+9FFF（中文标点 + 汉字 + 假名）：UTF-8 里是 E3–E9 开头
+    if perl -0777 -pe 's{/\*.*?\*/}{}gs; s{(?<!:)(//)(?!:)[^\n]*}{}g' "$f" \
+        | grep -q -P '[\x{3000}-\x{9fff}]'; then
+        echo "  ✗ $label：$f 里还有中文（文案必须走判定层）" >&2
+        ARCH_FAIL=1
+    else
+        echo "  ✓ $label"
+    fi
+}
 arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("graph"\).*QStringLiteral\("arch"\)' 'AppModel 调引擎 graph arch 取场景'
 arch_need "$SRC/src/app/AppModel.cpp" 'QStringLiteral\("scene"\)' '场景按 scene 契约格式取（--format scene）'
 arch_need "$SRC/src/app/AppModel.h" '\bloadScene\b' 'AppModel 暴露 loadScene'
@@ -1033,6 +1069,17 @@ arch_need "$SRC/src/main.cpp" 'QStandardPaths::setTestModeEnabled\(true\)' '探�
 arch_need "$SRC/scripts/ci-docs-lang-probe.sh" 'docs-lang-probe' '文档语言断言脚本在'
 arch_need "$SRC/scripts/ci-docs-lang-probe.sh" 'grep -Pq' '断言脚本真查汉字（英文档回落成中文要能抓住）'
 arch_need "$SRC/scripts/ci.sh" 'ci-docs-lang-probe\.sh' 'CI 真跑了这一门（脚本在但不跑 = 没有门）'
+# ── 批 AG · 「文案全在判定层」这条纪律**要有牙**（批 AA 只盯了写法）──
+# ⚠ 批 AA 写下的纪律是「UI 里一个中文字面量都不许有，接线门 arch_forbid 盯着」，
+#   实际那道门盯的是 `QStringLiteral(` —— **说法比门宽**：
+#   QString::fromUtf8("中文") / tr("中文") / 直接字面量都能绕过去。
+# ⇒ 补一条**盯内容**的门（汉字/中文标点本身），让纪律与门对齐。
+# ⚠ 范围只在**文档窗**（四语言的那一块）：其它 UI 的中文属 M2-5（人工翻译），
+#   那是「待做」，不是「已达成」—— 不许在这里写成已达成。
+arch_forbid_han "$SRC/src/ui/dialogs/DocsDialog.cpp" '文档窗不许有中文字面量（盯内容，不是盯写法）'
+arch_forbid_han "$SRC/src/ui/dialogs/DocsDialog.h" '文档窗头文件不许有中文字面量'
+arch_forbid_han "$SRC/src/ui/dialogs/DocsDialogProbe.cpp" '文档窗探针不许有中文字面量（机器格式）'
+arch_forbid_han "$SRC/src/ui/dialogs/DocsDialogProbe.h" '文档窗探针头不许有中文字面量'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 AA 段有门项红（上面带 ✗ 的行）" >&2
