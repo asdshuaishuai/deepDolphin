@@ -48,8 +48,14 @@ AgentDialog::AgentDialog(QWidget *parent, const QString &engineBin, const AgentC
     , m_cancelFlag(QSharedPointer<QAtomicInt>::create())
 {
     setWindowTitle(QStringLiteral("AI 助手 · %1").arg(m_target.label()));
+    // ⚠ **可缩放，不许固定**（PLAN §3c 响应式那条；同仓先例 `AiResultDialog.cpp:15`）：
+    //   固定尺寸曾让长报告读不完且关不掉 ⇒ 固定 720×620 时窗口**不能放大**，
+    //   AI 助手的回复一长就被裁掉、也调不大。
+    //   ⇒ 初始 720×620（mac sheet 口径），最小同值，**但可以放大**。
+    //   ⚠ 本对话框是全仓**最后一个**固定尺寸的对话框 ⇒ 其余（AddMilestone/AiResult/
+    //   AiSettings/Arch/CodeGraph/Docs/PatchCheck/Scan）都用 `setMinimumSize`。
     resize(720, 620);
-    setFixedSize(720, 620); // mac sheet 720×620 固定
+    setMinimumSize(720, 620);
     setOnButtonClickedClose(false);
 
     // AI 配置初判（判定空态/发送按钮）：GUI 线程只读 Settings 身份（不含 key——

@@ -32,6 +32,10 @@ constexpr int kRoleIsView = Qt::UserRole + 4;
 // 侧栏行（countedRow 与项目行两处共用）行内边距/行距（M3-6：复制收成一点）
 constexpr QMargins kRowMargins{4, 2, 6, 2};
 constexpr int kRowSpacing = 6;
+/// 项目名列的最大宽度（px）—— 超出部分**用省略号**表示（不硬裁）。
+/// ⚠ 这是**布局常量**：侧栏最小宽 210（`PanelWindow.cpp` 的 kSidebarMinWidth），
+///   给项目名留 120，其余留给状态点/计数/间距。
+constexpr int kProjectNameMaxPx = 120;
 
 // countedRow（PanelView.swift:127-140 对位）：行 widget = 图标 + 名称 + 拉伸 + 行内计数。
 // 子控件全部 WA_TransparentForMouseEvents → 点击落回列表项；
@@ -247,7 +251,14 @@ void SidebarNav::rebuildProjectRows()
         h->addWidget(dot);
         auto *name = new QLabel(p.name, row);
         name->setAttribute(Qt::WA_TransparentForMouseEvents);
-        name->setMaximumWidth(120);
+        // ⚠ **省略号**，不是硬裁（PLAN §3c「响应式」那条：定宽截断改 `elidedText`）。
+        //   原来只 `setMaximumWidth(120)` ⇒ QLabel 默认**直接切掉后半截**，
+        //   长项目名变成「my-very-long-pro…」（半个字，无提示）⇒ 用户看不懂是哪个项目。
+        //   ⇒ 按可用宽度算省略号，**完整名进 tooltip**（鼠标悬停能看全）。
+        name->setText(name->fontMetrics().elidedText(
+            p.name, Qt::ElideRight, kProjectNameMaxPx));
+        name->setToolTip(p.name);
+        name->setMaximumWidth(kProjectNameMaxPx);
         h->addWidget(name);
         h->addStretch(1);
         auto *count = new CountLabel(row);

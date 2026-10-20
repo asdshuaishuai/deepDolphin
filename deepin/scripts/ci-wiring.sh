@@ -877,6 +877,28 @@ arch_need "$SRC/CMakeLists.txt" 'src/app/SelfCheckGraph\.cpp' '图谱分片已�
 #   否则「判据夹具豁免」这个约定会在拆分时静默失效（批 AJ 实测踩过）。
 arch_need "$SRC/scripts/ci-d2.sh" 'src/app/SelfCheckGraph\.cpp\|keep' '图谱分片的判据夹具已登记 D2 豁免'
 
+# ── 批 AM · M3c「响应式」两条：AgentDialog 可缩放 + KPI 网格的过时注释订正 ──
+#
+# ⚠ 起因（实测照出两处「说法与实现不是一回事」）：
+#   ① PLAN §3c 写「KPI 网格按窗宽 1/2/4 列（`resizeEvent` 改写列数）」，
+#      而 deepin 侧**根本没有 resizeEvent**（4 张卡写死在 2×2）；
+#      且 mac 侧是**固定 4 列**（`macos/.../DetailViews.swift:902-903` `LazyVGrid(count:4)`）
+#      ⇒ 「1/2/4」是 deepin 侧的提案，**无 mac 对位** ⇒ 不做，改校准 PLAN。
+#   ② `DashboardPage` 的注释写着「宽 <980 由 resizeEvent 折 2 列」——**与实现相反**
+#      （与批 AI 的 `Notifier.h` 同类：注释比实现还自信）⇒ 已订正 + 门盯住。
+#   ③ `AgentDialog` 是全仓**最后一个**固定尺寸的对话框（其余 8 个都用 setMinimumSize），
+#      而 AI 助手的回复一长就被裁掉 ⇒ 照同仓先例 `AiResultDialog.cpp:15` 改可缩放。
+arch_forbid "$SRC/src/ui/dialogs/AgentDialog.cpp" 'setFixedSize\(' 'AI 助手对话框不许固定尺寸（长回复会被裁掉；同仓先例 AiResultDialog.cpp:15）'
+arch_need_count "$SRC/src/ui/dialogs/AgentDialog.cpp" 'setMinimumSize\(' 1 'AI 助手对话框有最小尺寸（可放大、不可缩到读不了）'
+arch_need_count "$SRC/src/ui/pages/DashboardPage.cpp" 'kpiGrid->addWidget' 4 'KPI 网格是 2×2 四卡（4 次入格）——将来做响应式时这条会红，提醒更新约定'
+# ⚠ 过时说法不许复活（**不剥注释**：那句话住在注释里，剥了就永远绿 ⇒ 又一个空门）
+arch_forbid_raw "$SRC/src/ui/pages/DashboardPage.cpp" '由 resizeEvent 折' 'DashboardPage 注释不许再写「由 resizeEvent 折」（代码里没有 resizeEvent）'
+# ⚠ 定宽截断必须**用省略号**，不许硬裁（PLAN §3c「响应式」那条的另一半）。
+#   ⚠ 实测：全仓 `elidedText` **零命中** ⇒ 这条此前完全没做；
+#   侧栏项目名原来只 `setMaximumWidth(120)` ⇒ QLabel 默认**直接切掉后半截**（半个字、无提示）。
+arch_need "$SRC/src/ui/SidebarNav.cpp" 'elidedText\(' '侧栏项目名定宽截断用省略号（不硬裁）'
+arch_need "$SRC/src/ui/SidebarNav.cpp" 'setToolTip\(p\.name\)' '被省略的完整项目名可从 tooltip 看到'
+
 # 批 Q · 引擎钩子（post-commit / post-merge 托管块）：判定层出结论，
 #   执行层只管跑，界面只读结论。⚠ 卸载**只删托管块**（用户的钩子逻辑留着）——
 #   这条一旦不成立，界面的「卸载」按钮就是删用户数据。

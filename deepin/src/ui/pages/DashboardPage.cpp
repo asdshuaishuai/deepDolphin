@@ -159,8 +159,17 @@ void DashboardPage::rebuild()
     });
     m_contentLayout->addWidget(m_filterBar);
 
-    // ── KPI 4 卡（QGridLayout；宽 <980 由 resizeEvent 折 2 列——用两列网格自适应代替：
-    //    固定两行两列在窄窗口下仍可读，宽窗口展开四列）──
+    // ── KPI 4 卡（QGridLayout；**固定两行两列**）──
+    // ⚠ **实测订正（批 AM）**：这段注释原来声称「窗宽 <980 时会折成 2 列」，
+    //   而**代码里根本没有那种折行机制**（4 张卡写死在 (0,0)(0,1)(1,0)(1,1)）
+    //   ⇒ 说法与实现相反（与批 AI 的 `Notifier.h` 同类：注释比实现还自信）。
+    //   ⇒ 现在按**实际行为**写：固定 2×2。
+    // ⚠ 为什么**不做** 1/2/4 列响应式（PLAN §3c 原提案）：实测 mac 侧是
+    //   **固定 4 列**（`macos/Sources/deepDolphin/DetailViews.swift:902-903`
+    //   `LazyVGrid(count: 4)`）⇒ 「按窗宽 1/2/4」是 deepin 侧的提案，**无 mac 对位**；
+    //   而 2×2 在窄窗口下仍可读（宽窗口则两列各自拉宽）⇒ 保持 2×2。
+    //   ⚠ 将来若真要响应式：**改这里 + 补判定层**（列数判定不许写在 resizeEvent 里
+    //   ——那样无头测不到），别只改一半。
     auto *kpiHost = new QWidget(m_content);
     auto *kpiGrid = new QGridLayout(kpiHost);
     kpiGrid->setContentsMargins(0, 0, 0, 0);
