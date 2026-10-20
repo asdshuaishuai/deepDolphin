@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 
 namespace EngineDownload {
 
@@ -89,6 +90,123 @@ QString installedBin()
     return installDir() + QStringLiteral("/moongit");
 }
 
+QString stagingDir(const QString &installDir)
+{
+    // ⚠ **与目标目录同级**（不是它的子目录）—— 同级才能用「改名」做**原子切换**
+    //   （同一父目录 ⇒ 同一文件系统 ⇒ rename 是原子的）。
+    //   放成子目录的话切换就变成「逐文件覆盖」，中途失败会留半个引擎。
+    return installDir + QStringLiteral(".staging");
+}
+
+QString backupDir(const QString &installDir)
+{
+    // 切换时的暂存：旧的挪到这儿，切换确认成功才删；失败时用它回滚。
+    return installDir + QStringLiteral(".backup");
+}
+
+bool hasInstalledEngine(const QString &installDir)
+{
+    if (installDir.isEmpty())
+        return false;
+    const QFileInfo bin(installDir + QStringLiteral("/") + packagedBinName());
+    // ⚠ 「可执行」才算「有引擎」：只剩半个文件（上次装崩了）不算，
+    //   否则会把「首次安装」误判成「升级」，失败文案就会说错。
+    return bin.exists() && bin.isExecutable();
+}
+
+QString parseEngineVersion(const QString &text)
+{
+    if (text.isEmpty())
+        return QString();
+    // ⚠ **锚定 "Engine"**：探活输出是
+    //   `moonGit Engine 0.2.1 (Cangjie 1.0.5 LTS)`
+    //   —— 括号里还有一个 1.0.5（那是**仓颉 SDK** 的版本，不是引擎的）。
+    //   ⚠ **文本里有 "Engine" 时就只认它后面的版本，认不到就返回空**（不知道），
+    //   **不许**再退回「全文第一个 x.y」—— 那会把 SDK 版本当成引擎版本。
+    //   （负控照出来的：不许 fallback 蒙对 ⇒ 判据必须与错误实现分叉。）
+    const bool hasEngineWord = text.contains(QStringLiteral("engine"), Qt::CaseInsensitive);
+    // ⚠⚠ 中间只许**非字母非数字**（空格/括号/破折号），**不许跨过别的单词** ——
+    //   `engine[^0-9]*` 会跨过 " (Cangjie " 抓到 SDK 的 1.0.5（负控照出来的真 bug）。
+    static const QRegularExpression anchored(
+        QStringLiteral("engine[^0-9a-zA-Z]*([0-9]+(?:\\.[0-9]+)*)"),
+        QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch m = anchored.match(text);
+    if (m.hasMatch())
+        return m.captured(1);
+    if (hasEngineWord)
+        return QString(); // ⚠ 说「Engine」却给不出版本 ⇒ 不知道，不猜
+
+    // 全文里**没有** "engine" 字样（老引擎 / 契约门夹具输出 `moongit 0.0.0-contract`）
+    //   ⇒ 退回「第一个 x.y 形态的数字串」。
+    static const QRegularExpression loose(
+        QStringLiteral("([0-9]+\\.[0-9]+(?:\\.[0-9]+)*)"));
+    const QRegularExpressionMatch m2 = loose.match(text);
+    if (m2.hasMatch())
+        return m2.captured(1);
+    return QString(); // ⚠ 解析不出来就是「不知道」—— 不猜
+}
+
+namespace {
+/// 把版本串拆成数字段：`v0.2.1-beta` → ["0","2","1"]（前导 v 与后缀不算）。
+QStringList versionParts(const QString &v)
+{
+    static const QRegularExpression num(QStringLiteral("[0-9]+"));
+    QStringList out;
+    QRegularExpressionMatchIterator it = num.globalMatch(v);
+    while (it.hasNext()) {
+        const QRegularExpressionMatch m = it.next();
+        out << m.captured(0);
+    }
+    return out;
+}
+} // namespace
+
+int compareVersions(const QString &a, const QString &b)
+{
+    const QStringList as = versionParts(a);
+    const QStringList bs = versionParts(b);
+    const int n = qMax(as.size(), bs.size());
+    for (int i = 0; i < n; ++i) {
+        // ⚠ 缺失的段当 0 ⇒ `0.2` 与 `0.2.0` 相等。
+        const int x = i < as.size() ? as.at(i).toInt() : 0;
+        const int y = i < bs.size() ? bs.at(i).toInt() : 0;
+        if (x != y)
+            return x < y ? -1 : 1;
+    }
+    return 0;
+}
+
+bool isDowngrade(const QString &installed, const QString &candidate)
+{
+    // ⚠ **版本未知就不判降级**：宁可让用户装上一个「看起来旧」的引擎，
+    //   也不要因为解析失败把一次合法升级挡在门外（挡错的代价更大）。
+    if (installed.trimmed().isEmpty() || candidate.trimmed().isEmpty())
+        return false;
+    return compareVersions(candidate, installed) < 0;
+}
+
+QString engineFingerprint(const QString &installDir)
+{
+    if (installDir.isEmpty())
+        return QString();
+    const QFileInfo bin(installDir + QStringLiteral("/") + packagedBinName());
+    if (!bin.exists() || !bin.isExecutable())
+        return QString();
+    return QStringLiteral("%1:%2")
+        .arg(bin.lastModified().toMSecsSinceEpoch())
+        .arg(bin.size());
+}
+
+QString preserveNote(bool hadExisting, bool preserved)
+{
+    if (!hadExisting)
+        return QStringLiteral("（未安装任何引擎）");
+    if (preserved)
+        return QStringLiteral("（已保留原有引擎，未做任何改动）");
+    // ⚠ 「本来有引擎」但指纹变了 ⇒ 老实说「状态已变」，别装作没事。
+    return QStringLiteral("（⚠ 原有引擎的状态已改变，请重新检查）");
+}
+
 QString packagedBinName()
 {
     // ⚠ 发布包**根部**的可执行文件是**启动器** `moongit`（引擎自己的打包脚本
@@ -127,6 +245,8 @@ QString stageMessage(Stage s, const QString &detail)
         return QStringLiteral("解压失败：%1").arg(detail);
     case Stage::probeFailed:
         return QStringLiteral("安装后的引擎跑不起来（`version` 探活失败）：%1").arg(detail);
+    case Stage::versionDowngrade:
+        return QStringLiteral("拒绝降级安装（下载到的版本比已装的旧）：%1").arg(detail);
     }
     return detail;
 }
@@ -150,6 +270,8 @@ QString stageName(Stage s)
         return QStringLiteral("extractFailed");
     case Stage::probeFailed:
         return QStringLiteral("probeFailed");
+    case Stage::versionDowngrade:
+        return QStringLiteral("versionDowngrade");
     }
     return QStringLiteral("unknown");
 }

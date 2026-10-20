@@ -532,6 +532,11 @@ static int headlessEngineDownload(int argc, char *argv[], const QString &apiUrl,
     out.insert(QStringLiteral("bin"), last.bin);
     out.insert(QStringLiteral("tag"), last.tag);
     out.insert(QStringLiteral("verified"), last.verified);
+    // ⚠ 这两个字段是本批的核心判据（契约门拿它们断言）：
+    //   installedVersion = 实际装上的版本（空 = 未知）
+    //   keptPrevious    = 失败时**原有引擎是否被保留**（装坏包不许毁掉已有引擎）
+    out.insert(QStringLiteral("installedVersion"), last.installedVersion);
+    out.insert(QStringLiteral("keptPrevious"), last.keptPrevious);
     fprintf(stdout, "%s\n",
         qPrintable(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact))));
     fflush(stdout);

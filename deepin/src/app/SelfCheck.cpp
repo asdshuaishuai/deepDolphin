@@ -3,8 +3,11 @@
 #include "EngineCli.h"
 #include <QCryptographicHash>
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QSet>
 #include <QHash>
+#include <QTemporaryDir>
 #include "../logic/AgentToolPlan.h"
 #include "../logic/ArchReceipt.h"
 #include "../logic/Backend.h"
@@ -3342,7 +3345,106 @@ int SelfCheck::run(QStringList &log)
             && EngineDownload::retryDelayMs(0) > 0
             && EngineDownload::retryDelayMs(99) > 0);
 
-        // 「失败要说清是哪一种」的可验证形式：七种失败各说各的，不许都叫「下载失败」
+        // ⚠ **安装必须「旁路构建 + 通过后切换」**（批 AF 修的真 bug）。
+        //   原实现是「先删旧引擎 → 再解包 → 最后才探活」⇒ 装到坏包时
+        //   **原来能用的引擎被顶替成坏的**（实测 old 0.9.9 → boom），且无法回滚。
+        //   判据盯三件事：① 旁路目录**与目标同级**（同文件系统 ⇒ rename 原子）
+        //   且**不等于**目标（否则又变成「就地覆盖」）；② 版本解析认得出引擎版本
+        //   且**不把仓颉 SDK 版本当引擎版本**；③ 降级要挡、但**版本未知不挡**。
+        check(log, "引擎下载：旁路目录与目标同级且互不相同（切换才能原子）",
+            EngineDownload::stagingDir(EngineDownload::installDir())
+                    != EngineDownload::installDir()
+                && EngineDownload::backupDir(EngineDownload::installDir())
+                    != EngineDownload::installDir()
+                && EngineDownload::stagingDir(EngineDownload::installDir())
+                    != EngineDownload::backupDir(EngineDownload::installDir())
+                // ⚠ **同父目录**才是同一文件系统 ⇒ rename 才原子
+                && QFileInfo(EngineDownload::stagingDir(EngineDownload::installDir()))
+                       .absolutePath()
+                    == QFileInfo(EngineDownload::installDir()).absolutePath()
+                && QFileInfo(EngineDownload::backupDir(EngineDownload::installDir()))
+                       .absolutePath()
+                    == QFileInfo(EngineDownload::installDir()).absolutePath());
+        check(log, "引擎下载：版本解析认得出引擎版本（且不把 SDK 版本当引擎版本）",
+            // ⚠ 真实输出形如 `moonGit Engine 0.2.1 (Cangjie 1.0.5 LTS)` ——
+            //   括号里的 1.0.5 是**仓颉 SDK** 的版本，不锚定 "Engine" 就会取错。
+            EngineDownload::parseEngineVersion(
+                    QStringLiteral("moonGit Engine 0.2.1 (Cangjie 1.0.5 LTS)"))
+                == QLatin1String("0.2.1")
+            && EngineDownload::parseEngineVersion(QStringLiteral("moongit 0.0.0-contract"))
+                == QLatin1String("0.0.0")
+            // ⚠ 认不出来就是「不知道」——不猜（返回空串）
+            && EngineDownload::parseEngineVersion(QStringLiteral("no version here")).isEmpty()
+            && EngineDownload::parseEngineVersion(QString()).isEmpty()
+            // ⚠⚠ **说「Engine」却给不出版本 ⇒ 不知道（空）**，不许把 SDK 版本顶上来。
+            //   这一条是**负控照出来的**：原先实现里有「锚定失败就退回全文第一个 x.y」的
+            //   兜底 ⇒ 遇到 `moonGit Engine (Cangjie 1.0.5 LTS)` 会把 SDK 的 1.0.5
+            //   当成引擎版本 ⇒ 降级判定会拿 SDK 版本比大小 ⇒ 误挡/误放。
+            && EngineDownload::parseEngineVersion(
+                    QStringLiteral("moonGit Engine (Cangjie 1.0.5 LTS)")).isEmpty());
+        check(log, "引擎下载：版本按数字段比（0.2.10 > 0.2.9，不是字符串比）",
+            EngineDownload::compareVersions(QStringLiteral("0.2.10"),
+                               QStringLiteral("0.2.9")) > 0
+                && EngineDownload::compareVersions(QStringLiteral("0.2.9"),
+                               QStringLiteral("0.2.10")) < 0
+                && EngineDownload::compareVersions(QStringLiteral("v0.2.1"),
+                               QStringLiteral("0.2.1")) == 0
+                // 缺失段当 0
+                && EngineDownload::compareVersions(QStringLiteral("0.2"),
+                               QStringLiteral("0.2.0")) == 0
+                && EngineDownload::compareVersions(QStringLiteral("0.2.1"),
+                               QStringLiteral("0.2.1")) == 0);
+        check(log, "引擎下载：拒绝降级，但版本未知时**不**误挡合法升级",
+            EngineDownload::isDowngrade(QStringLiteral("0.2.1"), QStringLiteral("0.2.0"))
+                && EngineDownload::isDowngrade(QStringLiteral("0.2.1"), QStringLiteral("0.1.9"))
+                && !EngineDownload::isDowngrade(QStringLiteral("0.2.1"),
+                                          QStringLiteral("0.2.2"))
+                && !EngineDownload::isDowngrade(QStringLiteral("0.2.1"),
+                                          QStringLiteral("0.2.1"))
+                // ⚠ **任一方版本未知 ⇒ 不判降级**（解析失败不该挡掉一次合法升级）
+                && !EngineDownload::isDowngrade(QString(), QStringLiteral("0.2.0"))
+                && !EngineDownload::isDowngrade(QStringLiteral("0.2.1"), QString()));
+        check(log, "引擎下载：失败时如实说「原引擎还在不在」（三种情形各说各的）",
+            EngineDownload::preserveNote(true, true).contains(QStringLiteral("保留"))
+                && EngineDownload::preserveNote(false, false).contains(QStringLiteral("未安装"))
+                // ⚠ 「本来有」但指纹变了 ⇒ 老实说「状态已变」，别装作没事
+                && EngineDownload::preserveNote(true, false).contains(QStringLiteral("改变"))
+                && EngineDownload::preserveNote(true, true)
+                    != EngineDownload::preserveNote(true, false)
+                && EngineDownload::preserveNote(true, true)
+                    != EngineDownload::preserveNote(false, false));
+        {
+            // 「目标目录里原本有没有引擎」是**升级/首装**的分界：
+            // 半个文件（上次装崩了）不算「有引擎」——否则失败文案会说错。
+            QTemporaryDir probeDir;
+            const QString base = probeDir.path() + QStringLiteral("/dd");
+            QDir().mkpath(base);
+            const QString bin = base + QStringLiteral("/moongit");
+            QFile f(bin);
+            f.open(QIODevice::WriteOnly);
+            f.write("x");
+            f.close();
+            const bool emptyDir = !EngineDownload::hasInstalledEngine(base);
+            QFile::setPermissions(bin,
+                QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner | QFile::ReadGroup
+                    | QFile::ExeGroup | QFile::ReadOther | QFile::ExeOther);
+            check(log, "引擎下载：只有真能跑的引擎才算「已装」（半个文件不算）",
+                emptyDir && EngineDownload::hasInstalledEngine(base));
+            // ⚠ **指纹**必须能分辨「内容被换了」——
+            //   单看「文件还在」证明不了「没被动过」（负控照出「还在但被顶替」）。
+            const QString fp1 = EngineDownload::engineFingerprint(base);
+            f.open(QIODevice::WriteOnly | QIODevice::Truncate);
+            f.write("longer content here");
+            f.close();
+            const QString fp2 = EngineDownload::engineFingerprint(base);
+            check(log, "引擎下载：引擎指纹能分辨「内容被换过」（存在性证明不了没被动过）",
+                !fp1.isEmpty() && !fp2.isEmpty() && fp1 != fp2
+                    && EngineDownload::engineFingerprint(
+                               probeDir.path() + QStringLiteral("/nope"))
+                           .isEmpty());
+        }
+
+        // 「失败要说清是哪一种」的可验证形式：八种失败各说各的，不许都叫「下载失败」
         const QStringList msgs = {
             EngineDownload::stageMessage(EngineDownload::Stage::networkUnreachable, QStringLiteral("x")),
             EngineDownload::stageMessage(EngineDownload::Stage::releaseUnreadable, QStringLiteral("x")),
@@ -3351,10 +3453,11 @@ int SelfCheck::run(QStringList &log)
             EngineDownload::stageMessage(EngineDownload::Stage::digestMismatch, QStringLiteral("x")),
             EngineDownload::stageMessage(EngineDownload::Stage::extractFailed, QStringLiteral("x")),
             EngineDownload::stageMessage(EngineDownload::Stage::probeFailed, QStringLiteral("x")),
+            EngineDownload::stageMessage(EngineDownload::Stage::versionDowngrade, QStringLiteral("x")),
         };
         const QSet<QString> uniq(msgs.begin(), msgs.end());
-        check(log, "引擎下载：七种失败各说各的（不许都叫「下载失败」）",
-            msgs.size() == 7 && uniq.size() == 7 && !msgs.isEmpty());
+        check(log, "引擎下载：八种失败各说各的（不许都叫「下载失败」）",
+            msgs.size() == 8 && uniq.size() == 8 && !msgs.isEmpty());
     }
 
     // ── 引擎钩子（post-commit / post-merge 托管块）判定层 ──

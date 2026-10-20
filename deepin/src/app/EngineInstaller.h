@@ -27,6 +27,8 @@ public:
         QString bin;           ///< 成功后引擎路径
         QString tag;           ///< 引擎版本（tag_name）
         bool verified = false; ///< 是否真的做了校验和校验（false = 发布方没给校验和）
+        QString installedVersion; ///< 实际装上的引擎版本（探活输出里解析的；空 = 未知）
+        bool keptPrevious = false; ///< 失败时**原有引擎是否被保留**（true = 原封未动）
     };
 
     explicit EngineInstaller(QObject *parent = nullptr);
@@ -45,9 +47,16 @@ private:
     void fetchAsset();
     void onReleaseReady();
     void onAssetReady();
-    void onExtracted();
-    void onInstalled();
+    /// 包已解到**旁路目录**（staging）⇒ 检查内容、探活。
+    void onStaged();
+    /// 旁路目录里的引擎探活完了 ⇒ 判断要不要比版本。
     void onProbed();
+    /// 已装引擎探活完了 ⇒ 比版本（拒绝降级）。
+    void onExistingProbed();
+    /// 切换：把旁路目录**改名**成目标目录（原子），旧的挪进备份再删。
+    void switchToStaging();
+    /// 失败收尾：清掉旁路目录（**不碰**目标目录 ⇒ 旧引擎原封不动）。
+    void abortInstall(EngineDownload::Stage stage, const QString &detail);
     void fail(EngineDownload::Stage stage, const QString &detail);
     void done(const Result &r);
 
@@ -60,9 +69,18 @@ private:
     QByteArray m_payload;
     QString m_apiUrl;
     QString m_installDir;
+    QString m_stagingDir;  ///< 旁路构建目录（解包 + 探活都在这儿做）
+    QString m_backupDir;   ///< 切换时的旧引擎暂存
     QString m_downloadUrl;
     QString m_digest;
     bool m_verified = false;
+    /// 目标目录里**原本**就有引擎吗（= 这次是升级；失败文案要说「已保留原有引擎」）。
+    bool m_hadExisting = false;
+    /// 安装开始时目标引擎的**指纹**（mtime + 大小）—— 失败时复查 ⇒ 「原封未动」是实测的。
+    QString m_fingerprint;
+    /// 旁路里新包的版本 / 已装引擎的版本（空 = 未知）。
+    QString m_newVersion;
+    QString m_installedVersion;
     /// 已尝试次数（**分阶段各计**：查询与下载各一轮重试）。
     /// ⚠ 判据在 logic/EngineDownload.h：可重试的错误类型、最多几次、退避多久。
     int m_apiAttempt = 0;

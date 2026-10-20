@@ -886,6 +886,101 @@ EOF
         echo "  ✓ 引擎获取：校验和不匹配时没有落盘"
         pass=$((pass+1))
     fi
+
+    # ⚠⚠ **装坏包不许毁掉原来能用的引擎**（批 AF 修的真 bug）。
+    #   原实现是「先删旧引擎 → 再解包 → 最后才探活」⇒ 装到跑不起来的包时，
+    #   **原来能用的引擎被顶替成坏的**（实测：old 0.9.9 → boom），且没有备份、
+    #   无法回滚 ⇒ 用户从「能用」掉到「有个跑不起来的引擎」。
+    #   ⚠ v0.2.0 那个坏包（runtime/lib/ 是空的）上这是**真实发生过**的。
+    #   现在的形状：解包 → **旁路目录** → 探活 → **通过了才切换**。
+    #   ⇒ 失败路径压根不碰目标目录 ⇒ 旧引擎原封不动。
+    ENG_OLD="$ENG_TMP/old"
+    mkdir -p "$ENG_OLD/bin" "$ENG_OLD/runtime/lib"
+    printf '#!/bin/sh\ncase "$1" in\n  version) echo "old 1.0.0";;\n  *) exit 0;;\nesac\n' > "$ENG_OLD/bin/moongit-cli"
+    chmod +x "$ENG_OLD/bin/moongit-cli"
+    printf '#!/bin/sh\nROOT="$(dirname "$0")"\nexport LD_LIBRARY_PATH="$ROOT/runtime/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\nexec "$ROOT/bin/moongit-cli" "$@"\n' > "$ENG_OLD/moongit"
+    chmod +x "$ENG_OLD/moongit"
+    : > "$ENG_OLD/runtime/lib/.keep"
+
+    # 造一个**探活失败**的包（version 退出码非 0）
+    mkdir -p "$ENG_TMP/badpkg/bin" "$ENG_TMP/badpkg/runtime/lib"
+    printf '#!/bin/sh\ncase "$1" in\n  version) echo "boom" >&2; exit 3;;\n  *) exit 0;;\nesac\n' > "$ENG_TMP/badpkg/bin/moongit-cli"
+    chmod +x "$ENG_TMP/badpkg/bin/moongit-cli"
+    printf '#!/bin/sh\nROOT="$(dirname "$0")"\nexport LD_LIBRARY_PATH="$ROOT/runtime/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\nexec "$ROOT/bin/moongit-cli" "$@"\n' > "$ENG_TMP/badpkg/moongit"
+    chmod +x "$ENG_TMP/badpkg/moongit"
+    : > "$ENG_TMP/badpkg/runtime/lib/.keep"
+    tar czf "$ENG_TMP/bad.tar.gz" -C "$ENG_TMP/badpkg" moongit bin runtime
+    BAD_SHA="$(sha256sum "$ENG_TMP/bad.tar.gz" | cut -d' ' -f1)"
+    BAD_SZ="$(wc -c < "$ENG_TMP/bad.tar.gz" | tr -d ' ')"
+    cat > "$ENG_TMP/bad.json" <<EOF
+{"tag_name":"v9.9.9-bad","assets":[{"name":"moongit-v9.9.9-bad-linux-x64.tar.gz","browser_download_url":"file://$ENG_TMP/bad.tar.gz","digest":"sha256:$BAD_SHA","size":$BAD_SZ}]}
+EOF
+
+    # ── 场景 A：已装 1.0.0，装一个探活失败的包 ⇒ 旧引擎必须**原样保留** ──
+    ENG_KEEP="$ENG_TMP/dest-keep"
+    cp -a "$ENG_OLD" "$ENG_KEEP"
+    ENG_KEEPOUT="$("$CLIENT_BIN" --engine-download "file://$ENG_TMP/bad.json" --engine-download-dest "$ENG_KEEP" 2>/dev/null)"
+    check "引擎获取：装坏包 ⇒ **旧引擎原样保留**（不许被顶替成坏的）" \
+        "d.get('ok') is False and d.get('stage') == 'probeFailed' and d.get('keptPrevious') is True" \
+        "$ENG_KEEPOUT"
+    if [ -x "$ENG_KEEP/moongit" ] && [ "$("$ENG_KEEP/moongit" version 2>/dev/null)" = "old 1.0.0" ]; then
+        echo "  ✓ 引擎获取：装坏包后旧引擎还在，且还是原来那个能跑的版本"
+        pass=$((pass+1))
+    else
+        echo "  ✗ 引擎获取：装坏包把旧引擎毁掉/顶替了（现在输出：$("$ENG_KEEP/moongit" version 2>&1)）" >&2
+        fail=$((fail+1))
+    fi
+    # 失败路径不许在目标目录旁边留下旁路/备份残留（残留会污染下一次的安装）
+    if [ -e "$ENG_TMP/dest-keep.staging" ] || [ -e "$ENG_TMP/dest-keep.backup" ]; then
+        echo "  ✗ 引擎获取：装坏包后留下旁路/备份残留（下次安装会踩到）" >&2
+        fail=$((fail+1))
+    else
+        echo "  ✓ 引擎获取：装坏包后没有留下旁路/备份残留"
+        pass=$((pass+1))
+    fi
+
+    # ── 场景 B：下载到的比已装的旧 ⇒ **拒绝降级**（不把能用的换成不能用的）──
+    #   夹具包版本 = 0.0.0（release.json 那个），已装 = 1.0.0 ⇒ 0.0.0 < 1.0.0。
+    ENG_DOWN="$ENG_TMP/dest-down"
+    cp -a "$ENG_OLD" "$ENG_DOWN"
+    ENG_DOWNOUT="$("$CLIENT_BIN" --engine-download "file://$ENG_TMP/release.json" --engine-download-dest "$ENG_DOWN" 2>/dev/null)"
+    check "引擎获取：下载到的比已装的旧 ⇒ **拒绝降级**（已装的不动）" \
+        "d.get('ok') is False and d.get('stage') == 'versionDowngrade' and d.get('keptPrevious') is True" \
+        "$ENG_DOWNOUT"
+    if [ "$("$ENG_DOWN/moongit" version 2>/dev/null)" = "old 1.0.0" ]; then
+        echo "  ✓ 引擎获取：拒绝降级后旧引擎原样还在"
+        pass=$((pass+1))
+    else
+        echo "  ✗ 引擎获取：拒绝降级却动了旧引擎" >&2
+        fail=$((fail+1))
+    fi
+
+    # ── 场景 C：版本确实更高 ⇒ 升级成功（这才允许切过去）──
+    mkdir -p "$ENG_TMP/newpkg/bin" "$ENG_TMP/newpkg/runtime/lib"
+    printf '#!/bin/sh\ncase "$1" in\n  version) echo "moongit 2.0.0-contract";;\n  *) exit 0;;\nesac\n' > "$ENG_TMP/newpkg/bin/moongit-cli"
+    chmod +x "$ENG_TMP/newpkg/bin/moongit-cli"
+    printf '#!/bin/sh\nROOT="$(dirname "$0")"\nexport LD_LIBRARY_PATH="$ROOT/runtime/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\nexec "$ROOT/bin/moongit-cli" "$@"\n' > "$ENG_TMP/newpkg/moongit"
+    chmod +x "$ENG_TMP/newpkg/moongit"
+    : > "$ENG_TMP/newpkg/runtime/lib/.keep"
+    tar czf "$ENG_TMP/new.tar.gz" -C "$ENG_TMP/newpkg" moongit bin runtime
+    NEW_SHA="$(sha256sum "$ENG_TMP/new.tar.gz" | cut -d' ' -f1)"
+    NEW_SZ="$(wc -c < "$ENG_TMP/new.tar.gz" | tr -d ' ')"
+    cat > "$ENG_TMP/new.json" <<EOF
+{"tag_name":"v2.0.0-contract","assets":[{"name":"moongit-v2.0.0-contract-linux-x64.tar.gz","browser_download_url":"file://$ENG_TMP/new.tar.gz","digest":"sha256:$NEW_SHA","size":$NEW_SZ}]}
+EOF
+    ENG_UP="$ENG_TMP/dest-up"
+    cp -a "$ENG_OLD" "$ENG_UP"
+    ENG_UPOUT="$("$CLIENT_BIN" --engine-download "file://$ENG_TMP/new.json" --engine-download-dest "$ENG_UP" 2>/dev/null)"
+    check "引擎获取：版本确实更高 ⇒ 升级成功（切到新版本）" \
+        "d.get('ok') is True and d.get('stage') == 'ok' and d.get('installedVersion') == '2.0.0'" \
+        "$ENG_UPOUT"
+    if [ "$("$ENG_UP/moongit" version 2>/dev/null)" = "moongit 2.0.0-contract" ]; then
+        echo "  ✓ 引擎获取：升级后跑的是新版本"
+        pass=$((pass+1))
+    else
+        echo "  ✗ 引擎获取：升级后还是旧版本（现在输出：$("$ENG_UP/moongit" version 2>&1)）" >&2
+        fail=$((fail+1))
+    fi
     # ⚠ **网络瞬断 ⇒ 客户端要重试**（行为门）。
     #   依据：2026-10-20 实测，本机第一次下载引擎 release 直接「下载中断：Connection closed」，
     #   稍后重试同一个 URL 1.17 秒下完 ⇒ 一次抖动不该让用户手动再点一次。

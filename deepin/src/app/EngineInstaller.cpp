@@ -24,13 +24,31 @@ EngineInstaller::EngineInstaller(QObject *parent)
 
 void EngineInstaller::fail(EngineDownload::Stage stage, const QString &detail)
 {
+    // ⚠ **实测**原引擎有没有被动过 —— 不是承诺，是比对指纹。
+    //   ⚠ 存在性证明不了「没被动过」（负控照出「文件还在、但被顶替成坏的」）。
+    const bool preserved = m_hadExisting && !m_fingerprint.isEmpty()
+        && m_fingerprint == EngineDownload::engineFingerprint(m_installDir);
     Result r;
     r.ok = false;
     r.stage = stage;
-    r.message = EngineDownload::stageMessage(stage, detail);
+    r.message = EngineDownload::stageMessage(stage, detail)
+        + EngineDownload::preserveNote(m_hadExisting, preserved);
     r.tag = m_release.tag;
     r.verified = m_verified;
+    r.keptPrevious = preserved;
     done(r);
+}
+
+/// 失败收尾：清掉旁路目录，**不碰**目标目录。
+///
+/// ⚠ **这是本批的核心不变量**：安装失败 ⇒ 原来能用的引擎**原封不动**。
+///   原来的实现是「先删旧 → 再解包 → 最后探活」⇒ 装到坏包时
+///   **旧引擎被顶替成坏的**（实测 `old 0.9.9` → `boom`），且无法回滚。
+void EngineInstaller::abortInstall(EngineDownload::Stage stage, const QString &detail)
+{
+    if (!m_stagingDir.isEmpty())
+        QDir(m_stagingDir).removeRecursively();
+    fail(stage, detail);
 }
 
 void EngineInstaller::done(const Result &r)
@@ -52,9 +70,19 @@ void EngineInstaller::start(const QString &apiUrl, const QString &installDir)
 {
     m_apiUrl = apiUrl;
     m_installDir = installDir.isEmpty() ? EngineDownload::installDir() : installDir;
+    m_stagingDir = EngineDownload::stagingDir(m_installDir);
+    m_backupDir = EngineDownload::backupDir(m_installDir);
     m_release = EngineDownload::Release();
     m_payload.clear();
     m_verified = false;
+    m_newVersion.clear();
+    m_installedVersion.clear();
+    // ⚠ 目标目录里**原本**就有引擎吗？决定失败文案说「已保留原有引擎」还是
+    //   「未安装任何引擎」—— 也决定要不要比版本（防降级）。
+    m_hadExisting = EngineDownload::hasInstalledEngine(m_installDir);
+    // ⚠ 记一份**指纹**（mtime + 大小）：失败时复查一遍 ⇒ 「原封未动」是实测的，
+    //   不是承诺的（负控照出「文件还在、但内容已被顶替」这种情形）。
+    m_fingerprint = EngineDownload::engineFingerprint(m_installDir);
 
     if (!m_tmp) {
         // ⚠ QTemporaryDir 的构造只认「模板路径」，不认 QObject parent ——
@@ -241,13 +269,23 @@ void EngineInstaller::onAssetReady()
     tar.write(m_payload);
     tar.close();
 
+    // ⚠⚠ **解到旁路目录，不是解到目标目录**。
+    //   原来的实现是「解到目标目录 ⇒ 先删旧的 ⇒ 最后才探活」⇒
+    //   装到跑不起来的包时，**原来能用的引擎被顶替成坏的**（实测 old 0.9.9 → boom）。
+    //   现在：解到 staging → 探活 staging → **通过了才改名切过去**。
+    //   ⇒ 失败路径压根不碰目标目录 ⇒ 旧引擎原封不动。
+    QDir(m_stagingDir).removeRecursively(); // 清掉上次残留（进程被杀时可能留下）
+    if (!QDir().mkpath(m_stagingDir)) {
+        fail(EngineDownload::Stage::downloadFailed,
+            QStringLiteral("临时安装目录建不了：%1").arg(m_stagingDir));
+        return;
+    }
+
     // 解压：系统 tar（deepin/UOS 都有）。⚠ 不用 waitForFinished —— 会卡 GUI 线程。
-    const QString outDir = m_tmp->path() + QStringLiteral("/pkg");
-    QDir().mkpath(outDir);
     m_proc = new QProcess(this);
     m_proc->setProgram(QStringLiteral("tar"));
-    m_proc->setArguments({ QStringLiteral("xzf"), tarPath, QStringLiteral("-C"), outDir });
-    connect(m_proc, &QProcess::finished, this, &EngineInstaller::onExtracted);
+    m_proc->setArguments({ QStringLiteral("xzf"), tarPath, QStringLiteral("-C"), m_stagingDir });
+    connect(m_proc, &QProcess::finished, this, &EngineInstaller::onStaged);
     connect(m_proc, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
         if (m_proc)
             m_proc->kill();
@@ -259,7 +297,8 @@ void EngineInstaller::onAssetReady()
     });
 }
 
-void EngineInstaller::onExtracted()
+/// 包已解到旁路目录 ⇒ 检查内容、赋可执行位、**探活**。
+void EngineInstaller::onStaged()
 {
     if (!m_proc)
         return;
@@ -269,65 +308,21 @@ void EngineInstaller::onExtracted()
     const QString err = QString::fromUtf8(proc->readAllStandardError()).trimmed();
     proc->deleteLater();
 
-    const QString outDir = m_tmp->path() + QStringLiteral("/pkg");
-    const QString packaged = outDir + QStringLiteral("/") + EngineDownload::packagedBinName();
-    if (code != 0 || !QFileInfo::exists(packaged)) {
-        fail(EngineDownload::Stage::extractFailed,
+    const QString staged = m_stagingDir + QStringLiteral("/")
+        + EngineDownload::packagedBinName();
+    if (code != 0 || !QFileInfo::exists(staged)) {
+        abortInstall(EngineDownload::Stage::extractFailed,
             err.isEmpty() ? QStringLiteral("tar 退出码 %1").arg(code) : err);
         return;
     }
-
-    // ⚠ 落盘：**整包**（不是只拷一个文件）。
-    //   发布包的根部是**启动器** `moongit`，它按**自身所在目录**去找
-    //   `bin/moongit-cli` 与 `runtime/lib/` ⇒ 只拷启动器的话，装下来的引擎
-    //   exec 不到二进制 / 加载不到仓颉运行库 ⇒ 装完直接跑不起来。
-    //   ⇒ 把整包解到安装目录（先清掉上一版的同名三件，避免残留旧文件）。
-    QDir().mkpath(m_installDir);
-    const QString dest = m_installDir + QStringLiteral("/moongit");
-    QFile::remove(dest);
-    QDir(m_installDir + QStringLiteral("/bin")).removeRecursively();
-    QDir(m_installDir + QStringLiteral("/runtime")).removeRecursively();
-
-    m_proc = new QProcess(this);
-    m_proc->setProgram(QStringLiteral("tar"));
-    m_proc->setArguments({ QStringLiteral("xzf"), m_tmp->path() + QStringLiteral("/engine.tar.gz"),
-        QStringLiteral("-C"), m_installDir });
-    connect(m_proc, &QProcess::finished, this, &EngineInstaller::onInstalled);
-    connect(m_proc, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
-        if (m_proc)
-            m_proc->kill();
-    });
-    m_proc->start();
-    QTimer::singleShot(kProcTimeoutMs, this, [this] {
-        if (m_proc)
-            m_proc->kill();
-    });
-}
-
-void EngineInstaller::onInstalled()
-{
-    if (!m_proc)
-        return;
-    QProcess *proc = m_proc;
-    m_proc = nullptr;
-    const int code = proc->exitCode();
-    const QString err = QString::fromUtf8(proc->readAllStandardError()).trimmed();
-    proc->deleteLater();
-
-    const QString dest = m_installDir + QStringLiteral("/moongit");
-    if (code != 0 || !QFileInfo::exists(dest)) {
-        fail(EngineDownload::Stage::extractFailed,
-            err.isEmpty() ? QStringLiteral("落盘解包退出码 %1").arg(code) : err);
-        return;
-    }
     // 可执行位（tar 解出来的权限可能不带）
-    QFile::setPermissions(dest,
+    QFile::setPermissions(staged,
         QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner | QFile::ReadGroup
             | QFile::ExeGroup | QFile::ReadOther | QFile::ExeOther);
 
     emit progress(QStringLiteral("正在校验引擎能否启动…"));
     m_proc = new QProcess(this);
-    m_proc->setProgram(dest);
+    m_proc->setProgram(staged);
     m_proc->setArguments({ QStringLiteral("version") });
     connect(m_proc, &QProcess::finished, this, &EngineInstaller::onProbed);
     m_proc->start();
@@ -337,6 +332,7 @@ void EngineInstaller::onInstalled()
     });
 }
 
+/// 旁路里的引擎探活完了。
 void EngineInstaller::onProbed()
 {
     if (!m_proc)
@@ -344,26 +340,102 @@ void EngineInstaller::onProbed()
     QProcess *proc = m_proc;
     m_proc = nullptr;
     const bool ok = proc->exitStatus() == QProcess::NormalExit && proc->exitCode() == 0;
+    const int code = proc->exitCode();
     const QString out = QString::fromUtf8(proc->readAllStandardOutput()).trimmed();
     proc->deleteLater();
 
     if (!ok) {
-        fail(EngineDownload::Stage::probeFailed,
-            QStringLiteral("%1 version 退出码 %2").arg(m_installDir).arg(proc->exitCode()));
+        // ⚠ **探活失败 ⇒ 放弃安装**（不切目录）⇒ 旧引擎原封不动。
+        abortInstall(EngineDownload::Stage::probeFailed,
+            QStringLiteral("%1 version 退出码 %2").arg(m_stagingDir).arg(code));
         return;
     }
+    m_newVersion = EngineDownload::parseEngineVersion(out);
+
+    // ⚠ 升级场景：先看**已装**的版本是多少，再决定要不要换。
+    //   没有已装引擎 ⇒ 直接切换（首装）。
+    if (!m_hadExisting) {
+        switchToStaging();
+        return;
+    }
+    emit progress(QStringLiteral("正在核对已装版本…"));
+    m_proc = new QProcess(this);
+    m_proc->setProgram(m_installDir + QStringLiteral("/")
+        + EngineDownload::packagedBinName());
+    m_proc->setArguments({ QStringLiteral("version") });
+    connect(m_proc, &QProcess::finished, this, &EngineInstaller::onExistingProbed);
+    m_proc->start();
+    QTimer::singleShot(kProcTimeoutMs, this, [this] {
+        if (m_proc)
+            m_proc->kill();
+    });
+}
+
+/// 已装引擎探活完了 ⇒ 比版本。
+void EngineInstaller::onExistingProbed()
+{
+    if (!m_proc)
+        return;
+    QProcess *proc = m_proc;
+    m_proc = nullptr;
+    const QString out = QString::fromUtf8(proc->readAllStandardOutput()).trimmed();
+    proc->deleteLater();
+    m_installedVersion = EngineDownload::parseEngineVersion(out);
+
+    // ⚠ **拒绝降级**：下载到的比已装的旧 ⇒ 不换（换下去是把能用的换成不能用的）。
+    //   ⚠ 版本**未知就不判**（解析失败不该挡掉一次合法升级）——
+    //     判据在 logic/EngineDownload.h 的 isDowngrade()。
+    if (EngineDownload::isDowngrade(m_installedVersion, m_newVersion)) {
+        abortInstall(EngineDownload::Stage::versionDowngrade,
+            QStringLiteral("已装 %1，下载到 %2")
+                .arg(m_installedVersion.isEmpty() ? QStringLiteral("（版本未知）")
+                                                   : m_installedVersion,
+                    m_newVersion.isEmpty() ? QStringLiteral("（版本未知）") : m_newVersion));
+        return;
+    }
+    switchToStaging();
+}
+
+/// 切换：旁路目录**改名**成目标目录。
+///
+/// ⚠ 用 rename（同一父目录 ⇒ 同一文件系统 ⇒ 原子）而不是「逐文件覆盖」——
+///   逐文件覆盖中途失败会留半个引擎在目标目录。
+///   顺序：旧的挪进 backup → 新的改名过来 → 确认成功才删 backup；
+///   中途失败 ⇒ 从 backup 回滚。
+void EngineInstaller::switchToStaging()
+{
+    QDir(m_backupDir).removeRecursively(); // 清掉上次残留
+    const bool hadDir = QFileInfo::exists(m_installDir);
+    if (hadDir) {
+        if (!QDir().rename(m_installDir, m_backupDir)) {
+            // 旧的挪不动 ⇒ 干脆不装（保留旧引擎）
+            abortInstall(EngineDownload::Stage::extractFailed,
+                QStringLiteral("旧引擎目录挪不开（%1）").arg(m_installDir));
+            return;
+        }
+    }
+    if (!QDir().rename(m_stagingDir, m_installDir)) {
+        // ⚠ 回滚：把旧的挪回去，别让用户落到「没有引擎」的状态。
+        if (hadDir)
+            QDir().rename(m_backupDir, m_installDir);
+        abortInstall(EngineDownload::Stage::extractFailed,
+            QStringLiteral("切换安装目录失败（%1）").arg(m_installDir));
+        return;
+    }
+    QDir(m_backupDir).removeRecursively(); // 切换成功 ⇒ 备份可丢
 
     Result r;
     r.ok = true;
     r.stage = EngineDownload::Stage::ok;
-    r.bin = m_installDir + QStringLiteral("/moongit");
+    r.bin = m_installDir + QStringLiteral("/") + EngineDownload::packagedBinName();
     r.tag = m_release.tag;
     r.verified = m_verified;
+    r.installedVersion = m_newVersion;
     r.message = m_verified
         ? QStringLiteral("引擎 %1 已安装到 %2（校验和已核对）").arg(r.tag, r.bin)
         : QStringLiteral("引擎 %1 已安装到 %2（⚠ 该发布未提供校验和，未能核对）")
               .arg(r.tag, r.bin);
-    if (!out.isEmpty())
-        r.message += QStringLiteral("；%1").arg(out);
+    if (!m_newVersion.isEmpty())
+        r.message += QStringLiteral("；版本 %1").arg(m_newVersion);
     done(r);
 }
