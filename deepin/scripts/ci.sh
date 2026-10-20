@@ -131,10 +131,17 @@ else
     echo "SKIP: appstream-util 未安装（README 决策 69 的硬门随工具到位生效）"
 fi
 
-echo "› 4/11 平台探针（正式断言：exit 0 且输出含 backend=）"
+echo "› 4/11 无头探针（平台探针 + 固定文档页四语言探针）"
 # 探针断言独立成 scripts/ci-platform-probe.sh：可单独跑，负控也能精确打它。
 if ! sh "$SRC/scripts/ci-platform-probe.sh" "$BIN"; then
     echo "✗ 平台探针门失败" >&2
+    exit 1
+fi
+# ⚠ 文档语言探针（批 AA）：**真跑**一遍四语言切换，看文档窗的实际呈现有没有跟着换。
+#   接线门是**源码扫描** —— 它能证明「代码里写了 setButtonText」，但证明不了
+#   「换语言后按钮真的变了」⇒ 这一门补的是**行为**证据。
+if ! sh "$SRC/scripts/ci-docs-lang-probe.sh" "$BIN"; then
+    echo "✗ 文档语言探针门失败（换语言后界面没跟着换）" >&2
     exit 1
 fi
 

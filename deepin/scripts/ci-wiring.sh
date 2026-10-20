@@ -750,6 +750,7 @@ for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToo
          src/logic/HeatLayout.cpp src/ui/HeatmapWidget.cpp \
          src/logic/PatchCheck.cpp src/ui/dialogs/PatchCheckDialog.cpp \
          src/logic/DocPages.cpp src/ui/dialogs/DocsDialog.cpp \
+         src/ui/dialogs/DocsDialogProbe.cpp \
          src/logic/SyntaxHighlight.cpp src/ui/CodeHighlighter.cpp \
          src/logic/GraphInsight.cpp src/logic/EngineDoctor.cpp \
          src/logic/EngineConfig.cpp src/logic/IndexStatus.cpp \
@@ -998,20 +999,21 @@ arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::kindTitle\(all\.at\(i\
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::windowTitle' '窗口标题按当前语言取'
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'setButtonText' '按钮文字按当前语言换（不许留中文按钮）'
 arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocPages::recoveredNotice' '语言键认不出时说一句（不静默吞掉）'
+arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'setToolTip\(DocPages::languageSelectorTip' '语言选择器如实说明作用域（不承诺没做到的事）'
 # ⚠ 写回设置必须**盯在「换语言」这个函数体里**：构造函数里也有一次
-#   `setDocsLanguageKey`（坏值自愈）—— 只盯「出现过」的话，摘掉换语言那次
+#   `setAppLanguageKey`（坏值自愈）—— 只盯「出现过」的话，摘掉换语言那次
 #   照样绿（第十一次「同名互相顶替」）。
-arch_need_count_in_fn "$SRC/src/ui/dialogs/DocsDialog.cpp" 'void DocsDialog::onLanguagePicked' 'setDocsLanguageKey' 1 '换语言时写回设置（恰好一处）'
-arch_need_count_in_fn "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocsDialog::DocsDialog\(QWidget \*parent\)' 'docsLanguageKey' 1 '开窗时读设置里的语言（恰好一处）'
+arch_need_count_in_fn "$SRC/src/ui/dialogs/DocsDialog.cpp" 'void DocsDialog::onLanguagePicked' 'setAppLanguageKey' 1 '换语言时写回设置（恰好一处）'
+arch_need_count_in_fn "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocsDialog::DocsDialog\(QWidget \*parent\)' 'appLanguageKey' 1 '开窗时读设置里的语言（恰好一处）'
 arch_need_count_in_fn "$SRC/src/ui/dialogs/DocsDialog.cpp" 'DocsDialog::DocsDialog\(QWidget \*parent\)' 'DocPages::resolveLanguage' 1 '语言解析走判定层（恰好一处）'
 # ⚠ 外壳文案的两处「换」也盯函数体（否则摘掉其中一处，另一处会顶替）
 arch_need_count_in_fn "$SRC/src/ui/dialogs/DocsDialog.cpp" 'void DocsDialog::applyLanguage' 'setButtonText\(0,' 1 '「关闭」按钮文字按语言换（恰好一处）'
 arch_need_count_in_fn "$SRC/src/ui/dialogs/DocsDialog.cpp" 'void DocsDialog::applyLanguage' 'setButtonText\(i,' 1 '类目分段名按语言换（恰好一处）'
 # ⚠ 文案不许写在 UI 里（四语言共用判定层那份）
 arch_forbid "$SRC/src/ui/dialogs/DocsDialog.cpp" 'QStringLiteral\(' '文档窗不许自己写死文案（文案全在判定层）'
-# 设置层：docs.language 键
-arch_need "$SRC/src/app/Settings.cpp" 'docs\.language' '设置层有 docs.language 键'
-arch_need "$SRC/src/app/Settings.h" 'docsLanguageKey' '设置层暴露语言读写接口'
+# 设置层：app.language 键
+arch_need "$SRC/src/app/Settings.cpp" 'app\.language' '设置层有 app.language 键（与 mac UserDefaults 逐字对齐）'
+arch_need "$SRC/src/app/Settings.h" 'appLanguageKey' '设置层暴露语言读写接口'
 # 分段按钮要能改档位文字（否则换语言时分段名换不掉）
 arch_need "$SRC/src/ui/common/SegmentedButton.h" 'setButtonText' '分段按钮支持改档位文字（语言切换用）'
 # 判据覆盖
@@ -1019,6 +1021,18 @@ arch_need "$SRC/src/app/SelfCheck.cpp" 'DocPages::resolveLanguage' 'SelfCheck �
 arch_need "$SRC/src/app/SelfCheck.cpp" 'DocPages::languageFromKey' 'SelfCheck 覆盖「认不出 ⇒ nullopt」'
 arch_need "$SRC/src/app/SelfCheck.cpp" 'DocPages::languageKey' 'SelfCheck 覆盖语言 key 稳定性'
 arch_need "$SRC/src/app/SelfCheck.cpp" 'DocPages::kindTitle' 'SelfCheck 覆盖类目显示名按语言取'
+# ── 批 AA 补 · 文档语言**行为**探针（接线门是源码扫描，证不了「界面真换了」）──
+arch_need "$SRC/src/ui/dialogs/DocsDialog.h" 'QStringList probeValues\(\) const' '文档窗有只读呈现出口（探针要看实际呈现）'
+arch_need "$SRC/src/ui/dialogs/DocsDialog.cpp" 'QStringList DocsDialog::probeValues\(\) const' '呈现出口有实现'
+arch_need "$SRC/src/ui/dialogs/DocsDialogProbe.h" 'docsLangProbeReport' '探针文件在（机器格式归它，文档窗里不留字面量）'
+arch_need "$SRC/src/ui/dialogs/DocsDialogProbe.cpp" 'box->setCurrentIndex\(i\)' '探针走**真实信号路径**（currentIndexChanged）'
+arch_need "$SRC/src/ui/common/SegmentedButton.h" 'QString buttonText\(int id\) const' '分段按钮能读回档位名（探针要看分段名换了没有）'
+arch_need "$SRC/src/main.cpp" 'headlessDocsLangProbe' 'main 有文档语言探针'
+arch_need "$SRC/src/main.cpp" 'rawArgs.contains\(QStringLiteral\("--docs-lang-probe"\)\)' '无头分支认得 --docs-lang-probe（不然会落进 GUI 常驻，CI 挂死）'
+arch_need "$SRC/src/main.cpp" 'QStandardPaths::setTestModeEnabled\(true\)' '探针隔离设置（切语言会写 app.language ⇒ 不许碰用户真实设置）'
+arch_need "$SRC/scripts/ci-docs-lang-probe.sh" 'docs-lang-probe' '文档语言断言脚本在'
+arch_need "$SRC/scripts/ci-docs-lang-probe.sh" 'grep -Pq' '断言脚本真查汉字（英文档回落成中文要能抓住）'
+arch_need "$SRC/scripts/ci.sh" 'ci-docs-lang-probe\.sh' 'CI 真跑了这一门（脚本在但不跑 = 没有门）'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 AA 段有门项红（上面带 ✗ 的行）" >&2

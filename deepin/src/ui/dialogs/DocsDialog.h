@@ -12,7 +12,7 @@
 //
 // 【四语言 + 页内切换（批 AA）】本窗**自带语言选择器**（右上角）：
 //   · 语言取值来自 `DocPages::Language`（zhCN / en / zhTW / ja，与 mac 的
-//     `AppLanguage` 一一对齐），选完写进 `Settings` 的 `docs.language` 键；
+//     `AppLanguage` 一一对齐），选完写进 `Settings` 的 `app.language` 键；
 //   · 切换语言时，**随语言变的文案一起换**：类目分段名、窗口标题、底部出处、
 //     按钮文字、正文本身 —— 不是只换正文（只换正文会留下「中文标题 + 英文正文」）。
 //   · 存的语言键认不出时：回落到默认语言 + **说一句**（不静默吞掉），
@@ -21,6 +21,7 @@
 #include <DDialog>
 #include <QPointer>
 #include <QString>
+#include <QStringList>
 
 #include "../../logic/DocPages.h"
 
@@ -36,6 +37,17 @@ class DocsDialog : public DDialog {
     Q_OBJECT
 public:
     explicit DocsDialog(QWidget *parent = nullptr);
+
+    /// 文档窗当前的**呈现值**（供无头探针用；**只读**，不改任何状态）。
+    ///
+    /// ⚠ 为什么要有这个出口：接线门是**源码扫描** —— 它能证明「代码里写了
+    ///   `setButtonText`」，但**证明不了**「换语言后按钮真的变了」。这个出口
+    ///   让探针能**真跑**一遍，看实际呈现（批 AA 的端到端判据）。
+    ///
+    /// ⚠ 顺序固定：**标题 / 关闭按钮 / 四个类目分段名 / 正文 / 底部说明**
+    ///   （字段名与格式化归探针文件 `DocsDialogProbe` —— 文档窗里不许有
+    ///   字符串字面量：用户可见文案全在判定层，四语言共用一份）。
+    QStringList probeValues() const;
 
 signals:
     /// 请求打开一个外部链接（仓库地址）。

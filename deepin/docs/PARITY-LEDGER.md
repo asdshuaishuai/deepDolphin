@@ -59,7 +59,7 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | B5 | **关系树（`graph tree`）** | `GraphService.loadTree` | 🟢 批 E2 已接（三源之一 → 文件/目录/符号树骨架，排序/汇总/可见行都在 `logic/CodeGraphBuild`） | ~~P1~~ 已完成 |
 | B6 | **函数级图谱 + 置信度**（`graph functions` / `graph confidence`） | `GraphService.loadFunctions` | 🟢 批 E2 已接（函数级疑点归属到符号、置信度孤儿疑点归属到文件、置信度总分与语法树降级说明、详情页「置信度」页签） | ~~P1~~ 已完成 |
 | B7 | **固定文档页** | `DocsPages.swift`（321 行） | 🟢 **已对位（批 G）**：四类目（关于 / 帮助 / 开源感谢 / 更新日志）内容层 `logic/DocPages`（写死在代码里，不取引擎）→ 文档窗 `ui/DocsDialog`（顶部分段切类目 + markdown 渲染）→ 面板菜单「关于 / 帮助」入口；内容按 **deepin 的事实**另写（Qt 6 + DDE / DTK），不抄 mac 的 Swift / macOS 文案 | ~~P2~~ 已完成 |
-| B8 | **四语言本地化（全应用接入）** | `L10n.swift`（2108 行） | 🟡 **批 AA 只做了「固定文档页」这一块**（判定层 `logic/DocPages` 扩到 zhCN/en/zhTW/ja 四语言 · 16 篇正文全给全 + 文档窗内语言选择器 + 持久化 `docs.language`）；**全应用 i18n 仍未做**（⚠ 真实规模实测：deepin 用户可见中文串 **1008 个去重 / 1186 次出现**，在 mac `L10n.swift` 的 zh-CN 表（483 键）里**逐字命中仅 155 个（15%）** ⇒ 「搬 mac 译文」这条路基本走不通，**85% 要新写**，尤其中日；台账原记「P2（量大）」**低估**了） | P2（量大，且**需人工翻译**） |
+| B8 | **四语言本地化（全应用接入）** | `L10n.swift`（2108 行） | 🟡 **批 AA 只做了「固定文档页」这一块**（判定层 `logic/DocPages` 扩到 zhCN/en/zhTW/ja 四语言 · 16 篇正文全给全 + 文档窗内语言选择器 + 持久化 `app.language`（与 mac UserDefaults 同名键逐字对齐））；**全应用 i18n 仍未做**（⚠ 真实规模实测：deepin 用户可见中文串 **1008 个去重 / 1186 次出现**，在 mac `L10n.swift` 的 zh-CN 表（483 键）里**逐字命中仅 155 个（15%）** ⇒ 「搬 mac 译文」这条路基本走不通，**85% 要新写**，尤其中日；台账原记「P2（量大）」**低估**了） | P2（量大，且**需人工翻译**） |
 | B9 | **原生菜单栏三件套（关于/帮助/设置）+ 设置统一为系统原生窗口** | `DeepDolphinApp.swift` | 🟡 **批 G 已接「关于 / 帮助」**（面板菜单 → 文档窗；DDE 无原生菜单栏对位物，改为面板菜单承载）；**「设置」仍是对话框**（`AiSettingsDialog`，三页签），非「原生独立设置窗口」 | ⚠ **批 AA 判定：不做**（实质只是「设置从对话框变独立窗口」；deepin 的 `AiSettingsDialog` 已是 `DDialog` 且**有「关闭」按钮** —— mac 那个 sheet **无关闭按钮**的问题在 DDE 下**不存在** ⇒ 价值低） |
 | B10 | **仪表盘项目卡片整卡可点** | `DashboardParts.swift` | 🟢 **已对位（台账原记「未开始」有误，批 G 复核时更正）**：`ProjectProgressCard::mouseReleaseEvent` → `goProject`（`Card` 是 QFrame 不吞鼠标事件，事件冒泡到卡片）；另有 mac 同款的「进入管控 →」钮 | ~~P3~~ 已完成 |
 | B11 | **Agent 补齐 18 个图能力工具**（契约检查第 12 组抓到的清单漂移） | `AgentCheck` | 🟢 **已对位（批 E1）**：28 个工具全接（命令形态抽成纯函数表 `logic/AgentToolPlan`，可无头判）；`deepDolphin --agent-tool-names` 出客户端权威清单，contract-check 第 12 组与真引擎 `tools --json` 严格对位（**CI 第 10 门**） | ~~P0~~ 已完成 |
@@ -671,9 +671,26 @@ C++ **没有 import 机制** ⇒ 标准库/第三方库的名字永远不会出�
 | 四语言**小节数一致**（不许某语言残缺） | ✅（关于 2 / 帮助 6 / 致谢 3 / 日志 2） |
 | 四语言关于页都写本平台事实（Qt / DDE / deepin），都不含 Swift / macOS | ✅ |
 
-**判据**：selfcheck **+18 条**（370/0）、接线门 **+33 项**（451 项全绿）。
+**判据**：selfcheck **+22 条**（374/0）、接线门 **+48 项**（466 项全绿）。
 门项里有一条是 `arch_forbid "DocsDialog.cpp" 'QStringLiteral\('` ——
 **文档窗里不许自己写死任何文案**（全在判定层，四语言共用一份）。
+
+**⚠ 持久化键是 `app.language`**（与 mac UserDefaults 的同名键**逐字对齐**，
+`L10n.swift:2042`），取值同一套 `zh-CN` / `en` / `zh-TW` / `ja`。
+⚠ deepin 目前**只有固定文档页**跟它走 ⇒ 文档窗的语言选择器**悬浮提示如实说明**
+（「目前只影响这一窗，其余界面仍是简体中文」）—— 不说的话就是不诚实的承诺。
+⇒ 全应用化之后**还是同一个键**，不迁移、也不会有两个「语言设置」打架。
+
+**⚠ 补了一道**行为**门**：接线门是**源码扫描** —— 它能证明「代码里写了
+`setButtonText`」，但**证明不了**「换语言后按钮真的变了」（扫描看得见调用，看不见结果）。
+⇒ 新增无头探针 `--docs-lang-probe`（`src/ui/dialogs/DocsDialogProbe.{h,cpp}`）：
+**真跑**一遍四语言切换，逐语言报出文档窗的**实际呈现**（标题 / 关闭按钮 / 四个类目
+分段名 / 正文 / 底部说明），断言脚本 `scripts/ci-docs-lang-probe.sh`（CI 第 4 门）核对
+「四种语言两两不同 / 英文档无汉字 / 呈现里无 `%1` 残留」。
+⚠ 探针会切语言 ⇒ 会写 `app.language` ⇒ 走 `QStandardPaths` **测试模式**且以
+`::_exit` 收尾（QSettings 根本不落盘）⇒ **绝不碰用户的真实设置**（实测：探针跑完
+`~/.config/deepin/deepDolphin.conf` 的 mtime 没变）；探针的「字段名」是机器格式 ⇒
+单独放探针文件，不去破「文档窗零字面量」那条纪律。
 
 **⚠ B8 的真实规模（这一条比上面所有实现都重要）**：
 deepin 用户可见中文串 **1008 个去重 / 1186 次出现**；而 mac `L10n.swift` 的

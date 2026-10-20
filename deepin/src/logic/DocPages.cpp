@@ -677,6 +677,26 @@ QString repoLabel(Language lang)
     return QString();
 }
 
+QString languageSelectorTip(Language lang)
+{
+    // ⚠ 如实说清**当前作用域**：deepin 现在只有固定文档页跟这个语言走
+    //   （全应用 i18n 仍待做，台账 B8）—— 不说的话，用户选了「English」
+    //   却发现别的界面还是中文 ⇒ 那是不诚实的承诺。
+    switch (lang) {
+    case Language::zhCN:
+        return QStringLiteral("固定文档页的语言（目前只影响这一窗，其余界面仍是简体中文）");
+    case Language::en:
+        return QStringLiteral("Language of the fixed documentation pages "
+                              "(currently this window only; the rest of the app stays Chinese)");
+    case Language::zhTW:
+        return QStringLiteral("固定文件頁的語言（目前只影響這一窗，其餘介面仍是簡體中文）");
+    case Language::ja:
+        return QStringLiteral("固定ドキュメントの言語（現在はこのウィンドウのみ。"
+                              "ほかの画面は簡体字中国語のままです）");
+    }
+    return QString();
+}
+
 QString engineRepoHint(Language lang, const QString &engineRepoUrl)
 {
     switch (lang) {

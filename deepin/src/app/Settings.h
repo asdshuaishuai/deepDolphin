@@ -11,7 +11,11 @@
 //   · ai.preset               —— 旧键迁移源（custom→deepseek，其余为 provider id）
 //   · ai.apiKey               —— **明文回退键**：key 正常只进 libsecret（AI 阶段），
 //                                此键仅 mock/无头自测路径使用；正常保存路径会清掉它。
-//   · docs.language           —— 固定文档页的语言（BCP 47 风格标签；批 AA 新增）
+//   · app.language             —— 应用语言（BCP 47 风格标签；批 AA 新增）。
+//                                键名与 mac 的 UserDefaults `app.language` **逐字对齐**
+//                                （mac L10n.swift:2042）—— 当前**只有固定文档页**跟它走
+//                                （台账 B8 的全应用 i18n 未做）；全应用化之后是**同一个键**，
+//                                不必迁移，也不会出现两个「语言设置」打架。
 #pragma once
 #include <QObject>
 #include <QString>
@@ -42,13 +46,16 @@ public:
     void setAiApiKeyPlaintext(const QString &key);
     void clearAi();                            // 清除全部 ai.* 键
 
-    // ── docs.language ──
-    /// 固定文档页的语言（持久化值；**BCP 47 风格**的语言标签，如 "zh-CN"/"en"）。
+    // ── app.language ──
+    /// 应用语言（持久化值；**BCP 47 风格**的语言标签，如 "zh-CN"/"en"）。
     ///
     /// ⚠ 缺省空串 = 还没选过 ⇒ 调用方回落到默认语言（简体中文）。
     ///   **不在这里回落**：这里只存「用户选了什么」，不替他决定。
-    QString docsLanguageKey() const;
-    void setDocsLanguageKey(const QString &key);
+    ///
+    /// ⚠ **作用域**：当前**只有固定文档页**跟这个值走（台账 B8 的全应用 i18n
+    ///   未做）—— 文档窗里的语言选择器会**如实说明**这一点。
+    QString appLanguageKey() const;
+    void setAppLanguageKey(const QString &key);
 
     // 同步落盘（退出前调用，防丢末次写入）
     void sync();

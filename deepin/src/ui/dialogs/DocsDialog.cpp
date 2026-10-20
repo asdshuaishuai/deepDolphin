@@ -21,7 +21,7 @@ DocsDialog::DocsDialog(QWidget *parent)
     setOnButtonClickedClose(false);
 
     // 语言：读持久化值 → 判定层解析（认不出 ⇒ 回落 + 标记 recovered）。
-    const QString storedKey = Settings::instance().docsLanguageKey();
+    const QString storedKey = Settings::instance().appLanguageKey();
     const DocPages::LanguageResolution res = DocPages::resolveLanguage(storedKey);
     m_language = res.language;
     m_recovered = res.recovered;
@@ -29,7 +29,7 @@ DocsDialog::DocsDialog(QWidget *parent)
     if (m_recovered) {
         // 自愈：把坏掉的键改回落到的语言（并说一句）。
         // 留着坏值 ⇒ 每次打开都提示，也坑到读同一个键的别的工具。
-        Settings::instance().setDocsLanguageKey(DocPages::languageKey(m_language));
+        Settings::instance().setAppLanguageKey(DocPages::languageKey(m_language));
     }
 
     auto *content = new QWidget(this);
@@ -110,7 +110,7 @@ void DocsDialog::onLanguagePicked(int index)
     // 用户自己选过了 ⇒ 「存的值坏掉」这件事已经过去，不再提示。
     m_recovered = false;
     m_recoveredKey.clear();
-    Settings::instance().setDocsLanguageKey(DocPages::languageKey(m_language));
+    Settings::instance().setAppLanguageKey(DocPages::languageKey(m_language));
     applyLanguage();
 }
 
@@ -126,6 +126,9 @@ void DocsDialog::applyLanguage()
 
     m_repo->setText(DocPages::repoLabel(m_language));
     setButtonText(0, DocPages::closeLabel(m_language));
+    // ⚠ 语言选择器**如实说明当前作用域**（目前只有这一窗跟着语言走）——
+    //   不说的话，用户选了「English」却发现别的界面还是中文 ⇒ 不诚实的承诺。
+    m_langBox->setToolTip(DocPages::languageSelectorTip(m_language));
 
     showKind(m_kindIndex);
 }
@@ -156,4 +159,23 @@ void DocsDialog::updateHint()
         return;
     }
     m_hint->setText(DocPages::engineRepoHint(m_language, DocPages::engineRepo()));
+}
+
+QStringList DocsDialog::probeValues() const
+{
+    // ⚠ 只回**值**，不回 key=value —— 字段名归探针文件（`DocsDialogProbe`）：
+    //   文档窗里一个字符串字面量都不许有（用户可见文案全在判定层）。
+    QStringList out;
+    out << windowTitle();
+    if (QAbstractButton *b = getButton(0))
+        out << b->text();
+    if (m_segments) {
+        for (int i = 0; i < m_segments->count(); ++i)
+            out << m_segments->buttonText(i);
+    }
+    if (m_body)
+        out << m_body->toPlainText();
+    if (m_hint)
+        out << m_hint->text();
+    return out;
 }

@@ -39,10 +39,14 @@
 #include "ui/ColorSampleSheet.h"
 #include "ui/DesignTokens.h"
 #include "ui/PanelWindow.h"
+#include "ui/dialogs/DocsDialog.h"
+#include "ui/dialogs/DocsDialogProbe.h"
 #include <DApplication>
 #include <DGuiApplicationHelper>
 #include <DLog>
+#include <QComboBox>
 #include <QCoreApplication>
+#include <QStandardPaths>
 #include <unistd.h>
 #include <QElapsedTimer>
 #include <QFile>
@@ -386,6 +390,38 @@ static int headlessPlatformProbe(int argc, char *argv[])
     ::_exit(rc);
 }
 
+// ── 无头文档语言探针（批 AA）：固定文档页的四语言切换**真跑**一遍 ──
+// 用法：deepDolphin --docs-lang-probe（配合 QT_QPA_PLATFORM=offscreen 亦可用）。
+// 逐语言打印文档窗的**实际**呈现（每行一个字段，key=value）：
+//   lang=<语言 key>   title=<窗口标题>   close=<关闭按钮文字>
+//   segments=<四个类目分段名，用 | 分隔>   body=<正文前 120 字，换行折成 |>
+//   hint=<底部说明>
+// ⚠ 只报告不断言（断言归 scripts/ci-docs-lang-probe.sh）。
+// ⚠ **必须隔离设置**：探针会切语言 ⇒ 会写 `app.language` ⇒ 走 QSettings 的
+//   测试模式（QStandardPaths test mode）⇒ 绝不碰用户的真实设置。
+static int headlessDocsLangProbe(int argc, char *argv[])
+{
+    // ⚠ 必须在 QApplication 构造**之前**开测试模式：QSettings 的落盘位置
+    //   在构造时就定下来了。
+    QStandardPaths::setTestModeEnabled(true);
+
+    DApplication app(argc, argv);
+    app.setApplicationName(QStringLiteral("deepDolphin"));
+    app.setOrganizationName(QStringLiteral("deepin"));
+
+    DocsDialog dlg;
+    const QString report = docsLangProbeReport(&dlg);
+    if (report.isEmpty()) {
+        fprintf(stderr, "✗ 文档窗里找不到语言选择器（无从断言）\n");
+        fflush(stderr);
+        ::_exit(1);
+    }
+    fprintf(stdout, "%s\n", qPrintable(report));
+    fflush(stdout);
+    // 同平台探针：走 ::_exit 跳过静态析构（DTK/DBus 全局单例收尾会挂死）。
+    ::_exit(0);
+}
+
 static int headlessEngineDownload(int argc, char *argv[], const QString &apiUrl, const QString &dest)
 {
     // 无头跑一遍「查发布信息 → 下载 → 校验 → 解压 → 落盘 → 探活」全链，
@@ -456,7 +492,8 @@ int main(int argc, char *argv[])
     // 不变（打完栈恢复默认处置并 re-raise，core 照常），ci.sh 成败判定不受影响。
     CrashHandler::install();
 
-    // ── 无头分支：--selfcheck / --version / --platform-probe / --agent-selftest
+    // ── 无头分支：--selfcheck / --version / --platform-probe / --docs-lang-probe /
+    //   --agent-selftest
     //（GUI 应用构造前解析——未知 flag 落进 GUI 主路径会以单实例常驻，无头 CI 挂死）──
     QStringList rawArgs;
     rawArgs.reserve(argc);
@@ -652,6 +689,11 @@ int main(int argc, char *argv[])
         // 必须留在无头分支：否则未知 flag 落进 GUI 主路径单实例常驻，ci.sh 步骤 4 挂死
         //（M1a 期实测）。M1-9 起返回探针事实，不再快速失败。
         return headlessPlatformProbe(argc, argv);
+    }
+    if (rawArgs.contains(QStringLiteral("--docs-lang-probe"))) {
+        // 固定文档页的四语言切换**真跑**一遍（批 AA）：报文档窗的实际呈现。
+        // 同样必须留在无头分支（否则会落进 GUI 主路径常驻，CI 挂死）。
+        return headlessDocsLangProbe(argc, argv);
     }
     if (rawArgs.contains(QStringLiteral("--hook-status-parse"))) {
         // 客户端对引擎 `hook status <项目> --json` 载荷的判定结果

@@ -174,6 +174,7 @@ add_executable(deepDolphin
     src/ui/dialogs/CodeGraphDialog.cpp
     src/ui/dialogs/PatchCheckDialog.cpp
     src/ui/dialogs/DocsDialog.cpp
+    src/ui/dialogs/DocsDialogProbe.cpp
     src/ui/CodeHighlighter.cpp
     src/ui/dialogs/ScanDialog.cpp
     src/ui/dialogs/panes/AutomationPane.cpp

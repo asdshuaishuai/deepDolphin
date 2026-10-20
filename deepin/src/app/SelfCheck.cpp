@@ -2519,6 +2519,18 @@ int SelfCheck::run(QStringList &log)
                 }
                 check(log, "文档页：四种语言的显示名齐全且互不相同（选择器不重复）", ok);
             }
+            {
+                // 作用域提示：四语言都非空，英文那档**不含汉字** ——
+                // 它要如实告诉用户「目前只有这一窗跟着语言走」。
+                const QRegularExpression han(QStringLiteral("[\\x{4E00}-\\x{9FFF}]"));
+                bool allPresent = true;
+                for (const DocPages::Language &l : langs)
+                    allPresent = allPresent && !DocPages::languageSelectorTip(l).isEmpty();
+                check(log, "文档页：语言选择器的作用域提示四语言齐全（不承诺没做到的事）",
+                    allPresent);
+                check(log, "文档页：英文作用域提示不含汉字",
+                    !DocPages::languageSelectorTip(DocPages::Language::en).contains(han));
+            }
         }
 
         {

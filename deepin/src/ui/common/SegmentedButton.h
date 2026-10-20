@@ -88,6 +88,15 @@ public:
             b->setText(text);
     }
 
+    // 读一档的文字（无头探针断言用 —— 「换语言后档位名真的变了」要看得见）；
+    // 越界 id 返回空串（不抛、不崩）。
+    QString buttonText(int id) const
+    {
+        if (QAbstractButton *b = m_group->button(id))
+            return b->text();
+        return QString();
+    }
+
     int checked() const { return m_group->checkedId(); }
     int count() const { return m_group->buttons().size(); }
 

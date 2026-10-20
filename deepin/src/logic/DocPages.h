@@ -93,6 +93,14 @@ QString closeLabel(Language lang);
 /// 「查看客户端仓库」按钮文字。
 QString repoLabel(Language lang);
 
+/// 语言选择器的**作用域提示**（悬浮说明）。
+///
+/// ⚠ 为什么要有它：mac 的 `app.language` 是**全应用**的语言；deepin 目前
+///   **只有固定文档页**跟它走（台账 B8 的全应用 i18n 还没做）⇒ 用户选了
+///   「English」却发现别的界面还是中文 ⇒ **必须说清楚当前的作用域**，
+///   否则就是不诚实的承诺。
+QString languageSelectorTip(Language lang);
+
 /// 底部出处说明（**传进去的仓库地址原样带上**）。
 ///
 /// ⚠ 约定：这三个提示函数**入参给值、出口即成品**（不留 `%1` 给调用方填）。
