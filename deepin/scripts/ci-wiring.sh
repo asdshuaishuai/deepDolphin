@@ -2300,7 +2300,10 @@ arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if SH_CONST\.match\(co
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+m = PY_CONST_IF\.match\(ln\)$' 2 'python 侧的恒真条件判定必须在（`if True:` / `if False:`）｜⚠ **两处**：.py 顶层 + **heredoc 内嵌 python** ⇒ 同一份判定走两处 ⇒ 改一处不会漏另一处｜⚠ **整行锚定** ⇒ 注释顶不住（批 BJ 实测）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+st_bad = self_test\(\)$' 1 '探针的**自检**必须在（门自己证明自己有牙）｜⚠⚠⚨ **整行锚定**：盯串的话「`st_bad = self_test() or True`」照样命中 ⇒ 自检被废而门假绿'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if st_bad:$' 1 '自检失败必须**判红**（自检不过还继续跑 ⇒ 等于没有自检）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.*,\s*(True|False)\),$' 28 '自检样例表**不许被掏空**（28 条：既含「该判为恒真」也含「不该判为恒真」的样例 ⇒ 只测一边 ⇒ 判反了也能过；⚠ 批 BG 起加了 6 条「断言函数实参」样例 + 1 条「实参解析器」样例；⚠ 批 BJ 起加了 **12 条「脚本侧捷径」样例**）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.cond., [^,]*, True\),$' 6 '自检样例里 **cond 类的「该判为恒真」** 那 6 条不许被掏空（⚠ 只测一边 ⇒ 判反了也能过）｜⚠⚠⚨ **整行锚定**（批 BQ）：中间用**有界**通配（吃不掉逗号 ⇒ 行结构仍被钉住）⇒ 不用无界通配（点星）⇒ 否则整行锚定名存实亡'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.cond., [^,]*, False\),$' 3 '自检样例里 **cond 类的「不该判为恒真」** 那 3 条不许被掏空（⚠ 这 3 条是判据的**反向**护栏 ⇒ 少了它们 ⇒ 探针只会乱报）｜⚠⚠⚨ **整行锚定**（批 BQ）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.shortcut., [^,]*, True\),$' 8 '自检样例里 **shortcut 类的「该判为捷径」** 那 8 条不许被掏空（批 BJ 起加的脚本侧捷径样例）｜⚠⚠⚨ **整行锚定**（批 BQ）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.shortcut., [^,]*, False\),$' 4 '自检样例里 **shortcut 类的「不该判为捷径」** 那 4 条不许被掏空（⚠ 反向护栏）｜⚠⚠⚨ **整行锚定**（批 BQ）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^JUDGEMENT_PREFIX = .SelfCheck.$' 1 '判定层文件名前缀的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 一条整行正则罩不住 ⇒ 拆成两条）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if not \(fn\.startswith\(JUDGEMENT_PREFIX\) and fn\.endswith\(.\.cpp.\)\):$' 1 '判定层文件名前缀的**使用点**必须在（⚠ 散在别处 ⇒ 改一处就废掉另一处）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if bad:$' 1 '探针的**违规 ⇒ 判红**判定必须在（没有它 ⇒ 探针只报告不拦 ⇒ 等于没门）｜⚠⚠⚨ **整行锚定**：盯串的话「`if bad or True:`」照样命中 ⇒ **探针的判红被掏空而门假绿**'
@@ -2364,7 +2367,11 @@ arch_need_count "$SRC/scripts/ci-tautology-check.py" '^ASSERT_CALL_BASELINE = \{
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+for fn, helpers in sorted\(ASSERT_CALL_BASELINE\.items\(\)\):$' 1 '断言调用**条数基线表**的使用必须在（散在别处 ⇒ 改一处就废掉另一处）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+.contract-check\.sh.: \{.check.: 93, .check_text.: 6\},$' 1 '基线里的 **`check` = 93 / `check_text` = 6 必须一起钉死**（⚠ 原来盯两个片段 ⇒ 各盯一处 ⇒ 改一个就废；⚠ 合并成一条**整行锚定** ⇒ 两个数**都**被钉死 ⇒ 比原来**更强**）｜⚠ **两条并一条** ⇒ 门项数 -1'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if got_n != want_n:$' 1 '**条数交叉校验**必须在（解析器漂了 / 断言被增删 ⇒ 当场红）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.assert_arg.,.*\),$' 6 '自检样例里**断言实参**那组不许被掏空（6 条）｜⚠ **整行锚定**（含行尾）：盯串的话「后面追加内容」躲得过｜⚠⚠⚨ 如实说明：**这 6 条样例的形态各异** ⇒ 一条正则只能盯到「行首是 `assert_arg 三元组，` 且行尾是 `),`」⇒ **中间实参内容被改仍躲得过** ⇒ 那由自检的**内容**负责（自检样例被改 ⇒ 自检结果会变 ⇒ 门红）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.assert_arg., \(.check., [^,]*\), True\),$' 2 '自检样例里 **断言实参（check 助手）的「该判为恒真」** 那 2 条不许被掏空｜⚠⚠⚨ **整行锚定**（批 BQ）：中间用**有界**通配 ⇒ 不用无界通配（点星）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.assert_arg., \(.check., [^,]*\), False\),$' 1 '自检样例里 **断言实参（check 助手）的「不该判为恒真」** 那 1 条不许被掏空（⚠ 反向护栏；⚠ 这一条的实参里**带右括号** ⇒ 字符类要用 `[^,]` 而不是 `[^)]` ⇒ **实测踩到**：用 `[^)]` 命中 0 而不是 1）｜⚠⚠⚨ **整行锚定**（批 BQ）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.assert_arg., \(.check_text., [^,]*\), True\),$' 2 '自检样例里 **断言实参（check_text 助手）的「该判为恒真」** 那 2 条不许被掏空｜⚠⚠⚨ **整行锚定**（批 BQ）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.assert_arg., \(.check_text., [^,]*\), False\),$' 1 '自检样例里 **断言实参（check_text 助手）的「不该判为恒真」** 那 1 条不许被掏空（⚠ 反向护栏）｜⚠⚠⚨ **整行锚定**（批 BQ）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.shell_scan., \([^)]*, \[[^]]*\]\), True\),$' 1 '自检样例里**实参解析器**那条不许被掏空（⚠ 它是解析器的**空实参**护栏 ⇒ 少了它 ⇒ 解析器把空实参吞掉没人知道）｜⚠⚠⚨ **整行锚定**（批 BQ）：中间用**有界**通配（吃不掉右括号与右方括号 ⇒ 行结构仍被钉住）；⚠ **结构顺序实测踩到**：列表在右括号**之前** ⇒ 正则要写成 `\([^)]*, \[[^]]*\]\)` ⇒ 写反了命中 0'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BG 段有门项红（上面带 ✗ 的行）" >&2
@@ -2622,4 +2629,49 @@ echo "✓ 批 BL 段门项全绿（盯门自己的工具的门项必须整行锚
 echo "✓ 批 BN 段门项全绿（整行锚定的豁免机制：双向配准 ⇒ 豁免表 ≡ 非锚定门项集合；改名漏改有静态兜底）；门项合计 ${ARCH_N} 项（含前段）"
 echo "✓ 批 BO 段门项全绿（接线门脚本自己的失败上报路径：per-函数 + 总数 + 注册表 ⇒ 少了上报 = 必红）；门项合计 ${ARCH_N} 项（含前段）"
 echo "✓ 批 BP 段门项全绿（恒真探针自己的扫描范围：范围行逐条钉住 + 文件数基线恰好相等 ⇒ 范围被改窄 = 必红）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 BQ · 「整行锚定」不许名存实亡（中间不许无界通配）─────────────────────
+#
+# ⚠⚠⚨ **起因（批 BP 实测坐实，不是推演）**：
+#   批 BL/BM/BN 一路用**整行锚定**挡「**判定被掏空、串还在**」
+#   ⇒ 但整行锚定只看「行首 `^`」+「行尾 `$`」
+#   ⇒ 中间放一个**点星**（无界通配）⇒ 行首行尾锚死、**中间什么都能吃**
+#   ⇒ ⇒ 判定被掏空、串还在 ⇒ 门照样绿 ⇒ 「整行锚定」**名存实亡**。
+#   实测：探针的样例表门项就是这种写法 ⇒ 样例表内容随便改都照样命中
+#   ⇒ 那道门是**假的**（批 BL 遗留的「锚定 ≠ 内容」那条边界，本批收掉一半）。
+# ⚠⚠⚨ **修法（三层）**：
+#   ① **审计器加一条判定** `has_unbounded_wildcard()`：只认**未转义**的点星
+#      （点号前**偶数**个反斜杠 ⇒ 是通配；**奇数**个 ⇒ 被转义 ⇒ 是字面点）
+#      ⇒ 适用范围仍是「门自己的工具」（探针 / 审计器 / ci.sh）
+#      ⇒ 违规 ⇒ 审计器第 8 种失败态（rc=8）。
+#   ② **自检必须含正反两面**（批 BF 纪律）：含点星的**必判违规** /
+#      有界通配的**必判合规** / 转义点星的**必判合规** ⇒ 判定被掏空时当场红。
+#   ③ **把那 2 条「名存实亡」的门项改成精确形式**（本批同批改）：
+#      按「类别 + 期望」拆成 **9 条**（cond 6+3 / shortcut 8+4 /
+#      assert_arg 2+1+2+1 / shell_scan 1）⇒ 中间用**有界**通配
+#      ⇒ 吃不掉结构分隔符 ⇒ 行结构仍被钉住 ⇒ 整行锚定**名副其实**。
+# ⚠⚠⚨ **中间为什么用「有界」通配**（实测踩到，记下来）：
+#   正则参数用**单引号**包裹 ⇒ 正则里**不能有字面单引号**（批 BL 既有约束）
+#   ⇒ 字符类里写不了 `[^\']` ⇒ 只能挑**不含引号**的结构分隔符：
+#   逗号 / 右括号 / 右方括号 ⇒ `[^,]` / `[^)]` / `[^]]`。
+#   ⚠⚠ **踩到的坑**：右括号类罩不住 `('check', "d.get('x')==1")`
+#     ⇒ 那个实参里**带右括号** ⇒ 实测命中 **0**（不是 1）⇒ 改用逗号类才罩住。
+#   ⚠⚠ **另一个坑**：`('shell_scan', (<文本>, [<列表>]), True)` 的**结构顺序**
+#     是「列表在右括号**之前**」⇒ 正则必须写成 `\([^)]*, \[[^]]*\]\)`
+#     ⇒ 写反了实测命中 **0**。
+# ⚠⚠⚨ **本段 5 条门项守的是「新规则自己不许被掏空」**：
+#   规则被掏空 ⇒ 「整行锚定」继续名存实亡 ⇒ 而**没人会发现**
+#   （审计器自己绿 ⇒ 它的报告没人怀疑）⇒ 所以规则本身也要有门。
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def has_unbounded_wildcard\(mid\):$' 1 '无界通配的**判定函数**必须在（⚠ 判定逻辑只许有一份 ⇒ 实扫与自检都走它 ⇒ 两套口径必然漂）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if nb % 2 == 0:$' 1 '无界通配判定的**转义计数行**必须在（⚠ 点号前**偶数**个反斜杠 ⇒ 这个点号是通配元字符；**奇数**个 ⇒ 被转义 ⇒ 是字面点）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return True$' 1 '无界通配判定的**「判违规」返回**必须在（⚠ 全文件恰好 1 处 ⇒ 判定被掏空成 `return False` 就红）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if has_unbounded_wildcard\(rx\[1:-1\]\):$' 1 '无界通配判定**必须真的在判定路径上**（⚠ 只定义不调用 ⇒ 规则形同虚设 ⇒ 整行锚定继续名存实亡）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+\(r.[^,]*, (True|False)\),$' 7 '锚定形态**自检的样例条数**必须是 7（⚠ 4 条原有 + 3 条批 BQ 新增：含点星的必判违规 / 有界通配的必判合规 / 转义点星的必判合规）⇒ 样例被删 ⇒ 自检失去证明力 ⇒ 门红'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 BQ 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 BQ 段门项全绿（整行锚定不许名存实亡：中间不许无界通配 ⇒ 规则自己有门）；门项合计 ${ARCH_N} 项（含前段）"
+
 exit 0
