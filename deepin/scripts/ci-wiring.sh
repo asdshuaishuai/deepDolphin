@@ -1118,7 +1118,7 @@ arch_forbid "$ROOT/macos/Sources/deepDolphin/ArchPage.swift" 'private func extra
 arch_forbid "$ROOT/macos/Sources/deepDolphin/CodeGraphPage.swift" 'private func extractHTMLPath' 'CodeGraphPage 不许再自带一份回执解析（同名复制会漂移）'
 arch_need "$ROOT/macos/Sources/deepDolphin/ArchPage.swift" 'ArchReceipt\.htmlPath\(' 'ArchPage 走共享的纯函数'
 arch_need "$ROOT/macos/Sources/deepDolphin/CodeGraphPage.swift" 'ArchReceipt\.htmlPath\(' 'CodeGraphPage 走共享的纯函数'
-arch_need "$ROOT/macos/scripts/client-check.sh" 'ArchReceipt\.swift' 'mac 侧判据必须编译 ArchReceipt.swift（不编 ⇒ 那四条断言永远绿、永远抓不到东西）'
+arch_need "$ROOT/macos/scripts/client-check.sh" 'swiftc .*\$ARCHRECEIPT' 'mac 侧判据必须**在 swiftc 那行**编译 ArchReceipt.swift（只声明不编 ⇒ 那四条断言永远绿、永远抓不到东西）'
 arch_need "$ROOT/macos/Tests/ClientCheck/main.swift" 'ArchReceipt\.htmlPath\(' 'mac 侧判据必须真的断言「引擎真实回执形态抽得出路径」'
 # ⚠ deepin 侧那条**实跑夹具**也钉住（它是两侧共同的口径来源）
 arch_need "$SRC/src/app/SelfCheckGraph.cpp" '已写入：' 'deepin 侧自检必须钉住**引擎实跑原文**的回执形态（两侧口径共同的事实来源）'
