@@ -1249,7 +1249,25 @@ else
     if python3 "$SRC/scripts/ci-wiring-audit.py" --list >"$AUDIT_OUT" 2>"$AUDIT_ERR"; then
         echo "  ✓ 门自审计：豁免基线之外的「串不唯一」隐患 0 条"
     else
-        echo "  ✗ 门自审计没过：**新加的门盯的串不唯一** ⇒ 改一处骗得过门" >&2
+        _audit_rc=$?
+        # ⚠⚠ **按审计器的退出码说原因**（批 AZ 实测查出来的失准）：
+        #   原来这一行**只说一种原因**（「新加的门盯的串不唯一」），
+        #   可审计器有 **5 种**失败态（见 ci-wiring-audit.py 的 main()）：
+        #     2 = 审计器自己有盲区（有门项没解析到 ⇒ 它们**根本没被审**）
+        #     3 = 豁免基线之外有「串不唯一」的隐患
+        #     4 = 次数门配准失准（期望次数 ≠ 实际命中数 ⇒ 门没牙或恒红）
+        #     5 = 正则写法体检不过，或**有门项命中 0 次**（门永远匹配不到）
+        #   ⇒ 真实原因不是「串不唯一」时，那句话**指错了方向**（排障会被带偏）。
+        #   ⚠ 实测（批 AZ 负控）：把新加的 `arch_need_count` 目标串删掉 ⇒
+        #     审计器报的是「命中 0 次 ⇒ 门恒红」(rc=4)，而旧消息说的是「串不唯一」⇒ **两回事**。
+        case "$_audit_rc" in
+            2) _audit_why="审计器自己有盲区（有门项没解析到 ⇒ 它们**根本没被审**）" ;;
+            3) _audit_why="豁免基线之外有「串不唯一」的隐患（改一处骗得过门）" ;;
+            4) _audit_why="次数门配准失准（期望次数 ≠ 实际命中数 ⇒ 门没牙或恒红）" ;;
+            5) _audit_why="正则写法体检不过，或**有门项命中 0 次**（门永远匹配不到）" ;;
+            *) _audit_why="未知的失败码" ;;
+        esac
+        echo "  ✗ 门自审计没过（退出码 $_audit_rc）：$_audit_why" >&2
         sed 's/^/      /' "$AUDIT_ERR" >&2
         sed 's/^/      /' "$AUDIT_OUT" >&2
         ARCH_FAIL=1
@@ -1750,9 +1768,55 @@ arch_need "$SRC/src/ui/dialogs/AgentDialog.cpp" 'anim->setDuration\(DS::MotionSt
 arch_need "$SRC/src/ui/dialogs/AgentDialog.cpp" 'anim->setEasingCurve\(QEasingCurve::InOutQuad\);' '那唯一一处动画的缓动统一（不各写各的）'
 arch_need "$SRC/src/ui/DesignTokens.h" 'constexpr int MotionStandardMs = 200;' '动效时长档 = **200ms**（全项目唯一出处的**唯一取值** —— 散写 200 就是第二个真相源；改档位只改这一处）'
 
+# ── 批 AZ · CI 的两个**真实检查盲区** + 崩点可诊断性 ─────────────────────
+# ⚠⚠⚠ **这一段盯的是 ci.sh 本身** —— 前面的门盯的是「源码里的接线在不在」，
+#   而这一段盯的是「**门自己**还活着吗」。
+# ⚠ **起因（批 AY 的现象）**：2026-10-20 两次 ci.sh 输出里出现 glibc 段错误回栈，
+#   **而 ci.sh 的退出码仍是 0** ⇒ CI 误判通过。
+# ⚠⚠⚠ **本批把那个机制定位出来了（实测）**，并分成两个盲区：
+#
+#   【盲区 1】selfcheck 步的**退出码被 `|| true` 吞掉**
+#     原来是 `SELFCHECK_OUT="$("$BIN" --selfcheck || true)"`。
+#     ⚠⚠ **要分清两种「吞退出码」**（批 AY 记的「`| tail` 吞退出码」在这里**不成立**）：
+#       `ci.sh` 顶部有 `set -euo pipefail` ⇒ 实测（**dash 与 bash 都试过**）
+#       `false | tail -2` 会让**整个脚本以 1 退出** ⇒ **管道没有吞退出码**。
+#       而 `$( cmd || true )` 里的 `|| true` 是**在命令替换内部** ⇒ 它把 cmd 的
+#       退出码变成 0 ⇒ 命令替换整体成功 ⇒ 外层什么也看不出来。
+#     ⇒ **崩在汇总行之后**时（stdout 已打出 "N passed, M failed"，随后才段错误）
+#       解析照样成功 ⇒ **门放行**。
+#     ⇒ **实测复现**：假二进制打印完汇总行再 `kill -SEGV` ⇒ **旧逻辑判绿**。
+#     ⚠ 这**正好解释**批 AY 的现象（崩掉的子进程退出码没人看 ⇒ CI 误判通过）。
+#
+#   【盲区 2】agent-selftest 步**零断言**
+#     原来是 `"$BIN" --agent-selftest | tail -2` ⇒ **只打两行输出，一句断言都没有**：
+#     agent 链路**整条坏掉**（工具循环断了、模型不回应、进程早退）时，
+#     只要进程**退出码是 0**，这一门照样绿 ⇒ **CI 判「agent 链路是好的」而它其实坏了**。
+#     ⚠⚠ 实测纠正：这里的洞**不是**「退出码被管道吞掉」（见上），
+#       而是「**退出码之外没有别的断言**」——
+#       退出码只能区分「0=FINAL / 1=ERROR」（main.cpp:68-72），
+#       **区分不了「链路坏了但恰好返回 0」**（main.cpp:191-197：
+#        没有 assistant 消息时 finalText 是空串，仍会打印 `[selftest] FINAL: ` 并 return 0）。
+#     ⇒ 现在**三件事都要查**：① 退出码 == 0 ② stdout 含 `[selftest] FINAL:`
+#       ③ stdout 含 `[selftest-done]`。
+#
+# ⚠ **下面每条门都盯「干活的那一行」**（批 AP/AQ/AR/AS/AX 连续五次同形状的纪律）：
+#   ⇒ 正则一律**只匹配唯一一处**，错误消息里重复出现的词**不算**（靠 `grep -q` 前缀锚定）。
+arch_forbid_ml "$SRC/scripts/ci.sh" '--selfcheck[^;|]*\|\| true' 'selfcheck 的退出码**不许被 `|| true` 吞掉**（⚠ `|| true` 在命令替换内部 ⇒ 崩在汇总行**之后**时解析照样成功 ⇒ 门放行；批 AZ 实测复现：旧逻辑判绿）'
+arch_forbid_ml "$SRC/scripts/ci.sh" '--agent-selftest[^;|]*\| *tail' 'agent-selftest 的输出**不许再被管道截断**（批 AY 的教训：段错误回栈被 `| tail -2` 截掉 ⇒ 白丢线索；落盘才能排障）'
+arch_need_count "$SRC/scripts/ci.sh" 'SELFCHECK_RC=\$\?' 1 'selfcheck 的退出码**有且只有一个**收集点（`|| SELFCHECK_RC=$?`；这是上一条 forbid 的**对位**：只禁 `|| true` 不够 ⇒ 必须有一条「真的收了」的正面证据）'
+arch_need_count "$SRC/scripts/ci.sh" 'AGENT_RC=\$\?' 1 'agent-selftest 的退出码**有且只有一个**收集点'
+arch_need_count "$SRC/scripts/ci.sh" '-ge 128' 2 '**信号退出必须显式判红**（128+n = 被信号 n 杀死；selfcheck 与 agent-selftest 各一处 —— ⚠ 恰好的 2 次：将来加第三个子进程检查时门会红 ⇒ 逼人回来补这条门，而不是默默多一个不判信号的调用点）'
+arch_need_count "$SRC/scripts/ci.sh" 'kill -l ' 2 '崩了要说清**是什么信号**（`kill -l` 查信号名；两处各一次）—— 只报「退出码 139」没人知道那是 SEGV 还是别的'
+arch_need_count "$SRC/scripts/ci.sh" 'grep -q .*FINAL:' 1 'agent-selftest 必须断言 **`[selftest] FINAL:` 标记**（盯**那条 grep**：错误消息里也提到 FINAL ⇒ 裸盯词会被顶替）'
+arch_need_count "$SRC/scripts/ci.sh" 'grep -q .*selftest-done' 1 'agent-selftest 必须断言**收尾标记 `[selftest-done]`**（盯**那条 grep**：错误消息里也提到该标记 ⇒ 裸盯词会被顶替）'
+arch_need_count "$SRC/scripts/ci.sh" 'mkdir -p "\$CRASH_DIR"' 1 'core 目录必须**先建出来**（core_pattern 是相对名 ⇒ core 落在崩溃进程的 cwd ⇒ 没有专用目录就没有 core 可查）'
+arch_need_count "$SRC/scripts/ci.sh" 'ulimit -c ' 1 'core dump 必须**开着**（不设 `ulimit -c` ⇒ 崩了**压根没有 core** ⇒ 「留 core 供下次查」这句话是空的）'
+arch_need_count "$SRC/scripts/ci.sh" 'cd "\$CRASH_DIR" && "\$BIN" --selfcheck' 1 'selfcheck 必须在**专用目录**里跑（core 落 cwd ⇒ 不 cd 进 CRASH_DIR ⇒ core 落在仓库目录 ⇒ 弄脏工作区且没人知道去哪儿找）'
+arch_need_count "$SRC/scripts/ci.sh" 'BUILD="\$\(cd "\$BUILD"' 1 'BUILD 必须**绝对化**（一旦 cd 进 core 目录，相对路径的 $BIN 就找不到了 ⇒ 自测步直接起不来）'
+
 if [ "$ARCH_FAIL" -ne 0 ]; then
-    echo "✗ 接线门失败：批 AX 段有门项红（上面带 ✗ 的行）" >&2
+    echo "✗ 接线门失败：批 AZ 段有门项红（上面带 ✗ 的行）" >&2
     exit 1
 fi
-echo "✓ 批 AX 段门项全绿（M3c 图标名/动效已达成）；门项合计 ${ARCH_N} 项（含前段）"
+echo "✓ 批 AZ 段门项全绿（CI 自测步不许吞退出码 / agent 自测三断言 / 崩点可诊断）；门项合计 ${ARCH_N} 项（含前段）"
 exit 0

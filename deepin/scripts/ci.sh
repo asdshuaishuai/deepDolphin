@@ -20,6 +20,11 @@
 set -euo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD="${1:-$SRC/build}"
+# ⚠ **绝对化**：批 AZ 起 selfcheck/agent-selftest 要 `cd` 进 core 目录再跑
+#   （core_pattern 是相对名 ⇒ core 落在进程 cwd ⇒ cwd 必须是专用目录）。
+#   ⇒ 若 BUILD 是相对路径（用户传 `scripts/ci.sh build`），cd 之后 $BIN 就找不到了。
+#   ⇒ 这里先绝对化（`cd` 到不存在的目录会失败 ⇒ 用 `|| true` 兜住，保留原值）。
+BUILD="$(cd "$BUILD" 2>/dev/null && pwd || echo "$BUILD")"
 BIN="$BUILD/deepDolphin"
 
 # 运行库环境提前到步骤 1 之前：selfcheck 也要加载 sysroot 的 Qt6/DTK6——原先导出
@@ -30,14 +35,85 @@ export LD_LIBRARY_PATH="$HOME/.local/dd-sysroot/usr/lib/x86_64-linux-gnu${LD_LIB
 export QT_PLUGIN_PATH="$HOME/.local/dd-sysroot/usr/lib/x86_64-linux-gnu/qt6/plugins${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 
+# ── 崩点可诊断（批 AZ）────────────────────────────────────────────────────
+# ⚠ **为什么要有**：批 AY 记过一次「ci.sh 输出里出现段错误回栈、而 ci.sh 退出码仍是 0」。
+#   那次**根因没定位**（2 次都未复现）⇒ 唯一能推进的是「**下次复现时要能查**」。
+#   ⇒ 这里把三样东西备好：
+#   ① **完整输出落盘**（selfcheck.err / agent-selftest.out|err）—— 批 AY 的栈
+#      被 `| tail -2` 截断 ⇒ 白丢线索 ⇒ 这条不许再犯。
+#   ② **core dump 开着**（`ulimit -c`）—— 本机**没有 gdb**，但 `strings core`
+#      还能看出是哪个库/哪个符号 ⇒ 比一句「Segmentation fault」有用得多。
+#      ⚠ 实测：`core_pattern` 是相对名 `core`（core_uses_pid=1 ⇒ 文件名带 pid）
+#        ⇒ core 落在**崩溃进程的 cwd** ⇒ 必须在**专用目录**里跑，别落进仓库根。
+#      ⚠ 实测单位：`ulimit -c` 在 bash 下是 1024 字节/单位、dash 下是 512 字节/单位
+#        ⇒ 这里给的值在两种 shell 下分别是 256MB / 128MB 上限（都够用，且不会撑爆磁盘）。
+#   ③ **崩了要说清「崩在哪一步」**（信号名 + 退出码 + core 路径 + stderr 全文）。
+#
+# ⚠ **core 目录不进 git**：`build/` 已被 .gitignore 忽略 ⇒ core 落这儿不会脏工作区。
+CRASH_DIR="$BUILD/crash"
+mkdir -p "$CRASH_DIR"
+# 256MB（bash）/ 128MB（dash）上限：够抓栈，又不会把磁盘写满。
+ulimit -c 262144 2>/dev/null || true
+# 打印最近一次 core 的路径（崩了才用得上；没有就什么都不打）。
+# ⚠⚠ **末尾必须 `|| true`**（批 AZ 实测踩到的坑）：
+#   「没有 core 时 `ls` 退出码非 0」在 `set -euo pipefail` 下会**反噬**：
+#   `ls | head -1` 的管道码 = ls 的非 0 ⇒ 命令替换 `_core="$(latest_core)"`
+#   拿到的退出码非 0 ⇒ **赋值语句本身失败** ⇒ `set -e` 直接把脚本带走
+#   （实测 dash/bash 都是 rc=2，**后面那句诊断根本打不出来**）。
+#   ⇒ 这里必须显式兜住，让「没有 core」是一个**正常分支**而不是脚本终止。
+# ⚠ 实测命名：`core_pattern` 是相对名 `core`、`core_uses_pid=1`
+#   ⇒ 实际落盘文件名是 **`core.<pid>`**（实测 `core.1565590`）⇒ glob 用 `core.*` 正好。
+latest_core() {
+    ls -t "$CRASH_DIR"/core.* 2>/dev/null | head -1 || true
+}
+
 SC_MIN=393
 echo "› 1/12 selfcheck（断言 0 failed 且 ≥58 passed 且 ≥$SC_MIN 条判据不许被删）"
-SELFCHECK_OUT="$("$BIN" --selfcheck || true)"
+# ⚠⚠⚠ **不许用 `|| true` 吞掉 selfcheck 的退出码**（批 AZ 实测出来的真洞）：
+#   原来这行是 `SELFCHECK_OUT="$("$BIN" --selfcheck || true)"` ⇒ **退出码被丢弃**。
+#   ⚠⚠ **要分清两种「吞退出码」**（批 AY 的「`| tail` 吞退出码」在这里**不成立**）：
+#     `ci.sh` 顶部有 `set -euo pipefail` ⇒ 实测（dash 与 bash 都试过）
+#     `false | tail -2` 会让**整个脚本以 1 退出** ⇒ **管道没有吞退出码**。
+#     而 `$( cmd || true )` 里的 `|| true` 是**在命令替换内部** ⇒ 它把 `cmd` 的
+#     退出码变成 0 ⇒ **命令替换整体成功** ⇒ 外层什么也看不出来。
+#   ⇒ **崩在汇总行之后**时（stdout 已完整打出 "N passed, M failed"，随后才段错误）
+#     解析照样成功 ⇒ **门放行**（实测：假二进制打印完汇总行再 `kill -SEGV` ⇒ 门判绿）。
+#   ⚠ 这**正好解释**批 AY 记的那次现象：「ci.sh 输出里出现段错误回栈、而 ci.sh 退出码仍是 0」
+#     —— 崩掉的子进程退出码没人看 ⇒ CI 误判通过（那次的栈在 libQt6Core）。
+#   ⇒ 现在：**退出码单独收**；信号退出（139=SIGSEGV / 134=SIGABRT / 141=SIGPIPE）
+#     **显式判红**，并把 stderr（CrashHandler 打的回栈）**原样打出来**。
+# ⚠ stderr 必须**落盘**再打：CrashHandler 的回栈只有十几行，全打出来才知道崩在哪。
+#   （批 AY 的教训：栈被 `| tail -2` 截断 ⇒ 白丢线索 ⇒ 下次复现查不了。）
+SELFCHECK_RC=0
+# ⚠ 在 CRASH_DIR 里跑：core_pattern 是相对名 ⇒ core 落在**进程的 cwd**
+#   ⇒ cwd 必须是专用目录（崩了才有 core 可查），不能是仓库根（会脏工作区）。
+#   ⚠ 实测：selfcheck **不依赖 cwd**（在 /tmp 跑与在仓库跑，395/0 一致）。
+( cd "$CRASH_DIR" && "$BIN" --selfcheck 2>"$BUILD/selfcheck.err" ) >"$BUILD/selfcheck.out" || SELFCHECK_RC=$?
+if [ "$SELFCHECK_RC" -ge 128 ]; then
+    # 128+n ⇒ 被信号 n 杀死（bash/dash 惯例）。这一类**必须判红**，不能当「输出解析不了」糊过去。
+    SC_SIG=$((SELFCHECK_RC - 128))
+    SC_SIG_NAME="$(kill -l "$SC_SIG" 2>/dev/null || echo "信号$SC_SIG")"
+    echo "✗ selfcheck 被信号杀死（$SC_SIG_NAME / 退出码 $SELFCHECK_RC）—— 崩了，不是判据不达标" >&2
+    if [ -s "$BUILD/selfcheck.err" ]; then
+        echo "  ---- selfcheck stderr（含 CrashHandler 回栈）----" >&2
+        sed 's/^/    /' "$BUILD/selfcheck.err" >&2
+    fi
+    _core="$(latest_core)"
+    if [ -n "$_core" ]; then
+        echo "  ⇒ core dump：$_core（本机无 gdb ⇒ 可用 strings 看符号）" >&2
+    fi
+    exit 1
+fi
+SELFCHECK_OUT="$(cat "$BUILD/selfcheck.out")"
 printf '%s\n' "$SELFCHECK_OUT" | tail -1
 SC_PASSED="$(printf '%s\n' "$SELFCHECK_OUT" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+' || true)"
 SC_FAILED="$(printf '%s\n' "$SELFCHECK_OUT" | grep -oE '[0-9]+ failed' | tail -1 | grep -oE '[0-9]+' || true)"
 if [ -z "$SC_PASSED" ] || [ -z "$SC_FAILED" ]; then
     echo "✗ selfcheck 输出无法解析（期待尾行 selfcheck: N passed, M failed——崩溃/早退？）" >&2
+    if [ -s "$BUILD/selfcheck.err" ]; then
+        echo "  ---- selfcheck stderr ----" >&2
+        sed 's/^/    /' "$BUILD/selfcheck.err" >&2
+    fi
     exit 1
 fi
 if [ "$SC_FAILED" -ne 0 ] || [ "$SC_PASSED" -lt 58 ]; then
@@ -305,7 +381,56 @@ if ! sh "$SRC/scripts/ci-d2.sh" "$SRC"; then
 fi
 
 echo "› 6/12 agent 自测（mock 渠道）"
-"$BIN" --agent-selftest | tail -2
+# ⚠⚠⚠ **这一门原来没有断言**（批 AZ 实测查出来的第二个真洞）：
+#   原来是 `"$BIN" --agent-selftest | tail -2` ⇒ **只打两行输出，零断言**：
+#   · agent 链路**整条坏掉**（工具循环断了、模型不回应、进程早退）时，
+#     只要进程**退出码是 0**，这一门照样绿 ⇒ **CI 判「agent 链路是好的」而它其实坏了**。
+#   · ⚠⚠ **实测纠正了一个想当然的判断**（批 AY 的「管道吞退出码」在这条上**不成立**）：
+#     `ci.sh` 顶部有 `set -euo pipefail` ⇒ 实测（dash 与 bash 都试过）
+#     `false | tail -2` 会让**整个脚本以 1 退出** ⇒ **退出码没有被管道吞掉**。
+#     ⇒ 所以这儿的洞**不是**「退出码被吞」，而是**「退出码之外没有别的断言」**：
+#       退出码只能区分「0=FINAL / 1=ERROR」（main.cpp:68-72），
+#       **区分不了「链路坏了但恰好返回 0」**（如 main.cpp:191-197：
+#        没有 assistant 消息时 finalText 是空串，仍会打印 `[selftest] FINAL: ` 并 return 0）。
+#   ⇒ 现在**三件事都要查**（契约见 src/main.cpp:68-72）：
+#     ① 退出码 == 0（0 = FINAL；1 = ERROR，main.cpp 里显式 return 1）
+#     ② stdout 里有 `[selftest] FINAL:`（真的走完了工具循环 ⇒ 不是早退）
+#     ③ stdout 里有 `[selftest-done]`（收尾标记 ⇒ 进程跑到了最后一步）
+#   ⚠ 输出**落盘**再查：既保住完整输出供排障，也避免 `| tail` 把诊断信息截掉
+#     （批 AY 的教训：栈被截断 ⇒ 白丢线索）。
+AGENT_RC=0
+# ⚠ 同样在 CRASH_DIR 里跑：core_pattern 是相对名 ⇒ core 落在**进程的 cwd**
+#   ⇒ 不 cd 的话，agent-selftest 崩了会把 `core.<pid>` 落在**仓库目录**里。
+( cd "$CRASH_DIR" && "$BIN" --agent-selftest ) >"$BUILD/agent-selftest.out" 2>"$BUILD/agent-selftest.err" || AGENT_RC=$?
+if [ "$AGENT_RC" -ge 128 ]; then
+    AG_SIG=$((AGENT_RC - 128))
+    AG_SIG_NAME="$(kill -l "$AG_SIG" 2>/dev/null || echo "信号$AG_SIG")"
+    echo "✗ agent 自测被信号杀死（$AG_SIG_NAME / 退出码 $AGENT_RC）" >&2
+    if [ -s "$BUILD/agent-selftest.err" ]; then
+        echo "  ---- agent-selftest stderr ----" >&2
+        sed 's/^/    /' "$BUILD/agent-selftest.err" >&2
+    fi
+    exit 1
+fi
+if [ "$AGENT_RC" -ne 0 ]; then
+    echo "✗ agent 自测退出码 $AGENT_RC（要求 0；1 = ERROR，见 main.cpp:68-72）" >&2
+    if [ -s "$BUILD/agent-selftest.out" ]; then
+        echo "  ---- agent-selftest stdout ----" >&2
+        sed 's/^/    /' "$BUILD/agent-selftest.out" >&2
+    fi
+    exit 1
+fi
+if ! grep -q '^\[selftest\] FINAL:' "$BUILD/agent-selftest.out"; then
+    echo "✗ agent 自测没有 FINAL 标记（工具循环没走完/早退）—— 期望 stdout 含 '[selftest] FINAL:'" >&2
+    sed 's/^/    /' "$BUILD/agent-selftest.out" >&2
+    exit 1
+fi
+if ! grep -q '^\[selftest-done\]$' "$BUILD/agent-selftest.out"; then
+    echo "✗ agent 自测没有收尾标记 '[selftest-done]'（进程没跑到最后一步）" >&2
+    sed 's/^/    /' "$BUILD/agent-selftest.out" >&2
+    exit 1
+fi
+tail -2 "$BUILD/agent-selftest.out"
 
 echo "› 7/12 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
 # 剥注释再匹配：注释里出现的字样不算接线（否则加一行注释就能骗过门）。
