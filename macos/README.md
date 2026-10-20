@@ -90,6 +90,38 @@ open deepDolphin.app
 `build.sh` 会尝试把引擎二进制与仓颉运行时 dylib 内嵌进 .app（~59MB），
 使其可独立分发；不内嵌则按上面的发现链找系统里的引擎。
 
+### 引擎下载链（批 AQ 修好）
+
+`build.sh` 在**本机找不到引擎**时会去 GitHub Releases 下载。这条路径**曾经从来没成功过**
+（三个错叠在一起：URL 写死了不带版本号的资产名 ⇒ **必然 404**；找的是「包根的
+`moongit-cli`」而真实包里包根是**启动器** `moongit`、真二进制在 `bin/moongit-cli`
+⇒ **找不到**；只复制那一个文件、把 `runtime/lib/` 丢掉 ⇒ 装下来的引擎**根本起不来**）。
+
+现在走 `scripts/fetch-engine.sh`：
+
+- 查 GitHub API 拿最新 release 的**资产列表**，按**后缀**挑（`darwin-arm64` /
+  `linux-x64`）—— 资产名带版本号，所以**不能**写死 `releases/latest/download/<name>`；
+- **整包**下载、**整包**解包、**整包**落盘到 `~/.local/share/deepDolphin/engine/`。
+  发布包**不是单个裸二进制**：包根是启动器 `moongit`，真二进制在 `bin/moongit-cli`，
+  仓颉运行库在 `runtime/lib/` —— 启动器按**自身所在目录**找后两样 ⇒ 三样必须一起落盘；
+- 落盘前**验三样齐全**（启动器 / `bin/moongit-cli` / `runtime/lib` 非空）。
+
+判据（**不依赖 macOS**，Linux 上就能跑）：
+
+```sh
+bash scripts/engine-fetch-check.sh          # 验 URL 选取与资产可达（快）
+bash scripts/engine-fetch-check.sh --full   # 真下载 + 解包 + 验三样 + 跑一次启动器
+```
+
+`--full` 的最后一步会真的执行一次包里的启动器（实测输出
+`moonGit Engine 0.2.1 (Cangjie 1.0.5 LTS)`）—— 这是整条链的终点：
+**装下来的引擎能起来吗**。
+
+内嵌进 .app 时还有一处讲究：内嵌的**必须是 Mach-O**（rpath 重写与补签都只对它有意义），
+所以发布包那种形状要内嵌**真二进制** `bin/moongit-cli`，并把它自带的运行库一起放进
+`Contents/Frameworks/`；形状 A **不用** SDK 那份运行库（两个版本的
+`libcangjie-runtime.dylib` 混在同一目录里，后拷的会盖掉先拷的 ⇒ 版本对不上 ⇒ 起来就崩）。
+
 ## 代码结构
 
 ```
