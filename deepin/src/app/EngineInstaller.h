@@ -42,6 +42,7 @@ private:
     void onReleaseReady();
     void onAssetReady();
     void onExtracted();
+    void onInstalled();
     void onProbed();
     void fail(EngineDownload::Stage stage, const QString &detail);
     void done(const Result &r);

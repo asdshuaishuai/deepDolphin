@@ -51,6 +51,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QEventLoop>
+#include <QProcess>
 #include <QScreen>
 #include <QSystemTrayIcon>
 #include <QThread>
@@ -74,6 +75,70 @@ static void applyThemeOverride()
         DGuiApplicationHelper::instance()->setPaletteType(DGuiApplicationHelper::LightType);
     else if (themeEnv.compare(QLatin1String("dark"), Qt::CaseInsensitive) == 0)
         DGuiApplicationHelper::instance()->setPaletteType(DGuiApplicationHelper::DarkType);
+}
+
+// ── 无头 agent 工具面探针（批 AB）：**模型实际能看到什么** ──
+// 用法：deepDolphin --agent-tool-surface（配合 QT_QPA_PLATFORM=offscreen 亦可用）。
+// 逐行打印（每行一个字段，key=value）：
+//   engine=<引擎版本>       model=<模型可见的工具名，逗号分隔>
+//   validated=<必填校验表里的工具名>   prompt=<系统提示词里的清单原文>
+// ⚠ 只报告不断言（断言归 scripts/probe-agent-tool-surface.sh）。
+//
+// 【为什么要有】工具面**收敛**（引擎标了「旧名别名，将移除」的那些不再推荐给模型）
+//   是一条**行为**：源码里写了过滤 ≠ 模型真的看不到那些工具。
+//   ⇒ 这个探针走真实引擎的 `tools --json` + 客户端真实的过滤口径，把三份名单
+//     （模型可见 / 校验表 / 提示词）都打出来给人看、给脚本核。
+static int headlessAgentToolSurface(int argc, char *argv[])
+{
+    QCoreApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("deepin"));
+    QCoreApplication::setApplicationName(QStringLiteral("deepDolphin"));
+
+    const EngineLocator::Result engine = EngineLocator::locate();
+    if (!engine.found) {
+        fprintf(stderr, "✗ 引擎未找到（工具面探针需要真引擎）\n");
+        fflush(stderr);
+        return 1;
+    }
+    AgentCore core(engine.bin);
+    QVector<ToolDef> defs;
+    QMap<QString, QString> paramsByTool;
+    QString toolsText;
+    QString err;
+    if (!core.loadToolManifest(&defs, &paramsByTool, &toolsText, &err, nullptr)) {
+        fprintf(stderr, "✗ 取工具清单失败：%s\n", qPrintable(err));
+        fflush(stderr);
+        return 1;
+    }
+    QStringList modelNames;
+    for (const ToolDef &d : defs)
+        modelNames << d.name;
+    QStringList validated;
+    for (auto it = paramsByTool.constBegin(); it != paramsByTool.constEnd(); ++it)
+        validated << it.key();
+    // 引擎**原始**清单里带 deprecated 标记的工具有几个 ——
+    // ⚠ 必须看原始清单：客户端给模型的清单**已经收敛**（别名被剔掉了），
+    //   在那里找标记永远找不到 ⇒ 探针会误判「引擎太老」而 SKIP。
+    int engineDeprecated = 0;
+    {
+        QProcess eng;
+        eng.setProgram(engine.bin);
+        eng.setArguments({ QStringLiteral("tools"), QStringLiteral("--json") });
+        eng.start();
+        if (eng.waitForFinished(30000)) {
+            const QString raw = QString::fromUtf8(eng.readAllStandardOutput());
+            // ⚠ 两种形态都数：仓颉 Json 序列化出来是 `"deprecated": true`（冒号后有空格），
+            //   紧凑序列化是 `"deprecated":true`（无空格）—— 只认一种会漏判。
+            engineDeprecated = raw.count(QStringLiteral("\"deprecated\": true"))
+                    + raw.count(QStringLiteral("\"deprecated\":true"));
+        }
+    }
+    fprintf(stdout, "engine_deprecated=%d\n", engineDeprecated);
+    fprintf(stdout, "model=%s\n", qPrintable(modelNames.join(QLatin1Char(','))));
+    fprintf(stdout, "validated=%s\n", qPrintable(validated.join(QLatin1Char(','))));
+    fprintf(stdout, "prompt=%s\n", qPrintable(toolsText));
+    fflush(stdout);
+    return 0;
 }
 
 static int headlessAgentSelftest(int argc, char *argv[], const QString &question)
@@ -694,6 +759,10 @@ int main(int argc, char *argv[])
         // 固定文档页的四语言切换**真跑**一遍（批 AA）：报文档窗的实际呈现。
         // 同样必须留在无头分支（否则会落进 GUI 主路径常驻，CI 挂死）。
         return headlessDocsLangProbe(argc, argv);
+    }
+    if (rawArgs.contains(QStringLiteral("--agent-tool-surface"))) {
+        // 报**模型实际能看到**哪些 agent 工具（批 AB 的工具面收敛探针）。
+        return headlessAgentToolSurface(argc, argv);
     }
     if (rawArgs.contains(QStringLiteral("--hook-status-parse"))) {
         // 客户端对引擎 `hook status <项目> --json` 载荷的判定结果

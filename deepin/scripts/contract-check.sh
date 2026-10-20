@@ -835,11 +835,18 @@ if [ ! -x "$CLIENT_BIN" ]; then
     echo "    ‣ 本组**未验证**，不算通过"
 else
     ENG_TMP="$(mktemp -d)"
-    mkdir -p "$ENG_TMP/pkg"
-    # 假引擎：只认 `version`（探活就跑这一条）
-    printf '#!/bin/sh\ncase "$1" in\n  version) echo "moongit 0.0.0-contract";;\n  *) echo "unknown";;\nesac\n' > "$ENG_TMP/pkg/moongit-cli"
-    chmod +x "$ENG_TMP/pkg/moongit-cli"
-    tar czf "$ENG_TMP/engine.tar.gz" -C "$ENG_TMP/pkg" moongit-cli
+    mkdir -p "$ENG_TMP/pkg/bin" "$ENG_TMP/pkg/runtime/lib"
+    # ⚠ 夹具必须用**真实发布包的布局**（引擎 `scripts/package-release.sh` 的产物）：
+    #   根部 = 启动器 `moongit`，真二进制在 `bin/moongit-cli`，仓颉运行库在
+    #   `runtime/lib/`；启动器按**自身所在目录**去找后两样。
+    #   ⚠ 原来这里只放了一个 `moongit-cli`（**虚构布局**）—— 夹具与生产者分叉，
+    #     测过的路径真实资产根本走不到（真实包里根部没有 moongit-cli）。
+    printf '#!/bin/sh\ncase "$1" in\n  version) echo "moongit 0.0.0-contract";;\n  *) echo "unknown";;\nesac\n' > "$ENG_TMP/pkg/bin/moongit-cli"
+    chmod +x "$ENG_TMP/pkg/bin/moongit-cli"
+    printf '#!/bin/sh\nROOT="$(dirname "$0")"\nexport LD_LIBRARY_PATH="$ROOT/runtime/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\nexec "$ROOT/bin/moongit-cli" "$@"\n' > "$ENG_TMP/pkg/moongit"
+    chmod +x "$ENG_TMP/pkg/moongit"
+    : > "$ENG_TMP/pkg/runtime/lib/.keep"
+    tar czf "$ENG_TMP/engine.tar.gz" -C "$ENG_TMP/pkg" moongit bin runtime
     ENG_SHA="$(sha256sum "$ENG_TMP/engine.tar.gz" | cut -d' ' -f1)"
     ENG_SZ="$(wc -c < "$ENG_TMP/engine.tar.gz" | tr -d ' ')"
     cat > "$ENG_TMP/release.json" <<EOF
@@ -854,6 +861,15 @@ EOF
         pass=$((pass+1))
     else
         echo "  ✗ 引擎获取：落盘的引擎不存在或不可执行（$ENG_TMP/dest/moongit）" >&2
+        fail=$((fail+1))
+    fi
+    # ⚠ 整包落盘：真二进制与运行库**必须一起**跟过来 ——
+    #   只拷启动器的话，装下来的引擎 exec 不到二进制 / 加载不到运行库 ⇒ 跑不起来。
+    if [ -x "$ENG_TMP/dest/bin/moongit-cli" ] && [ -d "$ENG_TMP/dest/runtime/lib" ]; then
+        echo "  ✓ 引擎获取：整包落盘（bin/ 与 runtime/ 跟着启动器一起过来了）"
+        pass=$((pass+1))
+    else
+        echo "  ✗ 引擎获取：整包没落全（缺 bin/ 或 runtime/lib ⇒ 装下来的引擎跑不起来）" >&2
         fail=$((fail+1))
     fi
     # 校验和不匹配 → 必须拒绝，且**不落盘**（落了就是半个坏引擎在跑）

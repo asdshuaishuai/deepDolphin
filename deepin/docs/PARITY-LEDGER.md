@@ -66,7 +66,7 @@ mac 端这 30 个提交**只动了 `macos/`（46 文件）+ `website/`**，`deep
 | B12 | **9 语言语法高亮** | mac 原生 `AttributedString` | 🟢 **已对位（批 H）**：判定层 `logic/SyntaxHighlight`（九语言关键词表 + 单遍扫描 → 关键字/字符串/注释/数字四类 token 段）、涂色层 `ui/CodeHighlighter`（QSyntaxHighlighter，颜色取自 DS 令牌）、接到代码图谱页源码页签（高亮语言跟着选中符号的 `lang` 走）；**九种语言与引擎 `detectLang` 逐条对齐**（契约门第 16 组用真引擎跑九种扩展名比对） | ~~P2~~ 已完成 |
 | B13 | **性能审计**：动画时钟可见性暂停 + formatter 静态化 | `21c7082` | 🟢 **批 M 已对位**（且补上 mac 侧没有的项）：**可见性暂停**deepin **本来就有** —— 实测（2026-10-19，Qt 6）**父窗口隐藏会给子控件发 `hideEvent`**，所以架构图与热力图的 `hideEvent → m_anim->stop()` 真的停得住，两处都是 33ms（≈30fps），与 mac 修完后的口径一致；**formatter 静态化**已做（日期格式化走 `Qt::ISODate` 枚举，不建格式串）；**另补 mac 没做的三项**：Canvas font 简写按 CSS 口径解析（`pt` 也不再被吞）、Canvas2D 的 QFont 按串静态缓存 + 同串跳过、热力图三处每帧分配收掉 | ~~P3~~ 已完成 |
 | B14 | **设计系统存量清零**（字号/散值收进 token，基线 87→95） | `e9d6074` | 🟢 **批 N 已对位**：M3-3 登记的 **4 处字号散值**全收进 `DS::FontPx`（徽章 11 / 等宽 13），D2 门上限 **4 → 0**；另收口 3 处门形式不全才照出的真散值（alpha `0.18` → `DS::Alpha`、底轨遮罩 → `DS::trackMask()`、热力图深色画布五档 → `HeatLayout::Canvas`）。**门从「只盯 `#RRGGBB`」补成全形式检测**（3/6/8 位 hex、`QColor(r,g,b)`、`QColor(0x..)`、`rgb()`、带裸 alpha 的 `rgba()`、`setPixelSize`/`setPointSizeF` 数字参数、QSS `font-size` 字面量、含 `font-size:` 文件里的裸数字 `.arg(N)`）—— 旧门的「4 处存量」其实只是「4 处**写成 hex 形态**的存量」。**豁免改为显式登记**（`D2_EXEMPT` 清单：`keep` 永久 / `fix` 待收敛且**归零即红**，白名单不许腐化） | ~~P3~~ 已完成（**状态语义色第二份定义**另立批 O，见下） |
-| B15 | **引擎获取链新增 GitHub Releases 自动下载** | `macos/build.sh` | 🟡 **批 P 已接（deepin 侧完整，mac 侧有缺陷）**：判定层 `logic/EngineDownload`（查 API → 按平台挑资产 → sha256 校验 → 落盘路径 → **七类失败各说各的**）+ 执行层 `app/EngineInstaller`（网络/解压全异步，不卡 GUI）+ 设置·通用页「引擎」卡（下载并安装引擎）+ 发现链认得新落盘位 `~/.local/libexec/deepdolphin/moongit`（排在 `~/.local/bin` **之前**，mac 的教训：客户端自带的优先，否则永远选到过期安装版）；契约门第 21 组端到端验（file:// 打桩跑完整链 + 校验和不匹配**拒绝安装且不落盘** + 真 GitHub API 解析） | P2（**待引擎侧发版**：latest v0.1.0 **只有 darwin-arm64 资产**，无 Linux x64 ⇒ 当下真机上点「下载引擎」会得到「该版本没有 Linux x64 安装包」。引擎的 release workflow **已产出** Linux 包，**引擎仓不用改**，下次发版即生效） |
+| B15 | **引擎获取链新增 GitHub Releases 自动下载** | `macos/build.sh` | 🟡 **批 P 已接（deepin 侧完整，mac 侧有缺陷）**：判定层 `logic/EngineDownload`（查 API → 按平台挑资产 → sha256 校验 → 落盘路径 → **七类失败各说各的**）+ 执行层 `app/EngineInstaller`（网络/解压全异步，不卡 GUI）+ 设置·通用页「引擎」卡（下载并安装引擎）+ 发现链认得新落盘位 `~/.local/libexec/deepdolphin/moongit`（排在 `~/.local/bin` **之前**，mac 的教训：客户端自带的优先，否则永远选到过期安装版）；契约门第 21 组端到端验（file:// 打桩跑完整链 + 校验和不匹配**拒绝安装且不落盘** + 真 GitHub API 解析） | P2（**批 AB 已解**：latest 已到 **v0.2.1**（Linux x64 + mac arm64 资产齐，v0.2.0 是 v0.1.0 之后第一个带 Linux 资产的版本）｜⚠ **v0.2.0 的 Linux 资产是坏包**（`runtime/lib/` 空 —— 引擎打包脚本用 `ldd` 探测依赖，在 CI 里全部 `not found` ⇒ 静默漏掉仓颉运行库），**v0.2.1 已修**，真机上点「下载引擎」拿到的是 v0.2.1｜客户端侧同时把落盘从「只拷一个文件」改成**整包**（启动器 `moongit` + `bin/` + `runtime/`），只拷启动器的话装下来的引擎 exec 不到二进制、加载不到运行库 ⇒ **跑不起来**） |
 | B16 | **关系树 / 图谱的导出动作**（查 + 生成 + 导出三件套） | `d62e429` | 🟢 **已对位（台账原记「未开始」有误，批 G 复核时更正）**：架构图页 = 查（`graph arch --format scene`）+ 生成（`arch gen`）+ 导出（`render arch`）；代码图谱页 = 查（`graph tree`/`confidence`/`functions`）+ 生成（`index gen --stats` + `confidence gen`）+ 导出（`render index --confidence`） | ~~P1~~ 已完成 |
 
 **引擎侧对应的新能力**（deepin 消费点）：
@@ -184,7 +184,7 @@ agent 工具清单后修正，README 决策 199）：
 | **持久化索引状态**（引擎 `index overview` / `index update`） | ✅ 批 L：代码图谱页「增量更新」钮 + 索引状态行（代数 / 节点 / 边 / 文件 / 探针时间） | ⬜ **未接** —— `macos/Sources/` 无 `index overview`/`index update` 调用 | ⬜ 未接 | mac 侧后续批次（**本轮次序先搞定 dde**，未改 mac） |
 | 索引状态与页头概览的口径 | ✅ 批 L：两者**不是一回事**且界面分开摆 —— 概览读实时扫描（`graph overview`），索引状态行读持久化索引（`index overview`）。此前「生成」写索引但界面不读它，点完看不到变化 | ⬜ 未接 | ⬜ 未接 | —— |
 | **Canvas font 简写按 CSS 口径解析** | ✅ 批 M：判定层 `logic/CanvasFont`（`px` 与 `pt` 都认）—— 修掉「`11pt` 被当成字体族名吞掉、字号根本没设上」的**移植语义缩水**；平台侧按串静态缓存 QFont + 同串跳过 | ⬜ 未接（mac 侧用浏览器原生 font 简写，无此坑） | ⬜ 未接 | —— |
-| **引擎获取链（GitHub Releases 下载安装）** | 🟡 批 P：判定层 + 执行层 + 设置页入口 + 契约门第 21 组端到端（file:// 打桩）；⚠ **当下 latest v0.1.0 没有 Linux x64 资产** ⇒ 真机上暂时下载不到（引擎侧下次发版即生效，**引擎仓不用改**） | ⬜ **URL 已失效** —— `build.sh` 用固定 URL `releases/latest/download/moongit-darwin-arm64.tar.gz`，而引擎的资产名**带版本号**（`moongit-v0.1.0-darwin-arm64.tar.gz`）⇒ **实测 404**（不带版本号的才 404，带版本号的 200） | ⬜ 未接 | mac 侧后续批次（**本轮次序先搞定 dde**，未改 mac） |
+| **引擎获取链（GitHub Releases 下载安装）** | 🟢 批 P + 批 AB：判定层 + 执行层 + 设置页入口 + 契约门第 21 组端到端（file:// 打桩）；**latest 已带 Linux x64 资产**（v0.2.1；v0.2.0 的 Linux 资产是坏包，已修）；落盘改为**整包**（真实布局：启动器 + `bin/` + `runtime/`），契约门第 21 组的夹具**同步改成真实布局**（原来那个夹具是虚构的，测过的路径真实资产根本走不到） | ⬜ **URL 已失效** —— `build.sh` 用固定 URL `releases/latest/download/moongit-darwin-arm64.tar.gz`，而引擎的资产名**带版本号**（`moongit-v0.1.0-darwin-arm64.tar.gz`）⇒ **实测 404**（不带版本号的才 404，带版本号的 200） | ⬜ 未接 | mac 侧后续批次（**本轮次序先搞定 dde**，未改 mac） |
 | 引擎索引自愈（`selfHealed`） | ✅ 批 L：索引缺失/过期时引擎会**自愈**（实测 2026-10-19：`selfHealed: true`）→ 索引状态行在用户点「生成」前就有内容，并明说「引擎自愈过索引」 | ⬜ 未接 | ⬜ 未接 | —— 条件键，需 present 标志 |
 
 ### D.1 跨端状态色**取值口径**差异（批 O 照出，**批 R 逐点核对后照实修正**）
@@ -705,6 +705,64 @@ mac 那个 sheet **无关闭按钮**的问题在 DDE 下**根本不存在** ⇒ 
 
 **顺带照出的一处台账失真**：批 AA 复核时发现我在批 Z 把 `index query` 说成「新维度」
 是**推过头了** —— 已在本节上方的「批 AA 勘误」里实测更正并**撤回「推翻」**。
+
+### E.1k 发版链打通 + 工具面收敛（批 AB —— **「引擎发版」这件事第一次真的跑通，也第一次照出坏包**）
+
+**背景**：批 Z 之后引擎侧攒了 4 个提交（版本号单一真相源、旧名别名的机器可读废弃标记、
+发版规矩落文档、发版 workflow 修好）一直**只在本机** —— 客户端本机装的是手工编译的引擎，
+用户装的仍是 `v0.1.0`（**只有 darwin-arm64 资产，无 Linux x64**）⇒ 批 P 的下载链
+在真机上仍然拿不到引擎。⇒ 本批把「发一个带 Linux x64 资产的 release」做掉。
+
+**① 发版链第一次真跑通**（引擎仓 `dev`）：v0.2.0 发布，两个资产齐
+（`moongit-v0.2.0-linux-x64.tar.gz` 7.5MB / `moongit-v0.2.0-darwin-arm64.tar.gz` 7.8MB），
+`releases/latest` 正确指向 v0.2.0，GitHub 侧 sha256 与本地实测一致。
+⇒ 过程中修掉**两个只会在 CI 上炸**的问题（引擎仓 AGENTS.md 不变量 139/140）：
+· **release job 403**：仓库默认 `GITHUB_TOKEN` 权限是 read-only ⇒ 建 release 被 API 拒
+  （两个构建 job 全绿，就挂在「Create Release」）⇒ workflow 显式 `permissions: contents: write`；
+  顺带把 `workflow_dispatch` 补成**显式传 tag**（手动触发时 `github.ref` 是分支，
+  不处理会 checkout 到分支代码、还把 release 建在分支上）。
+· **Linux 产物是坏包**：客户端端到端装完**引擎跑不起来**（`exec: .../bin/moongit-cli: not found`）
+  ⇒ 查出来 CI 产物的 `runtime/lib/` 是**空的**（本地打的同一个包是好的）
+  ⇒ 根因：`package-release.sh` 的 Linux 分支用 **`ldd`** 找仓颉库，而 `ldd` 解析依赖靠
+  **运行时的库搜索路径**（`LD_LIBRARY_PATH`）—— 本地同一个 shell 里 source 过 `envsetup.sh`
+  所以找得到，**CI 的每个 step 是独立 shell**（`Package` 步骤没 source）所以全部 `not found`
+  ⇒ 脚本**静默**一个库都不拷，照样打印「✓」、流水线全绿、release 照发。
+  ⇒ 改法：依赖清单用 `readelf -d` 的 `DT_NEEDED`（读二进制本身，不看运行时环境）、
+  库来源用 SDK 目录（找不到就 `exit 1`）、**打包后真的解包跑一次**（`env -i`）——
+  原来脚本只**打印**自验口令、从不执行，等于没有自验。
+  ⇒ **v0.2.0 的 Linux 资产因此是坏包，用 v0.2.1**（已在引擎 README 与 release 说明里标注）。
+
+**② 客户端下载链按真实布局落盘**（原来那套是**虚构布局**）：
+客户端的 `logic/EngineDownload` 假设「包根只有一个 `moongit-cli`」⇒ 真实发布包的根部是
+**启动器 `moongit`**，真二进制在 `bin/moongit-cli`、仓颉运行库在 `runtime/lib/`
+（启动器按**自身所在目录**找后两样）⇒ 三样必须**一起**落盘。
+⇒ 改：`packagedBinName()` = `moongit`、新增 `packagedDirs()` = {bin, runtime}；
+`app/EngineInstaller` 改为**整包**解到安装目录（原来只拷一个文件）
+⇒ 只拷启动器的话装下来的引擎 exec 不到二进制 / 加载不到运行库。
+⇒ 契约门第 21 组的夹具**同步改成真实布局**（原来那个夹具是虚构的 ⇒ 测过的路径真实资产根本走不到）。
+
+**③ 工具面收敛（模型可见面剔除旧名别名，可执行集不变）**：
+引擎 0.2.0 起给旧名别名**机器可读**的 `deprecated:true` + `replacedBy`（6 个别名）
+⇒ 客户端 `models/ToolsEnvelope` 读这两个字段，`ai/AgentCore` 只把**非废弃**的给模型，
+而**必填校验表仍收全部 28 个**（契约门第 12 组要求「可执行集 == 引擎声明集」，
+收敛的只是「**推荐给模型**的那一面」）。
+⇒ 实测：模型可见 **22** 个（6 个别名已剔除）、可执行/可校验 **28** 个（别名仍可调用），
+系统提示词里的清单与模型面**同一口径**（否则模型会去调「提示词里有、工具表里没有」的名字）。
+⇒ 缺省**不是**废弃（老引擎没给标记 ⇒ 不收敛）；继任者缺席 ⇒ 判成**收敛不自洽**（不静默放过）。
+
+**④ 一条工程纪律（本批真踩到，差点误判成产品 bug）**：
+做负控要**改源码**再还原。用 `cp` 备份 + `mv` 还原时，**`mv` 保留 mtime** ⇒ 还原后的文件
+mtime **比 .o 旧** ⇒ `make` 按 mtime 判断「无需重编」⇒ **跳过了重编** ⇒
+**二进制里留着负控那版实现** ⇒ 判据结果失真（本次表现为 `packagedDirs()` 只剩 `bin`，
+而源码明明是 `{bin, runtime}`）。
+⇒ 纪律：**负控还原后必须 `touch`（或强制重编）再跑判据**；否则「判据红了」可能只是在测一个
+**不存在的二进制**。判据结果只有在「源码 == 二进制」时才作数。
+
+**⑤ 本机网络事实（影响验收方式，不影响产品）**：
+`github.com/.../releases/download/...`（302 到 `objects.githubusercontent.com`）在本机
+**TCP 通但数据流卡死**（curl 与客户端都卡），而 `api.github.com` 与 `gh release download` 路径可用
+⇒ 端到端验收改用**本地 fixture**（`python3 -m http.server` 提供 release JSON + **真实发布的资产文件**）
+⇒ 验的是客户端的**真实逻辑**：查 API → 下载 → sha256 校验 → 解包 → **整包落盘** → 探活。
 
 ---
 

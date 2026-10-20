@@ -54,7 +54,7 @@ bool AgentCore::loadToolManifest(QVector<ToolDef> *defs, QMap<QString, QString> 
             EngineTimeouts::Tools, &raw, err, cancelled))
         return false;
     if (toolsText)
-        *toolsText = raw; // 清单**原文**进系统提示词（mac 同款）
+        *toolsText = raw; // 兜底：解析失败就用原文（不空提示词）
 
     // 解析失败 → 空清单不崩（mac engineToolDefinitions 同款守卫）
     const QJsonDocument doc = QJsonDocument::fromJson(raw.toUtf8());
@@ -79,10 +79,20 @@ bool AgentCore::loadToolManifest(QVector<ToolDef> *defs, QMap<QString, QString> 
                     { "properties", props },
                     { "required", QJsonArray::fromStringList(d.requiredParams) },
                 });
+                // ⚠ 必填校验表收**全部**工具（含废弃别名）—— 契约门第 12 组钉住
+                //   「客户端能执行的工具集 == 引擎声明的工具集」，别名必须仍可执行。
                 if (paramsByTool)
                     paramsByTool->insert(d.name, QString::fromUtf8(paramsDoc.toJson(QJsonDocument::Compact)));
-                if (defs)
+                // ⚠ 但**模型可调用的工具面**只给非废弃的：引擎标了「旧名别名，
+                //   将移除」的那些就别再推荐给模型了（工具面收敛）。
+                if (!t.deprecated && defs)
                     defs->append(d);
+            }
+            // 系统提示词里的清单 = **收敛后**的（与上面的工具面同一口径）——
+            // 不收敛的话，提示词里还列着旧名，模型就会去调它。
+            if (toolsText) {
+                *toolsText = QString::fromUtf8(
+                    QJsonDocument(env->activeJson()).toJson(QJsonDocument::Compact));
             }
         }
     }

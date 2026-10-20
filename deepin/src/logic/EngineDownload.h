@@ -61,10 +61,18 @@ QString installDir();
 /// 落盘后的引擎路径（落盘名是 `moongit` —— 引擎发现链认这个名字）。
 QString installedBin();
 
-/// 引擎 release 包**内**的可执行文件名。
-/// ⚠ 引擎的打包脚本把二进制改名成 `moongit-cli`（与 `moongit` 发布名区分），
-///   解压后必须改名落盘，否则引擎发现链找不到它。
+/// 引擎 release 包**根部**的可执行文件名（发布包根部的**启动器** `moongit`）。
+///
+/// ⚠ 发布包**不是**单个裸二进制：根部的 `moongit` 是启动器，真二进制在
+///   `bin/moongit-cli`、仓颉运行库在 `runtime/lib/`，启动器按**自身所在目录**
+///   去找这两样 ⇒ 三样必须**一起**落盘，否则装下来的引擎跑不起来。
 QString packagedBinName();
+
+/// 发布包里要与启动器**一起**落盘的目录（相对包根：`bin` / `runtime`）。
+///
+/// ⚠ 少落一个 = 装下来的引擎跑不起来（runtime 缺了就是 Library not loaded；
+///   bin 缺了启动器 exec 不到真二进制）。
+QStringList packagedDirs();
 
 /// 失败分类 —— 「失败要说清是哪一种」。
 enum class Stage {

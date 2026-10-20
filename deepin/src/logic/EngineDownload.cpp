@@ -91,8 +91,20 @@ QString installedBin()
 
 QString packagedBinName()
 {
-    // 引擎的打包脚本把二进制改名成 moongit-cli（与发布名 moongit 区分）。
-    return QStringLiteral("moongit-cli");
+    // ⚠ 发布包**根部**的可执行文件是**启动器** `moongit`（引擎自己的打包脚本
+    //   `scripts/package-release.sh` 产出的），不是裸二进制：
+    //   真二进制在 `bin/moongit-cli`、仓颉运行库在 `runtime/lib/`，
+    //   启动器按**自身所在目录**去找这两样 ⇒ 三样必须**一起**落盘。
+    //   （原实现按「包根只有一个 moongit-cli」设计 —— 那是**虚构的布局**：
+    //    真实资产根本找不到那个文件，装下来也跑不起来。）
+    return QStringLiteral("moongit");
+}
+
+QStringList packagedDirs()
+{
+    // 与启动器一起落盘的目录（相对发布包根）。
+    // ⚠ 少落一个 = 装下来的引擎跑不起来（runtime 缺了就是 Library not loaded）。
+    return { QStringLiteral("bin"), QStringLiteral("runtime") };
 }
 
 QString stageMessage(Stage s, const QString &detail)

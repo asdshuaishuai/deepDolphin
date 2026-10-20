@@ -229,15 +229,50 @@ void EngineInstaller::onExtracted()
         return;
     }
 
-    // 落盘：改名成 moongit（引擎发现链认这个名字）+ 可执行位。
+    // ⚠ 落盘：**整包**（不是只拷一个文件）。
+    //   发布包的根部是**启动器** `moongit`，它按**自身所在目录**去找
+    //   `bin/moongit-cli` 与 `runtime/lib/` ⇒ 只拷启动器的话，装下来的引擎
+    //   exec 不到二进制 / 加载不到仓颉运行库 ⇒ 装完直接跑不起来。
+    //   ⇒ 把整包解到安装目录（先清掉上一版的同名三件，避免残留旧文件）。
     QDir().mkpath(m_installDir);
     const QString dest = m_installDir + QStringLiteral("/moongit");
     QFile::remove(dest);
-    if (!QFile::copy(packaged, dest)) {
+    QDir(m_installDir + QStringLiteral("/bin")).removeRecursively();
+    QDir(m_installDir + QStringLiteral("/runtime")).removeRecursively();
+
+    m_proc = new QProcess(this);
+    m_proc->setProgram(QStringLiteral("tar"));
+    m_proc->setArguments({ QStringLiteral("xzf"), m_tmp->path() + QStringLiteral("/engine.tar.gz"),
+        QStringLiteral("-C"), m_installDir });
+    connect(m_proc, &QProcess::finished, this, &EngineInstaller::onInstalled);
+    connect(m_proc, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {
+        if (m_proc)
+            m_proc->kill();
+    });
+    m_proc->start();
+    QTimer::singleShot(kProcTimeoutMs, this, [this] {
+        if (m_proc)
+            m_proc->kill();
+    });
+}
+
+void EngineInstaller::onInstalled()
+{
+    if (!m_proc)
+        return;
+    QProcess *proc = m_proc;
+    m_proc = nullptr;
+    const int code = proc->exitCode();
+    const QString err = QString::fromUtf8(proc->readAllStandardError()).trimmed();
+    proc->deleteLater();
+
+    const QString dest = m_installDir + QStringLiteral("/moongit");
+    if (code != 0 || !QFileInfo::exists(dest)) {
         fail(EngineDownload::Stage::extractFailed,
-            QStringLiteral("拷不到目标位置：%1").arg(dest));
+            err.isEmpty() ? QStringLiteral("落盘解包退出码 %1").arg(code) : err);
         return;
     }
+    // 可执行位（tar 解出来的权限可能不带）
     QFile::setPermissions(dest,
         QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner | QFile::ReadGroup
             | QFile::ExeGroup | QFile::ReadOther | QFile::ExeOther);

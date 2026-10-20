@@ -528,6 +528,47 @@ int SelfCheck::run(QStringList &log)
             tools.has_value() && tools->tools.size() == 3
                 && tools->tools[1].params == QStringLiteral("name,message"));
 
+        // 旧名别名的机器可读废弃标记（引擎 0.2.0 起）。
+        // ⚠ 三态都要钉：① 标了废弃 ⇒ 认得出 + 认得出继任者；
+        //   ② **没**标（老引擎）⇒ 缺省**不是**废弃（别把「没有标记」读成「已废弃」）；
+        //   ③ 标了废弃但继任者不在面内 ⇒ 收敛不自洽（模型会无路可走）。
+        {
+            const auto dep = ToolsEnvelope::fromJson(JO(QStringLiteral(R"({
+                "tools":[{"name":"index_query","description":"索引查询","params":"name,symbol"},
+                         {"name":"codegraph_symbol","description":"符号定位（旧名别名）",
+                          "params":"name,symbol","deprecated":true,"replacedBy":"index_query"}]
+            })")));
+            check(log, "tools：能读出 deprecated / replacedBy（机器可读的废弃标记）",
+                dep.has_value() && dep->tools.size() == 2
+                    && dep->tools[1].deprecated
+                    && dep->tools[1].replacedBy == QStringLiteral("index_query")
+                    && !dep->tools[0].deprecated);
+            // 收敛口径：非废弃面只剩 1 个（清单 JSON 与工具表同一口径）
+            check(log, "tools：废弃别名不进非废弃面（AI 工具面收敛）",
+                dep.has_value() && dep->activeTools().size() == 1
+                    && dep->activeTools().front().name == QStringLiteral("index_query")
+                    && dep->activeJson().value(QStringLiteral("tools")).toArray().size() == 1);
+            // 继任者必须就在非废弃面里（否则模型无路可走）
+            check(log, "tools：废弃项的继任者必须在非废弃面内（收敛自洽）",
+                dep.has_value() && dep->successorsCovered());
+
+            // 缺标记 = 没废弃（老引擎兼容）；继任者缺席 = 不自洽
+            const auto old = ToolsEnvelope::fromJson(JO(QStringLiteral(R"({
+                "tools":[{"name":"codegraph_symbol","description":"旧引擎的工具","params":"name"}]
+            })")));
+            check(log, "tools：没标 deprecated 的老引擎工具不算废弃（缺省不是废弃）",
+                old.has_value() && !old->tools.front().deprecated
+                    && old->activeTools().size() == 1);
+            const auto broken = ToolsEnvelope::fromJson(JO(QStringLiteral(R"({
+                "tools":[{"name":"codegraph_symbol","description":"别名","params":"name",
+                          "deprecated":true,"replacedBy":"index_query"}]
+            })")));
+            QString missing;
+            check(log, "tools：废弃项的继任者缺席 ⇒ 判成收敛不自洽（不静默放过）",
+                broken.has_value() && !broken->successorsCovered(&missing)
+                    && !missing.isEmpty());
+        }
+
         ContextEnvelope::Note note = ContextEnvelope::Note::ok;
         const auto ctx = ContextEnvelope::decode(
             QStringLiteral(R"({"scope":"group","budget":9000,"context":"# 上下文"})").toUtf8(),
@@ -3268,7 +3309,15 @@ int SelfCheck::run(QStringList &log)
                 && !EngineDownload::installDir().startsWith(QLatin1String("/opt"))
                 && !EngineDownload::installDir().startsWith(QLatin1String("/etc"))
                 && EngineDownload::installedBin().endsWith(QLatin1String("/moongit"))
-                && EngineDownload::packagedBinName() == QLatin1String("moongit-cli"));
+                // ⚠ 发布包**根部**的可执行文件是 `moongit`（启动器），**不是** `moongit-cli`——
+                //   真二进制在包内 `bin/moongit-cli`，启动器按自身所在目录去找它。
+                //   拿错名字 = 落盘后启动器 exec 不到东西 = 装了个跑不起来的引擎。
+                && EngineDownload::packagedBinName() == QLatin1String("moongit")
+                // ⚠ 整包落盘：bin/ 与 runtime/ 必须**一起**落（少了 runtime 就是
+                //   Library not loaded，少了 bin 就是 exec 不到）⇒ 只落一个文件是不合格的。
+                && EngineDownload::packagedDirs().contains(QStringLiteral("bin"))
+                && EngineDownload::packagedDirs().contains(QStringLiteral("runtime"))
+                && EngineDownload::packagedDirs().size() >= 2);
         // 「失败要说清是哪一种」的可验证形式：七种失败各说各的，不许都叫「下载失败」
         const QStringList msgs = {
             EngineDownload::stageMessage(EngineDownload::Stage::networkUnreachable, QStringLiteral("x")),
