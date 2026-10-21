@@ -38,6 +38,13 @@ BUILD="${1:-$SRC/build}"
 #   ⇒ 这里先绝对化（`cd` 到不存在的目录会失败 ⇒ 用 `|| true` 兜住，保留原值）。
 BUILD="$(cd "$BUILD" 2>/dev/null && pwd || echo "$BUILD")"
 BIN="$BUILD/deepDolphin"
+# ⚠⚠⚨ 批 CK · 「未验证」不许被当成「通过」——**CI 自己这层**。
+#   ⇒ 盘点 `scripts/` 下所有「跳过/未验证」出口 ⇒ ci.sh 自己就有 **6 处**
+#     「只打印、不计数」⇒ CI 继续 ⇒ 最后照样打「✓ CI 门通过」
+#     ⇒ ⚠⚠⚨ **未验的组被当成「通过」** ⇒ 假绿。
+#   ⇒ 其中 ④⑤ 两处是 **D7 达标的必经**（deb 构建 / deb 布局验收）。
+#   ⇒ 口径与第 10 步（契约门，批 CI）**同款**：未验证 ⇒ 专属退出码 3 ⇒ 判红。
+skip=0
 
 # ⚠⚠⚨ 批 CF · 剥注释口径的**前提**是 perl 在（默认分支靠它剥 C++ 的 `//` 注释）。
 #   ⇒ 以前 perl 缺席时**静默降级**到 sed 兜底 ⇒ **口径变了** ⇒ 同一个门项两边结论可能相反
@@ -388,12 +395,14 @@ if command -v desktop-file-validate >/dev/null 2>&1; then
     desktop-file-validate "$SRC/data/cn.deepdolphin.app.desktop" && echo "✓ desktop 合法"
 else
     echo "SKIP: desktop-file-validate 未安装（装 desktop-file-validate 包后此门生效）"
+    skip=$((skip+1))
 fi
 if command -v appstream-util >/dev/null 2>&1; then
     appstream-util validate-relax --nonet "$SRC/data/metainfo/cn.deepdolphin.app.metainfo.xml" \
         && echo "✓ metainfo 合法"
 else
     echo "SKIP: appstream-util 未安装（README 决策 69 的硬门随工具到位生效）"
+    skip=$((skip+1))
 fi
 
 echo "› 4/15 无头探针（平台探针 + 固定文档页四语言探针 + 分隔线探针）"
@@ -652,6 +661,7 @@ if command -v dpkg-deb >/dev/null 2>&1; then
     fi
 else
     echo "‣ SKIP deb 构建：没有 dpkg-deb"
+    skip=$((skip+1))
     echo "‣ 本组**未验证**，不算通过"
 fi
 
@@ -667,6 +677,7 @@ echo "› 12/15 deb 布局验收（D7 的**准**验收：装完能不能用）"
 DEB_OUT="$(ls -t "$BUILD"/deb/*.deb 2>/dev/null | head -1)"
 if [ -z "$DEB_OUT" ]; then
     echo "‣ SKIP deb 布局验收：没有 deb 产物（本组**未验证**，不算通过）"
+    skip=$((skip+1))
 else
     # ⚠⚠⚨ 批 CC：**接住退出码**并分诊（0=通过 / 3=未验证(SKIP) / 其它非 0=失败）。
     #   ⚠ 以前是 `elif sh …; then … else … exit 1; fi` ⇒ 脚本 exit 0（**未验证**）
@@ -675,7 +686,11 @@ else
     #     ⇒ CI 第 12 步打印「✓ deb 布局验收通过」⇒ **假绿坐实**
     #     ⇒ 且**现有门全绿**（`exit 3` 一条门都没有 ⇒ 没人看得见）。
     #   ⚠ 分诊口径与第 10 步（契约门，批 CB）、第 13 步（agent 工具面门，批 BW）
-    #     **同款**：3 = 未验证，不算通过（⚠ 沿用本仓立场：不算通过，但**不判失败**）。
+    #     **同款**：3 = 未验证（SKIP）。
+    #   ⚠⚠⚨ **批 CK**：旧立场是「不算通过，但**不判失败**」⇒ **已被收掉**
+    #     ⇒ 那个立场会让 CI 继续跑 ⇒ 最后照样打「**✓ CI 门通过**」
+    #     ⇒ **未验的组被当成「通过」** ⇒ 假绿。
+    #     ⇒ 现在：**未验证 ⇒ 计入 `skip` ⇒ 末尾判红**（退出码 3）。
     _dl_log="$BUILD/deb-layout.log"
     _dl_rc=0
     sh "$SRC/scripts/check-deb-layout.sh" "$DEB_OUT" > "$_dl_log" 2>&1 || _dl_rc=$?
@@ -685,6 +700,7 @@ else
     elif [ "$_dl_rc" -eq 3 ]; then
         tail -3 "$_dl_log" >&2
         echo "‣ SKIP deb 布局验收：本组**未验证**（脚本自己报了 SKIP）——不算通过" >&2
+        skip=$((skip+1))
     else
         tail -20 "$_dl_log" >&2
         echo "✗ deb 布局验收失败（退出码 $_dl_rc）" >&2
@@ -709,6 +725,7 @@ ATS_RC=0
 sh "$SRC/scripts/probe-agent-tool-surface.sh" "$BIN" || ATS_RC=$?
 if [ "$ATS_RC" -eq 3 ]; then
     echo "‣ SKIP agent 工具面门：引擎缺席或版本太老（无 deprecated 标记）"
+    skip=$((skip+1))
     echo "‣ 本组**未验证**，不算通过"
 elif [ "$ATS_RC" -ne 0 ]; then
     echo "✗ agent 工具面门失败（退出码 $ATS_RC；1=断言红，2=用法错）" >&2
@@ -753,6 +770,18 @@ if [ -s "$STRIP_FAIL_FILE" ]; then
     # ⚠⚠⚨ 批 CH：诊断**搬进 trap**了（退出时必打）⇒ 这里只负责 exit 1
     #   ⇒ 否则「段落 ARCH_FAIL 提前 exit」会把末尾的诊断吃掉 ⇒ 红因指错
     exit 1
+fi
+
+
+# ⚠⚠⚨ 批 CK · 「未验证」不许被当成「通过」（**CI 自己这层**）。
+#   ⇒ 有任何一组**没验**（工具缺席 / 产物缺失 / 子脚本报 SKIP）⇒ 判红。
+#   ⇒ ⚠ **失败优先**：ci.sh 是 `set -e` 逐步执行 ⇒ 真失败**当场** exit 1
+#     ⇒ 能走到这里说明**没有真失败** ⇒ 这里只判「未验证」。
+#   ⇒ ⚠ 退出码 **3** = 未验证（与契约门、agent 工具面门同款口径，批 CB/CI）。
+if [ "$skip" -ne 0 ]; then
+    echo "✗ 有 $skip 组**未验证**（SKIP）⇒ **未验证不许被当成通过**" >&2
+    echo "  ⇒ 逐条看上面带「SKIP」的行；把环境补齐后重跑" >&2
+    exit 3
 fi
 
 echo "✓ CI 门通过：快照与 git 基线逐字节一致（无未提交的视觉改动）"

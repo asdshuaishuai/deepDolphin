@@ -3103,7 +3103,7 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 2$' 7 '审计器�
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 3 if outside else 0$' 1 '审计器的**「豁免之外」出口**（条件式 `return 3 if outside else 0`）必须恰好 1 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ 这是 rc=3 的唯一出处（豁免表对不上 ⇒ 必须报 3 而不是 0）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 0$' 3 '审计器的**成功出口**（`return 0`）必须恰好 3 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ 与「失败出口 16 处」**合看**：任何一个失败出口被改成 `return 0` ⇒ 失败出口掉 1、成功出口涨 1 ⇒ **两条都红**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^    sys\.exit\(main\(\)\)$' 1 '审计器的**入口**必须把 `main()` 的返回值交给 `sys.exit`（否则返回值被丢弃 ⇒ rc 恒 0 ⇒ 审计器**永远绿**）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
-arch_need_count "$SRC/scripts/ci.sh" '^[[:space:]]*exit [1-9]$' 33 'CI 入口的**失败上报**（整行的 `exit N`）必须恰好 33 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ `ci.sh` 的失败**已经被 `if` 分支消化**（`set -e` 救不了：失败命令的退出码被 `if` 的条件消费掉了）⇒ 只剩这些显式 `exit 1` 兜底 ⇒ 摘掉一个 ⇒ 那一步的失败**不再中止 CI** ⇒ 假绿'
+arch_need_count "$SRC/scripts/ci.sh" '^[[:space:]]*exit [1-9]$' 34 'CI 入口的**失败上报**（整行的 `exit N`）必须恰好 34 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ `ci.sh` 的失败**已经被 `if` 分支消化**（`set -e` 救不了：失败命令的退出码被 `if` 的条件消费掉了）⇒ 只剩这些显式 `exit 1` 兜底 ⇒ 摘掉一个 ⇒ 那一步的失败**不再中止 CI** ⇒ 假绿'
 arch_need_count "$SRC/scripts/ci-d2.sh" '^[[:space:]]*exit [1-9]$' 6 'D2 散值门的**失败上报**（整行的 `exit N`）必须恰好 6 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ **实测的洞**：摘掉最终判定那一行 ⇒ 脚本明明已检出「✗ 豁免路径不存在」却照样打印「✓ D2 命中 0/0」并 **exit 0** ⇒ **假绿坐实**'
 arch_need_count "$SRC/scripts/smoke.sh" '^\[ -x "\$BIN" \] \|\| \{ echo "✗ [^"]*"; exit 1; \}$' 1 '冒烟脚本「产物缺失」那一支的失败上报（**行内**形态 `|| { …; exit 1; }`）必须**整行锚定**｜⚠⚠⚨ **批 CA**｜⚠ 这一条是**行内**形态 ⇒ 不会被「整行的 `exit N`」那条门数到 ⇒ 必须单钉'
 arch_need_count "$SRC/scripts/smoke.sh" '^[[:space:]]*exit [1-9]$' 1 '冒烟脚本**整行**的失败上报（`exit N`）必须恰好 1 处（selfcheck 失败那一支）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
@@ -3570,6 +3570,53 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 CJ 段门项全绿（一次性盘点的数字不许被当成事实：仓内常驻盘点 + 逐处带理由的登记册）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 CK · 「未验证」不许被当成「通过」（**CI 自己这一层**） ────────────────
+#
+# ⚠⚠⚨ **起因（实测盘点 + 对照实验，不是推演）**：
+#   盘点 `scripts/` 下所有「跳过/未验证」出口 ⇒ ⚠⚠⚨ **ci.sh 自己就有 6 处**
+#   「**只打印、不计数**」：
+#   ① `desktop-file-validate` 缺席（desktop 合法性**没验**）
+#   ② `appstream-util` 缺席（metainfo 合法性**没验**）
+#   ③ 没有 `dpkg-deb` ⇒ **deb 构建没跑**（⚠⚠⚨ **D7 达标的必经**）
+#   ④ 没有 deb 产物 ⇒ **deb 布局验收没跑**（⚠ **D7 的准验收**）
+#   ⑤ deb 布局验收**脚本自己报 SKIP**（rc=3）⇒ ⚠⚠⚨ **与批 CI 修过的第 10 步完全同款**
+#   ⑥ agent 工具面门报 SKIP（rc=3）⇒ 同款
+#   ⇒ 全部「只打印、不算失败」⇒ **CI 继续跑** ⇒ 最后照样打
+#     「**✓ CI 门通过**」⇒ ⚠⚠⚨ **未验的组被当成「通过」** ⇒ **假绿**。
+#   ⇒ ⚠⚠⚨ 旧立场写死在 ci.sh 第 12 步的注释里：「不算通过，但**不判失败**」
+#     ⇒ 那个立场**已被本批收掉**（批 BB：说明必须与实际行为一致）。
+#
+# ⚠ **修法**（只动判据层 ⇒ 零产品代码改动）：
+#   ① ci.sh 加**未验证计数器** `skip`；6 处跳过各 `skip=$((skip+1))`；
+#   ② 末尾：`if [ "$skip" -ne 0 ]; then … exit 3; fi`
+#      ⇒ **专属退出码 3**（与契约门、agent 工具面门同款口径，批 CB/CI）
+#      ⇒ ⚠ **失败优先**：ci.sh 是 `set -e` 逐步执行 ⇒ 真失败**当场** exit 1
+#        ⇒ 能走到末尾说明**没有真失败** ⇒ 这里只判「未验证」；
+#   ③ 判定块必须**紧挨着**「✓ CI 门通过」**之前**
+#      ⇒ 顺序反了 ⇒ 「✓」先打出来 ⇒ 未验的组**已经被说成通过**了。
+#
+# ⚠⚠⚨ **门项正则一律由现抽实际行生成**（批 BS 纪律：绝不手写）
+#
+arch_need_count "$SRC/scripts/ci.sh" '^skip=0$' 1 'CI 入口**必须有「未验证」计数器**（⚠⚠⚨ 批 CK：⚠⚠⚨ 实测的洞：ci.sh 自己就有 **6 处**「跳过/未验证」出口**只打印、不计数** ⇒ CI 继续 ⇒ 最后照样打「**✓ CI 门通过**」⇒ **未验的组被当成「通过」**⇒ 假绿）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
+arch_need_count "$SRC/scripts/ci.sh" '^    skip=\$\(\(skip\+1\)\)$' 5 'CI 入口的**未验证计数点**（4 缩进那批，**恰好 5 处**）必须逐个计数（⚠⚠⚨ 批 CK：少一处 ⇒ 那一组未验证**又不计数** ⇒ 假绿；⚠ 4 缩进 = desktop-file-validate 缺席 / appstream-util 缺席 / 没有 dpkg-deb（**D7 必经**）/ 没有 deb 产物（**D7 准验收**）/ agent 工具面门报 SKIP）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
+arch_need_count "$SRC/scripts/ci.sh" '^        skip=\$\(\(skip\+1\)\)$' 1 'CI 入口的**未验证计数点**（8 缩进那批，**恰好 1 处**）必须计数（⚠⚠⚨ 批 CK：deb 布局验收**脚本自己报 SKIP**（rc=3）那一支 ⇒ ⚠⚠⚨ 与批 CI 修过的第 10 步**完全同款** ⇒ 以前只打印「不算通过」⇒ CI 继续 ⇒ 假绿）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
+arch_need_count "$SRC/scripts/ci.sh" '^if \[ "\$skip" -ne 0 \]; then$' 1 'CI 入口**末尾必须按「未验证」判**（⚠⚠⚨ 批 CK：有任何一组没验 ⇒ **专属退出码 3**⇒ 判红 ⇒ 不许说通过；⚠ **失败优先**：ci.sh 是 `set -e` 逐步执行 ⇒ 真失败**当场** exit 1 ⇒ 能走到这里说明没有真失败）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
+arch_need_count "$SRC/scripts/ci.sh" '^    exit 3$' 1 'CI 入口的「未验证」必须用**专属退出码 3**（⚠⚠⚨ 批 CK：与契约门、agent 工具面门**同款口径**，批 CB/CI）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
+arch_need_ml "$SRC/scripts/ci.sh" 'SKIP: desktop-file-validate 未安装（装 desktop-file-validate 包后此门生效）"[[:space:]]+skip=\$\(\(skip\+1\)\)' 'desktop-file-validate 缺席那一处**必须紧跟计数**（⚠⚠⚨ 批 CK：⚠ 少了计数 ⇒ 「desktop 合法性没验」被当成「通过」）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CK**'
+arch_need_ml "$SRC/scripts/ci.sh" 'SKIP: appstream-util 未安装（README 决策 69 的硬门随工具到位生效）"[[:space:]]+skip=\$\(\(skip\+1\)\)' 'appstream-util 缺席那一处**必须紧跟计数**（⚠⚠⚨ 批 CK：⚠ 少了计数 ⇒ 「metainfo 合法性没验」被当成「通过」）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CK**'
+arch_need_ml "$SRC/scripts/ci.sh" '‣ SKIP deb 构建：没有 dpkg-deb"[[:space:]]+skip=\$\(\(skip\+1\)\)' '没有 dpkg-deb 那一处**必须紧跟计数**（⚠⚠⚨ 批 CK：⚠⚠⚨ **deb 构建是 D7 达标的必经**⇒ 没构建 ⇒ 后面的「deb 布局验收」也跟着没有产物 ⇒ **两组都没验** ⇒ 假绿）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CK**'
+arch_need_ml "$SRC/scripts/ci.sh" '‣ SKIP deb 布局验收：没有 deb 产物（本组\*\*未验证\*\*，不算通过）"[[:space:]]+skip=\$\(\(skip\+1\)\)' '没有 deb 产物那一处**必须紧跟计数**（⚠⚠⚨ 批 CK：⚠ **deb 布局验收是 D7 的准验收**⇒ 没验 ⇒ 假绿）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CK**'
+arch_need_ml "$SRC/scripts/ci.sh" '‣ SKIP deb 布局验收：本组\*\*未验证\*\*（脚本自己报了 SKIP）——不算通过" >&2[[:space:]]+skip=\$\(\(skip\+1\)\)' 'deb 布局验收**脚本自己报 SKIP**（rc=3）那一支**必须紧跟计数**（⚠⚠⚨ 批 CK：⚠⚠⚨ 与批 CI 修过的第 10 步**完全同款**）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CK**'
+arch_need_ml "$SRC/scripts/ci.sh" '‣ SKIP agent 工具面门：引擎缺席或版本太老（无 deprecated 标记）"[[:space:]]+skip=\$\(\(skip\+1\)\)' 'agent 工具面门报 SKIP（rc=3）那一处**必须紧跟计数**（⚠⚠⚨ 批 CK：⚠⚠⚨ 与批 CI 修过的第 10 步**完全同款**）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CK**'
+arch_need_ml "$SRC/scripts/ci.sh" 'exit 3[[:space:]]+fi[[:space:]]+echo "✓ CI 门通过：快照与 git 基线逐字节一致（无未提交的视觉改动）' '「未验证 ⇒ 判红」那块**必须紧挨着**「✓ CI 门通过」**之前**（⚠⚠⚨ 批 CK：⚠⚠⚨ 顺序反了 ⇒ 「✓ CI 门通过」先打出来 ⇒ 未验的组**已经被说成通过**了 ⇒ 假绿）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CK**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 CK 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 CK 段门项全绿（未验证不许被当成通过：CI 自己的 6 处跳过必须计数 + 末尾 exit 3）；门项合计 ${ARCH_N} 项（含前段）"
+
 
 
 
