@@ -1359,7 +1359,7 @@ arch_need "$SRC/src/main.cpp" 'dpiEdgeLevels=legacy:%d' '平台探针报出自�
 #   （两列必然相同 ⇒ 恒成立 ⇒ 空门）。批 AJ 教训：承诺没有门 = 承诺不存在。
 #   ⚠ 盯**命令本身**（`dpi_b_out=…QT_SCALE_FACTOR=2`）而不是裸串 ——
 #   裸串在**错误提示语**里也出现（负控实测：把那一跑改成 1x，接线门照样绿）。
-arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^dpi_b_out="\$\(QT_SCALE_FACTOR=2 "\$BIN" --platform-probe 2>/dev/null\)"$' 1 'HiDPI 的效果断言必须真在 dpr=2 下跑（不许退化成 dpr=1 的空断言）｜⚠⚠⚨ **批 BS：整行锚定**（盯的是「那**一行**」⇒ QT_SCALE_FACTOR=2 被挪去别处或挪进行尾注释 ⇒ 立刻红；裸盯串时这两种都骗得过门）'
+arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^dpi_b_out="\$\(QT_SCALE_FACTOR=2 "\$BIN" --platform-probe\)"$' 1 'HiDPI 的效果断言必须真在 dpr=2 下跑（不许退化成 dpr=1 的空断言）｜⚠⚠⚨ **批 BS：整行锚定**（盯的是「那**一行**」⇒ QT_SCALE_FACTOR=2 被挪去别处或挪进行尾注释 ⇒ 立刻红；裸盯串时这两种都骗得过门）'
 arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^dpi_b_legacy="[^;]*dpiEdgeLevels=legacy:[^;]*\\1/p.\)"$' 1 'HiDPI 门必须断言边缘过渡层数 —— 盯**解析 legacy 那一列**的那行｜⚠⚠⚨ **批 BS：整行锚定**（裸盯串 ⇒ 挪进行尾注释就骗得过门）'
 arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^dpi_b_aware="[^;]*dpiEdgeLevels=\.\*aware:[^;]*\\1/p.\)"$' 1 'HiDPI 门必须断言边缘过渡层数 —— 盯**解析 aware 那一列**的那行（两列都要在 ⇒ 少一列就抓不到「dpr 感知更细腻」）｜⚠⚠⚨ **批 BS：整行锚定**'
 
@@ -1956,7 +1956,7 @@ arch_need "$SRC/src/ui/common/SegmentedButton.h" 'QString buttonText\(int id\) c
 arch_need "$SRC/src/main.cpp" 'return headlessDocsLangProbe\(argc, argv\);' 'main 有文档语言探针 —— 盯**调用**那一行（盯函数名的话，定义还在、调用被摘了，门照样绿）'
 arch_need "$SRC/src/main.cpp" 'rawArgs.contains\(QStringLiteral\("--docs-lang-probe"\)\)' '无头分支认得 --docs-lang-probe（不然会落进 GUI 常驻，CI 挂死）'
 arch_need "$SRC/src/main.cpp" 'QStandardPaths::setTestModeEnabled\(true\)' '探针隔离设置（切语言会写 app.language ⇒ 不许碰用户真实设置）'
-arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^PROBE_OUT="\$\(QT_QPA_PLATFORM=offscreen "\$BIN" --docs-lang-probe 2>/dev/null\)" \|\| PROBE_RC=\$\?$' 1 '文档语言断言脚本**真的去跑那个探针** —— 盯那行调用（盯「docs-lang-probe」这个词的话，错误消息里也有 ⇒ 改一处骗得过门）｜⚠⚠⚨ **批 BS：整行锚定**（裸盯串 ⇒ 挪进行尾注释就骗得过门）'
+arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^PROBE_OUT="\$\(QT_QPA_PLATFORM=offscreen "\$BIN" --docs-lang-probe\)" \|\| PROBE_RC=\$\?$' 1 '文档语言断言脚本**真的去跑那个探针** —— 盯那行调用（盯「docs-lang-probe」这个词的话，错误消息里也有 ⇒ 改一处骗得过门）｜⚠⚠⚨ **批 BS：整行锚定**（裸盯串 ⇒ 挪进行尾注释就骗得过门）'
 arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^if printf .%s. "\$EN_BODY" \| grep -Pq .\[\\x\{4E00\}-\\x\{9FFF\}\].; then$' 1 '断言脚本真查汉字（英文档回落成中文要能抓住）｜⚠⚠⚨ **批 BS：整行锚定**（裸盯串 ⇒ 挪进行尾注释就骗得过门）'
 arch_need "$SRC/scripts/ci.sh" 'ci-docs-lang-probe\.sh' 'CI 真跑了这一门（脚本在但不跑 = 没有门）'
 # ── 批 AG · 「文案全在判定层」这条纪律**要有牙**（批 AA 只盯了写法）──
@@ -1992,7 +1992,7 @@ arch_need_count "$SRC/src/ui/pages/ProjectDetailPage.cpp" 'vDivider\(' 3 '详情
 arch_forbid_tree 'QStringLiteral\("\|"\)' '不许用**文字**当分隔线（QLabel("|") 实测宽 4 高 18 ⇒ 那不是线）'
 arch_need "$SRC/src/main.cpp" 'return headlessDividerProbe\(argc, argv\);' 'main 有分隔线探针 —— 盯**调用**那一行（盯函数名的话，定义还在、调用被摘了，门照样绿）'
 arch_need "$SRC/src/main.cpp" 'rawArgs.contains\(QStringLiteral\("--divider-probe"\)\)' '无头分支认得 --divider-probe（不然会落进 GUI 常驻，CI 挂死）'
-arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^PROBE_OUT="\$\(QT_QPA_PLATFORM=offscreen "\$BIN" --divider-probe 2>/dev/null\)" \|\| PROBE_RC=\$\?$' 1 '分隔线断言脚本**真的去跑那个探针** —— 盯那行调用（盯「--divider-probe」这个词的话，错误消息里也有 ⇒ 改一处骗得过门）｜⚠⚠⚨ **批 BS：整行锚定**（裸盯串 ⇒ 挪进行尾注释就骗得过门）'
+arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^PROBE_OUT="\$\(QT_QPA_PLATFORM=offscreen "\$BIN" --divider-probe\)" \|\| PROBE_RC=\$\?$' 1 '分隔线断言脚本**真的去跑那个探针** —— 盯那行调用（盯「--divider-probe」这个词的话，错误消息里也有 ⇒ 改一处骗得过门）｜⚠⚠⚨ **批 BS：整行锚定**（裸盯串 ⇒ 挪进行尾注释就骗得过门）'
 arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^IW="\$\(field inkWidth\)"$' 1 '断言脚本真量墨迹宽（不量就证明不了「1 逻辑像素」这条）—— 盯**取值那一行**（裸盯 `inkWidth` 的话，缺字段的**错误消息**里也有 ⇒ 改一处骗得过门）｜⚠⚠⚨ **批 BS：整行锚定**'
 arch_need "$SRC/scripts/ci.sh" 'ci-divider-probe\.sh' 'CI 真跑了这一门（脚本在但不跑 = 没有门）'
 
@@ -2177,9 +2177,9 @@ echo "✓ 批 BB 段门项全绿（判据条数基线必须完全相等 ⇒ 余�
 #   ⇒ 那要逐条钉住断言的**表达式**，成本远高于收益 ⇒ 本批不做，记为待办。
 arch_need_count "$SRC/scripts/contract-check.sh" '^[[:space:]]*check ' 93 '契约门的断言清单**不许被删**（93 处 check 调用 ⇒ 运行期 120 条真引擎断言；⚠ 契约门有随环境变化的 SKIP 分支 ⇒ 运行期条数会变 ⇒ **只能钉静态调用数**）'
 arch_need_count "$SRC/scripts/check-deb-layout.sh" '^[[:space:]]*(no|ok) "' 14 'deb 布局验收的断言清单**不许被删**（14 处 ok/no 调用）'
-arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^[[:space:]]*echo "[ ]*✗' 20 '平台探针的断言清单**不许被删**（20 条报错 ⇒ 每条报错对应一条断言）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**（行尾注释里的标记不再算数 ⇒ 删一条真报错再在行尾注释里补一个骗不过门）｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
-arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^[[:space:]]*echo "[ ]*✗' 10 '文档语言探针的断言清单**不许被删**（10 条报错）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
-arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^[[:space:]]*echo "[ ]*✗' 9 '分隔线探针的断言清单**不许被删**（9 条报错；批 AW 只盯了其中 3 条 ⇒ 其余被删掉本来没人管）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
+arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^[[:space:]]*echo "[ ]*✗' 22 '平台探针的断言清单**不许被删**（22 条报错 ⇒ 每条报错对应一条断言）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**（行尾注释里的标记不再算数 ⇒ 删一条真报错再在行尾注释里补一个骗不过门）｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
+arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^[[:space:]]*echo "[ ]*✗' 11 '文档语言探针的断言清单**不许被删**（11 条报错）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
+arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^[[:space:]]*echo "[ ]*✗' 10 '分隔线探针的断言清单**不许被删**（10 条报错；批 AW 只盯了其中 3 条 ⇒ 其余被删掉本来没人管）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BC 段有门项红（上面带 ✗ 的行）" >&2
@@ -2728,9 +2728,9 @@ echo "✓ 批 BS 段门项全绿（探针脚本纳入整行锚定适用范围：
 # ⚠⚠⚨ **本段 5 条门项数的是「失败上报语句」的条数**：
 #   摘掉任何一条（或把它改成 `exit 0` / `fail=0`）⇒ 条数变少 ⇒ **必红**。
 #   ⚠ 正则**整行锚定** ⇒ 审计器（批 BL/BM/BN/BR/BS 的适用范围）会查它。
-arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^[[:space:]]*(exit [1-9]|return 1|fail=1)$' 22 '探针脚本的**失败上报语句条数**必须恰好是 22（⚠ **摘掉任何一条失败上报（或把它改成 `exit 0` / `fail=0`）⇒ 那条断言就变空转 ⇒ 脚本仍 exit 0 ⇒ CI 假绿**）｜⚠⚠⚨ **批 BT**｜⚠ 口径：这条门数的是**整行的失败上报语句**（`exit N` / `return 1` / `fail=1`）⇒ 辅助函数的内层/外层报错、awk 程序内部的 `exit 1` 都会**多出来**⇒ **不是 1:1 配对**，只钉住**总数** ⇒ 目的：**不许把任何一条失败上报摘掉或改成 0**'
-arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^[[:space:]]*(exit [1-9]|return 1|fail=1)$' 10 '探针脚本的**失败上报语句条数**必须恰好是 10（⚠ **摘掉任何一条失败上报（或把它改成 `exit 0` / `fail=0`）⇒ 那条断言就变空转 ⇒ 脚本仍 exit 0 ⇒ CI 假绿**）｜⚠⚠⚨ **批 BT**｜⚠ 口径：数**整行的失败上报语句**（`exit N` / `return 1` / `fail=1`）⇒ **不是与报错行 1:1 配对**，只钉**总数** ⇒ 目的：**不许把任何一条失败上报摘掉或改成 0**'
-arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^[[:space:]]*(exit [1-9]|return 1|fail=1)$' 9 '探针脚本的**失败上报语句条数**必须恰好是 9（⚠ **摘掉任何一条失败上报（或把它改成 `exit 0` / `fail=0`）⇒ 那条断言就变空转 ⇒ 脚本仍 exit 0 ⇒ CI 假绿**）｜⚠⚠⚨ **批 BT**｜⚠ 口径：数**整行的失败上报语句**（`exit N` / `return 1` / `fail=1`）⇒ **不是与报错行 1:1 配对**，只钉**总数** ⇒ 目的：**不许把任何一条失败上报摘掉或改成 0**'
+arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^[[:space:]]*(exit [1-9]|return 1|fail=1)$' 24 '探针脚本的**失败上报语句条数**必须恰好是 24（⚠ **摘掉任何一条失败上报（或把它改成 `exit 0` / `fail=0`）⇒ 那条断言就变空转 ⇒ 脚本仍 exit 0 ⇒ CI 假绿**）｜⚠⚠⚨ **批 BT**｜⚠ 口径：这条门数的是**整行的失败上报语句**（`exit N` / `return 1` / `fail=1`）⇒ 辅助函数的内层/外层报错、awk 程序内部的 `exit 1` 都会**多出来**⇒ **不是 1:1 配对**，只钉住**总数** ⇒ 目的：**不许把任何一条失败上报摘掉或改成 0**'
+arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^[[:space:]]*(exit [1-9]|return 1|fail=1)$' 11 '探针脚本的**失败上报语句条数**必须恰好是 11（⚠ **摘掉任何一条失败上报（或把它改成 `exit 0` / `fail=0`）⇒ 那条断言就变空转 ⇒ 脚本仍 exit 0 ⇒ CI 假绿**）｜⚠⚠⚨ **批 BT**｜⚠ 口径：数**整行的失败上报语句**（`exit N` / `return 1` / `fail=1`）⇒ **不是与报错行 1:1 配对**，只钉**总数** ⇒ 目的：**不许把任何一条失败上报摘掉或改成 0**'
+arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^[[:space:]]*(exit [1-9]|return 1|fail=1)$' 10 '探针脚本的**失败上报语句条数**必须恰好是 10（⚠ **摘掉任何一条失败上报（或把它改成 `exit 0` / `fail=0`）⇒ 那条断言就变空转 ⇒ 脚本仍 exit 0 ⇒ CI 假绿**）｜⚠⚠⚨ **批 BT**｜⚠ 口径：数**整行的失败上报语句**（`exit N` / `return 1` / `fail=1`）⇒ **不是与报错行 1:1 配对**，只钉**总数** ⇒ 目的：**不许把任何一条失败上报摘掉或改成 0**'
 arch_need_count "$SRC/scripts/probe-agent-tool-surface.sh" '^[[:space:]]*(exit [1-9]|return 1|fail=1)$' 11 '探针脚本的**失败上报语句条数**必须恰好是 11（⚠ **摘掉任何一条失败上报（或把它改成 `exit 0` / `fail=0`）⇒ 那条断言就变空转 ⇒ 脚本仍 exit 0 ⇒ CI 假绿**）｜⚠⚠⚨ **批 BT**｜⚠ 口径：数**整行的失败上报语句**（`exit N` / `return 1` / `fail=1`）⇒ 这个脚本用 `fail=1` 累加 + 末尾统一 `exit 1`，还有 2 条 `exit 3`（**SKIP**，也算失败）⇒ **不是与报错行 1:1 配对**，只钉**总数** ⇒ 目的：**不许把任何一条失败上报摘掉或改成 0**'
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^[[:space:]]*(exit [1-9]|return 1|fail=1)$' 6 '探针脚本的**失败上报语句条数**必须恰好是 6（⚠ **摘掉任何一条失败上报（或把它改成 `exit 0` / `fail=0`）⇒ 那条断言就变空转 ⇒ 脚本仍 exit 0 ⇒ CI 假绿**）｜⚠⚠⚨ **批 BT**｜⚠ 口径：数**整行的失败上报语句**（`exit N` / `return 1` / `fail=1`）⇒ 这个脚本用 `fail=1` 累加 + 末尾统一 `exit 1`⇒ **不是与报错行 1:1 配对**，只钉**总数** ⇒ 目的：**不许把任何一条失败上报摘掉或改成 0**'
 
@@ -2770,5 +2770,50 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 BU 段门项全绿（helper 型断言脚本：失败助手定义行 + 断言清单都要有门）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 BV · 无头路径的收尾：「退出时 QApplication 必须还活着」——CI 偶发段错误的真身 ──
+#
+# ⚠⚠⚨ **取证坐实的洞（core 解析 + 反汇编，不是推演）**：
+#   CI 偶发段错误（退出码 139）的 core 解析结果：
+#     · 崩溃线程 = **`QDBusConnection` 线程**（探针进程正好 3 个线程：
+#       deepDolphin / QDBusConnection / DConfigGlobalTh，与 core 里的 3 个 NT_PRSTATUS
+#       一一对应；崩溃那个线程的栈上有 `QEventLoop::exec` ⇒ 是个跑事件循环的线程）；
+#     · 崩点 rip = libQt6Core 的 `QCoreApplication::notifyInternal2`，
+#       故障指令 `mov (%rdi),%rax`，**rdi = 0**；
+#     · 反汇编逐条对上：
+#         `159d91 lea ...,%rbp`      （rbp = &QCoreApplication::self）
+#         `159d98 cmpq $0x0,0x0(%rbp)`（**第一次读 self：非空 ⇒ 通过**）
+#         `159dc3 call QInternal::activateCallbacks`（**这里主线程把 self 置空**）
+#         `159de1 mov 0x0(%rbp),%rdi`  （**第二次读 self：已是 NULL**）
+#         `159dec mov (%rdi),%rax`     （**崩：解引用 NULL**）
+#     · 而 `QCoreApplication::~QCoreApplication()` 里 `15beee: movq $0x0,(%rax)`
+#       写的**正是** `QCoreApplication::self` ⇒ **析构 QApplication 会把 self 置空**。
+#   ⇒ 根因：**主线程析构 QApplication 的同时，后台线程正在派发事件** ⇒ 空指针解引用。
+#   ⇒ 而探针的收尾**正好**在 app 作用域之外（`::_exit` 写在 `}` 之后）⇒ 竞态窗口就在那里。
+#
+# ⚠⚠⚨ **修法（两层）**：
+#   ① **产品侧**：所有无头路径统一走 `probeExit()` —— 它在**退出那一刻**报
+#      `appAlive=<0|1>` 再 `_exit` ⇒ **退出时 QApplication 还活着**（app 永不析构）。
+#   ② **CI 侧**：三个探针脚本**各断言** `appAlive=1` ⇒ 那个竞态**从「偶发」变成「必红」**
+#      （退出点一旦被挪出 app 作用域 ⇒ 事实变 0 ⇒ 门立刻红）。
+#
+# ⚠⚠⚨ **为什么事实必须由 `probeExit` 在退出点求值**：
+#   若把 `appAlive` 的求值挪到别处 ⇒ 它就不再反映「退出时 app 还在不在」
+#   ⇒ 断言变成空门（判定被搬走但串还在 —— 批 BQ/BL 反复治的那一类洞）。
+arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^if \[ "\$APP_ALIVE" != "1" \]; then$' 2 '平台探针的**两跳**都必须断言「退出时 QApplication 还活着」（事实行 appAlive）｜⚠⚠⚨ **批 BV**｜⚠ **整行锚定**（批 BS：整行锚定 ⇒ 判定行被追加内容/挪走时门会红）｜⚠ 少一趟（dpr=2 那趟）⇒ 那个竞态在缩放档位下就没人管了'
+arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^if \[ "\$APP_ALIVE" != "1" \]; then$' 1 '文档语言探针必须断言「退出时 QApplication 还活着」（事实行 appAlive）｜⚠⚠⚨ **批 BV**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^if \[ "\$APP_ALIVE" != "1" \]; then$' 1 '分隔线探针必须断言「退出时 QApplication 还活着」（事实行 appAlive）｜⚠⚠⚨ **批 BV**｜⚠ **整行锚定**'
+arch_need_count "$SRC/src/main.cpp" 'appAlive=%d' 1 '「退出时 QApplication 还活着」这个**事实**不许被删（它是批 BV 那条竞态的**唯一可见面**）｜⚠⚠⚨ **批 BV**｜⚠ 口径：`strip_comments` 剥注释 ⇒ 注释里写一遍不算数（批 BK 纪律）'
+arch_need_count "$SRC/src/main.cpp" '::_exit\(rc\);' 1 '`_exit` **只许出现在 `probeExit` 里**（1 处）｜⚠⚠⚨ **批 BV**｜⚠ 散落的 `_exit` 就是「退出点被挪到别处」的入口 ⇒ 一律收口到 probeExit（那儿才有 appAlive 事实）'
+arch_need_count "$SRC/src/main.cpp" 'probeExit\(' 8 '无头路径的收尾**必须走 `probeExit`**（8 = 1 处定义 + 7 个调用点：快照 / 色样张 / 平台探针 / 文档语言探针 ×2 / 分隔线探针 ×2）｜⚠⚠⚨ **批 BV**｜⚠ 走别的出口 = 没有 appAlive 事实 = 那个竞态没人看得见'
+arch_forbid "$SRC/scripts/ci-platform-probe.sh" '2>/dev/null' '平台探针的**stderr 不许被扔掉**（探针崩了时 CrashHandler 的栈回溯（崩点）全在 stderr 里 ⇒ 扔掉 = CI 只剩一句「退出码 139」，**没人知道崩在哪**）｜⚠⚠⚨ **批 BV**｜⚠ 口径：`strip_comments` 剥注释 ⇒ 注释里提一嘴不算'
+arch_forbid "$SRC/scripts/ci-docs-lang-probe.sh" '2>/dev/null' '文档语言探针的**stderr 不许被扔掉**（崩点会因此看不见）｜⚠⚠⚨ **批 BV**｜⚠ 口径：`strip_comments` 剥注释 ⇒ 注释里提一嘴不算'
+arch_forbid "$SRC/scripts/ci-divider-probe.sh" '2>/dev/null' '分隔线探针的**stderr 不许被扔掉**（崩点会因此看不见）｜⚠⚠⚨ **批 BV**｜⚠ 口径：`strip_comments` 剥注释 ⇒ 注释里提一嘴不算'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 BV 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 BV 段门项全绿（无头路径的收尾：退出时 QApplication 必须还活着 + 崩点不许被吞）；门项合计 ${ARCH_N} 项（含前段）"
 
 exit 0

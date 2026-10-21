@@ -22,6 +22,16 @@ if [ "$PROBE_RC" -ne 0 ]; then
     echo "✗ platform-probe 退出码 $PROBE_RC（要求 0）" >&2
     exit 1
 fi
+# ⚠ 批 BV：退出时 QApplication 必须**还活着**（事实行 appAlive）。
+#   appAlive 为 0 ⇒ 探针的退出点在 app 作用域之外 ⇒ 析构 QApplication 会把静态
+#   QCoreApplication::self 置空 ⇒ 后台线程（QDBusConnection / DConfigGlobalTh）
+#   此刻正派发事件时，它第二次读 self 拿到 NULL ⇒ 空指针解引用 ⇒ **SIGSEGV**
+#   （CI 偶发段错误的真身，core 取证坐实）。这一条把那个竞态**变成必红**。
+APP_ALIVE="$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^appAlive=//p')"
+if [ "$APP_ALIVE" != "1" ]; then
+    echo "✗ platform-probe 报 appAlive=${APP_ALIVE:-缺失}（要求 1：退出时 QApplication 必须还活着 ⇒ 后台线程派发事件才不会被空指针打死）" >&2
+    exit 1
+fi
 if ! printf '%s\n' "$PROBE_OUT" | grep -q '^backend='; then
     echo "✗ platform-probe 输出缺 backend= 行" >&2
     exit 1
@@ -155,10 +165,18 @@ dpi_struct_assert() {
 dpi_struct_assert "$PROBE_OUT" || exit 1
 
 # ── 第二跑：强制 200% 缩放（dpr=2），执行「效果事实」那一条 ──
-dpi_b_out="$(QT_SCALE_FACTOR=2 "$BIN" --platform-probe 2>/dev/null)"
+# ⚠ 批 BV：**不許**把 stderr 扔掉（`2>/dev/null`）—— 探针崩了时 CrashHandler 的
+#   栈回溯（崩点）全在 stderr 里 ⇒ 扔掉 = CI 只剩一句「退出码 139」，没人知道崩在哪。
+dpi_b_out="$(QT_SCALE_FACTOR=2 "$BIN" --platform-probe)"
 dpi_b_rc=$?
 if [ "$dpi_b_rc" -ne 0 ]; then
     echo "✗ QT_SCALE_FACTOR=2 下 platform-probe 退出码 $dpi_b_rc（要求 0）" >&2
+    exit 1
+fi
+# ⚠ 批 BV：第二跑**同样**要断言 appAlive（两趟都必须在 app 存活时退出）。
+APP_ALIVE="$(printf '%s\n' "$dpi_b_out" | sed -n 's/^appAlive=//p')"
+if [ "$APP_ALIVE" != "1" ]; then
+    echo "✗ dpr=2 那趟报 appAlive=${APP_ALIVE:-缺失}（要求 1：退出时 QApplication 必须还活着）" >&2
     exit 1
 fi
 dpi_b_dpr="$(printf '%s\n' "$dpi_b_out" | sed -n 's/^devicePixelRatio=//p')"

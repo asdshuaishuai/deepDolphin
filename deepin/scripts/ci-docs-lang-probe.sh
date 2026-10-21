@@ -23,12 +23,21 @@ if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
 fi
 
 PROBE_RC=0
-# ⚠ stderr 丢掉：DTK 会打「setHighDpiScaleFactorRoundingPolicy…」等噪声，
-#   那些不是探针的结论。断言只看 stdout。
-PROBE_OUT="$(QT_QPA_PLATFORM=offscreen "$BIN" --docs-lang-probe 2>/dev/null)" || PROBE_RC=$?
+# ⚠ 批 BV：**不許**把 stderr 扔掉（`2>/dev/null`）—— 探针崩了时 CrashHandler 的
+#   栈回溯（崩点）全在 stderr 里 ⇒ 扔掉 = CI 只剩一句「退出码 139」，没人知道崩在哪。
+#   （DTK 那几行噪声照旧会进 CI 日志；断言只看 stdout，不受影响。）
+PROBE_OUT="$(QT_QPA_PLATFORM=offscreen "$BIN" --docs-lang-probe)" || PROBE_RC=$?
 printf '%s\n' "$PROBE_OUT"
 if [ "$PROBE_RC" -ne 0 ]; then
     echo "✗ docs-lang-probe 退出码 $PROBE_RC（要求 0）" >&2
+    exit 1
+fi
+# ⚠ 批 BV：退出时 QApplication 必须**还活着**（事实行 appAlive）。
+#   为 0 ⇒ 退出点在 app 作用域之外 ⇒ 析构 QApplication 会把静态 QCoreApplication::self
+#   置空 ⇒ 后台线程派发事件时空指针解引用 ⇒ **SIGSEGV**（批 BV 取证坐实）。
+APP_ALIVE="$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^appAlive=//p')"
+if [ "$APP_ALIVE" != "1" ]; then
+    echo "✗ docs-lang-probe 报 appAlive=${APP_ALIVE:-缺失}（要求 1：退出时 QApplication 必须还活着）" >&2
     exit 1
 fi
 
