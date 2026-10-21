@@ -226,6 +226,23 @@ def strip_comments(path):
     return out.stdout
 
 
+def require_perl():
+    """⚠⚠⚨ 批 CF · 剥注释工具的**前提**是 perl 在（审计器与门侧调同一条 perl）。
+
+    ⚠⚠ **以前 perl 缺席时审计器会未捕获异常崩掉**（`FileNotFoundError: 'perl'`）
+      ⇒ 退出码 **1** ⇒ 门侧报「**未知的失败码**」⇒ 真实原因（缺 perl）
+      **没有任何一条消息提到** ⇒ 排障方向被带偏（诊断失真）。
+    ⚠ 现在：**前置检查** ⇒ 缺 perl ⇒ 指名道姓 + 退出码 **2**
+      （2 = 审计器有盲区或缺文件 ⇒ 缺 perl ⇒ C++ 侧的门项**根本没被审** ⇒ 正是盲区）
+    ⇒ 与批 CB/CC/CD/CE 同款口径：**未验证不许被当成通过**。
+    """
+    if shutil.which('perl') is None:
+        print('审计失败：没有 perl（剥注释工具）⇒ 判据口径无法确定 ⇒ '
+              'C++ 侧的门项根本没被审（盲区）', file=sys.stderr)
+        return 2
+    return 0
+
+
 def count_hits(path, rx):
     """用 grep -oE 数命中次数（与 arch_need_count 的口径一致）。"""
     if not os.path.isfile(path):
@@ -1059,6 +1076,12 @@ def check_any_gates(anyc_items, anym_items, counter):
 
 
 def main():
+    # ⚠⚠⚨ 批 CF · **环境前提**（不是检查项）：剥注释工具必须在。
+    #   ⇒ 缺它时审计器压根跑不动 ⇒ 与其崩在栈里（退出码 1 = 未知的失败码），
+    #     不如**指名道姓**地说清楚（批 CB/CC/CE：未验证不许被当成通过）。
+    _rp = require_perl()
+    if _rp != 0:
+        return _rp
     args = sys.argv[1:]
     want_list = '--list' in args
     want_list_all = '--list-all' in args

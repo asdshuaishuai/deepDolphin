@@ -39,6 +39,21 @@ BUILD="${1:-$SRC/build}"
 BUILD="$(cd "$BUILD" 2>/dev/null && pwd || echo "$BUILD")"
 BIN="$BUILD/deepDolphin"
 
+# ⚠⚠⚨ 批 CF · 剥注释口径的**前提**是 perl 在（默认分支靠它剥 C++ 的 `//` 注释）。
+#   ⇒ 以前 perl 缺席时**静默降级**到 sed 兜底 ⇒ **口径变了** ⇒ 同一个门项两边结论可能相反
+#     ⇒ 而**没有任何一条消息说「perl 缺失」** ⇒ 排障方向被带偏。
+#   ⇒ 现在：缺 perl ⇒ **响亮失败**（未验证不许被当成通过；批 CB/CC/CD/CE 同款口径）。
+# ⚠ 抽取的前提：单一真相源文件必须在（抽不到 ⇒ 函数未定义 ⇒ 调用时报
+#   "command not found" ⇒ 退出码 127 ⇒ 在 `|| true` 里被吞 ⇒ **静默失效**）。
+[ -f "$SRC/scripts/ci-wiring.sh" ] || {
+    echo "✗ 找不到 $SRC/scripts/ci-wiring.sh（剥注释口径的单一真相源 ⇒ 抽不到就等于没有门）" >&2
+    exit 1
+}
+command -v perl >/dev/null 2>&1 || {
+    echo "✗ 没有 perl（剥注释工具）⇒ 判据口径无法确定 ⇒ **未验证不许被当成通过**" >&2
+    exit 1
+}
+
 # 运行库环境提前到步骤 1 之前：selfcheck 也要加载 sysroot 的 Qt6/DTK6——原先导出
 # 在步骤 2，无 sysroot rpath 的环境下步骤 1 的二进制根本起不来。用"无条件前置 +
 # 保留旧值"而非 ${VAR:-默认}：预置了 LD_LIBRARY_PATH 的环境（如容器运行时自带
@@ -397,13 +412,20 @@ if ! sh "$SRC/scripts/ci-divider-probe.sh" "$BIN"; then
     exit 1
 fi
 
-strip_comments() {
-    if command -v perl >/dev/null 2>&1; then
-        perl -pe 's{//(?!:).*$}{}' "$1"
-    else
-        sed -e 's|//[^/].*$||' "$1"
-    fi
-}
+# ⚠⚠⚨ 批 CF · **剥注释口径的单一真相源**（批 AV 纪律：抽取而非复刻）。
+#   ⇒ 以前这里**自己定义**了一份，而且是**旧口径**（`s{//(?!:).*$}{}`，**没有** `(?<!:)`）
+#   ⇒ `https://…` 会被整段剥掉 ⇒ **同一个门项，两处口径结论相反**：
+#     实测：同一份源码、同一个门项 ⇒ ci.sh 口径命中 **0**、ci-wiring.sh 口径命中 **1**
+#     ⇒ 仓里已有 **12** 个真实源文件在两套口径下输出不同 ⇒ 现在就能咬人，不是假想。
+#   ⇒ 现在：**从 ci-wiring.sh 原文抽取** ⇒ 口径永远一致（改一处就跟着变）。
+# ⚠ **抽的是函数原文**（`sed -n '/^strip_comments() {/,/^}/p'`）⇒ 不复刻、不手抄。
+# ⚠⚠⚨ **抽取可能截断**：`sed -n '/^strip_comments() {/,/^}/p'` 会在**第一个**独占
+#   `}` 行处结束 ⇒ 函数体里若有这样的行 ⇒ 抽出来是**残缺函数** ⇒ 行为错乱。
+#   ⇒ 所以：抽取失败或抽出来不可用 ⇒ **指名道姓地失败**（不许静默用半个函数）。
+if ! eval "$(sed -n '/^strip_comments() {/,/^}/p' "$SRC/scripts/ci-wiring.sh")" || ! strip_comments "$SRC/scripts/ci-wiring.sh" >/dev/null 2>&1; then
+    echo "✗ 剥注释函数抽取失败或不可用（ci-wiring.sh 的函数体里有独占的 } 行 ⇒ 抽出来是残缺的）" >&2
+    exit 1
+fi
 
 echo "› 5/15 D2 grep 门（DS::* 单点真相源；散值上限 0，存量已清零）"
 # 散值门独立成 scripts/ci-d2.sh：可单独跑，负控也能精确打它。
