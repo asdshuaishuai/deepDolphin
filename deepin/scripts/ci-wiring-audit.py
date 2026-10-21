@@ -107,7 +107,7 @@ GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1031
+GATE_LINES_EXPECTED = 1033
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -207,6 +207,17 @@ DEFAULT_ANY_GLOB = 'src/app/SelfCheck*.cpp'
 #   ⇒ ⚠ 模块级是**故意**的：`main()` 的兜底 except 也要看得见它
 #     ⇒ 崩了 ⇒ 记 rc=2（盲区）⇒ 仍是「最先失败的那个」⇒ 码值语义不被顶替
 FAILS = []
+
+# ⚠⚠⚨ 批 CT · **崩了的退出码**（单独一个常量 ⇒ 可被门**整行锚定**地钉住）
+#   ⇒ 崩了 ⇒ 那些检查**没跑完** ⇒ 与「源文件读不了」同款 ⇒ 归入 **rc=2（盲区）**
+#   ⇒ ⚠⚠⚨ **为什么要单独一个常量**（不是就地写 2）：
+#     就地写 2 ⇒ 整行锚定的门**分不出**「这处 return 2 是崩了、还是那 4 处前置早退」
+#     ⇒ 单独一个常量 ⇒ 门能**指名道姓**地盯住崩了的那一处。
+#   ⇒ ⚠⚠⚨ **为什么崩了要强制这个码**（不是「取最先失败的那个」）：
+#     实测：先造一处别的失败（rc=6）**且**让审计器崩 ⇒ 旧行为 **rc=6**
+#     ⇒ ⇒ 「崩了」被顶替 ⇒ **CI 的分诊依据（rc）指向另一个原因** ⇒ 排障被带偏
+#     ⇒ ⇒ 崩了时**强制**这个码 ⇒ 分诊依据不再被顶替。
+CRASH_RC = 2
 
 
 def resolve(p):
@@ -1400,7 +1411,11 @@ def main():
               ' ⇒ 那些门项**根本没被审**' % (type(e).__name__, e),
               file=sys.stderr)
         FAILS.append(2)
-        return FAILS[0] if FAILS else 2
+        # ⚠⚠⚨ 批 CT · **崩了 ⇒ rc 强制走 CRASH_RC**（**不被更早的失败态顶替**）
+        #   ⇒ 否则「崩了」这个信号只活在 stderr 的一行里，而 **rc**（CI 的分诊依据）
+        #     指向别的原因 ⇒ 排障被带偏（实测：先造 rc=6 再崩 ⇒ 旧行为 rc=6）
+        #   ⇒ ⚠ **已报出来的失败态不丢**（批 CQ：一次报全）⇒ 别的失败照样看得见
+        return CRASH_RC
 
 
 def main_body():
