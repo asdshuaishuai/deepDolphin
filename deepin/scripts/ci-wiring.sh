@@ -2539,7 +2539,7 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+stbad = anchoring_selftes
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_anchor_scope\(cnt_items, exempt\):$' 1 '锚定形态的**实扫**必须在（探针是门自己的工具 ⇒ 它的门项必须整行锚定）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+anchbad, anchor_need = check_anchor_scope\(cnt, anchor_exempt\)$' 1 '锚定形态的**实扫必须被调用**（定义了不调 ⇒ 没人发现探针门项被改回盯串）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **第二返回值 = 「需要豁免」的集合**（豁免表的唯一合法来源）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return 8$' 2 '审计器的**第 8 种失败态**必须在（⚠ **两处**：锚定形态**自检**不过 + 实扫出违规 ⇒ 两种失败要分开 ⇒ 不然排障会被带偏）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^ANCHOR_SCOPE_SUFFIXES = \(.ci-tautology-check\.py., .ci-wiring-audit\.py., .ci\.sh., .ci-wiring\.sh., .ci-platform-probe\.sh., .ci-docs-lang-probe\.sh., .ci-divider-probe\.sh., .probe-agent-tool-surface\.sh., .ci-orphan-probe\.sh., .check-deb-layout\.sh., .contract-check\.sh.\)$' 1 '审计器的**锚定形态适用范围常量**的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 拆成两条）｜⚠⚠⚨ **适用范围必须同时含探针与审计器自身**（两者都是「门自己的工具」⇒ 被掏空 = 门集体失效）｜⚠⚠⚨ **批 BN：范围扩到 `ci.sh`**（CI 入口的门项同样是「门自己的工具」）｜⚠⚠⚨ **批 BR：范围再扩到 `ci-wiring.sh`**（**门脚本本体** ⇒ 它的门项就是「判定层不许被掏空」那一整类承诺的载体 ⇒ 载体被掏空 = 承诺集体失效）｜⚠⚠⚨ **批 BS：范围再扩到 5 个探针脚本**（CI 里跑的断言脚本 ⇒ 它们的判定行同样是「门自己的工具」⇒ 被掏空 = 那批承诺集体失效）｜⚠⚠⚨ **批 BY：范围再扩到 2 个计数器型断言脚本**（`check-deb-layout.sh` + `contract-check.sh` ⇒ 它们的**失败计数点**与**末尾判定行**同样是「判定不许被掏空」那一整类承诺的载体）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^ANCHOR_SCOPE_SUFFIXES = \(.ci-tautology-check\.py., .ci-wiring-audit\.py., .ci\.sh., .ci-wiring\.sh., .ci-platform-probe\.sh., .ci-docs-lang-probe\.sh., .ci-divider-probe\.sh., .probe-agent-tool-surface\.sh., .ci-orphan-probe\.sh., .check-deb-layout\.sh., .contract-check\.sh., .ci-d2\.sh., .smoke\.sh., .bootstrap-deps\.py.\)$' 1 '审计器的**锚定形态适用范围常量**的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 拆成两条）｜⚠⚠⚨ **适用范围必须同时含探针与审计器自身**（两者都是「门自己的工具」⇒ 被掏空 = 门集体失效）｜⚠⚠⚨ **批 BN：范围扩到 `ci.sh`**（CI 入口的门项同样是「门自己的工具」）｜⚠⚠⚨ **批 BR：范围再扩到 `ci-wiring.sh`**（**门脚本本体** ⇒ 它的门项就是「判定层不许被掏空」那一整类承诺的载体 ⇒ 载体被掏空 = 承诺集体失效）｜⚠⚠⚨ **批 BS：范围再扩到 5 个探针脚本**（CI 里跑的断言脚本 ⇒ 它们的判定行同样是「门自己的工具」⇒ 被掏空 = 那批承诺集体失效）｜⚠⚠⚨ **批 BY：范围再扩到 2 个计数器型断言脚本**（`check-deb-layout.sh` + `contract-check.sh` ⇒ 它们的**失败计数点**与**末尾判定行**同样是「判定不许被掏空」那一整类承诺的载体）｜⚠⚠⚨ **批 CA：范围再扩到 3 个**（`ci-d2.sh` + `smoke.sh` + `bootstrap-deps.py` ⇒ 它们的**失败上报出口**同样是「失败必须真的报出去」那一整类承诺的载体）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if not f\.endswith\(ANCHOR_SCOPE_SUFFIXES\):$' 1 '审计器的**锚定形态适用范围常量**的**使用点**必须在（⚠ 散在别处 ⇒ 改一处就废掉另一处 ⇒ 范围悄悄变了没人知道）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **批 BN：范围判定只此一处**（正向扫描与豁免反向配准共用它算出的「需要豁免」集合 ⇒ 两边口径天然一致 ⇒ 不许各判各的）'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+8\) _audit_why="[^"]*" ;;$' 1 '接线门必须**按审计器的第 8 种失败态说原因**（⚠ 批 AZ 实测：不按退出码说原因 ⇒ 排障会被带偏）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **批 BR 整行锚定**：中间的无界通配（点星）⇒ 行首行尾锚死但中间什么都能吃 ⇒ 名存实亡 ⇒ 改成有界通配'
 
@@ -3004,5 +3004,68 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 BZ 段门项全绿（新增失败路径必须带计数：报错行数 == 计数行数 ⇒ 差恒为 0）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 CA · 「失败上报出口」不许被摘掉：判据层与 CI 自己的出口都要有门 ──
+#
+# ⚠⚠⚨ **起因（实测盘点，不是印象）**：批 BT 收了 5 个探针脚本、批 BU 收了 3 个
+#   helper 型脚本、批 BY/BZ 收了 2 个计数器型脚本 ⇒ **但「失败上报出口」这个
+#   承诺本身**（脚本失败时**必须真的报出去**，不许被摘掉、不许 fall through 到 0）
+#   **从来没在「判据层与 CI 自己身上**收过。
+#
+# ⚠⚠⚨ **洞 ①（行为级·假绿·旗舰）**：`ci-wiring-audit.py` 的**退出码契约**没人守
+#   ⇒ 它是**判据层的裁判** ⇒ 它的每个失败出口都是「某一类判据失配 ⇒ 必须红」的
+#   唯一通路。
+#   ⇒ 实测：把 `return 4`（「次数门没配准 ⇒ rc=4」）**整行摘掉**
+#   ⇒ 再让某条次数门的期望值失准 ⇒ 审计器**不再报 4**
+#   ⇒ 而是 fall through 到 `return 3 if outside else 0` ⇒ `outside` 为空
+#   ⇒ **rc=0** ⇒ **审计器对失准的门项报「全绿」** ⇒ **假绿坐实**。
+#
+# ⚠⚠⚨ **洞 ②（行为级·假绿·实测）**：`ci-d2.sh` 的**最终判定**那一行
+#   `if [ "$FAIL" != "0" ]; then exit 1; fi`
+#   ⇒ 摘掉那个 `exit 1` ⇒ 脚本**明明已经检出失败**（打印了「✗ 豁免路径不存在」）
+#   ⇒ 却照样打印「✓ D2 命中 0/0（存量已清零，DS 单一真相源）」并 **exit 0**
+#   ⇒ **假绿坐实**（一个**失败的门自己说「✓」**）。
+#
+# ⚠⚠⚨ **洞 ③（形态级）**：`ci.sh` 的失败**已经被 `if` 分支消化**了
+#   （`set -e` 救不了：失败命令的退出码被 `if` 的条件消费掉了）
+#   ⇒ 只剩那些**显式 `exit 1`** 兜底
+#   ⇒ 摘掉一个 ⇒ 那一步的失败**不再中止 CI** ⇒ CI 继续往下跑 ⇒ 假绿。
+#
+# ⚠⚠⚨ **修法（本批只动判据层 ⇒ 零产品代码改动）**：
+#   ① 每个脚本的**失败出口条数**逐个钉住（整行锚定）；
+#   ② 审计器额外钉「成功出口条数」⇒ 与「失败出口条数」**合看**：
+#      任何一个失败出口被改成 `return 0` ⇒ 失败出口掉 1、成功出口涨 1
+#      ⇒ **两条都红**；
+#   ③ 三个 `.py` 的**入口行**（`sys.exit(main())`）单独钉住
+#      ⇒ 入口被摘 ⇒ `main()` 的返回值被丢弃 ⇒ **rc 恒 0** ⇒ 工具永远绿；
+#   ④ `ci-d2.sh` / `smoke.sh` / `bootstrap-deps.py` **纳入**审计器的
+#      「整行锚定」适用范围 ⇒ 将来这些门被写弱审计器就会红
+#      （这 3 个文件在范围内**没有**非锚定门项 ⇒ **豁免表不变**）。
+#
+# ⚠⚠⚨ **口径（如实记着）**：
+#   · 「失败出口」= **整行**的 `exit <非0数字>` / `return <非0数字>`
+#     ⇒ **行内**形态（如 `|| { …; exit 1; }` / `|| exit 1`）**数不到**
+#     ⇒ `smoke.sh` 的两处行内失败上报**单钉**（否则它们没门）；
+#   · 「失败出口被改成**另一个非 0 码**」⇒ 出口数不变 ⇒ 这两条门**抓不到**
+#     ⇒ 抓得到的是**诊断不失真**（另一条门盯具体码值）或**下一批**。
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return [1-9]$' 16 '审计器的**失败退出码出口**（整行的 `return <非0数字>`）必须恰好 16 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ **实测的洞**：摘掉任何一个 ⇒ 对应失败路径 fall through 到下一条语句 ⇒ 很可能落到 `return 0` ⇒ 审计器 rc=0 ⇒ **假绿**（实测：`return 4` 被摘 ⇒ 「次数门没配准」变成 rc=0）｜⚠ 口径：只数**整行**的纯数字码（条件式 `return 3 if outside else 0` 另有一条门）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 3 if outside else 0$' 1 '审计器的**「豁免之外」出口**（条件式 `return 3 if outside else 0`）必须恰好 1 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ 这是 rc=3 的唯一出处（豁免表对不上 ⇒ 必须报 3 而不是 0）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 0$' 2 '审计器的**成功出口**（`return 0`）必须恰好 2 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ 与「失败出口 16 处」**合看**：任何一个失败出口被改成 `return 0` ⇒ 失败出口掉 1、成功出口涨 1 ⇒ **两条都红**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^    sys\.exit\(main\(\)\)$' 1 '审计器的**入口**必须把 `main()` 的返回值交给 `sys.exit`（否则返回值被丢弃 ⇒ rc 恒 0 ⇒ 审计器**永远绿**）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci.sh" '^[[:space:]]*exit [1-9]$' 27 'CI 入口的**失败上报**（整行的 `exit N`）必须恰好 27 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ `ci.sh` 的失败**已经被 `if` 分支消化**（`set -e` 救不了：失败命令的退出码被 `if` 的条件消费掉了）⇒ 只剩这些显式 `exit 1` 兜底 ⇒ 摘掉一个 ⇒ 那一步的失败**不再中止 CI** ⇒ 假绿'
+arch_need_count "$SRC/scripts/ci-d2.sh" '^[[:space:]]*exit [1-9]$' 2 'D2 散值门的**失败上报**（整行的 `exit N`）必须恰好 2 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ **实测的洞**：摘掉最终判定那一行 ⇒ 脚本明明已检出「✗ 豁免路径不存在」却照样打印「✓ D2 命中 0/0」并 **exit 0** ⇒ **假绿坐实**'
+arch_need_count "$SRC/scripts/smoke.sh" '^\[ -x "\$BIN" \] \|\| \{ echo "✗ [^"]*"; exit 1; \}$' 1 '冒烟脚本「产物缺失」那一支的失败上报（**行内**形态 `|| { …; exit 1; }`）必须**整行锚定**｜⚠⚠⚨ **批 CA**｜⚠ 这一条是**行内**形态 ⇒ 不会被「整行的 `exit N`」那条门数到 ⇒ 必须单钉'
+arch_need_count "$SRC/scripts/smoke.sh" '^[[:space:]]*exit [1-9]$' 1 '冒烟脚本**整行**的失败上报（`exit N`）必须恰好 1 处（selfcheck 失败那一支）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/smoke.sh" '^[[:space:]]*bash "\$SRC/scripts/contract-check\.sh" \|\| exit 1$' 1 '冒烟脚本「契约门失败 ⇒ 中止」那一行必须**整行锚定**（**行内**形态 `|| exit 1`）｜⚠⚠⚨ **批 CA**｜⚠ 这一条是**行内**形态 ⇒ 不会被「整行的 `exit N`」那条门数到 ⇒ 必须单钉'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s*return [1-9]$' 3 '恒真探针的**失败退出码出口**（整行的 `return <非0数字>`）必须恰好 3 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ 摘掉一个 ⇒ 对应失败路径 fall through ⇒ 可能落到 `return 0` ⇒ 探针恒绿'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    sys\.exit\(main\(\)\)$' 1 '恒真探针的**入口**必须把 `main()` 的返回值交给 `sys.exit`（否则返回值被丢弃 ⇒ rc 恒 0 ⇒ 探针**永远绿**）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/bootstrap-deps.py" '^\s*return [1-9]$' 1 '依赖引导脚本的**失败退出码出口**必须恰好 1 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ 它**不在 CI 里**（手动引导用）⇒ 但「失败出口被摘 ⇒ 静默成功」是同一类洞 ⇒ 一并收'
+arch_need_count "$SRC/scripts/bootstrap-deps.py" '^    sys\.exit\(main\(\)\)$' 1 '依赖引导脚本的**入口**必须把 `main()` 的返回值交给 `sys.exit`（否则返回值被丢弃 ⇒ rc 恒 0 ⇒ 引导脚本**永远报成功**）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 CA 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 CA 段门项全绿（失败上报出口不许被摘掉：判据层与 CI 自己的出口都有门）；门项合计 ${ARCH_N} 项（含前段）"
 
 exit 0
