@@ -1359,9 +1359,9 @@ arch_need "$SRC/src/main.cpp" 'dpiEdgeLevels=legacy:%d' '平台探针报出自�
 #   （两列必然相同 ⇒ 恒成立 ⇒ 空门）。批 AJ 教训：承诺没有门 = 承诺不存在。
 #   ⚠ 盯**命令本身**（`dpi_b_out=…QT_SCALE_FACTOR=2`）而不是裸串 ——
 #   裸串在**错误提示语**里也出现（负控实测：把那一跑改成 1x，接线门照样绿）。
-arch_need "$SRC/scripts/ci-platform-probe.sh" 'dpi_b_out=.*QT_SCALE_FACTOR=2' 'HiDPI 的效果断言必须真在 dpr=2 下跑（不许退化成 dpr=1 的空断言）'
-arch_need "$SRC/scripts/ci-platform-probe.sh" 'dpiEdgeLevels=legacy:' 'HiDPI 门必须断言边缘过渡层数 —— 盯**解析 legacy 那一列**的那行'
-arch_need "$SRC/scripts/ci-platform-probe.sh" 'dpiEdgeLevels=\.\*aware:' 'HiDPI 门必须断言边缘过渡层数 —— 盯**解析 aware 那一列**的那行（两列都要在 ⇒ 少一列就抓不到「dpr 感知更细腻」）'
+arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^dpi_b_out="\$\(QT_SCALE_FACTOR=2 "\$BIN" --platform-probe 2>/dev/null\)"$' 1 'HiDPI 的效果断言必须真在 dpr=2 下跑（不许退化成 dpr=1 的空断言）｜⚠⚠⚨ **批 BS：整行锚定**（盯的是「那**一行**」⇒ QT_SCALE_FACTOR=2 被挪去别处或挪进行尾注释 ⇒ 立刻红；裸盯串时这两种都骗得过门）'
+arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^dpi_b_legacy="[^;]*dpiEdgeLevels=legacy:[^;]*\\1/p.\)"$' 1 'HiDPI 门必须断言边缘过渡层数 —— 盯**解析 legacy 那一列**的那行｜⚠⚠⚨ **批 BS：整行锚定**（裸盯串 ⇒ 挪进行尾注释就骗得过门）'
+arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^dpi_b_aware="[^;]*dpiEdgeLevels=\.\*aware:[^;]*\\1/p.\)"$' 1 'HiDPI 门必须断言边缘过渡层数 —— 盯**解析 aware 那一列**的那行（两列都要在 ⇒ 少一列就抓不到「dpr 感知更细腻」）｜⚠⚠⚨ **批 BS：整行锚定**'
 
 # ── 批 AQ · mac 侧引擎下载链：写死的 404 URL + 虚构的产物布局（跨目录盯 macos/）──
 #
@@ -1956,8 +1956,8 @@ arch_need "$SRC/src/ui/common/SegmentedButton.h" 'QString buttonText\(int id\) c
 arch_need "$SRC/src/main.cpp" 'return headlessDocsLangProbe\(argc, argv\);' 'main 有文档语言探针 —— 盯**调用**那一行（盯函数名的话，定义还在、调用被摘了，门照样绿）'
 arch_need "$SRC/src/main.cpp" 'rawArgs.contains\(QStringLiteral\("--docs-lang-probe"\)\)' '无头分支认得 --docs-lang-probe（不然会落进 GUI 常驻，CI 挂死）'
 arch_need "$SRC/src/main.cpp" 'QStandardPaths::setTestModeEnabled\(true\)' '探针隔离设置（切语言会写 app.language ⇒ 不许碰用户真实设置）'
-arch_need "$SRC/scripts/ci-docs-lang-probe.sh" '--docs-lang-probe' '文档语言断言脚本**真的去跑那个探针** —— 盯那行调用（盯「docs-lang-probe」这个词的话，错误消息里也有 ⇒ 改一处骗得过门）'
-arch_need "$SRC/scripts/ci-docs-lang-probe.sh" 'grep -Pq' '断言脚本真查汉字（英文档回落成中文要能抓住）'
+arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^PROBE_OUT="\$\(QT_QPA_PLATFORM=offscreen "\$BIN" --docs-lang-probe 2>/dev/null\)" \|\| PROBE_RC=\$\?$' 1 '文档语言断言脚本**真的去跑那个探针** —— 盯那行调用（盯「docs-lang-probe」这个词的话，错误消息里也有 ⇒ 改一处骗得过门）｜⚠⚠⚨ **批 BS：整行锚定**（裸盯串 ⇒ 挪进行尾注释就骗得过门）'
+arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^if printf .%s. "\$EN_BODY" \| grep -Pq .\[\\x\{4E00\}-\\x\{9FFF\}\].; then$' 1 '断言脚本真查汉字（英文档回落成中文要能抓住）｜⚠⚠⚨ **批 BS：整行锚定**（裸盯串 ⇒ 挪进行尾注释就骗得过门）'
 arch_need "$SRC/scripts/ci.sh" 'ci-docs-lang-probe\.sh' 'CI 真跑了这一门（脚本在但不跑 = 没有门）'
 # ── 批 AG · 「文案全在判定层」这条纪律**要有牙**（批 AA 只盯了写法）──
 # ⚠ 批 AA 写下的纪律是「UI 里一个中文字面量都不许有，接线门 arch_forbid 盯着」，
@@ -1992,8 +1992,8 @@ arch_need_count "$SRC/src/ui/pages/ProjectDetailPage.cpp" 'vDivider\(' 3 '详情
 arch_forbid_tree 'QStringLiteral\("\|"\)' '不许用**文字**当分隔线（QLabel("|") 实测宽 4 高 18 ⇒ 那不是线）'
 arch_need "$SRC/src/main.cpp" 'return headlessDividerProbe\(argc, argv\);' 'main 有分隔线探针 —— 盯**调用**那一行（盯函数名的话，定义还在、调用被摘了，门照样绿）'
 arch_need "$SRC/src/main.cpp" 'rawArgs.contains\(QStringLiteral\("--divider-probe"\)\)' '无头分支认得 --divider-probe（不然会落进 GUI 常驻，CI 挂死）'
-arch_need "$SRC/scripts/ci-divider-probe.sh" '--divider-probe' '分隔线断言脚本**真的去跑那个探针** —— 盯那行调用（盯「--divider-probe」这个词的话，错误消息里也有 ⇒ 改一处骗得过门）'
-arch_need "$SRC/scripts/ci-divider-probe.sh" 'field inkWidth' '断言脚本真量墨迹宽（不量就证明不了「1 逻辑像素」这条）—— 盯**取值那一行**（裸盯 `inkWidth` 的话，缺字段的**错误消息**里也有 ⇒ 改一处骗得过门）'
+arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^PROBE_OUT="\$\(QT_QPA_PLATFORM=offscreen "\$BIN" --divider-probe 2>/dev/null\)" \|\| PROBE_RC=\$\?$' 1 '分隔线断言脚本**真的去跑那个探针** —— 盯那行调用（盯「--divider-probe」这个词的话，错误消息里也有 ⇒ 改一处骗得过门）｜⚠⚠⚨ **批 BS：整行锚定**（裸盯串 ⇒ 挪进行尾注释就骗得过门）'
+arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^IW="\$\(field inkWidth\)"$' 1 '断言脚本真量墨迹宽（不量就证明不了「1 逻辑像素」这条）—— 盯**取值那一行**（裸盯 `inkWidth` 的话，缺字段的**错误消息**里也有 ⇒ 改一处骗得过门）｜⚠⚠⚨ **批 BS：整行锚定**'
 arch_need "$SRC/scripts/ci.sh" 'ci-divider-probe\.sh' 'CI 真跑了这一门（脚本在但不跑 = 没有门）'
 
 # ── 批 AX · M3c「图标名 / 动效」收口：把**实测结论**钉成门（不许退化）──
@@ -2177,9 +2177,9 @@ echo "✓ 批 BB 段门项全绿（判据条数基线必须完全相等 ⇒ 余�
 #   ⇒ 那要逐条钉住断言的**表达式**，成本远高于收益 ⇒ 本批不做，记为待办。
 arch_need_count "$SRC/scripts/contract-check.sh" '^[[:space:]]*check ' 93 '契约门的断言清单**不许被删**（93 处 check 调用 ⇒ 运行期 120 条真引擎断言；⚠ 契约门有随环境变化的 SKIP 分支 ⇒ 运行期条数会变 ⇒ **只能钉静态调用数**）'
 arch_need_count "$SRC/scripts/check-deb-layout.sh" '^[[:space:]]*(no|ok) "' 14 'deb 布局验收的断言清单**不许被删**（14 处 ok/no 调用）'
-arch_need_count "$SRC/scripts/ci-platform-probe.sh" '✗ ' 20 '平台探针的断言清单**不许被删**（20 条报错 ⇒ 每条报错对应一条断言）'
-arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '✗ ' 10 '文档语言探针的断言清单**不许被删**（10 条报错）'
-arch_need_count "$SRC/scripts/ci-divider-probe.sh" '✗ ' 9 '分隔线探针的断言清单**不许被删**（9 条报错；批 AW 只盯了其中 3 条 ⇒ 其余被删掉本来没人管）'
+arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^[[:space:]]*echo "[ ]*✗' 20 '平台探针的断言清单**不许被删**（20 条报错 ⇒ 每条报错对应一条断言）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**（行尾注释里的标记不再算数 ⇒ 删一条真报错再在行尾注释里补一个骗不过门）｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
+arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^[[:space:]]*echo "[ ]*✗' 10 '文档语言探针的断言清单**不许被删**（10 条报错）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
+arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^[[:space:]]*echo "[ ]*✗' 9 '分隔线探针的断言清单**不许被删**（9 条报错；批 AW 只盯了其中 3 条 ⇒ 其余被删掉本来没人管）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BC 段有门项红（上面带 ✗ 的行）" >&2
@@ -2215,11 +2215,11 @@ echo "✓ 批 BC 段门项全绿（CI 里跑的 5 个断言脚本，清单都不
 #      真调用 ⇒ 可达集合被夸大 ⇒ 探针失准。
 # ⚠ **白名单不许收纳「已经在 CI 里」的脚本**（逐条钉，期望次数 0）：
 #   否则有人可以把一个**已接管的**脚本塞进白名单 ⇒ 它随时能被踢出 CI 而无人知晓。
-arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '✗ ' 7 '无游离门自己的断言清单**不许被删**（⚠ 口径：7 = **6 条断言的报错行** + **1 处「什么算断言脚本」的判定行里带的同一个标记** ⇒ 删掉任意一条断言、或删掉那条判定行，都会掉到 6 ⇒ 红）'
-arch_need_count "$SRC/scripts/probe-agent-tool-surface.sh" '✗ ' 9 'agent 工具面探针的断言清单**不许被删**（9 条报错）—— ⚠⚠ **这条门是「文件被整个删掉」的唯一防线**：无游离门扫的是**目录里现存的文件** ⇒ 文件没了它就**扫不到**、也就不会报 ⇒ 必须另有一条「盯文件本身」的条数基线门（删文件 ⇒ 门报「文件不存在」⇒ 红）'
-arch_need_count "$SRC/scripts/ci-orphan-probe.sh" 'grep -q .✗ .' 1 '无游离门**判定「什么算断言脚本」的那行**必须在（⚠⚠ 少了它 ⇒ 扫到 0 个 ⇒ 报「全部可达」⇒ **空转恒绿**）'
-arch_need_count "$SRC/scripts/ci-orphan-probe.sh" 'arch_\[a-z_\]\+' 1 '无游离门**排除门项行**的规则必须在（⚠ 少了它 ⇒ 门项字符串被当成真调用 ⇒ 可达集合被夸大 ⇒ 探针失准）'
-arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^[A-Za-z0-9._-]+\.sh\|' 4 '白名单**条数**基线（恰好 4 条）—— 增删白名单条目必须同步改这里 ⇒ 改动是显式的、可 review 的（⚠ 期望 == 实际 ⇒ 余量恒为 0，批 BB 口径）'
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^[[:space:]]*echo "[ ]*✗' 6 '无游离门自己的断言清单**不许被删**（⚠ 口径：**6 条断言的报错行**；「什么算断言脚本」那条判定行**另有一条门**盯着 ⇒ 两边分开数）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
+arch_need_count "$SRC/scripts/probe-agent-tool-surface.sh" '^[[:space:]]*echo "[ ]*✗' 9 'agent 工具面探针的断言清单**不许被删**（9 条报错）—— ⚠⚠ **这条门是「文件被整个删掉」的唯一防线**：无游离门扫的是**目录里现存的文件** ⇒ 文件没了它就**扫不到**、也就不会报 ⇒ 必须另有一条「盯文件本身」的条数基线门（删文件 ⇒ 门报「文件不存在」⇒ 红）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^[[:space:]]*grep -q .✗ . "\$_f" 2>/dev/null \|\| continue$' 1 '无游离门**判定「什么算断言脚本」的那行**必须在（⚠⚠ 少了它 ⇒ 扫到 0 个 ⇒ 报「全部可达」⇒ **空转恒绿**）｜⚠⚠⚨ **批 BS：整行锚定**（裸盯串 ⇒ 挪进行尾注释就骗得过门）'
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^[[:space:]]*grep -vE .\^\[\[:space:\]\]\*arch_\[a-z_\]\+\[\[:space:\]\]. "\$_cf" 2>/dev/null \\$' 1 '无游离门**排除门项行**的规则必须在（⚠ 少了它 ⇒ 门项字符串被当成真调用 ⇒ 可达集合被夸大 ⇒ 探针失准）｜⚠⚠⚨ **批 BS：整行锚定**'
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^[A-Za-z0-9._-]+\.sh\|[^|]*$' 4 '白名单**条数**基线（恰好 4 条）—— 增删白名单条目必须同步改这里 ⇒ 改动是显式的、可 review 的（⚠ 期望 == 实际 ⇒ 余量恒为 0，批 BB 口径）｜⚠⚠⚨ **批 BS：整行锚定**（条目里多一个分隔符就红 ⇒ 格式被破坏会被解析错）'
 arch_need_count "$SRC/scripts/ci.sh" '(sh|bash|python3) +"?[^"]*/scripts/ci\.sh' 0 '白名单条目 ci.sh **不许被 CI 调用**（它就是 CI 入口本身）—— 期望 0 次：一旦它出现在调用点里 ⇒ 这条白名单就是开后门'
 arch_need_count "$SRC/scripts/ci.sh" '(sh|bash|python3) +"?[^"]*/scripts/smoke\.sh' 0 '白名单条目 smoke.sh **不许被 CI 调用**（它是本地冒烟入口，不是 CI 入口）'
 arch_need_count "$SRC/scripts/ci.sh" '(sh|bash|python3) +"?[^"]*/scripts/probe-deepin-tray\.sh' 0 '白名单条目 probe-deepin-tray.sh **不许被 CI 调用**（需真机：图形会话 + deepin 托盘 daemon）'
@@ -2509,7 +2509,7 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+stbad = anchoring_selftes
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_anchor_scope\(cnt_items, exempt\):$' 1 '锚定形态的**实扫**必须在（探针是门自己的工具 ⇒ 它的门项必须整行锚定）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+anchbad, anchor_need = check_anchor_scope\(cnt, anchor_exempt\)$' 1 '锚定形态的**实扫必须被调用**（定义了不调 ⇒ 没人发现探针门项被改回盯串）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **第二返回值 = 「需要豁免」的集合**（豁免表的唯一合法来源）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return 8$' 2 '审计器的**第 8 种失败态**必须在（⚠ **两处**：锚定形态**自检**不过 + 实扫出违规 ⇒ 两种失败要分开 ⇒ 不然排障会被带偏）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^ANCHOR_SCOPE_SUFFIXES = \(.ci-tautology-check\.py., .ci-wiring-audit\.py., .ci\.sh., .ci-wiring\.sh.\)$' 1 '审计器的**锚定形态适用范围常量**的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 拆成两条）｜⚠⚠⚨ **适用范围必须同时含探针与审计器自身**（两者都是「门自己的工具」⇒ 被掏空 = 门集体失效）｜⚠⚠⚨ **批 BN：范围扩到 `ci.sh`**（CI 入口的门项同样是「门自己的工具」）｜⚠⚠⚨ **批 BR：范围再扩到 `ci-wiring.sh`**（**门脚本本体** ⇒ 它的门项就是「判定层不许被掏空」那一整类承诺的载体 ⇒ 载体被掏空 = 承诺集体失效）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^ANCHOR_SCOPE_SUFFIXES = \(.ci-tautology-check\.py., .ci-wiring-audit\.py., .ci\.sh., .ci-wiring\.sh., .ci-platform-probe\.sh., .ci-docs-lang-probe\.sh., .ci-divider-probe\.sh., .probe-agent-tool-surface\.sh., .ci-orphan-probe\.sh.\)$' 1 '审计器的**锚定形态适用范围常量**的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 拆成两条）｜⚠⚠⚨ **适用范围必须同时含探针与审计器自身**（两者都是「门自己的工具」⇒ 被掏空 = 门集体失效）｜⚠⚠⚨ **批 BN：范围扩到 `ci.sh`**（CI 入口的门项同样是「门自己的工具」）｜⚠⚠⚨ **批 BR：范围再扩到 `ci-wiring.sh`**（**门脚本本体** ⇒ 它的门项就是「判定层不许被掏空」那一整类承诺的载体 ⇒ 载体被掏空 = 承诺集体失效）｜⚠⚠⚨ **批 BS：范围再扩到 5 个探针脚本**（CI 里跑的断言脚本 ⇒ 它们的判定行同样是「门自己的工具」⇒ 被掏空 = 那批承诺集体失效）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if not f\.endswith\(ANCHOR_SCOPE_SUFFIXES\):$' 1 '审计器的**锚定形态适用范围常量**的**使用点**必须在（⚠ 散在别处 ⇒ 改一处就废掉另一处 ⇒ 范围悄悄变了没人知道）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **批 BN：范围判定只此一处**（正向扫描与豁免反向配准共用它算出的「需要豁免」集合 ⇒ 两边口径天然一致 ⇒ 不许各判各的）'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+8\) _audit_why="[^"]*" ;;$' 1 '接线门必须**按审计器的第 8 种失败态说原因**（⚠ 批 AZ 实测：不按退出码说原因 ⇒ 排障会被带偏）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **批 BR 整行锚定**：中间的无界通配（点星）⇒ 行首行尾锚死但中间什么都能吃 ⇒ 名存实亡 ⇒ 改成有界通配'
 
@@ -2666,12 +2666,48 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def has_unbounded_wildcard\(
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if nb % 2 == 0:$' 1 '无界通配判定的**转义计数行**必须在（⚠ 点号前**偶数**个反斜杠 ⇒ 这个点号是通配元字符；**奇数**个 ⇒ 被转义 ⇒ 是字面点）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return True$' 1 '无界通配判定的**「判违规」返回**必须在（⚠ 全文件恰好 1 处 ⇒ 判定被掏空成 `return False` 就红）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if has_unbounded_wildcard\(rx\[1:-1\]\):$' 1 '无界通配判定**必须真的在判定路径上**（⚠ 只定义不调用 ⇒ 规则形同虚设 ⇒ 整行锚定继续名存实亡）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+\(r.[^,]*, (True|False)\),$' 7 '锚定形态**自检的样例条数**必须是 7（⚠ 4 条原有 + 3 条批 BQ 新增：含点星的必判违规 / 有界通配的必判合规 / 转义点星的必判合规）⇒ 样例被删 ⇒ 自检失去证明力 ⇒ 门红'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+\(r.[^,]*, (True|False)\),$' 9 '锚定形态**自检的样例条数**必须是 9（⚠ 4 条原有 + 3 条批 BQ 新增：含点星的必判违规 / 有界通配的必判合规 / 转义点星的必判合规 + **2 条批 BS 新增：末尾 \$ 必判违规 / 转义反斜杠 + 行尾锚点必判合规**）⇒ 样例被删 ⇒ 自检失去证明力 ⇒ 门红'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BQ 段有门项红（上面带 ✗ 的行）" >&2
     exit 1
 fi
 echo "✓ 批 BQ 段门项全绿（整行锚定不许名存实亡：中间不许无界通配 ⇒ 规则自己有门）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 BS · CI 里跑的断言脚本（探针们）纳入「整行锚定」适用范围 ─────────────────────
+#
+# ⚠⚠⚨ **本批先把洞摆出来，再修**（全部实测坐实，不是推演）：
+#   ① **7 条「盯探针判定行」的门项原来是裸 `arch_need`（盯串）**
+#      ⇒ 判定被掏空但串还在 ⇒ 门假绿。实测能骗过门的变异：
+#        · 把 `QT_SCALE_FACTOR=2` 挪进行尾注释
+#          ⇒ 「HiDPI 的效果断言」退化成 dpr=1 的空断言（**正是那条门自己声称要防的**）；
+#        · 把 `--docs-lang-probe` / `--divider-probe` / `field inkWidth` / `grep -Pq`
+#          挪进行尾注释 ⇒ 断言脚本「不再真的跑那个探针」也没人管；
+#        · 把 `dpiEdgeLevels=legacy:` / `dpiEdgeLevels=.*aware:` 挪进行尾注释
+#          ⇒ HiDPI 边缘层数断言瞎了（少一列就抓不到「dpr 感知更细腻」）。
+#      ⇒ 现在改成**整行锚定的 `arch_need_count`（恰好 1 处）** ⇒ 上面每种变异都会红。
+#   ② **5 条「断言清单条数门」的口径从「含标记的行」收紧成「真报错行」**
+#      （`^[[:space:]]*echo "[ ]*✗`）⇒ **行尾注释里的标记不再算数**
+#      ⇒ 「删一条真报错 + 在行尾注释里补一个标记」骗不过门了。
+#   ③ **适用范围扩到 5 个探针脚本**（`ANCHOR_SCOPE_SUFFIXES`）
+#      ⇒ 以后谁给这些脚本加「盯串」门项 ⇒ 审计器当场红（rc=8）。
+#   ④ **孤儿探针自己的 3 条判定行门项**改成整行锚定。
+#
+# ⚠⚠⚨ **为什么「条数门」要显式豁免**（不是漏网、不是忘了）：
+#   那些门项数的是**报错文案行** ⇒ 行尾是**自由文本**
+#   ⇒ 整行锚定等于把每条报错文案逐字写进正则 ⇒ **语义被改窄**
+#   ⇒ ⇒ **显式登记在豁免表里**（批 BN 的豁免机制：正向不豁免就红 + 反向豁免对不上就红）。
+#
+# ⚠⚠⚨ **本段 2 条门项守的是「批 BS 自己新加的判定不许被掏空」**：
+#   批 BS 给审计器加了一条**按反斜杠奇偶数**判「末尾 $ 有没有被转义」的规则
+#   ⇒ 规则被掏空 ⇒ 合法的整行锚定门项被误判成违规 ⇒ **逼人把门项写弱**（假红）。
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if nb % 2 == 1:$' 1 '「末尾 \$ 有没有被转义」的**判定行**必须在（⚠ 末尾 \$ 前**奇数**个反斜杠 ⇒ 这个 \$ 被转义（字面美元号）⇒ 不算行尾锚点；**偶数**个 ⇒ 它是行尾锚点）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **批 BS：原判据按「末两字符是 \$\」⇒ 把 `\\\$` 误判成被转义 ⇒ 假红 ⇒ 逼人把门项写弱**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+while j >= 0 and rx\[j\] == .\\\\.:$' 1 '「末尾 \$ 有没有被转义」的**反斜杠计数行**必须在（⚠ 数末尾 \$ 前面连续有几个反斜杠 ⇒ 奇偶决定它是不是被转义）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **批 BS：源行里是两个反斜杠（源码字面量 `\\\\`）⇒ 正则里要写四个**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 BS 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 BS 段门项全绿（探针脚本纳入整行锚定适用范围：判定行不许被掏空）；门项合计 ${ARCH_N} 项（含前段）"
 
 exit 0

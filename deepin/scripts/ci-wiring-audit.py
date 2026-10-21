@@ -630,6 +630,12 @@ def check_count_gates(count_items):
 #   · `ci-wiring.sh` —— **门脚本本体**（批 BR）⇒ 它的门项就是
 #     「**判定层不许被掏空**」那一整类承诺的**载体** ⇒ 载体被掏空 = 承诺集体失效
 #     ⇒ 风险与「门自己的工具」同级 ⇒ 本批把它那 5 条非锚定门项改成精确形式。
+#   · **5 个 CI 里跑的断言脚本**（批 BS：`ci-platform-probe.sh` /
+#     `ci-docs-lang-probe.sh` / `ci-divider-probe.sh` /
+#     `probe-agent-tool-surface.sh` / `ci-orphan-probe.sh`）
+#     ⇒ 它们的门项盯的正是**探针自己的判定行** ⇒ 判定被掏空 = 那批断言静默失效
+#     ⇒ ⇒ 批 BS 把其中 10 条改成**整行锚定**，5 条「真报错行」条数门**显式豁免**
+#     （行尾是自由文本 ⇒ 锚定会改窄语义 ⇒ 登记在豁免表里，不是漏网）。
 #   ⚠ 全仓其余门项仍逐批推进（已知边界，如实记着）。
 #   ⚠⚠ **C++ 判定层的门项仍刻意保持「盯串」**（批 BR 判定，如实记着）：
 #     那些门项的承诺是「**这个 API 必须在某处被调用**」（**调用点**承诺）
@@ -641,7 +647,7 @@ def check_count_gates(count_items):
 #   ⇒ 名字里的 `GATE_TOOL` 已经不副实（范围不再只是「门自己的工具」）
 #   ⇒ ⚠ **改名必须连带改掉所有引用点**（批 BM 就是漏了一处 ⇒ 报告模式崩
 #   ⇒ 见 `check_undefined_names` 的说明）⇒ 所以本批同时加了那道静态检查。
-ANCHOR_SCOPE_SUFFIXES = ('ci-tautology-check.py', 'ci-wiring-audit.py', 'ci.sh', 'ci-wiring.sh')
+ANCHOR_SCOPE_SUFFIXES = ('ci-tautology-check.py', 'ci-wiring-audit.py', 'ci.sh', 'ci-wiring.sh', 'ci-platform-probe.sh', 'ci-docs-lang-probe.sh', 'ci-divider-probe.sh', 'probe-agent-tool-surface.sh', 'ci-orphan-probe.sh')
 
 
 def has_unbounded_wildcard(mid):
@@ -685,10 +691,23 @@ def anchoring_violation(rx):
     """
     if not rx.startswith('^'):
         return '行首没有 ^ 锚点 ⇒ 盯的是串 ⇒ 判定被掏空但串还在 ⇒ 门假绿'
-    if rx.endswith('\\$'):
-        return '行尾的 $ 是被转义的 ⇒ 不算行尾锚点'
     if not rx.endswith('$'):
         return '行尾没有 $ 锚点 ⇒ 盯的是串 ⇒ 判定被掏空但串还在 ⇒ 门假绿'
+    # ⚠⚠⚨ **批 BS 实测坐实的假红**（本批自己撞上的，不是推演）：
+    #   原判据是 `rx.endswith('\\$')`（末两字符是 `\$`）
+    #   ⇒ ⚠⚠⚨ **但 `\\$`（转义的反斜杠 + 行尾锚点）也被误判成「被转义」**
+    #   ⇒ 合法的整行锚定门项被红 ⇒ 逼着人把门项**写弱**。
+    #   ⇒ ⚠⚠⚨ **假红比假绿更坏**：假绿是承诺悄悄消失；假红是**逼人把承诺改弱**
+    #   （本批就撞上了：一条要钉住「行尾反斜杠」的合法门项被红 ⇒ 只好去改弱它）。
+    #   ⇒ 改成**数反斜杠个数**（**奇数** = 这个 `$` 被转义）
+    #   ⇒ 与 `has_unbounded_wildcard` 的同款奇偶口径一致（批 BQ）。
+    nb = 0
+    j = len(rx) - 2
+    while j >= 0 and rx[j] == '\\':
+        nb += 1
+        j -= 1
+    if nb % 2 == 1:
+        return '行尾的 $ 是被转义的 ⇒ 不算行尾锚点'
     if has_unbounded_wildcard(rx[1:-1]):
         return '中间有无界通配（点星）⇒ 行首行尾锚死但中间什么都能吃 ⇒ 判定被掏空但串还在 ⇒ 门假绿'
     return None
@@ -721,6 +740,12 @@ def anchoring_selftest():
         (r'^\s+if \w+:$', False),
         # ⚠ 转义的点星（字面点星）⇒ 不是通配 ⇒ 必须判合规
         (r'^\s+if \.\*:$', False),
+        # ⚠⚠⚨ 批 BS：末尾的 `$` **被转义** ⇒ 它是字面美元号、不是行尾锚点 ⇒ 必须判违规
+        (r'^\s+if bad:\$', True),
+        # ⚠⚠⚨ 批 BS：**转义的反斜杠 + 行尾锚点**（`\\$`）⇒ 它**是**锚点 ⇒ 必须判合规
+        #   ⚠⚠⚨ 这条样例是**批 BS 自己撞出来的假红的护栏**：原判据按「末两字符是 `\$`」
+        #   ⇒ 把 `\\$` 误判成「被转义」⇒ 合法门项被红 ⇒ 逼人把门项改弱。
+        (r'^\s+if bad:\\$', False),
     ]
     bad = []
     for rx, should in cases:

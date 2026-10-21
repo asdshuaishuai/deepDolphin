@@ -24,3 +24,8 @@ arch_need_count	deepin/scripts/ci.sh	(sh|bash|python3) +"?[^"]*/scripts/ci\.sh	�
 arch_need_count	deepin/scripts/ci.sh	(sh|bash|python3) +"?[^"]*/scripts/smoke\.sh	期望 0 次的白名单门 ⇒ 语义是「不许出现在任何位置」⇒ 整行锚定会把它弱化成「不许出现在某一种整行形态」⇒ 不能用整行锚定
 arch_need_count	deepin/scripts/ci.sh	(sh|bash|python3) +"?[^"]*/scripts/probe-deepin-tray\.sh	期望 0 次的白名单门 ⇒ 语义是「不许出现在任何位置」⇒ 整行锚定会把它弱化成「不许出现在某一种整行形态」⇒ 不能用整行锚定
 arch_need_count	deepin/scripts/ci.sh	(sh|bash|python3) +"?[^"]*/scripts/probe-sni-icon\.sh	期望 0 次的白名单门 ⇒ 语义是「不许出现在任何位置」⇒ 整行锚定会把它弱化成「不许出现在某一种整行形态」⇒ 不能用整行锚定
+arch_need_count	deepin/scripts/ci-platform-probe.sh	^[[:space:]]*echo "[ ]*✗	条数基线门：数的是「报错文案行」⇒ 行尾是自由文本 ⇒ 整行锚定会改窄语义（等于把每条报错文案逐字写进正则）⇒ 显式豁免
+arch_need_count	deepin/scripts/ci-docs-lang-probe.sh	^[[:space:]]*echo "[ ]*✗	条数基线门：数的是「报错文案行」⇒ 行尾是自由文本 ⇒ 整行锚定会改窄语义（等于把每条报错文案逐字写进正则）⇒ 显式豁免
+arch_need_count	deepin/scripts/ci-divider-probe.sh	^[[:space:]]*echo "[ ]*✗	条数基线门：数的是「报错文案行」⇒ 行尾是自由文本 ⇒ 整行锚定会改窄语义（等于把每条报错文案逐字写进正则）⇒ 显式豁免
+arch_need_count	deepin/scripts/ci-orphan-probe.sh	^[[:space:]]*echo "[ ]*✗	条数基线门：数的是「报错文案行」⇒ 行尾是自由文本 ⇒ 整行锚定会改窄语义（等于把每条报错文案逐字写进正则）⇒ 显式豁免
+arch_need_count	deepin/scripts/probe-agent-tool-surface.sh	^[[:space:]]*echo "[ ]*✗	条数基线门：数的是「报错文案行」⇒ 行尾是自由文本 ⇒ 整行锚定会改窄语义（等于把每条报错文案逐字写进正则）⇒ 显式豁免
