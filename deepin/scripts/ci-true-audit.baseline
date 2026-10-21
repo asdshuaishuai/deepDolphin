@@ -1,0 +1,56 @@
+# 「命令替换内 `|| true`」登记册 —— 批 CJ
+#
+# ⚠⚠⚨ **为什么需要这份登记册**（批 CJ 的起因，实测坐实）：
+#   批 CG / 批 CE / 批 CI 的结论都引用过「`scripts/` 下命令替换内带 `|| true`
+#   的站点 **N** 处」这个数字 ⇒ 那个数字来自**一次性盘点脚本**（还放在 /tmp 里）
+#   ⇒ **仓内没有任何东西能重算出它** ⇒ 数字不可复核；
+#   ⇒ 且 ⚠⚠⚨ 批 CJ 实测：**三个盘点器给出三个数** ——
+#     **24**（批 CI 原写；原盘点器**跨行合并把注释并进块**⇒ 跨度配对错乱 ⇒ 3 处假阳性）
+#     / **26**（逐行 + **不剥注释** ⇒ 多算注释里的）
+#     / **21**（**真值**：剥注释 + 正确的 shell 词法 + 嵌套括号）
+#   ⇒ **一次性盘点的数字不许被当成事实** ⇒ 盘点搬进仓内常驻脚本
+#     （`scripts/ci-true-audit.py`）⇒ 数字由**机器**算、**逐处**登记。
+#
+# ⚠ **每行格式（恰好 6 段，TAB 分隔）**：
+#   `文件<TAB>段<TAB>分类<TAB>末命令摘要<TAB>同指纹序号<TAB>理由`
+#   · **不登记行号**（行号漂移 ⇒ 假红 ⇒ 批 BS 纪律：假红比假绿更坏）
+#   · **段** = 所在函数名，或 `(顶层)`（顶层代码不算在某个函数头上）
+#   · **分类** = `count`（计数型）/ `content`（取内容型）/ `exists`（存在性型）/ `other`
+#   · **末命令摘要** = 管道链末命令的前 24 字符（空白折成 `_`）
+#   · **同指纹序号** = 同「文件+段+分类+摘要」的第几处（区分同款代码的两份拷贝）
+#   · **理由** = **为什么这一处可以留**（不许空 ⇒ 批 BN 纪律：逐条理由）
+#   ⚠⚠⚨ **分隔符必须是 TAB**：理由里要写「`|| true`」⇒ 用 `|` 分隔会把行**劈开**
+#   ⇒ 段数对不上 ⇒ 登记册**永远读不出来**（实测踩过）。
+#
+# ⚠ **维护规则（改了就必须同步改这里，否则门红）**：
+#   ① **新增**一处 `|| true` ⇒ 必须在这里**登记并写清理由**（否则「新增未登记」⇒ 红）
+#   ② **修好**一处（把它去掉）⇒ 必须**删掉**这里对应的那一行
+#      （否则「登记册腐化」⇒ 红；⚠ 删行后还要同步门项里的**条数基线**）
+#   ③ **改了**站点内容（换了管道末命令）⇒ 指纹变了 ⇒ 对应行要更新
+#   ⚠⚠⚨ 代价：**每动一处都要改这里 + 改条数基线**（基线改小会显眼 ⇒ 双向红）
+#
+# ⚠⚠⚨ **判定方向是双向红**（批 BH 纪律：恰好口径双向红）：
+#   「实测有、登记册没有」⇒ **红**（新增未登记）
+#   「登记册有、实测没有」⇒ **红**（登记册腐化）
+#
+build-deb.sh	step	count	grep_-c_'not_found'	1	上游 `$_ldd_out` 是**内存里的文本**（ldd 输出已落盘）⇒ 不存在「文件读不了」这条路 ⇒ `grep -c` 无命中 ⇒ 输出 0 ⇒ `|| true` 只把「0」当正常结果（**不掩盖失败**）
+ci-d2.sh	(顶层)	other	"	1	管道末端是 `sed`（**恒退 0**）⇒ `|| true` 是**冗余防御**；上游 `strip_comments` 已由批 CG **先验可读性** ⇒ 文件读不了在剥注释阶段就红 ⇒ 不会静默算成「没命中」
+ci-d2.sh	(顶层)	count	grep_-c_.	1	上游 `$_hits` 是**内存里的文本** ⇒ `grep -c` 无命中 ⇒ 输出 0 ⇒ `|| true` 只把「0」当正常结果
+ci-d2.sh	(顶层)	other	"	2	同上一行的**对称段**（规则 2）⇒ 代码完全同款 ⇒ 靠序号区分
+ci-d2.sh	(顶层)	count	grep_-c_.	2	同上的**对称段**（规则 2 的计数）⇒ 靠序号区分
+ci-d2.sh	(顶层)	count	grep_-c_"^$_p_"_"$EXEMPT	1	`$EXEMPT_HITS` 是**运行时生成**的文件 ⇒ 若它读不了 ⇒ `grep -c` 输出 0 ⇒ 落到「豁免已失效」那一支 ⇒ **判红**（**偏严方向** ⇒ 不会假绿）
+ci-docs-lang-probe.sh	count_lines	count	grep_-c_.	1	上游 `$vals` 是**内存里的文本** ⇒ 同计数型口径
+ci-wiring.sh	any_hits	count	grep_-c_.	1	上游 `strip_comments`（批 CG 已**先验可读性**）⇒ 源文件读不了 ⇒ 剥注释阶段就红 ⇒ 不会静默算成 0
+ci-wiring.sh	arch_need_count	count	grep_-c_.	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
+ci-wiring.sh	arch_need_count_pair	count	grep_-cE_--_"$ra"	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
+ci-wiring.sh	arch_need_count_pair	count	grep_-cE_--_"$rb"	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
+ci-wiring.sh	arch_need_min	count	grep_-c_.	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
+ci-wiring.sh	arch_need_count_in_fn	count	grep_-c_.	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
+ci-wiring.sh	arch_need_count_in_step	count	grep_-c_.	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
+ci.sh	(顶层)	other	grep_-oE_'[0-9]+'	1	上游 `$SELFCHECK_OUT` 是**内存里的文本**；且批 CI 已加 `[ -z "$SC_PASSED" ]` **先判空** ⇒ 取数失败 ⇒ 判红（不再落进「判通过」那一支）
+ci.sh	(顶层)	other	grep_-oE_'[0-9]+'	2	同上一行（`SC_FAILED` 那一条）⇒ 靠序号区分
+ci.sh	(顶层)	other	#include[[:space:]]*<[A-	1	⚠⚠⚨ **批 CJ 修的真洞**：这处原先**没有**先验可读性 ⇒ 源文件对 grep 不可读 ⇒ grep **静默跳过** ⇒ **分层纪律门放行** ⇒ 假绿；⇒ 批 CJ 已在扫描前加 `find … ! -readable` 预检（批 CD 同款口径）⇒ 此处 `|| true` 只吞「无匹配」
+contract-check.sh	(顶层)	exists	command_-v_moongit	1	找不到引擎 ⇒ 返回空 ⇒ 契约门走「引擎缺席」那一支 ⇒ 批 CI 已把它改成**判红**（专属退出码 3）⇒ 不许说通过
+contract-check.sh	(顶层)	count	grep_-c_'^MISMATCH'	1	上游 `$E2E_OUT` 是**内存里的文本**；且批 CI 已把取数失败**先判空** ⇒ 判红
+contract-check.sh	(顶层)	content	cat_"$ENG_TMP/port"_2>/d	1	打桩服务器没起来 ⇒ 端口文件不存在 ⇒ 取到空 ⇒ 该分支报 SKIP ⇒ 批 CI 已把内层 SKIP **计入未验证** ⇒ 末尾 exit 3 ⇒ 判红
+contract-check.sh	(顶层)	content	cat_"$ENG_TMP/port2"_2>/	1	同上（重试上限场景那一条）⇒ 靠端口文件名区分

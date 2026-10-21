@@ -1,0 +1,412 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""批 CJ · 常驻盘点：shell 脚本里「命令替换内部的 `|| true`」站点。
+
+⚠⚠⚨ **为什么这个脚本必须存在在仓里**（批 CJ 的起因）：
+  批 CG / 批 CE / 批 CI 的结论都引用了「`scripts/` 下命令替换内带 `|| true`
+  的站点 **N** 处」这个数字 ⇒ 那个数字来自**一次性盘点脚本**（还放在 /tmp 里）
+  ⇒ **仓内没有任何东西能重算出它** ⇒ 数字不可复核；
+  ⇒ 且实测：换一个盘点器（逐行 + 不剥注释）⇒ 给出**另一个数**
+  ⇒ 且原盘点器**行号错位**（报 `:301` 实际在 `:334`）+ 有**假阳性**
+  ⇒ ⇒ 「一次性盘点的数字」本身没有门守 ⇒ **不许被当成事实**。
+
+⚠⚠⚨ **口径单一真相源**（批 CF 纪律：绝不复刻）：
+  剥注释**直接 import 判据层自己的审计器**（`ci-wiring-audit.py`）
+  ⇒ 与 `ci-wiring.sh` / 审计器 / 门侧**同一条 perl/sed**；
+  ⇒ 并带**抽取自检**（批 CF 教训：「复用实现的方式本身要有自检」）：
+     本脚本产出的剥注释结果必须与 **shell 侧 `strip_comments`** 对同一文件
+     **逐字节相同** ⇒ 漂移当场红。
+
+用法：
+  ci-true-audit.py --list      列出全部站点（落盘可复核）
+  ci-true-audit.py             对照登记册（scripts/ci-true-audit.baseline）判红
+"""
+import importlib.util
+import os
+import re
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+SCRIPTS = HERE
+
+BASELINE = os.path.join(SCRIPTS, 'ci-true-audit.baseline')
+
+# ⚠⚠⚨ 登记册**条数基线**（批 BC 纪律：清单不许被删）⇒ **恰好**（批 BB 口径）
+#   ⇒ 整份登记册被删/被截短 ⇒ 这里就红 ⇒ 门项另有一条盯这一行本身
+TRUE_AUDIT_EXPECTED_ROWS = 21
+
+
+# ══════════════════════════════════════════════════════════════
+# 口径：复用判据层自己的审计器（批 CF：绝不复刻剥注释）
+# ══════════════════════════════════════════════════════════════
+def load_audit():
+    """加载 `ci-wiring-audit.py` 为模块（⚠ 文件名带连字符 ⇒ 不能直接 import）。
+
+    ⚠⚠⚨ **必须确认它的 `__main__` 保护** ⇒ 不然 import 会把审计器**跑一遍**
+    （审计器会打印报告、可能改状态）⇒ 加载后先断言它没被执行。
+    """
+    path = os.path.join(SCRIPTS, 'ci-wiring-audit.py')
+    spec = importlib.util.spec_from_file_location('ci_wiring_audit', path)
+    if spec is None or spec.loader is None:
+        sys.exit('✗ 加载审计器失败：%s' % path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)          # ⚠ 该文件有 `if __name__ == "__main__"` 保护
+    for fn in ('read_source', 'strip_comments'):
+        if not hasattr(mod, fn):
+            sys.exit('✗ 审计器里没有 %s() ⇒ 口径无法复用 ⇒ 拒绝继续' % fn)
+    return mod
+
+
+AUDIT = load_audit()
+
+
+# ══════════════════════════════════════════════════════════════
+# 抽取自检（批 CF 教训：复用实现的方式本身要有自检）
+# ══════════════════════════════════════════════════════════════
+def shell_strip_comments(path):
+    """从 `ci-wiring.sh` **原文抽取** `strip_comments` 并跑一遍
+    ⇒ 拿它与审计器的 `strip_comments` 对拍 ⇒ 两边不一致 ⇒ 口径漂移 ⇒ 判红。"""
+    wiring = os.path.join(SCRIPTS, 'ci-wiring.sh')
+    if not os.access(wiring, os.R_OK):
+        sys.exit('✗ ci-wiring.sh 读不了 ⇒ 抽取自检做不了')
+    with open(wiring, encoding='utf-8') as fh:
+        src = fh.read()
+    m = re.search(r'^strip_comments\(\) \{.*?^\}', src, re.S | re.M)
+    if not m:
+        sys.exit('✗ ci-wiring.sh 里抽不出 strip_comments() ⇒ 抽取自检做不了')
+    fn = m.group(0)
+    probe = '/tmp/az-cj-selfcheck-probe.sh'
+    with open(probe, 'w', encoding='utf-8') as fh:
+        fh.write('#!/bin/sh\n')
+        fh.write(fn)
+        fh.write('\nstrip_comments "$1"\n')
+    out = subprocess.run(['sh', probe, path], capture_output=True, text=True)
+    if out.returncode != 0:
+        sys.exit('✗ 抽取出来的 strip_comments 跑不了（rc=%d）⇒ %s'
+                 % (out.returncode, out.stderr.strip()[:200]))
+    return out.stdout
+
+
+def selftest_strip_parity(paths):
+    """两侧剥注释结果必须**逐字节相同** ⇒ 否则口径漂移 ⇒ 判红。"""
+    bad = []
+    for p in paths:
+        try:
+            a = AUDIT.strip_comments(p)
+        except Exception as e:                       # noqa: BLE001
+            bad.append('%s：审计器侧 %s' % (p, e))
+            continue
+        b = shell_strip_comments(p)
+        if a != b:
+            bad.append('%s：两侧剥注释结果不同（审计器 %d 字节 / shell %d 字节）'
+                       % (p, len(a), len(b)))
+    if bad:
+        sys.exit('✗ 抽取自检失败（剥注释口径漂移）：\n  ' + '\n  '.join(bad))
+    return True
+
+
+# ══════════════════════════════════════════════════════════════
+# 命令替换跨度扫描（剥注释后 · 跳过引号内的文本）
+# ══════════════════════════════════════════════════════════════
+def find_subst_spans(text):
+    """找出所有 `$( ... )` 与反引号 `...` 的跨度（返回**绝对下标**对）。
+
+    ⚠⚠⚨ **shell 词法：单引号 vs 双引号不一样**（实测踩出来的坑）：
+      · `echo '$(foo || true)'` ⇒ **单引号内**不做替换 ⇒ `$(` 是字面量 ⇒ **不是站点**；
+      · `n="$(cmd || true)"`      ⇒ **双引号内照样做替换** ⇒ `$(` **是**站点；
+      ⇒ ⚠⚠⚨ 之前这版把**双引号也当成跳过** ⇒ 结果只认出 2 处（漏了绝大多数）
+        ⇒ ⚠ **教训：词法规则不许凭印象写，必须实测**（批 CG 纪律）。
+
+    ⚠⚠⚨ **必须处理嵌套括号**：`$(echo $(date))` 的外层跨度到**配对**的 `)`。
+    ⚠⚠⚨ **必须处理跨度内部的引号上下文**（`$(echo "a'b")` 里那个 `'`
+      不结束外层的双引号 ⇒ 各自独立计数）。
+    """
+    spans = []
+    n = len(text)
+
+    def scan_one(i):
+        """从 text[i] 处的 `$(` 或 `  开始，取**一个**跨度。"""
+        if text[i] == '`':
+            j = text.find('`', i + 1)
+            if j < 0:
+                j = n
+            return (i, j + 1, text[i + 1:j])
+        depth = 0
+        j = i + 1
+        while j < n:
+            c = text[j]
+            if c == '\\':
+                j += 2
+                continue
+            if c == "'":
+                k = text.find("'", j + 1)
+                j = (k + 1) if k >= 0 else n
+                continue
+            if c == '"':
+                k = j + 1
+                while k < n:
+                    if text[k] == '\\':
+                        k += 2
+                        continue
+                    if text[k] == '"':
+                        break
+                    k += 1
+                j = k + 1
+                continue
+            if c == '(':
+                depth += 1
+            elif c == ')':
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        return (i, j + 1, text[i + 2:j])
+
+    def scan(text):
+        """状态机扫描（⚠ **不许递归** —— 引号状态翻转 + 递归 = 无限递归）。"""
+        out = []
+        i = 0
+        n = len(text)
+        in_dq = False
+        while i < n:
+            c = text[i]
+            if c == '\\':
+                i += 2
+                continue
+            if c == "'" and not in_dq:
+                # 单引号内：不做任何替换 ⇒ 整段跳过
+                k = text.find("'", i + 1)
+                i = (k + 1) if k >= 0 else n
+                continue
+            if c == '"':
+                in_dq = not in_dq
+                i += 1
+                continue
+            if text.startswith('$(', i) or c == '`':
+                a, b, inner = scan_one(i)
+                out.append((a, b, inner))
+                i = b          # ⚠ 跨度内部有自己的引号上下文 ⇒ 不再递归进去
+                continue
+            i += 1
+        return out
+
+    return scan(text)
+
+
+TRUE_RE = re.compile(r'\|\|\s*true\s*$')
+
+
+def classify(inner):
+    """给站点分类 —— ⚠ 分类**只用于登记与说明**，判定仍靠「登记册逐条相等」。"""
+    seg = inner.split('||')[0]
+    cmds = [c.strip() for c in seg.split('|')]
+    last = cmds[-1] if cmds else ''
+    if re.search(r'\bgrep\s+(-[a-zA-Z]*c[a-zA-Z]*\b|-c\b)', last):
+        return 'count', last
+    if re.match(r'cat\b', last):
+        return 'content', last
+    if re.match(r'command\s+-v\b', last):
+        return 'exists', last
+    return 'other', last
+
+
+def enclosing_func(text, line):
+    """站点所在的位置：函数名，或 `(顶层)`。
+
+    ⚠⚠⚨ **必须区分「函数体内」与「顶层」**（实测踩出来的坑）：
+      上一版只向上找最近的 `name() {` ⇒ **顶层代码被归到上一个函数**
+      （实测 `ci-d2.sh` 的顶层 for 循环被归成 `exempt_field`）
+      ⇒ 指纹就分不出「同款的两段代码」⇒ 登记册失去区分力。
+    ⇒ 判据：向上找**第一个**「列 0 的 `name() {`」**或**「列 0 的 `}`」
+      ⇒ 前者 = 该函数；后者 = 已经出了函数体 ⇒ `(顶层)`。
+
+    ⚠⚠⚨ **函数名用来区分「同一文件里的多个同形态站点」**
+    （例如 `ci-wiring.sh` 里 7 处 `grep -c .`）
+    ⇒ 没有它 ⇒ 登记册里多行一模一样 ⇒ 挪动位置也不会红。
+    """
+    lines = text.split('\n')
+    for i in range(min(line, len(lines)) - 1, -1, -1):
+        l = lines[i]
+        m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\(\)\s*\{', l)
+        if m:
+            return m.group(1)
+        if re.match(r'^\}', l):
+            return '(顶层)'          # ⚠ 已出函数体 ⇒ 后面是顶层代码
+    return '(顶层)'
+
+
+def scan_file(path):
+    """返回该文件里的全部站点（行号来自**剥注释后**的文本 ⇒ 行号与原文件一致）。"""
+    text = AUDIT.strip_comments(path)
+    lines = text.split('\n')
+    # 每个字符的起始行号
+    line_of = []
+    ln = 1
+    for l in lines:
+        line_of.extend([ln] * (len(l) + 1))
+        ln += 1
+    out = []
+    for a, b, inner in find_subst_spans(text):
+        if not TRUE_RE.search(inner.rstrip()):
+            continue
+        # 行号 = 跨度起始处所在行（`$(` 通常与命令同行）
+        start_line = line_of[a] if a < len(line_of) else 0
+        kind, last = classify(inner)
+        out.append({
+            'file': os.path.basename(path),
+            'line': start_line,
+            'func': enclosing_func(text, start_line),
+            'kind': kind,
+            'last': last[:60],
+            'inner': ' '.join(inner.split())[:110],
+        })
+    return out
+
+
+def collect():
+    sites = []
+    for name in sorted(os.listdir(SCRIPTS)):
+        if not name.endswith('.sh'):
+            continue
+        sites.extend(scan_file(os.path.join(SCRIPTS, name)))
+    return sites
+
+
+# ══════════════════════════════════════════════════════════════
+# 登记册（独立文件 · 批 BH 纪律）
+# ══════════════════════════════════════════════════════════════
+def fmt(site, seq):
+    """站点的一行登记格式（**指纹**部分）。
+
+    ⚠⚠⚨ **不登记行号**（行号漂移 ⇒ 假红 ⇒ 批 BS 纪律：假红比假绿更坏）
+    ⇒ 登记**内容指纹**：`文件<TAB>段<TAB>分类<TAB>末命令摘要<TAB>序号`
+    ⇒ 内容变了 ⇒ 指纹变了 ⇒ 登记册对不上 ⇒ 红（这正是我们要的）。
+    ⇒ **序号**用来区分「同款代码的两份拷贝」（实测 `ci-d2.sh` 的规则1/规则2
+    两段完全对称 ⇒ 指纹完全相同 ⇒ 没有序号就分不开）。
+    """
+    digest = re.sub(r'[^\S|]+', '_', site['last'][:24])
+    return '%s\t%s\t%s\t%s\t%d' % (site['file'], site['func'], site['kind'],
+                                    digest, seq)
+
+
+def assign_seq(sites):
+    """给同指纹的站点编序号（按出现顺序）⇒ 返回 [(site, seq)]。"""
+    seen = {}
+    out = []
+    for s in sites:
+        key = (s['file'], s['func'], s['kind'],
+               re.sub(r'[^\S|]+', '_', s['last'][:24]))
+        seen[key] = seen.get(key, 0) + 1
+        out.append((s, seen[key]))
+    return out
+
+
+def load_baseline():
+    """读登记册 ⇒ 返回 [行]。
+
+    ⚠⚠⚨ **每行必须恰好 6 段且第 6 段（理由）非空**（批 BN 纪律：逐条理由）
+    ⇒ 不满足 ⇒ **判红**（不许「登记了但没写为什么」）。
+
+    ⚠⚠⚨ **分隔符用 TAB 而不是 `|`**（实测踩出来的坑）：
+      理由里要写「`|| true`」⇒ 用 `|` 分隔 ⇒ 理由本身会把行**劈开**
+      ⇒ 段数对不上 ⇒ 登记册**永远读不出来**。
+      ⇒ ⚠ 批 BN 已有先例（豁免表用 TAB 分隔）⇒ 沿用。
+    """
+    if not os.path.isfile(BASELINE):
+        sys.exit('✗ 登记册不存在：%s' % BASELINE)
+    with open(BASELINE, encoding='utf-8') as fh:
+        raw = fh.read()
+    if '\ufffd' in raw:
+        sys.exit('✗ 登记册里有 U+FFFD ⇒ 拒绝落盘/判读')
+    rows = []
+    for no, l in enumerate(raw.split('\n'), 1):
+        # ⚠⚠⚨ **只去换行，不 strip**（⚠ 负控 A5.1 逮到的真洞）：
+        #   `strip()` 会把**行尾的空白**一起吃掉 ⇒ 而「理由为空」的表现正是
+        #   「第 6 段是空白」⇒ 段数先变成 5 ⇒ **「没有理由」那条判定根本到不了**
+        #   ⇒ 那条判定**形同虚设**（门项盯的是它在不在，不是它能不能被触发
+        #   ⇒ 批 AX 的形状：门在，牙没有）。
+        #   ⇒ 所以这里**只去换行符** ⇒ 空理由仍然是「6 段 + 第 6 段为空」。
+        t = l.rstrip('\r\n')
+        if not t.strip() or t.strip().startswith('#'):
+            continue
+        parts = t.split('\t')
+        if len(parts) != 6:
+            sys.exit('✗ 登记册第 %d 行不是 6 段（`文件<TAB>段<TAB>分类<TAB>摘要<TAB>序号<TAB>理由`）：%s'
+                     % (no, t))
+        if not parts[5].strip():
+            sys.exit('✗ 登记册第 %d 行**没有理由** ⇒ 不许「登记了但没写为什么」：%s'
+                     % (no, t))
+        rows.append(t)
+    return rows
+
+
+def main():
+    args = sys.argv[1:]
+    shs = [os.path.join(SCRIPTS, n) for n in sorted(os.listdir(SCRIPTS))
+           if n.endswith('.sh')]
+    # ⚠ 抽取自检：口径漂移（两侧剥注释结果不同）⇒ 立即判红
+    selftest_strip_parity(shs)
+
+    sites = collect()
+
+    if '--list' in args:
+        print('命令替换内带 `|| true` 的站点：%d 处' % len(sites))
+        for s, seq in assign_seq(sites):
+            print('  · %-26s :%-5s 段=%-22s 分类=%-8s 摘要=%s 序号=%d'
+                  % (s['file'], s['line'], s['func'], s['kind'],
+                     re.sub(r'[^\S|]+', '_', s['last'][:24]), seq))
+        by_kind = {}
+        for s in sites:
+            by_kind[s['kind']] = by_kind.get(s['kind'], 0) + 1
+        for k in sorted(by_kind):
+            print('  [%s] %d 处' % (k, by_kind[k]))
+        return 0
+
+    # ---- 对照登记册（**双向红**，批 BH 纪律：恰好口径双向红）----
+    base = load_baseline()
+    # ⚠ 只比**指纹**（前 5 段）⇒ 理由不参与比较（理由只校验非空）
+    base_keys = ['\t'.join(t.split('\t')[:5]) for t in base]
+    got = [fmt(s, seq) for s, seq in assign_seq(sites)]
+    from collections import Counter
+    cb, cg = Counter(base_keys), Counter(got)
+    # 「登记册有、实测没有」⇒ 登记册腐化
+    missing = list((cb - cg).elements())
+    # 「实测有、登记册没有」⇒ 新增未登记
+    extra = list((cg - cb).elements())
+    bad = False
+    if missing or extra:
+        bad = True
+        print('✗ 「命令替换内 `|| true`」的盘点与登记册对不上 ⇒ 判红',
+              file=sys.stderr)
+        for m in missing:
+            print('  ✗ 登记册有、实测没有（**登记册腐化** ⇒ 修好后请删掉登记册那一行）：%s'
+                  % m, file=sys.stderr)
+        for e in extra:
+            print('  ✗ 实测有、登记册没有（**新增未登记** ⇒ 必须登记并写清理由）：%s'
+                  % e, file=sys.stderr)
+        print('  ⇒ 登记册：%s' % BASELINE, file=sys.stderr)
+    # ⚠⚠⚨ **条数必须恰好等于基线**（批 BC + 批 BB 口径）
+    #   ⚠⚠⚨ **放在对拍之后**（⚠ 负控 A3.1 逮到的真洞）：
+    #   放在**前面** ⇒ 「登记册多一行/少一行」会**先**被条数检查拦下
+    #   ⇒ 「**登记册腐化**」那条判定（missing）**永远到不了**
+    #   ⇒ ⇒ 那条判定**形同虚设**（门项盯的是它在不在，不是它能不能被触发）。
+    #   ⇒ 现在：**两个都报**（先对拍、再条数）⇒ 诊断更全、判定都可达。
+    if len(base) != TRUE_AUDIT_EXPECTED_ROWS:
+        bad = True
+        print('✗ 登记册条数 %d ≠ 基线 %d ⇒ 整份清单被删/被改 ⇒ 判红'
+              % (len(base), TRUE_AUDIT_EXPECTED_ROWS), file=sys.stderr)
+    # ⚠⚠⚨ **两个判定都报、都可达**（⚠ 负控 A3.1 / A4.1 逮到的真洞）：
+    #   若任一处**提前 return** ⇒ 另一处就**永远到不了**
+    #   ⇒ 那条判定**形同虚设**（门项盯的是它在不在，不是它能不能被触发）。
+    #   ⇒ 现在：**不提前 return** ⇒ 两个原因都报出来（批 AZ：一个退出码
+    #     可能对应两种原因 ⇒ 诊断不许只报一个）。
+    if bad:
+        return 1
+    print('✓ 「命令替换内 `|| true`」盘点与登记册逐条相等（%d 处）' % len(got))
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

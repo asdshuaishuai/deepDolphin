@@ -540,6 +540,25 @@ for m in $CANVAS_METHODS; do
     fi
 done
 # 判定层（logic/）零 QWidget 头 —— 分层纪律不能因为新加了图谱层而破。
+# ⚠⚠⚨ **批 CJ · 真洞（实测坐实）**：
+#   原来这行是 `grep -rlE … "$SRC/src/logic" "$SRC/src/models" 2>/dev/null || true`
+#   ⇒ ⚠⚠⚨ **文件对 grep 不可读**（chmod 000）⇒ grep **静默跳过**它
+#   ⇒ 若那个文件里**有** QWidget 头 ⇒ `GW_HITS` 仍是空 ⇒ **分层纪律门放行**
+#   ⇒ **假绿**（⚠ 与批 CD 在 `ci-d2.sh` 里收的洞**同款**：
+#     那边**已经**加了 `find … ! -readable` 预检 ⇒ **这边没加**
+#     ⇒ ⚠⚠⚨ **同一个洞堵一半比不堵更坏**（以为有门 ⇒ 实际没有））。
+#   ⇒ 修法（照批 CD 同款口径）：**扫描之前先验可读性** ⇒ 读不了 ⇒ 判失败。
+#   ⚠ `|| true` **保留**（无匹配 ⇒ grep 退 1 ⇒ `set -e` 会中止 ⇒ 必须吞）
+#   ⇒ 但**先验了可读性** ⇒ 这处 `|| true` 只吞「无匹配」，不吞「读不了」。
+#   ⚠ **不用 `|| true` 包 find**（那会新增一处 `|| true` 站点 ⇒ 登记册要跟着动）
+#   ⇒ 照 `ci-d2.sh` 同款写法：`|| _gw_find_rc=$?`。
+GW_UNREADABLE=""
+_gw_find_rc=0
+_gw_unread="$(find "$SRC/src/logic" "$SRC/src/models" -type f ! -readable -print 2>/dev/null)" || _gw_find_rc=$?
+if [ "$_gw_find_rc" -ne 0 ] || [ -n "$_gw_unread" ]; then
+    echo "✗ logic/ 或 models/ 里有源文件对工具不可读（find 退出码 $_gw_find_rc）：$_gw_unread ⇒ grep 会静默跳过它们 ⇒ 分层纪律门会误判「干净」⇒ **未验证不许被当成通过**" >&2
+    CANVAS_FAIL=1    # ⚠⚠⚨ 批 CJ：不可读 ⇒ 判失败（末尾统一 exit 1 ⇒ 「✓ 图谱 Canvas 契约门通过」永远打不出来）
+fi
 GW_HITS="$(grep -rlE '#include[[:space:]]*<[Qq]Widget|#include[[:space:]]*<[A-Za-z]*Widget' \
     "$SRC/src/logic" "$SRC/src/models" 2>/dev/null || true)"
 if [ -n "$GW_HITS" ]; then
