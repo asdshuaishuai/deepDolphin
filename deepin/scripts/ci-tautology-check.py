@@ -88,7 +88,7 @@ SCOPE_BASELINE = 'ci-tautology-scope.baseline'
 
 # ⚠ 扫描范围的**四个**口径（**键 = 基线文件里的行序** ⇒ 少一行就红）
 #   ⇒ ⚠⚠⚨ 批 CZ：加了 `macos_shell`（mac 侧判据脚本目录）⇒ 三个 → 四个
-SCOPE_KEYS = ('judgement', 'shell', 'macos_shell', 'assets_shell', 'linux_shell', 'python')
+SCOPE_KEYS = ('judgement', 'shell', 'macos_shell', 'assets_shell', 'linux_shell', 'python', 'swift')
 
 # ── 断言函数实参里的判据（批 BG 新增）────────────────────────────────────
 # ⚠ **形态（实测，不是猜）**：contract-check.sh 里
@@ -571,6 +571,14 @@ SELF_TEST_CASES = [
     ('shell_taut', ('if', 'false'), True),
     ('shell_taut', ('until', 'false'), False),
     ('shell_taut', ('if', '[ -f "$F" ]'), False),
+    # ⚠⚠⚨ **批 DC**：Swift 侧的两条新口径也要**自检证明有牙**
+    #   ⇒ 「断言闭包没有失败路径 ⇒ 判红」与「端到端扫描」各测一遍
+    #   ⇒ ⚠ **只测一边 ⇒ 判反了也能过**（批 BF 纪律）
+    ('swift_taut', 'guard x else { throw fail("boom") }', False),
+    ('swift_taut', 'return "OK"', True),
+    ('swift_e2e', ('check("x") {\n    return "OK"\n}\n', 1), True),
+    ('swift_e2e', ('check("x") {\n    guard y else { throw fail("z") }\n    return "OK"\n}\n', 0), True),
+    ('swift_e2e', ('if true {\n    print("x")\n}\n', 1), True),
 ]
 
 
@@ -602,6 +610,17 @@ def self_test():
             # ⚠ 走**同一条**判定路径（自检与实扫必须调同一个判定函数）
             _k, _c = inp
             got = shell_tautology_reason(_k, _c) is not None
+        elif kind == 'swift_taut':
+            # ⚠ 走**同一条**判定路径（自检与实扫必须调同一个判定函数）
+            got = swift_assert_reason(inp) is not None
+        elif kind == 'swift_e2e':
+            # ⚠ 走**同一条**扫描路径（自检与实扫必须调同一个扫描函数）
+            #   ⇒ 扫描会往 stderr 打诊断 ⇒ 自检期间**必须静音**
+            text, want_bad = inp
+            _buf = io.StringIO()
+            with contextlib.redirect_stderr(_buf):
+                _na, _ni, got_bad = scan_swift_text(text, 'self-test')
+            got = (got_bad == want_bad)
         else:
             helper, arg = inp
             got = assertion_arg_is_tautology(helper, arg)
@@ -616,9 +635,14 @@ def read_scope_baseline(scripts):
     """读「扫描范围基线」⇒ {口径: 期望文件数}。
 
     ⚠⚠⚨ **基线是独立文件**（批 BH 纪律：基线不许写死在裁判手里）。
-    ⚠ **行序 = 口径序**（`SCOPE_KEYS`）⇒ 少一行 / 多一行 / 坏行 ⇒ **返回 None**
+    ⚠⚠⚨ **批 DC：每行是 `<口径名> <数字>`**（⚠ 原先是**纯数字**、靠**行序**对应口径
+      ⇒ ⚠ 两个口径的文件数**相同**时（python 5 / swift 5）门就**钉不住是哪个**
+      ⇒ 「每个口径都记两遍」这条纪律**立不住** ⇒ 改成**带名字**
+      ⇒ 每个口径都能被**单独**钉住 ⇒ 门项才能指名道姓说「是哪个口径」）。
+    ⚠ **口径名必须与 `SCOPE_KEYS` 完全一致**（名字、个数、顺序）
+      ⇒ 少一行 / 多一行 / 名字写错 / 顺序乱了 ⇒ **返回 None**
       ⇒ 探针当场红（fail closed）⇒ 不许「读不到就当没有基线」。
-    ⚠ **只认纯数字行**（别的行当坏行）⇒ 基线文件里塞别的东西 ⇒ 也要红。
+    ⚠ **只认 `<名字> <纯数字>`**（别的行当坏行）⇒ 基线文件里塞别的东西 ⇒ 也要红。
     """
     path = os.path.join(scripts, SCOPE_BASELINE)
     if not os.path.isfile(path):
@@ -630,9 +654,10 @@ def read_scope_baseline(scripts):
         return None
     out = {}
     for key, row in zip(SCOPE_KEYS, rows):
-        if not row.isdigit():
+        parts = row.split()
+        if len(parts) != 2 or parts[0] != key or not parts[1].isdigit():
             return None
-        out[key] = int(row)
+        out[key] = int(parts[1])
     return out
 
 
@@ -701,6 +726,219 @@ def scan_shell_file(path, label):
     return scan_shell_text(text, label)
 
 
+# ── Swift 侧（批 DC）──────────────────────────────────────────────────────
+# ⚠⚠⚨ **为什么 Swift 要单独一套口径**（实测，不是推演）：
+#   mac 侧的判据脚本是 **Swift**（`macos/Tests/*/main.swift`：5 个文件、
+#   **469 条断言**、144 处 if 条件）
+#   ⇒ 断言形态与 shell/python **完全不同**：
+#     `check("标签") { …guard… else { throw fail("…") }… }`
+#   ⇒ 判据就藏在**闭包体**里 ⇒ C++ 侧那条「`check(…)` 的第三个实参」口径**够不着**
+#   ⇒ ⚠⚠⚨ 恒真探针里**没有 Swift** ⇒ mac 侧那 469 条断言**一个都没被查过**
+#   ⇒ 而 mac 构建**确实会跑**它们（`macos/build.sh` → `macos/scripts/*-check.sh`）
+#     ⇒ 它们就是 **mac 平台的判定层** ⇒ 掏空了也没人知道（**假绿**）
+#
+# ⚠ **Swift 侧的两种掏空形态**：
+#   ① **断言闭包里没有失败路径**（`throw` / `try` / `fatalError` / …）
+#      ⇒ 这条断言**永远不会失败** ⇒ 等价于 C++ 侧的 `check(log, "…", true)`
+#   ② **`if` 条件恒真/恒假**（`if true` / `if false`）或**带捷径**（`|| true`）
+#      ⇒ 体总执行 / 永不执行 ⇒ 里面的判据形同虚设
+
+# ⚠ **失败路径的关键字**（⚠⚠⚨ `try?` **不算**：它把错误**吞掉** ⇒ 不会失败
+#   ⇒ 实测仓里有 15 处 `try?` ⇒ 粗口径会把「吞错误」误当成「会失败」⇒ 假绿）
+SWIFT_FAIL_RE = re.compile(
+    r'\bthrow\b|\btry\b(?!\?)|\bfatalError\b|\bprecondition\b|\bassert\b')
+
+
+def strip_swift(text, blank_strings=False):
+    '''剥 Swift 注释（`//` 与 `/* */`）；`blank_strings=True` 时把**字符串字面量内容置空**。
+
+    ⚠ **状态机而不是正则**：源码里有 `"https://…"` 这类字面量
+      ⇒ 正则分不清 `//` 是注释还是 URL 的一部分。
+    ⚠ **`"""` 多行字符串**单独一档（⚠⚠⚨ 实测踩到：当成普通字符串 ⇒ 引号状态机跑偏
+      ⇒ 闭包体被抽错 ⇒ **假红**）。
+    ⚠ `blank_strings=True` 的用途：判「闭包里有没有失败路径」时，
+      `throw` / `try` 这些关键字必须**只从代码里认**
+      ⇒ 否则一句说明文字（`"这里没有 try"`）就能冒充「有失败路径」⇒ 掏空的断言混过去。
+    ⚠ **行数必须保持不变**（置空时只留换行）⇒ 诊断里的行号才不会错位。
+    '''
+    out = []
+    in_line = in_block = in_str = in_ml = False
+    escaped = False
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        cn = text[i + 1] if i + 1 < n else ''
+        if in_line:
+            if c == '\n':
+                in_line = False
+                out.append(c)
+        elif in_block:
+            if c == '*' and cn == '/':
+                in_block = False
+                i += 2
+                continue
+            if c == '\n':
+                out.append(c)
+        elif in_ml:
+            if text[i:i + 3] == '"""':
+                in_ml = False
+                out.append('"""')
+                i += 3
+                continue
+            if c == '\n':
+                out.append(c)
+            elif not blank_strings:
+                out.append(c)
+        elif in_str:
+            if not blank_strings:
+                out.append(c)
+            if escaped:
+                escaped = False
+            elif c == '\\':
+                escaped = True
+            elif c == '"':
+                in_str = False
+        else:
+            if c == '/' and cn == '/':
+                in_line = True
+                i += 2
+                continue
+            if c == '/' and cn == '*':
+                in_block = True
+                i += 2
+                continue
+            if text[i:i + 3] == '"""':
+                in_ml = True
+                out.append('"""')
+                i += 3
+                continue
+            if c == '"':
+                in_str = True
+            out.append(c)
+        i += 1
+    return ''.join(out)
+
+
+def _swift_balance(text, i, open_ch, close_ch):
+    """从 text[i]（= open_ch）起配平 ⇒ 返回 close_ch 的下标；配平不上 ⇒ -1。"""
+    depth = 0
+    in_str = in_ml = False
+    escaped = False
+    j = i
+    while j < len(text):
+        if in_ml:
+            if text[j:j + 3] == '"""':
+                in_ml = False
+                j += 3
+                continue
+        elif in_str:
+            if escaped:
+                escaped = False
+            elif text[j] == '\\':
+                escaped = True
+            elif text[j] == '"':
+                in_str = False
+        else:
+            if text[j:j + 3] == '"""':
+                in_ml = True
+                j += 3
+                continue
+            if text[j] == '"':
+                in_str = True
+            elif text[j] == open_ch:
+                depth += 1
+            elif text[j] == close_ch:
+                depth -= 1
+                if depth == 0:
+                    return j
+        j += 1
+    return -1
+
+
+def swift_check_closures(text):
+    """抽出 Swift 里每个 `check(…)` 调用的 (行号, 标签, 闭包体)。
+
+    ⚠ **括号/花括号配平，不用正则猜**（闭包里有嵌套闭包与字符串字面量）。
+    ⚠ `check` 必须**在行首**（前面只许空白）⇒ `func check(…)` 那条**定义**
+      不会被当成调用（⚠ 实测：5 个文件各 1 条定义 ⇒ 不排除就会多算 5 条）。
+    """
+    out = []
+    for m in re.finditer(r'(?m)^[ \t]*check\s*\(', text):
+        i = m.end() - 1
+        j = _swift_balance(text, i, '(', ')')
+        if j < 0:
+            continue
+        k = j + 1
+        while k < len(text) and text[k] in ' \t\r\n':
+            k += 1
+        if k >= len(text) or text[k] != '{':
+            continue
+        m2 = _swift_balance(text, k, '{', '}')
+        if m2 < 0:
+            continue
+        out.append((text.count('\n', 0, m.start()) + 1,
+                    text[i + 1:j].strip(), text[k:m2 + 1]))
+    return out
+
+
+def swift_if_conds(text):
+    """抽出 Swift 里每个 `if` 的条件 ⇒ [(行号, 条件)]。
+
+    ⚠ 含 `else if`（它也是条件 ⇒ 同样会退化）。
+    """
+    out = []
+    for m in re.finditer(r'(?m)^[ \t]*(?:else\s+)?if\s+(.+?)\s*\{', text):
+        out.append((text.count('\n', 0, m.start()) + 1, m.group(1)))
+    return out
+
+
+def swift_assert_reason(body):
+    r"""Swift 断言闭包的「掏空」判定 ⇒ 返回原因，不是就返回 None。
+
+    ⚠ **闭包里没有任何失败路径** ⇒ 这条断言**永远不会失败**
+      ⇒ 等价于 C++ 侧的 `check(log, "…", true)` ⇒ 掏空。
+    ⚠ `try?` **不算失败路径**（它把错误吞掉）⇒ 用 `(?!\?)` 排除。
+    ⚠ **返回原因而不是布尔**（同 `tautology_reason` 的规矩）。
+    """
+    code = strip_swift(body, blank_strings=True)
+    if SWIFT_FAIL_RE.search(code):
+        return None
+    return '断言闭包里没有任何失败路径（throw / try）⇒ 这条断言永远不会失败'
+
+
+def scan_swift_text(text, label):
+    """扫一个 Swift 脚本文本 ⇒ 返回 (断言数, if 条件数, 问题数)。
+
+    ⚠ **入参是文本** ⇒ 自检能拿合成样例走**同一条**扫描路径（同批 DA 的做法）。
+    """
+    code = strip_swift(text)
+    n_assert = 0
+    n_if = 0
+    bad = 0
+    for line, lbl, body in swift_check_closures(code):
+        n_assert += 1
+        why = swift_assert_reason(body)
+        if why:
+            print('%s%s:%d %s：%s' % (ERROR, label, line, why, lbl[:60]),
+                  file=sys.stderr)
+            bad += 1
+    for line, cond in swift_if_conds(code):
+        n_if += 1
+        why = tautology_reason(cond)
+        if why:
+            print('%s%s:%d if 的条件是%s：%s'
+                  % (ERROR, label, line, why, cond[:100]), file=sys.stderr)
+            bad += 1
+    return n_assert, n_if, bad
+
+
+def scan_swift_file(path, label):
+    """扫一个 .swift 文件 ⇒ 返回 (断言数, if 条件数, 问题数)。"""
+    text = open(path, encoding='utf-8').read()
+    return scan_swift_text(text, label)
+
+
 def main():
     if len(sys.argv) < 2:
         print('用法：ci-tautology-check.py <源码根目录>', file=sys.stderr)
@@ -737,11 +975,14 @@ def main():
     mac_dir = os.path.join(repo_root, 'macos')
     assets_dir = os.path.join(repo_root, 'assets')
     linux_scripts = os.path.join(repo_root, 'linux', 'scripts')
+    # ⚠⚠⚨ 批 DC · **Swift 判据目录**（mac 侧的判据脚本是 Swift
+    #   ⇒ 469 条断言**从来没被查过恒真** ⇒ 它们就是 mac 平台的判定层）
+    swift_dir = os.path.join(repo_root, 'macos', 'Tests')
     # ⚠⚠⚨ **扫描目录不存在 ⇒ 明确报错**（不许崩成 traceback）
     #   ⇒ 崩掉的退出码也是 1 ⇒ CI 照样红，但**看不出是哪一步坏了**
     #   ⇒ 排障会被带偏（批 AZ 纪律：不按原因说 ⇒ 排障会被带偏）
     #   ⚠ **用变量、不另写字面量** ⇒ 两套口径必然漂（改一处就不同步 ⇒ 新造一个洞）
-    for d in (appdir, scripts, mac_dir, assets_dir, linux_scripts):
+    for d in (appdir, scripts, mac_dir, assets_dir, linux_scripts, swift_dir):
         if not os.path.isdir(d):
             print('%s扫描目录不存在：%s' % (ERROR, d), file=sys.stderr)
             bad += 1
@@ -841,6 +1082,26 @@ def main():
                       % (ERROR, fn, line, helper, why, arg[:100]), file=sys.stderr)
                 bad += 1
 
+    # ⑤ **Swift 判据**（批 DC 新增）：mac 侧的判据脚本是 Swift
+    #    ⚠⚠⚨ 断言形态 = `check("标签") { …guard… else { throw … } }`
+    #      ⇒ 判据藏在**闭包体**里 ⇒ 前面四类扫描**都够不着**
+    #      ⇒ 那 469 条断言**从来没被查过** ⇒ 掏空了也没人知道（**假绿**）
+    n_swift_files = 0
+    n_swift_assert = 0
+    n_swift_if = 0
+    for _dp, _dn, _fns in os.walk(swift_dir):
+        _dn[:] = sorted(x for x in _dn if x != '__pycache__')
+        for fn in sorted(_fns):
+            if not fn.endswith('.swift'):
+                continue
+            n_swift_files += 1
+            path = os.path.join(_dp, fn)
+            _na, _ni, _nb = scan_swift_file(
+                path, 'macos/Tests/' + os.path.relpath(path, swift_dir))
+            n_swift_assert += _na
+            n_swift_if += _ni
+            bad += _nb
+
     # ⚠⚠⚨ 批 BP · **扫描范围不许被改窄**（基线在 scripts/ci-tautology-scope.baseline）
     #   ⚠ **fail closed**：基线读不到 / 坏行 ⇒ 照红（不许「读不到就当没有基线」）
     #   ⇒ 否则范围一被改窄 ⇒ 本探针就静默变成半个空门 ⇒ 它管的那些判据没人查了
@@ -854,7 +1115,7 @@ def main():
                      'macos_shell': n_sh_files['macos_shell'],
                      'assets_shell': n_sh_files['assets_shell'],
                      'linux_shell': n_sh_files['linux_shell'],
-                     'python': n_py_files}
+                     'python': n_py_files, 'swift': n_swift_files}
         for key in SCOPE_KEYS:
             want = scope_expect[key]
             if got_scope[key] != want:
@@ -871,12 +1132,14 @@ def main():
           'shell 与 python 脚本 %d 个条件都非恒真'
           '（⚠ while/until 的惯用无限循环按批 DA 规矩不判恒真）；'
           '断言函数实参里 %d 条判据都非恒真；'
-          '扫描范围 判定层 %d / shell %d（deepin %d + macos %d + assets %d + linux %d）/ python %d 个文件（与基线一致）'
-          % (n_check, n_if, n_assert, n_judge_files,
+          'Swift 判据 %d 条断言（闭包都有失败路径）+ %d 处 if 条件都非恒真；'
+          '扫描范围 判定层 %d / shell %d（deepin %d + macos %d + assets %d + linux %d）/ python %d / swift %d 个文件（与基线一致）'
+          % (n_check, n_if, n_assert, n_swift_assert, n_swift_if, n_judge_files,
              n_sh_files['shell'] + n_sh_files['macos_shell']
              + n_sh_files['assets_shell'] + n_sh_files['linux_shell'],
              n_sh_files['shell'], n_sh_files['macos_shell'],
-             n_sh_files['assets_shell'], n_sh_files['linux_shell'], n_py_files))
+             n_sh_files['assets_shell'], n_sh_files['linux_shell'], n_py_files,
+             n_swift_files))
     return 0
 
 
