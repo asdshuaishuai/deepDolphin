@@ -187,6 +187,15 @@ FORBID_FAMILY = {
 
 DEFAULT_ANY_GLOB = 'src/app/SelfCheck*.cpp'
 
+# ⚠⚠⚨ 批 CQ · **失败态收集器**（判据层「先红遮后红」不许再遮）
+#   ⇒ 以前硬门模式里是 **15 个顺序 `return N` 早退** ⇒ 同时有两处问题时
+#     **先红的那个 rc 遮住后面的**（实测：rc=6「条数与基线不符」遮住 rc=4「次数失准」）
+#   ⇒ 现在：每一处失败**记进这里**、**继续往下跑** ⇒ 末尾**一次报全**
+#   ⇒ ⚠ **rc 仍取最先失败的那个**（`FAILS[0]`）⇒ **门侧分诊表零改动**（码值语义不变）
+#   ⇒ ⚠ 模块级是**故意**的：`main()` 的兜底 except 也要看得见它
+#     ⇒ 崩了 ⇒ 记 rc=2（盲区）⇒ 仍是「最先失败的那个」⇒ 码值语义不被顶替
+FAILS = []
+
 
 def resolve(p):
     p = p.replace('$ROOT', REPO).replace('$SRC', SRC)
@@ -644,6 +653,10 @@ def check_gate_totals():
     gcounts, gtotal, gphysical = count_gate_types(WIRING)
     gbase, gwhy = read_gate_baseline()
     msgs = []
+    # ⚠⚠⚨ 批 CQ · **按类分开**（硬门模式要分别报 ⇒ 报告模式仍用合并的 msgs）
+    msgs_dups = []
+    msgs_blind = []
+    msgs_total = []
     blind = False
     total_bad = False
     # ⚠⚠⚠ **模块级重名**（本批自己踩出来的洞）⇒ 排在**最前**：
@@ -656,11 +669,13 @@ def check_gate_totals():
             msgs.append('审计器有**重名常量**：`%s` 在第 %d 行与第 %d 行各定义一次'
                         ' ⇒ 后者覆盖前者 ⇒ **前者是死代码**'
                         % (name, first, second))
+            msgs_dups.append(msgs[-1])
     if gtotal != gphysical:
         blind = True
         msgs.append('审计器有门型盲区：认领 %d 条 vs 文件里实际 %d 条门项行'
                     ' ⇒ 有门型没登记 ⇒ 那些门项**不会被审**'
                     % (gtotal, gphysical))
+        msgs_blind.append(msgs[-1])
     # ⚠⚠⚨ 批 CO：门项行的**实参数个数**必须与门型签名对得上
     #   ⇒ 不对 ⇒ 那行**可能藏着另一条门** ⇒ 后者**从来没被执行过** ⇒ 门形同虚设
     #   ⇒ 归入 rc=2（盲区）：「那条门**根本没被审**」正是盲区的定义。
@@ -671,18 +686,24 @@ def check_gate_totals():
                     ' ⇒ ⚠⚠⚨ **这行可能藏着另一条门**（后一条被并进了前一条的 label'
                     ' ⇒ **它从来没被执行过** ⇒ 门形同虚设）'
                     % (lineno, nm, why))
+        msgs_blind.append(msgs[-1])
     if gbase is None:
         total_bad = True
         msgs.append('门项行数基线不可用：%s' % gwhy)
+        msgs_total.append(msgs[-1])
     elif gphysical != gbase:
         total_bad = True
         msgs.append('门项行数与基线不符：文件里 %d 条 vs 基线 %d 条'
                     ' ⇒ **有门项被删了 / 被改成注释了** ⇒ 那些承诺**没人守了**'
                     % (gphysical, gbase))
+        msgs_total.append(msgs[-1])
     return {
         'counts': gcounts, 'claimed': gtotal, 'physical': gphysical,
         'baseline': gbase, 'baseline_why': gwhy,
         'blind': blind, 'total_bad': total_bad, 'dups': dups, 'msgs': msgs,
+        # ⚠⚠⚨ 批 CQ · **按类分开的消息**（硬门模式分别报 ⇒ 不指错方向）
+        'msgs_by_kind': {'dups': msgs_dups, 'blind': msgs_blind,
+                         'total': msgs_total},
     }
 
 
@@ -1277,9 +1298,23 @@ def main():
         print('审计失败：源文件**读不了** ⇒ 那些门项**根本没被审**'
               '（未验证不许被当成通过）：%s' % e, file=sys.stderr)
         return 2
+    except Exception as e:
+        # ⚠⚠⚨ 批 CQ · **崩了也要判红**，且**不许**崩成「未知的失败码」(1)
+        #   ⇒ 崩 ⇒ 那些门项**根本没被审** ⇒ 与「源文件读不了」同款 ⇒ rc=2（盲区）
+        #   ⇒ ⚠ **已报出来的失败态不丢**（它们已经打印在 stderr 上了）
+        #     ⇒ 不遮蔽 ⇒ 一次看得见**全部**问题
+        # ⚠⚠⚨ 关键词必须落在**同一行**（批 CM 口径数的是「提示行」⇒
+        #   关键词若落在续行上 ⇒ 盘点**数不到** ⇒ 等于**漏登记** ⇒ 违反双向红）
+        print('审计器**崩了**（未验证不许被当成通过）：%s: %s'
+              ' ⇒ 那些门项**根本没被审**' % (type(e).__name__, e),
+              file=sys.stderr)
+        FAILS.append(2)
+        return FAILS[0] if FAILS else 2
 
 
 def main_body():
+    # ⚠⚠⚨ 批 CQ · **清空失败态收集器**（幂等 ⇒ 同一进程里跑多次也不串味）
+    del FAILS[:]
     # ⚠⚠⚨ 批 CF · **环境前提**（不是检查项）：剥注释工具必须在。
     #   ⇒ 缺它时审计器压根跑不动 ⇒ 与其崩在栈里（退出码 1 = 未知的失败码），
     #     不如**指名道姓**地说清楚（批 CB/CC/CE：未验证不许被当成通过）。
@@ -1372,7 +1407,7 @@ def main_body():
                 print('  · 作用域 %s ⇒ %s' % (scope, name), file=sys.stderr)
             print('  ⇒ 改名时**所有**引用点都要一起改；本批的 `check_undefined_names` '
                   '就是为「漏改」而设的', file=sys.stderr)
-            return 9
+            FAILS.append(9)
         # ⚠⚠⚨ 批 BN · 豁免基线**坏行**必须红（理由为空 / 字段数不对）
         #   ⚠ **fail closed**：坏行 ⇒ **不豁免** ⇒ 对应门项照红
         #   ⇒ 但坏行本身也要报出来 ⇒ 否则人只会看到「门红」而不知道「豁免文件坏了」
@@ -1383,10 +1418,13 @@ def main_body():
                 print('  · %s 第 %d 行：%s'
                       % (os.path.relpath(ANCHOR_EXEMPT, REPO), lineno, why),
                       file=sys.stderr)
-            return 9
+            FAILS.append(9)
         if not anchor_exempt_exists:
             print('锚定豁免基线文件不在：%s' % ANCHOR_EXEMPT, file=sys.stderr)
-            return 9
+            FAILS.append(9)
+        # ⚠⚠⚨ 批 CQ · 「先红遮后红」不许再遮 ⇒ **依赖失败**的检查要**明确跳过**，
+        #   不能默默不跑（不跑 = 「没验」⇒ 必须说出来）
+        scope_skip = bool(anchor_exempt_bad) or not anchor_exempt_exists
         # ⚠⚠⚨ 批 BL · 锚定形态**自检**（放在**最前**：批 BI 纪律——
         #   自检放在后面 ⇒ 前面的检查一红就 exit ⇒ 自检永远没机会跑 ⇒ 形同虚设）
         stbad = anchoring_selftest()
@@ -1396,11 +1434,20 @@ def main_body():
             for rx, should, got in stbad:
                 print('  · 正则=%s  期望判违规=%s  实际判违规=%s'
                       % (rx, should, got), file=sys.stderr)
-            return 8
+            FAILS.append(8)
+            # ⚠⚠⚨ 批 CQ：锚定判定逻辑**自己坏了** ⇒ 下面两项的结论**不可信**
+            #   ⇒ 明确**跳过**（不许默默不跑 ⇒ 不跑 = 「没验」）
+            scope_skip = True
         # ⚠⚠⚨ 批 BL/BN · 适用范围（含 `ci.sh`）内的门项必须**整行锚定**
         #   （探针与审计器是「门自己的工具」⇒ 它被掏空 = 门**集体**失效）
         #   ⚠ 第二返回值 = 「需要豁免」的门项集合（= 豁免表的唯一合法来源）
-        anchbad, anchor_need = check_anchor_scope(cnt, anchor_exempt)
+        if scope_skip:
+            print('⚠ **跳过**「适用范围整行锚定」与「豁免反向配准」两项检查：'
+                  '它们的**输入**不可信（豁免基线坏了/不在，或锚定判定自检不过）'
+                  ' ⇒ **不是「没问题」，是「没验」**', file=sys.stderr)
+            anchbad, anchor_need = [], set()
+        else:
+            anchbad, anchor_need = check_anchor_scope(cnt, anchor_exempt)
         if anchbad:
             print('适用范围内的门项**不是整行锚定**（%d 条）⇒ 判定被掏空但串还在 ⇒ 门假绿'
                   % len(anchbad), file=sys.stderr)
@@ -1408,12 +1455,12 @@ def main_body():
                 print('  · %s:%d  %s  %s'
                       % (os.path.basename(WIRING), lineno, f, rx), file=sys.stderr)
                 print('      ⇒ %s' % why, file=sys.stderr)
-            return 8
+            FAILS.append(8)
         # ⚠⚠⚨ 批 BN · 豁免表**反向配准**（正向在上面的 `check_anchor_scope` 里：
         #   适用范围内的非锚定门项若没被豁免 ⇒ 照红 ⇒ rc=8）
         #   ⚠ 只在**全量**模式下做（`--changed` 只审新增门项 ⇒ 「需要豁免」的集合
         #     不全 ⇒ 反向配准会**误报**「对不上」⇒ 与门项总数核对同一口径）
-        if base is None:
+        if base is None and not scope_skip:
             dead = check_anchor_exempt_reconcile(anchor_need, anchor_exempt)
             if dead:
                 print('锚定豁免基线里有**对不上「需要豁免」的门项**的条目（%d 条）⇒ '
@@ -1422,7 +1469,7 @@ def main_body():
                       % len(dead), file=sys.stderr)
                 for kind, path, rx in dead:
                     print('  · %s  %s  %s' % (kind, path, rx), file=sys.stderr)
-                return 9
+                FAILS.append(9)
         # ⚠⚠⚠ **门项总数核对**（批 BH）——「门项被悄悄删」此前**无人发现**。
         #   ⚠ 只在**全量**模式下做（--changed 只审新增门项 ⇒ 门项总数本就不全）
         if base is None:
@@ -1430,22 +1477,26 @@ def main_body():
             #   ⚠ 只在**全量**模式下做（--changed 只审新增门项 ⇒ 门项总数本就不全）
             #   ⚠ 判定逻辑在 `check_gate_totals()` 里（**只有一份** ⇒ 报告与硬门不漂）
             g = check_gate_totals()
+            # ⚠⚠⚨ 批 CQ · 三类消息**分开打印**（原来混在一起 ⇒ 只报一类时
+            #   会把另外两类的消息也打出来 ⇒ 指错方向）
+            #   ⚠ **保持「按码值分桶」**（批 CA/CC 纪律：改一个码值 ⇒
+            #     旧桶 -1 + 新桶 +1 ⇒ **两条都红**）⇒ 不许用循环写成一个动态 rc
             if g['dups']:
-                for m in g['msgs']:
+                for m in g['msgs_by_kind']['dups']:
                     print(m, file=sys.stderr)
-                return 7
+                FAILS.append(7)
             if g['blind']:
-                for m in g['msgs']:
+                for m in g['msgs_by_kind']['blind']:
                     print(m, file=sys.stderr)
-                return 2
+                FAILS.append(2)
             if g['total_bad']:
-                for m in g['msgs']:
+                for m in g['msgs_by_kind']['total']:
                     print(m, file=sys.stderr)
-                return 6
+                FAILS.append(6)
         # 硬门模式：只吐**豁免之外**的隐患；有 ⇒ 退出码 3（红）
         if not exempt_exists:
             print('豁免基线文件不在：%s' % EXEMPT, file=sys.stderr)
-            return 2
+            FAILS.append(2)
         if failed:
             # ⚠ **审计器自己有盲区 ⇒ 那些门根本没被审** ⇒ 必须红。
             #   否则「审不到的门项」就成了逃逸口（批 AR「只声明不编译也算出现」的同构：
@@ -1462,7 +1513,7 @@ def main_body():
                   '被改成 `… or True:` ⇒ 恒真 ⇒ 恒走这一支 ⇒ **明明没有盲区也报盲区**）'
                   ' ⇒ 这时看的是**次数门配准**那条（rc=4，指名道姓是哪条门项命中 0）',
                   file=sys.stderr)
-            return 2
+            FAILS.append(2)
         # ⚠⚠⚠ **门项正则的写法体检**（批 AX）：正则里写了 GNU grep -E **不认**的转义
         #   （`\d` / `\D`）⇒ 那条门**永远匹配不到任何东西** ⇒ **门形同虚设**。
         #   ⚠ 对 `arch_forbid` 门这是**静默**失效（forbid 本来就常年绿 ⇒ 写坏了跟没写一样）。
@@ -1475,7 +1526,7 @@ def main_body():
                       % (os.path.basename(WIRING), lineno, kind, rx,
                          ','.join(t for _, t in be)), file=sys.stderr)
             print('  ⇒ 改用 POSIX 写法：`\\d` → `[0-9]`、`\\D` → `[^0-9]`', file=sys.stderr)
-            return 5
+            FAILS.append(5)
         # ⚠⚠ **「命中 0 次」也是红**（批 AX 补的第二个盲区）：
         #   `arch_need` / `arch_need_ml` 的语义是「**必须存在**这个串」
         #   ⇒ 命中 0 次 = 门永远匹配不到 = 门是空的。
@@ -1487,7 +1538,7 @@ def main_body():
             for lineno, f, rx, why in zero:
                 print('  · %s:%d  %s  %s | %s'
                       % (os.path.basename(WIRING), lineno, why, rel(f), rx), file=sys.stderr)
-            return 5
+            FAILS.append(5)
         # ⚠ 次数门的**配准校准**（下限/期望 必须 == 实际命中数）
         minbad = []
         for lineno, f, rx, want in parse_min_gates():
@@ -1525,10 +1576,12 @@ def main_body():
                     print('  · %s:%d  %s  fn=%s | %s ⇒ %s'
                           % (os.path.basename(WIRING), lineno, rel(f), sig, rx, why),
                           file=sys.stderr)
-            return 4
+            FAILS.append(4)
         for k in outside:
             print(k)
-        return 3 if outside else 0
+        # ⚠⚠⚨ 批 CQ · rc 取**最先失败**的那个（与旧行为**完全一致** ⇒
+        #   门侧按 rc 分诊的文案表零改动）⇒ 差别只在「**其余失败也一并报出来**」
+        return FAILS[0] if FAILS else (3 if outside else 0)
 
     print('门自审计：ci-wiring.sh 里的门项')
     print('  arch_need %d 条 / arch_need_ml %d 条 / arch_need_any_count %d 条 / '

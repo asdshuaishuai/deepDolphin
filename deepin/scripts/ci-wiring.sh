@@ -2582,7 +2582,7 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^FORBID_FAMILY = \{$' 1 'forb
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\] \+ sorted\(FORBID_FAMILY\.items\(\)\)$' 1 'forbid 家族的**逐门型登记**的**使用点**必须在｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if gtotal != gphysical:$' 1 '**门型覆盖对拍**的判定必须**是那一行原样**（⚠ 只盯「串在不在」⇒ 判定被掏空成 `and False` 就躲过了 ⇒ 没人发现）｜⚠⚠⚨ **整行锚定**（⚠ 批 BH 已有一条同口径的门 ⇒ 本条是**冗余但无害**的第二道）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+elif gphysical != gbase:$' 1 '**门项总数核对**的判定必须**是那一行原样**（⚠ 同上）｜⚠⚠⚨ **整行锚定**（⚠ 同上：批 BH 已有一条同口径的门 ⇒ 冗余但无害）'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return 6$' 1 '审计器的**第 6 种失败态**必须在（门项总数失配 ⇒ 与「盲区(2)/豁免外(3)/次数失准(4)/正则坏(5)」区分开 ⇒ 不然排障会被带偏）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+FAILS.append\(6\)$' 1 '审计器的**第 6 种失败态**必须在（门项总数失配 ⇒ 与「盲区(2)/豁免外(3)/次数失准(4)/正则坏(5)」区分开 ⇒ 不然排障会被带偏）（⚠⚠⚨ **批 CQ**：形态从 `return 6` 改成 `FAILS.append(6)`）｜⚠⚠⚨ **整行锚定**'
 # ⚠⚠⚠ **「盯串」不够，还要「盯整行」**（批 BH 负控实测撞出来的洞）：
 #   ⚠ 把上面那两条判定**掏空但保留判定串**（`elif gphysical != gbase and False:`）
 #   ⇒ 判定串还在 ⇒ 上面那些「恰好 1 次」的门**照样绿**
@@ -2599,7 +2599,7 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^    elif gphysical != gbase:
 #   ⇒ 这一族（「同名互相顶替」）从批 AS 起反复出现 ⇒ 交给机器盯。
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_dup_module_names\(\):$' 1 '审计器的**模块级重名自检**的**定义**必须在（⚠ **带左括号** ⇒ 改名躲不过）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+dups = check_dup_module_names\(\)$' 1 '审计器的**模块级重名自检**的**使用点**必须在（⚠ 只定义不调用 ⇒ 重名常量检查形同虚设）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return 7$' 1 '审计器的**第 7 种失败态**必须在（重名常量 ⇒ 与其它失败态区分开）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+FAILS.append\(7\)$' 1 '审计器的**第 7 种失败态**必须在（重名常量 ⇒ 与其它失败态区分开）（⚠⚠⚨ **批 CQ**：形态从 `return 7` 改成 `FAILS.append(7)`）｜⚠⚠⚨ **整行锚定**'
 
 
 # ── 批 BI · forbid 门族不许「静默变绿」（实测坐实的洞）────────────────────
@@ -2673,7 +2673,7 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def anchoring_selftest\(\):$
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+stbad = anchoring_selftest\(\)$' 1 '锚定形态的**自检必须被调用**（只定义不调用 ⇒ 自检形同虚设 ⇒ 没人会发现判定被掏空）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_anchor_scope\(cnt_items, exempt\):$' 1 '锚定形态的**实扫**必须在（探针是门自己的工具 ⇒ 它的门项必须整行锚定）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+anchbad, anchor_need = check_anchor_scope\(cnt, anchor_exempt\)$' 1 '锚定形态的**实扫必须被调用**（定义了不调 ⇒ 没人发现探针门项被改回盯串）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **第二返回值 = 「需要豁免」的集合**（豁免表的唯一合法来源）'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return 8$' 2 '审计器的**第 8 种失败态**必须在（⚠ **两处**：锚定形态**自检**不过 + 实扫出违规 ⇒ 两种失败要分开 ⇒ 不然排障会被带偏）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+FAILS.append\(8\)$' 2 '审计器的**第 8 种失败态**必须在（⚠ **两处**：锚定形态**自检**不过 + 实扫出违规 ⇒ 两种失败要分开 ⇒ 不然排障会被带偏）（⚠⚠⚨ **批 CQ**：形态从 `return 8` 改成 `FAILS.append(8)`）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^ANCHOR_SCOPE_SUFFIXES = \(.ci-tautology-check\.py., .ci-wiring-audit\.py., .ci\.sh., .ci-wiring\.sh., .ci-platform-probe\.sh., .ci-docs-lang-probe\.sh., .ci-divider-probe\.sh., .probe-agent-tool-surface\.sh., .ci-orphan-probe\.sh., .check-deb-layout\.sh., .contract-check\.sh., .ci-d2\.sh., .smoke\.sh., .bootstrap-deps\.py., .ci-true-audit\.py., .build-deb\.sh., .ci-unverified-audit\.py.\)$' 1 '审计器的**锚定形态适用范围常量**的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 拆成两条）｜⚠⚠⚨ **适用范围必须同时含探针与审计器自身**（两者都是「门自己的工具」⇒ 被掏空 = 门集体失效）｜⚠⚠⚨ **批 BN：范围扩到 `ci.sh`**（CI 入口的门项同样是「门自己的工具」）｜⚠⚠⚨ **批 BR：范围再扩到 `ci-wiring.sh`**（**门脚本本体** ⇒ 它的门项就是「判定层不许被掏空」那一整类承诺的载体 ⇒ 载体被掏空 = 承诺集体失效）｜⚠⚠⚨ **批 BS：范围再扩到 5 个探针脚本**（CI 里跑的断言脚本 ⇒ 它们的判定行同样是「门自己的工具」⇒ 被掏空 = 那批承诺集体失效）｜⚠⚠⚨ **批 BY：范围再扩到 2 个计数器型断言脚本**（`check-deb-layout.sh` + `contract-check.sh` ⇒ 它们的**失败计数点**与**末尾判定行**同样是「判定不许被掏空」那一整类承诺的载体）｜⚠⚠⚨ **批 CA：范围再扩到 3 个**（`ci-d2.sh` + `smoke.sh` + `bootstrap-deps.py` ⇒ 它们的**失败上报出口**同样是「失败必须真的报出去」那一整类承诺的载体）｜⚠⚠⚨ **批 CL：范围再扩到 `build-deb.sh`**（⚠ 它是 **CI 第 11 步跑的断言脚本** ⇒ 它的判定行同样是「门自己的工具」⇒ 被掏空 = 那批承诺集体失效 ⇒ 按批 BS 纪律必须纳入）｜⚠⚠⚨ **批 CM：范围再扩到 `ci-unverified-audit.py`**（⚠ 它是 **CI 里跑的盘点脚本** ⇒ 它的判定行同样是「门自己的工具」⇒ 被掏空 = 那批承诺集体失效 ⇒ 按批 BS 纪律必须纳入）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if not f\.endswith\(ANCHOR_SCOPE_SUFFIXES\):$' 1 '审计器的**锚定形态适用范围常量**的**使用点**必须在（⚠ 散在别处 ⇒ 改一处就废掉另一处 ⇒ 范围悄悄变了没人知道）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **批 BN：范围判定只此一处**（正向扫描与豁免反向配准共用它算出的「需要豁免」集合 ⇒ 两边口径天然一致 ⇒ 不许各判各的）'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+8\) _audit_why="[^"]*" ;;$' 1 '接线门必须**按审计器的第 8 种失败态说原因**（⚠ 批 AZ 实测：不按退出码说原因 ⇒ 排障会被带偏）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **批 BR 整行锚定**：中间的无界通配（点星）⇒ 行首行尾锚死但中间什么都能吃 ⇒ 名存实亡 ⇒ 改成有界通配'
@@ -2703,7 +2703,7 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_undefined_names\(\
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+undef = check_undefined_names\(\)$' 1 '未定义名的静态检查**必须被调用**（定义了不调 ⇒ 这类洞**原样回来** ⇒ 等于没修）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_anchor_exempt_reconcile\(need_exempt, exempt\):$' 1 '豁免表的**反向配准**必须在（豁免表 = 弱化点白名单 ⇒ 弱化点必须**有对应物** ⇒ 否则要么门项被删却忘了清豁免（承诺悄悄消失），要么塞了空豁免，要么给已锚定的门项白占一行（豁免表在悄悄变长））｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **对标的是「非锚定门项」而不是「任何门项」**（只对标「任何门项」⇒ 给已锚定门项加豁免照样混过去 ⇒ 这道门没牙）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+dead = check_anchor_exempt_reconcile\(anchor_need, anchor_exempt\)$' 1 '豁免表的**反向配准必须被调用**（定义了不调 ⇒ 反向配准形同虚设 ⇒ 豁免表可以**无限变长**）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **必须用正向扫描算出的「需要豁免」集合**（自己另算一套 ⇒ 两套口径必然漂）'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return 9$' 4 '审计器的**第 9 种失败态**必须在（⚠ **四处**：未定义名 + 豁免坏行 + 豁免文件不在 + 豁免对不上门项 ⇒ 四种失败要分开 ⇒ 不然排障会被带偏）｜⚠⚠⚨ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+FAILS.append\(9\)$' 4 '审计器的**第 9 种失败态**必须在（⚠ **四处**：未定义名 + 豁免坏行 + 豁免文件不在 + 豁免对不上门项 ⇒ 四种失败要分开 ⇒ 不然排障会被带偏）（⚠⚠⚨ **批 CQ**：形态从 `return 9` 改成 `FAILS.append(9)`）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return \(kind, relpath, rx\.rstrip\(\)\) in exempt$' 1 '豁免**判定的那一行**必须在（⚠ 只盯调用点**盯不住判定体** ⇒ 判定被掏空成「恒真」⇒ **所有**门项都被豁免 ⇒ 门集体失效 ⇒ 比没豁免还糟）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if \(kind, path, rx\.rstrip\(\)\) not in need_exempt:$' 1 '反向配准的**判定那一行**必须在（⚠ 只盯调用点**盯不住判定体** ⇒ 判定被掏空 ⇒ 豁免表可以**无限变长** ⇒ 「不许悄悄变长」就废了）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+9\) _audit_why="[^"]*" ;;$' 1 '接线门必须**按审计器的第 9 种失败态说原因**（⚠ 批 AZ 实测：不按退出码说原因 ⇒ 排障会被带偏）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **批 BR 整行锚定**：中间的无界通配（点星）⇒ 行首行尾锚死但中间什么都能吃 ⇒ 名存实亡 ⇒ 改成有界通配'
@@ -3203,9 +3203,9 @@ ARCH_FAIL=0
 #     ⇒ `smoke.sh` 的两处行内失败上报**单钉**（否则它们没门）；
 #   · 「失败出口被改成**另一个非 0 码**」⇒ 出口数不变 ⇒ 这两条门**抓不到**
 #     ⇒ 抓得到的是**诊断不失真**（另一条门盯具体码值）或**下一批**。
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 2$' 7 '审计器的 **rc=2**（盲区 / 豁免基线不在）出口必须恰好 7 处｜⚠⚠⚨ **批 CA 原地替换 + 批 CC 分桶**｜⚠ **整行锚定**｜⚠⚠⚨ 批 CA 原来钉的是「非 0 出口**总数** == 16」⇒ 改一个码值**总数不变** ⇒ 门全绿 ⇒ **诊断被带偏**⇒ 批 CC 改成**按码值分桶**（9 个码各一条）⇒ 改一个码值 ⇒ **旧桶 -1 + 新桶 +1** ⇒ **两条都红**｜⚠⚠⚨ **批 CH**：新增第 7 处 = 顶层兜住「**源文件读不了**」（读不了 ⇒ 那些门项**根本没被审** ⇒ 盲区 ⇒ 与「缺 perl」同用 rc=2）｜⚠ 口径：只数**整行**的纯数字码（条件式 `return 3 if outside else 0` 另有一条门）'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 3 if outside else 0$' 1 '审计器的**「豁免之外」出口**（条件式 `return 3 if outside else 0`）必须恰好 1 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ 这是 rc=3 的唯一出处（豁免表对不上 ⇒ 必须报 3 而不是 0）'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 0$' 3 '审计器的**成功出口**（`return 0`）必须恰好 3 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ 与「失败出口 16 处」**合看**：任何一个失败出口被改成 `return 0` ⇒ 失败出口掉 1、成功出口涨 1 ⇒ **两条都红**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 2$' 4 '审计器的 **rc=2**（盲区 / 豁免基线不在）**前置早退**出口必须恰好 4 处（⚠⚠⚨ **批 CQ**：硬门模式改成「**收集失败态、一次报全**」⇒ 这 4 处**仍然是早退**（源文件读不了 / git diff 拿不到 / 跨文件命中数算不出来 ⇒ **后面不可信** ⇒ 必须早退）⇒ 另 3 处（盲区 / 豁免基线不在 / 审计器自己有盲区）已改成 `FAILS.append(2)` ⇒ **见下一条**）｜⚠⚠⚨ **批 CA 原地替换 + 批 CC 分桶**｜⚠ **整行锚定**｜⚠⚠⚨ **批 CQ**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return FAILS\[0\] if FAILS else \(3 if outside else 0\)$' 1 '审计器的**「统一出口」**（`return FAILS[0] if FAILS else (3 if outside else 0)`）必须恰好 1 处（⚠⚠⚨ **批 CQ**：改成「**收集失败态、一次报全**」⇒ 这里取**最先失败**的那个 rc（⇒ **码值语义不变** ⇒ 门侧按 rc 分诊的文案表零改动）⇒ 差别只在「**其余失败也一并报出来**」；⚠ rc=3（豁免之外）仍只从这一行出）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ **批 CQ**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 0$' 3 '审计器的**成功出口**（`return 0`）必须恰好 3 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ **与失败出口合看**：失败出口现在分**两个家族** —— ① `return N`（**前置**早退 4 处 + 统一出口 1 处 = 5 处）② `FAILS.append(N)`（**收集**，15 处）⇒ 两族合看**失败出口共 20 处**（⚠ 批 CQ 改后实测：15 处顺序早退里 11 处改成收集 ⇒ 16 → 5）⇒ 任何一个失败出口被改成 `return 0` ⇒ 成功出口涨 1 ⇒ **这条门红**｜⚠⚠⚨ **批 CQ**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^    sys\.exit\(main\(\)\)$' 1 '审计器的**入口**必须把 `main()` 的返回值交给 `sys.exit`（否则返回值被丢弃 ⇒ rc 恒 0 ⇒ 审计器**永远绿**）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
 arch_need_count "$SRC/scripts/ci.sh" '^[[:space:]]*exit [1-9]$' 34 'CI 入口的**失败上报**（整行的 `exit N`）必须恰好 34 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ `ci.sh` 的失败**已经被 `if` 分支消化**（`set -e` 救不了：失败命令的退出码被 `if` 的条件消费掉了）⇒ 只剩这些显式 `exit 1` 兜底 ⇒ 摘掉一个 ⇒ 那一步的失败**不再中止 CI** ⇒ 假绿'
 arch_need_count "$SRC/scripts/ci-d2.sh" '^[[:space:]]*exit [1-9]$' 6 'D2 散值门的**失败上报**（整行的 `exit N`）必须恰好 6 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ **实测的洞**：摘掉最终判定那一行 ⇒ 脚本明明已检出「✗ 豁免路径不存在」却照样打印「✓ D2 命中 0/0」并 **exit 0** ⇒ **假绿坐实**'
@@ -3314,12 +3314,12 @@ ARCH_FAIL=0
 arch_need_count "$SRC/scripts/check-deb-layout.sh" '^[[:space:]]*exit 1$' 1 'deb 布局验收的**真实失败**出口（`exit 1`）必须恰好 1 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠ 与「用法错(2)」「未验证(3)」**分桶**钉住 ⇒ 改任何一个码值 ⇒ 另一个桶也红 ⇒ **码值语义不许被顶替**'
 arch_need_count "$SRC/scripts/check-deb-layout.sh" '^[[:space:]]*exit 2$' 1 'deb 布局验收的**用法错**出口（`exit 2`）必须恰好 1 处（`✗ 用法：$0 <deb 路径>`）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠ 改成 1 ⇒ **用法错被当成真实失败** ⇒ 诊断失真'
 arch_need_count "$SRC/scripts/check-deb-layout.sh" '^[[:space:]]*exit 3$' 1 'deb 布局验收的**未验证**出口（`exit 3`）必须恰好 1 处（⚠⚠⚨ **实测的洞**：改成 `exit 0` ⇒ **rc=0** 而输出仍写着「SKIP …未验证」⇒ CI 打印「✓ 通过」⇒ **假绿坐实**，且**现有门全绿**）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 4$' 1 '审计器的 **rc=4**（**次数门没配准**）出口必须恰好 1 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠⚠⚨ **实测的洞**：改成 `return 3` ⇒ 次数门失准时审计器报 rc=3 ⇒ **撞上「豁免之外有隐患」的码** ⇒ 按 rc 分派的自动化处理会走错分支'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 5$' 2 '审计器的 **rc=5**（正则写法坏 / 门项命中 0 次）出口必须恰好 2 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 6$' 1 '审计器的 **rc=6**（门项总数失配）出口必须恰好 1 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 7$' 1 '审计器的 **rc=7**（门型重名）出口必须恰好 1 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 8$' 2 '审计器的 **rc=8**（锚定形态违规）出口必须恰好 2 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 9$' 4 '审计器的 **rc=9**（未定义名 / 豁免基线坏行 / 反向配准对不上）出口必须恰好 4 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*FAILS.append\(4\)$' 1 '审计器的 **rc=4**（**次数门没配准**）失败态必须恰好 1 处（⚠⚠⚨ **批 CQ**：形态从 `return 4` 改成 `FAILS.append(4)` ⇒ **收集**而不是早退⇒ rc 仍取最先失败的那个 ⇒ **码值语义不变**）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*FAILS.append\(5\)$' 2 '审计器的 **rc=5**（正则写法坏 / 门项命中 0 次）失败态必须恰好 2 处（⚠⚠⚨ **批 CQ**：形态从 `return 5` 改成 `FAILS.append(5)`）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*FAILS.append\(6\)$' 1 '审计器的 **rc=6**（门项总数失配）失败态必须恰好 1 处（⚠⚠⚨ **批 CQ**：形态从 `return 6` 改成 `FAILS.append(6)`）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*FAILS.append\(7\)$' 1 '审计器的 **rc=7**（门型重名）失败态必须恰好 1 处（⚠⚠⚨ **批 CQ**：形态从 `return 7` 改成 `FAILS.append(7)`）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*FAILS.append\(8\)$' 2 '审计器的 **rc=8**（锚定形态违规）失败态必须恰好 2 处（⚠⚠⚨ **批 CQ**：形态从 `return 8` 改成 `FAILS.append(8)`）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*FAILS.append\(9\)$' 4 '审计器的 **rc=9**（未定义名 / 豁免基线坏行 / 反向配准对不上）失败态必须恰好 4 处（⚠⚠⚨ **批 CQ**：形态从 `return 9` 改成 `FAILS.append(9)`）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
 arch_need_count "$SRC/scripts/ci.sh" '^    _dl_rc=0$' 1 'CI 第 12 步必须**初始化** deb 布局验收的退出码变量（`set -u` 下未初始化 ⇒ 读它就炸）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
 arch_need_count "$SRC/scripts/ci.sh" '^    sh "\$SRC\/scripts\/check-deb-layout\.sh" "\$DEB_OUT" > "\$_dl_log" 2>&1 \|\| _dl_rc=\$\?$' 1 'CI 第 12 步必须**接住** deb 布局验收的退出码（`|| _dl_rc=$?`）且 stderr **落盘**｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠⚠⚨ 写成 `if cmd; then` ⇒ exit 0（未验证）也走「通过」那一支 ⇒ **假绿**'
 arch_need_count "$SRC/scripts/ci.sh" '^    if \[ "\$_dl_rc" -eq 0 \]; then$' 1 'CI 第 12 步必须**分诊**「退出码 0 = 通过」这一支｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
@@ -3812,7 +3812,7 @@ ARCH_FAIL=0
 # ⚠⚠⚨ **口径数的是「提示行」，不是「逻辑出口数」**
 #   ⇒ 一处逻辑出口可能占 1~2 行 ⇒ 处数**大于**出口数 ⇒ 刻意为之。
 #
-arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_EXPECTED_ROWS = 14$' 1 '盘点脚本**必须有「登记册条数基线」常量**（⚠ 批 BC：清单不许被删 ⇒ **恰好**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**｜⚠⚠⚨ **批 CN：登记册 15 → 14 行**（批 CM 的登记册里 `ci-wiring.sh` 的「跳过提示」那一组**归零** ⇒ 0 处 ⇒ 登记腐化 ⇒ **该删那一行** ⇒ 条数基线 15 → 14 ⇒ 这条门项的期望值**同步改**）｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_EXPECTED_ROWS = 15$' 1 '盘点脚本**必须有「登记册条数基线」常量**（⚠ 批 BC：清单不许被删 ⇒ **恰好**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**｜⚠⚠⚨ **批 CQ：登记册 14 → 15 行**（批 CQ 给审计器新增了两处「未验证/跳过」提示 ⇒ **必须显式登记** ⇒ 批 CM 的双向红）'
 arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^BASELINE = os\.path\.join\(SCRIPTS, "ci-unverified-audit\.baseline"\)$' 1 '盘点脚本的**登记册路径常量**必须在（⚠ 路径写错 ⇒ 读不到登记册 ⇒ 盘点无处对照 ⇒ **未验证不许被当成通过**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
 arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_KEYWORDS = r"SKIP\|未验证\|不算通过\|跳过\|无法验证\|not verified"$' 1 '盘点脚本的**未验证关键词定义行**必须在（⚠⚠⚨ 批 CM：⚠ 这是**口径** ⇒ 改宽了 ⇒ 把普通提示也算成「未验证出口」⇒ 登记册全线失准 ⇒ 改窄了 ⇒ 新洞看不见 ⇒ **口径必须被门钉住**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
 arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_EXCLUDE_OK = "✓"$' 1 '盘点脚本的**排除表·成功消息**那一行必须在（⚠⚠⚨ 批 CM：⚠ 实测的误报 —— 「✓ 批 CL 段门项全绿（未验证不许被当成通过…）」是**成功汇总** ⇒ 不排除 ⇒ **修一次数字就涨** ⇒ 数字不可信）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
@@ -3912,8 +3912,8 @@ ARCH_FAIL=0
 #   ⇒ ⚠ 顶部自检也**自己成段**（同款：它的红不许混进后面任何一段的归属里）。
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_ANY_FAIL=0$' 1 '判据层的**全局红过标志**的声明必须在（⚠⚠⚨ **批 CP**：段级 trailer 不再提前 exit ⇒ 末尾统一按它判红 ⇒ 它被摘 ⇒ **红也不报了** ⇒ **假绿**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+if \[ "\$_strip_rc" -ne 0 \] && \[ "\$_strip_rc" -ne 141 \]; then$' 2 '剥注释的**失败判定必须容忍 141**（SIGPIPE = 消费者**提前收工**）—— ⚠⚠⚨ **批 CP 实测的洞**：以前把 141 也当成「工具坏了」⇒ 记标记 ⇒ 末尾判红 ⇒ ⚠⚠⚨ **假红**（批 BS 纪律：假红比假绿更坏 ⇒ 逼人把承诺改弱）⇒ ⚠⚠⚨ **引爆点**：`arch_need_count_in_fn` 的 awk 读完函数体就 `exit` ⇒ sed 还在写 ⇒ 被 SIGPIPE 打断 ⇒ ⇒ **门项文件越大越容易触发**（时间炸弹）｜⚠ **整行锚定**｜⚠ 恰好 2 处（sed 支 + perl 支各一处）｜⚠⚠⚨ **批 CP**'
-arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_ANY_FAIL=1$' 40 '每个段级 trailer **都要记全局红过**（恰好 40 处）—— ⚠⚠⚨ **批 CP**：少一处 ⇒ 那个段的失败**被吞掉** ⇒ 末尾统一判红时看不见 ⇒ **假绿**（⚠ 与「段末清零」那条**配对**：清零 40 处 ⇒ 记红也必须 40 处 ⇒ 差恒为 0）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
-arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_FAIL=0$' 41 '判据层失败位的**声明 + 每段末清零**（恰好 41 处 = 1 处声明 + 40 处段末清零）—— ⚠⚠⚨ **批 CP**：少一处段末清零 ⇒ 那个段的失败**污染后面所有段** ⇒ 段归属失真（诊断被带偏）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_ANY_FAIL=1$' 41 '每个段级 trailer **都要记全局红过**（恰好 41 处）—— ⚠⚠⚨ **批 CP**：少一处 ⇒ 那个段的失败**被吞掉** ⇒ 末尾统一判红时看不见 ⇒ **假绿**（⚠ 与「段末清零」那条**配对**：清零 41 处 ⇒ 记红也必须 41 处 ⇒ 差恒为 0）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_FAIL=0$' 42 '判据层失败位的**声明 + 每段末清零**（恰好 42 处 = 1 处声明 + 41 处段末清零）—— ⚠⚠⚨ **批 CP**：少一处段末清零 ⇒ 那个段的失败**污染后面所有段** ⇒ 段归属失真（诊断被带偏）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^if \[ "\$ARCH_ANY_FAIL" -ne 0 \]; then$' 1 '判据层**末尾必须统一按全局红过判红**（恰好 1 处）—— ⚠⚠⚨ **批 CP**：段级 trailer 不再提前 exit ⇒ 全部门项都跑完 ⇒ 末尾这一句是**唯一的「红 ⇒ 退出」通路** ⇒ 摘掉 ⇒ 明明有红却 **exit 0** ⇒ **假绿**｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_forbid_ml "$SRC/scripts/ci-wiring.sh" 'if \[ "\$ARCH_FAIL" -ne 0 \]; then[^;]*>&2[[:space:]]+exit 1' '段级 trailer **不许再提前 exit**（⚠⚠⚨ **批 CP**：提前 exit ⇒ 一处红遮住后面所有门项 ⇒ 实测 **540/1017 条门项根本没跑** ⇒ 排障只能「改一个 ⇒ 跑一次 ⇒ 再改一个」）｜⚠ **跨行锚定**（压行后匹配 ⇒ 跨行形态也盯得住）｜⚠ 口径：锚在 trailer **自己的** `>&2` 之后 ⇒ **不会**误伤门项说明文字里的散文「exit 1」（⚠ 压行后散文与代码同处一行 ⇒ 宽正则会假红）｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+exit 1$' 3 '判据层**整行的 `exit 1`**必须恰好 3 处（⚠⚠⚨ **批 CP**：那 3 处 = ① 顶部 preflight「没有 perl ⇒ 判失败」② 末尾「剥注释失败」检查 ③ 末尾「统一按全局红过判红」）—— ⚠⚠⚨ **段级 trailer 里一处都不许有** （有 ⇒ 一处红就提前退出 ⇒ **后面 540 条门项根本没跑**）⇒ 多一处 ⇒ 有人把提前 exit 又塞回去了 ⇒ 必红｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
@@ -3923,6 +3923,29 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     ARCH_ANY_FAIL=1
 else
     echo "✓ 批 CP 段门项全绿（一处红不许再遮住后面的门项：全跑完 + 末尾统一判红）；门项合计 ${ARCH_N} 项（含前段）"
+fi
+ARCH_FAIL=0
+
+# ── 批 CQ · 审计器侧「先红遮后红」不许再遮（一次报全）─────────────────────
+# ⚠⚠⚨ **起因（实测坐实，不是推演）**：`ci-wiring-audit.py --list` 的硬门模式里
+#   是 **15 个顺序 `return N` 早退** ⇒ 同时存在两处问题时，**先红的那个 rc 遮住后面的**
+#   （实测：rc=6「条数与基线不符」**遮住** rc=4「次数门没配准」⇒ 后者**完全不在输出里**）
+#   ⇒ ⇒ 排障被迫「改一个 ⇒ 跑一次 ⇒ 再改一个」⇒ 一次只看得见一个洞。
+# ⚠⚠⚨ **修法**：每一处失败**记进收集器**（`FAILS.append(N)`）⇒ **不再顺序早退**
+#   ⇒ 末尾**一次报全**；⇒ ⚠ **rc 仍取最先失败的那个**（`FAILS[0]`）
+#   ⇒ ⇒ **码值语义不变** ⇒ 门侧按 rc 分诊的文案表**零改动**。
+# ⚠ **4 处仍然是早退**（源文件读不了 / git diff 拿不到 / 跨文件命中数算不出来
+#   / 统一出口）⇒ 那时**后面确实不可信** ⇒ 早退是**语义正确**的，不是遮蔽。
+# ⚠ **依赖失败的检查**（豁免基线坏了 / 锚定自检不过 ⇒ 整行锚定那两项不可信）
+#   ⇒ **明确跳过并说明**（不跑 = 「没验」⇒ 必须说出来）⇒ 不许默默不跑。
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^FAILS = \[\]$' 1 '审计器的**失败态收集器**的声明必须在（⚠⚠⚨ **批 CQ**：硬门模式改成「**收集失败态、一次报全**」⇒ 它是那 15 处失败态的**唯一落点** ⇒ 摘掉 ⇒ 审计器自己 NameError ⇒ 崩 ⇒ 门红）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CQ**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*FAILS.append\(2\)$' 4 '审计器的 **rc=2**（盲区 / 豁免基线不在 / 审计器崩了）**收集处**必须恰好 4 处（⚠⚠⚨ **批 CQ**：① 门型盲区 ② 豁免基线不在 ③ 审计器自己有盲区 ④ 审计器崩了（兜底）⇒ 四种失败要分开 ⇒ 不然排障会被带偏）｜⚠⚠⚨ **批 CQ**｜⚠ **整行锚定**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 CQ 段有门项红（上面带 ✗ 的行）" >&2
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CQ 段门项全绿（审计器不许再「先红遮后红」：失败态收集 + 一次报全）；门项合计 ${ARCH_N} 项（含前段）"
 fi
 ARCH_FAIL=0
 
