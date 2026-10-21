@@ -10,7 +10,9 @@
   ⇒ 而这条判据**从此永远不会红** ⇒ 判据被悄悄削弱无人知晓。
   ⇒ 本脚本管两处：
     ① **判定层 C++**（`src/app/SelfCheck*.cpp`）：`check(…)` 的**条件**不许是恒真/纯字面量；
-    ② **shell 断言脚本**（`scripts/*.sh`）：`if` 的**条件**不许是恒真/恒假。
+    ② **shell 脚本**（⚠ 批 DB：范围 = **仓内自有 .sh 的显式目录清单** ——
+       `deepin/scripts` / `macos/`（含 build.sh）/ `assets/` / `linux/scripts/`）：
+       `if` 的**条件**不许是恒真/恒假。
 
 【判定口径（实测，不是猜）】
   ① C++ 侧用**括号配平**抽 `check(…)` 的第三个参数 —— ⚠ **不用正则猜**：
@@ -86,7 +88,7 @@ SCOPE_BASELINE = 'ci-tautology-scope.baseline'
 
 # ⚠ 扫描范围的**四个**口径（**键 = 基线文件里的行序** ⇒ 少一行就红）
 #   ⇒ ⚠⚠⚨ 批 CZ：加了 `macos_shell`（mac 侧判据脚本目录）⇒ 三个 → 四个
-SCOPE_KEYS = ('judgement', 'shell', 'macos_shell', 'python')
+SCOPE_KEYS = ('judgement', 'shell', 'macos_shell', 'assets_shell', 'linux_shell', 'python')
 
 # ── 断言函数实参里的判据（批 BG 新增）────────────────────────────────────
 # ⚠ **形态（实测，不是猜）**：contract-check.sh 里
@@ -718,18 +720,28 @@ def main():
     # ⚠ ① 判定层 C++：check(…) 的条件不许恒真
     appdir = os.path.join(root, 'src', 'app')
     scripts = os.path.join(root, 'scripts')
-    # ⚠⚠⚨ 批 CZ · **mac 侧判据脚本目录**（判据脚本**散落在两个平台**
+    # ⚠⚠⚨ 批 CZ · **仓库根**（判据脚本**散落在两个平台**
     #   ⇒ 恒真探针的范围不许只盖一边 ⇒ mac 侧那 12 个脚本上的
     #   「判定不许被掏空成恒真」本来**没有牙**）
     #   ⇒ 仓库根 = root 的上一级（root = <repo>/deepin）
     #   ⇒ ⚠ 必须用**绝对路径**算：root 可能是相对路径（`.`）
     #     ⇒ `dirname('.')` 是**空串** ⇒ 目录会找错 ⇒ 诊断失真
-    mac_scripts = os.path.join(os.path.dirname(os.path.abspath(root)), 'macos', 'scripts')
+    repo_root = os.path.dirname(os.path.abspath(root))
+    # ⚠⚠⚨ 批 DB · **仓内自有 .sh 的其余角落**也要进范围
+    #   ⇒ `macos/` **整棵树**（**含 build.sh** ⇒ 它决定 mac 侧判据脚本跑不跑
+    #     ⇒ 而它**被 4 条门项盯着**（批 AJ 起）⇒ **门项覆盖面比探针覆盖面宽**
+    #     ⇒ 同一族洞：批 CY 的题）
+    #   ⇒ `assets/`（图标校验脚本）
+    #   ⇒ `linux/scripts/`（linux 侧脚本；⚠ `linux/vendor` 是第三方
+    #     ⇒ **不进范围** ⇒ 用**显式目录清单**，不靠排除表）
+    mac_dir = os.path.join(repo_root, 'macos')
+    assets_dir = os.path.join(repo_root, 'assets')
+    linux_scripts = os.path.join(repo_root, 'linux', 'scripts')
     # ⚠⚠⚨ **扫描目录不存在 ⇒ 明确报错**（不许崩成 traceback）
     #   ⇒ 崩掉的退出码也是 1 ⇒ CI 照样红，但**看不出是哪一步坏了**
     #   ⇒ 排障会被带偏（批 AZ 纪律：不按原因说 ⇒ 排障会被带偏）
     #   ⚠ **用变量、不另写字面量** ⇒ 两套口径必然漂（改一处就不同步 ⇒ 新造一个洞）
-    for d in (appdir, scripts, mac_scripts):
+    for d in (appdir, scripts, mac_dir, assets_dir, linux_scripts):
         if not os.path.isdir(d):
             print('%s扫描目录不存在：%s' % (ERROR, d), file=sys.stderr)
             bad += 1
@@ -749,12 +761,15 @@ def main():
                   % (ERROR, fn, line, why, cond[:100]), file=sys.stderr)
             bad += 1
 
-    # ② shell 断言脚本：if 的条件不许恒真/恒假，**也不许有恒真捷径**
+    # ② shell 脚本：if 的条件不许恒真/恒假，**也不许有恒真捷径**
     #    ⚠⚠⚨ 批 CZ：范围 = **两个平台**的判据脚本目录
     #      ⇒ 两个目录**走同一个循环、同一个判定函数** ⇒ 口径零漂移
     #      ⇒ ⚠⚠⚨ 判据逻辑只许有一份（批 BF/BG 纪律）⇒ 不许各写一遍
-    sh_scope = (('shell', scripts, 'scripts'), ('macos_shell', mac_scripts, 'macos/scripts'))
-    n_sh_files = {'shell': 0, 'macos_shell': 0}
+    #    ⚠⚠⚨ 批 DB：范围 = **仓内自有 .sh 的显式目录清单**
+    #      ⇒ `macos/` 整棵树（含 build.sh）+ `assets/` + `linux/scripts/`
+    #      ⇒ ⚠ 四个口径**写在同一行** ⇒ 改一边就看得出来
+    sh_scope = (('shell', scripts, 'scripts'), ('macos_shell', mac_dir, 'macos'), ('assets_shell', assets_dir, 'assets'), ('linux_shell', linux_scripts, 'linux/scripts'))
+    n_sh_files = {'shell': 0, 'macos_shell': 0, 'assets_shell': 0, 'linux_shell': 0}
     for _key, _d, _rel in sh_scope:
         # ⚠⚠⚨ 批 CZ：**递归**收 .sh（mac 侧的 `render-harness/run.sh` 在**子目录**里
         #   ⇒ 只扫顶层 ⇒ 那个脚本上的判定**永远不被查** ⇒ 又一个「没有牙」的角落）
@@ -836,7 +851,10 @@ def main():
         bad += 1
     else:
         got_scope = {'judgement': n_judge_files, 'shell': n_sh_files['shell'],
-                     'macos_shell': n_sh_files['macos_shell'], 'python': n_py_files}
+                     'macos_shell': n_sh_files['macos_shell'],
+                     'assets_shell': n_sh_files['assets_shell'],
+                     'linux_shell': n_sh_files['linux_shell'],
+                     'python': n_py_files}
         for key in SCOPE_KEYS:
             want = scope_expect[key]
             if got_scope[key] != want:
@@ -853,10 +871,12 @@ def main():
           'shell 与 python 脚本 %d 个条件都非恒真'
           '（⚠ while/until 的惯用无限循环按批 DA 规矩不判恒真）；'
           '断言函数实参里 %d 条判据都非恒真；'
-          '扫描范围 判定层 %d / shell %d（deepin %d + macos %d）/ python %d 个文件（与基线一致）'
+          '扫描范围 判定层 %d / shell %d（deepin %d + macos %d + assets %d + linux %d）/ python %d 个文件（与基线一致）'
           % (n_check, n_if, n_assert, n_judge_files,
-             n_sh_files['shell'] + n_sh_files['macos_shell'],
-             n_sh_files['shell'], n_sh_files['macos_shell'], n_py_files))
+             n_sh_files['shell'] + n_sh_files['macos_shell']
+             + n_sh_files['assets_shell'] + n_sh_files['linux_shell'],
+             n_sh_files['shell'], n_sh_files['macos_shell'],
+             n_sh_files['assets_shell'], n_sh_files['linux_shell'], n_py_files))
     return 0
 
 

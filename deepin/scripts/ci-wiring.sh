@@ -2781,7 +2781,7 @@ arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+scope_expect = read_sc
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if scope_expect is None:$' 1 '基线**读不到**必须**fail closed**（照红）—— 不许「读不到就当没有基线」⇒ 否则删掉基线文件 ⇒ 范围检查整个消失 ⇒ 探针静默失守｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if got_scope\[key\] != want:$' 1 '**扫到的文件数**必须与基线**完全相等**（⚠ **恰好** ⇒ 少一个就红；「不少于」天生带余量 ⇒ 少一个还绿 ⇒ 没牙 —— 批 BB 口径）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+want = scope_expect\[key\]$' 1 '基线里那个口径的**期望值**必须真的取出来用（⚠ 取错了 ⇒ 比的是别的 ⇒ 范围检查名存实亡）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-tautology-scope.baseline" '^[0-9]+$' 4 '扫描范围基线文件**恰好 4 行纯数字**（判定层 / shell / macos_shell / python 各一行）—— ⚠ 行数变了 ⇒ 口径错位 ⇒ 范围检查名存实亡 ⇒ **基线自己也要被守**（批 BH 纪律）｜⚠⚠⚨ **批 CZ**：加了 mac 侧那一行 ⇒ 3 → 4'
+arch_need_count "$SRC/scripts/ci-tautology-scope.baseline" '^[0-9]+$' 6 '扫描范围基线文件**恰好 4 行纯数字**（判定层 / shell / macos_shell / python 各一行）—— ⚠ 行数变了 ⇒ 口径错位 ⇒ 范围检查名存实亡 ⇒ **基线自己也要被守**（批 BH 纪律）｜⚠⚠⚨ **批 CZ**：加了 mac 侧那一行 ⇒ 3 → 4纪律）｜⚠⚠⚨ **批 CZ**：加了 mac 侧那一行 ⇒ 3 → 4｜⚠⚠⚨ **批 DB**：再加 assets / linux 两行 ⇒ 4 → 6'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if not os\.path\.isdir\(d\):$' 1 '恒真探针的**扫描目录不存在**必须**明确报错**（不许崩成 traceback ⇒ 崩掉的退出码也是 1 ⇒ CI 照样红，但**看不出是哪一步坏了** ⇒ 排障会被带偏 —— 批 AZ 纪律）｜⚠⚠⚨ **批 BP**｜⚠⚠⚨ **整行锚定**'
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BH/BI 段有门项红（上面带 ✗ 的行）" >&2
@@ -3913,8 +3913,8 @@ ARCH_FAIL=0
 #   ⇒ ⚠ 顶部自检也**自己成段**（同款：它的红不许混进后面任何一段的归属里）。
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_ANY_FAIL=0$' 1 '判据层的**全局红过标志**的声明必须在（⚠⚠⚨ **批 CP**：段级 trailer 不再提前 exit ⇒ 末尾统一按它判红 ⇒ 它被摘 ⇒ **红也不报了** ⇒ **假绿**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+if \[ "\$_strip_rc" -ne 0 \] && \[ "\$_strip_rc" -ne 141 \]; then$' 2 '剥注释的**失败判定必须容忍 141**（SIGPIPE = 消费者**提前收工**）—— ⚠⚠⚨ **批 CP 实测的洞**：以前把 141 也当成「工具坏了」⇒ 记标记 ⇒ 末尾判红 ⇒ ⚠⚠⚨ **假红**（批 BS 纪律：假红比假绿更坏 ⇒ 逼人把承诺改弱）⇒ ⚠⚠⚨ **引爆点**：`arch_need_count_in_fn` 的 awk 读完函数体就 `exit` ⇒ sed 还在写 ⇒ 被 SIGPIPE 打断 ⇒ ⇒ **门项文件越大越容易触发**（时间炸弹）｜⚠ **整行锚定**｜⚠ 恰好 2 处（sed 支 + perl 支各一处）｜⚠⚠⚨ **批 CP**'
-arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_ANY_FAIL=1$' 51 '每个段级 trailer **都要记全局红过**（恰好 51 处）—— ⚠⚠⚨ **批 CP**：少一处 ⇒ 那个段的失败**被吞掉** ⇒ 末尾统一判红时看不见 ⇒ **假绿**（⚠ 与「段末清零」那条**配对**：清零 48 处 ⇒ 记红也必须 48 处 ⇒ 差恒为 0；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 41 → 42；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CU**：批 CU 段新增 1 处 ⇒ 44 → 45；⚠⚠⚨ **批 CV**：批 CV 段新增 1 处 ⇒ 45 → 46；⚠⚠⚨ **批 CW**：批 CW 段新增 1 处 ⇒ 46 → 47；⚠⚠⚨ **批 CX**：批 CX 段新增 1 处 ⇒ 47 → 48；⚠⚠⚨ **批 CY**：批 CY 段新增 1 处 ⇒ 48 → 49；⚠⚠⚨ **批 CZ**：批 CZ 段新增 1 处 ⇒ 49 → 50；⚠⚠⚨ **批 DA**：批 DA 段新增 1 处 ⇒ 50 → 51）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
-arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_FAIL=0$' 52 '判据层失败位的**声明 + 每段末清零**（恰好 52 处 = 1 处声明 + 51 处段末清零；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 44 → 45；⚠⚠⚨ **批 CU**：批 CU 段新增 1 处 ⇒ 45 → 46；⚠⚠⚨ **批 CV**：批 CV 段新增 1 处 ⇒ 46 → 47；⚠⚠⚨ **批 CW**：批 CW 段新增 1 处 ⇒ 47 → 48；⚠⚠⚨ **批 CX**：批 CX 段新增 1 处 ⇒ 48 → 49；⚠⚠⚨ **批 CY**：批 CY 段新增 1 处 ⇒ 49 → 50；⚠⚠⚨ **批 CZ**：批 CZ 段新增 1 处 ⇒ 50 → 51；⚠⚠⚨ **批 DA**：批 DA 段新增 1 处 ⇒ 51 → 52）—— ⚠⚠⚨ **批 CP**：少一处段末清零 ⇒ 那个段的失败**污染后面所有段** ⇒ 段归属失真（诊断被带偏）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_ANY_FAIL=1$' 52 '每个段级 trailer **都要记全局红过**（恰好 52 处）—— ⚠⚠⚨ **批 CP**：少一处 ⇒ 那个段的失败**被吞掉** ⇒ 末尾统一判红时看不见 ⇒ **假绿**（⚠ 与「段末清零」那条**配对**：清零 48 处 ⇒ 记红也必须 48 处 ⇒ 差恒为 0；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 41 → 42；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CU**：批 CU 段新增 1 处 ⇒ 44 → 45；⚠⚠⚨ **批 CV**：批 CV 段新增 1 处 ⇒ 45 → 46；⚠⚠⚨ **批 CW**：批 CW 段新增 1 处 ⇒ 46 → 47；⚠⚠⚨ **批 CX**：批 CX 段新增 1 处 ⇒ 47 → 48；⚠⚠⚨ **批 CY**：批 CY 段新增 1 处 ⇒ 48 → 49；⚠⚠⚨ **批 CZ**：批 CZ 段新增 1 处 ⇒ 49 → 50；⚠⚠⚨ **批 DA**：批 DA 段新增 1 处 ⇒ 50 → 51；⚠⚠⚨ **批 DB**：批 DB 段新增 1 处 ⇒ 51 → 52）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_FAIL=0$' 53 '判据层失败位的**声明 + 每段末清零**（恰好 53 处 = 1 处声明 + 52 处段末清零；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 44 → 45；⚠⚠⚨ **批 CU**：批 CU 段新增 1 处 ⇒ 45 → 46；⚠⚠⚨ **批 CV**：批 CV 段新增 1 处 ⇒ 46 → 47；⚠⚠⚨ **批 CW**：批 CW 段新增 1 处 ⇒ 47 → 48；⚠⚠⚨ **批 CX**：批 CX 段新增 1 处 ⇒ 48 → 49；⚠⚠⚨ **批 CY**：批 CY 段新增 1 处 ⇒ 49 → 50；⚠⚠⚨ **批 CZ**：批 CZ 段新增 1 处 ⇒ 50 → 51；⚠⚠⚨ **批 DA**：批 DA 段新增 1 处 ⇒ 51 → 52；⚠⚠⚨ **批 DB**：批 DB 段新增 1 处 ⇒ 52 → 53）—— ⚠⚠⚨ **批 CP**：少一处段末清零 ⇒ 那个段的失败**污染后面所有段** ⇒ 段归属失真（诊断被带偏）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^if \[ "\$ARCH_ANY_FAIL" -ne 0 \]; then$' 1 '判据层**末尾必须统一按全局红过判红**（恰好 1 处）—— ⚠⚠⚨ **批 CP**：段级 trailer 不再提前 exit ⇒ 全部门项都跑完 ⇒ 末尾这一句是**唯一的「红 ⇒ 退出」通路** ⇒ 摘掉 ⇒ 明明有红却 **exit 0** ⇒ **假绿**｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_forbid_ml "$SRC/scripts/ci-wiring.sh" 'if \[ "\$ARCH_FAIL" -ne 0 \]; then[^;]*>&2[[:space:]]+exit 1' '段级 trailer **不许再提前 exit**（⚠⚠⚨ **批 CP**：提前 exit ⇒ 一处红遮住后面所有门项 ⇒ 实测 **540/1017 条门项根本没跑** ⇒ 排障只能「改一个 ⇒ 跑一次 ⇒ 再改一个」）｜⚠ **跨行锚定**（压行后匹配 ⇒ 跨行形态也盯得住）｜⚠ 口径：锚在 trailer **自己的** `>&2` 之后 ⇒ **不会**误伤门项说明文字里的散文「exit 1」（⚠ 压行后散文与代码同处一行 ⇒ 宽正则会假红）｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+exit 1$' 3 '判据层**整行的 `exit 1`**必须恰好 3 处（⚠⚠⚨ **批 CP**：那 3 处 = ① 顶部 preflight「没有 perl ⇒ 判失败」② 末尾「剥注释失败」检查 ③ 末尾「统一按全局红过判红」）—— ⚠⚠⚨ **段级 trailer 里一处都不许有** （有 ⇒ 一处红就提前退出 ⇒ **后面 540 条门项根本没跑**）⇒ 多一处 ⇒ 有人把提前 exit 又塞回去了 ⇒ 必红｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
@@ -3963,7 +3963,7 @@ ARCH_FAIL=0
 #   ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**
 # ⚠ **不宣称完全堵死**（四处协同编辑仍能躲过）⇒ 但成本从 2 处升到 4 处、跨 2 个文件
 #   ⇒ **极显眼** ⇒ 评审必看见 ⇒ 惯常动作不再是掩护。
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_LINES_EXPECTED = 1074$' 1 '门项条数必须被**审计器源码里的常量**交叉钉住（⚠⚠⚨ **批 CR**：实测坐实 —— 删一条门项 **且** 把基线文件 -1 ⇒ 旧行为**全绿**（审计器 rc=0、接线门 rc=0、✗ 0 行）⇒ 承诺**悄悄消失** ⇒ 现在同一件事记三遍：基线文件 / 审计器常量 / **本门里的这个数字** ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**）｜⚠⚠⚨ **批 CY**：批 CY 段新增 6 条 ⇒ 1044 → 1050（**三处同改**）；⚠⚠⚨ **批 CZ**：批 CZ 段新增 6 条 ⇒ 1050 → 1056（**三处同改**）；⚠⚠⚨ **批 DA**：批 DA 段新增 18 条 ⇒ 1056 → 1074（**三处同改**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CR**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_LINES_EXPECTED = 1087$' 1 '门项条数必须被**审计器源码里的常量**交叉钉住（⚠⚠⚨ **批 CR**：实测坐实 —— 删一条门项 **且** 把基线文件 -1 ⇒ 旧行为**全绿**（审计器 rc=0、接线门 rc=0、✗ 0 行）⇒ 承诺**悄悄消失** ⇒ 现在同一件事记三遍：基线文件 / 审计器常量 / **本门里的这个数字** ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**）｜⚠⚠⚨ **批 CY**：批 CY 段新增 6 条 ⇒ 1044 → 1050（**三处同改**）；⚠⚠⚨ **批 CZ**：批 CZ 段新增 6 条 ⇒ 1050 → 1056（**三处同改**）；⚠⚠⚨ **批 DA**：批 DA 段新增 18 条 ⇒ 1056 → 1074（**三处同改**）；⚠⚠⚨ **批 DB**：批 DB 段新增 13 条 ⇒ 1074 → 1087（**三处同改**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CR**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if gbase is not None and gbase != GATE_LINES_EXPECTED:$' 1 '基线与常量的**交叉核对判定行**必须**是那一行原样**（⚠⚠⚨ **批 CR**：⚠ 只盯「串在不在」⇒ 判定被掏空成 `and False:` 就躲过了 ⇒ 没人发现 ⇒ **交叉核对形同虚设** ⇒ 那批承诺也就没人守了）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CR**'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
@@ -4163,12 +4163,12 @@ ARCH_FAIL=0
 # ⚠⚠⚨ **口径不许漂**：两个平台**走同一个循环、同一个判定函数**
 #   ⇒ 抽成 `scan_shell_file()`（⚠ 这样「四个实扫点」那条门**不用改**）
 #   ⇒ ⚠ **递归**要递归**两个**目录（不许只递归 mac 侧 ⇒ 口径分叉）
-arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    mac_scripts = os\.path\.join\(os\.path\.dirname\(os\.path\.abspath\(root\)\), .macos., .scripts.\)$' 1 '恒真探针的 **mac 侧判据脚本目录**必须在（⚠⚠⚨ **批 CZ**：⚠ 判据脚本**散落在两个平台** ⇒ 范围不许只盖一边 ⇒ mac 侧那 12 个脚本上的「判定不许被掏空成恒真」本来**没有牙** ⇒ ⚠ 目录必须从**仓库根**算（root 的上一级）⇒ ⚠ 且要用**绝对路径**（root 可能是相对路径 `.` ⇒ `dirname(.)` 是空串 ⇒ 目录会找错 ⇒ 诊断失真）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CZ**'
-arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    sh_scope = \(\(.shell., scripts, .scripts.\), \(.macos_shell., mac_scripts, .macos\/scripts.\)\)$' 1 '恒真探针的 **shell 侧范围必须同时含两个平台**（⚠⚠⚨ **批 CZ**：⚠ 只列一个目录 ⇒ mac 侧整批判据**不再被查恒真** ⇒ 探针静默变成半个空门 ⇒ ⚠ 两个目录写在**同一行** ⇒ 改一边就看得出来）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CZ**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    repo_root = os\.path\.dirname\(os\.path\.abspath\(root\)\)$' 1 '恒真探针的 **mac 侧判据脚本目录**必须在（⚠⚠⚨ **批 CZ**：⚠ 判据脚本**散落在两个平台** ⇒ 范围不许只盖一边 ⇒ mac 侧那 12 个脚本上的「判定不许被掏空成恒真」本来**没有牙** ⇒ ⚠ 目录必须从**仓库根**算（root 的上一级）⇒ ⚠ 且要用**绝对路径**（root 可能是相对路径 `.` ⇒ `dirname(.)` 是空串 ⇒ 目录会找错 ⇒ 诊断失真）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CZ**｜⚠⚠⚨ **批 DB**：范围扩成**四个目录** ⇒ 「仓库根」这条被提到前面单独一行（`repo_root`）⇒ 本门跟着它走'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    sh_scope = \(\(.shell., scripts, .scripts.\), \(.macos_shell., mac_dir, .macos.\), \(.assets_shell., assets_dir, .assets.\), \(.linux_shell., linux_scripts, .linux/scripts.\)\)$' 1 '恒真探针的 **shell 侧范围必须同时含两个平台**（⚠⚠⚨ **批 CZ**：⚠ 只列一个目录 ⇒ mac 侧整批判据**不再被查恒真** ⇒ 探针静默变成半个空门 ⇒ ⚠ 两个目录写在**同一行** ⇒ 改一边就看得出来）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CZ**｜⚠⚠⚨ **批 DB**：扩成**四个口径**（deepin / macos / assets / linux）⇒ 仍写在**同一行** ⇒ 改一边就看得出来'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^def scan_shell_file\(path, label\):$' 1 '恒真探针的 **shell 侧判定必须是共用函数**（⚠⚠⚨ **批 CZ**：⚠ 两个平台各写一遍判定 ⇒ **口径必然漂**（批 BF/BG 纪律：判定逻辑只许有一份）⇒ 一边改了另一边没改 ⇒ 两边的结论不一致 ⇒ 没人发现）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CZ**'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^                _ni, _nb = scan_shell_file\(path, _rel \+ .\/. \+ os\.path\.relpath\(path, _d\)\)$' 1 '两个平台**必须真的走那个共用函数**（⚠⚠⚨ **批 CZ**：⚠ 定义了不调 ⇒ 等于没抽 ⇒ 两边各写一遍 ⇒ 口径漂 ⇒ 批 CX 同款教训：「常量在、但扫描时不判」⇒ **假绿**回来）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CZ**'
-arch_need_count "$SRC/scripts/ci-tautology-check.py" '^SCOPE_KEYS = \(.judgement., .shell., .macos_shell., .python.\)$' 1 '恒真探针的 **扫描范围口径序**必须在（⚠⚠⚨ **批 CZ**：⚠ 行序 = 口径序 ⇒ 少一行 / 多一行 ⇒ 基线读不出对应关系 ⇒ **fail closed** ⇒ 少一个平台就红 ⇒ 这条门钉住「**四个**口径」这件事本身）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CZ**'
-arch_need_count "$SRC/scripts/ci-tautology-scope.baseline" '^12$' 1 '扫描范围基线里 **mac 侧的判据脚本数必须恰好是 12**（⚠⚠⚨ **批 CZ**：⚠ 这一行是「mac 侧那批判据**还在被查**」的唯一数字依据 ⇒ 被改小 ⇒ 范围被悄悄改窄 ⇒ **没人发现** ⇒ ⇒ 这个数字**记两遍**（基线文件 + 本门）⇒ 改任意一边 ⇒ 另一边对不上 ⇒ **红**）｜⚠⚠⚨ **批 CZ**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^SCOPE_KEYS = \(.judgement., .shell., .macos_shell., .assets_shell., .linux_shell., .python.\)$' 1 '恒真探针的 **扫描范围口径序**必须在（⚠⚠⚨ **批 CZ**：⚠ 行序 = 口径序 ⇒ 少一行 / 多一行 ⇒ 基线读不出对应关系 ⇒ **fail closed** ⇒ 少一个平台就红 ⇒ 这条门钉住「**四个**口径」这件事本身）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CZ**｜⚠⚠⚨ **批 DB**：口径 4 → **6**（判定层 / deepin / macos / assets / linux / python）⇒ **行序 = 口径序** ⇒ 基线那 6 行的含义被这条门钉死'
+arch_need_count "$SRC/scripts/ci-tautology-scope.baseline" '^13$' 1 '扫描范围基线里 **mac 侧的判据脚本数必须恰好是 12**（⚠⚠⚨ **批 CZ**：⚠ 这一行是「mac 侧那批判据**还在被查**」的唯一数字依据 ⇒ 被改小 ⇒ 范围被悄悄改窄 ⇒ **没人发现** ⇒ ⇒ 这个数字**记两遍**（基线文件 + 本门）⇒ 改任意一边 ⇒ 另一边对不上 ⇒ **红**）｜⚠⚠⚨ **批 CZ**macos/scripts/`（12）扩成 **`macos/` 整棵树**（13 ⇒ **含 build.sh**）⇒ 12 → 13）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CZ**｜⚠⚠⚨ **批 DB**'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CZ 段有门项红（上面带 ✗ 的行）" >&2
@@ -4222,6 +4222,47 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     ARCH_ANY_FAIL=1
 else
     echo "✓ 批 DA 段门项全绿（恒真判定只对 if/elif 生效：while/until 的惯用无限循环不再被当成判据被掏空；自检自己证明有牙）；门项合计 ${ARCH_N} 项（含前段）"
+fi
+ARCH_FAIL=0
+
+# ── 批 DB · 恒真探针的 shell 范围不许只盖「两个平台的判据脚本目录」───────
+# ⚠⚠⚨ **起因（实测坐实 + 对照实验，不是推演）**：
+#   恒真探针（批 BF 立的）的 shell 范围 = **两个平台的判据脚本目录**
+#   ⇒ `macos/build.sh`、`assets/icon/check-icon.sh`、`linux/scripts/*.sh`
+#     这 **11 个仓内自有 .sh**（**101 处 if 条件**）**从来没被查过**
+#   ⇒ ⚠⚠⚨ 而 `macos/build.sh` **被 4 条门项盯着**（批 AJ 起：引擎 URL /
+#     fetch-engine.sh / runtime lib 拷贝 / bin 拷贝）
+#     ⇒ ⇒ **门项覆盖面比探针覆盖面宽** ⇒ **同一族洞**（批 CY 的题）
+#   ⇒ 实测坐实：在 `macos/build.sh` 里加一处恒真条件
+#     ⇒ ⚠⚠⚨ **HEAD 版探针 rc=0**（假绿）⇒ **本批版 rc=1**
+# ⚠⚠⚨ **前置依赖（批 DA 收了它，本批才敢扩）**：
+#   用**批 DA 之前**的口径量候选范围 ⇒ **160 处 if 条件、1 处会被判红**
+#   ⇒ `macos/build.sh:236` 的 `while :; do`（**惯用无限循环**）
+#     ⇒ ⚠⚠⚨ **不先修假红就扩范围 ⇒ 当场假红**（批 BS：假红逼人把承诺改弱）
+#   ⇒ 用**批 DA 之后**的口径量同一范围 ⇒ **0 处判红** ⇒ **扩范围是净收益**
+# ⚠⚠⚨ **口径不许漂**：四个范围目录**走同一个循环、同一个判定函数**
+#   ⇒ 四个口径**写在同一行**（`sh_scope`）⇒ 改一边就看得出来
+# ⚠ **显式目录清单，不靠排除表** ⇒ `linux/vendor`（第三方）**不进范围**
+# ⚠ **每个基线数字都记两遍**（基线文件 + 门）⇒ 改一边必红
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    mac_dir = os\.path\.join\(repo_root, .macos.\)$' 1 '恒真探针的 **mac 侧整棵树目录**必须在（⚠⚠⚨ **批 DB**：⚠ 原范围只有 `macos/scripts/` ⇒ **`macos/build.sh` 不在范围** ⇒ 而它**被 4 条门项盯着**（批 AJ 起：引擎 URL / fetch-engine.sh / runtime lib / bin 拷贝）⇒ **门项覆盖面比探针覆盖面宽** ⇒ 同一族洞（批 CY 的题）⇒ 它的 38 处 if 条件**从来没被查过**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DB**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    assets_dir = os\.path\.join\(repo_root, .assets.\)$' 1 '恒真探针的 **assets 目录**必须在（⚠⚠⚨ **批 DB**：⚠ `assets/icon/check-icon.sh` 是**图标校验脚本**（判据脚本）⇒ 它的 10 处 if 条件不该没人查）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DB**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    linux_scripts = os\.path\.join\(repo_root, .linux., .scripts.\)$' 1 '恒真探针的 **linux 侧脚本目录**必须在（⚠⚠⚨ **批 DB**：⚠ `linux/scripts/` 里 9 个脚本（含 `ai-e2e.sh` / `ci-local.sh` 这类**判据脚本**）的 53 处 if 条件不该没人查；⚠ **只列 `scripts` 子目录** ⇒ `linux/vendor`（第三方）**不进范围** ⇒ 用**显式目录清单**，不靠排除表）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DB**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    for d in \(appdir, scripts, mac_dir, assets_dir, linux_scripts\):$' 1 '**四个范围目录**必须在**存在性检查**里（⚠⚠⚨ **批 DB**：⚠ 目录不存在却**默默跳过** ⇒ 范围被悄悄改窄 ⇒ 没人发现 ⇒ **假绿**；⇒ 少一个目录 ⇒ 那一整片 .sh **不再被查**而门照样绿）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DB**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    for _key, _d, _rel in sh_scope:$' 1 '范围常量**必须真的被遍历**（⚠⚠⚨ **批 DB**：⚠⚠⚨ 批 CX 同款教训：「常量在、但扫描时不判」⇒ **假绿**回来；⚠ 改成只遍历第一项 ⇒ 三个新口径**一个都不扫**而门照样绿 ⇒ 范围被悄悄改窄）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DB**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    n_sh_files = \{.shell.: 0, .macos_shell.: 0, .assets_shell.: 0, .linux_shell.: 0\}$' 1 '**四个 shell 口径的计数**必须都在（⚠⚠⚨ **批 DB**：⚠ 少一个键 ⇒ 那个口径**永远数不到文件** ⇒ 与基线**恒不相等** ⇒ 探针恒红；⚠ 更坏：把那个键删掉 + 基线同步改 ⇒ **范围收窄没人发现**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DB**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+.assets_shell.: n_sh_files\[.assets_shell.\],$' 1 '扫到的 **assets 口径**必须进对拍字典（⚠⚠⚨ **批 DB**：⚠ 漏了 ⇒ `got_scope` 里没这个键 ⇒ 范围检查**漏掉一整片**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DB**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+.linux_shell.: n_sh_files\[.linux_shell.\],$' 1 '扫到的 **linux 口径**必须进对拍字典（⚠⚠⚨ **批 DB**：⚠ 漏了 ⇒ `got_scope` 里没这个键 ⇒ 范围检查**漏掉一整片**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DB**'
+arch_need_count "$SRC/scripts/ci-tautology-scope.baseline" '^4$' 1 '范围基线里 **判定层的文件数必须恰好是 4**（⚠⚠⚨ **批 DB**：⚠ 这个数字**记两遍**（基线文件 + 本门）⇒ 改任意一边 ⇒ 另一边对不上 ⇒ **红**；⚠ 原先只有基线文件记着 ⇒ 改范围 + 改基线 ⇒ **协同编辑**就收窄了范围而没人发现）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DB**'
+arch_need_count "$SRC/scripts/ci-tautology-scope.baseline" '^18$' 1 '范围基线里 **deepin 侧判据脚本数必须恰好是 18**（⚠⚠⚨ **批 DB**：⚠ 这个数字**记两遍**（基线文件 + 本门）⇒ 改任意一边 ⇒ 另一边对不上 ⇒ **红**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DB**'
+arch_need_count "$SRC/scripts/ci-tautology-scope.baseline" '^1$' 1 '范围基线里 **assets 侧的 .sh 数必须恰好是 1**（⚠⚠⚨ **批 DB**：⚠ 这个数字**记两遍**（基线文件 + 本门）⇒ 改任意一边 ⇒ 另一边对不上 ⇒ **红**；⚠ 改小 ⇒ **范围被悄悄改窄**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DB**'
+arch_need_count "$SRC/scripts/ci-tautology-scope.baseline" '^9$' 1 '范围基线里 **linux 侧的 .sh 数必须恰好是 9**（⚠⚠⚨ **批 DB**：⚠ 这个数字**记两遍**（基线文件 + 本门）⇒ 改任意一边 ⇒ 另一边对不上 ⇒ **红**；⚠ 改小 ⇒ **范围被悄悄改窄**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DB**'
+arch_need_count "$SRC/scripts/ci-tautology-scope.baseline" '^5$' 1 '范围基线里 **python 工具脚本数必须恰好是 5**（⚠⚠⚨ **批 DB**：⚠ 这个数字**记两遍**（基线文件 + 本门）⇒ 改任意边 ⇒ 另一边对不上 ⇒ **红**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DB**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 DB 段有门项红（上面带 ✗ 的行）" >&2
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 DB 段门项全绿（恒真探针的 shell 范围不许只盖两个平台的判据脚本目录：仓内自有 .sh 的四个口径都在范围内 + 每个基线数字都记两遍）；门项合计 ${ARCH_N} 项（含前段）"
 fi
 ARCH_FAIL=0
 
