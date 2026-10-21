@@ -141,6 +141,7 @@ dpi_struct_assert() {
         return 1
     fi
     dpi_a_lw="$1"; dpi_a_lh="$2"; dpi_a_bw="$3"; dpi_a_bh="$4"; dpi_a_pd="$5"
+    dpi_a_rc=0
     dpi_a_err="$(awk -v lw="$dpi_a_lw" -v lh="$dpi_a_lh" -v bw="$dpi_a_bw" -v bh="$dpi_a_bh" \
         -v pd="$dpi_a_pd" -v dpr="$dpi_a_dpr" 'BEGIN {
         if (lw + 0 <= 0 || lh + 0 <= 0) { print "logical 尺寸非法"; exit 1 }
@@ -153,8 +154,7 @@ dpi_struct_assert() {
             printf "pixmap 的 devicePixelRatio %s ≠ 应用 dpr %s", pd, dpr
             exit 1
         }
-    }')"
-    dpi_a_rc=$?
+    }')" || dpi_a_rc=$?
     if [ "$dpi_a_rc" -ne 0 ]; then
         echo "✗ HiDPI 结构断言失败：${dpi_a_err}" >&2
         return 1
@@ -167,8 +167,8 @@ dpi_struct_assert "$PROBE_OUT" || exit 1
 # ── 第二跑：强制 200% 缩放（dpr=2），执行「效果事实」那一条 ──
 # ⚠ 批 BV：**不許**把 stderr 扔掉（`2>/dev/null`）—— 探针崩了时 CrashHandler 的
 #   栈回溯（崩点）全在 stderr 里 ⇒ 扔掉 = CI 只剩一句「退出码 139」，没人知道崩在哪。
-dpi_b_out="$(QT_SCALE_FACTOR=2 "$BIN" --platform-probe)"
-dpi_b_rc=$?
+dpi_b_rc=0
+dpi_b_out="$(QT_SCALE_FACTOR=2 "$BIN" --platform-probe)" || dpi_b_rc=$?
 if [ "$dpi_b_rc" -ne 0 ]; then
     echo "✗ QT_SCALE_FACTOR=2 下 platform-probe 退出码 $dpi_b_rc（要求 0）" >&2
     exit 1

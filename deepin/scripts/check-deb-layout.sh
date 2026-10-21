@@ -138,11 +138,20 @@ fi
 
 # ⑧ 空环境下能跑 --version
 if [ -x "$BIN" ]; then
-    VOUT="$(env -i "$BIN" --version 2>&1 | head -3)"
-    if printf '%s' "$VOUT" | grep -q .; then
-        ok "可执行在**空环境**下能跑起来（--version：$(printf '%s' "$VOUT" | head -1)）"
-    else
+    # ⚠⚠⚨ 批 BX：**必须查退出码**，且 **stderr 不许混进 stdout**。
+    #   以前这一门是 `VOUT="$(env -i "$BIN" --version 2>&1 | head -3)"` +「有输出就算过」
+    #   ⇒ **退出码完全没查** + **stderr 被合并进 stdout**
+    #   ⇒ 实测：一个「先往 stderr 打一行警告、再段错误崩掉」的二进制
+    #   **也能过这一门**（判「✓ 可执行在空环境下能跑起来」）⇒ **假绿**。
+    #   ⇒ 现在：退出码非 0 ⇒ 判失败；stdout 空 ⇒ 判失败；stderr 原样透出（崩点看得见）。
+    VRC=0
+    VOUT="$(env -i "$BIN" --version)" || VRC=$?
+    if [ "$VRC" -ne 0 ]; then
+        no "可执行在空环境下跑 --version 退出码 $VRC（装完起不来；崩了也走这里）"
+    elif ! printf '%s' "$VOUT" | grep -q .; then
         no "可执行在空环境下跑 --version 没有输出（装完可能起不来）"
+    else
+        ok "可执行在**空环境**下能跑起来（--version：$(printf '%s' "$VOUT" | head -1)）"
     fi
 fi
 

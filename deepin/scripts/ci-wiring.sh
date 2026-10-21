@@ -1359,7 +1359,7 @@ arch_need "$SRC/src/main.cpp" 'dpiEdgeLevels=legacy:%d' '平台探针报出自�
 #   （两列必然相同 ⇒ 恒成立 ⇒ 空门）。批 AJ 教训：承诺没有门 = 承诺不存在。
 #   ⚠ 盯**命令本身**（`dpi_b_out=…QT_SCALE_FACTOR=2`）而不是裸串 ——
 #   裸串在**错误提示语**里也出现（负控实测：把那一跑改成 1x，接线门照样绿）。
-arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^dpi_b_out="\$\(QT_SCALE_FACTOR=2 "\$BIN" --platform-probe\)"$' 1 'HiDPI 的效果断言必须真在 dpr=2 下跑（不许退化成 dpr=1 的空断言）｜⚠⚠⚨ **批 BS：整行锚定**（盯的是「那**一行**」⇒ QT_SCALE_FACTOR=2 被挪去别处或挪进行尾注释 ⇒ 立刻红；裸盯串时这两种都骗得过门）'
+arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^dpi_b_out="\$\(QT_SCALE_FACTOR=2 "\$BIN" --platform-probe\)" \|\| dpi_b_rc=\$\?$' 1 'HiDPI 的效果断言必须真在 dpr=2 下跑（不许退化成 dpr=1 的空断言）｜⚠⚠⚨ **批 BX**：退出码必须**在同行**取（`|| dpi_b_rc=$?`）——「下一行再取 `$?`」的形态**中间插一行就断**（`$?` 变成上一条命令的）｜⚠⚠⚨ **批 BS：整行锚定**（盯的是「那**一行**」⇒ QT_SCALE_FACTOR=2 被挪去别处或挪进行尾注释 ⇒ 立刻红；裸盯串时这两种都骗得过门）'
 arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^dpi_b_legacy="[^;]*dpiEdgeLevels=legacy:[^;]*\\1/p.\)"$' 1 'HiDPI 门必须断言边缘过渡层数 —— 盯**解析 legacy 那一列**的那行｜⚠⚠⚨ **批 BS：整行锚定**（裸盯串 ⇒ 挪进行尾注释就骗得过门）'
 arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^dpi_b_aware="[^;]*dpiEdgeLevels=\.\*aware:[^;]*\\1/p.\)"$' 1 'HiDPI 门必须断言边缘过渡层数 —— 盯**解析 aware 那一列**的那行（两列都要在 ⇒ 少一列就抓不到「dpr 感知更细腻」）｜⚠⚠⚨ **批 BS：整行锚定**'
 
@@ -2176,7 +2176,7 @@ echo "✓ 批 BB 段门项全绿（判据条数基线必须完全相等 ⇒ 余�
 #   挡不住「**把断言掏空成恒真**」（把断言的判定表达式改成恒真 ⇒ 条数不变 ⇒ 门不红）。
 #   ⇒ 那要逐条钉住断言的**表达式**，成本远高于收益 ⇒ 本批不做，记为待办。
 arch_need_count "$SRC/scripts/contract-check.sh" '^[[:space:]]*check ' 93 '契约门的断言清单**不许被删**（93 处 check 调用 ⇒ 运行期 120 条真引擎断言；⚠ 契约门有随环境变化的 SKIP 分支 ⇒ 运行期条数会变 ⇒ **只能钉静态调用数**）'
-arch_need_count "$SRC/scripts/check-deb-layout.sh" '^[[:space:]]*(no|ok) "' 14 'deb 布局验收的断言清单**不许被删**（14 处 ok/no 调用）'
+arch_need_count "$SRC/scripts/check-deb-layout.sh" '^[[:space:]]*(no|ok) "' 15 'deb 布局验收的断言清单**不许被删**（15 处 ok/no 调用）｜⚠⚠⚨ **批 BX**：「--version 退出码非 0 ⇒ 判失败」多了一条 ok/no 调用（14 → 15）'
 arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^[[:space:]]*echo "[ ]*✗' 22 '平台探针的断言清单**不许被删**（22 条报错 ⇒ 每条报错对应一条断言）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**（行尾注释里的标记不再算数 ⇒ 删一条真报错再在行尾注释里补一个骗不过门）｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
 arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^[[:space:]]*echo "[ ]*✗' 11 '文档语言探针的断言清单**不许被删**（11 条报错）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
 arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^[[:space:]]*echo "[ ]*✗' 10 '分隔线探针的断言清单**不许被删**（10 条报错；批 AW 只盯了其中 3 条 ⇒ 其余被删掉本来没人管）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
@@ -2853,5 +2853,37 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 BW 段门项全绿（探针崩了不许被当成 SKIP：退出码分诊 + 崩点落地）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 BX · 「崩了」必须被判成「崩了」：退出码不许被吞、stderr 不许顶替 stdout ──
+#
+# ⚠⚠⚨ **起因**：批 BW 标了「其余断言脚本还没逐个查」⇒ 本批**逐个盘点**了
+#   `scripts/` 下全部 16 个断言脚本对「我们自己的二进制 / 探针脚本」的调用
+#   ⇒ 盘出两处**具体**的洞（不是印象，是逐行看的）：
+#
+# ⚠⚠⚨ **洞 ①（行为级·假绿）**：`check-deb-layout.sh` ⑧「空环境下能跑 --version」
+#   原来是：
+#       VOUT="$(env -i "$BIN" --version 2>&1 | head -3)"
+#       if printf '%s' "$VOUT" | grep -q .; then ok "能跑起来"; else no "…"; fi
+#   ⇒ **退出码完全没查** + **stderr 被 `2>&1` 合并进 stdout** + 判据只是「有输出」
+#   ⇒ **实测**：造一个「先往 stderr 打一行警告、再 `kill -SEGV` 崩掉」的假二进制
+#   ⇒ 这一门判 **✓ 可执行在空环境下能跑起来** ⇒ **假绿**。
+#
+# ⚠⚠⚨ **洞 ②（形态级·诊断失真）**：`ci-platform-probe.sh` 的 dpr=2 那跳用
+#   「**下一行**再取 `$?`」的形态 ⇒ `$?` 只对**紧邻的上一条**命令有效
+#   ⇒ 中间插一行 ⇒ 退出码被换成别人的 ⇒ 崩溃被伪装成「探针没输出」⇒ 诊断失真。
+#
+# ⚠⚠⚨ **修法**：
+#   ① `check-deb-layout.sh` ⑧：**查退出码**（非 0 ⇒ 判失败）+ **stderr 不混进 stdout**
+#      （stdout 单独取，stderr 原样透出 ⇒ 崩点看得见）；
+#   ② `ci-platform-probe.sh`：**退出码改成同行取**（`|| VAR=$?`）⇒ 形态固定，
+#      插一行也断不了（批 BV 已在另外三跳用同一形态）。
+arch_need_count "$SRC/scripts/check-deb-layout.sh" '^[[:space:]]*VOUT="\$\(env -i "\$BIN" --version\)" \|\| VRC=\$\?$' 1 'deb 布局验收的「空环境下能跑 --version」**必须查退出码**，且 **stderr 不许混进 stdout**｜⚠⚠⚨ **批 BX**｜⚠ **整行锚定**（这一条同时排除掉 `2>&1` 那种写法）｜⚠⚠⚨ **实测的洞**：以前 `2>&1` + 只判「有输出」⇒ 一个「先打警告再段错误」的二进制也能过这一门（判 ✓ 能跑起来）⇒ **假绿**'
+arch_need_count "$SRC/scripts/check-deb-layout.sh" '^[[:space:]]*if \[ "\$VRC" -ne 0 \]; then$' 1 '「--version 退出码非 0」必须**判失败**（崩了也走这一支 ⇒ 不许再落回「有输出就算过」）｜⚠⚠⚨ **批 BX**｜⚠ **整行锚定**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 BX 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 BX 段门项全绿（崩了必须被判成崩了：退出码不许被吞、stderr 不许顶替 stdout）；门项合计 ${ARCH_N} 项（含前段）"
 
 exit 0
