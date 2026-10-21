@@ -391,15 +391,37 @@ echo "✓ 8 张快照跨运行（新进程）复拍仍与基线逐字节一致"
 rm -rf "$BASE_DIR" "$SHOT_DIR"
 
 echo "› 3/15 desktop / metainfo 校验（缺工具显式 SKIP）"
+# ⚠⚠⚨ 批 CU · **校验失败不许被 `&&` 吞掉**（实测坐实的洞 ⇒ 台账 E.2bd）
+#   ⚠⚠⚨ 实测（旧形态）：把 desktop 的 `Type` 写成非法值 ⇒ desktop-file-validate
+#     **判红**（rc=1、错误打在 stdout）⇒ 但旧版 ci.sh **rc=0**、末尾照样打
+#     「✓ CI 门通过」、**15 步全部跑完** ⇒ ⚠⚠⚨ **假绿**
+#     （desktop 非法 ⇒ 图标进不了启动器 / 点不起来 ⇒ 这道门本该拦住）
+#   ⇒ 根因：`set -euo pipefail` 对 `&&` 列表里**非末位**命令的失败
+#     **不触发退出**（bash / dash 实测：`false && echo OK` ⇒ 继续往下跑、rc=0）
+#     ⇒ 「校验命令的成败」被挂在 `&&` 后面 ⇒ **失败不影响 CI 的结论**。
+#   ⇒ 而 desktop-file-validate / appstream-util **全仓只在 ci.sh 这一处被调用**
+#     ⇒ 没有第二道门兜底 ⇒ 那个 `&&` 就是**唯一**的那道门 ⇒ 它形同虚设。
+#   ⇒ 现在：**接住退出码** ⇒ 非 0 ⇒ 判红（与第 10/11/12/13 步同款口径）。
 if command -v desktop-file-validate >/dev/null 2>&1; then
-    desktop-file-validate "$SRC/data/cn.deepdolphin.app.desktop" && echo "✓ desktop 合法"
+    _dfv_rc=0
+    desktop-file-validate "$SRC/data/cn.deepdolphin.app.desktop" || _dfv_rc=$?
+    if [ "$_dfv_rc" -ne 0 ]; then
+        echo "✗ desktop 文件不合法（desktop-file-validate 退出码 $_dfv_rc）" >&2
+        exit 1
+    fi
+    echo "✓ desktop 合法"
 else
     echo "SKIP: desktop-file-validate 未安装（装 desktop-file-validate 包后此门生效）"
     skip=$((skip+1))
 fi
 if command -v appstream-util >/dev/null 2>&1; then
-    appstream-util validate-relax --nonet "$SRC/data/metainfo/cn.deepdolphin.app.metainfo.xml" \
-        && echo "✓ metainfo 合法"
+    _asu_rc=0
+    appstream-util validate-relax --nonet "$SRC/data/metainfo/cn.deepdolphin.app.metainfo.xml" || _asu_rc=$?
+    if [ "$_asu_rc" -ne 0 ]; then
+        echo "✗ metainfo 不合法（appstream-util 退出码 $_asu_rc）" >&2
+        exit 1
+    fi
+    echo "✓ metainfo 合法"
 else
     echo "SKIP: appstream-util 未安装（README 决策 69 的硬门随工具到位生效）"
     skip=$((skip+1))

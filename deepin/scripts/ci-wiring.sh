@@ -2258,7 +2258,7 @@ ARCH_FAIL=0
 #   否则会被**别处顶替**（改一处骗得过门）。
 arch_need_count "$SRC/scripts/ci.sh" '^\( cd "\$CRASH_DIR" && "\$BIN" --selfcheck 2>"\$BUILD/selfcheck\.err" \) >"\$BUILD/selfcheck\.out" \|\| SELFCHECK_RC=\$\?$' 1 '第 1 步 selfcheck 的动作还在（删掉这一步 ⇒ CI 少跑一次自测 ⇒ 必须红）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '--color-sample' 1 '第 2 步 截图矩阵（8 张快照 + 状态色样张）的动作还在'
-arch_need_count "$SRC/scripts/ci.sh" '^    desktop-file-validate "\$SRC/data/cn\.deepdolphin\.app\.desktop" && echo "✓ desktop 合法"$' 1 '第 3 步 desktop/metainfo 校验的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^    desktop-file-validate "\$SRC/data/cn\.deepdolphin\.app\.desktop" \|\| _dfv_rc=\$\?$' 1 '第 3 步 desktop/metainfo 校验的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）｜⚠⚠⚨ **批 CU：形态已改**（旧形态 `cmd && echo "✓ …"` ⇒ 校验命令的失败被 `&&` 吞掉 ⇒ `set -e` 不触发 ⇒ **CI 假绿**（实测 rc=0 + 「✓ CI 门通过」）⇒ 改成 `|| _dfv_rc=$?` ⇒ 接住退出码 ⇒ 失败即判红）'
 arch_need_count "$SRC/scripts/ci.sh" '^if ! sh "\$SRC/scripts/ci-platform-probe\.sh" "\$BIN"; then$' 1 '第 4 步 无头探针（平台探针）的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^if ! sh "\$SRC/scripts/ci-d2\.sh" "\$SRC"; then$' 1 '第 5 步 D2 散值门（DS::* 单点真相源）的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^\( cd "\$CRASH_DIR" && "\$BIN" --agent-selftest \) >"\$BUILD/agent-selftest\.out" 2>"\$BUILD/agent-selftest\.err" \|\| AGENT_RC=\$\?$' 1 '第 6 步 agent 自测的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
@@ -3207,7 +3207,7 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 2$' 4 '审计器�
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return FAILS\[0\] if FAILS else \(3 if outside else 0\)$' 1 '审计器的**「统一出口」**（`return FAILS[0] if FAILS else (3 if outside else 0)`）必须恰好 1 处（⚠⚠⚨ **批 CQ**：改成「**收集失败态、一次报全**」⇒ 这里取**最先失败**的那个 rc（⇒ **码值语义不变** ⇒ 门侧按 rc 分诊的文案表零改动）⇒ 差别只在「**其余失败也一并报出来**」；⚠ rc=3（豁免之外）仍只从这一行出）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ **批 CQ**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 0$' 3 '审计器的**成功出口**（`return 0`）必须恰好 3 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ **与失败出口合看**：失败出口现在分**两个家族** —— ① `return N`（**前置**早退 4 处 + 统一出口 1 处 = 5 处）② `FAILS.append(N)`（**收集**，15 处）⇒ 两族合看**失败出口共 20 处**（⚠ 批 CQ 改后实测：15 处顺序早退里 11 处改成收集 ⇒ 16 → 5）⇒ 任何一个失败出口被改成 `return 0` ⇒ 成功出口涨 1 ⇒ **这条门红**｜⚠⚠⚨ **批 CQ**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^    sys\.exit\(main\(\)\)$' 1 '审计器的**入口**必须把 `main()` 的返回值交给 `sys.exit`（否则返回值被丢弃 ⇒ rc 恒 0 ⇒ 审计器**永远绿**）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
-arch_need_count "$SRC/scripts/ci.sh" '^[[:space:]]*exit [1-9]$' 34 'CI 入口的**失败上报**（整行的 `exit N`）必须恰好 34 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ `ci.sh` 的失败**已经被 `if` 分支消化**（`set -e` 救不了：失败命令的退出码被 `if` 的条件消费掉了）⇒ 只剩这些显式 `exit 1` 兜底 ⇒ 摘掉一个 ⇒ 那一步的失败**不再中止 CI** ⇒ 假绿'
+arch_need_count "$SRC/scripts/ci.sh" '^[[:space:]]*exit [1-9]$' 36 'CI 入口的**失败上报**（整行的 `exit N`）必须恰好 36 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ `ci.sh` 的失败**已经被 `if` 分支消化**（`set -e` 救不了：失败命令的退出码被 `if` 的条件消费掉了）⇒ 只剩这些显式 `exit 1` 兜底 ⇒ 摘掉一个 ⇒ 那一步的失败**不再中止 CI** ⇒ 假绿｜⚠⚠⚨ **批 CU**：第 3 步两处校验的失败出口**新增 2 处**（接住退出码 ⇒ 失败即判红）⇒ 34 → 36'
 arch_need_count "$SRC/scripts/ci-d2.sh" '^[[:space:]]*exit [1-9]$' 6 'D2 散值门的**失败上报**（整行的 `exit N`）必须恰好 6 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ **实测的洞**：摘掉最终判定那一行 ⇒ 脚本明明已检出「✗ 豁免路径不存在」却照样打印「✓ D2 命中 0/0」并 **exit 0** ⇒ **假绿坐实**'
 arch_need_count "$SRC/scripts/smoke.sh" '^\[ -x "\$BIN" \] \|\| \{ echo "✗ [^"]*"; exit 1; \}$' 1 '冒烟脚本「产物缺失」那一支的失败上报（**行内**形态 `|| { …; exit 1; }`）必须**整行锚定**｜⚠⚠⚨ **批 CA**｜⚠ 这一条是**行内**形态 ⇒ 不会被「整行的 `exit N`」那条门数到 ⇒ 必须单钉'
 arch_need_count "$SRC/scripts/smoke.sh" '^[[:space:]]*exit [1-9]$' 3 '冒烟脚本**整行**的失败上报（`exit N`）必须恰好 3 处（selfcheck 失败 / **契约门未验证 ⇒ 原样传出**（8 缩进）/ **引擎缺席 ⇒ 未验证**（4 缩进））｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
@@ -3912,8 +3912,8 @@ ARCH_FAIL=0
 #   ⇒ ⚠ 顶部自检也**自己成段**（同款：它的红不许混进后面任何一段的归属里）。
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_ANY_FAIL=0$' 1 '判据层的**全局红过标志**的声明必须在（⚠⚠⚨ **批 CP**：段级 trailer 不再提前 exit ⇒ 末尾统一按它判红 ⇒ 它被摘 ⇒ **红也不报了** ⇒ **假绿**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+if \[ "\$_strip_rc" -ne 0 \] && \[ "\$_strip_rc" -ne 141 \]; then$' 2 '剥注释的**失败判定必须容忍 141**（SIGPIPE = 消费者**提前收工**）—— ⚠⚠⚨ **批 CP 实测的洞**：以前把 141 也当成「工具坏了」⇒ 记标记 ⇒ 末尾判红 ⇒ ⚠⚠⚨ **假红**（批 BS 纪律：假红比假绿更坏 ⇒ 逼人把承诺改弱）⇒ ⚠⚠⚨ **引爆点**：`arch_need_count_in_fn` 的 awk 读完函数体就 `exit` ⇒ sed 还在写 ⇒ 被 SIGPIPE 打断 ⇒ ⇒ **门项文件越大越容易触发**（时间炸弹）｜⚠ **整行锚定**｜⚠ 恰好 2 处（sed 支 + perl 支各一处）｜⚠⚠⚨ **批 CP**'
-arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_ANY_FAIL=1$' 44 '每个段级 trailer **都要记全局红过**（恰好 44 处）—— ⚠⚠⚨ **批 CP**：少一处 ⇒ 那个段的失败**被吞掉** ⇒ 末尾统一判红时看不见 ⇒ **假绿**（⚠ 与「段末清零」那条**配对**：清零 44 处 ⇒ 记红也必须 44 处 ⇒ 差恒为 0；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 41 → 42；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 43 → 44）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
-arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_FAIL=0$' 45 '判据层失败位的**声明 + 每段末清零**（恰好 45 处 = 1 处声明 + 44 处段末清零；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 44 → 45）—— ⚠⚠⚨ **批 CP**：少一处段末清零 ⇒ 那个段的失败**污染后面所有段** ⇒ 段归属失真（诊断被带偏）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_ANY_FAIL=1$' 45 '每个段级 trailer **都要记全局红过**（恰好 45 处）—— ⚠⚠⚨ **批 CP**：少一处 ⇒ 那个段的失败**被吞掉** ⇒ 末尾统一判红时看不见 ⇒ **假绿**（⚠ 与「段末清零」那条**配对**：清零 45 处 ⇒ 记红也必须 45 处 ⇒ 差恒为 0；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 41 → 42；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CU**：批 CU 段新增 1 处 ⇒ 44 → 45）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_FAIL=0$' 46 '判据层失败位的**声明 + 每段末清零**（恰好 46 处 = 1 处声明 + 45 处段末清零；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 44 → 45；⚠⚠⚨ **批 CU**：批 CU 段新增 1 处 ⇒ 45 → 46）—— ⚠⚠⚨ **批 CP**：少一处段末清零 ⇒ 那个段的失败**污染后面所有段** ⇒ 段归属失真（诊断被带偏）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^if \[ "\$ARCH_ANY_FAIL" -ne 0 \]; then$' 1 '判据层**末尾必须统一按全局红过判红**（恰好 1 处）—— ⚠⚠⚨ **批 CP**：段级 trailer 不再提前 exit ⇒ 全部门项都跑完 ⇒ 末尾这一句是**唯一的「红 ⇒ 退出」通路** ⇒ 摘掉 ⇒ 明明有红却 **exit 0** ⇒ **假绿**｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_forbid_ml "$SRC/scripts/ci-wiring.sh" 'if \[ "\$ARCH_FAIL" -ne 0 \]; then[^;]*>&2[[:space:]]+exit 1' '段级 trailer **不许再提前 exit**（⚠⚠⚨ **批 CP**：提前 exit ⇒ 一处红遮住后面所有门项 ⇒ 实测 **540/1017 条门项根本没跑** ⇒ 排障只能「改一个 ⇒ 跑一次 ⇒ 再改一个」）｜⚠ **跨行锚定**（压行后匹配 ⇒ 跨行形态也盯得住）｜⚠ 口径：锚在 trailer **自己的** `>&2` 之后 ⇒ **不会**误伤门项说明文字里的散文「exit 1」（⚠ 压行后散文与代码同处一行 ⇒ 宽正则会假红）｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+exit 1$' 3 '判据层**整行的 `exit 1`**必须恰好 3 处（⚠⚠⚨ **批 CP**：那 3 处 = ① 顶部 preflight「没有 perl ⇒ 判失败」② 末尾「剥注释失败」检查 ③ 末尾「统一按全局红过判红」）—— ⚠⚠⚨ **段级 trailer 里一处都不许有** （有 ⇒ 一处红就提前退出 ⇒ **后面 540 条门项根本没跑**）⇒ 多一处 ⇒ 有人把提前 exit 又塞回去了 ⇒ 必红｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
@@ -3962,7 +3962,7 @@ ARCH_FAIL=0
 #   ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**
 # ⚠ **不宣称完全堵死**（四处协同编辑仍能躲过）⇒ 但成本从 2 处升到 4 处、跨 2 个文件
 #   ⇒ **极显眼** ⇒ 评审必看见 ⇒ 惯常动作不再是掩护。
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_LINES_EXPECTED = 1033$' 1 '门项条数必须被**审计器源码里的常量**交叉钉住（⚠⚠⚨ **批 CR**：实测坐实 —— 删一条门项 **且** 把基线文件 -1 ⇒ 旧行为**全绿**（审计器 rc=0、接线门 rc=0、✗ 0 行）⇒ 承诺**悄悄消失** ⇒ 现在同一件事记三遍：基线文件 / 审计器常量 / **本门里的这个数字** ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CR**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_LINES_EXPECTED = 1036$' 1 '门项条数必须被**审计器源码里的常量**交叉钉住（⚠⚠⚨ **批 CR**：实测坐实 —— 删一条门项 **且** 把基线文件 -1 ⇒ 旧行为**全绿**（审计器 rc=0、接线门 rc=0、✗ 0 行）⇒ 承诺**悄悄消失** ⇒ 现在同一件事记三遍：基线文件 / 审计器常量 / **本门里的这个数字** ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CR**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if gbase is not None and gbase != GATE_LINES_EXPECTED:$' 1 '基线与常量的**交叉核对判定行**必须**是那一行原样**（⚠⚠⚨ **批 CR**：⚠ 只盯「串在不在」⇒ 判定被掏空成 `and False:` 就躲过了 ⇒ 没人发现 ⇒ **交叉核对形同虚设** ⇒ 那批承诺也就没人守了）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CR**'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
@@ -4013,6 +4013,36 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     ARCH_ANY_FAIL=1
 else
     echo "✓ 批 CT 段门项全绿（崩了 ⇒ rc 强制 2：分诊依据不被顶替）；门项合计 ${ARCH_N} 项（含前段）"
+fi
+ARCH_FAIL=0
+
+# ── 批 CU · 「校验失败」不许被 `&&` 吞掉（ci.sh 第 3 步 ⇒ 假绿）────────────
+# ⚠⚠⚨ **起因（实测坐实，不是推演）**：把 desktop 文件的 `Type` 写成非法值
+#   ⇒ `desktop-file-validate` **判红**（rc=1、错误打在 stdout）
+#   ⇒ 但旧版 ci.sh **rc=0**、末尾照样打「✓ CI 门通过」、**15 步全部跑完**
+#   ⇒ ⇒ ⚠⚠⚨ **假绿**（desktop 非法 ⇒ 图标进不了启动器 / 点不起来）
+# ⚠ **根因**：`set -euo pipefail` 对 `&&` 列表里**非末位**命令的失败
+#   **不触发退出**（bash / dash 实测：`false && echo OK` ⇒ 继续往下跑、rc=0）
+#   ⇒ ⇒ 「校验命令的成败」被挂在 `&&` 后面 ⇒ **失败不影响 CI 的结论**。
+# ⚠ **为什么没有第二道门兜底**：`desktop-file-validate` / `appstream-util`
+#   **全仓只在 ci.sh 那一处被调用**（grep 全仓确认）⇒ 那个 `&&` 就是**唯一**
+#   的那道门 ⇒ 它形同虚设 ⇒ 本批必须**行为修**（接住退出码）+ **形态门**。
+# ⚠⚠⚨ **本段的门盯什么**（三条，各管一头）：
+#   ① 两处校验**必须接住退出码**（`|| _xxx_rc=$?`）——
+#      ⚠ 不接 ⇒ `_xxx_rc` 恒为 0 ⇒ **失败分支永远进不去** ⇒ 洞回来；
+#   ② 两处**失败分支必须报错 + `exit 1`**（跨行锚定）——
+#      ⚠ 接住了退出码但不判红 ⇒ 失败照样往下跑 ⇒ 还是假绿；
+#   ③ **形态 forbid**：ci.sh 里不许再出现「`&&` 挂着的 echo」——
+#      ⚠ 这一条**一次挡住整类**（批 CD 纪律：一次挡住整类，别逐点治标）。
+arch_need_ml "$SRC/scripts/ci.sh" '_dfv_rc=0[[:space:]]+desktop-file-validate "\$SRC/data/cn\.deepdolphin\.app\.desktop" \|\| _dfv_rc=\$\?[[:space:]]+if \[ "\$_dfv_rc" -ne 0 \]; then[[:space:]]+echo "✗ desktop 文件不合法（desktop-file-validate 退出码 \$_dfv_rc）" >&2[[:space:]]+exit 1[[:space:]]+fi' 'CI 第 3 步的 desktop 校验必须**接住退出码并判红**（⚠⚠⚨ **批 CU**：⚠ 实测坐实 —— 旧形态把校验命令挂在 `&&` 后面 ⇒ `set -e` 对 `&&` 列表里**非末位**的失败**不触发退出**（bash/dash 实测：`false && echo OK` ⇒ 继续、rc=0）⇒ ⇒ desktop 非法 ⇒ ci.sh **rc=0**、照样打「✓ CI 门通过」⇒ **假绿** ⇒ ⇒ 本门把「初始化 → 接退出码 → 失败分支报错 → `exit 1`」**整块钉住** ⇒ 少一环（不接退出码 / 不判红 / 报错被删 / `exit 1` 被摘）⇒ **红**）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CU**'
+arch_need_ml "$SRC/scripts/ci.sh" '_asu_rc=0[[:space:]]+appstream-util validate-relax --nonet "\$SRC/data/metainfo/cn\.deepdolphin\.app\.metainfo\.xml" \|\| _asu_rc=\$\?[[:space:]]+if \[ "\$_asu_rc" -ne 0 \]; then[[:space:]]+echo "✗ metainfo 不合法（appstream-util 退出码 \$_asu_rc）" >&2[[:space:]]+exit 1[[:space:]]+fi' 'CI 第 3 步的 metainfo 校验必须**接住退出码并判红**（⚠⚠⚨ **批 CU**：⚠ 与 desktop 那一处**同款洞** —— `appstream-util` **全仓只在 ci.sh 这一处被调用** ⇒ 那道 `&&` 就是唯一的那道门 ⇒ 它形同虚设 ⇒ ⇒ 本门把「初始化 → 接退出码 → 失败分支报错 → `exit 1`」**整块钉住**）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CU**'
+arch_forbid "$SRC/scripts/ci.sh" '&&[[:space:]]*echo' 'CI 里不许再出现「`&&` 挂着的 echo」这种形态（⚠⚠⚨ **批 CU**：⚠ `set -euo pipefail` 对 `&&` 列表里**非末位**命令的失败**不触发退出**（bash/dash 实测：`false && echo OK` ⇒ 继续往下跑、rc=0）⇒ ⇒ 挂在 `&&` 后面的**校验命令的失败不影响 CI 的结论** ⇒ 实测：desktop 非法 ⇒ ci.sh **rc=0** + 「✓ CI 门通过」⇒ **假绿** ⇒ ⇒ 本条**一次挡住整类**（不是逐点治标）：任何「用 `&&` 把成败挂在成功提示上」的写法都不许回来｜⚠ forbid 门判「不该有的东西没了」⇒ 命中 >0 ⇒ 红）'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 CU 段有门项红（上面带 ✗ 的行）" >&2
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CU 段门项全绿（校验失败不许被 && 吞掉：接住退出码 + 失败即判红 + 形态禁绝）；门项合计 ${ARCH_N} 项（含前段）"
 fi
 ARCH_FAIL=0
 
