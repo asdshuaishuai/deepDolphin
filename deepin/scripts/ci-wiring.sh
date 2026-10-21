@@ -2197,7 +2197,7 @@ arch_need_count "$SRC/scripts/ci.sh" '^wire_need "\$SRC/src/app/AppModel\.cpp" .
 arch_need_count "$SRC/scripts/ci.sh" '^CANVAS_METHODS="setTransform fillRect strokeRect rect beginPath moveTo lineTo arcTo closePath arc bezierCurveTo fill stroke fillText createLinearGradient addColorStop setLineDash setLineDashOffset setShadowBlur setShadowColor setGlobalAlpha setLineWidth setStrokeStyle setFillStyle setFont setTextAlign"$' 1 '第 8 步 图谱 Canvas 契约清单的动作还在（26 个方法的清单在本步唯一定义）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^if sh "\$SRC/scripts/ci-wiring\.sh" "\$SRC"; then$' 1 '第 9 步 **接线门**的动作还在（⚠⚠ 门自己被删了，门也得红 —— 批 BA 实测：本步删掉时**其余门全绿**）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^    DEEPGIT_CLIENT_BIN="\$BIN" sh "\$SRC/scripts/contract-check\.sh" > "\$_cc_log" 2>&1 \|\| _cc_rc=\$\?$' 1 '第 10 步 引擎契约门（真引擎沙箱）的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
-arch_need_count "$SRC/scripts/ci.sh" '^    if sh "\$SRC/scripts/build-deb\.sh" "\$BUILD/deb" > "\$BUILD/build-deb\.log" 2>&1; then$' 1 '第 11 步 deb 打包的动作还在（D7 达标的必经：能出包装进 deepin）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^    sh \"\$SRC/scripts/build-deb\.sh\" \"\$BUILD/deb\" > \"\$BUILD/build-deb\.log\" 2>&1 \|\| _deb_rc=\$\?$' 1 '第 11 步 deb 打包的动作还在（D7 达标的必经：能出包装进 deepin）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'arch_need_count "$SRC/scripts/ci.sh" '^    if sh "\$SRC/scripts/build-deb\.sh" "\$BUILD/deb" > "\$BUILD/build-deb\.log" 2>&1; then$' 1 '第 11 步 deb 打包的动作还在（D7 达标的必经：能出包装进 deepin）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）｜⚠⚠⚨ **批 CL：形态已改**（接住退出码 + 分诊 rc=3）：`if sh … ; then` ⇒ `_deb_rc=0` + `sh … || _deb_rc=$?` + `if [ "$_deb_rc" -eq 0 ]; then`⇒ ⚠ 旧形态**接不住**退出码 ⇒ build-deb.sh 报「未验证」(3) 时**落进 else**⇒ 被当成「构建失败」（1）⇒ **码值语义被顶替**（批 CC 纪律）⇒ 现在 3 ⇒ 未验证 ⇒ 计入 `skip` ⇒ 末尾判红｜⚠ **原地替换**（批 BM：不增行）'
 arch_need_count "$SRC/scripts/ci.sh" '^    sh "\$SRC\/scripts\/check-deb-layout.sh" "\$DEB_OUT" > "\$_dl_log" 2>&1 \|\| _dl_rc=\$\?$' 1 '第 12 步 deb 布局验收的动作还在（D7 的**准**验收：装完能不能用）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）｜⚠⚠⚨ **批 CC：形态改成「接住退出码 + 分诊」**'
 arch_need_count "$SRC/scripts/ci.sh" '^sh "\$SRC/scripts/probe-agent-tool-surface\.sh" "\$BIN" \|\| ATS_RC=\$\?$' 1 '第 13 步 agent 工具面收敛的动作还在（批 BD 实测：这个探针以前**根本不在 CI 里** ⇒ 它的 9 条断言没人执行）—— ⚠ 盯的是**调用点**那串，不是文件名：文件名在 ci.sh 的注释里也出现过（讲这个洞的来由）⇒ 盯短名会命中 2 次而恒红｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^if ! sh "\$SRC/scripts/ci-orphan-probe\.sh" "\$SRC"; then$' 1 '第 14 步 无游离断言脚本的动作还在（批 BD：这是「CI 自己在漏什么」的那一道）—— ⚠ 同上，盯**调用点**｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
@@ -2590,7 +2590,7 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+stbad = anchoring_selftes
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_anchor_scope\(cnt_items, exempt\):$' 1 '锚定形态的**实扫**必须在（探针是门自己的工具 ⇒ 它的门项必须整行锚定）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+anchbad, anchor_need = check_anchor_scope\(cnt, anchor_exempt\)$' 1 '锚定形态的**实扫必须被调用**（定义了不调 ⇒ 没人发现探针门项被改回盯串）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **第二返回值 = 「需要豁免」的集合**（豁免表的唯一合法来源）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return 8$' 2 '审计器的**第 8 种失败态**必须在（⚠ **两处**：锚定形态**自检**不过 + 实扫出违规 ⇒ 两种失败要分开 ⇒ 不然排障会被带偏）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^ANCHOR_SCOPE_SUFFIXES = \(.ci-tautology-check\.py., .ci-wiring-audit\.py., .ci\.sh., .ci-wiring\.sh., .ci-platform-probe\.sh., .ci-docs-lang-probe\.sh., .ci-divider-probe\.sh., .probe-agent-tool-surface\.sh., .ci-orphan-probe\.sh., .check-deb-layout\.sh., .contract-check\.sh., .ci-d2\.sh., .smoke\.sh., .bootstrap-deps\.py., .ci-true-audit\.py.\)$' 1 '审计器的**锚定形态适用范围常量**的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 拆成两条）｜⚠⚠⚨ **适用范围必须同时含探针与审计器自身**（两者都是「门自己的工具」⇒ 被掏空 = 门集体失效）｜⚠⚠⚨ **批 BN：范围扩到 `ci.sh`**（CI 入口的门项同样是「门自己的工具」）｜⚠⚠⚨ **批 BR：范围再扩到 `ci-wiring.sh`**（**门脚本本体** ⇒ 它的门项就是「判定层不许被掏空」那一整类承诺的载体 ⇒ 载体被掏空 = 承诺集体失效）｜⚠⚠⚨ **批 BS：范围再扩到 5 个探针脚本**（CI 里跑的断言脚本 ⇒ 它们的判定行同样是「门自己的工具」⇒ 被掏空 = 那批承诺集体失效）｜⚠⚠⚨ **批 BY：范围再扩到 2 个计数器型断言脚本**（`check-deb-layout.sh` + `contract-check.sh` ⇒ 它们的**失败计数点**与**末尾判定行**同样是「判定不许被掏空」那一整类承诺的载体）｜⚠⚠⚨ **批 CA：范围再扩到 3 个**（`ci-d2.sh` + `smoke.sh` + `bootstrap-deps.py` ⇒ 它们的**失败上报出口**同样是「失败必须真的报出去」那一整类承诺的载体）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^ANCHOR_SCOPE_SUFFIXES = \(.ci-tautology-check\.py., .ci-wiring-audit\.py., .ci\.sh., .ci-wiring\.sh., .ci-platform-probe\.sh., .ci-docs-lang-probe\.sh., .ci-divider-probe\.sh., .probe-agent-tool-surface\.sh., .ci-orphan-probe\.sh., .check-deb-layout\.sh., .contract-check\.sh., .ci-d2\.sh., .smoke\.sh., .bootstrap-deps\.py., .ci-true-audit\.py., .build-deb\.sh.\)$' 1 '审计器的**锚定形态适用范围常量**的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 拆成两条）｜⚠⚠⚨ **适用范围必须同时含探针与审计器自身**（两者都是「门自己的工具」⇒ 被掏空 = 门集体失效）｜⚠⚠⚨ **批 BN：范围扩到 `ci.sh`**（CI 入口的门项同样是「门自己的工具」）｜⚠⚠⚨ **批 BR：范围再扩到 `ci-wiring.sh`**（**门脚本本体** ⇒ 它的门项就是「判定层不许被掏空」那一整类承诺的载体 ⇒ 载体被掏空 = 承诺集体失效）｜⚠⚠⚨ **批 BS：范围再扩到 5 个探针脚本**（CI 里跑的断言脚本 ⇒ 它们的判定行同样是「门自己的工具」⇒ 被掏空 = 那批承诺集体失效）｜⚠⚠⚨ **批 BY：范围再扩到 2 个计数器型断言脚本**（`check-deb-layout.sh` + `contract-check.sh` ⇒ 它们的**失败计数点**与**末尾判定行**同样是「判定不许被掏空」那一整类承诺的载体）｜⚠⚠⚨ **批 CA：范围再扩到 3 个**（`ci-d2.sh` + `smoke.sh` + `bootstrap-deps.py` ⇒ 它们的**失败上报出口**同样是「失败必须真的报出去」那一整类承诺的载体）｜⚠⚠⚨ **批 CL：范围再扩到 `build-deb.sh`**（⚠ 它是 **CI 第 11 步跑的断言脚本** ⇒ 它的判定行同样是「门自己的工具」⇒ 被掏空 = 那批承诺集体失效 ⇒ 按批 BS 纪律必须纳入）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if not f\.endswith\(ANCHOR_SCOPE_SUFFIXES\):$' 1 '审计器的**锚定形态适用范围常量**的**使用点**必须在（⚠ 散在别处 ⇒ 改一处就废掉另一处 ⇒ 范围悄悄变了没人知道）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **批 BN：范围判定只此一处**（正向扫描与豁免反向配准共用它算出的「需要豁免」集合 ⇒ 两边口径天然一致 ⇒ 不许各判各的）'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+8\) _audit_why="[^"]*" ;;$' 1 '接线门必须**按审计器的第 8 种失败态说原因**（⚠ 批 AZ 实测：不按退出码说原因 ⇒ 排障会被带偏）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **批 BR 整行锚定**：中间的无界通配（点星）⇒ 行首行尾锚死但中间什么都能吃 ⇒ 名存实亡 ⇒ 改成有界通配'
 
@@ -3106,8 +3106,8 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^    sys\.exit\(main\(\)\)$' 
 arch_need_count "$SRC/scripts/ci.sh" '^[[:space:]]*exit [1-9]$' 34 'CI 入口的**失败上报**（整行的 `exit N`）必须恰好 34 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ `ci.sh` 的失败**已经被 `if` 分支消化**（`set -e` 救不了：失败命令的退出码被 `if` 的条件消费掉了）⇒ 只剩这些显式 `exit 1` 兜底 ⇒ 摘掉一个 ⇒ 那一步的失败**不再中止 CI** ⇒ 假绿'
 arch_need_count "$SRC/scripts/ci-d2.sh" '^[[:space:]]*exit [1-9]$' 6 'D2 散值门的**失败上报**（整行的 `exit N`）必须恰好 6 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ **实测的洞**：摘掉最终判定那一行 ⇒ 脚本明明已检出「✗ 豁免路径不存在」却照样打印「✓ D2 命中 0/0」并 **exit 0** ⇒ **假绿坐实**'
 arch_need_count "$SRC/scripts/smoke.sh" '^\[ -x "\$BIN" \] \|\| \{ echo "✗ [^"]*"; exit 1; \}$' 1 '冒烟脚本「产物缺失」那一支的失败上报（**行内**形态 `|| { …; exit 1; }`）必须**整行锚定**｜⚠⚠⚨ **批 CA**｜⚠ 这一条是**行内**形态 ⇒ 不会被「整行的 `exit N`」那条门数到 ⇒ 必须单钉'
-arch_need_count "$SRC/scripts/smoke.sh" '^[[:space:]]*exit [1-9]$' 1 '冒烟脚本**整行**的失败上报（`exit N`）必须恰好 1 处（selfcheck 失败那一支）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
-arch_need_count "$SRC/scripts/smoke.sh" '^[[:space:]]*bash "\$SRC/scripts/contract-check\.sh" \|\| exit 1$' 1 '冒烟脚本「契约门失败 ⇒ 中止」那一行必须**整行锚定**（**行内**形态 `|| exit 1`）｜⚠⚠⚨ **批 CA**｜⚠ 这一条是**行内**形态 ⇒ 不会被「整行的 `exit N`」那条门数到 ⇒ 必须单钉'
+arch_need_count "$SRC/scripts/smoke.sh" '^[[:space:]]*exit [1-9]$' 3 '冒烟脚本**整行**的失败上报（`exit N`）必须恰好 3 处（selfcheck 失败 / **契约门未验证 ⇒ 原样传出**（8 缩进）/ **引擎缺席 ⇒ 未验证**（4 缩进））｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/smoke.sh" '^[[:space:]]*bash "\$SRC/scripts/contract-check\.sh" \|\| _cc_rc=\$\?$' 1 '冒烟脚本调用契约门那一行**必须接住退出码**（`|| _cc_rc=$?`）⇒ ⚠⚠⚨ 以前是 `|| exit 1` ⇒ 契约门报「未验证」(**3**) 时**被压成 1（失败）**⇒ ⚠⚠⚨ **退出码的码值语义被顶替**（批 CC 纪律）⇒ 调用方**分不出**「根本没验过」与「验了但没过」（⚠⚠⚨ 批 CL）｜⚠ **整行锚定**（形态变了 ⇒ **原地替换**、不增行，批 BM）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s*return [1-9]$' 3 '恒真探针的**失败退出码出口**（整行的 `return <非0数字>`）必须恰好 3 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ 摘掉一个 ⇒ 对应失败路径 fall through ⇒ 可能落到 `return 0` ⇒ 探针恒绿'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    sys\.exit\(main\(\)\)$' 1 '恒真探针的**入口**必须把 `main()` 的返回值交给 `sys.exit`（否则返回值被丢弃 ⇒ rc 恒 0 ⇒ 探针**永远绿**）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
 arch_need_count "$SRC/scripts/bootstrap-deps.py" '^\s*return [1-9]$' 1 '依赖引导脚本的**失败退出码出口**必须恰好 1 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ 它**不在 CI 里**（手动引导用）⇒ 但「失败出口被摘 ⇒ 静默成功」是同一类洞 ⇒ 一并收'
@@ -3600,7 +3600,7 @@ echo "✓ 批 CJ 段门项全绿（一次性盘点的数字不许被当成事实
 #
 arch_need_count "$SRC/scripts/ci.sh" '^skip=0$' 1 'CI 入口**必须有「未验证」计数器**（⚠⚠⚨ 批 CK：⚠⚠⚨ 实测的洞：ci.sh 自己就有 **6 处**「跳过/未验证」出口**只打印、不计数** ⇒ CI 继续 ⇒ 最后照样打「**✓ CI 门通过**」⇒ **未验的组被当成「通过」**⇒ 假绿）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
 arch_need_count "$SRC/scripts/ci.sh" '^    skip=\$\(\(skip\+1\)\)$' 5 'CI 入口的**未验证计数点**（4 缩进那批，**恰好 5 处**）必须逐个计数（⚠⚠⚨ 批 CK：少一处 ⇒ 那一组未验证**又不计数** ⇒ 假绿；⚠ 4 缩进 = desktop-file-validate 缺席 / appstream-util 缺席 / 没有 dpkg-deb（**D7 必经**）/ 没有 deb 产物（**D7 准验收**）/ agent 工具面门报 SKIP）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
-arch_need_count "$SRC/scripts/ci.sh" '^        skip=\$\(\(skip\+1\)\)$' 1 'CI 入口的**未验证计数点**（8 缩进那批，**恰好 1 处**）必须计数（⚠⚠⚨ 批 CK：deb 布局验收**脚本自己报 SKIP**（rc=3）那一支 ⇒ ⚠⚠⚨ 与批 CI 修过的第 10 步**完全同款** ⇒ 以前只打印「不算通过」⇒ CI 继续 ⇒ 假绿）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
+arch_need_count "$SRC/scripts/ci.sh" '^        skip=\$\(\(skip\+1\)\)$' 2 'CI 入口的**未验证计数点**（8 缩进那批，**恰好 2 处**）必须计数（⚠⚠⚨ 批 CK：① deb 布局验收**脚本自己报 SKIP**（rc=3）那一支 ⇒ ⚠⚠⚨ 与批 CI 修过的第 10 步**完全同款** ⇒ 以前只打印「不算通过」⇒ CI 继续 ⇒ 假绿；⚠⚠⚨ 批 CL：② deb 构建**脚本自己报 SKIP**（rc=3）那一支 ⇒ 同款 ⇒ 以前 build-deb.sh 那边**只打印**⇒ exit 0 ⇒ CI 照样打「✓ deb 构建通过」⇒ **说法比门宽**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
 arch_need_count "$SRC/scripts/ci.sh" '^if \[ "\$skip" -ne 0 \]; then$' 1 'CI 入口**末尾必须按「未验证」判**（⚠⚠⚨ 批 CK：有任何一组没验 ⇒ **专属退出码 3**⇒ 判红 ⇒ 不许说通过；⚠ **失败优先**：ci.sh 是 `set -e` 逐步执行 ⇒ 真失败**当场** exit 1 ⇒ 能走到这里说明没有真失败）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
 arch_need_count "$SRC/scripts/ci.sh" '^    exit 3$' 1 'CI 入口的「未验证」必须用**专属退出码 3**（⚠⚠⚨ 批 CK：与契约门、agent 工具面门**同款口径**，批 CB/CI）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
 arch_need_ml "$SRC/scripts/ci.sh" 'SKIP: desktop-file-validate 未安装（装 desktop-file-validate 包后此门生效）"[[:space:]]+skip=\$\(\(skip\+1\)\)' 'desktop-file-validate 缺席那一处**必须紧跟计数**（⚠⚠⚨ 批 CK：⚠ 少了计数 ⇒ 「desktop 合法性没验」被当成「通过」）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CK**'
@@ -3616,6 +3616,47 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 CK 段门项全绿（未验证不许被当成通过：CI 自己的 6 处跳过必须计数 + 末尾 exit 3）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 CL · 「未验证」不许被当成「通过」（**子脚本层**：打包脚本 / 冒烟脚本） ──
+#
+# ⚠⚠⚨ **起因（实测盘点 + 逐处人工判，不是推演）**：
+#   盘点判据层所有脚本的「跳过 / 未验证」出口 ⇒ 68 处带「未验证」字样的打印行
+#   ⇒ ⚠⚠⚨ 逐处判（批 CJ 纪律：危险方向靠人工判）⇒ **3 处真洞**：
+#   ① `build-deb.sh` 的第 2h 步「apt 查不到候选版本」⇒ **只打印、不计数**
+#   ② `build-deb.sh` 的第 2h 步「没有 apt-cache」⇒ **只打印、不计数**
+#   ③ `smoke.sh` 的「引擎缺席」⇒ **只打印** ⇒ 脚本 exit 0 ⇒ 冒烟说「全绿」
+#   ⇒ 全部「只打印」⇒ 脚本 **exit 0** ⇒ CI 第 11 步照样打
+#     「**✓ deb 构建通过（依赖清单自洽 + …）**」⇒ ⚠⚠⚨ **说法比门宽**（批 AA）
+#
+# ⚠⚠⚨ **另有一处码值语义被顶替（批 CC 纪律）**：
+#   `smoke.sh` 以前是 `bash contract-check.sh || exit 1`
+#   ⇒ 契约门报「未验证」(**3**) 时**被压成 1（失败）**
+#   ⇒ 调用方**分不出**「根本没验过」与「验了但没过」⇒ 本批一并收口
+#
+# ⚠⚠⚨ **为什么 build-deb.sh 不用 die**：die 调用点有门钉住**恰好 23 处**（批 BU）
+#   ⇒ 加 die 会动那条清单门 ⇒ 这里用**独立计数器** ⇒ 互不干扰。
+#
+# ⚠⚠⚨ **门项正则一律由现抽实际行生成**（批 BS 纪律：绝不手写）
+#
+arch_need_count "$SRC/scripts/build-deb.sh" '^skip=0$' 1 '打包脚本**必须有「未验证」计数器** `skip`（⚠⚠⚨ 批 CL：⚠⚠⚨ 实测的洞：build-deb.sh 第 2h 步有 **2 处**「未验证」只**打印**（apt 查不到候选版本 / 没有 apt-cache）⇒ 脚本**继续跑完** ⇒ 末尾照样打「**✓ 已生成**」⇒ **exit 0** ⇒ CI 第 11 步打印「**✓ deb 构建通过**」⇒ ⚠⚠⚨ **说法比门宽**（批 AA 教训））｜⚠ **整行锚定**｜⚠⚠⚨ **批 CL**'
+arch_need_count "$SRC/scripts/build-deb.sh" '^        skip=\$\(\(skip\+1\)\)$' 1 '打包脚本的**未验证计数点**（8 缩进那批，**恰好 1 处**）必须计数（⚠⚠⚨ 批 CL：那是「apt 查不到候选版本」那一支 ⇒ 少一处 ⇒ 那一项**不再被判红**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CL**'
+arch_need_count "$SRC/scripts/build-deb.sh" '^    skip=\$\(\(skip\+1\)\)$' 1 '打包脚本的**未验证计数点**（4 缩进那批，**恰好 1 处**）必须计数（⚠⚠⚨ 批 CL：那是「没有 apt-cache」那一支 ⇒ 少一处 ⇒ 那一项**不再被判红**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CL**'
+arch_need_count "$SRC/scripts/build-deb.sh" '^if \[ "\$skip" -ne 0 \]; then$' 1 '打包脚本**末尾必须按「未验证」判**（⚠⚠⚨ 批 CL：⚠ 退出码 **3** = 未验证（SKIP）⇒ 与契约门、agent 工具面门、CI 第 10/11/12/13 步**同款口径**，批 CB / CI / CK ⇒ 调用方能把它与「通过（0）」和「失败（其它非 0）」分开）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CL**'
+arch_need_count "$SRC/scripts/build-deb.sh" '^    exit 3$' 1 '打包脚本的「未验证」必须用**专属退出码 3**（⚠⚠⚨ 批 CL：⚠ 不用 `die` —— die 调用点有门钉住**恰好 23 处**（批 BU）⇒ 加 die 会动那条清单门 ⇒ 这里用**独立计数器** ⇒ 互不干扰）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CL**'
+arch_need_ml "$SRC/scripts/build-deb.sh" '‣ SKIP：apt 查不到候选版本（本机可能没配源 / 离线）—— 这一项\*\*未验证\*\*，不算通过"[[:space:]]+skip=\$\(\(skip\+1\)\)' '打包脚本「apt 查不到候选版本」那一处**必须紧跟计数**（⚠⚠⚨ 批 CL：⚠ 这一支是**有意不误红**的（无法区分「包真不存在」与「本机没配源/离线」，批 AE 的设计）⇒ 所以**不能**判失败 ⇒ 但也**不能**只打印 ⇒ 必须**计数** ⇒ 末尾专属码 3）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CL**'
+arch_need_ml "$SRC/scripts/build-deb.sh" '‣ SKIP：没有 apt-cache —— 这一项\*\*未验证\*\*，不算通过"[[:space:]]+skip=\$\(\(skip\+1\)\)' '打包脚本「没有 apt-cache」那一处**必须紧跟计数**（⚠⚠⚨ 批 CL：同款：不能误红 ⇒ 但必须计数 ⇒ 末尾专属码 3）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CL**'
+arch_need_ml "$SRC/scripts/build-deb.sh" 'exit 3[[:space:]]+fi[[:space:]]+echo "✓ 已生成 \$DEB_PATH' '打包脚本的「未验证 ⇒ 判红」那块**必须紧挨着**「**✓ 已生成**」**之前**（⚠⚠⚨ 批 CL：⚠ 顺序反了 ⇒ 「✓ 已生成」先打出来 ⇒ 这一项**已经被说成通过**了 ⇒ 假绿；⚠ 与批 CK 的「必须紧挨着「✓ CI 门通过」之前」**同款口径**）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CL**'
+arch_need_count "$SRC/scripts/smoke.sh" '^    exit 3$' 1 '冒烟脚本「**引擎缺席 ⇒ 未验证**」必须用**专属退出码 3**（⚠⚠⚨ 批 CL：⚠⚠⚨ 实测的洞：以前这一支**只打印** ⇒ 脚本 exit 0 ⇒ 冒烟脚本说「全绿」⇒ **未验证被当成通过** ⇒ 与契约门本体的口径**不一致**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CL**'
+arch_need_count "$SRC/scripts/smoke.sh" '^        exit 3$' 1 '冒烟脚本「**契约门未验证 ⇒ 原样传出**」必须用**专属退出码 3**（⚠⚠⚨ 批 CL：⚠⚠⚨ 以前是 `bash contract-check.sh || exit 1` ⇒ 契约门报「未验证」(**3**) 时**被压成 1（失败）** ⇒ ⚠⚠⚨ **退出码的码值语义被顶替**（批 CC 纪律）⇒ 调用方**分不出**「根本没验过」与「验了但没过」）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CL**'
+arch_need_ml "$SRC/scripts/smoke.sh" 'SKIP contract-check：moongit/deepgit 均不在（引擎未安装），本轮冒烟不算全绿——如实记录"[[:space:]]+exit 3' '冒烟脚本「引擎缺席 ⇒ 只打印」那一处**必须紧跟** `exit 3`（⚠⚠⚨ 批 CL：⚠ 少了退出码 ⇒ 脚本 exit 0 ⇒ 假绿）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CL**'
+arch_need_ml "$SRC/scripts/smoke.sh" 'bash "\$SRC/scripts/contract-check\.sh" \|\| _cc_rc=\$\?[[:space:]]+if \[ "\$_cc_rc" -eq 3 \]; then' '冒烟脚本调用契约门那一行**必须接住退出码**并**紧跟** rc=3 分诊（⚠⚠⚨ 批 CL：⚠⚠⚨ `|| exit 1` ⇒ **码值语义被顶替**（批 CC）⇒ 现在 `|| _cc_rc=$?` ⇒ 3 原样传出 ⇒ 其它非 0 ⇒ exit 1）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CL**'
+arch_need_ml "$SRC/scripts/ci.sh" '‣ SKIP deb 构建：本组\*\*未验证\*\*（脚本自己报了 SKIP）——不算通过" >&2[[:space:]]+skip=\$\(\(skip\+1\)\)' 'ci.sh「deb 构建脚本自报 SKIP」那一处**必须紧跟计数**（⚠⚠⚨ 批 CL：⚠⚠⚨ build-deb.sh 现在用**专属码 3** 报「未验证」 ⇒ CI 第 11 步**分诊** rc=3 ⇒ **计入 skip** ⇒ 末尾判红 ⇒ 与第 10 步（契约门，批 CB/CI）、第 12 步（deb 布局验收，批 CC）**同款口径**）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 CL**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 CL 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 CL 段门项全绿（未验证不许被当成通过：打包脚本 / 冒烟脚本的未验证出口必须计数 + 专属码 3）；门项合计 ${ARCH_N} 项（含前段）"
 
 
 

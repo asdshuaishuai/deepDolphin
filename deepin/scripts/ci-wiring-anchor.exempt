@@ -38,3 +38,4 @@ arch_need_count	deepin/scripts/ci-orphan-probe.sh	^[[:space:]]*echo "[ ]*✗	条
 arch_need_count	deepin/scripts/probe-agent-tool-surface.sh	^[[:space:]]*echo "[ ]*✗	条数基线门：数的是「报错文案行」⇒ 行尾是自由文本 ⇒ 整行锚定会改窄语义（等于把每条报错文案逐字写进正则）⇒ 显式豁免
 arch_need_count	deepin/scripts/check-deb-layout.sh	^[[:space:]]*(no|ok) "	清单门数的是**调用点数量**（ok/no 后面是自由说明文本）⇒ 整行锚定等于把每条说明逐字写进正则⇒ 会把「清单不许被删」改窄成「这几种文案不许被删」⇒ 显式豁免
 arch_need_count	deepin/scripts/contract-check.sh	^[[:space:]]*check	清单门数的是**调用点数量**（93 处断言的名字与表达式都是自由文本）⇒ 整行锚定等于把 93 条断言逐字写进正则⇒ 会把「清单不许被删」改窄成「这几种断言不许被删」⇒ 显式豁免
+arch_need_count	deepin/scripts/build-deb.sh	\b(die|fail) "	die/fail 调用点常写在**行中** ⇒ 没法行首锚定 ⇒ 这条门盯的是「**调用点总数**」（不是「✗ 标记数」）⇒ 强度弱于整行锚定 ⇒ 如实记为已知边界（批 BU 同款）

@@ -649,11 +649,24 @@ echo "› 11/15 deb 打包（D7 达标的必经：能出包装进 deepin，且�
 # build-deb.sh 自带**依赖清单双向校验**（清单 ↔ 二进制实际 DT_NEEDED）：
 # 漏声明（装上跑不起来）/ 多声明（包名不存在装不上）/ 包名抄错，一律构建失败。
 if command -v dpkg-deb >/dev/null 2>&1; then
-    if sh "$SRC/scripts/build-deb.sh" "$BUILD/deb" > "$BUILD/build-deb.log" 2>&1; then
+    # ⚠⚠⚨ 批 CL · **接住退出码并分诊**（0=通过 / 3=未验证(SKIP) / 其它非 0=失败）。
+    #   ⇒ build-deb.sh 的第 2h 步（依赖包在 apt 仓库里能不能装到）有两处
+    #     「未验证」：apt 查不到候选版本 / 没有 apt-cache
+    #   ⇒ 以前那边**只打印、不计数** ⇒ 脚本 exit 0 ⇒ 这里**照样打「✓ deb 构建通过」**
+    #     ⇒ ⚠⚠⚨ **说法比门宽**（批 AA 教训）⇒ 批 CL 已让 build-deb.sh 自己
+    #     **专属码 3** ⇒ 现在这里**分诊**：3 ⇒ 未验证 ⇒ **计入 skip** ⇒ 末尾判红。
+    #   ⚠ 与第 10 步（契约门，批 CB/CI）、第 12 步（deb 布局验收，批 CC）**同款口径**。
+    _deb_rc=0
+    sh "$SRC/scripts/build-deb.sh" "$BUILD/deb" > "$BUILD/build-deb.log" 2>&1 || _deb_rc=$?
+    if [ "$_deb_rc" -eq 0 ]; then
         tail -3 "$BUILD/build-deb.log"
         # ⚠ 解包后「零环境变量下无缺失库」的校验**在 build-deb.sh 里**（产物自检归打包脚本，
         #   别在这里再写一份 —— 两处定义会漂）。
         echo "✓ deb 构建通过（依赖清单自洽 + 产物零环境变量下无缺失库）"
+    elif [ "$_deb_rc" -eq 3 ]; then
+        tail -3 "$BUILD/build-deb.log" >&2
+        echo "‣ SKIP deb 构建：本组**未验证**（脚本自己报了 SKIP）——不算通过" >&2
+        skip=$((skip+1))
     else
         tail -20 "$BUILD/build-deb.log" >&2
         echo "✗ deb 构建失败" >&2
