@@ -79,8 +79,9 @@ JUDGEMENT_PREFIX = 'SelfCheck'
 #   ⇒ 裁判改不了标准（除非同时改文件系统）。
 SCOPE_BASELINE = 'ci-tautology-scope.baseline'
 
-# ⚠ 扫描范围的三个口径（**键 = 基线文件里的行序** ⇒ 少一行就红）
-SCOPE_KEYS = ('judgement', 'shell', 'python')
+# ⚠ 扫描范围的**四个**口径（**键 = 基线文件里的行序** ⇒ 少一行就红）
+#   ⇒ ⚠⚠⚨ 批 CZ：加了 `macos_shell`（mac 侧判据脚本目录）⇒ 三个 → 四个
+SCOPE_KEYS = ('judgement', 'shell', 'macos_shell', 'python')
 
 # ── 断言函数实参里的判据（批 BG 新增）────────────────────────────────────
 # ⚠ **形态（实测，不是猜）**：contract-check.sh 里
@@ -573,6 +574,55 @@ def read_scope_baseline(scripts):
     return out
 
 
+def scan_shell_file(path, label):
+    """扫一个 .sh 脚本 ⇒ 返回 (if 条件数, 问题数)。
+
+    ⚠⚠⚨ **批 CZ：两个平台的判据脚本目录必须走这**一个**函数**
+      ⇒ 判定逻辑只许有一份（批 BF/BG 纪律）⇒ 两边口径必然漂
+      ⇒ mac 侧复用它 ⇒ 「四个实扫点」那条门（恰好 4 处）**不用改**。
+    ⚠ `label` 是**显示用的路径**（`scripts/ci.sh` / `macos/scripts/xxx.sh`）
+      ⇒ 诊断要能指名道姓说是**哪个平台**的文件。
+    """
+    n_if = 0
+    bad = 0
+    for line, cond in shell_if_conds(path):
+        n_if += 1
+        if SH_CONST.match(cond):
+            print('%s%s:%d if 的条件是恒真/恒假：%s'
+                  % (ERROR, label, line, cond[:80]), file=sys.stderr)
+            bad += 1
+            continue
+        why = shortcut_reason(strip_literals(cond))
+        if why:
+            print('%s%s:%d 条件的%s：%s'
+                  % (ERROR, label, line, why, cond[:100]), file=sys.stderr)
+            bad += 1
+    # ⚠⚠⚨ **heredoc 里的内嵌脚本**（批 BJ 新增）：
+    #   里面的 `if` 会被误当 shell 条件（⇒ 误判），里面的**真判据**又扫不到
+    #   （⇒ 漏判）⇒ 必须**单独**拿出来，用两套规则各扫一遍
+    #   （python 收尾是 `:`、shell 收尾是 `then` ⇒ 天然不冲突）。
+    lines = open(path, encoding='utf-8').read().split('\n')
+    for s0, e0 in heredoc_spans(lines):
+        body = '\n'.join(lines[s0:e0 + 1])
+        for line, cond in python_if_conds(body, first_line=s0 + 1):
+            n_if += 1
+            why = shortcut_reason(strip_literals(cond))
+            if why:
+                print('%s%s:%d heredoc 内 python 条件的%s：%s'
+                      % (ERROR, label, line, why, cond[:100]), file=sys.stderr)
+                bad += 1
+            else:
+                # ⚠ python 的恒真/恒假字面量（`if True:` / `if False:`）
+                #   ⇒ **与 .py 顶层走同一条判定**（同一个 PY_CONST_IF）
+                ln = 'if ' + cond + ':'
+                m = PY_CONST_IF.match(ln)
+                if m:
+                    print('%s%s:%d heredoc 内 python 条件是恒真/恒假：%s'
+                          % (ERROR, label, line, cond[:80]), file=sys.stderr)
+                    bad += 1
+    return n_if, bad
+
+
 def main():
     if len(sys.argv) < 2:
         print('用法：ci-tautology-check.py <源码根目录>', file=sys.stderr)
@@ -592,11 +642,18 @@ def main():
     # ⚠ ① 判定层 C++：check(…) 的条件不许恒真
     appdir = os.path.join(root, 'src', 'app')
     scripts = os.path.join(root, 'scripts')
+    # ⚠⚠⚨ 批 CZ · **mac 侧判据脚本目录**（判据脚本**散落在两个平台**
+    #   ⇒ 恒真探针的范围不许只盖一边 ⇒ mac 侧那 12 个脚本上的
+    #   「判定不许被掏空成恒真」本来**没有牙**）
+    #   ⇒ 仓库根 = root 的上一级（root = <repo>/deepin）
+    #   ⇒ ⚠ 必须用**绝对路径**算：root 可能是相对路径（`.`）
+    #     ⇒ `dirname('.')` 是**空串** ⇒ 目录会找错 ⇒ 诊断失真
+    mac_scripts = os.path.join(os.path.dirname(os.path.abspath(root)), 'macos', 'scripts')
     # ⚠⚠⚨ **扫描目录不存在 ⇒ 明确报错**（不许崩成 traceback）
     #   ⇒ 崩掉的退出码也是 1 ⇒ CI 照样红，但**看不出是哪一步坏了**
     #   ⇒ 排障会被带偏（批 AZ 纪律：不按原因说 ⇒ 排障会被带偏）
     #   ⚠ **用变量、不另写字面量** ⇒ 两套口径必然漂（改一处就不同步 ⇒ 新造一个洞）
-    for d in (appdir, scripts):
+    for d in (appdir, scripts, mac_scripts):
         if not os.path.isdir(d):
             print('%s扫描目录不存在：%s' % (ERROR, d), file=sys.stderr)
             bad += 1
@@ -617,47 +674,25 @@ def main():
             bad += 1
 
     # ② shell 断言脚本：if 的条件不许恒真/恒假，**也不许有恒真捷径**
-    n_sh_files = 0
-    for fn in sorted(os.listdir(scripts)):
-        if not fn.endswith('.sh'):
-            continue
-        n_sh_files += 1
-        path = os.path.join(scripts, fn)
-        for line, cond in shell_if_conds(path):
-            n_if += 1
-            if SH_CONST.match(cond):
-                print('%sscripts/%s:%d if 的条件是恒真/恒假：%s'
-                      % (ERROR, fn, line, cond[:80]), file=sys.stderr)
-                bad += 1
-                continue
-            why = shortcut_reason(strip_literals(cond))
-            if why:
-                print('%sscripts/%s:%d 条件的%s：%s'
-                      % (ERROR, fn, line, why, cond[:100]), file=sys.stderr)
-                bad += 1
-        # ⚠⚠⚨ **heredoc 里的内嵌脚本**（批 BJ 新增）：
-        #   里面的 `if` 会被误当 shell 条件（⇒ 误判），里面的**真判据**又扫不到
-        #   （⇒ 漏判）⇒ 必须**单独**拿出来，用两套规则各扫一遍
-        #   （python 收尾是 `:`、shell 收尾是 `then` ⇒ 天然不冲突）。
-        lines = open(path, encoding='utf-8').read().split('\n')
-        for s0, e0 in heredoc_spans(lines):
-            body = '\n'.join(lines[s0:e0 + 1])
-            for line, cond in python_if_conds(body, first_line=s0 + 1):
-                n_if += 1
-                why = shortcut_reason(strip_literals(cond))
-                if why:
-                    print('%sscripts/%s:%d heredoc 内 python 条件的%s：%s'
-                          % (ERROR, fn, line, why, cond[:100]), file=sys.stderr)
-                    bad += 1
-                else:
-                    # ⚠ python 的恒真/恒假字面量（`if True:` / `if False:`）
-                    #   ⇒ **与 .py 顶层走同一条判定**（同一个 PY_CONST_IF）
-                    ln = 'if ' + cond + ':'
-                    m = PY_CONST_IF.match(ln)
-                    if m:
-                        print('%sscripts/%s:%d heredoc 内 python 条件是恒真/恒假：%s'
-                              % (ERROR, fn, line, cond[:80]), file=sys.stderr)
-                        bad += 1
+    #    ⚠⚠⚨ 批 CZ：范围 = **两个平台**的判据脚本目录
+    #      ⇒ 两个目录**走同一个循环、同一个判定函数** ⇒ 口径零漂移
+    #      ⇒ ⚠⚠⚨ 判据逻辑只许有一份（批 BF/BG 纪律）⇒ 不许各写一遍
+    sh_scope = (('shell', scripts, 'scripts'), ('macos_shell', mac_scripts, 'macos/scripts'))
+    n_sh_files = {'shell': 0, 'macos_shell': 0}
+    for _key, _d, _rel in sh_scope:
+        # ⚠⚠⚨ 批 CZ：**递归**收 .sh（mac 侧的 `render-harness/run.sh` 在**子目录**里
+        #   ⇒ 只扫顶层 ⇒ 那个脚本上的判定**永远不被查** ⇒ 又一个「没有牙」的角落）
+        #   ⇒ ⚠ deepin 侧**没有**子目录 .sh ⇒ 计数不变（18）⇒ 两平台口径对称
+        for _dp, _dn, _fns in os.walk(_d):
+            _dn[:] = sorted(d for d in _dn if d != '__pycache__')
+            for fn in sorted(_fns):
+                if not fn.endswith('.sh'):
+                    continue
+                n_sh_files[_key] += 1
+                path = os.path.join(_dp, fn)
+                _ni, _nb = scan_shell_file(path, _rel + '/' + os.path.relpath(path, _d))
+                n_if += _ni
+                bad += _nb
 
     # ③ python 工具脚本：if 的条件不许恒真/恒假（`if True:` 这类）
     #    ⚠ python 的 if 用**冒号**收尾 ⇒ 单独一条正则口径（不与 shell 混用）。
@@ -724,8 +759,8 @@ def main():
               % (ERROR, SCOPE_BASELINE), file=sys.stderr)
         bad += 1
     else:
-        got_scope = {'judgement': n_judge_files, 'shell': n_sh_files,
-                     'python': n_py_files}
+        got_scope = {'judgement': n_judge_files, 'shell': n_sh_files['shell'],
+                     'macos_shell': n_sh_files['macos_shell'], 'python': n_py_files}
         for key in SCOPE_KEYS:
             want = scope_expect[key]
             if got_scope[key] != want:
@@ -741,8 +776,10 @@ def main():
     print('✓ 判据非恒真：判定层 %d 条判据的条件都含被测标识符；'
           'shell 与 python 脚本 %d 个 if 条件都非恒真；'
           '断言函数实参里 %d 条判据都非恒真；'
-          '扫描范围 判定层 %d / shell %d / python %d 个文件（与基线一致）'
-          % (n_check, n_if, n_assert, n_judge_files, n_sh_files, n_py_files))
+          '扫描范围 判定层 %d / shell %d（deepin %d + macos %d）/ python %d 个文件（与基线一致）'
+          % (n_check, n_if, n_assert, n_judge_files,
+             n_sh_files['shell'] + n_sh_files['macos_shell'],
+             n_sh_files['shell'], n_sh_files['macos_shell'], n_py_files))
     return 0
 
 
