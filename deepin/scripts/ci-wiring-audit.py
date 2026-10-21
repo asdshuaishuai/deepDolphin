@@ -791,7 +791,7 @@ def check_count_gates(count_items):
 #   ⇒ 名字里的 `GATE_TOOL` 已经不副实（范围不再只是「门自己的工具」）
 #   ⇒ ⚠ **改名必须连带改掉所有引用点**（批 BM 就是漏了一处 ⇒ 报告模式崩
 #   ⇒ 见 `check_undefined_names` 的说明）⇒ 所以本批同时加了那道静态检查。
-ANCHOR_SCOPE_SUFFIXES = ('ci-tautology-check.py', 'ci-wiring-audit.py', 'ci.sh', 'ci-wiring.sh', 'ci-platform-probe.sh', 'ci-docs-lang-probe.sh', 'ci-divider-probe.sh', 'probe-agent-tool-surface.sh', 'ci-orphan-probe.sh', 'check-deb-layout.sh', 'contract-check.sh', 'ci-d2.sh', 'smoke.sh', 'bootstrap-deps.py', 'ci-true-audit.py', 'build-deb.sh')
+ANCHOR_SCOPE_SUFFIXES = ('ci-tautology-check.py', 'ci-wiring-audit.py', 'ci.sh', 'ci-wiring.sh', 'ci-platform-probe.sh', 'ci-docs-lang-probe.sh', 'ci-divider-probe.sh', 'probe-agent-tool-surface.sh', 'ci-orphan-probe.sh', 'check-deb-layout.sh', 'contract-check.sh', 'ci-d2.sh', 'smoke.sh', 'bootstrap-deps.py', 'ci-true-audit.py', 'build-deb.sh', 'ci-unverified-audit.py')
 
 
 def has_unbounded_wildcard(mid):

@@ -716,6 +716,25 @@ arch_forbid_text_dup() { # arch_forbid_text_dup <判定层文件> <相对SRC的�
         echo "  ✓ $label"
     fi
 }
+# ⚠⚠⚨ 批 CM · **接线门必须真的跑一次未验证出口盘点**（批 BD 纪律：
+#   「多了一份没人跑的断言」与「少了一份断言」是同一个洞的两头 ⇒ 从**集合**这一层堵）
+#   ⇒ 盘点脚本**在仓内常驻**（`ci-unverified-audit.py` + 逐组带理由的登记册）
+#     ⇒ 数字**可复核**（批 CL 实测坐实的起因：那个数字原先只存在于 /tmp 的
+#       一次性脚本里 ⇒ 仓内没有任何东西能重算它）；
+#   ⇒ ⚠⚠⚨ **位置必须在所有门项段之前** ⇒ 否则前面某段红 ⇒ 提前 exit ⇒
+#     **盘点根本没人跑**（那就还是「多了一份没人跑的断言」）。
+if ! python3 "$SRC/scripts/ci-unverified-audit.py"; then
+    echo "✗ 未验证出口盘点失败（盘点脚本跑不起来 ⇒ 没有 python3；或盘点与登记册对不上 ⇒ 看上面带 ✗ 的行）" >&2
+    ARCH_FAIL=1
+    # ⚠⚠⚨ 批 CM：**紧跟 exit 1**（⚠ 诊断不许失真，批 CE 纪律）：
+    #   `ARCH_FAIL=1` 是「门型判定失败 → 整道门红」的**唯一通路**（批 BO）⇒ 照例打上；
+    #   但**只打不退出** ⇒ 会一路跑到**后面**那个通用守卫 ⇒ 那句文案是
+    #   「取数/判定/渲染/接线任一段被摘掉」⇒ ⚠⚠⚨ **指错方向**（本批的失败既不是
+    #   「取数/判定/渲染/接线」也不是「被摘掉」）⇒ ⇒ 这里**立刻带准确诊断退出**。
+    # ⚠ 摘掉这行 exit 1 ⇒ 盘点失败会落到末尾那句 ⇒ **仍然红**（不是假绿）⇒ 只丢诊断精度。
+    exit 1
+fi
+
 arch_need_any_count 'QStringLiteral\("graph"\).*QStringLiteral\("arch"\)' 1 'AppModel 调引擎 graph arch 取场景' 'src/app/AppModel*.cpp'
 arch_need_any_count 'QStringLiteral\("scene"\)' 1 '场景按 scene 契约格式取（--format scene）' 'src/app/AppModel*.cpp'
 arch_need "$SRC/src/app/AppModel.h" '\bloadScene\b' 'AppModel 暴露 loadScene'
@@ -2590,7 +2609,7 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+stbad = anchoring_selftes
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_anchor_scope\(cnt_items, exempt\):$' 1 '锚定形态的**实扫**必须在（探针是门自己的工具 ⇒ 它的门项必须整行锚定）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+anchbad, anchor_need = check_anchor_scope\(cnt, anchor_exempt\)$' 1 '锚定形态的**实扫必须被调用**（定义了不调 ⇒ 没人发现探针门项被改回盯串）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **第二返回值 = 「需要豁免」的集合**（豁免表的唯一合法来源）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+return 8$' 2 '审计器的**第 8 种失败态**必须在（⚠ **两处**：锚定形态**自检**不过 + 实扫出违规 ⇒ 两种失败要分开 ⇒ 不然排障会被带偏）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^ANCHOR_SCOPE_SUFFIXES = \(.ci-tautology-check\.py., .ci-wiring-audit\.py., .ci\.sh., .ci-wiring\.sh., .ci-platform-probe\.sh., .ci-docs-lang-probe\.sh., .ci-divider-probe\.sh., .probe-agent-tool-surface\.sh., .ci-orphan-probe\.sh., .check-deb-layout\.sh., .contract-check\.sh., .ci-d2\.sh., .smoke\.sh., .bootstrap-deps\.py., .ci-true-audit\.py., .build-deb\.sh.\)$' 1 '审计器的**锚定形态适用范围常量**的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 拆成两条）｜⚠⚠⚨ **适用范围必须同时含探针与审计器自身**（两者都是「门自己的工具」⇒ 被掏空 = 门集体失效）｜⚠⚠⚨ **批 BN：范围扩到 `ci.sh`**（CI 入口的门项同样是「门自己的工具」）｜⚠⚠⚨ **批 BR：范围再扩到 `ci-wiring.sh`**（**门脚本本体** ⇒ 它的门项就是「判定层不许被掏空」那一整类承诺的载体 ⇒ 载体被掏空 = 承诺集体失效）｜⚠⚠⚨ **批 BS：范围再扩到 5 个探针脚本**（CI 里跑的断言脚本 ⇒ 它们的判定行同样是「门自己的工具」⇒ 被掏空 = 那批承诺集体失效）｜⚠⚠⚨ **批 BY：范围再扩到 2 个计数器型断言脚本**（`check-deb-layout.sh` + `contract-check.sh` ⇒ 它们的**失败计数点**与**末尾判定行**同样是「判定不许被掏空」那一整类承诺的载体）｜⚠⚠⚨ **批 CA：范围再扩到 3 个**（`ci-d2.sh` + `smoke.sh` + `bootstrap-deps.py` ⇒ 它们的**失败上报出口**同样是「失败必须真的报出去」那一整类承诺的载体）｜⚠⚠⚨ **批 CL：范围再扩到 `build-deb.sh`**（⚠ 它是 **CI 第 11 步跑的断言脚本** ⇒ 它的判定行同样是「门自己的工具」⇒ 被掏空 = 那批承诺集体失效 ⇒ 按批 BS 纪律必须纳入）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^ANCHOR_SCOPE_SUFFIXES = \(.ci-tautology-check\.py., .ci-wiring-audit\.py., .ci\.sh., .ci-wiring\.sh., .ci-platform-probe\.sh., .ci-docs-lang-probe\.sh., .ci-divider-probe\.sh., .probe-agent-tool-surface\.sh., .ci-orphan-probe\.sh., .check-deb-layout\.sh., .contract-check\.sh., .ci-d2\.sh., .smoke\.sh., .bootstrap-deps\.py., .ci-true-audit\.py., .build-deb\.sh., .ci-unverified-audit\.py.\)$' 1 '审计器的**锚定形态适用范围常量**的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 拆成两条）｜⚠⚠⚨ **适用范围必须同时含探针与审计器自身**（两者都是「门自己的工具」⇒ 被掏空 = 门集体失效）｜⚠⚠⚨ **批 BN：范围扩到 `ci.sh`**（CI 入口的门项同样是「门自己的工具」）｜⚠⚠⚨ **批 BR：范围再扩到 `ci-wiring.sh`**（**门脚本本体** ⇒ 它的门项就是「判定层不许被掏空」那一整类承诺的载体 ⇒ 载体被掏空 = 承诺集体失效）｜⚠⚠⚨ **批 BS：范围再扩到 5 个探针脚本**（CI 里跑的断言脚本 ⇒ 它们的判定行同样是「门自己的工具」⇒ 被掏空 = 那批承诺集体失效）｜⚠⚠⚨ **批 BY：范围再扩到 2 个计数器型断言脚本**（`check-deb-layout.sh` + `contract-check.sh` ⇒ 它们的**失败计数点**与**末尾判定行**同样是「判定不许被掏空」那一整类承诺的载体）｜⚠⚠⚨ **批 CA：范围再扩到 3 个**（`ci-d2.sh` + `smoke.sh` + `bootstrap-deps.py` ⇒ 它们的**失败上报出口**同样是「失败必须真的报出去」那一整类承诺的载体）｜⚠⚠⚨ **批 CL：范围再扩到 `build-deb.sh`**（⚠ 它是 **CI 第 11 步跑的断言脚本** ⇒ 它的判定行同样是「门自己的工具」⇒ 被掏空 = 那批承诺集体失效 ⇒ 按批 BS 纪律必须纳入）｜⚠⚠⚨ **批 CM：范围再扩到 `ci-unverified-audit.py`**（⚠ 它是 **CI 里跑的盘点脚本** ⇒ 它的判定行同样是「门自己的工具」⇒ 被掏空 = 那批承诺集体失效 ⇒ 按批 BS 纪律必须纳入）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if not f\.endswith\(ANCHOR_SCOPE_SUFFIXES\):$' 1 '审计器的**锚定形态适用范围常量**的**使用点**必须在（⚠ 散在别处 ⇒ 改一处就废掉另一处 ⇒ 范围悄悄变了没人知道）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **批 BN：范围判定只此一处**（正向扫描与豁免反向配准共用它算出的「需要豁免」集合 ⇒ 两边口径天然一致 ⇒ 不许各判各的）'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+8\) _audit_why="[^"]*" ;;$' 1 '接线门必须**按审计器的第 8 种失败态说原因**（⚠ 批 AZ 实测：不按退出码说原因 ⇒ 排障会被带偏）｜⚠⚠⚨ **整行锚定**｜⚠⚠⚨ **批 BR 整行锚定**：中间的无界通配（点星）⇒ 行首行尾锚死但中间什么都能吃 ⇒ 名存实亡 ⇒ 改成有界通配'
 
@@ -2646,7 +2665,7 @@ arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+9\) _audit_why="[^"]*" ;;$' 1 '
 #   ⇒ 门项行自己不会被数进去 ⇒ 期望值里不混着「自己」。
 
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^arch_\w*\(\) \{ # [^$]*$' 15 '`arch_` **门型函数的注册表**（恰好 15 个）—— 新增门型 ⇒ 必须改这条基线 ⇒ 改的时候就会看到「**新门型也得有失败上报**」 ⇒ 集合层把新成员挡住（⚠ **行首锚定**：门项行自己不会被数进去 ⇒ 不自引）｜⚠⚠⚨ **批 BZ：新增了门型 `arch_need_count_pair`（配对门）⇒ 14 → 15**｜⚠⚠⚨ **批 BR 整行锚定**：行尾补 `$` ⇒ 只锚行首不够 ⇒ 判定被掏空但串还在 ⇒ 门假绿'
-arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_FAIL=1( ;;)?$' 38 '**全文失败上报的总数**（恰好 38 处）—— ⚠⚠⚨ 它是「门型判定失败 → 整道门红」的**唯一通路** ⇒ 改成别值 ⇒ **那个门型的所有失败都静默** ⇒ 而审计器**自己重算命中数** ⇒ **也抓不到** ⇒ 这条门把「静默失效」变成「必红」（⚠ **行首锚定** ⇒ 门项行不自引）｜⚠⚠⚨ **批 BZ：配对门带 2 处 `ARCH_FAIL=1` ⇒ 35 → 37**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_FAIL=1( ;;)?$' 39 '**全文失败上报的总数**（恰好 39 处）—— ⚠⚠⚨ 它是「门型判定失败 → 整道门红」的**唯一通路** ⇒ 改成别值 ⇒ **那个门型的所有失败都静默** ⇒ 而审计器**自己重算命中数** ⇒ **也抓不到** ⇒ 这条门把「静默失效」变成「必红」（⚠ **行首锚定** ⇒ 门项行不自引）｜⚠⚠⚨ **批 BZ：配对门带 2 处 `ARCH_FAIL=1` ⇒ 35 → 37**｜⚠⚠⚨ **批 CM：加了一处「跑盘点」**（接线门必须真的跑一次未验证出口盘点 ⇒ 盘点与登记册对不上 ⇒ `ARCH_FAIL=1`）⇒ 失败上报处数 **38 → 39**（**原地替换**，批 BM 纪律）'
 arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^probe_scan_report\(\)' '^\s+ARCH_FAIL=1' 3 '**probe_scan_report** 的失败上报（函数体内恰好 3 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
 arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^probe_scan_report_many\(\)' '^\s+ARCH_FAIL=1' 2 '**probe_scan_report_many** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
 arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_need\(\)' '^\s+ARCH_FAIL=1' 2 '**arch_need** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
@@ -3657,6 +3676,60 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 CL 段门项全绿（未验证不许被当成通过：打包脚本 / 冒烟脚本的未验证出口必须计数 + 专属码 3）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 CM · 「未验证出口」的盘点搬进仓内常驻脚本 + 逐组带理由的登记册 ──
+#
+# ⚠⚠⚨ **起因（批 CL 实测坐实，不是推演）**：
+#   批 CK / 批 CL 的结论都引用「判据层有 **N 处**『未验证 / 跳过』提示」
+#   ⇒ 那个数字来自**一次性盘点脚本**（放在 /tmp 里）
+#   ⇒ ⚠⚠⚨ **仓内没有任何东西能重算出它** ⇒ 数字不可复核；
+#   ⇒ 且实测：批 CL 的**修复本身**又新增了带「未验证」字样的提示消息
+#   ⇒ 「**修一次，数字就涨**」⇒ 「N 处未验证出口」这个说法**本身就不可靠**。
+#
+# ⚠⚠⚨ **口径（机器可判 · 写死在盘点脚本里 · 门项整行锚定那些定义行）**：
+#   · 站点 = **打印行**（echo/printf/print）且含未验证关键词，且不在排除表里；
+#   · 排除表**四类**（每类都有实测依据）：成功消息（✓）/ 步骤标题（›）/
+#     辅助提示（引号内首个非空白是 ⇒）/ 成功汇总行（含 `passed,`）；
+#   · 分类两类：`失败上报`（含 ✗ ⇒ 已判红）/ `跳过提示`（其余 ⇒ 只打印）。
+#
+# ⚠⚠⚨ **登记册按 (文件, 分类) 聚合计数，不按行登记**（刻意的取舍）：
+#   · 按行登记 ⇒ 身份含行号或文案 ⇒ **改一句文案就漂** ⇒ **假红**
+#     ⇒ 批 BS 纪律：**假红比假绿更坏**；
+#   · 记**处数** ⇒ 改文案不漂、中间插入不漂，**只有数量变了才红**
+#     ⇒ 而数量变了**正是**要人看一眼的时候；
+#   · ⚠⚠⚨ **代价（如实记）**：**组级理由** ⇒ 「这一组里某一处没判红」
+#     **机器看不出来** ⇒ ⚠ 这是本批**最弱的一环**（批 CJ 同款纪律）。
+#
+# ⚠⚠⚨ **口径数的是「提示行」，不是「逻辑出口数」**
+#   ⇒ 一处逻辑出口可能占 1~2 行 ⇒ 处数**大于**出口数 ⇒ 刻意为之。
+#
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_EXPECTED_ROWS = 15$' 1 '盘点脚本**必须有「登记册条数基线」常量**（⚠ 批 BC：清单不许被删 ⇒ **恰好**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^BASELINE = os\.path\.join\(SCRIPTS, "ci-unverified-audit\.baseline"\)$' 1 '盘点脚本的**登记册路径常量**必须在（⚠ 路径写错 ⇒ 读不到登记册 ⇒ 盘点无处对照 ⇒ **未验证不许被当成通过**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_KEYWORDS = r"SKIP\|未验证\|不算通过\|跳过\|无法验证\|not verified"$' 1 '盘点脚本的**未验证关键词定义行**必须在（⚠⚠⚨ 批 CM：⚠ 这是**口径** ⇒ 改宽了 ⇒ 把普通提示也算成「未验证出口」⇒ 登记册全线失准 ⇒ 改窄了 ⇒ 新洞看不见 ⇒ **口径必须被门钉住**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_EXCLUDE_OK = "✓"$' 1 '盘点脚本的**排除表·成功消息**那一行必须在（⚠⚠⚨ 批 CM：⚠ 实测的误报 —— 「✓ 批 CL 段门项全绿（未验证不许被当成通过…）」是**成功汇总** ⇒ 不排除 ⇒ **修一次数字就涨** ⇒ 数字不可信）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_EXCLUDE_TITLE = "›"$' 1 '盘点脚本的**排除表·步骤标题**那一行必须在（⚠ 步骤打点「› N/15 …」不是出口）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_EXCLUDE_HINT = "⇒"$' 1 '盘点脚本的**排除表·辅助提示**那一行必须在（⚠ 紧跟在失败上报后面的「⇒ …」说明行本身**不构成**出口）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_EXCLUDE_SUMMARY = "passed,"$' 1 '盘点脚本的**排除表·成功汇总行**那一行必须在（⚠ 「──── N passed, N failed, N unverified ────」是**成功汇总** ⇒ 不是出口）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_PRINT_RE = r"\^\\s\*\(echo\|printf\|print\)\\b"$' 1 '盘点脚本的**打印行判定正则**必须在（⚠⚠⚨ 批 CM：⚠ 必须同时认 shell 的 `echo`/`printf` **与** python 的 `print` ⇒ 否则 python 侧判据脚本的「未验证」提示**完全不在盘点范围内** ⇒ **盲区**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_HINT_RE = r"\^\\s\*\(\?:echo\|printf\)\\s\+\\"\?\\s\*⇒"$' 1 '盘点脚本的**辅助提示判定正则**必须在（⚠⚠⚨ 批 CM 实测踩过：⚠ 必须按**「引号内首个非空白字符」**判 ⇒ 按「整行以 ⇒ 开头」判 ⇒ 实际行是 `echo "  ⇒ …"` ⇒ 开头是 `echo` ⇒ **排除规则静默失效** ⇒ 多算了 3 行）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^        if len\(parts\) != 4:$' 1 '登记册**每行必须恰好 4 段**（文件|分类|处数|理由）⇒ 段数不对 ⇒ 读不出来 ⇒ 登记册永远对不上 ⇒ **假红**｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^        if not n\.strip\(\)\.isdigit\(\) or int\(n\) <= 0:$' 1 '登记册的**处数必须是正整数**（0 处 ⇒ 登记腐化 ⇒ 该删那一行）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^        if not why\.strip\(\):$' 1 '登记册**每行必须写清理由**（⚠⚠⚨ 机器只校验「非空」⇒ 「理由写得对不对」**机器判不了** ⇒ **危险方向靠人工**（批 CJ 同款纪律））｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^    if len\(rows\) != UNVERIFIED_EXPECTED_ROWS:$' 1 '登记册**条数必须恰好等于基线常量**（⚠ 批 BC：清单不许被删）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^    if missing:$' 1 '盘点必须判「**实测有、登记册没有**」（新增未登记 ⇒ **红** ⇒ 必须显式登记 + 写理由）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^    if dead:$' 1 '盘点必须判「**登记册有、实测没有**」（登记册腐化 ⇒ **红** ⇒ 修好后请删那一行）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^    if drifted:$' 1 '盘点必须判「**处数对不上**」（同一 (文件, 分类) 的处数变了 ⇒ **红** ⇒ 新增了一处「未验证」提示 ⇒ 要人看一眼）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^    HELPER\.selftest_strip_parity\(\[os\.path\.join\(SCRIPTS, f\) for f in files\]\)$' 1 '盘点脚本**必须跑抽取自检**（批 CF/CH 教训：「复用实现的方式本身要有自检」⇒ 剥注释口径漂移当场红）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^        return 1$' 1 '盘点脚本的**失败上报出口**（`return 1`）必须恰好 1 处（批 CA 口径：失败必须真的报出去 ⇒ 少一处 ⇒ 这个脚本的失败**静默**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^    sys\.exit\(main\(\)\)$' 1 '盘点脚本的**入口**必须把 `main()` 的返回值交给 `sys.exit`（否则返回值被丢弃 ⇒ rc 恒 0 ⇒ 盘点**永远绿**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^if ! python3 "\$SRC/scripts/ci-unverified-audit\.py"; then$' 1 '接线门**必须真的跑一次盘点**（⚠ 批 BD 纪律：「多了一份没人跑的断言」与「少了一份断言」是同一个洞的两头 ⇒ 从**集合**这一层堵）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_forbid "$SRC/scripts/ci-unverified-audit.py" '^[[:space:]]*def strip_comments' '盘点脚本**不许自己实现剥注释**（⚠⚠⚨ 批 CF 纪律：口径单一真相源 ⇒ 必须**复用**判据层自己的实现（这里复用 `ci-true-audit.py` → `ci-wiring-audit.py`）⇒ 自己写一份 ⇒ 两边口径可能不同 ⇒ 盘点结果不可信）｜⚠⚠⚨ **批 CM**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 CM 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 CM 段门项全绿（未验证出口的盘点搬进仓内常驻脚本 + 逐组带理由的登记册）；门项合计 ${ARCH_N} 项（含前段）"
 
 
 
