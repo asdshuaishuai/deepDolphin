@@ -58,7 +58,7 @@ SCRIPTS = HERE
 BASELINE = os.path.join(SCRIPTS, "ci-unverified-audit.baseline")
 
 # ⚠⚠⚨ 登记册**条数基线**（批 BC 纪律：清单不许被删）⇒ **恰好**（批 BB 口径）
-UNVERIFIED_EXPECTED_ROWS = 15
+UNVERIFIED_EXPECTED_ROWS = 21
 
 # ══════════════════════════════════════════════════════════════
 # 口径定义（⚠⚠⚨ 门项会**整行锚定**这几行 ⇒ 口径不许被改弱）
@@ -86,6 +86,16 @@ UNVERIFIED_EXCLUDE_SUMMARY = "passed,"
 #   实际行是 `echo "  ⇒ 逐条看上面带「SKIP」的行…"` ⇒ stripped 后开头是 `echo`
 #   ⇒ 「以 ⇒ 开头」永远不成立 ⇒ **排除规则静默失效**（多算了 3 行）。
 UNVERIFIED_HINT_RE = r"^\s*(?:echo|printf)\s+\"?\s*⇒"
+
+# ⚠⚠⚨ 批 CX · **未验证的逻辑出口**也要进盘点（口径不只数「提示行」）
+#   ⇒ 原来只数「带未验证关键词的**打印行**」⇒ 一处 `exit 3` 若**没带提示**
+#     ⇒ 登记册**看不见它** ⇒ 「未验证出口必须明示」这条纪律**没有牙**
+#     ⇒ ⇒ 实测：在判据层里加一处**没提示**的 `exit 3` ⇒ 盘点照样绿 ⇒ **假绿**
+#   ⇒ 现在：**逻辑出口**（专属码 3）也算一个站点 ⇒ 登记册逐文件登记它的处数
+#     ⇒ 新增一处（**带不带提示都一样**）⇒ 处数对不上 ⇒ **必红**
+#   ⇒ ⚠ 排除表**不适用**于逻辑出口（它不是「提示行」）⇒ 命中即计入。
+#   ⇒ ⚠ 口径是 shell 的 `exit 3`（未验证的**专属码**，批 CC/CL 立的）。
+UNVERIFIED_EXIT_RE = re.compile(r"^\s*exit\s+3(\s|$)")
 
 # ══════════════════════════════════════════════════════════════
 # 复用批 CJ 的常驻盘点脚本（剥注释口径 + 抽取自检）⇒ 不复刻
@@ -140,6 +150,12 @@ def scan_file(path):
     text = AUDIT.strip_comments(path)
     sites, excluded = [], []
     for i, ln in enumerate(text.split('\n'), 1):
+        # ⚠⚠⚨ 批 CX · **未验证的逻辑出口**（专属码 3）也算一个站点
+        #   ⇒ 它**不是**打印行 ⇒ 排除表不适用 ⇒ 命中即计入
+        #   ⇒ ⚠ 这一行**在**打印行判定**之前** ⇒ 一行不会既算出口又算提示
+        if UNVERIFIED_EXIT_RE.match(ln):
+            sites.append(('未验证逻辑出口', ln.strip()))
+            continue
         if not PRINT_RE.match(ln):
             continue
         if not KW_RE.search(ln):
@@ -273,8 +289,10 @@ def main():
         print('✗ 未验证出口盘点与登记册对不上：\n  ' + '\n  '.join(bad),
               file=sys.stderr)
         return 1
-    print('✓ 未验证出口盘点与登记册逐条相等：%d 组 / %d 处（登记册 %d 行）'
-          % (len(got), len(detail), len(rows)))
+    n_exit = sum(1 for _fn, cat, _s in detail if cat == '未验证逻辑出口')
+    print('✓ 未验证出口盘点与登记册逐条相等：%d 组 / %d 处（登记册 %d 行；'
+          '其中 %d 处是**未验证的逻辑出口**（专属码 3））'
+          % (len(got), len(detail), len(rows), n_exit))
     return 0
 
 
