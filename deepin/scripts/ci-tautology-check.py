@@ -22,10 +22,15 @@
   ③ 另禁「捷径」写法：`|| true` / `&& false` / `or true` / `and false`
      （条件里有个恒真项 ⇒ 整条判据被短路成恒真）。
   ④ shell 侧：`if` 的条件（跨行续行也拼起来）不许是 `true` / `false` / `:`。
+     ⚠⚠⚨ **批 DA**：`while` / `until` 的条件**不在这一档**
+       （`while :; do` 是 **shell 的惯用无限循环** ⇒ 把它判成「掏空成恒真」
+       = **假红** ⇒ 假红逼人把承诺改弱 ⇒ 比假绿更坏 —— 批 BS 纪律）。
 
 【用法】python3 scripts/ci-tautology-check.py <源码根目录>
   退出码 0 = 通过；非 0 = 有恒真条件（stderr 里有清单）。
 """
+import contextlib
+import io
 import os
 import re
 import sys
@@ -237,8 +242,15 @@ def _shell_cond_at(lines, i, kwlen):
     return (i + 1, cond.strip())
 
 
-def shell_if_conds(path):
-    """抽出 shell 脚本里每个条件的文本 ⇒ [(行号, 条件)]。
+def shell_if_conds(text):
+    """抽出 shell 文本里每个条件的文本 ⇒ [(行号, 条件, 种类)]。
+
+    ⚠⚠⚨ **批 DA：返回值带上「种类」**（`if` / `while`）
+      ⇒ 「恒真」判定**只对 `if`/`elif`** 生效
+      ⇒ `while :; do` / `while true; do` 是 shell 的**惯用无限循环**
+      ⇒ 把它判成「判据被掏空成恒真」= **假红**（批 BS：假红逼人把承诺改弱）
+      ⇒ ⚠ 种类**必须跟着条件一起返回** ⇒ 判定处才知道该不该判恒真
+    ⚠⚠ **入参是文本**（不是路径）⇒ 自检能拿合成样例走**同一条**提取路径。
 
     ⚠⚠⚠ **批 BJ 改了三处**（都是实测逼出来的）：
       ① **heredoc 体被摘出去**（`heredoc_spans`）⇒ 里面的 `if` 不再被
@@ -248,7 +260,7 @@ def shell_if_conds(path):
       ③ **`while` / `until` 也要算条件**（体永不执行 ⇒ 断言永不跑）。
     """
     out = []
-    lines = open(path, encoding='utf-8').read().split('\n')
+    lines = text.split('\n')
     skip = set()
     for s0, e0 in heredoc_spans(lines):
         for k in range(s0, e0 + 1):
@@ -259,24 +271,44 @@ def shell_if_conds(path):
             i += 1
             continue
         st = lines[i].strip()
-        got = None
+        kw = None
         if st.startswith('if ') or st == 'if':
-            got = _shell_cond_at(lines, i, 3)
+            kw = 'if'
         elif st.startswith('elif ') or st == 'elif':
-            got = _shell_cond_at(lines, i, 5)
+            kw = 'elif'
         elif st.startswith('while ') or st == 'while':
-            got = _shell_cond_at(lines, i, 6)
+            kw = 'while'
         elif st.startswith('until ') or st == 'until':
-            got = _shell_cond_at(lines, i, 6)
-        if got:
-            out.append(got)
-            # 续行已被 _shell_cond_at 吃掉 ⇒ 跳到条件结束处之后
+            kw = 'until'
+        if kw is None:
             i += 1
-            while i < len(lines) and ';' not in lines[i] and i not in skip:
-                i += 1
             continue
+        got = _shell_cond_at(lines, i, len(kw) + 1)
+        # ⚠⚠⚨ **批 DA**：种类 = `if` 家族（if/elif）还是 `while` 家族（while/until）
+        kind = 'if' if kw in ('if', 'elif') else 'while'
+        out.append((got[0], got[1], kind))
+        # 续行已被 _shell_cond_at 吃掉 ⇒ 跳到条件结束处之后
         i += 1
+        while i < len(lines) and ';' not in lines[i] and i not in skip:
+            i += 1
     return out
+
+
+def shell_tautology_reason(kind, cond):
+    """shell 条件的「恒真/恒假」判定 ⇒ 返回原因，不是就返回 None。
+
+    ⚠⚠⚨ **批 DA：只对 `if`/`elif` 生效**
+      ⇒ `while :; do` / `while true; do` 是 shell 的**惯用无限循环**
+      ⇒ 把它判成「判据被掏空成恒真」= **假红**（批 BS：假红逼人把承诺改弱）
+      ⇒ ⚠ `until` 同样放过（`until true` ⇒ 体永不执行 ⇒ 也是惯用写法）
+    ⚠⚠ **返回原因而不是布尔**（同 `tautology_reason` 的规矩）
+    ⚠⚠ **自检与实扫走同一条判定路径**（批 BF 纪律）⇒ 自检才有意义
+    """
+    if kind != 'if':
+        return None
+    if SH_CONST.match(cond):
+        return '恒真/恒假'
+    return None
 
 
 def python_if_conds(text, first_line=1):
@@ -523,6 +555,20 @@ SELF_TEST_CASES = [
     ('shortcut', 'ok || truthful', False),
     ('shortcut', 'ok and Falsey', False),
     ('shortcut', 'ok and other', False),
+    # ⚠⚠⚨ **批 DA**：`if` 与 `while` 的**恒真判定必须分开**
+    #   （实测坐实：HEAD 版把 `while :; do` 判成「恒真」⇒ **假红**）
+    #   ⇒ `while :; do` / `while true; do` 是 **shell 的惯用无限循环**
+    #     ⇒ 判它「判据被掏空成恒真」= **假红**（批 BS：假红逼人把承诺改弱）
+    #   ⇒ 但 `if :` / `if true` / `if false` **仍要判红**（真掏空）
+    # ⚠ 端到端样例：整段脚本文本 ⇒ 该判红的判红、该放过的放过
+    ('shell_e2e', ('if :; then x=1; fi', 1), True),
+    ('shell_e2e', ('if true; then x=1; fi', 1), True),
+    ('shell_e2e', ('while :; do x=1; done', 0), True),
+    ('shell_e2e', ('while true; do x=1; done', 0), True),
+    # ⚠ 判定级样例：`until` 与 `if false` 这两档端到端样例里没有
+    ('shell_taut', ('if', 'false'), True),
+    ('shell_taut', ('until', 'false'), False),
+    ('shell_taut', ('if', '[ -f "$F" ]'), False),
 ]
 
 
@@ -540,6 +586,20 @@ def self_test():
             text, exp = inp
             toks, _st = scan_shell(text)
             got = (toks == exp)
+        elif kind == 'shell_e2e':
+            # ⚠ 走**同一条**扫描路径（自检与实扫必须调同一个扫描函数）
+            #   ⇒ 「while 不判 / if 判」这条区分由**探针自己**证明有牙
+            # ⚠ 扫描会往 stderr 打诊断 ⇒ 自检期间**必须静音**
+            #   （否则每次 CI 都吐一堆像失败的行 ⇒ 排障会被带偏 —— 批 AZ 纪律）
+            text, want_bad = inp
+            _buf = io.StringIO()
+            with contextlib.redirect_stderr(_buf):
+                _n, got_bad = scan_shell_text(text, 'self-test')
+            got = (got_bad == want_bad)
+        elif kind == 'shell_taut':
+            # ⚠ 走**同一条**判定路径（自检与实扫必须调同一个判定函数）
+            _k, _c = inp
+            got = shell_tautology_reason(_k, _c) is not None
         else:
             helper, arg = inp
             got = assertion_arg_is_tautology(helper, arg)
@@ -574,9 +634,11 @@ def read_scope_baseline(scripts):
     return out
 
 
-def scan_shell_file(path, label):
-    """扫一个 .sh 脚本 ⇒ 返回 (if 条件数, 问题数)。
+def scan_shell_text(text, label):
+    """扫一个 shell 脚本文本 ⇒ 返回 (条件数, 问题数)。
 
+    ⚠⚠⚨ **批 DA：入参是文本** ⇒ 自检能拿合成样例走**同一条**扫描路径
+      （自检与实扫分家 ⇒ 自检测的不是真判定 ⇒ 假的保证）。
     ⚠⚠⚨ **批 CZ：两个平台的判据脚本目录必须走这**一个**函数**
       ⇒ 判定逻辑只许有一份（批 BF/BG 纪律）⇒ 两边口径必然漂
       ⇒ mac 侧复用它 ⇒ 「四个实扫点」那条门（恰好 4 处）**不用改**。
@@ -585,11 +647,15 @@ def scan_shell_file(path, label):
     """
     n_if = 0
     bad = 0
-    for line, cond in shell_if_conds(path):
+    for line, cond, kind in shell_if_conds(text):
         n_if += 1
-        if SH_CONST.match(cond):
-            print('%s%s:%d if 的条件是恒真/恒假：%s'
-                  % (ERROR, label, line, cond[:80]), file=sys.stderr)
+        # ⚠⚠⚨ **批 DA**：恒真/恒假判定**只对 `if`/`elif`** 生效
+        #   ⇒ `while :; do` 是 **shell 的惯用无限循环** ⇒ 判它恒真 = **假红**
+        #     （批 BS：假红逼人把承诺改弱 ⇒ 比假绿更坏）
+        why = shell_tautology_reason(kind, cond)
+        if why:
+            print('%s%s:%d %s 的条件是%s：%s'
+                  % (ERROR, label, line, kind, why, cond[:80]), file=sys.stderr)
             bad += 1
             continue
         why = shortcut_reason(strip_literals(cond))
@@ -601,7 +667,7 @@ def scan_shell_file(path, label):
     #   里面的 `if` 会被误当 shell 条件（⇒ 误判），里面的**真判据**又扫不到
     #   （⇒ 漏判）⇒ 必须**单独**拿出来，用两套规则各扫一遍
     #   （python 收尾是 `:`、shell 收尾是 `then` ⇒ 天然不冲突）。
-    lines = open(path, encoding='utf-8').read().split('\n')
+    lines = text.split('\n')
     for s0, e0 in heredoc_spans(lines):
         body = '\n'.join(lines[s0:e0 + 1])
         for line, cond in python_if_conds(body, first_line=s0 + 1):
@@ -621,6 +687,16 @@ def scan_shell_file(path, label):
                           % (ERROR, label, line, cond[:80]), file=sys.stderr)
                     bad += 1
     return n_if, bad
+
+
+def scan_shell_file(path, label):
+    """扫一个 .sh 脚本 ⇒ 返回 (条件数, 问题数)。
+
+    ⚠ **薄封装**：读文件 + 交给 `scan_shell_text`（⚠ 判定逻辑只有那一份
+      ⇒ 两个平台必然同口径 —— 批 CZ/DA 纪律）。
+    """
+    text = open(path, encoding='utf-8').read()
+    return scan_shell_text(text, label)
 
 
 def main():
@@ -774,7 +850,8 @@ def main():
               % (ERROR, bad), file=sys.stderr)
         return 1
     print('✓ 判据非恒真：判定层 %d 条判据的条件都含被测标识符；'
-          'shell 与 python 脚本 %d 个 if 条件都非恒真；'
+          'shell 与 python 脚本 %d 个条件都非恒真'
+          '（⚠ while/until 的惯用无限循环按批 DA 规矩不判恒真）；'
           '断言函数实参里 %d 条判据都非恒真；'
           '扫描范围 判定层 %d / shell %d（deepin %d + macos %d）/ python %d 个文件（与基线一致）'
           % (n_check, n_if, n_assert, n_judge_files,
