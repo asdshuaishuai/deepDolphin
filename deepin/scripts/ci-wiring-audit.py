@@ -506,6 +506,128 @@ def check_dup_module_names():
     return dups
 
 
+# ══════════════════════════════════════════════════════════════════════
+# 批 CO · 门项行的**实参数个数**必须与门型签名对得上
+# ══════════════════════════════════════════════════════════════════════
+def split_shell_args(line):
+    """按 **shell 顶层分词** ⇒ 参数列表。
+
+    ⚠⚠⚨ **引号闭合后紧跟的非空白要并进同一个词** ⇒ 这正是
+      「**两条门粘在一行**」的特征：后一条的前半截被并进了前一条的 label
+      ⇒ 后一条**从来没被执行过** ⇒ 门形同虚设（批 CO 实测在 ci-wiring.sh 里逮到一条）。
+
+    ⚠ 行尾注释（引号**外**的 `#`）不算参数 ⇒ 先截掉。
+    """
+    args = []
+    cur = ''
+    have = False
+    inq = False
+    for c in line:
+        if inq:
+            if c == "'":
+                inq = False
+            else:
+                cur += c
+            continue
+        if c == "'":
+            inq = True
+            have = True
+            continue
+        if c == '#' and (not cur or cur[-1] in ' \t'):
+            break                      # ⚠ 引号外的行尾注释
+        if c in ' \t':
+            if have:
+                args.append(cur)
+                cur = ''
+                have = False
+            continue
+        cur += c
+        have = True
+    if have:
+        args.append(cur)
+    return args
+
+
+def gate_arity_map(names):
+    """现抽每个门型函数的**必填参数数**与「可否多传」。
+
+    ⚠⚠ **口径单一真相源**（批 AV 纪律）：**从 ci-wiring.sh 原文现抽**，不复刻。
+    ⚠ 三种形态：
+      · **定长**（无默认值、无 `shift`）⇒ 实参数必须**恰好**等于必填数
+      · **可选**（`local` 里有 `${N:-…}`）⇒ 实参数 >= 必填数
+      · **变参**（函数体里有 `shift`）⇒ 实参数 >= 必填数
+    ⚠⚠⚨ 必填数 = **没有默认值的那些参数里的最大序号**
+      ⇒ 不能用 max($N)（`${4:-…}` 那个是可选的 ⇒ 必填数是 3 不是 4）。
+    """
+    out = {}
+    for nm in names:
+        body = extract_shell_func(nm)
+        if not body:
+            continue
+        nums, opt = [], set()
+        variadic = False
+        for ln in body.split('\n'):
+            if ln.strip().startswith('local '):
+                for mm in re.finditer(r'\$\{?(\d)(:-|:\+|\})?', ln):
+                    if mm.group(2) in (':-', ':+'):
+                        opt.add(int(mm.group(1)))
+                    else:
+                        nums.append(int(mm.group(1)))
+            if re.search(r'(^|[;\s])shift\b', ln):
+                variadic = True
+        if not nums:
+            continue
+        out[nm] = (max(nums), bool(opt) or variadic)
+    return out
+
+
+def check_gate_arity():
+    """门项行的**实参数个数**必须与门型签名对得上 ⇒ 否则**可能藏着另一条门**。
+
+    ⚠⚠⚨ **实测逮到的洞（批 CO）**：ci-wiring.sh 里有一行把**两条门粘在一起**
+      （前一条的说明文字后面**直接**接了后一条 ⇒ 中间连空格都没有）
+      ⇒ shell 解析时后一条被并进前一条的 label ⇒ **后一条从来没跑过**
+      ⇒ 而它盯的形态**早已不存在** ⇒ 它真跑起来**就该是红的**
+      ⇒ ⚠⚠⚨ **CI 一直是假绿** ⇒ 且负控的定位串**命中 2 条**却只跑了其中一条。
+
+    ⇒ 这里的检查是**结构性**的：实参数个数对不上 ⇒ 那行**藏着东西** ⇒ 报。
+    """
+    src = read_source(WIRING)
+    lines = src.split('\n')
+    names = []
+    gate_lines = []
+    for i, ln in enumerate(lines, 1):
+        if not GATE_CALL_LINE.match(ln):
+            continue
+        gate_lines.append((i, ln))
+        w = ln.strip().split(None, 1)[0]
+        if w not in names:
+            names.append(w)
+    arity = gate_arity_map(names)
+    bad = []
+    for i, ln in gate_lines:
+        args = split_shell_args(ln)
+        if not args:
+            continue
+        nm = args[0]
+        got = len(args) - 1
+        info = arity.get(nm)
+        if info is None:
+            bad.append((i, nm, got, None, True,
+                        '门型 %s 没抽到签名（函数定义不在 ci-wiring.sh 里？）' % nm))
+            continue
+        need, may_extra = info
+        if may_extra:
+            ok = got >= need
+        else:
+            ok = got == need
+        if not ok:
+            bad.append((i, nm, got, need, may_extra,
+                        '实参 %d 个（签名必填 %d%s）'
+                        % (got, need, '，可多传' if may_extra else '')))
+    return bad
+
+
 def check_gate_totals():
     """核门项行数 ⇒ 结果字典。
 
@@ -539,6 +661,16 @@ def check_gate_totals():
         msgs.append('审计器有门型盲区：认领 %d 条 vs 文件里实际 %d 条门项行'
                     ' ⇒ 有门型没登记 ⇒ 那些门项**不会被审**'
                     % (gtotal, gphysical))
+    # ⚠⚠⚨ 批 CO：门项行的**实参数个数**必须与门型签名对得上
+    #   ⇒ 不对 ⇒ 那行**可能藏着另一条门** ⇒ 后者**从来没被执行过** ⇒ 门形同虚设
+    #   ⇒ 归入 rc=2（盲区）：「那条门**根本没被审**」正是盲区的定义。
+    arity_bad = check_gate_arity()
+    for lineno, nm, got, need, may_extra, why in arity_bad:
+        blind = True
+        msgs.append('门项行的**实参数个数**与门型签名对不上（行 %d · %s）：%s'
+                    ' ⇒ ⚠⚠⚨ **这行可能藏着另一条门**（后一条被并进了前一条的 label'
+                    ' ⇒ **它从来没被执行过** ⇒ 门形同虚设）'
+                    % (lineno, nm, why))
     if gbase is None:
         total_bad = True
         msgs.append('门项行数基线不可用：%s' % gwhy)

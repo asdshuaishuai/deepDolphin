@@ -2223,7 +2223,8 @@ arch_need_count "$SRC/scripts/ci.sh" '^wire_need "\$SRC/src/app/AppModel\.cpp" .
 arch_need_count "$SRC/scripts/ci.sh" '^CANVAS_METHODS="setTransform fillRect strokeRect rect beginPath moveTo lineTo arcTo closePath arc bezierCurveTo fill stroke fillText createLinearGradient addColorStop setLineDash setLineDashOffset setShadowBlur setShadowColor setGlobalAlpha setLineWidth setStrokeStyle setFillStyle setFont setTextAlign"$' 1 '第 8 步 图谱 Canvas 契约清单的动作还在（26 个方法的清单在本步唯一定义）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^if sh "\$SRC/scripts/ci-wiring\.sh" "\$SRC"; then$' 1 '第 9 步 **接线门**的动作还在（⚠⚠ 门自己被删了，门也得红 —— 批 BA 实测：本步删掉时**其余门全绿**）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^    DEEPGIT_CLIENT_BIN="\$BIN" sh "\$SRC/scripts/contract-check\.sh" > "\$_cc_log" 2>&1 \|\| _cc_rc=\$\?$' 1 '第 10 步 引擎契约门（真引擎沙箱）的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
-arch_need_count "$SRC/scripts/ci.sh" '^    sh \"\$SRC/scripts/build-deb\.sh\" \"\$BUILD/deb\" > \"\$BUILD/build-deb\.log\" 2>&1 \|\| _deb_rc=\$\?$' 1 '第 11 步 deb 打包的动作还在（D7 达标的必经：能出包装进 deepin）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'arch_need_count "$SRC/scripts/ci.sh" '^    if sh "\$SRC/scripts/build-deb\.sh" "\$BUILD/deb" > "\$BUILD/build-deb\.log" 2>&1; then$' 1 '第 11 步 deb 打包的动作还在（D7 达标的必经：能出包装进 deepin）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）｜⚠⚠⚨ **批 CL：形态已改**（接住退出码 + 分诊 rc=3）：`if sh … ; then` ⇒ `_deb_rc=0` + `sh … || _deb_rc=$?` + `if [ "$_deb_rc" -eq 0 ]; then`⇒ ⚠ 旧形态**接不住**退出码 ⇒ build-deb.sh 报「未验证」(3) 时**落进 else**⇒ 被当成「构建失败」（1）⇒ **码值语义被顶替**（批 CC 纪律）⇒ 现在 3 ⇒ 未验证 ⇒ 计入 `skip` ⇒ 末尾判红｜⚠ **原地替换**（批 BM：不增行）'
+arch_need_count "$SRC/scripts/ci.sh" '^    sh \"\$SRC/scripts/build-deb\.sh\" \"\$BUILD/deb\" > \"\$BUILD/build-deb\.log\" 2>&1 \|\| _deb_rc=\$\?$' 1 '第 11 步 deb 打包的动作还在（D7 达标的必经：能出包装进 deepin）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）｜⚠⚠⚨ **批 CL：形态已改**（接住退出码 + 分诊 rc=3）：`if sh … ; then` ⇒ `_deb_rc=0` + `sh … || _deb_rc=$?` + `if [ "$_deb_rc" -eq 0 ]; then`⇒ ⚠ 旧形态**接不住**退出码 ⇒ build-deb.sh 报「未验证」(3) 时**落进 else**⇒ 被当成「构建失败」（1）⇒ **码值语义被顶替**（批 CC 纪律）⇒ 现在 3 ⇒ 未验证 ⇒ 计入 `skip` ⇒ 末尾判红｜⚠ **原地替换**（批 BM：不增行）'
+arch_forbid "$SRC/scripts/ci.sh" '^    if sh "\$SRC/scripts/build-deb\.sh" "\$BUILD/deb" > "\$BUILD/build-deb\.log" 2>&1; then$' 'CI 第 11 步 deb 打包的**旧形态**（`if sh … ; then`）**绝不许回来**（⚠⚠⚨ 批 CO：⚠ **实测的洞**：这条门在批 CL 改形态时**没被真正替换掉** ⇒ 被**追加**到了新门项行的尾巴上（中间连空格都没有）⇒ shell 把后一条并进了前一条的 label ⇒ **它从来没被执行过** ⇒ 而它盯的形态**早已不存在** ⇒ 它真跑起来**就该是红的** ⇒ ⚠⚠⚨ **CI 一直是假绿** ⇒ ⇒ 现在改成 forbid：**旧形态绝迹**才算数（⚠ forbid 门判「不该有的东西没了」⇒ 命中 >0 ⇒ 红））'
 arch_need_count "$SRC/scripts/ci.sh" '^    sh "\$SRC\/scripts\/check-deb-layout.sh" "\$DEB_OUT" > "\$_dl_log" 2>&1 \|\| _dl_rc=\$\?$' 1 '第 12 步 deb 布局验收的动作还在（D7 的**准**验收：装完能不能用）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）｜⚠⚠⚨ **批 CC：形态改成「接住退出码 + 分诊」**'
 arch_need_count "$SRC/scripts/ci.sh" '^sh "\$SRC/scripts/probe-agent-tool-surface\.sh" "\$BIN" \|\| ATS_RC=\$\?$' 1 '第 13 步 agent 工具面收敛的动作还在（批 BD 实测：这个探针以前**根本不在 CI 里** ⇒ 它的 9 条断言没人执行）—— ⚠ 盯的是**调用点**那串，不是文件名：文件名在 ci.sh 的注释里也出现过（讲这个洞的来由）⇒ 盯短名会命中 2 次而恒红｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^if ! sh "\$SRC/scripts/ci-orphan-probe\.sh" "\$SRC"; then$' 1 '第 14 步 无游离断言脚本的动作还在（批 BD：这是「CI 自己在漏什么」的那一道）—— ⚠ 同上，盯**调用点**｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
@@ -3762,6 +3763,30 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 CN 段门项全绿（没有 perl ⇒ 这道门没跑 ⇒ 必须判红；顶部 preflight 也不许被摘）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 CO · 门项行的「实参数个数」必须与门型签名对得上（不许一行藏两条门）──
+#
+# ⚠⚠⚨ **起因（实测，不是推演）**：
+#   `ci-wiring.sh` 里有**一行**把**两条门粘在一起**
+#   （前一条的说明文字后面**直接**接了后一条 ⇒ 中间连空格都没有）
+#   ⇒ shell 解析时后一条被**并进前一条的 label**
+#   ⇒ ⚠⚠⚨ **后一条从来没被执行过**
+#   ⇒ 而它盯的形态**早已不存在**（批 CL 改掉了）⇒ 它真跑起来**就该是红的**
+#   ⇒ ⚠⚠⚨ **CI 一直是假绿** ⇒ 且批 CL 的负控**定位串命中 2 条**却只跑了其中一条。
+#
+# ⚠⚠⚨ **结构性兜底**：审计器新增「门项行的**实参数个数**必须与门型签名对得上」
+#   ⇒ 实参数个数对不上 ⇒ 那行**藏着东西** ⇒ 报（rc=2「盲区」那一支）。
+#   ⇒ ⚠ 门型签名**现抽** `ci-wiring.sh` 的函数定义（批 AV 纪律：不复刻）
+#     ⇒ 定长门型必须**恰好**相等；可选参（`${N:-…}`）/ 变参（`shift`）允许多传。
+#
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_gate_arity\(\):$' 1 '审计器的**「门项行实参数个数」检查函数**必须在（⚠⚠⚨ 批 CO：⚠ **实测的洞**：`ci-wiring.sh` 里有一行把**两条门粘在一起** ⇒ 后一条被并进前一条的 label ⇒ **它从来没被执行过** ⇒ 而它盯的形态早已不存在 ⇒ 它真跑起来就该是红的 ⇒ **CI 一直是假绿** ⇒ ⇒ 这个检查是**结构性**的兜底）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CO**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^    arity_bad = check_gate_arity\(\)$' 1 '审计器的**「门项行实参数个数」检查必须真的被调用**（⚠ 只定义不调用 ⇒ 等于没有 ⇒ 删掉调用点 ⇒ 这条门红）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CO**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 CO 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 CO 段门项全绿（门项行的实参数个数必须与门型签名对得上；不许一行藏两条门）；门项合计 ${ARCH_N} 项（含前段）"
 
 
 
