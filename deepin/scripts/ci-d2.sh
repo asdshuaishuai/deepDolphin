@@ -91,7 +91,7 @@ D2_PATTERN='#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{3}\b|setPixelSize\([0-9]|setPointSizeF?
 D2_ARG_PATTERN='\.arg\([0-9]+'
 
 EXEMPT_HITS="$(mktemp)"
-trap 'rm -f "$EXEMPT_HITS" "$STRIP_FAIL_FILE"' EXIT
+trap '_ch_rc=$?; if [ -s "$STRIP_FAIL_FILE" ]; then echo "✗ 剥注释失败（工具失败 ≠ 没找到）——这些文件的匹配结果**不可信**：$(sort -u "$STRIP_FAIL_FILE" | tr "\n" " ")" >&2; _ch_rc=1; fi; rm -f "$EXEMPT_HITS" "$STRIP_FAIL_FILE"; exit $_ch_rc' EXIT
 
 exempt_field() { # exempt_field <src/相对路径> <字段号 2=模式 3=理由>
     printf '%s\n' "$D2_EXEMPT" | awk -F'|' -v p="$1" -v n="$2" '$1==p {print $n; exit}'
@@ -183,7 +183,8 @@ fi
 #   ⇒ ⚠⚠⚨ 覆盖**全部**剥注释调用点（forbid / need / count / any …）
 #     ⇒ 一次挡住整类（批 CD 纪律：一次挡住整类，别逐点治标）。
 if [ -s "$STRIP_FAIL_FILE" ]; then
-    echo "✗ 剥注释失败（工具失败 ≠ 没找到）——这些文件的匹配结果**不可信**：$(tr '\n' ' ' < "$STRIP_FAIL_FILE")" >&2
+    # ⚠⚠⚨ 批 CH：诊断**搬进 trap**了（退出时必打）⇒ 这里只负责 exit 1
+    #   ⇒ 否则「段落 ARCH_FAIL 提前 exit」会把末尾的诊断吃掉 ⇒ 红因指错
     exit 1
 fi
 

@@ -49,7 +49,7 @@ BIN="$BUILD/deepDolphin"
 #   ⇒ 标记文件（跨子 shell ⇒ 必须用文件，变量传不出去）
 #   ⇒ 抽取过来的 strip_comments 失败时写它；脚本末尾统一检查 ⇒ 有 ⇒ 判红。
 STRIP_FAIL_FILE="${TMPDIR:-/tmp}/deepdolphin-strip-fail.$$"
-trap 'rm -f "$STRIP_FAIL_FILE"' EXIT
+trap '_ch_rc=$?; if [ -s "$STRIP_FAIL_FILE" ]; then echo "✗ 剥注释失败（工具失败 ≠ 没找到）——这些文件的匹配结果**不可信**：$(sort -u "$STRIP_FAIL_FILE" | tr "\n" " ")" >&2; _ch_rc=1; fi; rm -f "$STRIP_FAIL_FILE"; exit $_ch_rc' EXIT
 [ -f "$SRC/scripts/ci-wiring.sh" ] || {
     echo "✗ 找不到 $SRC/scripts/ci-wiring.sh（剥注释口径的单一真相源 ⇒ 抽不到就等于没有门）" >&2
     exit 1
@@ -719,7 +719,8 @@ fi
 #   ⇒ ⚠⚠⚨ 覆盖**全部**剥注释调用点（forbid / need / count / any …）
 #     ⇒ 一次挡住整类（批 CD 纪律：一次挡住整类，别逐点治标）。
 if [ -s "$STRIP_FAIL_FILE" ]; then
-    echo "✗ 剥注释失败（工具失败 ≠ 没找到）——这些文件的匹配结果**不可信**：$(tr '\n' ' ' < "$STRIP_FAIL_FILE")" >&2
+    # ⚠⚠⚨ 批 CH：诊断**搬进 trap**了（退出时必打）⇒ 这里只负责 exit 1
+    #   ⇒ 否则「段落 ARCH_FAIL 提前 exit」会把末尾的诊断吃掉 ⇒ 红因指错
     exit 1
 fi
 

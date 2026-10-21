@@ -200,6 +200,49 @@ def rel(path):
         return path
 
 
+class UnreadableSource(Exception):
+    """⚠⚠⚨ 批 CH · 源文件**读不了** ⇒ 不是「没问题」，是**没验过**。
+
+    ⚠⚠⚨ **实测坐实的三个洞**（python 侧 —— ⚠ 批 CG 只收了 **shell 侧**那三处）：
+    ① **诊断失真**：被盯的源文件不可读 ⇒ `strip_comments` 静默返回空
+       ⇒ 报成「**门永远匹配不到（形同虚设）**」
+       ⇒ ⚠⚠⚨ **完全不提「不可读 / 权限」** ⇒ 排障被带偏
+       （真实原因是权限，报告说的是「门写错了」）；
+    ② ⚠⚠⚨ **彻底假绿**：仓里有 **36** 条「**期望 0 次**」的 `arch_need_count` 门
+       ⇒ 文件不可读 ⇒ 命中 0 == 期望 0 ⇒ 配准校准说「0 条失准」
+       ⇒ **审计器判绿** ⇒ 而那个文件**根本没被审**；
+    ③ **崩在栈里**：审计器自己依赖的文件（门脚本 / 豁免基线 / 门项总数基线）
+       不可读 ⇒ 未捕获 `PermissionError` ⇒ 退出码 **1**
+       ⇒ 门侧报「**未知的失败码**」⇒ 真实原因没有任何一条消息提到
+       （⚠ 批 CF 修过「缺 perl」的同一形状，但**没管「文件读不了」**）。
+
+    ⇒ 与门侧（shell）口径对齐：批 CG 的三个脚本已经「失败留标记 + 末尾统一判红」
+    ⇒ ⚠⚠⚨ **审计器就是判定层自己的「盘点方法」**
+    ⇒ 它不可靠 ⇒ 盘点结论就不可靠
+    ⇒ 这正是「**盘点方法本身也要被门守**」的第一块砖。
+    """
+
+    def __init__(self, path, why):
+        super().__init__('%s：%s' % (path, why))
+        self.path = path
+        self.why = why
+
+
+def read_source(path):
+    """读**被审的源文件** ⇒ 内容；**读不了 ⇒ 指名道姓地抛**（不许静默当空）。
+
+    ⚠⚠⚨ 批 CD / 批 CE 同款口径：**扫描之前先验可读性**
+    ⇒ 读不了 = 没验过 ⇒ 必须红（不许当成「没问题」）。
+    ⚠ **文件不存在也抛** —— 调用方若要区分「不存在」与「读不了」，
+    自己先 `os.path.isfile()`（既有语义保持不变）。
+    """
+    try:
+        with open(path, encoding='utf-8') as fh:
+            return fh.read()
+    except OSError as e:
+        raise UnreadableSource(path, '读不了（%s）' % e)
+
+
 def strip_comments(path):
     """剥注释 —— ⚠ **直接调 ci-wiring.sh 用的同一条 perl/sed**，不复刻。
 
@@ -222,7 +265,21 @@ def strip_comments(path):
         cmd = ["sed", "-e", r's/^[[:space:]]*#.*$//']
     else:
         cmd = ["perl", "-pe", r's{(?<!:)(//)(?!:).*$}{}']
+    # ⚠⚠⚨ 批 CH · **先验可读性**（批 CD / 批 CE 同款口径：扫描之前先验）
+    #   ⇒ ⚠⚠⚨ **实测**：perl 打不开文件时**退出码仍是 0**（只往 stderr 打一句
+    #     「Can't open …: 权限不够」）⇒ **靠退出码抓不住「读不了」**
+    #     ⇒ 所以必须**先验**（`os.access` 用真实 uid ⇒ 与 shell 的 `-r` 同口径
+    #     ⇒ **两侧口径一致**，不会一边绿一边红）
+    if not os.access(path, os.R_OK):
+        raise UnreadableSource(path, '对工具不可读（权限）')
     out = subprocess.run(cmd + [path], capture_output=True, text=True)
+    # ⚠⚠⚨ 批 CH · **接住工具的退出码**（批 CG 纪律：工具失败 ≠ 没找到）
+    #   ⇒ 工具失败 ⇒ 抛（不许把空输出当成「这个文件里没有」）
+    #   ⚠⚠⚨ **变量名带前缀** ⇒ 这一行在仓里**唯一**
+    #     （与别处同缩进的 `if out.returncode != 0:` 撞形态 ⇒ 整行锚定罩不住 ⇒ 批 CG 教训）
+    _tool_rc = out.returncode
+    if _tool_rc != 0:
+        raise UnreadableSource(path, '剥注释工具退出码 %d' % _tool_rc)
     return out.stdout
 
 
@@ -385,7 +442,7 @@ def count_gate_types(path):
       · 「物理门项行数」= 用**不认识门型**的口径数一遍（只看「长得像门项」）。
       ⇒ 不等 ⇒ **有一种门型没被登记** ⇒ 那些门项**没被审**（批 BH 抓的就是这个）。
     """
-    src = open(path, encoding='utf-8').read()
+    src = read_source(path)
     lines = src.split('\n')
     counts = {}
     for name, rx in GATE_TYPES:
@@ -409,7 +466,7 @@ def read_gate_baseline():
     path = GATE_BASELINE
     if not os.path.isfile(path):
         return None, '基线文件不存在：%s' % path
-    raw = open(path, encoding='utf-8').read()
+    raw = read_source(path)
     txt = raw.strip()
     if not txt:
         return None, '基线文件是空的'
@@ -501,7 +558,7 @@ def parse_wiring():
     """解析 ci-wiring.sh ⇒ (need 门项, ml 门项, any_count 门项, any_min 门项,
     count 门项, count_in_fn 门项, count_in_step 门项, 各门型行数,
     解析失败行号, arch_forbid 行数)"""
-    src = open(WIRING, encoding='utf-8').read()
+    src = read_source(WIRING)
     lines = src.split('\n')
     need, ml, anyc, anym, cnt, cif, cis, pair = [], [], [], [], [], [], [], []
     totals = {'need': 0, 'ml': 0, 'any_count': 0, 'any_min': 0,
@@ -597,8 +654,8 @@ def read_exempt():
     """
     if not os.path.isfile(EXEMPT):
         return set(), False, 0
-    with open(EXEMPT, encoding='utf-8') as fh:
-        lines = [ln.rstrip('\n') for ln in fh]
+    lines = [ln.rstrip('\n')
+             for ln in read_source(EXEMPT).split('\n')]
     keys = set(ln for ln in lines if ln.strip() and not ln.lstrip().startswith('#'))
     return keys, True, len(keys)
 
@@ -858,26 +915,25 @@ def read_anchor_exempt():
         return set(), False, 0, []
     keys = set()
     bad = []
-    with open(ANCHOR_EXEMPT, encoding='utf-8') as fh:
-        for lineno, raw in enumerate(fh, 1):
-            ln = raw.rstrip('\n')
-            if not ln.strip() or ln.lstrip().startswith('#'):
-                continue
-            parts = ln.split('\t')
-            if len(parts) != 4:
-                bad.append((lineno, '字段数 %d（应为 4：门型<TAB>路径<TAB>正则<TAB>理由）'
-                            % len(parts)))
-                continue
-            kind, path, rx, why = parts[0].strip(), parts[1].strip(), parts[2], parts[3].strip()
-            if not kind or not path or not rx.strip():
-                bad.append((lineno, '门型/路径/正则不许为空'))
-                continue
-            if not why:
-                bad.append((lineno, '**豁免理由不许为空**'))
-                continue
-            # ⚠ **只 rstrip，不 strip** ⇒ 正则的**前导空格是有意义的**
-            #   （`^ foo` 与 `foo` 是两条不同的正则）⇒ 不能顺手 strip 掉。
-            keys.add((kind, path, rx.rstrip()))
+    for lineno, raw in enumerate(read_source(ANCHOR_EXEMPT).split('\n'), 1):
+        ln = raw.rstrip('\n')
+        if not ln.strip() or ln.lstrip().startswith('#'):
+            continue
+        parts = ln.split('\t')
+        if len(parts) != 4:
+            bad.append((lineno, '字段数 %d（应为 4：门型<TAB>路径<TAB>正则<TAB>理由）'
+                        % len(parts)))
+            continue
+        kind, path, rx, why = parts[0].strip(), parts[1].strip(), parts[2], parts[3].strip()
+        if not kind or not path or not rx.strip():
+            bad.append((lineno, '门型/路径/正则不许为空'))
+            continue
+        if not why:
+            bad.append((lineno, '**豁免理由不许为空**'))
+            continue
+        # ⚠ **只 rstrip，不 strip** ⇒ 正则的**前导空格是有意义的**
+        #   （`^ foo` 与 `foo` 是两条不同的正则）⇒ 不能顺手 strip 掉。
+        keys.add((kind, path, rx.rstrip()))
     return keys, True, len(keys), bad
 
 
@@ -927,8 +983,7 @@ def check_undefined_names():
     """
     import symtable
     path = os.path.abspath(__file__)
-    with open(path, encoding='utf-8') as fh:
-        src = fh.read()
+    src = read_source(path)
     top = symtable.symtable(src, path, 'exec')
     defined = set(top.get_identifiers())
     import builtins
@@ -1076,6 +1131,23 @@ def check_any_gates(anyc_items, anym_items, counter):
 
 
 def main():
+    """⚠⚠⚨ 批 CH · 顶层**兜住「源文件读不了」** ⇒ 指名道姓 + 退出码 **2**。
+
+    ⚠⚠⚨ **为什么必须有这一层**：
+    ① 审计器读不到**被审的源文件** ⇒ 那条门项**根本没被审** ⇒ **盲区**
+      ⇒ 与「缺 perl」同款 ⇒ 同用 **rc=2**（门侧的分派消息会点名这一类）；
+    ② 以前是**未捕获异常** ⇒ 退出码 **1** ⇒ 门侧报「**未知的失败码**」
+      ⇒ 真实原因（权限）**没有任何一条消息提到**（批 CF 的教训重演）。
+    """
+    try:
+        return main_body()
+    except UnreadableSource as e:
+        print('审计失败：源文件**读不了** ⇒ 那些门项**根本没被审**'
+              '（未验证不许被当成通过）：%s' % e, file=sys.stderr)
+        return 2
+
+
+def main_body():
     # ⚠⚠⚨ 批 CF · **环境前提**（不是检查项）：剥注释工具必须在。
     #   ⇒ 缺它时审计器压根跑不动 ⇒ 与其崩在栈里（退出码 1 = 未知的失败码），
     #     不如**指名道姓**地说清楚（批 CB/CC/CE：未验证不许被当成通过）。
@@ -1461,7 +1533,7 @@ def main():
 def parse_min_gates():
     """解析所有 `arch_need_min` 门项 ⇒ [(行号, 文件, 正则, 下限)]"""
     out = []
-    src = open(WIRING, encoding='utf-8').read()
+    src = read_source(WIRING)
     for i, ln in enumerate(src.split('\n'), 1):
         m = NEED_MIN_LINE.match(ln)
         if m:
@@ -1552,7 +1624,7 @@ def bad_escapes(rx):
 def check_rx_syntax():
     """体检**所有**门项的正则参数 ⇒ [(行号, 门型, 正则, 危险转义)]"""
     bad = []
-    src = open(WIRING, encoding='utf-8').read()
+    src = read_source(WIRING)
     for i, ln in enumerate(src.split('\n'), 1):
         m = GATE_LINE.match(ln)
         if not m:
