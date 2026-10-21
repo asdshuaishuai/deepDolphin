@@ -259,16 +259,41 @@ grep -q "libdtk6widget" "$TMP/info.txt" \
 grep -q "dde-qt6integration" "$TMP/info.txt" \
     || die "产物的 Depends 里没有 dde-qt6integration（DTK 样式漏了 = 静默降级成纯 Qt 感）"
 # 包内二进制不许带 RPATH（指向开发机路径 = 换台机器就起不来）
-if readelf -d "$PKG/usr/bin/deepDolphin" | grep -qiE "rpath|runpath"; then
+# ⚠⚠⚨ 批 CE：**外部工具的失败不许被当成「检查通过」**。
+#   ⇒ 以前是 `if readelf … | grep -qiE "rpath|runpath"; then die; fi`
+#     ⇒ readelf **失败**（读不了二进制 / 工具崩了）⇒ 管道无输出 ⇒
+#     **不进 then 分支** ⇒ **静默判「没带 RPATH」⇒ 通过** ⇒ **假绿**
+#     ⇒ ⚠⚠⚨ 实测（stub 一个失败的 readelf）：旧形态 **rc=0 走到末尾**。
+#   ⇒ 现在：**接住 readelf 的退出码** ⇒ 非 0 ⇒ **判失败**（工具失败 = 没验过，
+#     不许当成「检查通过」—— 与批 CB/CC/CD 同款口径）。
+_re_rc=0
+_re_out="$(readelf -d "$PKG/usr/bin/deepDolphin" 2>&1)" || _re_rc=$?
+if [ "$_re_rc" -ne 0 ]; then
+    die "readelf 读不了包内二进制（退出码 $_re_rc）⇒ **RPATH 检查未验证**，不算通过（$_re_out）"
+fi
+if printf '%s\n' "$_re_out" | grep -qiE "rpath|runpath"; then
     die "包内二进制带 RPATH/RUNPATH —— 指向开发机路径，装到别的机器就找不到库"
 fi
 # D7 的核心：解包后**零环境变量**下不许有缺失的库（不靠 LD_LIBRARY_PATH 救）
 #   —— 装到干净 deepin 25 上能不能起来，就看这一条。
 rm -rf "$TMP/unpack" && mkdir -p "$TMP/unpack"
-dpkg-deb -x "$DEB_PATH" "$TMP/unpack"
-# ⚠ `grep -c` **没匹配时退出码是 1** —— 在 `set -e` 下，命令替换把这个退出码带出来，
-#   脚本会**静默退出**（没有 die 消息，看着像「跑到一半没了」）。必须 `|| true`。
-_nf="$(env -u LD_LIBRARY_PATH ldd "$TMP/unpack/usr/bin/deepDolphin" 2>&1 | grep -c 'not found' || true)"
+# ⚠⚠⚨ 批 CE：解包失败**必须响亮失败**（以前靠 `set -e` 静默中止 ⇒ 没有 die 消息，
+#   看着像「跑到一半没了」⇒ **诊断失真**）。
+dpkg-deb -x "$DEB_PATH" "$TMP/unpack" || die "解包失败：$DEB_PATH（产物自检的前提就没有 ⇒ 后面全是空转）"
+# ⚠⚠⚨ 批 CE：**外部工具的失败不许被当成「检查通过」**（D7 的核心验收！）。
+#   ⇒ 以前是 `_nf="$(ldd … | grep -c 'not found' || true)"`
+#     ⇒ ldd **失败**（二进制不存在 / 不可读 / 工具崩了 ⇒ 报 "cannot open"）
+#     ⇒ 计数 **0** ⇒ 「无缺失库」⇒ **判通过** ⇒ **假绿**
+#     ⇒ ⚠⚠⚨ 实测（stub 一个失败的 ldd）：旧形态 **rc=0 走到末尾**。
+#     ⇒ ⚠⚠⚨ 假绿的代价：**发出一个装不起来的 deb**。
+#   ⇒ 现在：**接住 ldd 的退出码** ⇒ 非 0 ⇒ **判失败**（没验过 ≠ 验过了）。
+#   ⚠ `grep -c` 没匹配时退出码是 1 ⇒ 计数那步仍要 `|| true`（否则 set -e 静默中止）。
+_ldd_rc=0
+_ldd_out="$(env -u LD_LIBRARY_PATH ldd "$TMP/unpack/usr/bin/deepDolphin" 2>&1)" || _ldd_rc=$?
+if [ "$_ldd_rc" -ne 0 ]; then
+    die "ldd 读不了解包后的二进制（退出码 $_ldd_rc）⇒ **D7 缺库检查未验证**，不算通过（$_ldd_out）"
+fi
+_nf="$(printf '%s\n' "$_ldd_out" | grep -c 'not found' || true)"
 _nf="${_nf:-0}"
 [ "$_nf" = "0" ] || die "解包后的二进制有 $_nf 个库 not found（D7 不达标：装到干净系统上起不来）"
 

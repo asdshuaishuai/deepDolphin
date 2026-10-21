@@ -1030,7 +1030,7 @@ arch_need "$SRC/scripts/deb-deps.txt" 'dde-qt6xcb-plugin\b' 'DTK xcb 插件包�
 #   `not found` 在脚本里出现两次（这一行 + die 消息里那句），
 #   只改这一行时「出现过」照样绿（同名多处互相顶替，负控实测）。
 arch_need "$SRC/scripts/build-deb.sh" 'grep -c .not found\b' 'deb 构建校验解包后无缺失库（D7 核心）'
-arch_need "$SRC/scripts/build-deb.sh" 'readelf -d "\$PKG/usr/bin/deepDolphin" \| grep -qiE "rpath\|runpath"' 'deb 构建**真的查了**包内二进制的 RPATH（盯那行 readelf 检查 —— 盯「rpath\|runpath」这个串，它在**同一行出现两次** ⇒ 改一处骗得过门）'
+arch_need "$SRC/scripts/build-deb.sh" '^_re_out="\$\(readelf -d "\$PKG\/usr\/bin\/deepDolphin" 2>&1\)" \|\| _re_rc=\$\?$' 'deb 构建**真的查了**包内二进制的 RPATH（⚠⚠⚨ **批 CC 原地替换**：形态从「管道直接判」改成「**接住 readelf 的退出码 + 分诊**」—— ⚠⚠⚨ 旧形态里 readelf **失败** ⇒ 管道无输出 ⇒ **静默判「没带 RPATH」⇒ 假绿**⇒ 现在非 0 ⇒ **判失败**（工具失败 = 没验过））（⚠ **批 CE：正则已跟着形态改** —— 现在盯的是「**接住 readelf 的退出码**」那一行 ⇒ 旧形态的管道判法被摘掉 ⇒ 门红）'
 arch_need "$SRC/scripts/ci.sh" 'build-deb\.sh\b' 'CI 流程构建 deb（D7 达标必经）'
 
 # 批 T · 面板快照夹具：基线要**可重现** ⇒ 快照走固定夹具，不走真引擎
@@ -1112,6 +1112,18 @@ for f in "$SRC"/src/ui/*.cpp "$SRC"/src/ui/*.h "$SRC"/src/ui/pages/*.cpp "$SRC"/
          "$SRC"/src/ui/common/*.cpp "$SRC"/src/ui/common/*.h "$SRC"/src/ui/dialogs/*.cpp \
          "$SRC"/src/ui/dialogs/*.h "$SRC"/src/ui/dialogs/panes/*.cpp; do
     [ -f "$f" ] || continue
+    # ⚠⚠⚨ 批 CE：**工具读不了文件 ⇒ 后面所有 grep 都会静默跳过它** ⇒ 漏检 ⇒ 假绿。
+    #   ⇒ ⚠⚠⚨ **实测的洞**：把某个 `src/ui/*.cpp` 对 grep **不可读**（chmod 000
+    #     ⇒ grep rc=2）⇒ `strip_comments "$f" | grep -qE 'QIcon::fromTheme'`
+    #     **无输出** ⇒ **不进 then 分支** ⇒ **裸 QIcon::fromTheme 漏检**
+    #     ⇒ 门照样绿（⚠ 与批 CD 的「假绿」同款：不是门坏了，是**门没看见**）。
+    #   ⇒ 所以在扫之前**先验可读性**：读不了 ⇒ 判失败，**不许当成「没有裸图标」**
+    #     （⚠ 与批 CB/CC/CD 同款口径：**未验证不许被当成通过**）。
+    if [ ! -r "$f" ]; then
+        echo "  ✗ 源文件不可读：$f ⇒ grep 会静默跳过它 ⇒ 图标收口检查会漏检 ⇒ **未验证不许当成通过**" >&2
+        ICON_RAW=1
+        ICON_STR=1
+    fi
     if strip_comments "$f" | grep -qE 'QIcon::fromTheme'; then
         echo "  ✗ UI 里还有裸 QIcon::fromTheme（图标必须走 platform::icon）：$f" >&2
         ICON_RAW=1
@@ -2791,7 +2803,7 @@ echo "✓ 批 BT 段门项全绿（探针的失败上报不许被摘掉：断言
 arch_need_count "$SRC/scripts/build-deb.sh" '^die\(\) \{ echo "✗ build-deb: \$\*" >&2; exit 1; \}$' 1 '**helper 型脚本的失败助手定义行**必须原样存在（⚠ **整行锚定**）⇒ 助手里的 `exit 1` 被摘掉 ⇒ 所有断言**变空转**（脚本仍 exit 0 ⇒ CI 假绿）⇒ 必红｜⚠⚠⚨ **批 BU**｜die 助手定义行'
 arch_need_count "$SRC/scripts/probe-deepin-tray.sh" '^fail\(\) \{ echo "✗ \$1" >&2; exit 1; \}$' 1 '**helper 型脚本的失败助手定义行**必须原样存在（⚠ **整行锚定**）⇒ 助手里的 `exit 1` 被摘掉 ⇒ 所有断言**变空转**（脚本仍 exit 0 ⇒ CI 假绿）⇒ 必红｜⚠⚠⚨ **批 BU**｜fail 助手定义行'
 arch_need_count "$SRC/scripts/probe-sni-icon.sh" '^fail\(\) \{ echo "✗ \$1" >&2; exit 1; \}$' 1 '**helper 型脚本的失败助手定义行**必须原样存在（⚠ **整行锚定**）⇒ 助手里的 `exit 1` 被摘掉 ⇒ 所有断言**变空转**（脚本仍 exit 0 ⇒ CI 假绿）⇒ 必红｜⚠⚠⚨ **批 BU**｜fail 助手定义行'
-arch_need_count "$SRC/scripts/build-deb.sh" '\b(die|fail) "' 20 '**helper 型脚本的断言清单不许被删** —— 助手调用点必须恰好 20 处（⚠ 口径：数的是**调用点**（`die "` / `fail "`），**不是 `✗ ` 标记数** —— 后者在 helper 型脚本里只有 **1**（在助手体内）⇒ 用它当清单门**形同虚设**：删掉任意一条断言调用，门照样绿）｜⚠⚠⚨ **批 BU**｜⚠ **强度弱于行首锚定**（调用点常写在行中 ⇒ 没法行首锚定）⇒ 行尾注释理论上能冒充 ⇒ **如实记为已知边界**｜⚠ 期望 == 实际 ⇒ 余量恒为 0（批 BB 口径）'
+arch_need_count "$SRC/scripts/build-deb.sh" '\b(die|fail) "' 23 '**helper 型脚本的断言清单不许被删** —— 助手调用点必须恰好 23 处（⚠⚠⚨ **批 CD +3**：新增 3 个**诊断增强**的 die ——① 解包失败 ② readelf 失败 ③ ldd 失败：它们不是新断言，而是**把「工具失败」从静默变成响亮失败**）（⚠ 口径：数的是**调用点**（`die "` / `fail "`），**不是 `✗ ` 标记数** —— 后者在 helper 型脚本里只有 **1**（在助手体内）⇒ 用它当清单门**形同虚设**：删掉任意一条断言调用，门照样绿）｜⚠⚠⚨ **批 BU**｜⚠ **强度弱于行首锚定**（调用点常写在行中 ⇒ 没法行首锚定）⇒ 行尾注释理论上能冒充 ⇒ **如实记为已知边界**｜⚠ 期望 == 实际 ⇒ 余量恒为 0（批 BB 口径）'
 arch_need_count "$SRC/scripts/probe-deepin-tray.sh" '\b(die|fail) "' 7 '**helper 型脚本的断言清单不许被删** —— 助手调用点必须恰好 7 处（⚠ 口径：数的是**调用点**（`die "` / `fail "`），**不是 `✗ ` 标记数** —— 后者在 helper 型脚本里只有 **1**（在助手体内）⇒ 用它当清单门**形同虚设**：删掉任意一条断言调用，门照样绿）｜⚠⚠⚨ **批 BU**｜⚠ **强度弱于行首锚定**（调用点常写在行中 ⇒ 没法行首锚定）⇒ 行尾注释理论上能冒充 ⇒ **如实记为已知边界**｜⚠ 期望 == 实际 ⇒ 余量恒为 0（批 BB 口径）'
 arch_need_count "$SRC/scripts/probe-sni-icon.sh" '\b(die|fail) "' 10 '**helper 型脚本的断言清单不许被删** —— 助手调用点必须恰好 10 处（⚠ 口径：数的是**调用点**（`die "` / `fail "`），**不是 `✗ ` 标记数** —— 后者在 helper 型脚本里只有 **1**（在助手体内）⇒ 用它当清单门**形同虚设**：删掉任意一条断言调用，门照样绿）｜⚠⚠⚨ **批 BU**｜⚠ **强度弱于行首锚定**（调用点常写在行中 ⇒ 没法行首锚定）⇒ 行尾注释理论上能冒充 ⇒ **如实记为已知边界**｜⚠ 期望 == 实际 ⇒ 余量恒为 0（批 BB 口径）'
 
@@ -3222,5 +3234,51 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 CD 段门项全绿（工具读不了不许被当成没问题：扫描前先验可读性）；门项合计 ${ARCH_N} 项（含前段）"
+# ── 批 CE · 「外部工具的失败」不许被当成「检查通过」 ────────────────────────
+#
+# ⚠⚠⚨ **起因（实测盘点，不是印象）**：批 CD 盘过「外部工具的调用站点」
+#   （419 处）⇒ 结论是「**危险方向 0 处**」⇒ ⚠⚠⚨ **但那个口径有盲区**：
+#   它只找**字面形态** `if 外部工具; then <不通过>; else <通过>; fi`
+#   ⇒ **漏了两种形态**：
+#   ① **工具输出 → 变量 → 判定**（`N=$( 工具 | grep -c )` ⇒ `[ "$N" = "0" ] || die`）；
+#   ② **无 else 分支**的 `if 工具; then <失败支>; fi`
+#      ⇒ 工具失败 ⇒ 条件为假 ⇒ **什么都不做 ⇒ 隐式通过**。
+#   ⇒ 本批用**更宽的口径**重盘（两种形态都盘）⇒ 盘出 **3 处真洞**
+#   （另 4 处输入是字符串 ⇒ grep 崩不了 ⇒ 无害）。
+#
+# ⚠⚠⚨ **洞 ①（行为级·假绿·旗舰·D7 核心验收）**：`build-deb.sh` 的 ldd 缺库检查
+#   `_nf="$(env -u LD_LIBRARY_PATH ldd … 2>&1 | grep -c 'not found' || true)"`
+#   ⇒ ldd **失败**（二进制不存在 / 不可读 / 工具崩了 ⇒ 报 "cannot open"）
+#   ⇒ 计数 **0** ⇒ 「无缺失库」⇒ **判通过** ⇒ **假绿**
+#   ⇒ ⚠⚠⚨ **实测**（stub 一个失败的 ldd）：旧形态 **rc=0 走到末尾**。
+#   ⇒ ⚠⚠⚨ 假绿的代价：**发出一个装不起来的 deb**（CI 第 11 步照样报「✓」）。
+#
+# ⚠⚠⚨ **洞 ②（行为级·假绿）**：`build-deb.sh` 的 readelf RPATH 检查
+#   `if readelf -d … | grep -qiE "rpath|runpath"; then die; fi`
+#   ⇒ **无 else** ⇒ readelf 失败 ⇒ 不进 then ⇒ **静默判「没带 RPATH」⇒ 假绿**
+#   ⇒ ⚠⚠⚨ **实测**（stub 一个失败的 readelf）：旧形态 **rc=0 走到末尾**。
+#
+# ⚠⚠⚨ **洞 ③（行为级·假绿·判据层自身）**：`ci-wiring.sh` 的图标收口检查
+#   （`strip_comments "$f" | grep -qE 'QIcon::fromTheme'` ⇒ then 分支是失败支、
+#   **无 else**）⇒ 文件对工具不可读 ⇒ 条件为假 ⇒ **裸图标漏检** ⇒ 假绿。
+#
+# ⚠ **修法（只动判据层与构建脚本 ⇒ 零产品代码改动）**：
+#   ① **接住工具的退出码** ⇒ 非 0 ⇒ **判失败**（工具失败 = 没验过）
+#      ⇒ 与批 CB/CC/CD **同款口径**：**未验证不许被当成通过**；
+#   ② **拆开管道**（工具输出先落进变量，再加工）
+#      ⇒ 否则管道里**拿不到**工具自己的退出码（管道退出码是最后一条的）；
+#   ③ `dpkg-deb -x` 的失败**改成响亮 die**（以前靠 `set -e` 静默中止
+#      ⇒ 没有 die 消息 ⇒ 看着像「跑到一半没了」⇒ **诊断失真**）。
+arch_need_count "$SRC/scripts/build-deb.sh" '^    die "ldd 读不了解包后的二进制（退出码 \$_ldd_rc）⇒ \*\*D7 缺库检查未验证\*\*，不算通过（\$_ldd_out）"$' 1 'deb 构建的 **ldd 缺库检查**（D7 核心验收）**必须在 ldd 失败时判失败**（⚠⚠⚨ **实测的洞**：ldd 失败（二进制读不了 / 工具崩了）⇒ 旧形态计数 0 ⇒ 判「无缺失库」⇒ **rc=0 假绿** ⇒ **发出装不起来的 deb**）｜⚠⚠⚨ **批 CE**｜⚠ **整行锚定**｜⚠ 与批 CB/CC/CD 同款口径：**未验证不许被当成通过**'
+arch_need_count "$SRC/scripts/build-deb.sh" '^    die "readelf 读不了包内二进制（退出码 \$_re_rc）⇒ \*\*RPATH 检查未验证\*\*，不算通过（\$_re_out）"$' 1 'deb 构建的 **readelf RPATH 检查**必须在 readelf 失败时判失败（⚠⚠⚨ **实测的洞**：旧形态是 `if readelf … | grep -qiE …; then die; fi`（**无 else**）⇒ readelf 失败 ⇒ 不进 then ⇒ 静默判「没带 RPATH」⇒ **rc=0 假绿**）｜⚠⚠⚨ **批 CE**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/build-deb.sh" '^dpkg-deb -x "\$DEB_PATH" "\$TMP\/unpack" \|\| die "解包失败：\$DEB_PATH（产物自检的前提就没有 ⇒ 后面全是空转）"$' 1 'deb 构建的**解包失败必须响亮 die**（⚠ 以前靠 `set -e` 静默中止 ⇒ 没有 die 消息 ⇒ 看着像「跑到一半没了」⇒ **诊断失真**）｜⚠⚠⚨ **批 CE**｜⚠ **整行锚定**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 CE 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^    if \[ ! -r "\$f" \]; then$' 1 '接线门的**图标收口检查必须先验可读性**（⚠⚠⚨ **实测的洞**：某个 `src/ui/*.cpp` 对 grep **不可读** ⇒ `strip_comments … | grep -qE` **无输出** ⇒ **裸 QIcon::fromTheme 漏检** ⇒ 门照样绿 ⇒ **判据层自身的假绿**）｜⚠⚠⚨ **批 CE**｜⚠ **整行锚定**｜⚠ 与批 CB/CC/CD 同款口径：**未验证不许被当成通过**'
+
+echo "✓ 批 CE 段门项全绿（外部工具的失败不许被当成「检查通过」：接住退出码 + 工具失败即判失败）；门项合计 ${ARCH_N} 项（含前段）"
 
 exit 0
