@@ -17,6 +17,13 @@
 #   3~6. (sh|bash|python3) …ci.sh / smoke.sh / probe-*.sh：
 #      **期望 0 次**的白名单门 ⇒ 语义是「这个模式**不许出现在任何位置**」
 #      ⇒ 整行锚定会把它**弱化**成「不许出现在某一种整行形态」⇒ 语义被改窄
+#   7. check-deb-layout.sh 的 `^[[:space:]]*(no|ok) "`：数的是**调用点数量**
+#      （ok/no 的说明文字是自由文本）⇒ 整行锚定等于把每条说明逐字写进正则
+#      ⇒ 会把「清单不许被删」这条门改窄成「这几种文案不许被删」⇒ 显式豁免
+#   8. contract-check.sh 的 `^[[:space:]]*check`：数的是**调用点数量**
+#      （93 处断言的名字与表达式都是自由文本）⇒ 同上 ⇒ 显式豁免
+#      ⚠⚠⚨ 这两条是**批 BY 把这两个脚本纳入适用范围时**新增的豁免
+#      ⇒ 批 BY 给它们新加的 12 条门**全部是整行锚定** ⇒ 不落在这张表里
 #
 arch_need_count	deepin/scripts/ci.sh	--color-sample	ci.sh 里这条命令是 shell 续行（行尾是续行符）⇒ 整行锚定只能钉住第一行 ⇒ 真正的动作在下一行 ⇒ 锚定挡不住 ⇒ 不能用整行锚定
 arch_need_count	deepin/scripts/ci.sh	› [0-9]+/15 	15 个步骤打点行的后半段各不相同 ⇒ 一条正则只能通配 ⇒ 整行锚定无增量价值 ⇒ 不能用整行锚定
@@ -29,3 +36,5 @@ arch_need_count	deepin/scripts/ci-docs-lang-probe.sh	^[[:space:]]*echo "[ ]*✗	
 arch_need_count	deepin/scripts/ci-divider-probe.sh	^[[:space:]]*echo "[ ]*✗	条数基线门：数的是「报错文案行」⇒ 行尾是自由文本 ⇒ 整行锚定会改窄语义（等于把每条报错文案逐字写进正则）⇒ 显式豁免
 arch_need_count	deepin/scripts/ci-orphan-probe.sh	^[[:space:]]*echo "[ ]*✗	条数基线门：数的是「报错文案行」⇒ 行尾是自由文本 ⇒ 整行锚定会改窄语义（等于把每条报错文案逐字写进正则）⇒ 显式豁免
 arch_need_count	deepin/scripts/probe-agent-tool-surface.sh	^[[:space:]]*echo "[ ]*✗	条数基线门：数的是「报错文案行」⇒ 行尾是自由文本 ⇒ 整行锚定会改窄语义（等于把每条报错文案逐字写进正则）⇒ 显式豁免
+arch_need_count	deepin/scripts/check-deb-layout.sh	^[[:space:]]*(no|ok) "	清单门数的是**调用点数量**（ok/no 后面是自由说明文本）⇒ 整行锚定等于把每条说明逐字写进正则⇒ 会把「清单不许被删」改窄成「这几种文案不许被删」⇒ 显式豁免
+arch_need_count	deepin/scripts/contract-check.sh	^[[:space:]]*check	清单门数的是**调用点数量**（93 处断言的名字与表达式都是自由文本）⇒ 整行锚定等于把 93 条断言逐字写进正则⇒ 会把「清单不许被删」改窄成「这几种断言不许被删」⇒ 显式豁免
