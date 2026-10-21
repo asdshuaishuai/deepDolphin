@@ -107,7 +107,7 @@ GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1028
+GATE_LINES_EXPECTED = 1031
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -886,6 +886,57 @@ def count_lines(path, rx):
         return None
 
 
+def pair_segment_bad(path, ra, rb):
+    """逐段核对「报错行 ↔ 计数行」：每一段（从一处报错行到**下一处报错行之前**）
+    必须**恰好有 1 处**计数行。
+
+    ⚠⚠⚨ **为什么需要它**（批 BZ 遗留 ① · **本批实测坐实**，不是推演）：
+      配对门只保证「**报错行数 == 计数行数** == 期望」⇒ **总数相等**
+      ⇒ 实测：把某处的计数行**挪到别的一段** ⇒ 总数**仍相等**
+      ⇒ ⇒ 老门**全绿**（审计器 rc=0、接线门 rc=0、✗ 0 行）
+      ⇒ ⇒ 但那一处报错**不再被计数** ⇒ 末尾判定恒真 ⇒ **CI 假绿**
+    ⇒ 逐段核对 ⇒ 哪一段的计数数不是 1 ⇒ 立刻红 ⇒ 洞堵死。
+
+    ⚠ 口径：**行号**用 `grep -nE`（与门侧 `grep -cE` **同一份正则、同一份剥注释文本**）
+      ⇒ 两侧口径一致 ⇒ 零漂移。
+    ⚠ 段的定义：从一处报错行（含）到下一处报错行（不含）；**最后一段**到文件末。
+    ⚠ 返回 (违规段列表, 报错行数) 或 None（工具失败 ⇒ 调用方跳过）。
+    """
+    if not os.path.isfile(path):
+        return None
+    text = strip_comments(path)
+
+    def line_numbers(rx):
+        try:
+            out = subprocess.run(['grep', '-nE', '--', rx], input=text,
+                                 capture_output=True, text=True)
+        except OSError:
+            return None
+        if out.returncode not in (0, 1):
+            return None
+        res = []
+        for ln in out.stdout.split('\n'):
+            if not ln.strip():
+                continue
+            head = ln.split(':', 1)[0]
+            if head.isdigit():
+                res.append(int(head))
+        return res
+
+    errs = line_numbers(ra)
+    cnts = line_numbers(rb)
+    if errs is None or cnts is None:
+        return None
+    nlines = len(text.split('\n'))
+    bad = []
+    for k, s in enumerate(errs):
+        e = errs[k + 1] if k + 1 < len(errs) else nlines
+        seg_n = sum(1 for c in cnts if s <= c < e)
+        if seg_n != 1:
+            bad.append((s, seg_n))
+    return bad, len(errs)
+
+
 def check_pair_count_gates(pair_items):
     """校准 `arch_need_count_pair`：**报错行数**与**计数行数**都必须 == 期望。
 
@@ -910,6 +961,21 @@ def check_pair_count_gates(pair_items):
                       if na != nb else '两个数都与期望不符 ⇒ 门恒红/没牙'))
             bad.append((lineno, f, rx_desc, want,
                         '报错 %d / 计数 %d' % (na, nb), why))
+        # ⚠⚠⚨ 批 CS · **逐段配对**（总数相等**不够** ⇒ 见 pair_segment_bad 的说明）
+        seg = pair_segment_bad(f, ra, rb)
+        if seg is None:
+            continue
+        segbad, nseg = seg
+        for seg_line, seg_n in segbad:
+            # ⚠⚠⚨ **关键信息必须进 `why`**（批 CS 负控撞出来的）：6 字段形态的打印器
+            #   **只打 `why`**（`got` 那一项被丢）⇒ 消息里少写 ⇒ 诊断就少一截
+            #   ⇒ ⇒ 消息要自带：文件、行号、段内计数数、为什么是红
+            why = ('「%s」第 %d 行那一段（从这处报错到下一处报错之前）**段内计数 %d 处**'
+                   ' ⇒ 必须是 **1** 处 ⇒ 那一处报错**没被计数** ⇒ 末尾判定恒真'
+                   ' ⇒ **CI 假绿**（⚠ 批 CS：**总数相等也躲不过**）'
+                   % (rel(f), seg_line, seg_n))
+            bad.append((lineno, f, rx_desc, want,
+                        '段内计数 %d' % seg_n, why))
     return bad
 
 
@@ -1616,7 +1682,8 @@ def main_body():
           % (totals['count'], totals['count_in_fn']))
     print('  arch_need_count_in_step %d 条（批 BE 新门型：盯「标记串**还在这一步里**」）'
           % totals['count_in_step'])
-    print('  arch_need_count_pair %d 条（批 BZ 新门型：盯「**报错行数 == 计数行数**」）'
+    print('  arch_need_count_pair %d 条（批 BZ 新门型：盯「**报错行数 == 计数行数**」'
+          '；⚠⚠⚨ 批 CS：审计器侧**逐段**核对 ⇒ 每段恰好 1 处计数）'
           % totals['count_pair'])
     print('（arch_forbid 门项 %d 条**有意不审**：它判「不该有的东西没了」，'
           '目标串出现 >0 本来就红，不属于「被别处顶替」的隐患）' % forbid_lines)
@@ -1716,7 +1783,8 @@ def main_body():
               % (os.path.basename(WIRING), lineno, rel(f), rx, why))
 
     pairbad = check_pair_count_gates(pair)
-    print('arch_need_count_pair 期望校准（须 **报错行数 == 计数行数** == 期望）：%d 条失准'
+    print('arch_need_count_pair 期望校准（须 **报错行数 == 计数行数** == 期望'
+          ' **且逐段配对**（每段恰好 1 处计数 ⇒ 批 CS））：%d 条失准'
           % len(pairbad))
     for lineno, f, rx, want, got, why in pairbad:
         print('  · %s:%d  %s | %s ⇒ %s'
