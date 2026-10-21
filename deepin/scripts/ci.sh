@@ -609,11 +609,29 @@ echo "› 12/15 deb 布局验收（D7 的**准**验收：装完能不能用）"
 DEB_OUT="$(ls -t "$BUILD"/deb/*.deb 2>/dev/null | head -1)"
 if [ -z "$DEB_OUT" ]; then
     echo "‣ SKIP deb 布局验收：没有 deb 产物（本组**未验证**，不算通过）"
-elif sh "$SRC/scripts/check-deb-layout.sh" "$DEB_OUT"; then
-    echo "✓ deb 布局验收通过（装完能不能用：service/desktop/图标/metainfo/空环境启动）"
 else
-    echo "✗ deb 布局验收失败" >&2
-    exit 1
+    # ⚠⚠⚨ 批 CC：**接住退出码**并分诊（0=通过 / 3=未验证(SKIP) / 其它非 0=失败）。
+    #   ⚠ 以前是 `elif sh …; then … else … exit 1; fi` ⇒ 脚本 exit 0（**未验证**）
+    #     也走「通过」那一支 ⇒ ⚠⚠⚨ 实测：把 check-deb-layout.sh 的 SKIP 支
+    #     `exit 3` 改成 `exit 0` ⇒ **rc=0** 而输出仍写着「SKIP …未验证」
+    #     ⇒ CI 第 12 步打印「✓ deb 布局验收通过」⇒ **假绿坐实**
+    #     ⇒ 且**现有门全绿**（`exit 3` 一条门都没有 ⇒ 没人看得见）。
+    #   ⚠ 分诊口径与第 10 步（契约门，批 CB）、第 13 步（agent 工具面门，批 BW）
+    #     **同款**：3 = 未验证，不算通过（⚠ 沿用本仓立场：不算通过，但**不判失败**）。
+    _dl_log="$BUILD/deb-layout.log"
+    _dl_rc=0
+    sh "$SRC/scripts/check-deb-layout.sh" "$DEB_OUT" > "$_dl_log" 2>&1 || _dl_rc=$?
+    if [ "$_dl_rc" -eq 0 ]; then
+        tail -3 "$_dl_log"
+        echo "✓ deb 布局验收通过（装完能不能用：service/desktop/图标/metainfo/空环境启动）"
+    elif [ "$_dl_rc" -eq 3 ]; then
+        tail -3 "$_dl_log" >&2
+        echo "‣ SKIP deb 布局验收：本组**未验证**（脚本自己报了 SKIP）——不算通过" >&2
+    else
+        tail -20 "$_dl_log" >&2
+        echo "✗ deb 布局验收失败（退出码 $_dl_rc）" >&2
+        exit 1
+    fi
 fi
 
 echo "› 13/15 agent 工具面收敛（旧名别名必须从模型可见面剔掉，但仍可执行）"

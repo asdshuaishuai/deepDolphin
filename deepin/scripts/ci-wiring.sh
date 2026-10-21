@@ -2147,7 +2147,7 @@ arch_need_count "$SRC/scripts/ci.sh" '^CANVAS_METHODS="setTransform fillRect str
 arch_need_count "$SRC/scripts/ci.sh" '^if sh "\$SRC/scripts/ci-wiring\.sh" "\$SRC"; then$' 1 '第 9 步 **接线门**的动作还在（⚠⚠ 门自己被删了，门也得红 —— 批 BA 实测：本步删掉时**其余门全绿**）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^    DEEPGIT_CLIENT_BIN="\$BIN" sh "\$SRC/scripts/contract-check\.sh" > "\$_cc_log" 2>&1 \|\| _cc_rc=\$\?$' 1 '第 10 步 引擎契约门（真引擎沙箱）的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^    if sh "\$SRC/scripts/build-deb\.sh" "\$BUILD/deb" > "\$BUILD/build-deb\.log" 2>&1; then$' 1 '第 11 步 deb 打包的动作还在（D7 达标的必经：能出包装进 deepin）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
-arch_need_count "$SRC/scripts/ci.sh" '^elif sh "\$SRC/scripts/check-deb-layout\.sh" "\$DEB_OUT"; then$' 1 '第 12 步 deb 布局验收的动作还在（D7 的**准**验收：装完能不能用）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^    sh "\$SRC\/scripts\/check-deb-layout.sh" "\$DEB_OUT" > "\$_dl_log" 2>&1 \|\| _dl_rc=\$\?$' 1 '第 12 步 deb 布局验收的动作还在（D7 的**准**验收：装完能不能用）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）｜⚠⚠⚨ **批 CC：形态改成「接住退出码 + 分诊」**'
 arch_need_count "$SRC/scripts/ci.sh" '^sh "\$SRC/scripts/probe-agent-tool-surface\.sh" "\$BIN" \|\| ATS_RC=\$\?$' 1 '第 13 步 agent 工具面收敛的动作还在（批 BD 实测：这个探针以前**根本不在 CI 里** ⇒ 它的 9 条断言没人执行）—— ⚠ 盯的是**调用点**那串，不是文件名：文件名在 ci.sh 的注释里也出现过（讲这个洞的来由）⇒ 盯短名会命中 2 次而恒红｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^if ! sh "\$SRC/scripts/ci-orphan-probe\.sh" "\$SRC"; then$' 1 '第 14 步 无游离断言脚本的动作还在（批 BD：这是「CI 自己在漏什么」的那一道）—— ⚠ 同上，盯**调用点**｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^if ! python3 "\$SRC/scripts/ci-tautology-check\.py" "\$SRC"; then$' 1 '第 15 步 判据不许被掏空成恒真的动作还在（批 BF：条数基线门抓不到「条件被掏空」）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
@@ -3032,7 +3032,7 @@ echo "✓ 批 BZ 段门项全绿（新增失败路径必须带计数：报错行
 #   ⇒ 摘掉一个 ⇒ 那一步的失败**不再中止 CI** ⇒ CI 继续往下跑 ⇒ 假绿。
 #
 # ⚠⚠⚨ **修法（本批只动判据层 ⇒ 零产品代码改动）**：
-#   ① 每个脚本的**失败出口条数**逐个钉住（整行锚定）；
+#   ① 每个脚本的**失败出口**逐个钉住（整行锚定）—— ⚠⚠⚨ **批 CC 已把「非 0 的总数」改成「按码值分桶」**（改一个码值 ⇒ 旧桶 -1 + 新桶 +1 ⇒ 两条都红）；
 #   ② 审计器额外钉「成功出口条数」⇒ 与「失败出口条数」**合看**：
 #      任何一个失败出口被改成 `return 0` ⇒ 失败出口掉 1、成功出口涨 1
 #      ⇒ **两条都红**；
@@ -3048,7 +3048,7 @@ echo "✓ 批 BZ 段门项全绿（新增失败路径必须带计数：报错行
 #     ⇒ `smoke.sh` 的两处行内失败上报**单钉**（否则它们没门）；
 #   · 「失败出口被改成**另一个非 0 码**」⇒ 出口数不变 ⇒ 这两条门**抓不到**
 #     ⇒ 抓得到的是**诊断不失真**（另一条门盯具体码值）或**下一批**。
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return [1-9]$' 16 '审计器的**失败退出码出口**（整行的 `return <非0数字>`）必须恰好 16 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ **实测的洞**：摘掉任何一个 ⇒ 对应失败路径 fall through 到下一条语句 ⇒ 很可能落到 `return 0` ⇒ 审计器 rc=0 ⇒ **假绿**（实测：`return 4` 被摘 ⇒ 「次数门没配准」变成 rc=0）｜⚠ 口径：只数**整行**的纯数字码（条件式 `return 3 if outside else 0` 另有一条门）'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 2$' 5 '审计器的 **rc=2**（盲区 / 豁免基线不在）出口必须恰好 5 处｜⚠⚠⚨ **批 CA 原地替换 + 批 CC 分桶**｜⚠ **整行锚定**｜⚠⚠⚨ 批 CA 原来钉的是「非 0 出口**总数** == 16」⇒ 改一个码值**总数不变** ⇒ 门全绿 ⇒ **诊断被带偏**⇒ 批 CC 改成**按码值分桶**（9 个码各一条）⇒ 改一个码值 ⇒ **旧桶 -1 + 新桶 +1** ⇒ **两条都红**｜⚠ 口径：只数**整行**的纯数字码（条件式 `return 3 if outside else 0` 另有一条门）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 3 if outside else 0$' 1 '审计器的**「豁免之外」出口**（条件式 `return 3 if outside else 0`）必须恰好 1 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ 这是 rc=3 的唯一出处（豁免表对不上 ⇒ 必须报 3 而不是 0）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 0$' 2 '审计器的**成功出口**（`return 0`）必须恰好 2 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ 与「失败出口 16 处」**合看**：任何一个失败出口被改成 `return 0` ⇒ 失败出口掉 1、成功出口涨 1 ⇒ **两条都红**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^    sys\.exit\(main\(\)\)$' 1 '审计器的**入口**必须把 `main()` 的返回值交给 `sys.exit`（否则返回值被丢弃 ⇒ rc 恒 0 ⇒ 审计器**永远绿**）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
@@ -3109,5 +3109,75 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 CB 段门项全绿（未验证不许被当成通过：契约门 SKIP ⇒ 专属码 3 + CI 侧分诊）；门项合计 ${ARCH_N} 项（含前段）"
+# ── 批 CC · 「失败出口的码值」是判据的一部分：不许被悄悄改 ──────────────────
+#
+# ⚠⚠⚨ **起因（实测盘点，不是印象）**：批 CA 把「失败上报出口」逐个钉住了
+#   ⇒ 但它钉的是**总数**（`return [1-9]` == 16）⇒ 而**退出码是判据的一部分**
+#   （每个码值承载一类语义）⇒ 改一个码值**总数不变** ⇒ 批 CA 的门**全绿**
+#   ⇒ 诊断被带偏。⇒ 批 CA 段自己就写着这条已知边界 ⇒ **本批就是那个「下一批」**。
+#
+# ⚠⚠⚨ **洞 ①（行为级·假绿·旗舰）**：`check-deb-layout.sh` 的 SKIP 分支
+#   （没有 dpkg-deb ⇒ 本门**未验证**）用的是 `exit 3`
+#   ⇒ ⚠⚠⚨ **实测**：把它改成 `exit 0` ⇒ 脚本 **rc=0** 而输出**仍写着**
+#     「SKIP: 没有 dpkg-deb（本门**未验证**，不算通过）」⇒
+#     CI 第 12 步打印「**✓ deb 布局验收通过**」⇒ **假绿坐实**
+#   ⇒ ⚠⚠⚨ 而**现有门全绿**（`exit 3` **一条门都没有** ⇒ 没人看得见）。
+#
+# ⚠⚠⚨ **洞 ②（行为级·误判）**：`ci.sh` 第 12 步**不分诊**退出码
+#   （`elif sh …; then … else … exit 1; fi`）⇒
+#   ① 脚本 exit 3（**正确的未验证**）⇒ CI 判「✗ 失败」并 exit 1
+#      ⇒ **未验证被当成失败**；
+#   ② 脚本 exit 0（**未验证**）⇒ CI 打印「✓ 通过」⇒ **假绿**。
+#   ⇒ 与批 CB 修的第 10 步（契约门）**同款洞** ⇒ 本批同款修。
+#
+# ⚠⚠⚨ **洞 ③（行为级·诊断被带偏）**：审计器的失败码**每个都有语义**
+#   （2=盲区 / 3=豁免之外有隐患 / **4=次数门没配准** / 5=正则坏 / 6=总数失配
+#   / 7=重名 / 8=锚定形态 / 9=未定义名）
+#   ⇒ ⚠⚠⚨ **实测**：把 `return 4` 改成 `return 3` ⇒ 次数门失准时审计器报
+#     **rc=3** ⇒ **撞上「豁免之外有隐患」的码** ⇒
+#     **按 rc 分派的自动化处理会走错分支** ⇒ 排障被带偏。
+#
+# ⚠ **修法（本批只动判据层与 CI 脚本 ⇒ 零产品代码改动）**：
+#   ① **按码值分桶**逐个钉住（不再是「非 0 的总数」）⇒ 改一个码值
+#     ⇒ **旧桶 -1 + 新桶 +1** ⇒ **两条都红**；
+#   ② `ci.sh` 第 12 步**接住退出码**并分诊（0/3/其它）
+#     ⇒ 与第 10 步、第 13 步**同款口径**；
+#   ③ 批 CA 的 `return [1-9]` **宽门原地替换**成第一条分桶门
+#     （其余 6 条在本段）⇒ 7 条分桶门**完全蕴含**那条宽门
+#     （5+1+2+1+1+2+4 = 16）⇒ 删宽门不降低保护。
+#
+# ⚠ **口径**：
+#   · 「用法错」= **2**（4 个探针 + check-deb-layout.sh + 恒真探针）
+#     ⇒ 改成 1 ⇒ **用法错被当成断言失败** ⇒ 诊断失真；
+#   · 「未验证」= **3**（check-deb-layout.sh + agent 工具面探针）
+#     ⇒ 改成 0 ⇒ **未验证被当成通过** ⇒ 假绿（洞 ①）；
+#   · 审计器的 9 个码**各有语义** ⇒ 逐个钉死。
+arch_need_count "$SRC/scripts/check-deb-layout.sh" '^[[:space:]]*exit 1$' 1 'deb 布局验收的**真实失败**出口（`exit 1`）必须恰好 1 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠ 与「用法错(2)」「未验证(3)」**分桶**钉住 ⇒ 改任何一个码值 ⇒ 另一个桶也红 ⇒ **码值语义不许被顶替**'
+arch_need_count "$SRC/scripts/check-deb-layout.sh" '^[[:space:]]*exit 2$' 1 'deb 布局验收的**用法错**出口（`exit 2`）必须恰好 1 处（`✗ 用法：$0 <deb 路径>`）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠ 改成 1 ⇒ **用法错被当成真实失败** ⇒ 诊断失真'
+arch_need_count "$SRC/scripts/check-deb-layout.sh" '^[[:space:]]*exit 3$' 1 'deb 布局验收的**未验证**出口（`exit 3`）必须恰好 1 处（⚠⚠⚨ **实测的洞**：改成 `exit 0` ⇒ **rc=0** 而输出仍写着「SKIP …未验证」⇒ CI 打印「✓ 通过」⇒ **假绿坐实**，且**现有门全绿**）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 4$' 1 '审计器的 **rc=4**（**次数门没配准**）出口必须恰好 1 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠⚠⚨ **实测的洞**：改成 `return 3` ⇒ 次数门失准时审计器报 rc=3 ⇒ **撞上「豁免之外有隐患」的码** ⇒ 按 rc 分派的自动化处理会走错分支'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 5$' 2 '审计器的 **rc=5**（正则写法坏 / 门项命中 0 次）出口必须恰好 2 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 6$' 1 '审计器的 **rc=6**（门项总数失配）出口必须恰好 1 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 7$' 1 '审计器的 **rc=7**（门型重名）出口必须恰好 1 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 8$' 2 '审计器的 **rc=8**（锚定形态违规）出口必须恰好 2 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 9$' 4 '审计器的 **rc=9**（未定义名 / 豁免基线坏行 / 反向配准对不上）出口必须恰好 4 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci.sh" '^    _dl_rc=0$' 1 'CI 第 12 步必须**初始化** deb 布局验收的退出码变量（`set -u` 下未初始化 ⇒ 读它就炸）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci.sh" '^    sh "\$SRC\/scripts\/check-deb-layout\.sh" "\$DEB_OUT" > "\$_dl_log" 2>&1 \|\| _dl_rc=\$\?$' 1 'CI 第 12 步必须**接住** deb 布局验收的退出码（`|| _dl_rc=$?`）且 stderr **落盘**｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠⚠⚨ 写成 `if cmd; then` ⇒ exit 0（未验证）也走「通过」那一支 ⇒ **假绿**'
+arch_need_count "$SRC/scripts/ci.sh" '^    if \[ "\$_dl_rc" -eq 0 \]; then$' 1 'CI 第 12 步必须**分诊**「退出码 0 = 通过」这一支｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci.sh" '^    elif \[ "\$_dl_rc" -eq 3 \]; then$' 1 'CI 第 12 步必须**分诊**「退出码 3 = 未验证(SKIP)」这一支（⚠ 少了它 ⇒ exit 3 落进「失败」⇒ **未验证被当成失败**）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci.sh" '^        echo "‣ SKIP deb 布局验收：本组\*\*未验证\*\*[^"]*" >&2$' 1 'CI 第 12 步的 SKIP 支必须**如实打印「未验证、不算通过」**｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠ 少了这句 ⇒ 日志里只剩一句「✓ 通过」或一句「✗ 失败」⇒ 读日志的人**分不出这一组到底验没验**'
+arch_need_count "$SRC/scripts/ci.sh" '^        echo "✗ deb 布局验收失败（退出码 \$_dl_rc）" >&2$' 1 'CI 第 12 步的失败支必须**报出退出码**（诊断不失真：只知道「失败」不知道「哪一类失败」）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^[[:space:]]*exit 2$' 1 '平台探针的**用法错**出口（`exit 2`）必须恰好 1 处（`✗ 用法：$0 <deepDolphin 二进制>`）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠ 改成 1 ⇒ **用法错被当成断言失败** ⇒ 诊断失真'
+arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^[[:space:]]*exit 2$' 1 '文档语言探针的**用法错**出口（`exit 2`）必须恰好 1 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠ 改成 1 ⇒ **用法错被当成断言失败** ⇒ 诊断失真'
+arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^[[:space:]]*exit 2$' 1 '分隔线探针的**用法错**出口（`exit 2`）必须恰好 1 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠ 改成 1 ⇒ **用法错被当成断言失败** ⇒ 诊断失真'
+arch_need_count "$SRC/scripts/probe-agent-tool-surface.sh" '^[[:space:]]*exit 2$' 1 'agent 工具面探针的**用法错**出口（`exit 2`）必须恰好 1 处｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠ 改成 1 ⇒ **用法错被当成断言失败** ⇒ 诊断失真'
+arch_need_count "$SRC/scripts/probe-agent-tool-surface.sh" '^[[:space:]]*exit 3$' 2 'agent 工具面探针的**未验证**出口（`exit 3`）必须恰好 2 处（⚠ 批 BW 立的 0/1/**3** 口径：3 = SKIP ⇒ **不算通过**）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠ 改成 0 ⇒ **未验证被当成通过** ⇒ 假绿'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s*return 2$' 1 '恒真探针的**用法错**出口（`return 2`）必须恰好 1 处（`用法：ci-tautology-check.py <源码根目录>`）｜⚠⚠⚨ **批 CC**｜⚠ **整行锚定**｜⚠ 改成 1 ⇒ **用法错被当成检查失败** ⇒ 诊断失真'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 CC 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 CC 段门项全绿（失败出口的码值语义不许被顶替：未验证/用法错/审计器各码分桶钉住）；门项合计 ${ARCH_N} 项（含前段）"
 
 exit 0
