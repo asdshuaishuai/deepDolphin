@@ -62,7 +62,17 @@ strip_comments() {
         # ⚠⚠⚨ 批 CG：失败**必须被看见**（工具失败 ≠ 没找到）
         #   ⇒ 失败 ⇒ **写标记文件**（跨子 shell ⇒ 必须用文件，变量传不出去）
         #   ⇒ 正常路径**零开销**；脚本末尾统一检查 ⇒ 有 ⇒ 判红 + 指名道姓。
-        if ! sed -e 's/^[[:space:]]*#.*$//' "$1"; then
+        # ⚠⚠⚨ **批 CP · 141 = SIGPIPE**（消费者**提前收工**）⇒ **不是「工具坏了」**
+        #   ⇒ 以前把 141 也当成「剥注释失败」⇒ 记标记 ⇒ 末尾判红 ⇒ ⚠⚠⚨ **假红**
+        #     （批 BS 纪律：假红比假绿更坏 ⇒ 逼人把承诺改弱）
+        #   ⇒ ⚠⚠⚨ **实测的引爆点**：`arch_need_count_in_fn` / `arch_need_count_in_step`
+        #     的 awk 读完函数体/步正文就 `exit` ⇒ sed 还在写 ⇒ 被 SIGPIPE 打断
+        #     ⇒ ⚠ **门项文件越写越大 ⇒ 越容易触发** ⇒ 这是颗**时间炸弹**
+        #   ⇒ 现在：141 一律**不算工具失败**（那些消费者**故意**只取一部分 ⇒
+        #     截断是预期的）⇒ 其余非 0（sed/perl 崩了、文件读不了）⇒ 照旧判红。
+        sed -e 's/^[[:space:]]*#.*$//' "$1"
+        _strip_rc=$?
+        if [ "$_strip_rc" -ne 0 ] && [ "$_strip_rc" -ne 141 ]; then
             printf '%s\n' "$1" >> "$STRIP_FAIL_FILE"
             return 1
         fi
@@ -79,7 +89,10 @@ strip_comments() {
         #   `ci.sh` / `ci-d2.sh` 按 `sed -n '/^strip_comments() {/,/^}/p'` 抽取本函数
         #   ⇒ 独占的 `}` 会让它们**抽到残缺函数** ⇒ 那两处的抽取自检会当场红。
         # ⚠⚠⚨ 批 CG：失败**必须被看见**（工具失败 ≠ 没找到）—— 同上。
-        if ! perl -pe 's{(?<!:)(//)(?!:).*$}{}' "$1"; then
+        # ⚠⚠⚨ 批 CP：141（SIGPIPE，消费者提前收工）**不算工具失败** —— 同上。
+        perl -pe 's{(?<!:)(//)(?!:).*$}{}' "$1"
+        _strip_rc=$?
+        if [ "$_strip_rc" -ne 0 ] && [ "$_strip_rc" -ne 141 ]; then
             printf '%s\n' "$1" >> "$STRIP_FAIL_FILE"
             return 1
         fi
@@ -258,16 +271,29 @@ echo "› 接线门：架构图 / agent 工具表 / 代码图谱+热力图 / 补
 #   → 接线层（详情页入口 → PanelWindow → ArchDialog → 画布）
 ARCH_FAIL=0
 ARCH_N=0
+# ⚠⚠⚨ 批 CP · **全局红过标志**（段级 trailer 不再提前 exit ⇒ 末尾统一判红）
+#   ⇒ **一处红不再遮住后面的门项** ⇒ 排障可以「改一个 ⇒ 跑一次 ⇒ 再改一个」
+#   ⇒ ⚠ 段级 `ARCH_FAIL` 现在是**段内作用域**（每段末清零）⇒ 段归属不失真
+ARCH_ANY_FAIL=0
 # ⚠⚠⚠ **自检放在门项之前**（批 BI 修的坑，两个理由）：
 #   ① 判定逻辑坏了 ⇒ 立刻红；
 #   ② **不被前面某段的 exit 短路**（批 BG 教训：审计器先跑会短路后面段落的门项）
 #      ⇒ 自检若放在段末尾 ⇒ 前面的门一红就退出 ⇒ 自检永远没机会跑 ⇒ 自检形同虚设。
 #   ⚠ 必须在 ARCH_FAIL 初始化**之后** ⇒ 否则自检设的红会被重置掉。
+#   ⚠⚠⚨ 批 CP：自检的红**自己成段**（下面那个 trailer）⇒ 它的归属不许混进后面任何一段。
 # ⚠ 自检：三态判定自己证明自己有牙（合成样例 ⇒ 判定逻辑坏了当场红）。
 if ! probe_scan_selftest; then
     echo "  ✗ 公共查找自检失败：三态判定没有牙（这道门不可信）" >&2
     ARCH_FAIL=1
 fi
+# ⚠⚠⚨ 批 CP · **自检自己成段**（不许混进后面任何一段的归属里 ⇒ 诊断不许失真）
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：公共查找自检段有门项红（上面带 ✗ 的行）" >&2
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 公共查找自检段通过（三态判定有牙）"
+fi
+ARCH_FAIL=0
 arch_need() { # arch_need <文件> <正则> <说明>
     local f="$1" re="$2" label="$3"
     ARCH_N=$((ARCH_N + 1))
@@ -733,14 +759,21 @@ arch_forbid_text_dup() { # arch_forbid_text_dup <判定层文件> <相对SRC的�
 if ! python3 "$SRC/scripts/ci-unverified-audit.py"; then
     echo "✗ 未验证出口盘点失败（盘点脚本跑不起来 ⇒ 没有 python3；或盘点与登记册对不上 ⇒ 看上面带 ✗ 的行）" >&2
     ARCH_FAIL=1
-    # ⚠⚠⚨ 批 CM：**紧跟 exit 1**（⚠ 诊断不许失真，批 CE 纪律）：
-    #   `ARCH_FAIL=1` 是「门型判定失败 → 整道门红」的**唯一通路**（批 BO）⇒ 照例打上；
-    #   但**只打不退出** ⇒ 会一路跑到**后面**那个通用守卫 ⇒ 那句文案是
-    #   「取数/判定/渲染/接线任一段被摘掉」⇒ ⚠⚠⚨ **指错方向**（本批的失败既不是
-    #   「取数/判定/渲染/接线」也不是「被摘掉」）⇒ ⇒ 这里**立刻带准确诊断退出**。
-    # ⚠ 摘掉这行 exit 1 ⇒ 盘点失败会落到末尾那句 ⇒ **仍然红**（不是假绿）⇒ 只丢诊断精度。
-    exit 1
+    # ⚠⚠⚨ 批 CM 的理由是「紧跟 exit 1」（诊断不许失真）：只打不退出 ⇒ 会落到**后面**那个
+    #   通用守卫 ⇒ 那句文案是「取数/判定/渲染/接线任一段被摘掉」⇒ **指错方向**。
+    # ⚠⚠⚨ **批 CP 订正**：但那个 `exit 1` 本身就是「**先红遮后红**」的另一个实例 ——
+    #   盘点一红 ⇒ 后面 1000 多条门项**根本没跑** ⇒ 一次只看得见一个洞。
+    #   ⇒ 现在改成「**只打红 + 继续跑**」⇒ 归属交给**紧跟其后的盘点段 trailer**
+    #   （文案指名道姓 ⇒ 诊断精度**不丢**）⇒ 而后面所有门项**照跑**。
 fi
+# ⚠⚠⚨ 批 CP · **盘点自己成段**（它的红不许落到「接线门」段头上 ⇒ 诊断不许失真）
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：出口盘点段有门项红（上面带 ✗ 的行）" >&2
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 出口盘点段通过（登记册与实测对得上）"
+fi
+ARCH_FAIL=0
 
 arch_need_any_count 'QStringLiteral\("graph"\).*QStringLiteral\("arch"\)' 1 'AppModel 调引擎 graph arch 取场景' 'src/app/AppModel*.cpp'
 arch_need_any_count 'QStringLiteral\("scene"\)' 1 '场景按 scene 契约格式取（--format scene）' 'src/app/AppModel*.cpp'
@@ -1793,15 +1826,17 @@ for f in src/logic/ArchViewport.cpp src/logic/ArchReceipt.cpp src/logic/AgentToo
         ARCH_FAIL=1
     fi
 done
-if [ "$ARCH_FAIL" -ne 0 ]; then
-    echo "✗ 接线门失败：取数/判定/渲染/接线任一段被摘掉" >&2
-    exit 1
-fi
 # ⚠ 这里报的是**本段**的项数（批 X 段还没跑）⇒ 末尾那行才报**总项数**。
 #   批 X 照出：文档里写的「N 项」原先**没法自证** —— 脚本自己报的那个数
 #   是中途的计数，批 X 段又加了项却没报总账 ⇒ 「371 项」这种说法不可核。
 #   ⇒ 末尾统一报总项数（见文件末尾）。
-echo "✓ 接线完整（取数 → 判定 → 渲染 → 接线，前段 ${ARCH_N} 项）"
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：取数/判定/渲染/接线任一段被摘掉" >&2
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 接线完整（取数 → 判定 → 渲染 → 接线，前段 ${ARCH_N} 项）"
+fi
+ARCH_FAIL=0
 
 # ── 批 X · M1-3 SNI 托盘（DDE 只认 SNI；旧协议一个像素都不显示）──────
 # 实测事实（批 X 照出来的，写进门项的依据）：
@@ -1904,9 +1939,11 @@ arch_need "$SRC/scripts/probe-sni-icon.sh" '非零字节' '探针统计整张图
 #   ⇒ 末尾必须显式 `exit $ARCH_FAIL`。
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 X 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 X 段门项全绿（SNI 托盘）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 X 段门项全绿（SNI 托盘）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 Y · M1-3 deepin 托盘**窗口协议**（DDE 25 真正的解法）──────────
 # 实测事实（批 Y 查明，写进门项的依据）：
@@ -1993,9 +2030,11 @@ arch_need "$SRC/CMakeLists.txt" 'find_path\(XCB_INCLUDE_DIR' 'xcb 用 find_path 
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 Y 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 Y 段门项全绿（deepin 托盘窗口协议）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 Y 段门项全绿（deepin 托盘窗口协议）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 AA · 固定文档页四语言 + 页内语言切换 ───────────────────────────
 # 纪律（本批的判据来自这几条）：
@@ -2129,9 +2168,11 @@ arch_need "$SRC/src/ui/DesignTokens.h" 'constexpr int MotionStandardMs = 200;' '
 #   口径与批 X / 批 Y 段一致。
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 AX 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 AX 段门项全绿（M3c 图标名/动效已达成）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 AX 段门项全绿（M3c 图标名/动效已达成）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 AZ · CI 的两个**真实检查盲区** + 崩点可诊断性 ─────────────────────
 # ⚠⚠⚠ **这一段盯的是 ci.sh 本身** —— 前面的门盯的是「源码里的接线在不在」，
@@ -2183,9 +2224,11 @@ arch_need_count "$SRC/scripts/ci.sh" '^BUILD="\$\(cd "\$BUILD" 2>/dev/null && pw
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 AZ 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 AZ 段门项全绿（CI 自测步不许吞退出码 / agent 自测三断言 / 崩点可诊断）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 AZ 段门项全绿（CI 自测步不许吞退出码 / agent 自测三断言 / 崩点可诊断）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BA · CI 的**每一步**都必须有门（批 BA 时 12 步，批 BD 起 14 步，批 BF 起 15 步）──
 # ⚠⚠⚠ **起因（实测，不是推演）**：批 AZ 给 ci.sh 的**内部**加了门，
@@ -2234,9 +2277,11 @@ arch_need_ml "$SRC/scripts/ci.sh" '› 1/15 .*› 2/15 .*› 3/15 .*› 4/15 .*�
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BA 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BA 段门项全绿（ci.sh 的 15 步每一步都有门）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BA 段门项全绿（ci.sh 的 15 步每一步都有门）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BB · 判据条数基线：**必须相等**，不是「不少于」────────────────────
 # ⚠⚠⚠ **起因（实测，不是推演）**：批 AJ 立的门是「判据数**不少于** `SC_MIN`」
@@ -2260,9 +2305,11 @@ arch_need_count "$SRC/scripts/ci.sh" '^if \[ "\$SC_FAILED" -ne 0 \] \|\| \[ "\$S
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BB 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BB 段门项全绿（判据条数基线必须完全相等 ⇒ 余量恒为 0）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BB 段门项全绿（判据条数基线必须完全相等 ⇒ 余量恒为 0）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BC · CI 里跑的**每个断言脚本**，它的断言清单都要有门 ───────────────
 # ⚠⚠⚠ **起因**：批 BB 修完 selfcheck 的判据基线后，顺手查了别的脚本 ⇒ 撞出同一族的洞：
@@ -2291,9 +2338,11 @@ arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^[[:space:]]*echo "[ ]*✗' 
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BC 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BC 段门项全绿（CI 里跑的 5 个断言脚本，清单都不许被删）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BC 段门项全绿（CI 里跑的 5 个断言脚本，清单都不许被删）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BD · 断言脚本不许游离在 CI 之外 ──────────────────────────────────
 # ⚠⚠⚠ **起因（实测，不是推演）**：批 BC 给「CI 里跑的脚本」加了条数基线门，
@@ -2335,9 +2384,11 @@ arch_need_count "$SRC/scripts/ci.sh" '(sh|bash|python3) +"?[^"]*/scripts/probe-s
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BD 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BD 段门项全绿（断言脚本不许游离在 CI 之外；白名单 4 条，每条带理由且都确实不在 CI 里）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BD 段门项全绿（断言脚本不许游离在 CI 之外；白名单 4 条，每条带理由且都确实不在 CI 里）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BE · per-step 门要认识**步骤边界**（标记串被挪到别处也要红）──────
 # ⚠⚠⚠ **起因（实测，不是推演）**：批 BA 立了 12 条 per-step 门（批 BD 扩到 14 条），
@@ -2374,9 +2425,11 @@ arch_need_count_in_step "$SRC/scripts/ci.sh" 15 'python3 "\$SRC/scripts/ci-tauto
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BE 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BE 段门项全绿（ci.sh 每一步的标记串**不许被挪到别的步**）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BE 段门项全绿（ci.sh 每一步的标记串**不许被挪到别的步**）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BF · 判据不许被「掏空成恒真」（条数基线门抓不到的那一类）────────
 # ⚠⚠⚠ **起因（实测，不是推演）**：批 BB/BC 的门盯的是「**判据条数**」
@@ -2418,9 +2471,11 @@ arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if bad:$' 1 '探针的
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BF 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BF 段门项全绿（判据不许被掏空成恒真；探针自带自检 ⇒ 门自己证明自己有牙）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BF 段门项全绿（判据不许被掏空成恒真；探针自带自检 ⇒ 门自己证明自己有牙）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BG · 断言函数**实参里**的判据也不许恒真（契约门那 93 条）────────
 # ⚠⚠⚠ **起因（实测，不是推演）**：批 BF 把「判据掏空成恒真」管住了
@@ -2483,9 +2538,11 @@ arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.shell_scan., \([^)]
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BG 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BG 段门项全绿（断言函数实参里的判据也不许恒真；实参解析器 + 条数交叉校验都在）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BG 段门项全绿（断言函数实参里的判据也不许恒真；实参解析器 + 条数交叉校验都在）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BH · 门项总数不许被悄悄删（批 BA 留下的洞）──────────────────────────
 #
@@ -2727,9 +2784,11 @@ arch_need_count "$SRC/scripts/ci-tautology-scope.baseline" '^[0-9]+$' 3 '扫描�
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if not os\.path\.isdir\(d\):$' 1 '恒真探针的**扫描目录不存在**必须**明确报错**（不许崩成 traceback ⇒ 崩掉的退出码也是 1 ⇒ CI 照样红，但**看不出是哪一步坏了** ⇒ 排障会被带偏 —— 批 AZ 纪律）｜⚠⚠⚨ **批 BP**｜⚠⚠⚨ **整行锚定**'
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BH/BI 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BH 段门项全绿（门项总数不许被悄悄删；审计器门型覆盖对拍也在）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BH 段门项全绿（门项总数不许被悄悄删；审计器门型覆盖对拍也在）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 echo "✓ 批 BI 段门项全绿（forbid 门族不许静默变绿；工具坏了 ⇒ 红，不是绿）；门项合计 ${ARCH_N} 项（含前段）"
 echo "✓ 批 BJ 段门项全绿（恒真探针看得见脚本侧捷径与 heredoc 内嵌脚本）；门项合计 ${ARCH_N} 项（含前段）"
 echo "✓ 批 BK 段门项全绿（剥注释覆盖 .py ⇒ 注释顶替不了真代码）；门项合计 ${ARCH_N} 项（含前段）"
@@ -2778,9 +2837,11 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+\(r.[^,]*, (True|False)\)
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BQ 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BQ 段门项全绿（整行锚定不许名存实亡：中间不许无界通配 ⇒ 规则自己有门）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BQ 段门项全绿（整行锚定不许名存实亡：中间不许无界通配 ⇒ 规则自己有门）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BS · CI 里跑的断言脚本（探针们）纳入「整行锚定」适用范围 ─────────────────────
 #
@@ -2814,9 +2875,11 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+while j >= 0 and rx\[j\] 
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BS 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BS 段门项全绿（探针脚本纳入整行锚定适用范围：判定行不许被掏空）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BS 段门项全绿（探针脚本纳入整行锚定适用范围：判定行不许被掏空）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BT · 探针脚本的「失败上报」不许被摘掉（否则断言空转 ⇒ CI 假绿）──────
 #
@@ -2844,9 +2907,11 @@ arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^[[:space:]]*(exit [1-9]|retu
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BT 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BT 段门项全绿（探针的失败上报不许被摘掉：断言空转 ⇒ CI 假绿）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BT 段门项全绿（探针的失败上报不许被摘掉：断言空转 ⇒ CI 假绿）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BU · helper 型断言脚本：「失败上报」与「断言清单」都要有门 ──────────────
 #
@@ -2875,9 +2940,11 @@ arch_need_count "$SRC/scripts/probe-sni-icon.sh" '\b(die|fail) "' 10 '**helper �
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BU 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BU 段门项全绿（helper 型断言脚本：失败助手定义行 + 断言清单都要有门）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BU 段门项全绿（helper 型断言脚本：失败助手定义行 + 断言清单都要有门）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BV · 无头路径的收尾：「退出时 QApplication 必须还活着」——CI 偶发段错误的真身 ──
 #
@@ -2920,9 +2987,11 @@ arch_forbid "$SRC/scripts/ci-divider-probe.sh" '2>/dev/null' '分隔线探针的
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BV 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BV 段门项全绿（无头路径的收尾：退出时 QApplication 必须还活着 + 崩点不许被吞）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BV 段门项全绿（无头路径的收尾：退出时 QApplication 必须还活着 + 崩点不许被吞）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BW · 「探针崩了」不许被当成「未验证」（SKIP） ─────────────────────
 #
@@ -2958,9 +3027,11 @@ arch_need_count "$SRC/src/main.cpp" 'probeExit\(3\);' 1 '「引擎未找到」�
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BW 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BW 段门项全绿（探针崩了不许被当成 SKIP：退出码分诊 + 崩点落地）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BW 段门项全绿（探针崩了不许被当成 SKIP：退出码分诊 + 崩点落地）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BX · 「崩了」必须被判成「崩了」：退出码不许被吞、stderr 不许顶替 stdout ──
 #
@@ -2990,9 +3061,11 @@ arch_need_count "$SRC/scripts/check-deb-layout.sh" '^[[:space:]]*if \[ "\$VRC" -
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BX 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BX 段门项全绿（崩了必须被判成崩了：退出码不许被吞、stderr 不许顶替 stdout）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BX 段门项全绿（崩了必须被判成崩了：退出码不许被吞、stderr 不许顶替 stdout）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BY · 「失败计数不许被掏空」：计数器型断言脚本的 fail 计数必须真的有门 ──
 #
@@ -3043,9 +3116,11 @@ arch_need_count "$SRC/scripts/contract-check.sh" '^[^#]*\bfail=[^#]*$' 40 '契�
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BY 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BY 段门项全绿（失败计数不许被掏空：计数点/判定行逐条整行锚定 + 写 fail 的行数基线 ⇒ 摘计数 / 复位计数都必红）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BY 段门项全绿（失败计数不许被掏空：计数点/判定行逐条整行锚定 + 写 fail 的行数基线 ⇒ 摘计数 / 复位计数都必红）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 BZ · 「新增失败路径必须带计数」：报错行数 == 计数行数（配对门）──
 #
@@ -3079,9 +3154,11 @@ arch_need_count_pair "$SRC/scripts/contract-check.sh" 'echo "  ✗' 'fail=\$\(\(
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BZ 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 BZ 段门项全绿（新增失败路径必须带计数：报错行数 == 计数行数 ⇒ 差恒为 0）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 BZ 段门项全绿（新增失败路径必须带计数：报错行数 == 计数行数 ⇒ 差恒为 0）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 CA · 「失败上报出口」不许被摘掉：判据层与 CI 自己的出口都要有门 ──
 #
@@ -3142,9 +3219,11 @@ arch_need_count "$SRC/scripts/bootstrap-deps.py" '^    sys\.exit\(main\(\)\)$' 1
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CA 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CA 段门项全绿（失败上报出口不许被摘掉：判据层与 CI 自己的出口都有门）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 CA 段门项全绿（失败上报出口不许被摘掉：判据层与 CI 自己的出口都有门）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 CB · 「未验证」不许被当成「通过」：契约门的 SKIP 必须用专属退出码 3 ──
 #
@@ -3184,9 +3263,11 @@ arch_need_count "$SRC/scripts/ci.sh" '^        echo "✗ 引擎契约门失败�
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CB 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CB 段门项全绿（未验证不许被当成通过：契约门 SKIP ⇒ 专属码 3 + CI 侧分诊）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 CB 段门项全绿（未验证不许被当成通过：契约门 SKIP ⇒ 专属码 3 + CI 侧分诊）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 # ── 批 CC · 「失败出口的码值」是判据的一部分：不许被悄悄改 ──────────────────
 #
 # ⚠⚠⚨ **起因（实测盘点，不是印象）**：批 CA 把「失败上报出口」逐个钉住了
@@ -3254,9 +3335,11 @@ arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s*return 2$' 1 '恒真�
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CC 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CC 段门项全绿（失败出口的码值语义不许被顶替：未验证/用法错/审计器各码分桶钉住）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 CC 段门项全绿（失败出口的码值语义不许被顶替：未验证/用法错/审计器各码分桶钉住）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 # ── 批 CD · 「工具读不了」不许被当成「没问题」 ────────────────────────────
 #
 # ⚠⚠⚨ **起因（实测盘点，不是印象）**：批 AZ 早就记下过「真正吞退出码的是
@@ -3297,9 +3380,11 @@ arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^    fail=1    # ⚠⚠⚨ �
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CD 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CD 段门项全绿（工具读不了不许被当成没问题：扫描前先验可读性）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 CD 段门项全绿（工具读不了不许被当成没问题：扫描前先验可读性）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 # ── 批 CE · 「外部工具的失败」不许被当成「检查通过」 ────────────────────────
 #
 # ⚠⚠⚨ **起因（实测盘点，不是印象）**：批 CD 盘过「外部工具的调用站点」
@@ -3339,13 +3424,15 @@ arch_need_count "$SRC/scripts/build-deb.sh" '^    die "ldd 读不了解包后的
 arch_need_count "$SRC/scripts/build-deb.sh" '^    die "readelf 读不了包内二进制（退出码 \$_re_rc）⇒ \*\*RPATH 检查未验证\*\*，不算通过（\$_re_out）"$' 1 'deb 构建的 **readelf RPATH 检查**必须在 readelf 失败时判失败（⚠⚠⚨ **实测的洞**：旧形态是 `if readelf … | grep -qiE …; then die; fi`（**无 else**）⇒ readelf 失败 ⇒ 不进 then ⇒ 静默判「没带 RPATH」⇒ **rc=0 假绿**）｜⚠⚠⚨ **批 CE**｜⚠ **整行锚定**'
 arch_need_count "$SRC/scripts/build-deb.sh" '^dpkg-deb -x "\$DEB_PATH" "\$TMP\/unpack" \|\| die "解包失败：\$DEB_PATH（产物自检的前提就没有 ⇒ 后面全是空转）"$' 1 'deb 构建的**解包失败必须响亮 die**（⚠ 以前靠 `set -e` 静默中止 ⇒ 没有 die 消息 ⇒ 看着像「跑到一半没了」⇒ **诊断失真**）｜⚠⚠⚨ **批 CE**｜⚠ **整行锚定**'
 
-if [ "$ARCH_FAIL" -ne 0 ]; then
-    echo "✗ 接线门失败：批 CE 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
-fi
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^    if \[ ! -r "\$f" \]; then$' 1 '接线门的**图标收口检查必须先验可读性**（⚠⚠⚨ **实测的洞**：某个 `src/ui/*.cpp` 对 grep **不可读** ⇒ `strip_comments … | grep -qE` **无输出** ⇒ **裸 QIcon::fromTheme 漏检** ⇒ 门照样绿 ⇒ **判据层自身的假绿**）｜⚠⚠⚨ **批 CE**｜⚠ **整行锚定**｜⚠ 与批 CB/CC/CD 同款口径：**未验证不许被当成通过**'
 
-echo "✓ 批 CE 段门项全绿（外部工具的失败不许被当成「检查通过」：接住退出码 + 工具失败即判失败）；门项合计 ${ARCH_N} 项（含前段）"
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 CE 段有门项红（上面带 ✗ 的行）" >&2
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CE 段门项全绿（外部工具的失败不许被当成「检查通过」：接住退出码 + 工具失败即判失败）；门项合计 ${ARCH_N} 项（含前段）"
+fi
+ARCH_FAIL=0
 
 # ── 批 CF · 「判据层自己的剥注释」不许有三份实现、三种口径 ────────────────────────
 #
@@ -3388,15 +3475,17 @@ arch_need_count "$SRC/scripts/ci-d2.sh" '^if ! eval "\$\(sed -n .\/\^strip_comme
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^command -v perl >\/dev\/null 2>&1 \|\| \{$' 1 '判据层的剥注释**前提是 perl 在** ⇒ 缺它必须**响亮失败**（⚠⚠⚨ **批 CF**：以前会**静默降级**换口径 ⇒ 门与审计器不再同口径 ⇒ 判定不可信且无人知晓 ⇒ 假红或假绿都可能）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CF**｜⚠ 与批 CB/CC/CD/CE 同款口径：**未验证不许被当成通过**'
 arch_need_count "$SRC/scripts/ci.sh" '^command -v perl >\/dev\/null 2>&1 \|\| \{$' 1 'CI 入口的剥注释**前提是 perl 在** ⇒ 缺它必须**响亮失败**（⚠⚠⚨ **批 CF**：以前静默降级 ⇒ 红因指错方向 ⇒ 排障被带偏）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CF**'
 arch_need_count "$SRC/scripts/ci-d2.sh" '^command -v perl >\/dev\/null 2>&1 \|\| \{$' 1 '散值门的剥注释**前提是 perl 在** ⇒ 缺它必须**响亮失败**（⚠⚠⚨ **批 CF**：以前静默降级 ⇒ 命中数变 0 ⇒ 而本门**照样打印「✓ D2 命中 0/0」** ⇒ **假绿**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CF**'
-arch_need_count "$SRC/scripts/ci-wiring.sh" '^        if ! perl -pe .s\{\(\?<!:\)\(\/\/\)\(\?!:\)\.\*\$\}\{\}. "\$1"; then$' 1 '判据层的剥注释**必须直接走 perl**（⚠⚠⚨ **批 CG**：形态改成 「`if ! perl …; then`」⇒ **失败要接住**（写标记 ⇒ 末尾统一判红）⇒ perl 缺席/崩了都不会被当成「没有命中」｜⚠ **整行锚定** ⇒ 一旦有人把兜底或失败处理加回来 ⇒ 这一行变形 ⇒ 门立刻红｜⚠⚠⚨ **批 CG**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^        perl -pe .s\{\(\?<!:\)\(\/\/\)\(\?!:\)\.\*\$\}\{\}. "\$1"$' 1 '判据层的剥注释**必须直接走 perl**（⚠⚠⚨ **批 CG**：形态改成「`perl …` + **接住退出码**」（原来裹在 `if ! perl …; then` 里 ⇒ 拿不到**原始**退出码 ⇒ 分不清「工具坏了」与「消费者提前收工（SIGPIPE=141）」）⇒ **失败要接住**（写标记 ⇒ 末尾统一判红）⇒ perl 缺席/崩了都不会被当成「没有命中」｜⚠ **整行锚定** ⇒ 一旦有人把兜底或失败处理加回来 ⇒ 这一行变形 ⇒ 门立刻红｜⚠⚠⚨ **批 CG + 批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def require_perl\(\):$' 1 '审计器的**剥注释工具前提检查**的**定义**必须在（⚠⚠⚨ **批 CF**：以前 perl 缺席时审计器**未捕获异常崩掉** ⇒ 退出码 1 ⇒ 门报「**未知的失败码**」⇒ 真实原因没人知道）｜⚠ **带左括号** ⇒ 改名躲不过｜⚠ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^    _rp = require_perl\(\)$' 1 '审计器的**剥注释工具前提检查**必须**真的被调用**（只定义不调 ⇒ 形同虚设 ⇒ 崩了没人发现）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CF**'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CF 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CF 段门项全绿（判据层自己的剥注释只有一份实现、一种口径；剥注释工具不许静默降级）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 CF 段门项全绿（判据层自己的剥注释只有一份实现、一种口径；剥注释工具不许静默降级）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 CG · 「剥注释失败」不许被当成「没找到」 ────────────────────────────────
 #
@@ -3434,9 +3523,11 @@ arch_need_count "$SRC/scripts/ci-d2.sh" '^if \[ -s "\$STRIP_FAIL_FILE" \]; then$
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CG 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CG 段门项全绿（剥注释失败不许被当成「没找到」：失败留标记 + 末尾统一判红）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 CG 段门项全绿（剥注释失败不许被当成「没找到」：失败留标记 + 末尾统一判红）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 CH · 「盘点方法本身」也要被门守：审计器自己读不了不许当成「没问题」 ──────
 #
@@ -3493,9 +3584,11 @@ arch_need_count "$SRC/scripts/ci-d2.sh" '^trap ._ch_rc=\$\?; if \[ -s "\$STRIP_F
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CH 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CH 段门项全绿（审计器自己读不了源文件 ⇒ 指名道姓 + rc=2，不许当成「没问题」）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 CH 段门项全绿（审计器自己读不了源文件 ⇒ 指名道姓 + rc=2，不许当成「没问题」）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 CI · 「未验证」不许被当成「通过」（从契约门内部到 CI 出口，全链路） ──────
 #
@@ -3538,9 +3631,11 @@ arch_need_count "$SRC/scripts/ci.sh" '^    echo "✗ 引擎契约门\*\*未验�
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CI 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CI 段门项全绿（未验证不许被当成通过：契约门内层 SKIP 计数 + 末尾 exit 3 + CI 判红）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 CI 段门项全绿（未验证不许被当成通过：契约门内层 SKIP 计数 + 末尾 exit 3 + CI 判红）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 CJ · 「一次性盘点的数字」不许被当成事实 ──────────────────────────
 #
@@ -3594,9 +3689,11 @@ fi
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CJ 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CJ 段门项全绿（一次性盘点的数字不许被当成事实：仓内常驻盘点 + 逐处带理由的登记册）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 CJ 段门项全绿（一次性盘点的数字不许被当成事实：仓内常驻盘点 + 逐处带理由的登记册）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 CK · 「未验证」不许被当成「通过」（**CI 自己这一层**） ────────────────
 #
@@ -3640,9 +3737,11 @@ arch_need_ml "$SRC/scripts/ci.sh" 'exit 3[[:space:]]+fi[[:space:]]+echo "✓ CI 
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CK 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CK 段门项全绿（未验证不许被当成通过：CI 自己的 6 处跳过必须计数 + 末尾 exit 3）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 CK 段门项全绿（未验证不许被当成通过：CI 自己的 6 处跳过必须计数 + 末尾 exit 3）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 CL · 「未验证」不许被当成「通过」（**子脚本层**：打包脚本 / 冒烟脚本） ──
 #
@@ -3681,9 +3780,11 @@ arch_need_ml "$SRC/scripts/ci.sh" '‣ SKIP deb 构建：本组\*\*未验证\*\*
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CL 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CL 段门项全绿（未验证不许被当成通过：打包脚本 / 冒烟脚本的未验证出口必须计数 + 专属码 3）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 CL 段门项全绿（未验证不许被当成通过：打包脚本 / 冒烟脚本的未验证出口必须计数 + 专属码 3）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 CM · 「未验证出口」的盘点搬进仓内常驻脚本 + 逐组带理由的登记册 ──
 #
@@ -3735,9 +3836,11 @@ arch_forbid "$SRC/scripts/ci-unverified-audit.py" '^[[:space:]]*def strip_commen
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CM 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CM 段门项全绿（未验证出口的盘点搬进仓内常驻脚本 + 逐组带理由的登记册）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 CM 段门项全绿（未验证出口的盘点搬进仓内常驻脚本 + 逐组带理由的登记册）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 CN · 「没有 perl ⇒ 这道门没跑」必须**判红**（不许回退成 SKIP 口径）──
 #
@@ -3760,9 +3863,11 @@ arch_need_ml "$SRC/scripts/ci-wiring.sh" 'command -v perl >/dev/null 2>&1 \|\| \
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CN 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CN 段门项全绿（没有 perl ⇒ 这道门没跑 ⇒ 必须判红；顶部 preflight 也不许被摘）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 CN 段门项全绿（没有 perl ⇒ 这道门没跑 ⇒ 必须判红；顶部 preflight 也不许被摘）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
 
 # ── 批 CO · 门项行的「实参数个数」必须与门型签名对得上（不许一行藏两条门）──
 #
@@ -3784,9 +3889,42 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^    arity_bad = check_gate_a
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CO 段有门项红（上面带 ✗ 的行）" >&2
-    exit 1
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CO 段门项全绿（门项行的实参数个数必须与门型签名对得上；不许一行藏两条门）；门项合计 ${ARCH_N} 项（含前段）"
 fi
-echo "✓ 批 CO 段门项全绿（门项行的实参数个数必须与门型签名对得上；不许一行藏两条门）；门项合计 ${ARCH_N} 项（含前段）"
+ARCH_FAIL=0
+
+# ── 批 CP · 判据层「先红遮后红」不许再遮 ───────────────────────────────────
+# ⚠⚠⚨ **实测的洞（批 CP 的起因，不是推演）**：段级 trailer 原来长这样：
+#     if [ "$ARCH_FAIL" -ne 0 ]; then
+#         echo "✗ 接线门失败：批 X 段有门项红（上面带 ✗ 的行）" >&2
+#         exit 1              ← ⚠⚠⚨ **提前退出**
+#     fi
+#   ⇒ `ARCH_FAIL` 是**全局**的 ⇒ **任何一段红了，后面每一段的 trailer 都会 exit**
+#     ⇒ ⚠⚠⚨ **实测：540/1017 条门项根本没跑**（只跑了 477 条）
+#     ⇒ 排障被迫「改一个 ⇒ 跑一次 ⇒ 再改一个」⇒ 一次只看得见一个洞。
+#   ⇒ 现在：段级 trailer **只记红不退出**（`ARCH_ANY_FAIL=1`）⇒ 全部门项都跑完
+#     ⇒ 末尾**统一**判红（退出码语义**不变**：红 = 1）⇒ 一次看得见**全部**洞。
+#   ⇒ ⚠ 段级 `ARCH_FAIL` 现在是**段内作用域**（每段末清零）⇒ 段归属不失真。
+#   ⇒ ⚠ 盘点脚本那一处 `exit 1`（批 CM 加的）**同款** ⇒ 也收了
+#     ⇒ 盘点**自己成段**（诊断不许失真：它的红不许落到「接线门」段头上）。
+#   ⇒ ⚠ 顶部自检也**自己成段**（同款：它的红不许混进后面任何一段的归属里）。
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_ANY_FAIL=0$' 1 '判据层的**全局红过标志**的声明必须在（⚠⚠⚨ **批 CP**：段级 trailer 不再提前 exit ⇒ 末尾统一按它判红 ⇒ 它被摘 ⇒ **红也不报了** ⇒ **假绿**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+if \[ "\$_strip_rc" -ne 0 \] && \[ "\$_strip_rc" -ne 141 \]; then$' 2 '剥注释的**失败判定必须容忍 141**（SIGPIPE = 消费者**提前收工**）—— ⚠⚠⚨ **批 CP 实测的洞**：以前把 141 也当成「工具坏了」⇒ 记标记 ⇒ 末尾判红 ⇒ ⚠⚠⚨ **假红**（批 BS 纪律：假红比假绿更坏 ⇒ 逼人把承诺改弱）⇒ ⚠⚠⚨ **引爆点**：`arch_need_count_in_fn` 的 awk 读完函数体就 `exit` ⇒ sed 还在写 ⇒ 被 SIGPIPE 打断 ⇒ ⇒ **门项文件越大越容易触发**（时间炸弹）｜⚠ **整行锚定**｜⚠ 恰好 2 处（sed 支 + perl 支各一处）｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_ANY_FAIL=1$' 40 '每个段级 trailer **都要记全局红过**（恰好 40 处）—— ⚠⚠⚨ **批 CP**：少一处 ⇒ 那个段的失败**被吞掉** ⇒ 末尾统一判红时看不见 ⇒ **假绿**（⚠ 与「段末清零」那条**配对**：清零 40 处 ⇒ 记红也必须 40 处 ⇒ 差恒为 0）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_FAIL=0$' 41 '判据层失败位的**声明 + 每段末清零**（恰好 41 处 = 1 处声明 + 40 处段末清零）—— ⚠⚠⚨ **批 CP**：少一处段末清零 ⇒ 那个段的失败**污染后面所有段** ⇒ 段归属失真（诊断被带偏）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^if \[ "\$ARCH_ANY_FAIL" -ne 0 \]; then$' 1 '判据层**末尾必须统一按全局红过判红**（恰好 1 处）—— ⚠⚠⚨ **批 CP**：段级 trailer 不再提前 exit ⇒ 全部门项都跑完 ⇒ 末尾这一句是**唯一的「红 ⇒ 退出」通路** ⇒ 摘掉 ⇒ 明明有红却 **exit 0** ⇒ **假绿**｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+arch_forbid_ml "$SRC/scripts/ci-wiring.sh" 'if \[ "\$ARCH_FAIL" -ne 0 \]; then[^;]*>&2[[:space:]]+exit 1' '段级 trailer **不许再提前 exit**（⚠⚠⚨ **批 CP**：提前 exit ⇒ 一处红遮住后面所有门项 ⇒ 实测 **540/1017 条门项根本没跑** ⇒ 排障只能「改一个 ⇒ 跑一次 ⇒ 再改一个」）｜⚠ **跨行锚定**（压行后匹配 ⇒ 跨行形态也盯得住）｜⚠ 口径：锚在 trailer **自己的** `>&2` 之后 ⇒ **不会**误伤门项说明文字里的散文「exit 1」（⚠ 压行后散文与代码同处一行 ⇒ 宽正则会假红）｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+exit 1$' 3 '判据层**整行的 `exit 1`**必须恰好 3 处（⚠⚠⚨ **批 CP**：那 3 处 = ① 顶部 preflight「没有 perl ⇒ 判失败」② 末尾「剥注释失败」检查 ③ 末尾「统一按全局红过判红」）—— ⚠⚠⚨ **段级 trailer 里一处都不许有** （有 ⇒ 一处红就提前退出 ⇒ **后面 540 条门项根本没跑**）⇒ 多一处 ⇒ 有人把提前 exit 又塞回去了 ⇒ 必红｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 CP 段有门项红（上面带 ✗ 的行）" >&2
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 CP 段门项全绿（一处红不许再遮住后面的门项：全跑完 + 末尾统一判红）；门项合计 ${ARCH_N} 项（含前段）"
+fi
+ARCH_FAIL=0
 
 
 
@@ -3800,7 +3938,13 @@ echo "✓ 批 CO 段门项全绿（门项行的实参数个数必须与门型签
 #     ⇒ 一次挡住整类（批 CD 纪律：一次挡住整类，别逐点治标）。
 if [ -s "$STRIP_FAIL_FILE" ]; then
     # ⚠⚠⚨ 批 CH：诊断**搬进 trap**了（退出时必打）⇒ 这里只负责 exit 1
-    #   ⇒ 否则「段落 ARCH_FAIL 提前 exit」会把末尾的诊断吃掉 ⇒ 红因指错
+    #   ⇒ 否则「段落 ARCH_FAIL 提前 exit」会把末尾的诊断吃掉 ⇒ 红因指错（⚠⚠⚨ 批 CP：段级 trailer 已不再提前 exit ⇒ 这条隐患已收）
+    exit 1
+fi
+# ⚠⚠⚨ 批 CP · **末尾统一判红**（段级 trailer 不再提前 exit ⇒ 全部门项都跑完）
+#   ⇒ 退出码语义**不变**（红 = 1）⇒ 但诊断是**全的**（一处红不再遮住后面所有问题）
+if [ "$ARCH_ANY_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：有门项红（上面带 ✗ 的行）" >&2
     exit 1
 fi
 exit 0
