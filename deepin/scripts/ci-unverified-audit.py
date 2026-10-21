@@ -24,6 +24,21 @@
     ④ `汇总行`   —— 行内含 `passed,`（例如「──── contract-check: N passed, N failed, N unverified ────」）
        ⇒ 它是**成功汇总**。
 
+⚠⚠⚨ **盘点范围（批 CY · 覆盖面不许只盖一半）**：
+  判据脚本**散落在两个目录** ⇒ 盘点范围**必须同时覆盖**它们：
+    · `deepin/scripts/`（本目录）
+    · `macos/scripts/`（⚠⚠⚨ **批 CY**：⚠ 原来**完全不在册**
+      ⇒ 实测：在 `macos/scripts/contract-check.sh` 里加一处**没提示**的
+      「专属码 3」出口 ⇒ 盘点照样绿 ⇒ **假绿**
+      ⇒ ⚠ 而判据层**早已有门项盯着 `macos/scripts/*.sh`**（批 AJ 起）
+      ⇒ ⇒ 「未验证出口必须登记」这条纪律的覆盖面**比门项覆盖面窄**）
+  ⇒ 范围写在 `UNVERIFIED_SCOPE` 这**一个常量**里 ⇒ 门项整行钉住它
+    （⚠⚠⚨ 只写常量不够 ⇒ 必须**真的遍历它** ⇒ 另有一条门盯那行遍历）。
+  ⇒ ⚠⚠⚨ **登记册的「文件」列必须用相对仓库根的路径**（不是裸文件名）
+    ⇒ 两个目录里**都有** `contract-check.sh` ⇒ 若用裸文件名做键
+    ⇒ 两个文件的处数**合并** ⇒ **一处新增 + 一处减少 = 净 0**
+    ⇒ 登记册照样相等 ⇒ **假绿**（⇒ 这是扩范围时**必踩**的坑）。
+
 ⚠⚠⚨ **分类（机器可判）**：计入的站点按前缀分成两类 ——
   · `失败上报`（行内含 `✗`）⇒ 这一处**已经判红**；
   · `跳过提示`（其余）⇒ 这一处**只打印** ⇒ **必须**有计数 / 判红（批 CK / CL 的口径）。
@@ -55,7 +70,17 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = HERE
 
+# ⚠⚠⚨ 批 CY · **仓库根**（判据脚本散落在两个目录 ⇒ 必须有唯一的根坐标）
+#   ⇒ HERE = <root>/deepin/scripts ⇒ 根 = dirname(dirname(HERE))
+REPO_ROOT = os.path.dirname(os.path.dirname(HERE))
+
 BASELINE = os.path.join(SCRIPTS, "ci-unverified-audit.baseline")
+
+# ⚠⚠⚨ 批 CY · **盘点范围**（相对仓库根；⚠ **两个**判据脚本目录）
+#   ⇒ ⚠ 原来只扫 `deepin/scripts/` ⇒ `macos/scripts/` 的未验证出口**不在册**
+#     ⇒ 实测：加一处没提示的专属码 3 出口 ⇒ 盘点照样绿 ⇒ **假绿**
+#   ⇒ ⚠ 门项**整行钉住**这一行 ⇒ 范围被改窄 ⇒ 门红
+UNVERIFIED_SCOPE = ("deepin/scripts", "macos/scripts")
 
 # ⚠⚠⚨ 登记册**条数基线**（批 BC 纪律：清单不许被删）⇒ **恰好**（批 BB 口径）
 UNVERIFIED_EXPECTED_ROWS = 21
@@ -171,26 +196,46 @@ def scan_file(path):
 
 
 def collect():
-    """扫全 `scripts/` ⇒ 返回 (计数表, 站点明细, 排除明细, 文件列表)。"""
-    files = sorted(f for f in os.listdir(SCRIPTS)
-                   if f.endswith(('.sh', '.py')) and os.path.isfile(os.path.join(SCRIPTS, f)))
+    """扫**盘点范围**内的全部判据脚本 ⇒ 返回 (计数表, 站点明细, 排除明细, 文件列表)。"""
+    files = []
+    for scope in UNVERIFIED_SCOPE:
+        base = os.path.join(REPO_ROOT, scope)
+        # ⚠⚠⚨ 批 CY · 范围目录**不存在** ⇒ 必须**当场判红**（不许静默扫 0 个）
+        #   ⇒ os.walk 对不存在的目录**不报错**、直接产出空 ⇒ 范围被悄悄掏空
+        #     ⇒ 盘点等于没跑 ⇒ **假绿**
+        if not os.path.isdir(base):
+            sys.exit('✗ 盘点范围里的目录不存在：%s ⇒ 盘点做不了 ⇒ **未验证不许被当成通过**' % scope)
+        n_scope = 0
+        for dirpath, dirnames, filenames in os.walk(base):
+            dirnames[:] = sorted(d for d in dirnames if d != '__pycache__')
+            for fn in sorted(filenames):
+                if fn.endswith(('.sh', '.py')):
+                    files.append(os.path.join(dirpath, fn))
+                    n_scope += 1
+        # ⚠⚠⚨ 批 CY · 范围目录**存在但一个判据脚本都没有** ⇒ 同样**判红**
+        if n_scope == 0:
+            sys.exit('✗ 盘点范围里的目录里一个判据脚本都没有：%s ⇒ 范围被掏空 ⇒ 盘点等于没跑 ⇒ **未验证不许被当成通过**' % scope)
+    files.sort()
     # ⚠⚠⚨ 抽取自检：两侧剥注释必须**逐字节相同**（批 CF / CH 纪律）
-    HELPER.selftest_strip_parity([os.path.join(SCRIPTS, f) for f in files])
+    HELPER.selftest_strip_parity(files)
     counts = {}
     detail = []
     excluded = []
-    for fn in files:
-        path = os.path.join(SCRIPTS, fn)
+    for path in files:
+        # ⚠⚠⚨ 批 CY · 登记册的**键 = 相对仓库根的路径** ⇒ **唯一**
+        #   ⇒ ⚠ 两个目录里**都有** `contract-check.sh` ⇒ 若用裸文件名做键
+        #     ⇒ 两个文件的处数**合并** ⇒ 一处新增 + 一处减少 = 净 0 ⇒ **假绿**
+        key = os.path.relpath(path, REPO_ROOT)
         try:
             sites, exc = scan_file(path)
         except Exception as e:                       # noqa: BLE001
-            sys.exit('✗ 读不了 %s：%s ⇒ 盘点做不了 ⇒ **未验证不许被当成通过**' % (fn, e))
+            sys.exit('✗ 读不了 %s：%s ⇒ 盘点做不了 ⇒ **未验证不许被当成通过**' % (key, e))
         for cat, s in sites:
-            counts.setdefault(fn, {})
-            counts[fn][cat] = counts[fn].get(cat, 0) + 1
-            detail.append((fn, cat, s))
+            counts.setdefault(key, {})
+            counts[key][cat] = counts[key].get(cat, 0) + 1
+            detail.append((key, cat, s))
         for cat, s in exc:
-            excluded.append((fn, cat, s))
+            excluded.append((key, cat, s))
     return counts, detail, excluded, files
 
 
@@ -240,6 +285,7 @@ def main():
 
     # ⚠ `--list` **不读登记册** ⇒ 否则「登记册还没建」时连清单都列不出来
     if '--list' in sys.argv:
+        print('盘点范围：%s（相对仓库根）' % ' + '.join(UNVERIFIED_SCOPE))
         print('站点：%d 处（计入）｜排除：%d 处（成功消息/步骤标题/辅助提示/汇总行）'
               % (len(detail), len(excluded)))
         print('按 (文件, 分类) 聚合：')
@@ -248,10 +294,10 @@ def main():
                 print('  %s\t%s\t%d' % (fn, cat, counts[fn][cat]))
         print('\n── 计入的站点明细 ──')
         for fn, cat, s in detail:
-            print('  %-26s %-10s %s' % (fn, cat, s[:90]))
+            print('  %-40s %-10s %s' % (fn, cat, s[:90]))
         print('\n── 被排除的站点明细（排除表也留痕）──')
         for fn, cat, s in excluded:
-            print('  %-26s %-10s %s' % (fn, cat, s[:90]))
+            print('  %-40s %-10s %s' % (fn, cat, s[:90]))
         return 0
 
     rows = load_baseline()
@@ -270,6 +316,12 @@ def main():
     #   ⇒ 批 discipline：「同名多处顶替 ⇒ 死代码」⇒ 已删（本批落盘前清掉）。
 
     bad = []
+    # ⚠⚠⚨ 批 CY · 登记册的 (文件, 分类) 键**不许重复**
+    #   ⇒ 重复行在字典里**静默塌陷**（后一条盖前一条）⇒ 行数对了、组数少了
+    #     ⇒ 「登记册条数基线」就**名不副实** ⇒ 且两行的处数若相同 ⇒ 全绿
+    if len(base) != len(rows):
+        bad.append('登记册里有**重复的 (文件, 分类) 键**（%d 行 ⇒ %d 组）⇒ 键撞车 ⇒ 登记册不可信'
+                   % (len(rows), len(base)))
     if missing:
         bad.append('实测有、登记册没有（新增未登记）%d 条：%s'
                    % (len(missing), '；'.join('%s/%s=%d' % (k[0], k[1], got[k]) for k in missing)))
@@ -290,9 +342,9 @@ def main():
               file=sys.stderr)
         return 1
     n_exit = sum(1 for _fn, cat, _s in detail if cat == '未验证逻辑出口')
-    print('✓ 未验证出口盘点与登记册逐条相等：%d 组 / %d 处（登记册 %d 行；'
+    print('✓ 未验证出口盘点与登记册逐条相等：%d 组 / %d 处（范围：%s；登记册 %d 行；'
           '其中 %d 处是**未验证的逻辑出口**（专属码 3））'
-          % (len(got), len(detail), len(rows), n_exit))
+          % (len(got), len(detail), ' + '.join(UNVERIFIED_SCOPE), len(rows), n_exit))
     return 0
 
 

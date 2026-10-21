@@ -24,29 +24,45 @@
 #   ⇒ 一处逻辑出口可能占 1~2 行（例如「‣ SKIP …」+「‣ 本组未验证，不算通过」）
 #   ⇒ ⚠ 故处数**大于**逻辑出口数 ⇒ 这是**刻意的**（口径稳定优先）
 #
+# 【键 = 相对仓库根的路径】（批 CY）
+#   ⇒ ⚠⚠⚨ **为什么不用裸文件名**：判据脚本散落在**两个**目录
+#     （`deepin/scripts/` 与 `macos/scripts/`）⇒ 两个目录里**都有**
+#     `contract-check.sh` ⇒ 若用裸文件名做键 ⇒ 两个文件的处数**合并**
+#     ⇒ **一处新增 + 一处减少 = 净 0** ⇒ 登记册照样相等 ⇒ **假绿**
+#   ⇒ 现在统一写成**相对仓库根的路径**（`deepin/scripts/ci.sh`）⇒ **唯一**
+#   ⇒ ⚠ 同一 (文件, 分类) 也**不许出现两行**（重复行会在字典里静默塌陷）
+#     ⇒ 盘点脚本会当场判红。
+#
+# 【盘点范围】（批 CY）
+#   ⇒ 范围 = `deepin/scripts/` + `macos/scripts/`（相对仓库根）
+#     ⇒ ⚠ 原来**只扫** `deepin/scripts/` ⇒ mac 侧判据脚本的未验证出口
+#       **完全不在册** ⇒ 实测：加一处没提示的专属码 3 出口 ⇒ 盘点照样绿
+#   ⇒ ⚠ 登记册里**没有** `macos/scripts/` 的行 ⇔ **实测那边当前 0 处**
+#     （范围已覆盖 ⇒ 那边新增一处 ⇒ 盘点**必红**）
+#
 # 【双向红】（批 BH / CJ 纪律）
 #   · 实测有、登记册没有 ⇒ **红**（新增未登记 ⇒ 必须显式登记 + 写理由）
 #   · 登记册有、实测没有 ⇒ **红**（登记册腐化 ⇒ 修好后请删那一行）
 #   · 处数对不上 ⇒ **红**
 #
-build-deb.sh	失败上报	1	批 CL 新增的「未验证 ⇒ 判红」判定块消息（`✗ 有 $skip 项未验证…`）⇒ **已判红**（专属码 3，紧挨着「✓ 已生成」之前）
-build-deb.sh	跳过提示	2	第 2h 步两处（apt 查不到候选版本 / 没有 apt-cache）⇒ **已计数**（各 `skip=$((skip+1))`）+ 末尾专属码 3 ⇒ 批 CL 收
-build-deb.sh	未验证逻辑出口	1	末尾「有 $skip 项**未验证** ⇒ 专属码 3」那一个**逻辑出口**（⚠ 批 CX：**出口**也登记 ⇒ 新增一处出口（带不带提示都一样）⇒ 必红）
-check-deb-layout.sh	跳过提示	1	「没有 dpkg-deb」那一处 ⇒ **专属退出码 3**（批 CC 收：「deb 布局验收的未验证出口 exit 3 必须恰好 1 处」）
-check-deb-layout.sh	未验证逻辑出口	1	「没有 dpkg-deb ⇒ 未验证」那一个**逻辑出口**（专属码 3）（⚠ 批 CX：**出口**也登记）
-ci-d2.sh	失败上报	2	① 没有 perl（剥注释工具缺席）② 源文件对工具不可读 ⇒ 两处都**响亮判失败**（exit 1）⇒ 批 CG/CH 收
-ci-orphan-probe.sh	失败上报	1	「有脚本对工具不可读」⇒ **响亮判失败**（exit 1）⇒ 批 CD/CG 收
-ci-wiring-audit.py	跳过提示	2	① 批 CQ 的「审计器**崩了**（未验证不许被当成通过）」② 批 CQ 的「**依赖失败 ⇒ 那两项检查不跑**（跳过）」⇒ 两处都**跟着**前面的失败态（rc=2 / rc=8 / rc=9）⇒ 末尾统一判红 ⇒ **已判红**（⚠ 批 CM 纪律：新增提示**必须显式登记** ⇒ 不许悄悄加）
-ci-wiring.sh	失败上报	6	① 顶部 preflight「没有 perl ⇒ 判失败」② 门自审计跑不起来 ③ 源文件不可读 ④ 批 CM 新增的「盘点与登记册对不上」⑤ 批 CN：`arch_forbid_han` 的「没有 perl ⇒ 这道门没跑」⑥ 批 CN：`arch_forbid_text_dup` 的「没有 perl ⇒ 这道门没跑」⇒ 六处都**已判红**（⚠ 第 ④ 处是批 CM 自己接进接线门的 ⇒ 位置在**所有门项段之前** ⇒ 前面某段红也不会漏跑；⚠ 第 ⑤⑥ 处原先是「显式 SKIP（不算通过）」⇒ 那是**批 CB/CC 之前的旧口径** ⇒ 只是**碰巧**不可达（顶部 preflight 先 exit 1）⇒ **preflight 被摘就静默放行 ⇒ 假绿** ⇒ 批 CN 改成判红）
-ci-unverified-audit.py	失败上报	1	盘点脚本自己的失败消息（✗ 未验证出口盘点与登记册对不上）⇒ **已判红**（main 返回 1 ⇒ 入口 sys.exit(main()) ⇒ 退出码 1）｜⚠⚠⚨ **自指**：改这一行的文案 ⇒ 处数变 ⇒ 登记册要跟着改（知情取舍）
-ci.sh	失败上报	5	批 CI/CK 收的失败上报（契约门未验证 / 引擎缺席 / 分层纪律门源文件不可读 / 剥注释失败 / 末尾未验证判定）⇒ 全部**已判红**（退出码 1 或专属码 3）
-ci.sh	跳过提示	9	① desktop-file-validate 缺席 ② appstream-util 缺席 ③ deb 构建脚本自报 SKIP（批 CL）④ deb 构建没有 dpkg-deb ⑤ 其说明行 ⑥ deb 布局验收没有 deb 产物 ⑦ deb 布局验收自报 SKIP ⑧ agent 工具面门 ⑨ 其说明行 ⇒ 其中 **7 处真出口全部已计数**（`skip=$((skip+1)`），另 **2 处是同一声明的说明行** ⇒ 批 CK/CL 收
-ci.sh	未验证逻辑出口	1	末尾「有 $skip 组**未验证**（SKIP）」那一个**逻辑出口**（专属码 3）（⚠ 批 CX：**出口**也登记）
-contract-check.sh	失败上报	1	末尾「有 $skip 组未验证 ⇒ 专属码 3」⇒ **已判红**（批 CI 收）
-contract-check.sh	跳过提示	26	契约门的内层 SKIP 提示（客户端二进制缺席 / 打桩服务器没起来 / GitHub API 不可达 / 没有 curl / 没有 python3 …）⇒ **14 处内层 SKIP 全部已计数**（4/7/3 缩进，批 CI 收），其余是同一声明的说明行 ⇒ **未验证 ⇒ 末尾专属码 3**（批 CI 收）
-contract-check.sh	未验证逻辑出口	2	① 顶部「引擎缺席 ⇒ 未验证」② 末尾「有 $skip 组未验证」⇒ 两个**逻辑出口**（专属码 3）（⚠ 批 CX：**出口**也登记）
-probe-agent-tool-surface.sh	失败上报	2	① 探针退出码非 0 且非 3 ⇒ 判失败 ② 退出码 0 却什么都没报 ⇒ 判失败（假绿）⇒ 批 BW 收
-probe-agent-tool-surface.sh	跳过提示	2	① 引擎未找到 ② 引擎太老（无 deprecated 标记）⇒ 两处都**专属退出码 3**（批 BW/CC 收）
-probe-agent-tool-surface.sh	未验证逻辑出口	2	① 引擎未找到 ② 引擎太老（无 deprecated 标记）⇒ 两个**逻辑出口**（专属码 3）（⚠ 批 CX：**出口**也登记）
-smoke.sh	跳过提示	2	① 契约门未验证 ⇒ 原样传出（专属码 3）② 引擎缺席 ⇒ 专属码 3 ⇒ 批 CL 收
-smoke.sh	未验证逻辑出口	2	① 契约门未验证（原样传出）② 引擎缺席 ⇒ 两个**逻辑出口**（专属码 3）（⚠ 批 CX：**出口**也登记）
+deepin/scripts/build-deb.sh	失败上报	1	批 CL 新增的「未验证 ⇒ 判红」判定块消息（`✗ 有 $skip 项未验证…`）⇒ **已判红**（专属码 3，紧挨着「✓ 已生成」之前）
+deepin/scripts/build-deb.sh	跳过提示	2	第 2h 步两处（apt 查不到候选版本 / 没有 apt-cache）⇒ **已计数**（各 `skip=$((skip+1))`）+ 末尾专属码 3 ⇒ 批 CL 收
+deepin/scripts/build-deb.sh	未验证逻辑出口	1	末尾「有 $skip 项**未验证** ⇒ 专属码 3」那一个**逻辑出口**（⚠ 批 CX：**出口**也登记 ⇒ 新增一处出口（带不带提示都一样）⇒ 必红）
+deepin/scripts/check-deb-layout.sh	跳过提示	1	「没有 dpkg-deb」那一处 ⇒ **专属退出码 3**（批 CC 收：「deb 布局验收的未验证出口 exit 3 必须恰好 1 处」）
+deepin/scripts/check-deb-layout.sh	未验证逻辑出口	1	「没有 dpkg-deb ⇒ 未验证」那一个**逻辑出口**（专属码 3）（⚠ 批 CX：**出口**也登记）
+deepin/scripts/ci-d2.sh	失败上报	2	① 没有 perl（剥注释工具缺席）② 源文件对工具不可读 ⇒ 两处都**响亮判失败**（exit 1）⇒ 批 CG/CH 收
+deepin/scripts/ci-orphan-probe.sh	失败上报	1	「有脚本对工具不可读」⇒ **响亮判失败**（exit 1）⇒ 批 CD/CG 收
+deepin/scripts/ci-wiring-audit.py	跳过提示	2	① 批 CQ 的「审计器**崩了**（未验证不许被当成通过）」② 批 CQ 的「**依赖失败 ⇒ 那两项检查不跑**（跳过）」⇒ 两处都**跟着**前面的失败态（rc=2 / rc=8 / rc=9）⇒ 末尾统一判红 ⇒ **已判红**（⚠ 批 CM 纪律：新增提示**必须显式登记** ⇒ 不许悄悄加）
+deepin/scripts/ci-wiring.sh	失败上报	6	① 顶部 preflight「没有 perl ⇒ 判失败」② 门自审计跑不起来 ③ 源文件不可读 ④ 批 CM 新增的「盘点与登记册对不上」⑤ 批 CN：`arch_forbid_han` 的「没有 perl ⇒ 这道门没跑」⑥ 批 CN：`arch_forbid_text_dup` 的「没有 perl ⇒ 这道门没跑」⇒ 六处都**已判红**（⚠ 第 ④ 处是批 CM 自己接进接线门的 ⇒ 位置在**所有门项段之前** ⇒ 前面某段红也不会漏跑；⚠ 第 ⑤⑥ 处原先是「显式 SKIP（不算通过）」⇒ 那是**批 CB/CC 之前的旧口径** ⇒ 只是**碰巧**不可达（顶部 preflight 先 exit 1）⇒ **preflight 被摘就静默放行 ⇒ 假绿** ⇒ 批 CN 改成判红）
+deepin/scripts/ci-unverified-audit.py	失败上报	1	盘点脚本自己的失败消息（✗ 未验证出口盘点与登记册对不上）⇒ **已判红**（main 返回 1 ⇒ 入口 sys.exit(main()) ⇒ 退出码 1）｜⚠⚠⚨ **自指**：改这一行的文案 ⇒ 处数变 ⇒ 登记册要跟着改（知情取舍）
+deepin/scripts/ci.sh	失败上报	5	批 CI/CK 收的失败上报（契约门未验证 / 引擎缺席 / 分层纪律门源文件不可读 / 剥注释失败 / 末尾未验证判定）⇒ 全部**已判红**（退出码 1 或专属码 3）
+deepin/scripts/ci.sh	跳过提示	9	① desktop-file-validate 缺席 ② appstream-util 缺席 ③ deb 构建脚本自报 SKIP（批 CL）④ deb 构建没有 dpkg-deb ⑤ 其说明行 ⑥ deb 布局验收没有 deb 产物 ⑦ deb 布局验收自报 SKIP ⑧ agent 工具面门 ⑨ 其说明行 ⇒ 其中 **7 处真出口全部已计数**（`skip=$((skip+1)`），另 **2 处是同一声明的说明行** ⇒ 批 CK/CL 收
+deepin/scripts/ci.sh	未验证逻辑出口	1	末尾「有 $skip 组**未验证**（SKIP）」那一个**逻辑出口**（专属码 3）（⚠ 批 CX：**出口**也登记）
+deepin/scripts/contract-check.sh	失败上报	1	末尾「有 $skip 组未验证 ⇒ 专属码 3」⇒ **已判红**（批 CI 收）
+deepin/scripts/contract-check.sh	跳过提示	26	契约门的内层 SKIP 提示（客户端二进制缺席 / 打桩服务器没起来 / GitHub API 不可达 / 没有 curl / 没有 python3 …）⇒ **14 处内层 SKIP 全部已计数**（4/7/3 缩进，批 CI 收），其余是同一声明的说明行 ⇒ **未验证 ⇒ 末尾专属码 3**（批 CI 收）
+deepin/scripts/contract-check.sh	未验证逻辑出口	2	① 顶部「引擎缺席 ⇒ 未验证」② 末尾「有 $skip 组未验证」⇒ 两个**逻辑出口**（专属码 3）（⚠ 批 CX：**出口**也登记）
+deepin/scripts/probe-agent-tool-surface.sh	失败上报	2	① 探针退出码非 0 且非 3 ⇒ 判失败 ② 退出码 0 却什么都没报 ⇒ 判失败（假绿）⇒ 批 BW 收
+deepin/scripts/probe-agent-tool-surface.sh	跳过提示	2	① 引擎未找到 ② 引擎太老（无 deprecated 标记）⇒ 两处都**专属退出码 3**（批 BW/CC 收）
+deepin/scripts/probe-agent-tool-surface.sh	未验证逻辑出口	2	① 引擎未找到 ② 引擎太老（无 deprecated 标记）⇒ 两个**逻辑出口**（专属码 3）（⚠ 批 CX：**出口**也登记）
+deepin/scripts/smoke.sh	跳过提示	2	① 契约门未验证 ⇒ 原样传出（专属码 3）② 引擎缺席 ⇒ 专属码 3 ⇒ 批 CL 收
+deepin/scripts/smoke.sh	未验证逻辑出口	2	① 契约门未验证（原样传出）② 引擎缺席 ⇒ 两个**逻辑出口**（专属码 3）（⚠ 批 CX：**出口**也登记）
