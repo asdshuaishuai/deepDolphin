@@ -76,7 +76,7 @@ GIT_AUTHOR_DATE='2026-10-03T10:00:00' GIT_COMMITTER_DATE='2026-10-03T10:00:00' \
     git -C "$FIX" commit -qm 'feat(search): 搜索实现' 2>/dev/null
 git -C "$FIX" checkout -q main 2>/dev/null
 
-pass=0; fail=0
+pass=0; fail=0; skip=0
 check() { # check <名称> <python表达式（stdin 为 JSON 文本）> [json]
     local name="$1" expr="$2" json="${3:-}"
     if printf '%s' "$json" | python3 -c "
@@ -218,6 +218,7 @@ check_text "render arch 回执：非空且给出 .html 落盘路径（引擎层�
 if [ ! -x "$CLIENT_BIN" ]; then
     echo "  ‣ SKIP 第 12 组：找不到客户端二进制 $CLIENT_BIN（可设 DEEPGIT_CLIENT_BIN 指定）"
     echo "    ‣ 本组**未验证**，不算通过"
+    skip=$((skip+1))
 else
     ENGINE_TOOLS_JSON="$("$BIN" tools --json 2>/dev/null)"
     CLIENT_TOOLS="$("$CLIENT_BIN" --agent-tool-names 2>/dev/null)"
@@ -291,6 +292,7 @@ check "代码图谱 functions：符号 id 与客户端构造式同形 f:路径:�
 if [ ! -x "$CLIENT_BIN" ]; then
     echo "  ‣ SKIP 符号 id 端到端比对：找不到客户端二进制 $CLIENT_BIN"
     echo "    ‣ 本条**未验证**，不算通过"
+    skip=$((skip+1))
 else
     # 用 python 做比对（别在 sh 里切 tab：dash 的 read 不认 $'\t'）
     E2E_OUT="$(printf '%s' "$FNS_JSON" | python3 -c "
@@ -313,7 +315,12 @@ print('COUNT\t%d' % len(fns))
 " "$CLIENT_BIN" 2>/dev/null)"
     E2E_N="$(printf '%s\n' "$E2E_OUT" | grep '^COUNT' | head -1 | cut -f2 | tr -d '[:space:]')"
     E2E_BAD="$(printf '%s\n' "$E2E_OUT" | grep -c '^MISMATCH' || true)"
-    if [ "$E2E_N" -eq 0 ]; then
+    # ⚠⚠⚨ 批 CI：⚠⚠⚨ **实测的洞**：`E2E_OUT` 取数失败 ⇒ `E2E_N=""`
+    #   ⇒ `[ "" -eq 0 ]` 在 dash 里报「Illegal number」并返回 **2**
+    #   ⇒ `if` 判假 ⇒ 落到 elif ⇒ `[ 0 -ne 0 ]` 假 ⇒ **else ⇒ 判通过**
+    #   ⇒ **取数失败被当成「没有问题」⇒ 假绿**
+    #   ⇒ 修法：先判空（`-z`）⇒ 空 ⇒ 走「没取到可比对的符号」那一支（判红）
+    if [ -z "$E2E_N" ] || [ "$E2E_N" -eq 0 ]; then
         echo "  ✗ 符号 id 端到端：没取到可比对的符号（断言空转，必须先修取数）" >&2
         fail=$((fail+1))
     elif [ "$E2E_BAD" -ne 0 ]; then
@@ -568,6 +575,7 @@ all(set(['check','result','detail']) <= set(c.keys()) for c in d['checks'])" \
     if [ ! -x "$CLIENT_BIN" ]; then
         echo "  ‣ SKIP 第 18 组端到端：找不到客户端二进制 $CLIENT_BIN"
         echo "    ‣ 本条**未验证**，不算通过"
+        skip=$((skip+1))
     else
         DOCTOR_VERDICT="$(printf '%s' "$DOCTOR_JSON" | "$CLIENT_BIN" --doctor-parse 2>/dev/null)"
         check "引擎自检端到端：客户端对真载荷判成 ok 档、问题数与引擎一致" \
@@ -605,6 +613,7 @@ print(json.dumps({'out': out, 'err': err}, ensure_ascii=False))
     if [ ! -x "$CLIENT_BIN" ]; then
         echo "  ‣ SKIP 第 18 组报告路径端到端：找不到客户端二进制 $CLIENT_BIN"
         echo "    ‣ 本条**未验证**，不算通过"
+        skip=$((skip+1))
     else
         REPORT_PATH="$(printf '%s' "$REPORT_TXT" | "$CLIENT_BIN" --receipt-file-path .md 2>/dev/null)"
         if [ -z "$REPORT_PATH" ]; then
@@ -653,6 +662,7 @@ sys.exit(0 if isinstance(d, dict) and 'checks' in d else 1)
     if [ ! -x "$CLIENT_BIN" ]; then
         echo "  ‣ SKIP 第 18 组端到端（问题档）：找不到客户端二进制 $CLIENT_BIN"
         echo "    ‣ 本条**未验证**，不算通过"
+        skip=$((skip+1))
     else
         DOCTOR_BAD_VERDICT="$(printf '%s' "$DOCTOR_BAD_JSON" | "$CLIENT_BIN" --doctor-parse 2>/dev/null)"
         check "引擎自检端到端：有问题时客户端仍判为**有效报告**、档是 problem（不是 unreadable）" \
@@ -723,6 +733,7 @@ print(json.dumps({'out': out, 'err': err}, ensure_ascii=False))
     if [ ! -x "$CLIENT_BIN" ]; then
         echo "  ‣ SKIP 第 19 组端到端：找不到客户端二进制 $CLIENT_BIN"
         echo "    ‣ 本条**未验证**，不算通过"
+        skip=$((skip+1))
     else
         CFG_VERDICT="$(printf '%s' "$CFG_JSON" | "$CLIENT_BIN" --engine-config-parse 2>/dev/null)"
         check "引擎配置端到端：客户端对真载荷解析出同一组值（版本/语言/文档数/两个数字）" \
@@ -822,6 +833,7 @@ print(d.get('indexJson', ''))
     if [ ! -x "$CLIENT_BIN" ]; then
         echo "  ‣ SKIP 第 20 组端到端：找不到客户端二进制 $CLIENT_BIN"
         echo "    ‣ 本条**未验证**，不算通过"
+        skip=$((skip+1))
     else
         IDX_VERDICT="$(printf '%s' "$IDX_OVERVIEW" | "$CLIENT_BIN" --index-status-parse 2>/dev/null)"
         check "索引状态端到端：客户端对真概览解析出同一组值（代数/节点/边/文件/探针）" \
@@ -838,6 +850,7 @@ fi
 if [ ! -x "$CLIENT_BIN" ]; then
     echo "  ‣ SKIP 第 21 组：找不到客户端二进制 $CLIENT_BIN"
     echo "    ‣ 本组**未验证**，不算通过"
+    skip=$((skip+1))
 else
     ENG_TMP="$(mktemp -d)"
     mkdir -p "$ENG_TMP/pkg/bin" "$ENG_TMP/pkg/runtime/lib"
@@ -1079,6 +1092,7 @@ PYEOF
             fi
         else
             echo "  ‣ SKIP 第 21 组之重试场景：打桩服务器没起来（本项**未验证**，不算通过）"
+            skip=$((skip+1))
         fi
         kill "$SRV_PID" 2>/dev/null
         wait "$SRV_PID" 2>/dev/null
@@ -1097,11 +1111,13 @@ PYEOF
                 "$ENG_DEAD"
         else
             echo "  ‣ SKIP 第 21 组之重试上限场景：打桩服务器没起来（本项**未验证**，不算通过）"
+            skip=$((skip+1))
         fi
         kill "$SRV_PID2" 2>/dev/null
         wait "$SRV_PID2" 2>/dev/null
     else
         echo "  ‣ SKIP 第 21 组之重试场景：没有 python3（本项**未验证**，不算通过）"
+        skip=$((skip+1))
     fi
 
     # 本平台没有资产 → 必须说清「有什么」，而不是笼统失败
@@ -1118,6 +1134,7 @@ EOF
         if [ -z "$ENG_API" ]; then
             echo "  ‣ SKIP 第 21 组真 API 那条：GitHub API 不可达（网络问题）"
             echo "    ‣ 本条**未验证**，不算通过"
+            skip=$((skip+1))
         else
             ENG_PARSED="$(printf '%s' "$ENG_API" | "$CLIENT_BIN" --engine-release-parse 2>/dev/null)"
             check "引擎获取：真 GitHub API 的 latest release 能被判定层读懂（tag + 资产清单）" \
@@ -1131,6 +1148,7 @@ EOF
     else
         echo "  ‣ SKIP 第 21 组真 API 那条：没有 curl"
         echo "    ‣ 本条**未验证**，不算通过"
+        skip=$((skip+1))
     fi
     rm -rf "$ENG_TMP"
 fi
@@ -1143,6 +1161,7 @@ fi
 if [ ! -x "$CLIENT_BIN" ]; then
     echo "  ‣ SKIP 第 22 组：找不到客户端二进制 $CLIENT_BIN"
     echo "    ‣ 本组**未验证**，不算通过"
+    skip=$((skip+1))
 else
     HOOK_REPO="$SANDBOX/hooked"
     mkdir -p "$HOOK_REPO/src"
@@ -1191,5 +1210,17 @@ else
     fi
 fi
 
-echo "──── contract-check: $pass passed, $fail failed ────"
+echo "──── contract-check: $pass passed, $fail failed, $skip unverified ────"
+# ⚠⚠⚨ 批 CI · **未验证不许被当成通过**（批 CB 口径：专属退出码 3）
+#   ⇒ ⚠⚠⚨ **实测的洞**：14 处内层 SKIP（客户端二进制缺席 / 打桩服务器没起来 /
+#     GitHub API 不可达 / 没有 curl …）**只打印、不计数** ⇒ 末尾判 `fail`
+#     ⇒ exit 0 ⇒ 「这些组**根本没验**」被当成「通过」⇒ 而每条消息里都写着
+#     「本项**未验证**，不算通过」⇒ **说法比门宽**（批 AA 教训）
+#   ⇒ ⚠ **失败优先**：真有失败 ⇒ 仍报 1（失败）⇒ 未验证不掩盖失败
+#     （⚠ 这行**不含 `fail=`** ⇒ 「写 fail 变量的行数」那条门不受影响）
+if [ "$skip" -ne 0 ] && [ "$fail" -eq 0 ]; then
+    echo "✗ 有 $skip 组**未验证**（SKIP）⇒ **未验证不许被当成通过**" >&2
+    echo "  ⇒ 逐条看上面的「‣ SKIP」；把环境补齐后重跑" >&2
+    exit 3
+fi
 [ "$fail" -eq 0 ]
