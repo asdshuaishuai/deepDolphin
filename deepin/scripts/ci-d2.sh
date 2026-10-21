@@ -83,6 +83,22 @@ D2_HITS=""
 D2_COUNT=0
 FAIL=0
 
+# ⚠⚠⚨ 批 CD：**工具读不了文件 ⇒ 后面所有 grep 都会静默跳过它** ⇒ 假绿。
+#   ⇒ ⚠⚠⚨ **实测的洞**：造一个**含散值**的源文件（`src/zzAzCdProbe.cpp`），
+#     让它对 grep **不可读**（chmod 000 ⇒ grep rc=2）
+#     ⇒ `grep -rlE … 2>/dev/null` 把它**静默跳过** ⇒ 命中数变 0
+#     ⇒ 本脚本打印「**✓ D2 命中 0/0（存量已清零，DS 单一真相源）**」并 **exit 0**
+#     ⇒ **门自己说「✓」⇒ 假绿坐实**（而接线门全绿 ⇒ 没人看得见）。
+#   ⇒ 所以在扫之前**先验可读性**：读不了 ⇒ 必须红，**不许当成「没有散值」**
+#     （⚠ 与批 CB/CC 同款口径：**未验证不许被当成通过**）。
+D2_UNREADABLE=""
+_d2_find_rc=0
+_d2_unread="$(find "$SRC/src" -type f ! -readable -print 2>/dev/null)" || _d2_find_rc=$?
+if [ "$_d2_find_rc" -ne 0 ] || [ -n "$_d2_unread" ]; then
+    echo "✗ 有源文件对工具不可读（find 退出码 $_d2_find_rc）：$_d2_unread ⇒ grep 会静默跳过它们 ⇒ 本门会误判「已清零」⇒ **未验证不许当成通过**" >&2
+    FAIL=1    # ⚠⚠⚨ 批 CD：不可读 ⇒ 判失败（末尾的 exit 1 在「✓ 命中 0/0」之前 ⇒ 那个 ✓ 永远打不出来）
+fi
+
 # ── 规则 1：文件内散值（剥注释后）──
 for _f in $(grep -rlE "$D2_PATTERN" "$SRC/src" 2>/dev/null | sort); do
     _rel="${_f#$SRC/}"

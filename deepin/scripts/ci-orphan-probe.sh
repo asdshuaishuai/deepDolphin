@@ -108,6 +108,24 @@ while IFS='|' read -r _name _reason; do
     esac
 done < "$WL_FILE"
 
+# ⚠⚠⚨ 批 CD：**工具读不了文件 ⇒ grep 会静默跳过它** ⇒ 漏检 ⇒ 假绿。
+#   ⇒ ⚠⚠⚨ **实测的洞**：造一个**游离断言脚本**（`scripts/zzAzCdFake.sh`），
+#     让它对 grep **不可读**（chmod 000 ⇒ grep rc=2）
+#     ⇒ `grep -q '✗ ' "$_f" 2>/dev/null || continue` 把它**静默跳过**
+#     ⇒ 本脚本打印「**✓ 无游离断言脚本**」并 **exit 0**
+#     ⇒ **游离断言脚本漏检 ⇒ 假绿坐实**（而接线门全绿 ⇒ 没人看得见）。
+#   ⇒ 所以在扫之前**先验可读性**：读不了 ⇒ 必须红，**不许当成「不是断言脚本」**
+#     （⚠ 与批 CB/CC 同款口径：**未验证不许被当成通过**）。
+_orphan_unread=""
+for _f in "$SCRIPTS"/*.sh "$SCRIPTS"/*.py; do
+    [ -f "$_f" ] || continue
+    [ -r "$_f" ] || _orphan_unread="$_orphan_unread $(basename "$_f")"
+done
+if [ -n "$_orphan_unread" ]; then
+    echo "✗ 有脚本对工具不可读：$_orphan_unread ⇒ grep 会静默跳过它们 ⇒ 本门会漏检 ⇒ **未验证不许当成通过**" >&2
+    fail=1    # ⚠⚠⚨ 批 CD：不可读 ⇒ 判失败（末尾统一 exit 1 ⇒ 「✓ 无游离断言脚本」永远打不出来）
+fi
+
 # ── 3. 每个断言脚本都必须在 CI 里可达（否则进白名单）────────────────────
 n_assert=0
 n_orphan=0
