@@ -2462,9 +2462,9 @@ arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if SH_CONST\.match\(co
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+m = PY_CONST_IF\.match\(ln\)$' 2 'python 侧的恒真条件判定必须在（`if True:` / `if False:`）｜⚠ **两处**：.py 顶层 + **heredoc 内嵌 python** ⇒ 同一份判定走两处 ⇒ 改一处不会漏另一处｜⚠ **整行锚定** ⇒ 注释顶不住（批 BJ 实测）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+st_bad = self_test\(\)$' 1 '探针的**自检**必须在（门自己证明自己有牙）｜⚠⚠⚨ **整行锚定**：盯串的话「`st_bad = self_test() or True`」照样命中 ⇒ 自检被废而门假绿'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if st_bad:$' 1 '自检失败必须**判红**（自检不过还继续跑 ⇒ 等于没有自检）｜⚠⚠⚨ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.cond., [^,]*, True\),$' 6 '自检样例里 **cond 类的「该判为恒真」** 那 6 条不许被掏空（⚠ 只测一边 ⇒ 判反了也能过）｜⚠⚠⚨ **整行锚定**（批 BQ）：中间用**有界**通配（吃不掉逗号 ⇒ 行结构仍被钉住）⇒ 不用无界通配（点星）⇒ 否则整行锚定名存实亡'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.cond., [^,]*, True\),$' 7 '自检样例里 **cond 类的「该判为恒真」** 那 7 条不许被掏空（⚠ 只测一边 ⇒ 判反了也能过）｜⚠⚠⚨ **整行锚定**（批 BQ）：中间用**有界**通配（吃不掉逗号 ⇒ 行结构仍被钉住）⇒ 不用无界通配（点星）⇒ 否则整行锚定名存实亡'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.cond., [^,]*, False\),$' 3 '自检样例里 **cond 类的「不该判为恒真」** 那 3 条不许被掏空（⚠ 这 3 条是判据的**反向**护栏 ⇒ 少了它们 ⇒ 探针只会乱报）｜⚠⚠⚨ **整行锚定**（批 BQ）'
-arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.shortcut., [^,]*, True\),$' 8 '自检样例里 **shortcut 类的「该判为捷径」** 那 8 条不许被掏空（批 BJ 起加的脚本侧捷径样例）｜⚠⚠⚨ **整行锚定**（批 BQ）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.shortcut., [^,]*, True\),$' 10 '自检样例里 **shortcut 类的「该判为捷径」** 那 10 条不许被掏空（批 BJ 起加的脚本侧捷径样例）｜⚠⚠⚨ **整行锚定**（批 BQ）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.shortcut., [^,]*, False\),$' 4 '自检样例里 **shortcut 类的「不该判为捷径」** 那 4 条不许被掏空（⚠ 反向护栏）｜⚠⚠⚨ **整行锚定**（批 BQ）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^JUDGEMENT_PREFIX = .SelfCheck.$' 1 '判定层文件名前缀的**定义**必须在（⚠ **整行锚定**：定义与使用是两处不同形态 ⇒ 一条整行正则罩不住 ⇒ 拆成两条）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if not \(fn\.startswith\(JUDGEMENT_PREFIX\) and fn\.endswith\(.\.cpp.\)\):$' 1 '判定层文件名前缀的**使用点**必须在（⚠ 散在别处 ⇒ 改一处就废掉另一处）｜⚠⚠⚨ **整行锚定**'
@@ -2533,7 +2533,7 @@ arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+.contract-check\.sh.: 
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+if got_n != want_n:$' 1 '**条数交叉校验**必须在（解析器漂了 / 断言被增删 ⇒ 当场红）｜⚠⚠⚨ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.assert_arg., \(.check., [^,]*\), True\),$' 2 '自检样例里 **断言实参（check 助手）的「该判为恒真」** 那 2 条不许被掏空｜⚠⚠⚨ **整行锚定**（批 BQ）：中间用**有界**通配 ⇒ 不用无界通配（点星）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.assert_arg., \(.check., [^,]*\), False\),$' 1 '自检样例里 **断言实参（check 助手）的「不该判为恒真」** 那 1 条不许被掏空（⚠ 反向护栏；⚠ 这一条的实参里**带右括号** ⇒ 字符类要用 `[^,]` 而不是 `[^)]` ⇒ **实测踩到**：用 `[^)]` 命中 0 而不是 1）｜⚠⚠⚨ **整行锚定**（批 BQ）'
-arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.assert_arg., \(.check_text., [^,]*\), True\),$' 2 '自检样例里 **断言实参（check_text 助手）的「该判为恒真」** 那 2 条不许被掏空｜⚠⚠⚨ **整行锚定**（批 BQ）'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.assert_arg., \(.check_text., [^,]*\), True\),$' 3 '自检样例里 **断言实参（check_text 助手）的「该判为恒真」** 那 3 条不许被掏空｜⚠⚠⚨ **整行锚定**（批 BQ）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.assert_arg., \(.check_text., [^,]*\), False\),$' 1 '自检样例里 **断言实参（check_text 助手）的「不该判为恒真」** 那 1 条不许被掏空（⚠ 反向护栏）｜⚠⚠⚨ **整行锚定**（批 BQ）'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.shell_scan., \([^)]*, \[[^]]*\]\), True\),$' 1 '自检样例里**实参解析器**那条不许被掏空（⚠ 它是解析器的**空实参**护栏 ⇒ 少了它 ⇒ 解析器把空实参吞掉没人知道）｜⚠⚠⚨ **整行锚定**（批 BQ）：中间用**有界**通配（吃不掉右括号与右方括号 ⇒ 行结构仍被钉住）；⚠ **结构顺序实测踩到**：列表在右括号**之前** ⇒ 正则要写成 `\([^)]*, \[[^]]*\]\)` ⇒ 写反了命中 0'
 
@@ -3913,8 +3913,8 @@ ARCH_FAIL=0
 #   ⇒ ⚠ 顶部自检也**自己成段**（同款：它的红不许混进后面任何一段的归属里）。
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_ANY_FAIL=0$' 1 '判据层的**全局红过标志**的声明必须在（⚠⚠⚨ **批 CP**：段级 trailer 不再提前 exit ⇒ 末尾统一按它判红 ⇒ 它被摘 ⇒ **红也不报了** ⇒ **假绿**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+if \[ "\$_strip_rc" -ne 0 \] && \[ "\$_strip_rc" -ne 141 \]; then$' 2 '剥注释的**失败判定必须容忍 141**（SIGPIPE = 消费者**提前收工**）—— ⚠⚠⚨ **批 CP 实测的洞**：以前把 141 也当成「工具坏了」⇒ 记标记 ⇒ 末尾判红 ⇒ ⚠⚠⚨ **假红**（批 BS 纪律：假红比假绿更坏 ⇒ 逼人把承诺改弱）⇒ ⚠⚠⚨ **引爆点**：`arch_need_count_in_fn` 的 awk 读完函数体就 `exit` ⇒ sed 还在写 ⇒ 被 SIGPIPE 打断 ⇒ ⇒ **门项文件越大越容易触发**（时间炸弹）｜⚠ **整行锚定**｜⚠ 恰好 2 处（sed 支 + perl 支各一处）｜⚠⚠⚨ **批 CP**'
-arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_ANY_FAIL=1$' 53 '每个段级 trailer **都要记全局红过**（恰好 53 处）—— ⚠⚠⚨ **批 CP**：少一处 ⇒ 那个段的失败**被吞掉** ⇒ 末尾统一判红时看不见 ⇒ **假绿**（⚠ 与「段末清零」那条**配对**：清零 48 处 ⇒ 记红也必须 48 处 ⇒ 差恒为 0；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 41 → 42；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CU**：批 CU 段新增 1 处 ⇒ 44 → 45；⚠⚠⚨ **批 CV**：批 CV 段新增 1 处 ⇒ 45 → 46；⚠⚠⚨ **批 CW**：批 CW 段新增 1 处 ⇒ 46 → 47；⚠⚠⚨ **批 CX**：批 CX 段新增 1 处 ⇒ 47 → 48；⚠⚠⚨ **批 CY**：批 CY 段新增 1 处 ⇒ 48 → 49；⚠⚠⚨ **批 CZ**：批 CZ 段新增 1 处 ⇒ 49 → 50；⚠⚠⚨ **批 DA**：批 DA 段新增 1 处 ⇒ 50 → 51；⚠⚠⚨ **批 DB**：批 DB 段新增 1 处 ⇒ 51 → 52；⚠⚠⚨ **批 DC**：批 DC 段新增 1 处 ⇒ 52 → 53）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
-arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_FAIL=0$' 54 '判据层失败位的**声明 + 每段末清零**（恰好 54 处 = 1 处声明 + 53 处段末清零；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 44 → 45；⚠⚠⚨ **批 CU**：批 CU 段新增 1 处 ⇒ 45 → 46；⚠⚠⚨ **批 CV**：批 CV 段新增 1 处 ⇒ 46 → 47；⚠⚠⚨ **批 CW**：批 CW 段新增 1 处 ⇒ 47 → 48；⚠⚠⚨ **批 CX**：批 CX 段新增 1 处 ⇒ 48 → 49；⚠⚠⚨ **批 CY**：批 CY 段新增 1 处 ⇒ 49 → 50；⚠⚠⚨ **批 CZ**：批 CZ 段新增 1 处 ⇒ 50 → 51；⚠⚠⚨ **批 DA**：批 DA 段新增 1 处 ⇒ 51 → 52；⚠⚠⚨ **批 DB**：批 DB 段新增 1 处 ⇒ 52 → 53；⚠⚠⚨ **批 DC**：批 DC 段新增 1 处 ⇒ 53 → 54）—— ⚠⚠⚨ **批 CP**：少一处段末清零 ⇒ 那个段的失败**污染后面所有段** ⇒ 段归属失真（诊断被带偏）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_ANY_FAIL=1$' 54 '每个段级 trailer **都要记全局红过**（恰好 53 处）—— ⚠⚠⚨ **批 CP**：少一处 ⇒ 那个段的失败**被吞掉** ⇒ 末尾统一判红时看不见 ⇒ **假绿**（⚠ 与「段末清零」那条**配对**：清零 48 处 ⇒ 记红也必须 48 处 ⇒ 差恒为 0；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 41 → 42；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CU**：批 CU 段新增 1 处 ⇒ 44 → 45；⚠⚠⚨ **批 CV**：批 CV 段新增 1 处 ⇒ 45 → 46；⚠⚠⚨ **批 CW**：批 CW 段新增 1 处 ⇒ 46 → 47；⚠⚠⚨ **批 CX**：批 CX 段新增 1 处 ⇒ 47 → 48；⚠⚠⚨ **批 CY**：批 CY 段新增 1 处 ⇒ 48 → 49；⚠⚠⚨ **批 CZ**：批 CZ 段新增 1 处 ⇒ 49 → 50；⚠⚠⚨ **批 DA**：批 DA 段新增 1 处 ⇒ 50 → 51；⚠⚠⚨ **批 DB**：批 DB 段新增 1 处 ⇒ 51 → 52；⚠⚠⚨ **批 DC**：批 DC 段新增 1 处 ⇒ 52 → 53；⚠⚠⚨ **批 DD**：批 DD 段新增 1 处 ⇒ 53 → 54）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_FAIL=0$' 55 '判据层失败位的**声明 + 每段末清零**（恰好 54 处 = 1 处声明 + 53 处段末清零；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 44 → 45；⚠⚠⚨ **批 CU**：批 CU 段新增 1 处 ⇒ 45 → 46；⚠⚠⚨ **批 CV**：批 CV 段新增 1 处 ⇒ 46 → 47；⚠⚠⚨ **批 CW**：批 CW 段新增 1 处 ⇒ 47 → 48；⚠⚠⚨ **批 CX**：批 CX 段新增 1 处 ⇒ 48 → 49；⚠⚠⚨ **批 CY**：批 CY 段新增 1 处 ⇒ 49 → 50；⚠⚠⚨ **批 CZ**：批 CZ 段新增 1 处 ⇒ 50 → 51；⚠⚠⚨ **批 DA**：批 DA 段新增 1 处 ⇒ 51 → 52；⚠⚠⚨ **批 DB**：批 DB 段新增 1 处 ⇒ 52 → 53；⚠⚠⚨ **批 DC**：批 DC 段新增 1 处 ⇒ 53 → 54；⚠⚠⚨ **批 DD**：批 DD 段新增 1 处 ⇒ 54 → 55）—— ⚠⚠⚨ **批 CP**：少一处段末清零 ⇒ 那个段的失败**污染后面所有段** ⇒ 段归属失真（诊断被带偏）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^if \[ "\$ARCH_ANY_FAIL" -ne 0 \]; then$' 1 '判据层**末尾必须统一按全局红过判红**（恰好 1 处）—— ⚠⚠⚨ **批 CP**：段级 trailer 不再提前 exit ⇒ 全部门项都跑完 ⇒ 末尾这一句是**唯一的「红 ⇒ 退出」通路** ⇒ 摘掉 ⇒ 明明有红却 **exit 0** ⇒ **假绿**｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_forbid_ml "$SRC/scripts/ci-wiring.sh" 'if \[ "\$ARCH_FAIL" -ne 0 \]; then[^;]*>&2[[:space:]]+exit 1' '段级 trailer **不许再提前 exit**（⚠⚠⚨ **批 CP**：提前 exit ⇒ 一处红遮住后面所有门项 ⇒ 实测 **540/1017 条门项根本没跑** ⇒ 排障只能「改一个 ⇒ 跑一次 ⇒ 再改一个」）｜⚠ **跨行锚定**（压行后匹配 ⇒ 跨行形态也盯得住）｜⚠ 口径：锚在 trailer **自己的** `>&2` 之后 ⇒ **不会**误伤门项说明文字里的散文「exit 1」（⚠ 压行后散文与代码同处一行 ⇒ 宽正则会假红）｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+exit 1$' 3 '判据层**整行的 `exit 1`**必须恰好 3 处（⚠⚠⚨ **批 CP**：那 3 处 = ① 顶部 preflight「没有 perl ⇒ 判失败」② 末尾「剥注释失败」检查 ③ 末尾「统一按全局红过判红」）—— ⚠⚠⚨ **段级 trailer 里一处都不许有** （有 ⇒ 一处红就提前退出 ⇒ **后面 540 条门项根本没跑**）⇒ 多一处 ⇒ 有人把提前 exit 又塞回去了 ⇒ 必红｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
@@ -3963,7 +3963,7 @@ ARCH_FAIL=0
 #   ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**
 # ⚠ **不宣称完全堵死**（四处协同编辑仍能躲过）⇒ 但成本从 2 处升到 4 处、跨 2 个文件
 #   ⇒ **极显眼** ⇒ 评审必看见 ⇒ 惯常动作不再是掩护。
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_LINES_EXPECTED = 1107$' 1 '门项条数必须被**审计器源码里的常量**交叉钉住（⚠⚠⚨ **批 CR**：实测坐实 —— 删一条门项 **且** 把基线文件 -1 ⇒ 旧行为**全绿**（审计器 rc=0、接线门 rc=0、✗ 0 行）⇒ 承诺**悄悄消失** ⇒ 现在同一件事记三遍：基线文件 / 审计器常量 / **本门里的这个数字** ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**）｜⚠⚠⚨ **批 CY**：批 CY 段新增 6 条 ⇒ 1044 → 1050（**三处同改**）；⚠⚠⚨ **批 CZ**：批 CZ 段新增 6 条 ⇒ 1050 → 1056（**三处同改**）；⚠⚠⚨ **批 DA**：批 DA 段新增 18 条 ⇒ 1056 → 1074（**三处同改**）；⚠⚠⚨ **批 DB**：批 DB 段新增 13 条 ⇒ 1074 → 1087（**三处同改**）；⚠⚠⚨ **批 DC**：批 DC 段新增 20 条 ⇒ 1087 → 1107（**三处同改**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CR**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_LINES_EXPECTED = 1122$' 1 '门项条数必须被**审计器源码里的常量**交叉钉住（⚠⚠⚨ **批 CR**：实测坐实 —— 删一条门项 **且** 把基线文件 -1 ⇒ 旧行为**全绿**（审计器 rc=0、接线门 rc=0、✗ 0 行）⇒ 承诺**悄悄消失** ⇒ 现在同一件事记三遍：基线文件 / 审计器常量 / **本门里的这个数字** ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**）｜⚠⚠⚨ **批 CY**：批 CY 段新增 6 条 ⇒ 1044 → 1050（**三处同改**）；⚠⚠⚨ **批 CZ**：批 CZ 段新增 6 条 ⇒ 1050 → 1056（**三处同改**）；⚠⚠⚨ **批 DA**：批 DA 段新增 18 条 ⇒ 1056 → 1074（**三处同改**）；⚠⚠⚨ **批 DB**：批 DB 段新增 13 条 ⇒ 1074 → 1087（**三处同改**）；⚠⚠⚨ **批 DC**：批 DC 段新增 20 条 ⇒ 1087 → 1107（**三处同改**）；⚠⚠⚨ **批 DD**：批 DD 段新增 15 条 ⇒ 1107 → 1122（**三处同改**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CR**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if gbase is not None and gbase != GATE_LINES_EXPECTED:$' 1 '基线与常量的**交叉核对判定行**必须**是那一行原样**（⚠⚠⚨ **批 CR**：⚠ 只盯「串在不在」⇒ 判定被掏空成 `and False:` 就躲过了 ⇒ 没人发现 ⇒ **交叉核对形同虚设** ⇒ 那批承诺也就没人守了）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CR**'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
@@ -4316,6 +4316,46 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     ARCH_ANY_FAIL=1
 else
     echo "✓ 批 DC 段门项全绿（Swift 判据也不许被掏空：469 条断言的闭包必须有失败路径 + if 条件不许恒真/带捷径；范围基线改成带口径名 ⇒ 每个口径能单独钉住）；门项合计 ${ARCH_N} 项（含前段）"
+fi
+ARCH_FAIL=0
+
+# ── 批 DD · 判据层的「判定口径表」不许被悄悄改弱 ─────────────────────
+# ⚠⚠⚨ **起因（实测坐实 + 完整枚举，不是推演）**：
+#   恒真探针（批 BF 立的）里有一批「**判定口径表**」——
+#     KEYWORDS（哪些词不算标识符）/ SHORTCUT（哪些写法算捷径）/
+#     SH_CONST（shell 恒真字面量）/ PY_CONST_IF（python 恒真条件）/
+#     LITERAL_CHAR（ERE 里哪些字符算字面量）/ SWIFT_FAIL_RE（Swift 失败路径）
+#   ⚠ **它们的内容被削弱 ⇒ 没有任何东西会红**：
+#     实测把每张表的**每一个分支**逐个删掉（78 个分支）⇒
+#     **接线门 / 探针 / 审计器三样全绿** ⇒ 没人发现 ⇒
+#     「恒真/纯字面量」「捷径」「ERE 匹配一切」「没有失败路径」这些
+#     判定**悄悄变弱** ⇒ 承诺悄悄消失。
+#   ⇒ 修法两腿（互不依赖 ⇒ 改一处必红）：
+#     ① **内容级门**：每一行整行锚定 ⇒ 改一行 ⇒ 那条门红；
+#     ② **补自检**（在探针里 ⇒ 批 DA·定）：每一档都有自检样例
+#        ⇒ 改口径 ⇒ 探针自检红 ⇒ 探针自己证明有牙。
+# ⚠ **正则一律从真实行现抽**（批 CX 纪律）⇒ 不手抄 ⇒ 零漂移。
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^KEYWORDS = \{$' 1 '「不算标识符」的关键字表**必须**是集合字面量（⚠ 改成别的形态 ⇒ 表的内容 不再是「抽掉它们之后不剩标识符」⇒ 判定口径漂）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DD**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    .true., .false., .nullptr., .NULL., .this., .sizeof., .static_cast.,$' 1 '「不算标识符」的关键字表**第 1 行**必须原样（⚠⚠⚨ **批 DD**：实测 —— 删掉任何一个关键字 ⇒ 接线门/探针/审计器**三样全绿** ⇒ 没人发现 ⇒ 「恒真/纯字面量」这条判定**悄悄变弱** ⇒ ⇒ 这一行逐字钉住）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DD**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    .const_cast., .reinterpret_cast., .dynamic_cast., .new., .delete.,$' 1 '「不算标识符」的关键字表**第 2 行**必须原样（⚠⚠⚨ **批 DD**：见第 1 行那条）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DD**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    .not., .and., .or., .int., .bool., .char., .double., .float., .void.,$' 1 '「不算标识符」的关键字表**第 3 行**必须原样（⚠⚠⚨ **批 DD**：见第 1 行那条）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DD**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    .unsigned., .signed., .long., .short., .auto., .return.,$' 1 '「不算标识符」的关键字表**第 4 行**必须原样（⚠⚠⚨ **批 DD**：见第 1 行那条）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DD**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^SHORTCUT = re\.compile\($' 1 '「捷径」的判定表**必须**是编译好的正则（⚠ 改成别的形态 ⇒ 捷径判定口径漂）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DD**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    r.\\\|\\\|\\s\*true\\b\|\\\|\\\|\\s\*false\\b\|&&\\s\*false\\b\|&&\\s\*true\\b.$' 1 '「捷径」判定表（`|| true` / `|| false` / `&& false` / `&& true` 四种退化方向）**第 1 行**必须原样（⚠⚠⚨ **批 DD**：实测 —— 删掉其中任何一档 ⇒ **三样全绿** ⇒ 没人发现 ⇒ 捷径判定**悄悄变弱**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DD**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    r.\|\\bor\\s\+true\\b\|\\bor\\s\+True\\b\|\\bor\\s\+False\\b.$' 1 '「捷径」判定表（`or true` / `or True` / `or False` 三档）**第 2 行**必须原样（⚠⚠⚨ **批 DD**：见第 1 行那条）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DD**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    r.\|\\band\\s\+false\\b\|\\band\\s\+False\\b\|\\band\\s\+True\\b.\)$' 1 '「捷径」判定表（`and false` / `and False` / `and True` 三档）**第 3 行**必须原样（⚠⚠⚨ **批 DD**：见第 1 行那条）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DD**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^SH_CONST = re\.compile\(r.\^\\s\*\(true\|false\|:\)\\s\*\$.\)$' 1 'shell 侧恒真字面量表（`true` / `false` / `:`）**必须原样**（⚠⚠⚨ **批 DD**：实测删掉任一档 ⇒ **三样全绿**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DD**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^PY_CONST_IF = re\.compile\(r.\^\\s\*if\\s\+\(True\|False\|1\|0\)\\s\*:.\)$' 1 'python 侧恒真条件表（`True` / `False` / `1` / `0`）**必须原样**（⚠⚠⚨ **批 DD**：实测删掉**任意一档** ⇒ **三样全绿** ⇒ python 侧的恒真条件**没人查了**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DD**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^LITERAL_CHAR = re\.compile\(r.\[\^\\\^\\\$\\\.\\\*\\\+\\\?\\\(\\\)\\\[\\\]\\\{\\\}\\\|\\\\\].\)$' 1 'ERE 的「字面字符」集合（哪些字符算字面量）**必须原样**（⚠⚠⚨ **批 DD**：实测删掉其中任何一档 ⇒ **三样全绿** ⇒ 「ERE 匹配一切 ⇒ 恒真」这条判定**悄悄变弱**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DD**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^        elif kind == .py_const_if.:$' 1 '自检**必须真的有** `py_const_if` 那一档（⚠⚠⚨ **批 DD**：⚠ 分支被改名/删掉 ⇒ python 侧那 5 个样例**走不到那条判定** ⇒ 自检测的不是真判定 ⇒ **假绿** —— 批 CX 同款教训：「常量在、但扫描时不判」）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DD**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.py_const_if., [^,]*, True\),$' 4 '自检样例里 **python 侧恒真条件的 4 档**（`if True:` / `if False:` / `if 1:` / `if 0:`）不许被掏空（⚠⚠⚨ **批 DD**：⚠ 实测 —— 删掉 PY_CONST_IF 里**任意一档** ⇒ 接线门/探针/审计器**三样全绿** ⇒ python 侧的恒真条件**没人查**）｜⚠ **整行锚定**（批 BQ：中间用**有界**通配 `[^,]*`）｜⚠⚠⚨ **批 DD**'
+arch_need_count "$SRC/scripts/ci-tautology-check.py" '^\s+\(.py_const_if., [^,]*, False\),$' 1 '自检样例里 **python 侧「不该判红」** 那 1 条不许被掏空（⚠⚠⚨ **批 DD**：⚠ 这是**反向护栏** ⇒ 少了它 ⇒ 探针只会乱报）｜⚠ **整行锚定**（批 BQ）｜⚠⚠⚨ **批 DD**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 DD 段有门项红（上面带 ✗ 的行）" >&2
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 DD 段门项全绿（判定口径表不许被悄悄改弱：关键字表 / 捷径表 / shell 恒真字面量 / python 恒真条件 / ERE 字面字符，五张表逐行钉住 + python 侧恒真条件补了自检））；门项合计 ${ARCH_N} 项（含前段）"
 fi
 ARCH_FAIL=0
 

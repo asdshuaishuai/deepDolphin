@@ -530,12 +530,14 @@ SELF_TEST_CASES = [
     ('cond', 'ok', False),
     ('cond', 'env.has_value()', False),
     ('cond', 'covered && count == expected', False),
+    ('cond', 'true false nullptr NULL this sizeof static_cast const_cast reinterpret_cast dynamic_cast new delete not and or int bool char double float void unsigned signed long short auto return', True),
     ('assert_arg', ('check', 'True'), True),
     ('assert_arg', ('check', '1 == 1'), True),
     ('assert_arg', ('check', "d.get('x')==1"), False),
     ('assert_arg', ('check_text', '.*'), True),
     ('assert_arg', ('check_text', ''), True),
     ('assert_arg', ('check_text', 'arch\\.json'), False),
+    ('assert_arg', ('check_text', '^$.*+?()[]{}|\\'), True),
     # ⚠⚠⚠ **第三类：实参解析器**（批 BG 负控 B4 实测出来的洞）：
     #   判据是「**第二个**实参」⇒ 若解析器把空实参（`''`）吞掉
     #   ⇒ `tokens[2]` 错位成第三个实参 ⇒ 判据抽成别的东西
@@ -553,10 +555,17 @@ SELF_TEST_CASES = [
     ('shortcut', 'ok and False', True),
     ('shortcut', 'ok or False', True),
     ('shortcut', 'ok and True', True),
+    ('shortcut', 'ok or true', True),
+    ('shortcut', 'ok and false', True),
     ('shortcut', 'ok and Trueish', False),
     ('shortcut', 'ok || truthful', False),
     ('shortcut', 'ok and Falsey', False),
     ('shortcut', 'ok and other', False),
+    ('py_const_if', 'if True:', True),
+    ('py_const_if', 'if False:', True),
+    ('py_const_if', 'if 1:', True),
+    ('py_const_if', 'if 0:', True),
+    ('py_const_if', 'if value:', False),
     # ⚠⚠⚨ **批 DA**：`if` 与 `while` 的**恒真判定必须分开**
     #   （实测坐实：HEAD 版把 `while :; do` 判成「恒真」⇒ **假红**）
     #   ⇒ `while :; do` / `while true; do` 是 **shell 的惯用无限循环**
@@ -588,6 +597,11 @@ def self_test():
     for kind, inp, want in SELF_TEST_CASES:
         if kind == 'cond':
             got = tautology_reason(inp) is not None
+        elif kind == 'py_const_if':
+            # ⚠ 走**同一条**判定路径（自检与实扫必须调同一个正则）
+            #   ⇒ python 侧的 `if True:` / `if False:` / `if 1:` / `if 0:`
+            #     这四档恒真条件**不许**被悄悄放掉
+            got = PY_CONST_IF.match(inp) is not None
         elif kind == 'shortcut':
             # ⚠ 走**同一条**判定路径（自检与实扫必须调同一个 shortcut_reason）
             got = shortcut_reason(strip_literals(inp)) is not None
