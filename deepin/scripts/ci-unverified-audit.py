@@ -58,7 +58,7 @@ SCRIPTS = HERE
 BASELINE = os.path.join(SCRIPTS, "ci-unverified-audit.baseline")
 
 # ⚠⚠⚨ 登记册**条数基线**（批 BC 纪律：清单不许被删）⇒ **恰好**（批 BB 口径）
-UNVERIFIED_EXPECTED_ROWS = 15
+UNVERIFIED_EXPECTED_ROWS = 14
 
 # ══════════════════════════════════════════════════════════════
 # 口径定义（⚠⚠⚨ 门项会**整行锚定**这几行 ⇒ 口径不许被改弱）

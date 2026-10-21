@@ -588,9 +588,14 @@ arch_forbid_han() { # arch_forbid_han <文件> <说明>
         return
     fi
     if ! command -v perl >/dev/null 2>&1; then
-        # ⚠ 没有 perl ⇒ 剥不掉块注释 ⇒ 硬跑会假红 ⇒ 显式 SKIP（不算通过）
-        echo "  ‣ SKIP $label：没有 perl（剥不掉块注释，跑就是假红）"
-        return
+        # ⚠⚠⚨ 批 CN：没有 perl ⇒ 这道门**根本没跑** ⇒ 必须**判红**
+        #   （批 CB / CC / BI 口径：工具坏了 ≠ 没找到；未验证不许被当成通过）。
+        #   ⇒ 以前这里是「显式 SKIP（不算通过）」⇒ 那**正是**批 CB/CC 要收的旧口径；
+        #   ⇒ ⚠ 以前它只是**碰巧**不可达（脚本顶部 preflight「没有 perl ⇒ exit 1」先兜住）
+        #   ⇒ ⇒ **顶部 preflight 一旦被摘掉**（或 perl 中途消失）⇒ 这里就**静默放行 ⇒ 假绿**。
+        echo "  ✗ $label：没有 perl（剥不掉块注释 ⇒ 这道门没跑 ⇒ 未验证不许被当成通过）" >&2
+        ARCH_FAIL=1
+        return 1
     fi
     # ⚠ 剥块注释 + 剥行注释 + 查中文，**一次 perl 做完** ⇒ 只有一个工具 ⇒ 只有一个失败点。
     #   退出码：0 = 有中文；1 = 没中文；其它 = perl 坏了 ⇒ 门必须红（**不是绿**）。
@@ -650,9 +655,11 @@ arch_forbid_text_dup() { # arch_forbid_text_dup <判定层文件> <相对SRC的�
         return
     fi
     if ! command -v perl >/dev/null 2>&1; then
-        # ⚠ 没有 perl ⇒ 取不出字面量清单 ⇒ 硬跑等于**假绿** ⇒ 显式 SKIP（不算通过）
-        echo "  ‣ SKIP $label：没有 perl（取不出字面量清单，跑就是假绿）"
-        return
+        # ⚠⚠⚨ 批 CN：同款 ⇒ 没有 perl ⇒ 这道门**根本没跑** ⇒ 必须**判红**
+        #   （批 CB / CC / BI 口径：工具坏了 ≠ 没找到；未验证不许被当成通过）。
+        echo "  ✗ $label：没有 perl（取不出字面量清单 ⇒ 这道门没跑 ⇒ 未验证不许被当成通过）" >&2
+        ARCH_FAIL=1
+        return 1
     fi
     local tmp hitsf err rc
     tmp="$(mktemp)"
@@ -2665,7 +2672,7 @@ arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+9\) _audit_why="[^"]*" ;;$' 1 '
 #   ⇒ 门项行自己不会被数进去 ⇒ 期望值里不混着「自己」。
 
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^arch_\w*\(\) \{ # [^$]*$' 15 '`arch_` **门型函数的注册表**（恰好 15 个）—— 新增门型 ⇒ 必须改这条基线 ⇒ 改的时候就会看到「**新门型也得有失败上报**」 ⇒ 集合层把新成员挡住（⚠ **行首锚定**：门项行自己不会被数进去 ⇒ 不自引）｜⚠⚠⚨ **批 BZ：新增了门型 `arch_need_count_pair`（配对门）⇒ 14 → 15**｜⚠⚠⚨ **批 BR 整行锚定**：行尾补 `$` ⇒ 只锚行首不够 ⇒ 判定被掏空但串还在 ⇒ 门假绿'
-arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_FAIL=1( ;;)?$' 39 '**全文失败上报的总数**（恰好 39 处）—— ⚠⚠⚨ 它是「门型判定失败 → 整道门红」的**唯一通路** ⇒ 改成别值 ⇒ **那个门型的所有失败都静默** ⇒ 而审计器**自己重算命中数** ⇒ **也抓不到** ⇒ 这条门把「静默失效」变成「必红」（⚠ **行首锚定** ⇒ 门项行不自引）｜⚠⚠⚨ **批 BZ：配对门带 2 处 `ARCH_FAIL=1` ⇒ 35 → 37**｜⚠⚠⚨ **批 CM：加了一处「跑盘点」**（接线门必须真的跑一次未验证出口盘点 ⇒ 盘点与登记册对不上 ⇒ `ARCH_FAIL=1`）⇒ 失败上报处数 **38 → 39**（**原地替换**，批 BM 纪律）'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_FAIL=1( ;;)?$' 41 '**全文失败上报的总数**（恰好 39 处）—— ⚠⚠⚨ 它是「门型判定失败 → 整道门红」的**唯一通路** ⇒ 改成别值 ⇒ **那个门型的所有失败都静默** ⇒ 而审计器**自己重算命中数** ⇒ **也抓不到** ⇒ 这条门把「静默失效」变成「必红」（⚠ **行首锚定** ⇒ 门项行不自引）｜⚠⚠⚨ **批 BZ：配对门带 2 处 `ARCH_FAIL=1` ⇒ 35 → 37**｜⚠⚠⚨ **批 CM：加了一处「跑盘点」**（接线门必须真的跑一次未验证出口盘点 ⇒ 盘点与登记册对不上 ⇒ `ARCH_FAIL=1`）⇒ 失败上报处数 **38 → 39**（**原地替换**，批 BM 纪律）｜⚠⚠⚨ **批 CN：两处「没有 perl」改成判红**（`arch_forbid_han` / `arch_forbid_text_dup` ⇒ 以前是「显式 SKIP（不算通过）」⇒ 那是**批 CB / CC 之前的旧口径** ⇒ 只是**碰巧**不可达（顶部 preflight 先 exit 1）⇒ **preflight 被摘就静默放行 ⇒ 假绿**）⇒ 失败上报处数 **39 → 41**（**原地替换**，批 BM 纪律）'
 arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^probe_scan_report\(\)' '^\s+ARCH_FAIL=1' 3 '**probe_scan_report** 的失败上报（函数体内恰好 3 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
 arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^probe_scan_report_many\(\)' '^\s+ARCH_FAIL=1' 2 '**probe_scan_report_many** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
 arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_need\(\)' '^\s+ARCH_FAIL=1' 2 '**arch_need** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
@@ -2676,8 +2683,8 @@ arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_need_count\(\)' '^\s+AR
 arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_need_min\(\)' '^\s+ARCH_FAIL=1' 2 '**arch_need_min** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
 arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_need_count_in_fn\(\)' '^\s+ARCH_FAIL=1' 3 '**arch_need_count_in_fn** 的失败上报（函数体内恰好 3 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
 arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_need_count_in_step\(\)' '^\s+ARCH_FAIL=1' 2 '**arch_need_count_in_step** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
-arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid_han\(\)' '^\s+ARCH_FAIL=1' 2 '**arch_forbid_han** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
-arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid_text_dup\(\)' '^\s+ARCH_FAIL=1' 6 '**arch_forbid_text_dup** 的失败上报（函数体内恰好 6 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid_han\(\)' '^\s+ARCH_FAIL=1' 3 '**arch_forbid_han** 的失败上报（函数体内恰好 2 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」｜⚠⚠⚨ **批 CN：那支「没有 perl」改成判红**（原先只打印 SKIP ⇒ 不算失败 ⇒ **静默放行**）⇒ 函数体内失败上报 **2 → 3**（**原地替换**，批 BM 纪律）'
+arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid_text_dup\(\)' '^\s+ARCH_FAIL=1' 7 '**arch_forbid_text_dup** 的失败上报（函数体内恰好 6 处）—— ⚠ 判定失败必须真的把失败标记打出去 ⇒ 少一处 ⇒ **这个门型的失败全部静默** ⇒ 审计器自己重算命中数 ⇒ **抓不到** ⇒ 这条门让「静默失效」变成「必红」｜⚠⚠⚨ **批 CN：那支「没有 perl」改成判红**（原先只打印 SKIP ⇒ 不算失败 ⇒ **静默放行**）⇒ 函数体内失败上报 **6 → 7**（**原地替换**，批 BM 纪律）'
 arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid\(\)' '^\s+probe_scan_report ' 1 '**arch_forbid** 必须**转发给上报函数**（函数体内恰好 1 次调用 `probe_scan_report`）—— ⚠ forbid 族的失败**不自己上报** ⇒ 转发关系被摘掉 ⇒ **这个门型的失败全部静默** ⇒ 而它自己不报错 ⇒ 谁都看不出来'
 arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid_ml\(\)' '^\s+probe_scan_report ' 1 '**arch_forbid_ml** 必须**转发给上报函数**（函数体内恰好 1 次调用 `probe_scan_report`）—— ⚠ forbid 族的失败**不自己上报** ⇒ 转发关系被摘掉 ⇒ **这个门型的失败全部静默** ⇒ 而它自己不报错 ⇒ 谁都看不出来'
 arch_need_count_in_fn "$SRC/scripts/ci-wiring.sh" '^arch_forbid_raw\(\)' '^\s+probe_scan_report ' 1 '**arch_forbid_raw** 必须**转发给上报函数**（函数体内恰好 1 次调用 `probe_scan_report`）—— ⚠ forbid 族的失败**不自己上报** ⇒ 转发关系被摘掉 ⇒ **这个门型的失败全部静默** ⇒ 而它自己不报错 ⇒ 谁都看不出来'
@@ -3703,7 +3710,7 @@ echo "✓ 批 CL 段门项全绿（未验证不许被当成通过：打包脚本
 # ⚠⚠⚨ **口径数的是「提示行」，不是「逻辑出口数」**
 #   ⇒ 一处逻辑出口可能占 1~2 行 ⇒ 处数**大于**出口数 ⇒ 刻意为之。
 #
-arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_EXPECTED_ROWS = 15$' 1 '盘点脚本**必须有「登记册条数基线」常量**（⚠ 批 BC：清单不许被删 ⇒ **恰好**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
+arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_EXPECTED_ROWS = 14$' 1 '盘点脚本**必须有「登记册条数基线」常量**（⚠ 批 BC：清单不许被删 ⇒ **恰好**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**｜⚠⚠⚨ **批 CN：登记册 15 → 14 行**（批 CM 的登记册里 `ci-wiring.sh` 的「跳过提示」那一组**归零** ⇒ 0 处 ⇒ 登记腐化 ⇒ **该删那一行** ⇒ 条数基线 15 → 14 ⇒ 这条门项的期望值**同步改**）｜⚠ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^BASELINE = os\.path\.join\(SCRIPTS, "ci-unverified-audit\.baseline"\)$' 1 '盘点脚本的**登记册路径常量**必须在（⚠ 路径写错 ⇒ 读不到登记册 ⇒ 盘点无处对照 ⇒ **未验证不许被当成通过**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
 arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_KEYWORDS = r"SKIP\|未验证\|不算通过\|跳过\|无法验证\|not verified"$' 1 '盘点脚本的**未验证关键词定义行**必须在（⚠⚠⚨ 批 CM：⚠ 这是**口径** ⇒ 改宽了 ⇒ 把普通提示也算成「未验证出口」⇒ 登记册全线失准 ⇒ 改窄了 ⇒ 新洞看不见 ⇒ **口径必须被门钉住**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
 arch_need_count "$SRC/scripts/ci-unverified-audit.py" '^UNVERIFIED_EXCLUDE_OK = "✓"$' 1 '盘点脚本的**排除表·成功消息**那一行必须在（⚠⚠⚨ 批 CM：⚠ 实测的误报 —— 「✓ 批 CL 段门项全绿（未验证不许被当成通过…）」是**成功汇总** ⇒ 不排除 ⇒ **修一次数字就涨** ⇒ 数字不可信）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CM**'
@@ -3730,6 +3737,31 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 CM 段门项全绿（未验证出口的盘点搬进仓内常驻脚本 + 逐组带理由的登记册）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 CN · 「没有 perl ⇒ 这道门没跑」必须**判红**（不许回退成 SKIP 口径）──
+#
+# ⚠⚠⚨ **起因（批 CM 登记册里明写「建议下一批收」，不是推演）**：
+#   `ci-wiring.sh` 有两处「没有 perl ⇒ **显式 SKIP（不算通过）**」
+#   ⇒ 那是**批 CB / CC 之前的旧口径**（工具坏了 ⇒ 只打印 ⇒ 继续 ⇒ 绿）；
+#   ⇒ ⚠ 以前它们只是**碰巧**不可达（脚本顶部 preflight「没有 perl ⇒ exit 1」先兜住）；
+#   ⇒ ⇒ **顶部 preflight 一旦被摘掉**（或 perl 中途消失）
+#     ⇒ 这两处就**静默放行 ⇒ 假绿**。
+#
+# ⚠⚠⚨ **本批做两件事**：
+#   ① 那两处改成**判红**（`ARCH_FAIL=1` + `return 1`）⇒ 口径与批 CB/CC/BI 统一；
+#   ② ⚠ **给顶部 preflight 本身加门** ⇒ 它是那两处的唯一活路
+#     ⇒ 它不许被摘掉（⚠ **实测：它此前没有任何门** ⇒ 摘掉它没人发现）。
+#
+# ⚠ 门项正则**现抽**（批 BS）：preflight 的第 1 / 3 / 4 行照抄实际行，
+#   第 2 行只钉结构（`echo "✗ 没有 perl…" >&2`）⇒ 改文案不假红、删行必红。
+#
+arch_need_ml "$SRC/scripts/ci-wiring.sh" 'command -v perl >/dev/null 2>&1 \|\| \{[[:space:]]+echo "✗ 没有 perl[^"]*" >&2[[:space:]]+exit 1[[:space:]]+\}' '判据层**顶部**的「没有 perl ⇒ 判失败」preflight **整块不许被摘掉**（⚠⚠⚨ 批 CN：⚠ **实测：它此前没有任何门** ⇒ 它是 `arch_forbid_han` / `arch_forbid_text_dup` 那两处「没有 perl ⇒ 判红」的**唯一活路** ⇒ **摘掉它 ⇒ 那两处就静默放行 ⇒ 假绿** ⇒ 现在它自己也被门盯住）｜⚠ **跨行锚定**（⚠ 压行后匹配 ⇒ 跨行形态不变）｜⚠⚠⚨ **批 CN**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 CN 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 CN 段门项全绿（没有 perl ⇒ 这道门没跑 ⇒ 必须判红；顶部 preflight 也不许被摘）；门项合计 ${ARCH_N} 项（含前段）"
 
 
 
