@@ -2145,7 +2145,7 @@ arch_need_count "$SRC/scripts/ci.sh" '^\( cd "\$CRASH_DIR" && "\$BIN" --agent-se
 arch_need_count "$SRC/scripts/ci.sh" '^wire_need "\$SRC/src/app/AppModel\.cpp" .QStringLiteral\\\("verify"\\\). .AppModel 调引擎 verify 命令.$' 1 '第 7 步 verify 接线扫描的动作还在（盯那条 wire_need 的正则 —— 它是本步唯一的「verify 入口」证据）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^CANVAS_METHODS="setTransform fillRect strokeRect rect beginPath moveTo lineTo arcTo closePath arc bezierCurveTo fill stroke fillText createLinearGradient addColorStop setLineDash setLineDashOffset setShadowBlur setShadowColor setGlobalAlpha setLineWidth setStrokeStyle setFillStyle setFont setTextAlign"$' 1 '第 8 步 图谱 Canvas 契约清单的动作还在（26 个方法的清单在本步唯一定义）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^if sh "\$SRC/scripts/ci-wiring\.sh" "\$SRC"; then$' 1 '第 9 步 **接线门**的动作还在（⚠⚠ 门自己被删了，门也得红 —— 批 BA 实测：本步删掉时**其余门全绿**）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
-arch_need_count "$SRC/scripts/ci.sh" '^    if DEEPGIT_CLIENT_BIN="\$BIN" sh "\$SRC/scripts/contract-check\.sh" > "\$_cc_log" 2>&1; then$' 1 '第 10 步 引擎契约门（真引擎沙箱）的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
+arch_need_count "$SRC/scripts/ci.sh" '^    DEEPGIT_CLIENT_BIN="\$BIN" sh "\$SRC/scripts/contract-check\.sh" > "\$_cc_log" 2>&1 \|\| _cc_rc=\$\?$' 1 '第 10 步 引擎契约门（真引擎沙箱）的动作还在｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^    if sh "\$SRC/scripts/build-deb\.sh" "\$BUILD/deb" > "\$BUILD/build-deb\.log" 2>&1; then$' 1 '第 11 步 deb 打包的动作还在（D7 达标的必经：能出包装进 deepin）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^elif sh "\$SRC/scripts/check-deb-layout\.sh" "\$DEB_OUT"; then$' 1 '第 12 步 deb 布局验收的动作还在（D7 的**准**验收：装完能不能用）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^sh "\$SRC/scripts/probe-agent-tool-surface\.sh" "\$BIN" \|\| ATS_RC=\$\?$' 1 '第 13 步 agent 工具面收敛的动作还在（批 BD 实测：这个探针以前**根本不在 CI 里** ⇒ 它的 9 条断言没人执行）—— ⚠ 盯的是**调用点**那串，不是文件名：文件名在 ci.sh 的注释里也出现过（讲这个洞的来由）⇒ 盯短名会命中 2 次而恒红｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
@@ -3067,5 +3067,47 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 CA 段门项全绿（失败上报出口不许被摘掉：判据层与 CI 自己的出口都有门）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 CB · 「未验证」不许被当成「通过」：契约门的 SKIP 必须用专属退出码 3 ──
+#
+# ⚠⚠⚨ **起因（实测盘点，不是印象）**：批 CA 把「失败上报出口」逐个钉住了
+#   ⇒ 盘出**唯一**一处「用 `exit 0` 表示**未验证**」的地方：
+#   `contract-check.sh` 的两个 SKIP 分支。
+#   ⚠⚠⚨ **批 BW 早就在探针侧立了这条口径**（0=通过 / 1=失败 / **3=SKIP**），
+#   而且它的注释**早就写着**「与第 10 步契约门**同款口径**」
+#   ⇒ 但契约门脚本一直用的是 `exit 0` ⇒ **注释与实际行为不一致**（批 BB 纪律：
+#   说明必须与实际行为一致）⇒ 本批把脚本侧对齐。
+#
+# ⚠⚠⚨ **洞（行为级·假绿）**：`ci.sh` 第 10 步原来是
+#       if cmd; then …「✓ 引擎契约门通过」… else … exit 1; fi
+#   ⇒ 脚本 exit 0（**未验证**）也走「**通过**」那一支
+#   ⇒ ⚠⚠⚨ **实测**：缺 python3 时**120 条契约断言一条都没跑**，
+#     CI 却打印「**✓ 引擎契约门通过**」⇒ **假绿**。
+#   ⇒ 根因链有两环：① 脚本用 exit 0 表示未验证；② CI 不分诊退出码。
+#   ⇒ **两环都要修**，只修一环仍然是假绿。
+#
+# ⚠⚠⚨ **修法（照批 BW 的房style）**：
+#   ① **脚本侧**：两个 SKIP 分支 `exit 0` → **专属未验证码 3**；
+#   ② **CI 侧**：第 10 步**接住退出码**并分诊
+#      （**0 = 通过 / 3 = 未验证(SKIP) / 其它非 0 = 失败**）
+#      ⇒ SKIP 支**如实打印「本组未验证，不算通过」**（与第 13 步同款口径）。
+#
+# ⚠⚠⚨ **口径（如实记着）**：
+#   · 引擎缺席那一支在 CI 里**走不到**（ci.sh 的外层守卫先判过引擎在不在）
+#     ⇒ 收它是为了「脚本**单独**跑时也诚实」+ 与第 13 步口径一致；
+#   · CI 里**实际可达**的是「缺 python3」那一支 ⇒ 门项两条都收（不许只收一条）。
+arch_need_count "$SRC/scripts/contract-check.sh" '^    exit 3$' 1 '契约门**引擎缺席**那一支的「未验证」必须用**专属退出码 3**（不是 `exit 0`）｜⚠⚠⚨ **批 CB**｜⚠ **整行锚定**｜⚠⚠⚨ 以前是 `exit 0` ⇒ 与「通过」在**退出码**这一层分不开 ⇒ 调用方无从分辨｜⚠ 口径：只数**独立成行**的 `exit 3`（「缺 python3」那一支是**行内**形态 ⇒ 另有一条门）'
+arch_need_count "$SRC/scripts/contract-check.sh" '^command -v python3 >/dev/null \|\| \{ echo "SKIP contract-check：[^"]*"; exit 3; \}$' 1 '契约门**缺 python3**那一支的「未验证」必须用**专属退出码 3**｜⚠⚠⚨ **批 CB**｜⚠ **整行锚定**｜⚠⚠⚨ **实测的洞**：这一支是 CI 里**实际可达**的那个 ⇒ 摘掉/改成 `exit 0` ⇒ **120 条契约断言一条没跑**却报「✓ 引擎契约门通过」⇒ **假绿**｜⚠ 口径：报错文案是自由文本 ⇒ 用 `[^"]*` 有界通配钉住结构'
+arch_need_count "$SRC/scripts/ci.sh" '^    _cc_rc=0$' 1 'CI 第 10 步必须**初始化**契约门的退出码变量（`set -u` 下未初始化 ⇒ 读它就炸）｜⚠⚠⚨ **批 CB**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci.sh" '^    if \[ "\$_cc_rc" -eq 0 \]; then$' 1 'CI 第 10 步必须**分诊**「退出码 0 = 通过」这一支｜⚠⚠⚨ **批 CB**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci.sh" '^    elif \[ "\$_cc_rc" -eq 3 \]; then$' 1 'CI 第 10 步必须**分诊**「退出码 3 = 未验证(SKIP)」这一支（⚠ 少了它 ⇒ exit 3 会落进「失败」⇒ 未验证被当成失败；⚠ 更糟的是少了它而脚本还用 exit 0 ⇒ 未验证被当成**通过**）｜⚠⚠⚨ **批 CB**｜⚠ **整行锚定**｜⚠ 与第 13 步（agent 工具面门，批 BW）**同款口径**'
+arch_need_count "$SRC/scripts/ci.sh" '^        echo "‣ SKIP 引擎契约门：本组\*\*未验证\*\*[^"]*" >&2$' 1 'CI 第 10 步的 SKIP 支必须**如实打印「未验证、不算通过」**｜⚠⚠⚨ **批 CB**｜⚠ **整行锚定**｜⚠⚠⚨ 少了这句 ⇒ 日志里只剩一句「✓ 通过」或一句「✗ 失败」⇒ 读日志的人**分不出这一组到底验没验**（与第 13 步同款口径）'
+arch_need_count "$SRC/scripts/ci.sh" '^        echo "✗ 引擎契约门失败（退出码 \$_cc_rc）" >&2$' 1 'CI 第 10 步的失败支必须**报出退出码**（诊断不失真：只知道「失败」不知道「哪一类失败」）｜⚠⚠⚨ **批 CB**｜⚠ **整行锚定**'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 CB 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 CB 段门项全绿（未验证不许被当成通过：契约门 SKIP ⇒ 专属码 3 + CI 侧分诊）；门项合计 ${ARCH_N} 项（含前段）"
 
 exit 0

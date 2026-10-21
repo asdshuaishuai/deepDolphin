@@ -34,9 +34,14 @@ if [ -z "$BIN" ]; then
 fi
 if [ -z "$BIN" ]; then
     echo "SKIP contract-check：未找到 moongit/deepgit（可设 DEEPGIT_BIN 指定）"
-    exit 0
+    # ⚠⚠⚨ 批 CB：未验证 ⇒ **专属退出码 3**（不是 0）⇒ 调用方能把它与「通过」分开。
+    #   ⚠ 批 BW 早就在探针侧立了这条口径（0=通过 / 1=失败 / 3=SKIP），
+    #     而且它的注释**早就写着**「与第 10 步契约门同款口径」
+    #     ⇒ 但本脚本一直用的是 `exit 0` ⇒ **注释与实际行为不一致** ⇒ 本批对齐。
+    #   ⚠ 以前 exit 0 ⇒ ci.sh 判「✓ 引擎契约门通过」⇒ **一条断言都没跑却说通过**。
+    exit 3
 fi
-command -v python3 >/dev/null || { echo "SKIP contract-check：需要 python3 做 JSON 断言"; exit 0; }
+command -v python3 >/dev/null || { echo "SKIP contract-check：需要 python3 做 JSON 断言"; exit 3; }
 
 # 客户端二进制（第 12 组要拿它的工具清单）。找不到 → 该组显式 SKIP，
 # **不算通过**（否则「清单没对过」会被当成「对过了」）。

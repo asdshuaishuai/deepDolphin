@@ -552,12 +552,23 @@ if [ -n "${DEEPGIT_BIN:-}" ] || command -v moongit >/dev/null || command -v deep
     # ⚠ 别写成 `if cmd | tail -3` —— 那样 if 判的是 tail 的退出码（永远 0），
     #   契约挂了门也是绿的。必须拿脚本自己的退出码。
     _cc_log="$BUILD/contract-check.log"
-    if DEEPGIT_CLIENT_BIN="$BIN" sh "$SRC/scripts/contract-check.sh" > "$_cc_log" 2>&1; then
+    # ⚠⚠⚨ 批 CB：**接住退出码**并分诊（0=通过 / 3=未验证(SKIP) / 其它非 0=失败）。
+    #   ⚠ 以前是 `if cmd; then … else … exit 1; fi` ⇒ 脚本 exit 0（**未验证**）也走
+    #   「通过」那一支 ⇒ ⚠⚠⚨ 实测：缺 python3 时**120 条契约断言一条都没跑**，
+    #   CI 却打印「✓ 引擎契约门通过」⇒ **假绿**。
+    #   ⚠ 别写成 `if ! cmd; then $?`：`!` 会把退出码**取反** ⇒ 分不清 SKIP 与失败。
+    #   ⚠ 分诊口径与第 13 步（agent 工具面门，批 BW）**同款**：3 = 未验证，不算通过。
+    _cc_rc=0
+    DEEPGIT_CLIENT_BIN="$BIN" sh "$SRC/scripts/contract-check.sh" > "$_cc_log" 2>&1 || _cc_rc=$?
+    if [ "$_cc_rc" -eq 0 ]; then
         tail -3 "$_cc_log"
         echo "✓ 引擎契约门通过"
+    elif [ "$_cc_rc" -eq 3 ]; then
+        tail -3 "$_cc_log"
+        echo "‣ SKIP 引擎契约门：本组**未验证**（脚本自己报了 SKIP）——不算通过" >&2
     else
         tail -20 "$_cc_log" >&2
-        echo "✗ 引擎契约门失败" >&2
+        echo "✗ 引擎契约门失败（退出码 $_cc_rc）" >&2
         exit 1
     fi
 else
