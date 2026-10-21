@@ -37,6 +37,17 @@ set -uo pipefail
 SRC="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 SCRIPTS="$SRC/scripts"
 
+# ⚠⚠⚨ 批 CV · **「可达」判定之前必须先剥注释**（实测坐实的洞 ⇒ 台账 E.2be）
+#   ⚠⚠⚨ **实测**：造一个**没有任何真调用点**的断言脚本（游离）⇒ 本门判红 ✓；
+#     **只**在 ci.sh 里加一行**注释**（`# sh "$SRC/scripts/<那个脚本>.sh"`）
+#     ⇒ 本门改判「全部可达」⇒ **rc=0** ⇒ ⚠⚠⚨ **假绿坐实**
+#     ⇒ ⇒ 批 BD 的承诺（「少了一份断言 ⇒ 必须红」）**可被一行注释破掉**。
+#   ⇒ **抽取**而非复刻（批 CF / AV 纪律：判据层只有**一份**剥注释实现）
+#     ⇒ 与 ci.sh / ci-d2.sh **同款现成写法**（那两处已经这么抽）。
+#   ⇒ ⚠ 抽取失败 ⇒ **指名道姓地失败**（不许静默降级成「不剥注释」
+#     ⇒ 那等于把本批收掉的洞原样放回去 ⇒ 假绿）。
+STRIP_FAIL_FILE="${TMPDIR:-/tmp}/deepdolphin-strip-fail.$$"
+
 # ── 白名单：允许「不在 CI 里」的断言脚本 ─────────────────────────────────
 # ⚠ 白名单是**例外登记**，不是垃圾桶：每条必须写清「为什么它进不了 CI」。
 # ⚠ 白名单**条数**由 ci-wiring.sh 的「批 BD 段」钉死（完全相等 ⇒ 余量恒为 0，
@@ -49,11 +60,22 @@ probe-sni-icon.sh|需真机：要有图形会话与会话总线（用 gdbus 从�
 
 fail=0
 WL_FILE="$(mktemp)"
-trap 'rm -f "$WL_FILE"' EXIT
+# ⚠⚠⚨ 批 CG 同款口径：**剥注释失败**必须被看见（工具失败 ≠ 没找到）
+#   ⇒ 判据层那条「剥注释失败 ⇒ 未验证」的口径，在这里同样适用
+#   ⇒ 剥注释失败 ⇒ 可达性判定**不可信** ⇒ 必须判红（不许当成「没有游离脚本」）。
+trap '_cv_rc=$?; rm -f "$WL_FILE"; if [ -s "$STRIP_FAIL_FILE" ]; then echo "✗ 剥注释失败（工具失败 ≠ 没找到）—— 孤儿探针的可达性判定**不可信**：$(sort -u "$STRIP_FAIL_FILE" | tr "\n" " ")" >&2; _cv_rc=1; fi; rm -f "$STRIP_FAIL_FILE"; exit $_cv_rc' EXIT
 printf '%s\n' "$WHITELIST" | sed '/^$/d' > "$WL_FILE"
 
 if [ ! -f "$SCRIPTS/ci.sh" ]; then
     echo "✗ 找不到 CI 入口：$SCRIPTS/ci.sh" >&2
+    exit 1
+fi
+
+# ⚠⚠⚨ 批 CV · **抽取**判据层那**唯一一份**剥注释实现（剥注释口径**只有一份**）。
+#   ⇒ 抽取失败 ⇒ **指名道姓地失败**（不许静默降级成「不剥注释」
+#     ⇒ 那等于把批 CV 收掉的洞原样放回去 ⇒ 假绿）。
+if ! eval "$(sed -n '/^strip_comments() {/,/^}/p' "$SRC/scripts/ci-wiring.sh")" || ! strip_comments "$SRC/scripts/ci-wiring.sh" >/dev/null 2>&1; then
+    echo "✗ 剥注释函数抽取失败或不可用（ci-wiring.sh 的函数体里有独占的 } 行 ⇒ 抽出来是残缺的）" >&2
     exit 1
 fi
 
@@ -66,7 +88,10 @@ calls_of() {
     _cf="$SCRIPTS/$1"
     [ -f "$_cf" ] || return 0
     # ⚠ 排除门项行（见文件头「门项行不算调用点」）
-    grep -vE '^[[:space:]]*arch_[a-z_]+[[:space:]]' "$_cf" 2>/dev/null \
+    # ⚠⚠⚨ 批 CV：**先剥注释**再找调用点（否则注释里的一行同形文本就能冒充真调用
+    #   ⇒ 游离断言脚本被当成「在 CI 里」⇒ 本门假绿 ⇒ 实测坐实 ⇒ 台账 E.2be）
+    #   ⚠ 剥注释口径**只有一份**（抽取 ci-wiring.sh 的 strip_comments ⇒ 零漂移）。
+    strip_comments "$_cf" | grep -vE '^[[:space:]]*arch_[a-z_]+[[:space:]]' 2>/dev/null \
         | grep -oE '(sh|bash|python3?)[[:space:]]+"?[^"]*/scripts/[A-Za-z0-9._-]+\.(sh|py)' 2>/dev/null \
         | sed 's|.*/||' | sort -u || true
 }
