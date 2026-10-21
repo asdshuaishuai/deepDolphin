@@ -36,10 +36,31 @@ fi
 # 新面的锚点工具（这几个**必须**在模型可见面里 —— 它们是「旧名别名的继任者」）。
 NEWFACE="index_query index_overview index_gen confidence_gen confidence_query arch_gen render"
 
-OUT="$(QT_QPA_PLATFORM=offscreen "$BIN" --agent-tool-surface 2>/dev/null)"
-if [ -z "$OUT" ]; then
+# ⚠⚠⚨ 批 BW：**必须看探针的退出码**。
+#   以前这里只看「stdout 空不空」⇒ **探针崩了（139）和「引擎没找到」被当成同一件事**
+#   ⇒ 崩了 ⇒ 报 SKIP（exit 3）⇒ ci.sh 打印「‣ SKIP …未验证」⇒ **CI 整体照样绿**
+#   ⇒ ⇒ 「崩了」被伪装成「环境不具备」⇒ 崩点彻底看不见。
+#   ⇒ 现在按退出码分诊：**3 = 未验证（引擎缺席）** / **其它非 0 = 失败**。
+#   ⚠ stderr **不扔掉**（落盘，失败时原样吐出）⇒ 崩点（CrashHandler 的栈回溯）看得见。
+ERR_FILE="$(mktemp 2>/dev/null || echo /tmp/az-ats-stderr.$$)"
+trap 'rm -f "$ERR_FILE"' EXIT
+PROBE_RC=0
+OUT="$(QT_QPA_PLATFORM=offscreen "$BIN" --agent-tool-surface 2>"$ERR_FILE")" || PROBE_RC=$?
+if [ "$PROBE_RC" -eq 3 ]; then
     echo "SKIP: 引擎未找到（工具面探针需要真引擎）—— 本门**未验证**，不算通过"
+    cat "$ERR_FILE" >&2
     exit 3
+fi
+if [ "$PROBE_RC" -ne 0 ]; then
+    echo "✗ 工具面探针退出码 $PROBE_RC（要求 0；3=引擎未找到已单列为 SKIP）—— 这是**失败**，不是「未验证」" >&2
+    echo "--- 探针 stderr（崩点在这里）---" >&2
+    cat "$ERR_FILE" >&2
+    exit 1
+fi
+if [ -z "$OUT" ]; then
+    echo "✗ 工具面探针退出码 0 却什么都没报（假绿：这一门会被当成 SKIP 放过去）" >&2
+    cat "$ERR_FILE" >&2
+    exit 1
 fi
 
 MODEL="$(printf '%s\n' "$OUT" | sed -n 's/^model=//p')"

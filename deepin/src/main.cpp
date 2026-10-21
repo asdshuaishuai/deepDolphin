@@ -82,6 +82,32 @@ static void applyThemeOverride()
         DGuiApplicationHelper::instance()->setPaletteType(DGuiApplicationHelper::DarkType);
 }
 
+// ── 无头路径的**唯一**收尾出口（批 BV）──
+// ⚠⚠⚨ **为什么所有无头路径都必须走它**（批 BV 取证坐实，不是推演）：
+//   1) 它在**退出那一刻**报一个**可断言的事实**（`appAlive`）——
+//      事实的值在**退出点**求值 ⇒ 无论退出点被挪到哪，说的都是当下的真相。
+//   2) `appAlive=0` ⇔ **退出时 QApplication 已经被析构** ⇔ 那个必崩的竞态回来了。
+//
+// ⚠⚠⚨ **根因（core 取证 + 反汇编坐实）**：
+//   `QCoreApplication::~QCoreApplication()` 会把静态 `QCoreApplication::self` 置空
+//   （libQt6Core 里 `movq $0x0,(%rax)` 写的正是那个 `self` 变量）；
+//   而后台线程（实测探针进程里有 `QDBusConnection` 与 `DConfigGlobalTh` 两个）
+//   可能正走在 `QCoreApplication::notifyInternal2()` 里派发事件 ——
+//   它先读一次 `self` 判非空（通过），隔一个函数调用再读时已被主线程置空
+//   ⇒ `mov (%rdi),%rax` 空指针解引用 ⇒ **SIGSEGV**（CI 偶发段错误的真身）。
+//   ⇒ 无头路径**绝不能**让 QApplication 析构 ⇒ 一律在 app 还活着时 `_exit`。
+//
+// ⚠ 退出方式仍是 `::_exit`（跳过静态析构）：DTK/DBus 全局单例收尾会无限等 futex
+//   （容器实测 5/8 次挂死）。
+[[noreturn]] static void probeExit(int rc)
+{
+    // ⚠ 这个事实**必须在这里求值**（退出那一刻），不能挪到别处 ——
+    //   挪走 ⇒ 它就不再反映「退出时 app 还在不在」⇒ 断言就变成空门。
+    fprintf(stdout, "appAlive=%d\n", QCoreApplication::instance() ? 1 : 0);
+    fflush(stdout);
+    ::_exit(rc);
+}
+
 // ── 无头 agent 工具面探针（批 AB）：**模型实际能看到什么** ──
 // 用法：deepDolphin --agent-tool-surface（配合 QT_QPA_PLATFORM=offscreen 亦可用）。
 // 逐行打印（每行一个字段，key=value）：
@@ -103,7 +129,11 @@ static int headlessAgentToolSurface(int argc, char *argv[])
     if (!engine.found) {
         fprintf(stderr, "✗ 引擎未找到（工具面探针需要真引擎）\n");
         fflush(stderr);
-        return 1;
+        // ⚠⚠⚨ 批 BW：退出码 **3 = 「未验证」**（引擎缺席 ⇒ 本门无从验证
+        //   ⇒ 既不能红也不能绿 ⇒ 显式 SKIP）—— 与「失败（1）」**分开**。
+        //   以前这里报 1 ⇒ 脚本只按「stdout 空不空」分诊 ⇒ **探针崩了（139）
+        //   也被当成「引擎没找到」⇒ SKIP ⇒ CI 报绿 ⇒ 崩点彻底看不见**。
+        probeExit(3);
     }
     AgentCore core(engine.bin);
     QVector<ToolDef> defs;
@@ -113,7 +143,7 @@ static int headlessAgentToolSurface(int argc, char *argv[])
     if (!core.loadToolManifest(&defs, &paramsByTool, &toolsText, &err, nullptr)) {
         fprintf(stderr, "✗ 取工具清单失败：%s\n", qPrintable(err));
         fflush(stderr);
-        return 1;
+        probeExit(1);
     }
     QStringList modelNames;
     for (const ToolDef &d : defs)
@@ -151,7 +181,8 @@ static int headlessAgentToolSurface(int argc, char *argv[])
     fprintf(stdout, "validated=%s\n", qPrintable(validated.join(QLatin1Char(','))));
     fprintf(stdout, "prompt=%s\n", qPrintable(toolsText));
     fflush(stdout);
-    return 0;
+    // ⚠ 批 BV：无头路径**不许**正常 return（那会析构 QCoreApplication ⇒ 竞态）。
+    probeExit(0);
 }
 
 static int headlessAgentSelftest(int argc, char *argv[], const QString &question)
@@ -200,32 +231,6 @@ static int headlessAgentSelftest(int argc, char *argv[], const QString &question
     fflush(stdout);
     Settings::instance().sync();
     return 0;
-}
-
-// ── 无头路径的**唯一**收尾出口（批 BV）──
-// ⚠⚠⚨ **为什么所有无头路径都必须走它**（批 BV 取证坐实，不是推演）：
-//   1) 它在**退出那一刻**报一个**可断言的事实**（`appAlive`）——
-//      事实的值在**退出点**求值 ⇒ 无论退出点被挪到哪，说的都是当下的真相。
-//   2) `appAlive=0` ⇔ **退出时 QApplication 已经被析构** ⇔ 那个必崩的竞态回来了。
-//
-// ⚠⚠⚨ **根因（core 取证 + 反汇编坐实）**：
-//   `QCoreApplication::~QCoreApplication()` 会把静态 `QCoreApplication::self` 置空
-//   （libQt6Core 里 `movq $0x0,(%rax)` 写的正是那个 `self` 变量）；
-//   而后台线程（实测探针进程里有 `QDBusConnection` 与 `DConfigGlobalTh` 两个）
-//   可能正走在 `QCoreApplication::notifyInternal2()` 里派发事件 ——
-//   它先读一次 `self` 判非空（通过），隔一个函数调用再读时已被主线程置空
-//   ⇒ `mov (%rdi),%rax` 空指针解引用 ⇒ **SIGSEGV**（CI 偶发段错误的真身）。
-//   ⇒ 无头路径**绝不能**让 QApplication 析构 ⇒ 一律在 app 还活着时 `_exit`。
-//
-// ⚠ 退出方式仍是 `::_exit`（跳过静态析构）：DTK/DBus 全局单例收尾会无限等 futex
-//   （容器实测 5/8 次挂死）。
-[[noreturn]] static void probeExit(int rc)
-{
-    // ⚠ 这个事实**必须在这里求值**（退出那一刻），不能挪到别处 ——
-    //   挪走 ⇒ 它就不再反映「退出时 app 还在不在」⇒ 断言就变成空门。
-    fprintf(stdout, "appAlive=%d\n", QCoreApplication::instance() ? 1 : 0);
-    fflush(stdout);
-    ::_exit(rc);
 }
 
 // ── 无头快照（mac scripts/render-harness 对位：离屏渲染整窗 PNG，布局可自动验证）──

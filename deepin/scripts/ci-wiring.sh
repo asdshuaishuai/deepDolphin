@@ -2216,7 +2216,7 @@ echo "✓ 批 BC 段门项全绿（CI 里跑的 5 个断言脚本，清单都不
 # ⚠ **白名单不许收纳「已经在 CI 里」的脚本**（逐条钉，期望次数 0）：
 #   否则有人可以把一个**已接管的**脚本塞进白名单 ⇒ 它随时能被踢出 CI 而无人知晓。
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^[[:space:]]*echo "[ ]*✗' 6 '无游离门自己的断言清单**不许被删**（⚠ 口径：**6 条断言的报错行**；「什么算断言脚本」那条判定行**另有一条门**盯着 ⇒ 两边分开数）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
-arch_need_count "$SRC/scripts/probe-agent-tool-surface.sh" '^[[:space:]]*echo "[ ]*✗' 9 'agent 工具面探针的断言清单**不许被删**（9 条报错）—— ⚠⚠ **这条门是「文件被整个删掉」的唯一防线**：无游离门扫的是**目录里现存的文件** ⇒ 文件没了它就**扫不到**、也就不会报 ⇒ 必须另有一条「盯文件本身」的条数基线门（删文件 ⇒ 门报「文件不存在」⇒ 红）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
+arch_need_count "$SRC/scripts/probe-agent-tool-surface.sh" '^[[:space:]]*echo "[ ]*✗' 11 'agent 工具面探针的断言清单**不许被删**（11 条报错）—— ⚠⚠ **这条门是「文件被整个删掉」的唯一防线**：无游离门扫的是**目录里现存的文件** ⇒ 文件没了它就**扫不到**、也就不会报 ⇒ 必须另有一条「盯文件本身」的条数基线门（删文件 ⇒ 门报「文件不存在」⇒ 红）｜⚠⚠⚨ **批 BS：口径从「含标记的行」收紧成「真报错行」**｜⚠ 行尾是自由文本 ⇒ 整行锚定会改窄语义 ⇒ 走豁免表登记'
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^[[:space:]]*grep -q .✗ . "\$_f" 2>/dev/null \|\| continue$' 1 '无游离门**判定「什么算断言脚本」的那行**必须在（⚠⚠ 少了它 ⇒ 扫到 0 个 ⇒ 报「全部可达」⇒ **空转恒绿**）｜⚠⚠⚨ **批 BS：整行锚定**（裸盯串 ⇒ 挪进行尾注释就骗得过门）'
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^[[:space:]]*grep -vE .\^\[\[:space:\]\]\*arch_\[a-z_\]\+\[\[:space:\]\]. "\$_cf" 2>/dev/null \\$' 1 '无游离门**排除门项行**的规则必须在（⚠ 少了它 ⇒ 门项字符串被当成真调用 ⇒ 可达集合被夸大 ⇒ 探针失准）｜⚠⚠⚨ **批 BS：整行锚定**'
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^[A-Za-z0-9._-]+\.sh\|[^|]*$' 4 '白名单**条数**基线（恰好 4 条）—— 增删白名单条目必须同步改这里 ⇒ 改动是显式的、可 review 的（⚠ 期望 == 实际 ⇒ 余量恒为 0，批 BB 口径）｜⚠⚠⚨ **批 BS：整行锚定**（条目里多一个分隔符就红 ⇒ 格式被破坏会被解析错）'
@@ -2731,7 +2731,7 @@ echo "✓ 批 BS 段门项全绿（探针脚本纳入整行锚定适用范围：
 arch_need_count "$SRC/scripts/ci-platform-probe.sh" '^[[:space:]]*(exit [1-9]|return 1|fail=1)$' 24 '探针脚本的**失败上报语句条数**必须恰好是 24（⚠ **摘掉任何一条失败上报（或把它改成 `exit 0` / `fail=0`）⇒ 那条断言就变空转 ⇒ 脚本仍 exit 0 ⇒ CI 假绿**）｜⚠⚠⚨ **批 BT**｜⚠ 口径：这条门数的是**整行的失败上报语句**（`exit N` / `return 1` / `fail=1`）⇒ 辅助函数的内层/外层报错、awk 程序内部的 `exit 1` 都会**多出来**⇒ **不是 1:1 配对**，只钉住**总数** ⇒ 目的：**不许把任何一条失败上报摘掉或改成 0**'
 arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^[[:space:]]*(exit [1-9]|return 1|fail=1)$' 11 '探针脚本的**失败上报语句条数**必须恰好是 11（⚠ **摘掉任何一条失败上报（或把它改成 `exit 0` / `fail=0`）⇒ 那条断言就变空转 ⇒ 脚本仍 exit 0 ⇒ CI 假绿**）｜⚠⚠⚨ **批 BT**｜⚠ 口径：数**整行的失败上报语句**（`exit N` / `return 1` / `fail=1`）⇒ **不是与报错行 1:1 配对**，只钉**总数** ⇒ 目的：**不许把任何一条失败上报摘掉或改成 0**'
 arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^[[:space:]]*(exit [1-9]|return 1|fail=1)$' 10 '探针脚本的**失败上报语句条数**必须恰好是 10（⚠ **摘掉任何一条失败上报（或把它改成 `exit 0` / `fail=0`）⇒ 那条断言就变空转 ⇒ 脚本仍 exit 0 ⇒ CI 假绿**）｜⚠⚠⚨ **批 BT**｜⚠ 口径：数**整行的失败上报语句**（`exit N` / `return 1` / `fail=1`）⇒ **不是与报错行 1:1 配对**，只钉**总数** ⇒ 目的：**不许把任何一条失败上报摘掉或改成 0**'
-arch_need_count "$SRC/scripts/probe-agent-tool-surface.sh" '^[[:space:]]*(exit [1-9]|return 1|fail=1)$' 11 '探针脚本的**失败上报语句条数**必须恰好是 11（⚠ **摘掉任何一条失败上报（或把它改成 `exit 0` / `fail=0`）⇒ 那条断言就变空转 ⇒ 脚本仍 exit 0 ⇒ CI 假绿**）｜⚠⚠⚨ **批 BT**｜⚠ 口径：数**整行的失败上报语句**（`exit N` / `return 1` / `fail=1`）⇒ 这个脚本用 `fail=1` 累加 + 末尾统一 `exit 1`，还有 2 条 `exit 3`（**SKIP**，也算失败）⇒ **不是与报错行 1:1 配对**，只钉**总数** ⇒ 目的：**不许把任何一条失败上报摘掉或改成 0**'
+arch_need_count "$SRC/scripts/probe-agent-tool-surface.sh" '^[[:space:]]*(exit [1-9]|return 1|fail=1)$' 13 '探针脚本的**失败上报语句条数**必须恰好是 13（⚠ **摘掉任何一条失败上报（或把它改成 `exit 0` / `fail=0`）⇒ 那条断言就变空转 ⇒ 脚本仍 exit 0 ⇒ CI 假绿**）｜⚠⚠⚨ **批 BT**｜⚠ 口径：数**整行的失败上报语句**（`exit N` / `return 1` / `fail=1`）⇒ 这个脚本用 `fail=1` 累加 + 末尾统一 `exit 1`，还有 2 条 `exit 3`（**SKIP**，也算失败）⇒ **不是与报错行 1:1 配对**，只钉**总数** ⇒ 目的：**不许把任何一条失败上报摘掉或改成 0**'
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^[[:space:]]*(exit [1-9]|return 1|fail=1)$' 6 '探针脚本的**失败上报语句条数**必须恰好是 6（⚠ **摘掉任何一条失败上报（或把它改成 `exit 0` / `fail=0`）⇒ 那条断言就变空转 ⇒ 脚本仍 exit 0 ⇒ CI 假绿**）｜⚠⚠⚨ **批 BT**｜⚠ 口径：数**整行的失败上报语句**（`exit N` / `return 1` / `fail=1`）⇒ 这个脚本用 `fail=1` 累加 + 末尾统一 `exit 1`⇒ **不是与报错行 1:1 配对**，只钉**总数** ⇒ 目的：**不许把任何一条失败上报摘掉或改成 0**'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
@@ -2805,7 +2805,7 @@ arch_need_count "$SRC/scripts/ci-docs-lang-probe.sh" '^if \[ "\$APP_ALIVE" != "1
 arch_need_count "$SRC/scripts/ci-divider-probe.sh" '^if \[ "\$APP_ALIVE" != "1" \]; then$' 1 '分隔线探针必须断言「退出时 QApplication 还活着」（事实行 appAlive）｜⚠⚠⚨ **批 BV**｜⚠ **整行锚定**'
 arch_need_count "$SRC/src/main.cpp" 'appAlive=%d' 1 '「退出时 QApplication 还活着」这个**事实**不许被删（它是批 BV 那条竞态的**唯一可见面**）｜⚠⚠⚨ **批 BV**｜⚠ 口径：`strip_comments` 剥注释 ⇒ 注释里写一遍不算数（批 BK 纪律）'
 arch_need_count "$SRC/src/main.cpp" '::_exit\(rc\);' 1 '`_exit` **只许出现在 `probeExit` 里**（1 处）｜⚠⚠⚨ **批 BV**｜⚠ 散落的 `_exit` 就是「退出点被挪到别处」的入口 ⇒ 一律收口到 probeExit（那儿才有 appAlive 事实）'
-arch_need_count "$SRC/src/main.cpp" 'probeExit\(' 8 '无头路径的收尾**必须走 `probeExit`**（8 = 1 处定义 + 7 个调用点：快照 / 色样张 / 平台探针 / 文档语言探针 ×2 / 分隔线探针 ×2）｜⚠⚠⚨ **批 BV**｜⚠ 走别的出口 = 没有 appAlive 事实 = 那个竞态没人看得见'
+arch_need_count "$SRC/src/main.cpp" 'probeExit\(' 11 '无头路径的收尾**必须走 `probeExit`**（11 = 1 处定义 + 10 个调用点：快照 / 色样张 / 平台探针 / 文档语言探针 ×2 / 分隔线探针 ×2 / 工具面探针 ×3）｜⚠⚠⚨ **批 BV**｜⚠ 走别的出口 = 没有 appAlive 事实 = 那个竞态没人看得见'
 arch_forbid "$SRC/scripts/ci-platform-probe.sh" '2>/dev/null' '平台探针的**stderr 不许被扔掉**（探针崩了时 CrashHandler 的栈回溯（崩点）全在 stderr 里 ⇒ 扔掉 = CI 只剩一句「退出码 139」，**没人知道崩在哪**）｜⚠⚠⚨ **批 BV**｜⚠ 口径：`strip_comments` 剥注释 ⇒ 注释里提一嘴不算'
 arch_forbid "$SRC/scripts/ci-docs-lang-probe.sh" '2>/dev/null' '文档语言探针的**stderr 不许被扔掉**（崩点会因此看不见）｜⚠⚠⚨ **批 BV**｜⚠ 口径：`strip_comments` 剥注释 ⇒ 注释里提一嘴不算'
 arch_forbid "$SRC/scripts/ci-divider-probe.sh" '2>/dev/null' '分隔线探针的**stderr 不许被扔掉**（崩点会因此看不见）｜⚠⚠⚨ **批 BV**｜⚠ 口径：`strip_comments` 剥注释 ⇒ 注释里提一嘴不算'
@@ -2815,5 +2815,43 @@ if [ "$ARCH_FAIL" -ne 0 ]; then
     exit 1
 fi
 echo "✓ 批 BV 段门项全绿（无头路径的收尾：退出时 QApplication 必须还活着 + 崩点不许被吞）；门项合计 ${ARCH_N} 项（含前段）"
+
+# ── 批 BW · 「探针崩了」不许被当成「未验证」（SKIP） ─────────────────────
+#
+# ⚠⚠⚨ **起因（批 BV 留下的已知边界）**：批 BV 把「崩点不许被吞」做进了三个探针脚本
+#   ⇒ 但 `probe-agent-tool-surface.sh` 当时**没收** ⇒ 顺手查了一遍，发现**更糟**：
+#   它的探针调用**根本没接退出码**：
+#       OUT="$(... --agent-tool-surface 2>/dev/null)"
+#       if [ -z "$OUT" ]; then echo "SKIP: 引擎未找到…"; exit 3; fi
+#   ⇒ **只看 stdout 空不空** ⇒ 于是：
+#     · 探针**崩了**（139）⇒ stdout 空 ⇒ 报「SKIP: 引擎未找到」⇒ exit 3
+#     · 探针**报成功但没输出**⇒ stdout 空 ⇒ 同样 SKIP
+#   ⇒ ci.sh 第 13 步看到 exit 3 ⇒ 打印「‣ SKIP …未验证」⇒ **CI 整体照样绿**
+#   ⇒ ⇒ 「**崩了**」被伪装成「**环境不具备**」⇒ 崩点彻底看不见。
+#
+# ⚠⚠⚨ **修法（三层）**：
+#   ① **产品侧**：「引擎未找到」用**专属退出码 3**（= 未验证），
+#      其它失败用 1 ⇒ 「未验证」与「失败」在**退出码**这一层就分开了；
+#   ② **CI 侧**：脚本**接住退出码**并分诊（3 = SKIP / 其它非 0 = **失败**），
+#      且 stderr **落盘并在失败时原样吐出** ⇒ 崩点（CrashHandler 的栈回溯）看得见；
+#   ③ **顺带**：工具面探针的收尾也收口到 `probeExit`（批 BV 的口径）⇒
+#      「所有无头路径统一走 probeExit」这句话**这才真的成立**。
+#
+# ⚠⚠⚨ **实测（行为级，假探针）**：
+#   ① 假探针 `kill -SEGV $$`（退出码 139）⇒ 脚本 **exit 1（失败）**且把 stderr 吐出来
+#      ⇒ **以前是 exit 3（SKIP）⇒ CI 假绿**；
+#   ② 假探针 `exit 3`（引擎未找到）⇒ 脚本 **exit 3（SKIP）** ⇒ 语义**没变**；
+#   ③ 假探针 `exit 0` 但无输出 ⇒ 脚本 **exit 1**（假绿被抓住）。
+arch_need_count "$SRC/scripts/probe-agent-tool-surface.sh" '^OUT="\$\(QT_QPA_PLATFORM=offscreen "\$BIN" --agent-tool-surface 2>"\$ERR_FILE"\)" \|\| PROBE_RC=\$\?$' 1 '工具面探针的**退出码必须被接住**（`|| PROBE_RC=$?`）且 stderr **落盘**（不许扔掉）｜⚠⚠⚨ **批 BW**｜⚠ **整行锚定**（批 BS：整行锚定 ⇒ 判定行被追加内容/挪走时门会红）｜⚠ 不接退出码 ⇒ 探针崩了（139）与「引擎没找到」被当成同一件事 ⇒ 崩了 ⇒ SKIP ⇒ **CI 假绿**'
+arch_need_count "$SRC/scripts/probe-agent-tool-surface.sh" '^if \[ "\$PROBE_RC" -eq 3 \]; then$' 1 '「**未验证**」（引擎缺席）必须单列成 SKIP 这一支｜⚠⚠⚨ **批 BW**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/probe-agent-tool-surface.sh" '^if \[ "\$PROBE_RC" -ne 0 \]; then$' 1 '**其它非 0 退出码必须判「失败」**（不许混进 SKIP 那一支）｜⚠⚠⚨ **批 BW**｜⚠ **整行锚定**｜⚠ 这一支才是「崩了」的归宿'
+arch_need_count "$SRC/scripts/probe-agent-tool-surface.sh" '^[[:space:]]*echo "✗ 工具面探针退出码 0 [^"]*" >&2$' 1 '探针**退出码 0 却什么都没报** ⇒ 必须判**失败**（否则这一门会被当成 SKIP 放过去 ⇒ 假绿）｜⚠⚠⚨ **批 BW**｜⚠ **整行锚定**'
+arch_need_count "$SRC/src/main.cpp" 'probeExit\(3\);' 1 '「引擎未找到」必须用**专属的『未验证』退出码 3**（与「失败（1）」分开）｜⚠⚠⚨ **批 BW**｜⚠ 口径：`strip_comments` 剥注释 ⇒ 注释里写一遍不算数'
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 BW 段有门项红（上面带 ✗ 的行）" >&2
+    exit 1
+fi
+echo "✓ 批 BW 段门项全绿（探针崩了不许被当成 SKIP：退出码分诊 + 崩点落地）；门项合计 ${ARCH_N} 项（含前段）"
 
 exit 0
