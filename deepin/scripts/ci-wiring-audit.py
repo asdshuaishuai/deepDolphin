@@ -151,6 +151,17 @@ COUNT_IN_FN_LINE = re.compile(
 #   ⇒ 这里加解析 + 配准校准；切步骤正文用的 awk **从 ci-wiring.sh 原文抽取**（零漂移）。
 COUNT_IN_STEP_LINE = re.compile(
     r'^\s*arch_need_count_in_step\s+"([^"]+)"\s+(\d+)\s+\'([^\']*)\'\s+(\d+)\s+')
+# ⚠⚠⚨ 批 BZ · **配对门**（`arch_need_count_pair`）：盯「**报错行数 == 计数行数** == 期望」
+#   ⚠ **为什么需要它**（不是推演，是批 BY 留下的**具体**洞）：
+#     两个**独立**的「恰好 N 次」门**彼此不知道对方**
+#     ⇒ 「新增一条**只报错不计数**的失败路径」（有人新写了一条 `echo "  ✗ …"`
+#       却忘了加 `fail=$((fail+1))`）
+#     ⇒ 报错门红、计数门绿 ⇒ 人把**报错门**的期望值改大 ⇒ 两门都绿
+#     ⇒ 但那条新报错**永远不计数** ⇒ 末尾判定恒真 ⇒ **CI 假绿**
+#   ⇒ 必须有**一条**门**同时**盯住两个数 ⇒ 它们的差恒为 0
+#   ⚠ **新门型必须进审计覆盖**（批 AR/AV 纪律）⇒ 解析 + 对拍登记 + 期望校准
+PAIR_COUNT_LINE = re.compile(
+    r'^\s*arch_need_count_pair\s+"([^"]+)"\s+\'([^\']*)\'\s+\'([^\']*)\'\s+(\d+)\s+')
 # ⚠⚠ **count 族的兜底盲区检测**（批 BE）：
 #   `ANY_NEED_LINE`（`arch_need\b`）**匹配不到** count 族（`_` 是单词字符 ⇒ 没有词边界）⇒
 #   以前一条**写坏**的 `arch_need_count*` 门项会**静默被忽略** ⇒
@@ -340,6 +351,7 @@ GATE_TYPES = [
     ('need_count', COUNT_LINE),
     ('need_count_in_fn', COUNT_IN_FN_LINE),
     ('need_count_in_step', COUNT_IN_STEP_LINE),
+    ('need_count_pair', PAIR_COUNT_LINE),
     ('need_min', NEED_MIN_LINE),
 ] + sorted(FORBID_FAMILY.items())
 
@@ -352,7 +364,7 @@ def count_gate_types(path):
     """数门项 ⇒ (各门型条数, 审计器认领总数, 物理门项行数)。
 
     ⚠⚠ **两个数必须相等**：
-      · 「审计器认领总数」= 上面 14 条门型正则各数一遍（互斥 ⇒ 不会重复计数）；
+      · 「审计器认领总数」= 上面 15 条门型正则各数一遍（互斥 ⇒ 不会重复计数）；
       · 「物理门项行数」= 用**不认识门型**的口径数一遍（只看「长得像门项」）。
       ⇒ 不等 ⇒ **有一种门型没被登记** ⇒ 那些门项**没被审**（批 BH 抓的就是这个）。
     """
@@ -474,9 +486,10 @@ def parse_wiring():
     解析失败行号, arch_forbid 行数)"""
     src = open(WIRING, encoding='utf-8').read()
     lines = src.split('\n')
-    need, ml, anyc, anym, cnt, cif, cis = [], [], [], [], [], [], []
+    need, ml, anyc, anym, cnt, cif, cis, pair = [], [], [], [], [], [], [], []
     totals = {'need': 0, 'ml': 0, 'any_count': 0, 'any_min': 0,
-              'count': 0, 'count_in_fn': 0, 'count_in_step': 0}
+              'count': 0, 'count_in_fn': 0, 'count_in_step': 0,
+              'count_pair': 0}
     failed, forbid_lines = [], 0
     for i, ln in enumerate(lines, 1):
         if ANY_FORBID_LINE.match(ln) and not FUNC_DEF_LINE.match(ln):
@@ -521,12 +534,19 @@ def parse_wiring():
             m = COUNT_IN_FN_LINE.match(ln)
             cif.append((i, resolve(m.group(1)), m.group(2), m.group(3), int(m.group(4))))
             continue
+        if PAIR_COUNT_LINE.match(ln):
+            totals['count_pair'] += 1
+            m = PAIR_COUNT_LINE.match(ln)
+            pair.append((i, resolve(m.group(1)), m.group(2), m.group(3),
+                         int(m.group(4))))
+            continue
         if COUNT_FAMILY_LINE.match(ln):
             # ⚠⚠ 走到这里 = 这一行**没被任何 count 门型解析到** ⇒ 审计器有盲区
             #   （批 BE：写坏的 count 族门项以前是**静默忽略** ⇒ 没人知道它没被审）
             failed.append((i, 'count-family'))
             continue
-    return need, ml, anyc, anym, cnt, cif, cis, totals, failed, forbid_lines
+    return (need, ml, anyc, anym, cnt, cif, cis, pair,
+            totals, failed, forbid_lines)
 
 
 def changed_lines(base):
@@ -588,6 +608,56 @@ def check_min_gates(min_items):
             bad.append((lineno, f, rx, want, got,
                         '下限 %d ≠ 实际命中 %d ⇒ %s'
                         % (want, got, '门没牙（删一处仍够）' if got > want else '门恒红')))
+    return bad
+
+
+def count_lines(path, rx):
+    """数**行数**（`grep -cE` 口径）⇒ 与 `arch_need_count_pair` 的门**完全一致**。
+
+    ⚠⚠ 与 `count_hits`（`grep -oE` ⇒ 数**出现次数**）**故意不同**：
+      配对门盯的是「有**几行**涉及报错 / 计数」⇒ 一行里写两次只算 1 行。
+    ⚠ `grep -c` 无命中时**退出码是 1**（但仍打印 "0"）⇒ 两种退出码都算正常。
+    """
+    if not os.path.isfile(path):
+        return None
+    text = strip_comments(path)
+    try:
+        out = subprocess.run(['grep', '-cE', '--', rx], input=text,
+                             capture_output=True, text=True)
+    except OSError:
+        return None
+    if out.returncode not in (0, 1):
+        return None
+    try:
+        return int(out.stdout.strip() or '0')
+    except ValueError:
+        return None
+
+
+def check_pair_count_gates(pair_items):
+    """校准 `arch_need_count_pair`：**报错行数**与**计数行数**都必须 == 期望。
+
+    ⚠ 口径与门一致（**行数**）⇒ 一行里写两次只算 1 行。
+    ⚠ 期望 < 实际 ⇒ 门**没牙**；期望 > 实际 ⇒ 门**恒红**。
+    ⚠ 两个数**不等** ⇒ 存在「**只报错不计数**」的失败路径 ⇒ 假绿 ⇒ 必须红。
+    """
+    bad = []
+    for lineno, f, ra, rb, want in pair_items:
+        rx_desc = '%s | %s' % (ra, rb)
+        if not os.path.isfile(f):
+            bad.append((lineno, f, rx_desc, want, None, '文件不存在'))
+            continue
+        na = count_lines(f, ra)
+        nb = count_lines(f, rb)
+        if na is None or nb is None:
+            continue
+        if na != want or nb != want:
+            why = ('期望 报错 %d 且 计数 %d ⇒ 实际 报错 %d / 计数 %d ⇒ %s'
+                   % (want, want, na, nb,
+                      '**两者不等 ⇒ 存在「只报错不计数」的失败路径 ⇒ 假绿**'
+                      if na != nb else '两个数都与期望不符 ⇒ 门恒红/没牙'))
+            bad.append((lineno, f, rx_desc, want,
+                        '报错 %d / 计数 %d' % (na, nb), why))
     return bad
 
 
@@ -997,7 +1067,7 @@ def main():
         i = args.index('--changed')
         base = args[i + 1] if i + 1 < len(args) else 'HEAD~1'
 
-    (need, ml, anyc, anym, cnt, cif, cis,
+    (need, ml, anyc, anym, cnt, cif, cis, pair,
      totals, failed, forbid_lines) = parse_wiring()
 
     # ⚠⚠⚨ 批 BN · 「整行锚定」的豁免基线（**先读** ⇒ 后面两处判定共用同一份）
@@ -1207,8 +1277,9 @@ def main():
         cntbad = check_count_gates(cnt)
         cifbad = check_count_in_fn_gates(cif)
         cisbad = check_count_in_step_gates(cis)
+        pairbad = check_pair_count_gates(pair)
         anybad = check_any_gates(anyc, anym, counter)
-        bad_all = minbad + cntbad + cifbad + cisbad + anybad
+        bad_all = minbad + cntbad + cifbad + cisbad + pairbad + anybad
         if bad_all:
             print('次数门没配准（%d 条）：' % len(bad_all), file=sys.stderr)
             for b in bad_all:
@@ -1240,6 +1311,8 @@ def main():
           % (totals['count'], totals['count_in_fn']))
     print('  arch_need_count_in_step %d 条（批 BE 新门型：盯「标记串**还在这一步里**」）'
           % totals['count_in_step'])
+    print('  arch_need_count_pair %d 条（批 BZ 新门型：盯「**报错行数 == 计数行数**」）'
+          % totals['count_pair'])
     print('（arch_forbid 门项 %d 条**有意不审**：它判「不该有的东西没了」，'
           '目标串出现 >0 本来就红，不属于「被别处顶替」的隐患）' % forbid_lines)
     # ⚠⚠⚠ 门项行总数（批 BH）：三个数摆在一起 ⇒ 差在哪一眼看得出
@@ -1334,6 +1407,13 @@ def main():
     print('arch_need_count_in_step 期望校准（须 == **该步正文里**实际次数）：%d 条失准'
           % len(cisbad))
     for lineno, f, rx, want, got, why in cisbad:
+        print('  · %s:%d  %s | %s ⇒ %s'
+              % (os.path.basename(WIRING), lineno, rel(f), rx, why))
+
+    pairbad = check_pair_count_gates(pair)
+    print('arch_need_count_pair 期望校准（须 **报错行数 == 计数行数** == 期望）：%d 条失准'
+          % len(pairbad))
+    for lineno, f, rx, want, got, why in pairbad:
         print('  · %s:%d  %s | %s ⇒ %s'
               % (os.path.basename(WIRING), lineno, rel(f), rx, why))
 
