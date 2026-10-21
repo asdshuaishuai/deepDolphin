@@ -45,6 +45,11 @@ BIN="$BUILD/deepDolphin"
 #   ⇒ 现在：缺 perl ⇒ **响亮失败**（未验证不许被当成通过；批 CB/CC/CD/CE 同款口径）。
 # ⚠ 抽取的前提：单一真相源文件必须在（抽不到 ⇒ 函数未定义 ⇒ 调用时报
 #   "command not found" ⇒ 退出码 127 ⇒ 在 `|| true` 里被吞 ⇒ **静默失效**）。
+# ⚠⚠⚨ 批 CG · **剥注释失败**必须被看见（工具失败 ≠ 没找到）。
+#   ⇒ 标记文件（跨子 shell ⇒ 必须用文件，变量传不出去）
+#   ⇒ 抽取过来的 strip_comments 失败时写它；脚本末尾统一检查 ⇒ 有 ⇒ 判红。
+STRIP_FAIL_FILE="${TMPDIR:-/tmp}/deepdolphin-strip-fail.$$"
+trap 'rm -f "$STRIP_FAIL_FILE"' EXIT
 [ -f "$SRC/scripts/ci-wiring.sh" ] || {
     echo "✗ 找不到 $SRC/scripts/ci-wiring.sh（剥注释口径的单一真相源 ⇒ 抽不到就等于没有门）" >&2
     exit 1
@@ -704,6 +709,17 @@ echo "› 15/15 判据不许被掏空成恒真（判定层条件的静态分析�
 #   ⇒ 判定逻辑被掏空 ⇒ 探针当场报「自检失败」⇒ 红（门自己证明自己有牙）。
 if ! python3 "$SRC/scripts/ci-tautology-check.py" "$SRC"; then
     echo "✗ 判据里有恒真/纯字面量条件（判据被掏空 ⇒ 它的断言永远不会红）" >&2
+    exit 1
+fi
+
+# ⚠⚠⚨ 批 CG · **剥注释失败**必须被看见（工具失败 ≠ 没找到）。
+#   ⇒ 放在「✓ 全绿」**之前** ⇒ 那个「✓」永远打不出来
+#     （批 CE 的教训：诊断失真最贵；⚠⚠⚨ 实测：剥注释失败时
+#       forbid 门会判「没找到」⇒ **静默变绿** ⇒ 违例被漏检）。
+#   ⇒ ⚠⚠⚨ 覆盖**全部**剥注释调用点（forbid / need / count / any …）
+#     ⇒ 一次挡住整类（批 CD 纪律：一次挡住整类，别逐点治标）。
+if [ -s "$STRIP_FAIL_FILE" ]; then
+    echo "✗ 剥注释失败（工具失败 ≠ 没找到）——这些文件的匹配结果**不可信**：$(tr '\n' ' ' < "$STRIP_FAIL_FILE")" >&2
     exit 1
 fi
 

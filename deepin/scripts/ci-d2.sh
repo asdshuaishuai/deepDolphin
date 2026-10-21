@@ -36,6 +36,10 @@ SRC="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 #   ⇒ 以前 perl 缺席时**静默降级**到 sed 兜底 ⇒ 口径变了 ⇒ 命中数变 0
 #   ⇒ 而本门**照样打印「✓ D2 命中 0/0」** ⇒ **假绿**（工具失败 ≠ 没问题）。
 #   ⇒ 现在：缺 perl ⇒ **响亮失败**（未验证不许被当成通过；批 CB/CC/CD/CE 同款口径）。
+# ⚠⚠⚨ 批 CG · **剥注释失败**必须被看见（工具失败 ≠ 没找到）。
+#   ⇒ 标记文件（跨子 shell ⇒ 必须用文件，变量传不出去）
+#   ⇒ 抽取过来的 strip_comments 失败时写它；脚本末尾统一检查 ⇒ 有 ⇒ 判红。
+STRIP_FAIL_FILE="${TMPDIR:-/tmp}/deepdolphin-strip-fail.$$"
 [ -f "$SRC/scripts/ci-wiring.sh" ] || {
     echo "✗ 找不到 $SRC/scripts/ci-wiring.sh（剥注释口径的单一真相源 ⇒ 抽不到就等于没有门）" >&2
     exit 1
@@ -87,7 +91,7 @@ D2_PATTERN='#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{3}\b|setPixelSize\([0-9]|setPointSizeF?
 D2_ARG_PATTERN='\.arg\([0-9]+'
 
 EXEMPT_HITS="$(mktemp)"
-trap 'rm -f "$EXEMPT_HITS"' EXIT
+trap 'rm -f "$EXEMPT_HITS" "$STRIP_FAIL_FILE"' EXIT
 
 exempt_field() { # exempt_field <src/相对路径> <字段号 2=模式 3=理由>
     printf '%s\n' "$D2_EXEMPT" | awk -F'|' -v p="$1" -v n="$2" '$1==p {print $n; exit}'
@@ -170,6 +174,17 @@ if [ "$D2_COUNT" -gt 0 ]; then
     echo "✗ D2 命中 ${D2_COUNT} 处（上限 0，存量已清零），命中清单：" >&2
     printf '%s\n' "$D2_HITS" >&2
     FAIL=1
+fi
+
+# ⚠⚠⚨ 批 CG · **剥注释失败**必须被看见（工具失败 ≠ 没找到）。
+#   ⇒ 放在「✓ 全绿」**之前** ⇒ 那个「✓」永远打不出来
+#     （批 CE 的教训：诊断失真最贵；⚠⚠⚨ 实测：剥注释失败时
+#       forbid 门会判「没找到」⇒ **静默变绿** ⇒ 违例被漏检）。
+#   ⇒ ⚠⚠⚨ 覆盖**全部**剥注释调用点（forbid / need / count / any …）
+#     ⇒ 一次挡住整类（批 CD 纪律：一次挡住整类，别逐点治标）。
+if [ -s "$STRIP_FAIL_FILE" ]; then
+    echo "✗ 剥注释失败（工具失败 ≠ 没找到）——这些文件的匹配结果**不可信**：$(tr '\n' ' ' < "$STRIP_FAIL_FILE")" >&2
+    exit 1
 fi
 
 if [ "$FAIL" != "0" ]; then
