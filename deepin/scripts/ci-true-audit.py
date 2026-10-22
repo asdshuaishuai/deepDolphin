@@ -33,9 +33,27 @@ SCRIPTS = HERE
 
 BASELINE = os.path.join(SCRIPTS, 'ci-true-audit.baseline')
 
+# ⚠⚠⚨ **仓库根**（`deepin/` 的上一级）⇒ 登记册的键用它算
+#   ⇒ ⚠ 必须是**绝对路径**（本脚本可能被用相对路径调用）
+REPO_ROOT = os.path.dirname(ROOT)
+
+# ⚠⚠⚨ 批 DQ · **盘点范围**（**显式目录清单** ⇒ 不靠排除表
+#   ⇒ `linux/vendor` 是第三方 ⇒ 天然**不进范围** ⇒ 照批 DB 的口径）
+#   ⇒ ⚠ **与恒真探针的 shell 范围对齐**（批 CZ / 批 DB 立的判据层面）
+#     ⇒ 「命令替换内带 `|| true` 必须逐条登记」这条承诺
+#       **不许只覆盖一半**（实测坐实：mac 侧新增一处 ⇒ 盘点照样绿 ⇒ **全绿假绿**）
+#   ⇒ ⚠ 每项带**恒真探针范围基线的口径名** ⇒ 下面**逐范围对账**文件数
+#   ⇒ ⇒ 两个盘点**共用同一份范围基线** ⇒ 任何一边把范围改窄 ⇒ 对不上 ⇒ 红
+TRUE_SCOPE = (('shell', 'deepin/scripts'), ('macos_shell', 'macos'), ('assets_shell', 'assets'), ('linux_shell', 'linux/scripts'))
+
+# ⚠⚠⚨ **恒真探针的扫描范围基线**（批 BP 立）⇒ 用来**对账**本盘点的范围
+SCOPE_BASELINE = os.path.join(SCRIPTS, 'ci-tautology-scope.baseline')
+
 # ⚠⚠⚨ 登记册**条数基线**（批 BC 纪律：清单不许被删）⇒ **恰好**（批 BB 口径）
 #   ⇒ 整份登记册被删/被截短 ⇒ 这里就红 ⇒ 门项另有一条盯这一行本身
-TRUE_AUDIT_EXPECTED_ROWS = 21
+#   ⇒ ⚠⚠⚨ 批 DQ：范围扩到 mac 侧 + linux 侧 ⇒ 21 → **33**
+#     （实测：deepin/scripts 21 + macos 7 + linux/scripts 5 + assets 0）
+TRUE_AUDIT_EXPECTED_ROWS = 33
 
 
 # ══════════════════════════════════════════════════════════════
@@ -255,7 +273,11 @@ def scan_file(path):
         start_line = line_of[a] if a < len(line_of) else 0
         kind, last = classify(inner)
         out.append({
-            'file': os.path.basename(path),
+            # ⚠⚠⚨ 批 DQ · 键必须是**相对仓库根的路径**（批 CY 教训）：
+            #   `deepin/scripts/contract-check.sh` 与 `macos/scripts/contract-check.sh`
+            #   **同名** ⇒ 若用裸文件名做键 ⇒ 两边的处数**合并**
+            #   ⇒ 「一处新增 + 一处减少 = 净 0」⇒ 登记册照样相等 ⇒ **假绿**
+            'file': os.path.relpath(path, REPO_ROOT),
             'line': start_line,
             'func': enclosing_func(text, start_line),
             'kind': kind,
@@ -265,12 +287,67 @@ def scan_file(path):
     return out
 
 
-def collect():
-    sites = []
-    for name in sorted(os.listdir(SCRIPTS)):
-        if not name.endswith('.sh'):
+def scope_files():
+    """按 `TRUE_SCOPE` 列出全部 .sh ⇒ 返回 (文件列表, 各口径的文件数)。
+
+    ⚠⚠⚨ **fail closed**（批 CX / 批 CY 同款纪律）：
+      范围目录**不存在** / 一个 .sh 都没有 ⇒ **判红**
+      ⇒ 否则范围被悄悄掏空 ⇒ 盘点等于没跑 ⇒ **承诺的覆盖面是空的**。
+
+    ⚠ **递归**：`macos/scripts/render-harness/run.sh` 在**子目录**里
+      ⇒ 不递归 ⇒ 那批脚本上的 `|| true` **永远不被查** ⇒ 又一个「没有牙」的角落。
+    """
+    files = []
+    counts = {}
+    for key, rel in TRUE_SCOPE:
+        base = os.path.join(REPO_ROOT, rel)
+        if not os.path.isdir(base):
+            sys.exit('✗ 盘点范围里的目录不存在：%s ⇒ 盘点做不了 ⇒ '
+                     '**承诺的覆盖面不许被悄悄改窄**' % base)
+        n = 0
+        for dp, dn, fns in os.walk(base):
+            dn[:] = sorted(d for d in dn if d not in ('__pycache__', '.git'))
+            for fn in sorted(fns):
+                if not fn.endswith('.sh'):
+                    continue
+                n += 1
+                files.append((key, os.path.join(dp, fn)))
+        if n == 0:
+            sys.exit('✗ 盘点范围 %s 里一个 .sh 都没有 ⇒ 范围被掏空 ⇒ '
+                     '盘点等于没跑 ⇒ **承诺的覆盖面不许被悄悄改窄**' % rel)
+        counts[key] = n
+    return files, counts
+
+
+def read_scope_baseline():
+    """读**恒真探针的扫描范围基线**（批 BP 立）⇒ 返回 {口径: 期望文件数}。
+
+    ⚠ **fail closed**：读不到 / 有坏行 ⇒ 返回 **None** ⇒ 调用方照红
+    ⇒ 不许「读不到就当没有基线」（批 BP 同款纪律）。
+    """
+    if not os.path.isfile(SCOPE_BASELINE):
+        return None
+    out = {}
+    try:
+        with open(SCOPE_BASELINE, encoding='utf-8') as fh:
+            raw = fh.read()
+    except OSError:
+        return None
+    for line in raw.split('\n'):
+        t = line.strip()
+        if not t or t.startswith('#'):
             continue
-        sites.extend(scan_file(os.path.join(SCRIPTS, name)))
+        parts = t.split()
+        if len(parts) != 2 or not parts[1].isdigit():
+            return None
+        out[parts[0]] = int(parts[1])
+    return out
+
+
+def collect(files):
+    sites = []
+    for _key, path in files:
+        sites.extend(scan_file(path))
     return sites
 
 
@@ -344,12 +421,39 @@ def load_baseline():
 
 def main():
     args = sys.argv[1:]
-    shs = [os.path.join(SCRIPTS, n) for n in sorted(os.listdir(SCRIPTS))
-           if n.endswith('.sh')]
+    # ⚠⚠⚨ 批 DQ · 先列**范围**（fail closed）⇒ 再跑抽取自检
+    files, counts = scope_files()
+    shs = [p for _k, p in files]
     # ⚠ 抽取自检：口径漂移（两侧剥注释结果不同）⇒ 立即判红
     selftest_strip_parity(shs)
 
-    sites = collect()
+    # ⚠⚠⚨ 批 DQ · **范围对账**（与恒真探针**共用**同一份范围基线）
+    #   ⇒ 两个盘点的范围**必须一致** ⇒ 任何一边把范围改窄 ⇒ 文件数对不上 ⇒ 红
+    scope_expect = read_scope_baseline()
+    if scope_expect is None:
+        sys.exit('✗ 恒真探针的扫描范围基线读不到或坏了：scripts/%s ⇒ '
+                 '本盘点的范围**无处对账** ⇒ 拒绝继续'
+                 % os.path.basename(SCOPE_BASELINE))
+    for key, _rel in TRUE_SCOPE:
+        want = scope_expect.get(key)
+        got = counts.get(key, 0)
+        if want is None or got != want:
+            sys.exit('✗ 盘点范围 %s 的 .sh 文件数 %d ≠ 恒真探针范围基线 %s ⇒ '
+                     '两个盘点的**范围不再一致** ⇒ 承诺的覆盖面被悄悄改窄'
+                     % (key, got, want))
+    # ⚠⚠⚨ **反向对账**（堵「恒真探针扩了范围而本盘点没跟上」）
+    #   ⇒ 基线里凡是 **shell 口径**的键（`shell` 或 `*_shell`）都必须在本盘点的范围里
+    #   ⇒ 少了 ⇒ 恒真探针新加的那块目录**永远不被查** ⇒ 覆盖面又窄了一块 ⇒ 红
+    scope_keys = set(k for k, _rel in TRUE_SCOPE)
+    extra_shell = sorted(k for k in scope_expect
+                         if (k == 'shell' or k.endswith('_shell'))
+                         and k not in scope_keys)
+    if extra_shell:
+        sys.exit('✗ 恒真探针的范围基线里有 %s 这几个 shell 口径，但本盘点的范围里没有 ⇒ '
+                 '恒真探针扩了范围而本盘点没跟上 ⇒ 承诺的覆盖面又窄了一块'
+                 % '、'.join(extra_shell))
+
+    sites = collect(files)
 
     if '--list' in args:
         print('命令替换内带 `|| true` 的站点：%d 处' % len(sites))

@@ -110,7 +110,7 @@ GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1258
+GATE_LINES_EXPECTED = 1275
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -1630,7 +1630,7 @@ DP_SELF = os.path.basename(os.path.abspath(__file__))
 #   ⇒ ⚠ 类别：`fail_exit` = 失败出口（`sys.exit(X)`，X 非 `main()` 调用）
 #     / `fail_ret` = 失败返回（`return <非零>`）
 #     / `fail_count` = 失败累加器上的**追加型写**（`X += …` / `X.append(…)`）
-FAIL_REPORT_COUNTS = (('bootstrap-deps.py', 'fail_count', 2), ('bootstrap-deps.py', 'fail_ret', 1), ('ci-tautology-check.py', 'fail_count', 18), ('ci-tautology-check.py', 'fail_ret', 3), ('ci-true-audit.py', 'fail_count', 2), ('ci-true-audit.py', 'fail_exit', 10), ('ci-true-audit.py', 'fail_ret', 1), ('ci-unverified-audit.py', 'fail_count', 7), ('ci-unverified-audit.py', 'fail_exit', 8), ('ci-unverified-audit.py', 'fail_ret', 1))
+FAIL_REPORT_COUNTS = (('bootstrap-deps.py', 'fail_count', 2), ('bootstrap-deps.py', 'fail_ret', 1), ('ci-tautology-check.py', 'fail_count', 18), ('ci-tautology-check.py', 'fail_ret', 3), ('ci-true-audit.py', 'fail_count', 2), ('ci-true-audit.py', 'fail_exit', 15), ('ci-true-audit.py', 'fail_ret', 1), ('ci-unverified-audit.py', 'fail_count', 7), ('ci-unverified-audit.py', 'fail_exit', 8), ('ci-unverified-audit.py', 'fail_ret', 1))
 
 
 def _dp_is_main_call(node):
