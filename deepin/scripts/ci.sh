@@ -2,7 +2,8 @@
 # ci.sh — deepin 客户端本地 CI 门（DDE-INTEGRATION-PLAN.md §4.1/§4.3）。
 #
 # ⚠ **这份清单必须与下面的步骤打点一一对应**（批 BA：12 步逐个钉了门；
-#   批 BD 起扩到 14 步）⇒ 改步骤就改这份清单，也改门。
+#   批 BD 起扩到 14 步，批 BF 起 15 步，⚠⚠⚨ **批 DG 起 16 步**
+#   —— 批 DG 把 assets 侧两个判据脚本接进 CI）⇒ 改步骤就改这份清单，也改门。
 # 1. --selfcheck：断言「0 failed 且 ≥58 passed」（例数只增不减）
 # 2. 截图矩阵（亮/暗 × 4 页）→ docs/snapshots，落盘后人工 diff 基线
 # 3. desktop / metainfo 校验：desktop-file-validate / appstream-util 缺工具显式 SKIP
@@ -25,7 +26,11 @@
 #     模型可见面/系统提示词里，但仍留在必填校验表里；引擎缺席/太老 ⇒ 显式 SKIP）
 # 14. 无游离断言脚本：scripts/ci-orphan-probe.sh（scripts/ 下每个断言脚本都必须在 CI
 #     里可达，否则进**带理由的白名单** ⇒ 「少了一份断言」不可能再悄无声息）
-# 15. 判据不许被掏空成恒真：scripts/ci-tautology-check.py（判定层的判据条件必须含被测
+# 15. assets 侧图标判据：assets/icon/make-icons.py --check（产物与母版一致）
+#     + assets/icon/check-icon.sh（三个平台同一套 icon）—— ⚠⚠⚨ 批 DG：这两个脚本
+#     以前**不在任何 CI 里** ⇒ 它们的断言从来没人执行 ⇒ 现在接进 CI；
+#     ⚠ 需 Pillow：缺席 ⇒ 显式 SKIP（**未验证不许被当成通过**）
+# 16. 判据不许被掏空成恒真：scripts/ci-tautology-check.py（判定层的判据条件必须含被测
 #     标识符；shell 断言脚本的 if 条件不许恒真/恒假 ⇒ 判据**条数不变但条件被掏空**也抓得住）
 #
 # 用法：scripts/ci.sh [build目录]（默认 build/）
@@ -107,7 +112,7 @@ latest_core() {
 }
 
 SC_MIN=395
-echo "› 1/15 selfcheck（断言 0 failed 且 ≥58 passed 且判据数 == $SC_MIN 条不许被删）"
+echo "› 1/16 selfcheck（断言 0 failed 且 ≥58 passed 且判据数 == $SC_MIN 条不许被删）"
 # ⚠⚠⚠ **不许用 `|| true` 吞掉 selfcheck 的退出码**（批 AZ 实测出来的真洞）：
 #   原来这行是 `SELFCHECK_OUT="$("$BIN" --selfcheck || true)"` ⇒ **退出码被丢弃**。
 #   ⚠⚠ **要分清两种「吞退出码」**（批 AY 的「`| tail` 吞退出码」在这里**不成立**）：
@@ -194,7 +199,7 @@ if [ "$SC_PASSED" -ne "$SC_MIN" ]; then
 fi
 echo "✓ selfcheck ${SC_PASSED} passed, ${SC_FAILED} failed"
 
-echo "› 2/15 截图矩阵（离屏）"
+echo "› 2/16 截图矩阵（离屏）"
 # ⚠ 这一步**强制** offscreen，不继承环境里的 QT_QPA_PLATFORM。
 #   理由（决策 86）：基线是离屏拍的；若宿主已设 QT_QPA_PLATFORM=dxcb;xcb，
 #   快照会带 DTK 原生窗口装饰与 chameleon 样式 —— 同一份代码拍出另一张脸，
@@ -390,7 +395,7 @@ echo "✓ 8 张快照跨运行（新进程）复拍仍与基线逐字节一致"
 #   ⚠ 失败路径（exit 1）会提前退出 ⇒ 临时目录留在 /tmp，由系统回收，不污染仓库。
 rm -rf "$BASE_DIR" "$SHOT_DIR"
 
-echo "› 3/15 desktop / metainfo 校验（缺工具显式 SKIP）"
+echo "› 3/16 desktop / metainfo 校验（缺工具显式 SKIP）"
 # ⚠⚠⚨ 批 CU · **校验失败不许被 `&&` 吞掉**（实测坐实的洞 ⇒ 台账 E.2bd）
 #   ⚠⚠⚨ 实测（旧形态）：把 desktop 的 `Type` 写成非法值 ⇒ desktop-file-validate
 #     **判红**（rc=1、错误打在 stdout）⇒ 但旧版 ci.sh **rc=0**、末尾照样打
@@ -427,7 +432,7 @@ else
     skip=$((skip+1))
 fi
 
-echo "› 4/15 无头探针（平台探针 + 固定文档页四语言探针 + 分隔线探针）"
+echo "› 4/16 无头探针（平台探针 + 固定文档页四语言探针 + 分隔线探针）"
 # 探针断言独立成 scripts/ci-platform-probe.sh：可单独跑，负控也能精确打它。
 if ! sh "$SRC/scripts/ci-platform-probe.sh" "$BIN"; then
     echo "✗ 平台探针门失败" >&2
@@ -463,14 +468,14 @@ if ! eval "$(sed -n '/^strip_comments() {/,/^}/p' "$SRC/scripts/ci-wiring.sh")" 
     exit 1
 fi
 
-echo "› 5/15 D2 grep 门（DS::* 单点真相源；散值上限 0，存量已清零）"
+echo "› 5/16 D2 grep 门（DS::* 单点真相源；散值上限 0，存量已清零）"
 # 散值门独立成 scripts/ci-d2.sh：可单独跑，负控也能精确打它。
 if ! sh "$SRC/scripts/ci-d2.sh" "$SRC"; then
     echo "✗ 设计系统散值门失败：src/ 下出现色值/硬编码 px 字号" >&2
     exit 1
 fi
 
-echo "› 6/15 agent 自测（mock 渠道）"
+echo "› 6/16 agent 自测（mock 渠道）"
 # ⚠⚠⚠ **这一门原来没有断言**（批 AZ 实测查出来的第二个真洞）：
 #   原来是 `"$BIN" --agent-selftest | tail -2` ⇒ **只打两行输出，零断言**：
 #   · agent 链路**整条坏掉**（工具循环断了、模型不回应、进程早退）时，
@@ -522,7 +527,7 @@ if ! grep -q '^\[selftest-done\]$' "$BUILD/agent-selftest.out"; then
 fi
 tail -2 "$BUILD/agent-selftest.out"
 
-echo "› 7/15 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
+echo "› 7/16 verify 接线在（源扫描：判定不许藏回视图，撤入口 ≠ 撤能力）"
 # 剥注释再匹配：注释里出现的字样不算接线（否则加一行注释就能骗过门）。
 WIRING_HITS=0
 WIRING_FAIL=0
@@ -555,7 +560,7 @@ if [ "$WIRING_FAIL" -ne 0 ]; then
 fi
 echo "✓ verify 接线完整（$WIRING_HITS 项）"
 
-echo "› 8/15 图谱 Canvas 契约清单齐（章程 §3.5：方法清单就是移植验收清单）"
+echo "› 8/16 图谱 Canvas 契约清单齐（章程 §3.5：方法清单就是移植验收清单）"
 # 契约清单（引擎 docs/graph-scene-schema.md 的渲染契约层）：26 个标准 Canvas2D 方法。
 # 「少实现一项，渲染器就跑不完」——本门逐个核 Canvas2D 是否声明为 override。
 CANVAS_METHODS="setTransform fillRect strokeRect rect beginPath moveTo lineTo arcTo closePath arc bezierCurveTo fill stroke fillText createLinearGradient addColorStop setLineDash setLineDashOffset setShadowBlur setShadowColor setGlobalAlpha setLineWidth setStrokeStyle setFillStyle setFont setTextAlign"
@@ -612,7 +617,7 @@ if [ "$CANVAS_FAIL" -ne 0 ]; then
 fi
 echo "✓ Canvas2D 覆盖契约清单 ${CANVAS_N}/26 个方法；logic/ 与 models/ 零 QWidget 头；新文件均已登记构建"
 
-echo "› 9/15 接线门（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
+echo "› 9/16 接线门（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
 # 接线门独立成 scripts/ci-wiring.sh：可单独跑，负控也能精确打它。
 if sh "$SRC/scripts/ci-wiring.sh" "$SRC"; then
     :
@@ -621,7 +626,7 @@ else
     exit 1
 fi
 
-echo "› 10/15 引擎契约门（真引擎沙箱；**未验证 ⇒ 判红**，不许说通过）"
+echo "› 10/16 引擎契约门（真引擎沙箱；**未验证 ⇒ 判红**，不许说通过）"
 # contract-check.sh 之前是**游离脚本** —— CI 从来没跑过它，契约漂移不会被拦。
 # 接进 CI 后：引擎在 → 真跑（32 条）；引擎不在 → 脚本自己 SKIP 并如实说明
 # 「本组未验证」（不是静默通过）。
@@ -665,7 +670,7 @@ else
     exit 1
 fi
 
-echo "› 11/15 deb 打包（D7 达标的必经：能出包装进 deepin，且装后零环境变量）"
+echo "› 11/16 deb 打包（D7 达标的必经：能出包装进 deepin，且装后零环境变量）"
 # PLAN §「CI 流程」明确列了「⑥ deb 构建」—— 这一门以前根本不存在，
 # 于是「能不能出包装进 deepin」从没被验证过。
 # build-deb.sh 自带**依赖清单双向校验**（清单 ↔ 二进制实际 DT_NEEDED）：
@@ -700,7 +705,7 @@ else
     echo "‣ 本组**未验证**，不算通过"
 fi
 
-echo "› 12/15 deb 布局验收（D7 的**准**验收：装完能不能用）"
+echo "› 12/16 deb 布局验收（D7 的**准**验收：装完能不能用）"
 # ⚠ D7 的最终验收是「干净 deepin 25 容器里 dpkg -i + 启动」—— 本机**没有容器
 #   运行时**（无 docker/podman）⇒ 那一段做不了。
 #   ⇒ 这里做「不依赖容器的那一半」：把 deb **解包**到临时目录（不装进系统），
@@ -743,7 +748,7 @@ else
     fi
 fi
 
-echo "› 13/15 agent 工具面收敛（旧名别名必须从模型可见面剔掉，但仍可执行）"
+echo "› 13/16 agent 工具面收敛（旧名别名必须从模型可见面剔掉，但仍可执行）"
 # ⚠⚠⚠ **这个探针以前根本不在 CI 里**（批 BD 实测查出来的）：
 #   ① 它有 9 条断言（引擎标的废弃别名不得出现在模型可见面/系统提示词里，
 #      但**仍要留在必填校验表**里 —— 收敛的是「推荐谁」，不是「还能不能用」）；
@@ -767,7 +772,7 @@ elif [ "$ATS_RC" -ne 0 ]; then
     exit 1
 fi
 
-echo "› 14/15 无游离断言脚本（每个断言脚本都必须在 CI 里可达）"
+echo "› 14/16 无游离断言脚本（每个断言脚本都必须在 CI 里可达）"
 # ⚠ 这一步查的是「**CI 自己在漏什么**」：
 #   批 BD 实测：`probe-agent-tool-surface.sh`（9 条断言）整个从仓库删掉，
 #   接线门与审计器**都全绿** ⇒ 「少了一份断言」这件事**没有任何门会说一个字**。
@@ -778,7 +783,38 @@ if ! sh "$SRC/scripts/ci-orphan-probe.sh" "$SRC"; then
     exit 1
 fi
 
-echo "› 15/15 判据不许被掏空成恒真（判定层条件的静态分析）"
+echo "› 15/16 assets 侧图标判据（产物与母版一致 + 三个平台同一套 icon）"
+# ⚠⚠⚨ **批 DG · 起因（实测坐实，不是推演）**：assets 侧有两个**判据脚本**
+#   （`assets/icon/check-icon.sh` ＝ 图标一致性验收；`assets/icon/make-icons.py --check`
+#   ＝ 产物与母版一致性校验）⇒ ⚠ **它们不在任何 CI 里** ⇒ 它们的断言
+#   **从来没人执行** ⇒ 「所有平台用同一套 icon」这句承诺**没人守**
+#   ⇒ 有人改了图标体系、忘了重跑产物 ⇒ **没有任何门会说一个字**。
+#   ⇒ 与 mac 侧那 6 条白名单**不同款**：这两个脚本**本机可跑可验**
+#   （Pillow 在、产物入库）⇒ 所以本批是**真的接进 CI**，不是「只登记」。
+# ⚠⚠⚨ **工具缺席 ⇒ 未验证（专属码 3），不许当成真失败**（批 CB/CC 纪律）：
+#   这两个脚本都要 Pillow ⇒ 缺席时 `check-icon.sh` 的母版包围盒那节
+#   会把「PIL-缺」当成「母版不合法」⇒ **把「工具没装」说成「图标不一致」**
+#   ⇒ **码值语义被顶替** ⇒ ⇒ 先探工具：缺席 ⇒ `skip++` ⇒ 末尾 `exit 3`。
+if python3 -c 'from PIL import Image' >/dev/null 2>&1; then
+    _ic_rc=0
+    python3 "$SRC/../assets/icon/make-icons.py" --check || _ic_rc=$?
+    if [ "$_ic_rc" -ne 0 ]; then
+        echo "✗ 图标产物与母版不一致（make-icons.py --check 退出码 $_ic_rc）" >&2
+        exit 1
+    fi
+    _ic2_rc=0
+    bash "$SRC/../assets/icon/check-icon.sh" || _ic2_rc=$?
+    if [ "$_ic2_rc" -ne 0 ]; then
+        echo "✗ 图标一致性验收失败（check-icon.sh 退出码 $_ic2_rc）" >&2
+        exit 1
+    fi
+    echo "✓ 图标判据全绿（产物与母版一致 + 三个平台同一套 icon）"
+else
+    echo "SKIP: Pillow 未安装（图标判据未验证：母版包围盒那节需要 PIL）"
+    skip=$((skip+1))
+fi
+
+echo "› 16/16 判据不许被掏空成恒真（判定层条件的静态分析）"
 # ⚠⚠⚠ **起因（实测，不是推演）**：批 BB/BC 的门盯的是「**判据条数**」
 #   （selfcheck 的 `SC_MIN`、各断言脚本的条数基线）⇒
 #   ⚠⚠⚠ **实测：把一条判据的条件改成 `true`** ⇒

@@ -12,7 +12,7 @@
 #   1. --color-sample：ci.sh 里这条命令是 **shell 续行**（行尾是 `\`）
 #      ⇒ 整行锚定只能钉住**第一行** ⇒ 真正的动作（输出重定向）在下一行
 #      ⇒ 锚定挡不住「第二行被改」⇒ 锚了反而给人「已经钉死」的错觉
-#   2. › [0-9]+/15 ：15 个步骤打点行的**后半段各不相同**
+#   2. › [0-9]+/16 ：16 个步骤打点行的**后半段各不相同**
 #      ⇒ 一条正则只能通配 ⇒ 整行锚定**无增量价值**（能加的只是「以打点开头」）
 #   3~6. (sh|bash|python3) …ci.sh / smoke.sh / probe-*.sh：
 #      **期望 0 次**的白名单门 ⇒ 语义是「这个模式**不许出现在任何位置**」
@@ -26,7 +26,7 @@
 #      ⇒ 批 BY 给它们新加的 12 条门**全部是整行锚定** ⇒ 不落在这张表里
 #
 arch_need_count	deepin/scripts/ci.sh	--color-sample	ci.sh 里这条命令是 shell 续行（行尾是续行符）⇒ 整行锚定只能钉住第一行 ⇒ 真正的动作在下一行 ⇒ 锚定挡不住 ⇒ 不能用整行锚定
-arch_need_count	deepin/scripts/ci.sh	› [0-9]+/15 	15 个步骤打点行的后半段各不相同 ⇒ 一条正则只能通配 ⇒ 整行锚定无增量价值 ⇒ 不能用整行锚定
+arch_need_count	deepin/scripts/ci.sh	› [0-9]+/16 	16 个步骤打点行的后半段各不相同 ⇒ 一条正则只能通配 ⇒ 整行锚定无增量价值 ⇒ 不能用整行锚定（⚠ 批 DG：步数 15 → 16）
 arch_need_count	deepin/scripts/ci.sh	(sh|bash|python3) +"?[^"]*/scripts/ci\.sh	期望 0 次的白名单门 ⇒ 语义是「不许出现在任何位置」⇒ 整行锚定会把它弱化成「不许出现在某一种整行形态」⇒ 不能用整行锚定
 arch_need_count	deepin/scripts/ci.sh	(sh|bash|python3) +"?[^"]*/scripts/smoke\.sh	期望 0 次的白名单门 ⇒ 语义是「不许出现在任何位置」⇒ 整行锚定会把它弱化成「不许出现在某一种整行形态」⇒ 不能用整行锚定
 arch_need_count	deepin/scripts/ci.sh	(sh|bash|python3) +"?[^"]*/scripts/probe-deepin-tray\.sh	期望 0 次的白名单门 ⇒ 语义是「不许出现在任何位置」⇒ 整行锚定会把它弱化成「不许出现在某一种整行形态」⇒ 不能用整行锚定

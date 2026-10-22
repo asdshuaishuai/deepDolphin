@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# ci-orphan-probe.sh — 「断言脚本不许游离在 CI 之外」（批 BD；批 DE 扩到**两个平台**）。
+# ci-orphan-probe.sh — 「断言脚本不许游离在 CI 之外」（批 BD；批 DE 扩到**两个平台**；
+#   ⚠⚠⚨ 批 DG 扩到**三个平台**：加 **assets**（`assets/icon/` 下的两个判据脚本）。
 #
 # 【为什么要有它 —— 实测取证，不是推演】
 #   批 BD 实测：把 `scripts/probe-agent-tool-surface.sh`（9 条断言）**整个删掉**，
@@ -12,7 +13,20 @@
 #     · 删掉 ci.sh 里对某个探针的**调用** ⇒ 门**红** ⇒ 调用点本身是有门的。
 #   ⇒ 所以要补的是**最后一块**：**没人接管的断言脚本**，不许悄悄存在。
 #
-# ⚠⚠⚨ **批 DE 实测出的第二个洞（本批收的就是它）**：
+# ⚠⚠⚨ **批 DG · 第三个平台 assets（本批收的就是它）**：
+#   `assets/icon/` 下有**两个判据脚本** —— `check-icon.sh`（图标一致性验收）
+#   与 `make-icons.py --check`（产物与母版一致性校验）
+#   ⇒ ⚠⚠⚨ 批 DG **实测坐实**：它们**不在任何 CI 里**
+#     ⇒ 它们的断言**从来没人执行** ⇒ 「所有平台用同一套 icon」这句承诺**没人守**
+#     ⇒ 有人改了图标体系、忘了重跑产物 ⇒ **没有任何门会说一个字**。
+#   ⇒ 与 mac 侧那 6 条白名单**不同款**：这两个脚本**本机可跑可验**
+#     （Pillow 在、产物入库）⇒ 本批是**真的接进 CI**（`ci.sh` 第 15 步），不是「只登记」。
+#   ⇒ ⚠ **assets 平台没有自己的 CI 入口** ⇒ 它的入口就是 **deepin 的 `ci.sh`**
+#     ⇒ ⚠ **这是有意的，不是混算**：每个平台**用各自的路径口径**算可达集合
+#     （assets 只认 `/assets/` 下的路径 ⇒ deepin/macos 的脚本**不会**流进 assets 的集合）
+#     ⇒ 分平台这条纪律**没有被破坏**。
+#
+# ⚠⚠⚨ **批 DE 实测出的第二个洞（批 DE 收的）**：
 #   批 BD 的范围**只有 `deepin/scripts/`** ⇒ `macos/scripts/` 里那 **12 个判据脚本**
 #   **从来没被查过** ⇒ 有人把 `macos/build.sh` 里对某个判据脚本的**调用**摘掉
 #   ⇒ **没有任何门会说一个字** ⇒ 承诺悄悄消失。
@@ -62,6 +76,13 @@ DEEPIN_SCOPE="$SRC/scripts"
 DEEPIN_ENTRY="$SRC/scripts/ci.sh"
 MACOS_SCOPE="$ROOT/macos/scripts"
 MACOS_ENTRY="$ROOT/macos/build.sh"
+# ⚠⚠⚨ 批 DG · **第三个平台：assets**
+#   ⚠ assets 侧**没有自己的 CI** ⇒ 它的入口就是 **deepin 的 `ci.sh`**
+#     （批 DG 已把 `assets/icon/check-icon.sh` 与 `assets/icon/make-icons.py --check`
+#     接进 `ci.sh` 第 15 步 ⇒ 它们的断言现在真的会被执行）
+#   ⇒ ⚠ **入口共用 ≠ 口径共用**：可达集合**按平台各算各的**（见下面 `_strip`）
+ASSETS_SCOPE="$ROOT/assets"
+ASSETS_ENTRY="$SRC/scripts/ci.sh"
 
 # ⚠⚠⚨ 批 DE · **脚本路径片段**：两个平台**共用一份**（路径口径零漂移）
 #   ⚠ 形如 `<某目录>/scripts/<脚本名>` —— 两个平台的判据脚本都在 scripts/ 下
@@ -76,9 +97,21 @@ CALL_RE_DEEPIN="(sh|bash|python3?)[[:space:]]+\"?${_CALL_PATH}"
 #     ⚠ 负控实测（批 DE C7）：原口径要求路径后**紧跟** `;` / `)` / 行末
 #     ⇒ 认不出 `"…x.sh" || true` ⇒ 漏检 ⇒ 本批把口径放宽到「后面没有 `]`」
 CALL_RE_MACOS="(sh|bash|python3?)[[:space:]]+\"?${_CALL_PATH}|\"${_CALL_PATH}\"([^]]*)$"
+# ⚠⚠⚨ 批 DG · **assets 侧一份自己的路径口径**（⚠ **不共用** `_CALL_PATH`）
+#   ⇒ 它的路径不在 `/scripts/` 下 ⇒ 共用口径会**一个都认不出**
+#   ⇒ 认不出 ⇒ 可达集合为空 ⇒ 两个脚本全成「游离」⇒ **假红**
+_CALL_PATH_ASSETS='[^"]*/assets/[A-Za-z0-9._/-]+\.(sh|py)'
+CALL_RE_ASSETS="(sh|bash|python3?)[[:space:]]+\"?${_CALL_PATH_ASSETS}"
+# ⚠⚠⚨ 批 DG · **路径前缀按平台各一份**（抽取出来的名字要能对上本平台的 scope）
+#   ⚠ 原来硬编码 `s|.*/scripts/||` ⇒ assets 平台的 `assets/icon/x.sh` 剥不掉前缀
+#     ⇒ 名字变成 `assets/icon/x.sh` ⇒ 与 scope 下的相对路径 `icon/x.sh` 对不上
+#     ⇒ 白名单「指向不存在的脚本」⇒ **假红**
+_STRIP_DEEPIN='.*/scripts/'
+_STRIP_MACOS='.*/scripts/'
+_STRIP_ASSETS='.*/assets/'
 
 # ⚠ 平台清单（**显式清单**，不靠排除表 —— 批 DB 纪律）
-PLATFORMS="deepin macos"
+PLATFORMS="deepin macos assets"
 
 # ⚠⚠⚨ 批 CV · **「可达」判定之前必须先剥注释**（实测坐实的洞 ⇒ 台账 E.2be）
 #   ⚠⚠⚨ **实测**：造一个**没有任何真调用点**的断言脚本（游离）⇒ 本门判红 ✓；
@@ -131,7 +164,7 @@ fi
 while IFS='|' read -r _wl_rel _wl_reason; do
     [ -n "$_wl_rel" ] || continue
     case "$_wl_rel" in
-        deepin/*|macos/*) ;;
+        deepin/*|macos/*|assets/*) ;;
         *) echo "  ✗ 白名单条目的平台前缀不认识：$_wl_rel（它永远不会被任何平台检查到 ⇒ 形同虚设）" >&2
            fail=1 ;;
     esac
@@ -155,7 +188,7 @@ calls_of() {
     #   ⚠ 剥注释口径**只有一份**（抽取 ci-wiring.sh 的 strip_comments ⇒ 零漂移）。
     strip_comments "$_cf" | grep -vE '^[[:space:]]*arch_[a-z_]+[[:space:]]' 2>/dev/null \
         | grep -oE "$_re" 2>/dev/null \
-        | sed -e 's|.*/scripts/||' -e 's|[^A-Za-z0-9._/-].*$||' | sort -u || true
+        | sed -e "s|$_strip||" -e 's|[^A-Za-z0-9._/-].*$||' | sort -u || true
 }
 
 n_assert_total=0
@@ -164,9 +197,14 @@ n_wl_total=0
 
 for _plat in $PLATFORMS; do
     _fail_before="$fail"
+    # ⚠⚠⚨ 批 DG · **路径前缀按平台各一份**：默认是 `scripts/`（deepin/macos 共用）
+    #   ⇒ assets 那支**单独**改成 `assets/`（它的脚本不在 `scripts/` 下）
+    #   ⇒ ⚠ deepin/macos 两支**一个字都不改** ⇒ 批 DE 那两条门**不用动**
+    _strip="$_STRIP_DEEPIN"
     case "$_plat" in
         deepin) _scope="$DEEPIN_SCOPE"; _entry="$DEEPIN_ENTRY"; _re="$CALL_RE_DEEPIN" ;;
         macos)  _scope="$MACOS_SCOPE";  _entry="$MACOS_ENTRY";  _re="$CALL_RE_MACOS" ;;
+        assets) _scope="$ASSETS_SCOPE"; _entry="$ASSETS_ENTRY"; _re="$CALL_RE_ASSETS"; _strip="$_STRIP_ASSETS" ;;
         *) echo "  ✗ 平台名不认识：$_plat（平台清单里出现未知平台 ⇒ 那一整个平台不会被查）" >&2
            fail=1
            continue ;;
@@ -285,5 +323,5 @@ if [ "$fail" -ne 0 ]; then
     echo "✗ 无游离断言脚本门失败（游离 $n_orphan_total 个）" >&2
     exit 1
 fi
-echo "✓ 无游离断言脚本：两个平台共 $n_assert_total 个断言脚本全部在 CI 里可达（白名单 $n_wl 条，每条带理由）"
+echo "✓ 无游离断言脚本：三个平台共 $n_assert_total 个断言脚本全部在 CI 里可达（白名单 $n_wl 条，每条带理由）"
 exit 0

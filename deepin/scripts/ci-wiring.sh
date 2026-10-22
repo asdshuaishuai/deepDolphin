@@ -2273,14 +2273,14 @@ arch_need_count "$SRC/scripts/ci.sh" '^    sh "\$SRC\/scripts\/check-deb-layout.
 arch_need_count "$SRC/scripts/ci.sh" '^sh "\$SRC/scripts/probe-agent-tool-surface\.sh" "\$BIN" \|\| ATS_RC=\$\?$' 1 '第 13 步 agent 工具面收敛的动作还在（批 BD 实测：这个探针以前**根本不在 CI 里** ⇒ 它的 9 条断言没人执行）—— ⚠ 盯的是**调用点**那串，不是文件名：文件名在 ci.sh 的注释里也出现过（讲这个洞的来由）⇒ 盯短名会命中 2 次而恒红｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^if ! sh "\$SRC/scripts/ci-orphan-probe\.sh" "\$SRC"; then$' 1 '第 14 步 无游离断言脚本的动作还在（批 BD：这是「CI 自己在漏什么」的那一道）—— ⚠ 同上，盯**调用点**｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
 arch_need_count "$SRC/scripts/ci.sh" '^if ! python3 "\$SRC/scripts/ci-tautology-check\.py" "\$SRC"; then$' 1 '第 15 步 判据不许被掏空成恒真的动作还在（批 BF：条数基线门抓不到「条件被掏空」）｜⚠⚠⚨ **整行锚定**（批 BN：整行锚定 ⇒ 判定行被**追加内容**（`or True` / 注释尾巴）时门会红；⚠ **这条已进锚定形态检查的适用范围**）'
-arch_need_count "$SRC/scripts/ci.sh" '› [0-9]+/15 ' 15 'ci.sh 的步骤打点**恰好 15 个**（多一步/少一步都红；且分母统一是 15 ⇒ 散写分母也红）'
-arch_need_ml "$SRC/scripts/ci.sh" '› 1/15 .*› 2/15 .*› 3/15 .*› 4/15 .*› 5/15 .*› 6/15 .*› 7/15 .*› 8/15 .*› 9/15 .*› 10/15 .*› 11/15 .*› 12/15 .*› 13/15 .*› 14/15 .*› 15/15 ' 'ci.sh 的 15 个步骤打点**编号连续**（压行后匹配 ⇒ 跨行也算）⇒ 跳号/重号/乱序都红'
+arch_need_count "$SRC/scripts/ci.sh" '› [0-9]+/16 ' 16 'ci.sh 的步骤打点**恰好 16 个**（多一步/少一步都红；且分母统一是 16 ⇒ 散写分母也红）｜⚠⚠⚨ **批 DG**：assets 侧图标判据接进 CI ⇒ 15 → 16 步'
+arch_need_ml "$SRC/scripts/ci.sh" '› 1/16 .*› 2/16 .*› 3/16 .*› 4/16 .*› 5/16 .*› 6/16 .*› 7/16 .*› 8/16 .*› 9/16 .*› 10/16 .*› 11/16 .*› 12/16 .*› 13/16 .*› 14/16 .*› 15/16 .*› 16/16 ' 'ci.sh 的 16 个步骤打点**编号连续**（压行后匹配 ⇒ 跨行也算）⇒ 跳号/重号/乱序都红｜⚠⚠⚨ **批 DG**：15 → 16 步'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BA 段有门项红（上面带 ✗ 的行）" >&2
     ARCH_ANY_FAIL=1
 else
-    echo "✓ 批 BA 段门项全绿（ci.sh 的 15 步每一步都有门）；门项合计 ${ARCH_N} 项（含前段）"
+    echo "✓ 批 BA 段门项全绿（ci.sh 的 16 步每一步都有门）；门项合计 ${ARCH_N} 项（含前段）"
 fi
 ARCH_FAIL=0
 
@@ -2422,7 +2422,7 @@ arch_need_count_in_step "$SRC/scripts/ci.sh" 11 'build-deb\.sh' 1 '第 11 步 de
 arch_need_count_in_step "$SRC/scripts/ci.sh" 12 'check-deb-layout\.sh' 1 '第 12 步 deb 布局验收的动作**还在这一步里**（D7 的**准**验收：装完能不能用）'
 arch_need_count_in_step "$SRC/scripts/ci.sh" 13 'sh "\$SRC/scripts/probe-agent-tool-surface\.sh"' 1 '第 13 步 agent 工具面收敛的动作**还在这一步里**'
 arch_need_count_in_step "$SRC/scripts/ci.sh" 14 'sh "\$SRC/scripts/ci-orphan-probe\.sh"' 1 '第 14 步 无游离断言脚本的动作**还在这一步里**'
-arch_need_count_in_step "$SRC/scripts/ci.sh" 15 'python3 "\$SRC/scripts/ci-tautology-check\.py"' 1 '第 15 步 判据不许被掏空成恒真的动作**还在这一步里**'
+arch_need_count_in_step "$SRC/scripts/ci.sh" 16 'python3 "\$SRC/scripts/ci-tautology-check\.py"' 1 '第 16 步 判据不许被掏空成恒真的动作**还在这一步里**（⚠⚠⚨ **批 DG**：assets 图标判据插在它前面 ⇒ 15 → 16 步）'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 BE 段有门项红（上面带 ✗ 的行）" >&2
@@ -3208,7 +3208,7 @@ arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 2$' 4 '审计器�
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return FAILS\[0\] if FAILS else \(3 if outside else 0\)$' 1 '审计器的**「统一出口」**（`return FAILS[0] if FAILS else (3 if outside else 0)`）必须恰好 1 处（⚠⚠⚨ **批 CQ**：改成「**收集失败态、一次报全**」⇒ 这里取**最先失败**的那个 rc（⇒ **码值语义不变** ⇒ 门侧按 rc 分诊的文案表零改动）⇒ 差别只在「**其余失败也一并报出来**」；⚠ rc=3（豁免之外）仍只从这一行出）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ **批 CQ**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*return 0$' 3 '审计器的**成功出口**（`return 0`）必须恰好 3 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠ **与失败出口合看**：失败出口现在分**两个家族** —— ① `return N`（**前置**早退 4 处 + 统一出口 1 处 = 5 处）② `FAILS.append(N)`（**收集**，15 处）⇒ 两族合看**失败出口共 20 处**（⚠ 批 CQ 改后实测：15 处顺序早退里 11 处改成收集 ⇒ 16 → 5）⇒ 任何一个失败出口被改成 `return 0` ⇒ 成功出口涨 1 ⇒ **这条门红**｜⚠⚠⚨ **批 CQ**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^    sys\.exit\(main\(\)\)$' 1 '审计器的**入口**必须把 `main()` 的返回值交给 `sys.exit`（否则返回值被丢弃 ⇒ rc 恒 0 ⇒ 审计器**永远绿**）｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
-arch_need_count "$SRC/scripts/ci.sh" '^[[:space:]]*exit [1-9]$' 36 'CI 入口的**失败上报**（整行的 `exit N`）必须恰好 36 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ `ci.sh` 的失败**已经被 `if` 分支消化**（`set -e` 救不了：失败命令的退出码被 `if` 的条件消费掉了）⇒ 只剩这些显式 `exit 1` 兜底 ⇒ 摘掉一个 ⇒ 那一步的失败**不再中止 CI** ⇒ 假绿｜⚠⚠⚨ **批 CU**：第 3 步两处校验的失败出口**新增 2 处**（接住退出码 ⇒ 失败即判红）⇒ 34 → 36'
+arch_need_count "$SRC/scripts/ci.sh" '^[[:space:]]*exit [1-9]$' 38 'CI 入口的**失败上报**（整行的 `exit N`）必须恰好 38 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ `ci.sh` 的失败**已经被 `if` 分支消化**（`set -e` 救不了：失败命令的退出码被 `if` 的条件消费掉了）⇒ 只剩这些显式 `exit 1` 兜底 ⇒ 摘掉一个 ⇒ 那一步的失败**不再中止 CI** ⇒ 假绿｜⚠⚠⚨ **批 CU**：第 3 步两处校验的失败出口**新增 2 处**（接住退出码 ⇒ 失败即判红）⇒ 34 → 36'
 arch_need_count "$SRC/scripts/ci-d2.sh" '^[[:space:]]*exit [1-9]$' 6 'D2 散值门的**失败上报**（整行的 `exit N`）必须恰好 6 处｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**｜⚠⚠⚨ **实测的洞**：摘掉最终判定那一行 ⇒ 脚本明明已检出「✗ 豁免路径不存在」却照样打印「✓ D2 命中 0/0」并 **exit 0** ⇒ **假绿坐实**'
 arch_need_count "$SRC/scripts/smoke.sh" '^\[ -x "\$BIN" \] \|\| \{ echo "✗ [^"]*"; exit 1; \}$' 1 '冒烟脚本「产物缺失」那一支的失败上报（**行内**形态 `|| { …; exit 1; }`）必须**整行锚定**｜⚠⚠⚨ **批 CA**｜⚠ 这一条是**行内**形态 ⇒ 不会被「整行的 `exit N`」那条门数到 ⇒ 必须单钉'
 arch_need_count "$SRC/scripts/smoke.sh" '^[[:space:]]*exit [1-9]$' 3 '冒烟脚本**整行**的失败上报（`exit N`）必须恰好 3 处（selfcheck 失败 / **契约门未验证 ⇒ 原样传出**（8 缩进）/ **引擎缺席 ⇒ 未验证**（4 缩进））｜⚠⚠⚨ **批 CA**｜⚠ **整行锚定**'
@@ -3724,7 +3724,7 @@ ARCH_FAIL=0
 # ⚠⚠⚨ **门项正则一律由现抽实际行生成**（批 BS 纪律：绝不手写）
 #
 arch_need_count "$SRC/scripts/ci.sh" '^skip=0$' 1 'CI 入口**必须有「未验证」计数器**（⚠⚠⚨ 批 CK：⚠⚠⚨ 实测的洞：ci.sh 自己就有 **6 处**「跳过/未验证」出口**只打印、不计数** ⇒ CI 继续 ⇒ 最后照样打「**✓ CI 门通过**」⇒ **未验的组被当成「通过」**⇒ 假绿）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
-arch_need_count "$SRC/scripts/ci.sh" '^    skip=\$\(\(skip\+1\)\)$' 5 'CI 入口的**未验证计数点**（4 缩进那批，**恰好 5 处**）必须逐个计数（⚠⚠⚨ 批 CK：少一处 ⇒ 那一组未验证**又不计数** ⇒ 假绿；⚠ 4 缩进 = desktop-file-validate 缺席 / appstream-util 缺席 / 没有 dpkg-deb（**D7 必经**）/ 没有 deb 产物（**D7 准验收**）/ agent 工具面门报 SKIP）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
+arch_need_count "$SRC/scripts/ci.sh" '^    skip=\$\(\(skip\+1\)\)$' 6 'CI 入口的**未验证计数点**（4 缩进那批，**恰好 6 处**）必须逐个计数（⚠⚠⚨ 批 CK：少一处 ⇒ 那一组未验证**又不计数** ⇒ 假绿；⚠ 4 缩进 = desktop-file-validate 缺席 / appstream-util 缺席 / 没有 dpkg-deb（**D7 必经**）/ 没有 deb 产物（**D7 准验收**）/ agent 工具面门报 SKIP / **Pillow 缺席（批 DG：assets 图标判据未验证）**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
 arch_need_count "$SRC/scripts/ci.sh" '^        skip=\$\(\(skip\+1\)\)$' 2 'CI 入口的**未验证计数点**（8 缩进那批，**恰好 2 处**）必须计数（⚠⚠⚨ 批 CK：① deb 布局验收**脚本自己报 SKIP**（rc=3）那一支 ⇒ ⚠⚠⚨ 与批 CI 修过的第 10 步**完全同款** ⇒ 以前只打印「不算通过」⇒ CI 继续 ⇒ 假绿；⚠⚠⚨ 批 CL：② deb 构建**脚本自己报 SKIP**（rc=3）那一支 ⇒ 同款 ⇒ 以前 build-deb.sh 那边**只打印**⇒ exit 0 ⇒ CI 照样打「✓ deb 构建通过」⇒ **说法比门宽**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
 arch_need_count "$SRC/scripts/ci.sh" '^if \[ "\$skip" -ne 0 \]; then$' 1 'CI 入口**末尾必须按「未验证」判**（⚠⚠⚨ 批 CK：有任何一组没验 ⇒ **专属退出码 3**⇒ 判红 ⇒ 不许说通过；⚠ **失败优先**：ci.sh 是 `set -e` 逐步执行 ⇒ 真失败**当场** exit 1 ⇒ 能走到这里说明没有真失败）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
 arch_need_count "$SRC/scripts/ci.sh" '^    exit 3$' 1 'CI 入口的「未验证」必须用**专属退出码 3**（⚠⚠⚨ 批 CK：与契约门、agent 工具面门**同款口径**，批 CB/CI）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CK**'
@@ -3913,8 +3913,8 @@ ARCH_FAIL=0
 #   ⇒ ⚠ 顶部自检也**自己成段**（同款：它的红不许混进后面任何一段的归属里）。
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_ANY_FAIL=0$' 1 '判据层的**全局红过标志**的声明必须在（⚠⚠⚨ **批 CP**：段级 trailer 不再提前 exit ⇒ 末尾统一按它判红 ⇒ 它被摘 ⇒ **红也不报了** ⇒ **假绿**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+if \[ "\$_strip_rc" -ne 0 \] && \[ "\$_strip_rc" -ne 141 \]; then$' 2 '剥注释的**失败判定必须容忍 141**（SIGPIPE = 消费者**提前收工**）—— ⚠⚠⚨ **批 CP 实测的洞**：以前把 141 也当成「工具坏了」⇒ 记标记 ⇒ 末尾判红 ⇒ ⚠⚠⚨ **假红**（批 BS 纪律：假红比假绿更坏 ⇒ 逼人把承诺改弱）⇒ ⚠⚠⚨ **引爆点**：`arch_need_count_in_fn` 的 awk 读完函数体就 `exit` ⇒ sed 还在写 ⇒ 被 SIGPIPE 打断 ⇒ ⇒ **门项文件越大越容易触发**（时间炸弹）｜⚠ **整行锚定**｜⚠ 恰好 2 处（sed 支 + perl 支各一处）｜⚠⚠⚨ **批 CP**'
-arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_ANY_FAIL=1$' 56 '每个段级 trailer **都要记全局红过**（恰好 56 处）—— ⚠⚠⚨ **批 CP**：少一处 ⇒ 那个段的失败**被吞掉** ⇒ 末尾统一判红时看不见 ⇒ **假绿**（⚠ 与「段末清零」那条**配对**：清零 48 处 ⇒ 记红也必须 48 处 ⇒ 差恒为 0；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 41 → 42；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CU**：批 CU 段新增 1 处 ⇒ 44 → 45；⚠⚠⚨ **批 CV**：批 CV 段新增 1 处 ⇒ 45 → 46；⚠⚠⚨ **批 CW**：批 CW 段新增 1 处 ⇒ 46 → 47；⚠⚠⚨ **批 CX**：批 CX 段新增 1 处 ⇒ 47 → 48；⚠⚠⚨ **批 CY**：批 CY 段新增 1 处 ⇒ 48 → 49；⚠⚠⚨ **批 CZ**：批 CZ 段新增 1 处 ⇒ 49 → 50；⚠⚠⚨ **批 DA**：批 DA 段新增 1 处 ⇒ 50 → 51；⚠⚠⚨ **批 DB**：批 DB 段新增 1 处 ⇒ 51 → 52；⚠⚠⚨ **批 DC**：批 DC 段新增 1 处 ⇒ 52 → 53；⚠⚠⚨ **批 DD**：批 DD 段新增 1 处 ⇒ 53 → 54；⚠⚠⚨ **批 DE**：批 DE 段新增 1 处 ⇒ 54 → 55；⚠⚠⚨ **批 DF**：批 DF 段新增 1 处 ⇒ 55 → 56）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
-arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_FAIL=0$' 57 '判据层失败位的**声明 + 每段末清零**（恰好 57 处 = 1 处声明 + 56 处段末清零；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 44 → 45；⚠⚠⚨ **批 CU**：批 CU 段新增 1 处 ⇒ 45 → 46；⚠⚠⚨ **批 CV**：批 CV 段新增 1 处 ⇒ 46 → 47；⚠⚠⚨ **批 CW**：批 CW 段新增 1 处 ⇒ 47 → 48；⚠⚠⚨ **批 CX**：批 CX 段新增 1 处 ⇒ 48 → 49；⚠⚠⚨ **批 CY**：批 CY 段新增 1 处 ⇒ 49 → 50；⚠⚠⚨ **批 CZ**：批 CZ 段新增 1 处 ⇒ 50 → 51；⚠⚠⚨ **批 DA**：批 DA 段新增 1 处 ⇒ 51 → 52；⚠⚠⚨ **批 DB**：批 DB 段新增 1 处 ⇒ 52 → 53；⚠⚠⚨ **批 DC**：批 DC 段新增 1 处 ⇒ 53 → 54；⚠⚠⚨ **批 DD**：批 DD 段新增 1 处 ⇒ 54 → 55；⚠⚠⚨ **批 DE**：批 DE 段新增 1 处 ⇒ 55 → 56；⚠⚠⚨ **批 DF**：批 DF 段新增 1 处 ⇒ 56 → 57）—— ⚠⚠⚨ **批 CP**：少一处段末清零 ⇒ 那个段的失败**污染后面所有段** ⇒ 段归属失真（诊断被带偏）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+ARCH_ANY_FAIL=1$' 57 '每个段级 trailer **都要记全局红过**（恰好 57 处）—— ⚠⚠⚨ **批 CP**：少一处 ⇒ 那个段的失败**被吞掉** ⇒ 末尾统一判红时看不见 ⇒ **假绿**（⚠ 与「段末清零」那条**配对**：清零 57 处 ⇒ 记红也必须 57 处 ⇒ 差恒为 0；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 41 → 42；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CU**：批 CU 段新增 1 处 ⇒ 44 → 45；⚠⚠⚨ **批 CV**：批 CV 段新增 1 处 ⇒ 45 → 46；⚠⚠⚨ **批 CW**：批 CW 段新增 1 处 ⇒ 46 → 47；⚠⚠⚨ **批 CX**：批 CX 段新增 1 处 ⇒ 47 → 48；⚠⚠⚨ **批 CY**：批 CY 段新增 1 处 ⇒ 48 → 49；⚠⚠⚨ **批 CZ**：批 CZ 段新增 1 处 ⇒ 49 → 50；⚠⚠⚨ **批 DA**：批 DA 段新增 1 处 ⇒ 50 → 51；⚠⚠⚨ **批 DB**：批 DB 段新增 1 处 ⇒ 51 → 52；⚠⚠⚨ **批 DC**：批 DC 段新增 1 处 ⇒ 52 → 53；⚠⚠⚨ **批 DD**：批 DD 段新增 1 处 ⇒ 53 → 54；⚠⚠⚨ **批 DE**：批 DE 段新增 1 处 ⇒ 54 → 55；⚠⚠⚨ **批 DF**：批 DF 段新增 1 处 ⇒ 55 → 56）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
+arch_need_count "$SRC/scripts/ci-wiring.sh" '^ARCH_FAIL=0$' 58 '判据层失败位的**声明 + 每段末清零**（恰好 58 处 = 1 处声明 + 57 处段末清零；⚠⚠⚨ **批 CR**：批 CR 段新增 1 处 ⇒ 42 → 43；⚠⚠⚨ **批 CS**：批 CS 段新增 1 处 ⇒ 43 → 44；⚠⚠⚨ **批 CT**：批 CT 段新增 1 处 ⇒ 44 → 45；⚠⚠⚨ **批 CU**：批 CU 段新增 1 处 ⇒ 45 → 46；⚠⚠⚨ **批 CV**：批 CV 段新增 1 处 ⇒ 46 → 47；⚠⚠⚨ **批 CW**：批 CW 段新增 1 处 ⇒ 47 → 48；⚠⚠⚨ **批 CX**：批 CX 段新增 1 处 ⇒ 48 → 49；⚠⚠⚨ **批 CY**：批 CY 段新增 1 处 ⇒ 49 → 50；⚠⚠⚨ **批 CZ**：批 CZ 段新增 1 处 ⇒ 50 → 51；⚠⚠⚨ **批 DA**：批 DA 段新增 1 处 ⇒ 51 → 52；⚠⚠⚨ **批 DB**：批 DB 段新增 1 处 ⇒ 52 → 53；⚠⚠⚨ **批 DC**：批 DC 段新增 1 处 ⇒ 53 → 54；⚠⚠⚨ **批 DD**：批 DD 段新增 1 处 ⇒ 54 → 55；⚠⚠⚨ **批 DE**：批 DE 段新增 1 处 ⇒ 55 → 56；⚠⚠⚨ **批 DF**：批 DF 段新增 1 处 ⇒ 56 → 57）—— ⚠⚠⚨ **批 CP**：少一处段末清零 ⇒ 那个段的失败**污染后面所有段** ⇒ 段归属失真（诊断被带偏）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^if \[ "\$ARCH_ANY_FAIL" -ne 0 \]; then$' 1 '判据层**末尾必须统一按全局红过判红**（恰好 1 处）—— ⚠⚠⚨ **批 CP**：段级 trailer 不再提前 exit ⇒ 全部门项都跑完 ⇒ 末尾这一句是**唯一的「红 ⇒ 退出」通路** ⇒ 摘掉 ⇒ 明明有红却 **exit 0** ⇒ **假绿**｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
 arch_forbid_ml "$SRC/scripts/ci-wiring.sh" 'if \[ "\$ARCH_FAIL" -ne 0 \]; then[^;]*>&2[[:space:]]+exit 1' '段级 trailer **不许再提前 exit**（⚠⚠⚨ **批 CP**：提前 exit ⇒ 一处红遮住后面所有门项 ⇒ 实测 **540/1017 条门项根本没跑** ⇒ 排障只能「改一个 ⇒ 跑一次 ⇒ 再改一个」）｜⚠ **跨行锚定**（压行后匹配 ⇒ 跨行形态也盯得住）｜⚠ 口径：锚在 trailer **自己的** `>&2` 之后 ⇒ **不会**误伤门项说明文字里的散文「exit 1」（⚠ 压行后散文与代码同处一行 ⇒ 宽正则会假红）｜⚠⚠⚨ **批 CP**'
 arch_need_count "$SRC/scripts/ci-wiring.sh" '^\s+exit 1$' 3 '判据层**整行的 `exit 1`**必须恰好 3 处（⚠⚠⚨ **批 CP**：那 3 处 = ① 顶部 preflight「没有 perl ⇒ 判失败」② 末尾「剥注释失败」检查 ③ 末尾「统一按全局红过判红」）—— ⚠⚠⚨ **段级 trailer 里一处都不许有** （有 ⇒ 一处红就提前退出 ⇒ **后面 540 条门项根本没跑**）⇒ 多一处 ⇒ 有人把提前 exit 又塞回去了 ⇒ 必红｜⚠ **整行锚定**｜⚠⚠⚨ **批 CP**'
@@ -3963,7 +3963,7 @@ ARCH_FAIL=0
 #   ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**
 # ⚠ **不宣称完全堵死**（四处协同编辑仍能躲过）⇒ 但成本从 2 处升到 4 处、跨 2 个文件
 #   ⇒ **极显眼** ⇒ 评审必看见 ⇒ 惯常动作不再是掩护。
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_LINES_EXPECTED = 1167$' 1 '门项条数必须被**审计器源码里的常量**交叉钉住（⚠⚠⚨ **批 CR**：实测坐实 —— 删一条门项 **且** 把基线文件 -1 ⇒ 旧行为**全绿**（审计器 rc=0、接线门 rc=0、✗ 0 行）⇒ 承诺**悄悄消失** ⇒ 现在同一件事记三遍：基线文件 / 审计器常量 / **本门里的这个数字** ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**）｜⚠⚠⚨ **批 CY**：批 CY 段新增 6 条 ⇒ 1044 → 1050（**三处同改**）；⚠⚠⚨ **批 CZ**：批 CZ 段新增 6 条 ⇒ 1050 → 1056（**三处同改**）；⚠⚠⚨ **批 DA**：批 DA 段新增 18 条 ⇒ 1056 → 1074（**三处同改**）；⚠⚠⚨ **批 DB**：批 DB 段新增 13 条 ⇒ 1074 → 1087（**三处同改**）；⚠⚠⚨ **批 DC**：批 DC 段新增 20 条 ⇒ 1087 → 1107（**三处同改**）；⚠⚠⚨ **批 DD**：批 DD 段新增 15 条 ⇒ 1107 → 1122（**三处同改**）｜⚠ **整行锚定**；⚠⚠⚨ **批 DE**：批 DE 段新增 31 条 ⇒ 1122 → 1153（**三处同改**）；⚠⚠⚨ **批 DF**：批 DF 段新增 14 条 ⇒ 1153 → 1167（**三处同改**）｜⚠⚠⚨ **批 CR**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_LINES_EXPECTED = 1180$' 1 '门项条数必须被**审计器源码里的常量**交叉钉住（⚠⚠⚨ **批 CR**：实测坐实 —— 删一条门项 **且** 把基线文件 -1 ⇒ 旧行为**全绿**（审计器 rc=0、接线门 rc=0、✗ 0 行）⇒ 承诺**悄悄消失** ⇒ 现在同一件事记三遍：基线文件 / 审计器常量 / **本门里的这个数字** ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**）｜⚠⚠⚨ **批 CY**：批 CY 段新增 6 条 ⇒ 1044 → 1050（**三处同改**）；⚠⚠⚨ **批 CZ**：批 CZ 段新增 6 条 ⇒ 1050 → 1056（**三处同改**）；⚠⚠⚨ **批 DA**：批 DA 段新增 18 条 ⇒ 1056 → 1074（**三处同改**）；⚠⚠⚨ **批 DB**：批 DB 段新增 13 条 ⇒ 1074 → 1087（**三处同改**）；⚠⚠⚨ **批 DC**：批 DC 段新增 20 条 ⇒ 1087 → 1107（**三处同改**）；⚠⚠⚨ **批 DD**：批 DD 段新增 15 条 ⇒ 1107 → 1122（**三处同改**）｜⚠ **整行锚定**；⚠⚠⚨ **批 DE**：批 DE 段新增 31 条 ⇒ 1122 → 1153（**三处同改**）；⚠⚠⚨ **批 DF**：批 DF 段新增 14 条 ⇒ 1153 → 1167（**三处同改**）；⚠⚠⚨ **批 DG**：批 DG 段新增 13 条 ⇒ 1167 → 1180（**三处同改**）｜⚠⚠⚨ **批 CR**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if gbase is not None and gbase != GATE_LINES_EXPECTED:$' 1 '基线与常量的**交叉核对判定行**必须**是那一行原样**（⚠⚠⚨ **批 CR**：⚠ 只盯「串在不在」⇒ 判定被掏空成 `and False:` 就躲过了 ⇒ 没人发现 ⇒ **交叉核对形同虚设** ⇒ 那批承诺也就没人守了）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CR**'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
@@ -4410,13 +4410,13 @@ arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^MACOS_ENTRY="\$ROOT/macos/bu
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^_CALL_PATH=.\[\^"\]\*/scripts/\[A-Za-z0-9\._/-\]\+\\\.\(sh\|py\).$' 1 '孤儿探针的**脚本路径片段**必须原样（⚠⚠⚨ **批 DE**：⚠ 两个平台**共用这一份** ⇒ 路径口径零漂移；⚠ 片段被改窄（漏掉子目录形态）⇒ 子目录里的判据脚本**认不出来** ⇒ 漏检 ⇒ 假绿）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DE**'
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^CALL_RE_DEEPIN="\(sh\|bash\|python3\?\)\[\[:space:\]\]\+\\"\?\$\{_CALL_PATH\}"$' 1 '孤儿探针的 **deepin 侧调用点口径**必须原样（⚠⚠⚨ **批 DE**：⚠ **解释器前缀**（`sh` / `bash` / `python3`）是 deepin 侧调用点的标志 ⇒ 删掉前缀 ⇒ 调用点认不出 ⇒ 一整片脚本**全成游离** ⇒ 假红；⚠ 口径被改宽 ⇒ 「提到过路径」被当成「调用过」⇒ 假绿）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DE**'
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^CALL_RE_MACOS="\(sh\|bash\|python3\?\)\[\[:space:\]\]\+\\"\?\$\{_CALL_PATH\}\|\\"\$\{_CALL_PATH\}\\"\(\[\^\]\]\*\)\$"$' 1 '孤儿探针的 **mac 侧调用点口径**必须原样（⚠⚠⚨ **批 DE**：⚠⚠⚨ **实测坐实** —— mac 构建的调用形态是**裸可执行**（`if "$DIR/scripts/x.sh"; then`）⇒ 用 deepin 那份口径**一个都认不出** ⇒ 直接扩范围会**假红**；⚠⚠⚨ **而且必须排除「可执行性守卫」**（`if [ -x "$DIR/scripts/x.sh" ]; then`）—— 守卫**不是调用** ⇒ 若把它算成调用 ⇒ 有人把真调用删掉、只留守卫 ⇒ 探针仍判「可达」⇒ **假绿** ⇒ 口径：**引号路径之后到行尾不得出现 `]`** ⇒ `[ … ]` 守卫天然排除，而 `"…x.sh"; then` / `"…x.sh" || true` / `"…x.sh" 参数` **都算调用**｜⚠⚠⚨ **负控实测（批 DE C7）**：口径要求路径后**紧跟** `;` / `)` / 行末时认不出 `"…x.sh" || true` ⇒ 漏检 ⇒ 本批放宽）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DE**'
-arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^PLATFORMS="deepin macos"$' 1 '孤儿探针的**平台清单**必须恰好是两个（⚠⚠⚨ **批 DE**：⚠ 少一个 ⇒ 那一个平台**整片不被查**而门全绿 ⇒ 假绿；⚠ 多一个不认识的平台 ⇒ 那个平台**直接被判红**（fail closed）⇒ 不会静默漏检）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DE**'
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^PLATFORMS="deepin macos assets"$' 1 '孤儿探针的**平台清单**必须恰好是三个（⚠⚠⚨ **批 DE**：⚠ 少一个 ⇒ 那一个平台**整片不被查**而门全绿 ⇒ 假绿；⚠ 多一个不认识的平台 ⇒ 那个平台**直接被判红**（fail closed）⇒ 不会静默漏检；⚠⚠⚨ **批 DG**：加 **assets** ⇒ 两个 → 三个）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DE**'
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^        deepin\) _scope="\$DEEPIN_SCOPE"; _entry="\$DEEPIN_ENTRY"; _re="\$CALL_RE_DEEPIN" ;;$' 1 '孤儿探针的 **deepin 平台分支**必须真的走 deepin 那份范围/入口/口径（⚠⚠⚨ **批 DE**：⚠⚠⚨ **批 CX 同款教训**：「常量在、但扫描时不判」⇒ 定义了不用 ⇒ 等于没定义；⚠ 分支被改成走 mac 那份口径 ⇒ deepin 侧**认不出调用点** ⇒ 全成游离 ⇒ 假红）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DE**'
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^        macos\)  _scope="\$MACOS_SCOPE";  _entry="\$MACOS_ENTRY";  _re="\$CALL_RE_MACOS" ;;$' 1 '孤儿探针的 **mac 平台分支**必须真的走 mac 那份范围/入口/口径（⚠⚠⚨ **批 DE**：⚠⚠⚨ **批 CX 同款教训**：「常量在、但扫描时不判」；⚠ 分支被改成走 deepin 那份口径 ⇒ mac 侧**认不出裸可执行调用** ⇒ 12 个脚本**全成游离** ⇒ 假红）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DE**'
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^    for _f in \$\(find "\$_scope" -type f \\\( -name .\*\.sh. -o -name .\*\.py. \\\) 2>/dev/null \| LC_ALL=C sort\); do$' 2 '孤儿探针的**范围扫描必须递归**（恰好 **2 处**：可读性预检 + 断言脚本识别，两处**同一句**）｜⚠⚠⚨ **批 DE**：⚠ 只扫顶层 ⇒ `macos/scripts/render-harness/run.sh`（**子目录**里）不被查 ⇒ 漏检；⚠ 少一处 ⇒ 两个扫描点**口径不一致**（一处递归一处不递归）⇒ 判定失真；⚠ 递归下钻被摘 ⇒ 计数从 2 变 1 ⇒ **红**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DE**'
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^    if \[ ! -d "\$_scope" \]; then$' 1 '孤儿探针必须**先验范围目录存在**（⚠⚠⚨ **批 DE**：⚠ 目录不存在 ⇒ **fail closed**（判红）而不是「这一平台没有判据脚本」⇒ 否则整个平台被**静默移出范围**而门全绿 ⇒ 假绿）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DE**'
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^    if \[ ! -f "\$_entry" \]; then$' 1 '孤儿探针必须**先验 CI 入口存在**（⚠⚠⚨ **批 DE**：⚠ 入口不存在 ⇒ **fail closed**（判红）而不是「可达集合为空」⇒ 否则整片脚本被误报成游离、或因空集合而全成可达）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DE**'
-arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^        deepin/\*\|macos/\*\) ;;$' 1 '白名单条目的**平台前缀**必须只认这两个（⚠⚠⚨ **批 DE**：⚠ 白名单里出现不认识的前缀 ⇒ 那个条目**永远不会被任何平台检查到** ⇒ 形同虚设 ⇒ 后门；⚠ 本门守的是「前缀集合」，具体条目另有门逐条钉）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DE**'
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^        deepin/\*\|macos/\*\|assets/\*\) ;;$' 1 '白名单条目的**平台前缀**必须只认这三个（⚠⚠⚨ **批 DE**：⚠ 白名单里出现不认识的前缀 ⇒ 那个条目**永远不会被任何平台检查到** ⇒ 形同虚设 ⇒ 后门；⚠ 本门守的是「前缀集合」，具体条目另有门逐条钉；⚠⚠⚨ **批 DG**：加 **assets** ⇒ 两个 → 三个）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DE**'
 arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^if \[ "\$n_wl_total" -ne "\$n_wl" \]; then$' 1 '孤儿探针必须**核对「被检查的白名单条数 == 白名单总条数」**（⚠⚠⚨ **批 DE**：⚠ 不核对 ⇒ 某个平台的条目**没被任何平台检查** ⇒ 那条白名单形同虚设 ⇒ 后门，而门全绿）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DE**'
 #
 # ⚠ **白名单逐条钉住：mac 侧那 6 条「不许被 build.sh 调用」**
@@ -4499,6 +4499,62 @@ else
     echo "✓ 批 DF 段门项全绿（恒真探针的条件抽取器不许被掏空：C++ 侧 extract_check_conds + shell 侧 _shell_cond_at 的关键行逐条钉住 + C++ 侧补 cpp_e2e 自检档）；门项合计 ${ARCH_N} 项（含前段）"
 fi
 ARCH_FAIL=0
+# ── 批 DG · assets 侧判据脚本不许游离（图标那一套真的进 CI） ──────────────
+# ⚠⚠⚨ **起因（实测坐实，不是推演）**：
+#   `assets/icon/` 下有**两个判据脚本** ——
+#     ① `check-icon.sh`（「所有平台用同一套 icon」这条约束的验收）
+#     ② `make-icons.py --check`（产物与母版一致性的**只校验**模式）
+#   ⇒ ⚠⚠⚨ **实测坐实**：这两个脚本**不在任何 CI 里**
+#     ⇒ 它们的断言**从来没人执行** ⇒ 有人改了图标体系、忘了重跑产物
+#     ⇒ **没有任何门会说一个字** ⇒ 承诺悄悄消失。
+#   ⇒ ⚠ **与 mac 侧那 6 条白名单不同款**：那两个脚本**本机不可验**
+#     （需 macOS + Swift 工具链）⇒ 只能「只登记」；
+#     而这两个**本机可跑可验**（Pillow 在、产物入库）⇒ **真的接进 CI**
+#     ⇒ 批 DE 遗留的「assets 侧判据脚本游离」**正面收掉**。
+#   ⇒ 腿 1：`ci.sh` 新增第 15 步（图标判据）⇒ **步数 15 → 16**
+#     （⚠ 步数门、连续门、每步必有门、in_step 全部同步改）；
+#   ⇒ 腿 2：孤儿探针扩到**第三个平台 assets**（范围/入口/调用口径/路径前缀
+#     **各一份**）⇒ assets 侧以后新增判据脚本却忘了接进 CI ⇒ **会被抓到**。
+# ⚠⚠⚨ **工具缺席 ⇒ 未验证（专属码 3）**：图标判据要 Pillow
+#   ⇒ 缺席 ⇒ `ci.sh` 显式 SKIP ⇒ 计入 `skip` ⇒ 末尾 `exit 3`
+#   ⇒ **未验证不许被当成通过**（批 CB/CC 纪律）⇒ 不许拿「工具没装」
+#   冒充「图标不一致」。
+
+arch_need_count "$SRC/scripts/ci.sh" '^    bash "\$SRC/\.\./assets/icon/check-icon\.sh" \|\| _ic2_rc=\$\?$' 1 '第 15 步 assets 图标一致性验收的**动作还在**（⚠⚠⚨ **批 DG**：⚠ 这个脚本以前**不在任何 CI 里** ⇒ 它的断言**从来没人执行** ⇒ 「三个平台同一套 icon」这句承诺**没人守** ⇒ 接进 CI 后必须钉住调用点，⚠ **整行锚定**（批 BN）｜⚠⚠⚨ **批 DG**'
+
+arch_need_count "$SRC/scripts/ci.sh" '^    python3 "\$SRC/\.\./assets/icon/make-icons\.py" --check \|\| _ic_rc=\$\?$' 1 '第 15 步 assets 图标**产物与母版一致性校验**的动作还在（⚠⚠⚨ **批 DG**：⚠ `make-icons.py --check` 是**只校验不写文件**的判据模式 ⇒ 它以前也**不在任何 CI 里** ⇒ 产物与母版分家时**没有任何门会说一个字** ⇒ 现在接进 CI，⚠ **整行锚定**｜⚠⚠⚨ **批 DG**'
+
+arch_need_count "$SRC/scripts/ci.sh" '^if python3 -c .from PIL import Image. >/dev/null 2>&1; then$' 1 '第 15 步**必须先探工具**再跑图标判据（⚠⚠⚨ **批 DG**：⚠⚠⚨ 少了这一探 ⇒ Pillow 缺席时 `check-icon.sh` 会把「PIL-缺」当成「母版不合法」⇒ **把「工具没装」说成「图标不一致」**⇒ **码值语义被顶替**（批 CC 纪律）⇒ 现在缺席 ⇒ SKIP ⇒ 计入 `skip` ⇒ 末尾专属码 3｜⚠ **整行锚定**｜⚠⚠⚨ **批 DG**'
+
+arch_need_count "$SRC/scripts/ci.sh" '^    echo "SKIP: Pillow 未安装（图标判据未验证：母版包围盒那节需要 PIL）"$' 1 '第 15 步的**未验证提示**必须在（⚠⚠⚨ **批 DG**：⚠ 少了它 ⇒ 日志里只剩一句「✓ 通过」⇒ 读日志的人**分不出这一组到底验没验**（批 CC 同款口径）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DG**'
+
+arch_need_ml "$SRC/scripts/ci.sh" 'SKIP: Pillow 未安装[^"]*"[[:space:]]+skip=' 'Pillow 缺席那一处**必须紧跟计数**（⚠⚠⚨ **批 DG**：⚠ 少了计数 ⇒ 「图标判据没验」被当成「通过」⇒ **未验证不许被当成通过**（批 CK 同款口径）｜⚠ **跨行锚定**｜⚠⚠⚨ **批 DG**'
+
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^ASSETS_SCOPE="\$ROOT/assets"$' 1 '孤儿探针的 **assets 侧范围目录**必须在（⚠⚠⚨ **批 DG**：⚠ 范围被静默收窄 ⇒ `assets/icon/` 下那两个判据脚本**没人查**而门全绿 ⇒ **假绿**；⚠ 范围不许被改成别的目录）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DG**'
+
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^ASSETS_ENTRY="\$SRC/scripts/ci\.sh"$' 1 '孤儿探针的 **assets 侧 CI 入口**必须是 `ci.sh`（⚠⚠⚨ **批 DG**：⚠ assets 侧**没有自己的 CI** ⇒ 它的判据脚本只能由 deepin CI 驱动 ⇒ 入口算错 ⇒ 可达集合算在别的文件上 ⇒ 两个脚本**全成游离**或**全成可达** ⇒ 门失准）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DG**'
+
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^_CALL_PATH_ASSETS=.\[\^"\]\*/assets/\[A-Za-z0-9\._/-\]\+\\\.\(sh\|py\).$' 1 '孤儿探针的 **assets 侧路径片段**必须原样（⚠⚠⚨ **批 DG**：⚠ 它**不共用** `_CALL_PATH`（那份只认 `/scripts/` 下）⇒ 共用口径 ⇒ assets 的路径**一个都认不出** ⇒ 可达集合为空 ⇒ 两个脚本全成「游离」⇒ **假红**；⚠ 片段被改窄 ⇒ 漏检 ⇒ **假绿**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DG**'
+
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^CALL_RE_ASSETS="\(sh\|bash\|python3\?\)\[\[:space:\]\]\+\\"\?\$\{_CALL_PATH_ASSETS\}"$' 1 '孤儿探针的 **assets 侧调用点口径**必须真的用 assets 那份路径片段（⚠⚠⚨ **批 DG**：⚠ 改成 `_CALL_PATH` ⇒ 认不出 assets 路径 ⇒ 两个脚本全成「游离」⇒ **假红**；⚠ 这条与「assets 侧路径片段」那一条**配对** ⇒ 改一边必红）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DG**'
+
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^_STRIP_ASSETS=.\.\*/assets/.$' 1 '孤儿探针的 **assets 侧路径前缀**必须原样（⚠⚠⚨ **批 DG**：⚠ 它决定「抽出来的名字能不能对上 scope 下的相对路径」⇒ 错了 ⇒ 白名单「指向不存在的脚本」⇒ **假红**；⚠ 改成 `.*/scripts/` ⇒ 名字剥不掉前缀 ⇒ 对不上 ⇒ 失准）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DG**'
+
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^    _strip="\$_STRIP_DEEPIN"$' 1 '孤儿探针的**路径前缀默认值**必须在（⚠⚠⚨ **批 DG**：⚠ deepin/macos 两个平台**共用** `scripts/` 前缀 ⇒ 抽出来的名字要能对上 scope 下的相对路径；⚠ 少了这一行 ⇒ `$_strip` 为空 ⇒ 剥不掉前缀 ⇒ 两个平台的名字全带目录 ⇒ 白名单与可达判定**双双失准**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DG**'
+
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^        assets\) _scope="\$ASSETS_SCOPE"; _entry="\$ASSETS_ENTRY"; _re="\$CALL_RE_ASSETS"; _strip="\$_STRIP_ASSETS" ;;$' 1 '孤儿探针的 **assets 平台分支**必须真的走 assets 那份范围/入口/口径/前缀（⚠⚠⚨ **批 DG**：⚠ 少这一支 ⇒ 平台清单里有 assets 但**没有分支** ⇒ fail closed 判红；⚠ 走错分支 ⇒ 那一整片脚本**全成游离**或**全成可达** ⇒ 门失准）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DG**'
+
+arch_need_count "$SRC/scripts/ci-orphan-probe.sh" '^echo "✓ 无游离断言脚本：三个平台共 \$n_assert_total 个断言脚本全部在 CI 里可达（白名单 \$n_wl 条，每条带理由）"$' 1 '孤儿探针的**汇总文案**必须说「三个平台」（⚠⚠⚨ **批 DG**：⚠ 文案说两个 ⇒ 读日志的人以为**只查了两个平台** ⇒ 承诺的覆盖面**被说窄了** ⇒ 与实际行为不一致（批 BA/BB 纪律）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DG**'
+
+
+if [ "$ARCH_FAIL" -ne 0 ]; then
+    echo "✗ 接线门失败：批 DG 段有门项红（上面带 ✗ 的行）" >&2
+    ARCH_ANY_FAIL=1
+else
+    echo "✓ 批 DG 段门项全绿（assets 侧图标判据接进 CI + 孤儿探针扩到第三平台 assets）；门项合计 ${ARCH_N} 项（含前段）"
+fi
+ARCH_FAIL=0
+
 
 
 
