@@ -298,14 +298,14 @@ arch_need() { # arch_need <文件> <正则> <说明>
     local f="$1" re="$2" label="$3"
     ARCH_N=$((ARCH_N + 1))
     if [ ! -f "$f" ]; then
-        echo "  ✗ $label：文件不存在 $f" >&2
+        printf '%s\n' "  ✗ $label：文件不存在 $f" >&2
         ARCH_FAIL=1
         return
     fi
     if strip_comments "$f" | grep -E -- "$re" >/dev/null; then
-        echo "  ✓ $label"
+        printf '%s\n' "  ✓ $label"
     else
-        echo "  ✗ $label：$f 里找不到 $re" >&2
+        printf '%s\n' "  ✗ $label：$f 里找不到 $re" >&2
         ARCH_FAIL=1
     fi
 }
@@ -329,14 +329,14 @@ arch_need_ml() { # arch_need_ml <文件> <正则> <说明>
     local f="$1" re="$2" label="$3"
     ARCH_N=$((ARCH_N + 1))
     if [ ! -f "$f" ]; then
-        echo "  ✗ $label：文件不存在 $f" >&2
+        printf '%s\n' "  ✗ $label：文件不存在 $f" >&2
         ARCH_FAIL=1
         return
     fi
     if strip_comments "$f" | tr '\n' ' ' | grep -E -- "$re" >/dev/null; then
-        echo "  ✓ $label"
+        printf '%s\n' "  ✓ $label"
     else
-        echo "  ✗ $label：$f 里找不到 $re" >&2
+        printf '%s\n' "  ✗ $label：$f 里找不到 $re" >&2
         ARCH_FAIL=1
     fi
 }
@@ -373,9 +373,9 @@ arch_need_any_count() { # arch_need_any_count <正则> <期望次数> <说明> [
     local got
     got="$(any_hits "$re" "$glob")"
     if [ "$got" = "$want" ]; then
-        echo "  ✓ $label"
+        printf '%s\n' "  ✓ $label"
     else
-        echo "  ✗ $label：$glob 范围里 $re 命中 $got 次（期望 $want 次）" >&2
+        printf '%s\n' "  ✗ $label：$glob 范围里 $re 命中 $got 次（期望 $want 次）" >&2
         ARCH_FAIL=1
     fi
 }
@@ -391,9 +391,9 @@ arch_need_any_min() { # arch_need_any_min <正则> <下限次数> <说明> [文�
     local got
     got="$(any_hits "$re" "$glob")"
     if [ "$got" -ge "$want" ]; then
-        echo "  ✓ $label"
+        printf '%s\n' "  ✓ $label"
     else
-        echo "  ✗ $label：$glob 范围里 $re 命中 $got 次（至少要 $want 次）" >&2
+        printf '%s\n' "  ✗ $label：$glob 范围里 $re 命中 $got 次（至少要 $want 次）" >&2
         ARCH_FAIL=1
     fi
 }
@@ -407,7 +407,7 @@ arch_need_count() { # arch_need_count <文件> <正则> <期望次数> <说明>
     local f="$1" re="$2" want="$3" label="$4"
     ARCH_N=$((ARCH_N + 1))
     if [ ! -f "$f" ]; then
-        echo "  ✗ $label：文件不存在 $f" >&2
+        printf '%s\n' "  ✗ $label：文件不存在 $f" >&2
         ARCH_FAIL=1
         return
     fi
@@ -415,9 +415,9 @@ arch_need_count() { # arch_need_count <文件> <正则> <期望次数> <说明>
     got="$(strip_comments "$f" | grep -oE -- "$re" | grep -c . || true)"
     got="${got:-0}"
     if [ "$got" = "$want" ]; then
-        echo "  ✓ $label"
+        printf '%s\n' "  ✓ $label"
     else
-        echo "  ✗ $label：$f 里 $re 出现 $got 次（期望 $want 次）" >&2
+        printf '%s\n' "  ✗ $label：$f 里 $re 出现 $got 次（期望 $want 次）" >&2
         ARCH_FAIL=1
     fi
 }
@@ -441,7 +441,7 @@ arch_need_count_pair() { # arch_need_count_pair <文件> <报错行正则> <计�
     local f="$1" ra="$2" rb="$3" want="$4" label="$5"
     ARCH_N=$((ARCH_N + 1))
     if [ ! -f "$f" ]; then
-        echo "  ✗ $label：文件不存在 $f" >&2
+        printf '%s\n' "  ✗ $label：文件不存在 $f" >&2
         ARCH_FAIL=1
         return
     fi
@@ -451,9 +451,9 @@ arch_need_count_pair() { # arch_need_count_pair <文件> <报错行正则> <计�
     na="${na:-0}"
     nb="${nb:-0}"
     if [ "$na" = "$want" ] && [ "$nb" = "$want" ]; then
-        echo "  ✓ $label"
+        printf '%s\n' "  ✓ $label"
     else
-        echo "  ✗ $label：$f 里 报错行 $na 次 / 计数行 $nb 次（两者都必须是 $want 次 ⇒ 差必须恒为 0）" >&2
+        printf '%s\n' "  ✗ $label：$f 里 报错行 $na 次 / 计数行 $nb 次（两者都必须是 $want 次 ⇒ 差必须恒为 0）" >&2
         ARCH_FAIL=1
     fi
 }
@@ -461,7 +461,7 @@ arch_need_min() { # arch_need_min <文件> <正则> <下限次数> <说明>
     local f="$1" re="$2" want="$3" label="$4"
     ARCH_N=$((ARCH_N + 1))
     if [ ! -f "$f" ]; then
-        echo "  ✗ $label：文件不存在 $f" >&2
+        printf '%s\n' "  ✗ $label：文件不存在 $f" >&2
         ARCH_FAIL=1
         return
     fi
@@ -469,9 +469,9 @@ arch_need_min() { # arch_need_min <文件> <正则> <下限次数> <说明>
     got="$(strip_comments "$f" | grep -oE -- "$re" | grep -c . || true)"
     got="${got:-0}"
     if [ "$got" -ge "$want" ]; then
-        echo "  ✓ $label"
+        printf '%s\n' "  ✓ $label"
     else
-        echo "  ✗ $label：$f 里 $re 出现 $got 次（至少要 $want 次）" >&2
+        printf '%s\n' "  ✗ $label：$f 里 $re 出现 $got 次（至少要 $want 次）" >&2
         ARCH_FAIL=1
     fi
 }
@@ -489,7 +489,7 @@ arch_need_count_in_fn() { # arch_need_count_in_fn <文件> <签名正则> <正�
     local f="$1" sig="$2" re="$3" want="$4" label="$5"
     ARCH_N=$((ARCH_N + 1))
     if [ ! -f "$f" ]; then
-        echo "  ✗ $label：文件不存在 $f" >&2
+        printf '%s\n' "  ✗ $label：文件不存在 $f" >&2
         ARCH_FAIL=1
         return
     fi
@@ -507,16 +507,16 @@ arch_need_count_in_fn() { # arch_need_count_in_fn <文件> <签名正则> <正�
         }
     ')"
     if [ -z "$body" ]; then
-        echo "  ✗ $label：$f 里找不到函数 $sig" >&2
+        printf '%s\n' "  ✗ $label：$f 里找不到函数 $sig" >&2
         ARCH_FAIL=1
         return
     fi
     got="$(printf "%s\n" "$body" | grep -oE -- "$re" | grep -c . || true)"
     got="${got:-0}"
     if [ "$got" = "$want" ]; then
-        echo "  ✓ $label"
+        printf '%s\n' "  ✓ $label"
     else
-        echo "  ✗ $label：$f 的 $sig 函数体里 $re 出现 $got 次（期望 $want 次）" >&2
+        printf '%s\n' "  ✗ $label：$f 的 $sig 函数体里 $re 出现 $got 次（期望 $want 次）" >&2
         ARCH_FAIL=1
     fi
 }
@@ -537,7 +537,7 @@ arch_need_count_in_step() { # arch_need_count_in_step <文件> <步号> <正则>
     local f="$1" step="$2" re="$3" want="$4" label="$5"
     ARCH_N=$((ARCH_N + 1))
     if [ ! -f "$f" ]; then
-        echo "  ✗ $label：文件不存在 $f" >&2
+        printf '%s\n' "  ✗ $label：文件不存在 $f" >&2
         ARCH_FAIL=1
         return
     fi
@@ -557,9 +557,9 @@ arch_need_count_in_step() { # arch_need_count_in_step <文件> <步号> <正则>
     got="$(printf "%s\n" "$body" | grep -oE -- "$re" | grep -c . || true)"
     got="${got:-0}"
     if [ "$got" = "$want" ]; then
-        echo "  ✓ $label"
+        printf '%s\n' "  ✓ $label"
     else
-        echo "  ✗ $label：$f 的第 $step 步正文里 $re 出现 $got 次（期望 $want 次）" >&2
+        printf '%s\n' "  ✗ $label：$f 的第 $step 步正文里 $re 出现 $got 次（期望 $want 次）" >&2
         ARCH_FAIL=1
     fi
 }
@@ -609,7 +609,7 @@ arch_forbid_han() { # arch_forbid_han <文件> <说明>
     local f="$1" label="$2"
     ARCH_N=$((ARCH_N + 1))
     if [ ! -f "$f" ]; then
-        echo "  ✗ $label：文件不存在 $f" >&2
+        printf '%s\n' "  ✗ $label：文件不存在 $f" >&2
         ARCH_FAIL=1
         return
     fi
@@ -619,7 +619,7 @@ arch_forbid_han() { # arch_forbid_han <文件> <说明>
         #   ⇒ 以前这里是「显式 SKIP（不算通过）」⇒ 那**正是**批 CB/CC 要收的旧口径；
         #   ⇒ ⚠ 以前它只是**碰巧**不可达（脚本顶部 preflight「没有 perl ⇒ exit 1」先兜住）
         #   ⇒ ⇒ **顶部 preflight 一旦被摘掉**（或 perl 中途消失）⇒ 这里就**静默放行 ⇒ 假绿**。
-        echo "  ✗ $label：没有 perl（剥不掉块注释 ⇒ 这道门没跑 ⇒ 未验证不许被当成通过）" >&2
+        printf '%s\n' "  ✗ $label：没有 perl（剥不掉块注释 ⇒ 这道门没跑 ⇒ 未验证不许被当成通过）" >&2
         ARCH_FAIL=1
         return 1
     fi
@@ -636,7 +636,7 @@ arch_forbid_han() { # arch_forbid_han <文件> <说明>
     rc=$?
     probe_scan_state_of "$rc"
     if [ "$PROBE_SCAN_STATE" = "broken" ]; then
-        echo "  ✗ $label：查中文的 perl 失败（工具坏了 ≠ 没找到）——$(head -2 "$err" 2>/dev/null | tr '\n' ' ')" >&2
+        printf '%s\n' "  ✗ $label：查中文的 perl 失败（工具坏了 ≠ 没找到）——$(head -2 "$err" 2>/dev/null | tr '\n' ' ')" >&2
         rm -f "$err"
         ARCH_FAIL=1
         return
@@ -671,19 +671,19 @@ arch_forbid_text_dup() { # arch_forbid_text_dup <判定层文件> <相对SRC的�
     local srcf="$1" dir="$2" label="$3"
     ARCH_N=$((ARCH_N + 1))
     if [ ! -f "$srcf" ]; then
-        echo "  ✗ $label：文件不存在 $srcf" >&2
+        printf '%s\n' "  ✗ $label：文件不存在 $srcf" >&2
         ARCH_FAIL=1
         return
     fi
     if [ ! -d "$SRC/$dir" ]; then
-        echo "  ✗ $label：目录不存在 $SRC/$dir" >&2
+        printf '%s\n' "  ✗ $label：目录不存在 $SRC/$dir" >&2
         ARCH_FAIL=1
         return
     fi
     if ! command -v perl >/dev/null 2>&1; then
         # ⚠⚠⚨ 批 CN：同款 ⇒ 没有 perl ⇒ 这道门**根本没跑** ⇒ 必须**判红**
         #   （批 CB / CC / BI 口径：工具坏了 ≠ 没找到；未验证不许被当成通过）。
-        echo "  ✗ $label：没有 perl（取不出字面量清单 ⇒ 这道门没跑 ⇒ 未验证不许被当成通过）" >&2
+        printf '%s\n' "  ✗ $label：没有 perl（取不出字面量清单 ⇒ 这道门没跑 ⇒ 未验证不许被当成通过）" >&2
         ARCH_FAIL=1
         return 1
     fi
@@ -696,14 +696,14 @@ arch_forbid_text_dup() { # arch_forbid_text_dup <判定层文件> <相对SRC的�
     if ! perl -0777 -Mopen=':std,:encoding(UTF-8)' -ne \
         'while (/"([^"\n]{4,})"/g) { my $t = $1; print "$t\n" if $t =~ /[\x{3000}-\x{9fff}]/; }' \
         "$srcf" >"$tmp" 2>"$err"; then
-        echo "  ✗ $label：取判定层文案的 perl 失败（工具坏了 ≠ 没找到）——$(head -2 "$err" | tr '\n' ' ')" >&2
+        printf '%s\n' "  ✗ $label：取判定层文案的 perl 失败（工具坏了 ≠ 没找到）——$(head -2 "$err" | tr '\n' ' ')" >&2
         rm -f "$tmp" "$hitsf" "$err"
         ARCH_FAIL=1
         return
     fi
     if [ ! -s "$tmp" ]; then
         rm -f "$tmp" "$hitsf" "$err"
-        echo "  ✗ $label：判定层里没取到任何中文字面量（清单为空 = 门形同虚设）" >&2
+        printf '%s\n' "  ✗ $label：判定层里没取到任何中文字面量（清单为空 = 门形同虚设）" >&2
         ARCH_FAIL=1
         return
     fi
@@ -734,19 +734,19 @@ arch_forbid_text_dup() { # arch_forbid_text_dup <判定层文件> <相对SRC的�
     probe_scan_state_of "$rc"
     rm -f "$tmp" "$err"
     if [ "$PROBE_SCAN_STATE" = "broken" ]; then
-        echo "  ✗ $label：扫界面层的 perl 失败（工具坏了 ≠ 没找到）" >&2
+        printf '%s\n' "  ✗ $label：扫界面层的 perl 失败（工具坏了 ≠ 没找到）" >&2
         rm -f "$hitsf"
         ARCH_FAIL=1
         return
     fi
     if [ -s "$hitsf" ]; then
-        echo "  ✗ $label：界面层抄了判定层的文案（同一句话两个真相源）——" >&2
+        printf '%s\n' "  ✗ $label：界面层抄了判定层的文案（同一句话两个真相源）——" >&2
         sed 's/^/      /' "$hitsf" >&2
         rm -f "$hitsf"
         ARCH_FAIL=1
     else
         rm -f "$hitsf"
-        echo "  ✓ $label"
+        printf '%s\n' "  ✓ $label"
     fi
 }
 # ⚠⚠⚨ 批 CM · **接线门必须真的跑一次未验证出口盘点**（批 BD 纪律：
@@ -3940,7 +3940,7 @@ ARCH_FAIL=0
 # ⚠ **依赖失败的检查**（豁免基线坏了 / 锚定自检不过 ⇒ 整行锚定那两项不可信）
 #   ⇒ **明确跳过并说明**（不跑 = 「没验」⇒ 必须说出来）⇒ 不许默默不跑。
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^FAILS = \[\]$' 1 '审计器的**失败态收集器**的声明必须在（⚠⚠⚨ **批 CQ**：硬门模式改成「**收集失败态、一次报全**」⇒ 它是那 15 处失败态的**唯一落点** ⇒ 摘掉 ⇒ 审计器自己 NameError ⇒ 崩 ⇒ 门红）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CQ**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*FAILS.append\(2\)$' 11 '审计器的 **rc=2**（盲区 / 豁免基线不在 / 审计器崩了）**收集处**必须恰好 11 处（⚠⚠⚨ **批 CQ**：① 门型盲区 ② 豁免基线不在 ③ 审计器自己有盲区 ④ 审计器崩了（兜底）⑤ **门型没登记在正则体检登记册**（批 DL：那一族门项的正则从来没被体检过）⑥ **判定函数被掏空**（批 DM：那一族门项的校准静默失效）⑦ **自检函数被掏空**（批 DN：那一族自检静默失效）⑧ **失败态上报被静默关掉**（批 DO：那一族失败态**永远不会报出来**）⑨ **判据脚本的失败态上报被静默关掉**（批 DP：那批失败态**永远不会报出来**）⇒ 九种失败要分开 ⇒ 不然排障会被带偏）｜⚠⚠⚨ **批 CQ**｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s*FAILS.append\(2\)$' 12 '审计器的 **rc=2**（盲区 / 豁免基线不在 / 审计器崩了）**收集处**必须恰好 12 处（⚠⚠⚨ **批 CQ**：① 门型盲区 ② 豁免基线不在 ③ 审计器自己有盲区 ④ 审计器崩了（兜底）⑤ **门型没登记在正则体检登记册**（批 DL：那一族门项的正则从来没被体检过）⑥ **判定函数被掏空**（批 DM：那一族门项的校准静默失效）⑦ **自检函数被掏空**（批 DN：那一族自检静默失效）⑧ **失败态上报被静默关掉**（批 DO：那一族失败态**永远不会报出来**）⑨ **判据脚本的失败态上报被静默关掉**（批 DP：那批失败态**永远不会报出来**）⑩ **门型输出随执行 shell 变**（批 DT：那批诊断文案**随 shell 变** ⇒ 负控的文案命中判定不可信）⇒ 十种失败要分开 ⇒ 不然排障会被带偏）｜⚠⚠⚨ **批 CQ**｜⚠ **整行锚定**'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 CQ 段有门项红（上面带 ✗ 的行）" >&2
@@ -3963,7 +3963,7 @@ ARCH_FAIL=0
 #   ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**
 # ⚠ **不宣称完全堵死**（四处协同编辑仍能躲过）⇒ 但成本从 2 处升到 4 处、跨 2 个文件
 #   ⇒ **极显眼** ⇒ 评审必看见 ⇒ 惯常动作不再是掩护。
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_LINES_EXPECTED = 1328$' 1 '门项条数必须被**审计器源码里的常量**交叉钉住（⚠⚠⚨ **批 CR**：实测坐实 —— 删一条门项 **且** 把基线文件 -1 ⇒ 旧行为**全绿**（审计器 rc=0、接线门 rc=0、✗ 0 行）⇒ 承诺**悄悄消失** ⇒ 现在同一件事记三遍：基线文件 / 审计器常量 / **本门里的这个数字** ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**）｜⚠⚠⚨ **批 CY**：批 CY 段新增 6 条 ⇒ 1044 → 1050（**三处同改**）；⚠⚠⚨ **批 CZ**：批 CZ 段新增 6 条 ⇒ 1050 → 1056（**三处同改**）；⚠⚠⚨ **批 DA**：批 DA 段新增 18 条 ⇒ 1056 → 1074（**三处同改**）；⚠⚠⚨ **批 DB**：批 DB 段新增 13 条 ⇒ 1074 → 1087（**三处同改**）；⚠⚠⚨ **批 DC**：批 DC 段新增 20 条 ⇒ 1087 → 1107（**三处同改**）；⚠⚠⚨ **批 DD**：批 DD 段新增 15 条 ⇒ 1107 → 1122（**三处同改**）｜⚠ **整行锚定**；⚠⚠⚨ **批 DE**：批 DE 段新增 31 条 ⇒ 1122 → 1153（**三处同改**）；⚠⚠⚨ **批 DF**：批 DF 段新增 14 条 ⇒ 1153 → 1167（**三处同改**）；⚠⚠⚨ **批 DG**：批 DG 段新增 13 条 ⇒ 1167 → 1180（**三处同改**）；⚠⚠⚨ **批 DH**：批 DH 段新增 3 条 ⇒ 1180 → 1183（**三处同改**）；⚠⚠⚨ **批 DI**：批 DI 段新增 4 条 ⇒ 1183 → 1187（**三处同改**）；⚠⚠⚨ **批 DJ**：批 DJ 段新增 3 条 ⇒ 1187 → 1190（**三处同改**）；⚠⚠⚨ **批 DK**：批 DK 段新增 12 条 ⇒ 1190 → 1202（**三处同改**）；⚠⚠⚨ **批 DL**：批 DL 段新增 8 条 ⇒ 1202 → 1210（**三处同改**）；⚠⚠⚨ **批 DM**：批 DM 段新增 9 条 ⇒ 1210 → 1219（**三处同改**）；⚠⚠⚨ **批 DN**：批 DN 段新增 15 条 ⇒ 1219 → 1234（**三处同改**）；⚠⚠⚨ **批 DO**：批 DO 段新增 10 条 ⇒ 1234 → 1244（**三处同改**）；⚠⚠⚨ **批 DP**：批 DP 段新增 14 条 ⇒ 1244 → 1258（**三处同改**）；⚠⚠⚨ **批 DQ**：批 DR 段新增 39 条 ⇒ 1258 → 1297（**三处同改**）｜⚠⚠⚨ **批 DS**：批 DS 段新增 7 条（live 判定收紧 ⇒ 自检**从不被调用**也算「覆盖」的洞被堵）⇒ 1321 → 1328（**三处同改**）｜⚠⚠⚨ **批 CR**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_LINES_EXPECTED = 1335$' 1 '门项条数必须被**审计器源码里的常量**交叉钉住（⚠⚠⚨ **批 CR**：实测坐实 —— 删一条门项 **且** 把基线文件 -1 ⇒ 旧行为**全绿**（审计器 rc=0、接线门 rc=0、✗ 0 行）⇒ 承诺**悄悄消失** ⇒ 现在同一件事记三遍：基线文件 / 审计器常量 / **本门里的这个数字** ⇒ 改任意一边 ⇒ 另外两边对不上 ⇒ **红**）｜⚠⚠⚨ **批 CY**：批 CY 段新增 6 条 ⇒ 1044 → 1050（**三处同改**）；⚠⚠⚨ **批 CZ**：批 CZ 段新增 6 条 ⇒ 1050 → 1056（**三处同改**）；⚠⚠⚨ **批 DA**：批 DA 段新增 18 条 ⇒ 1056 → 1074（**三处同改**）；⚠⚠⚨ **批 DB**：批 DB 段新增 13 条 ⇒ 1074 → 1087（**三处同改**）；⚠⚠⚨ **批 DC**：批 DC 段新增 20 条 ⇒ 1087 → 1107（**三处同改**）；⚠⚠⚨ **批 DD**：批 DD 段新增 15 条 ⇒ 1107 → 1122（**三处同改**）｜⚠ **整行锚定**；⚠⚠⚨ **批 DE**：批 DE 段新增 31 条 ⇒ 1122 → 1153（**三处同改**）；⚠⚠⚨ **批 DF**：批 DF 段新增 14 条 ⇒ 1153 → 1167（**三处同改**）；⚠⚠⚨ **批 DG**：批 DG 段新增 13 条 ⇒ 1167 → 1180（**三处同改**）；⚠⚠⚨ **批 DH**：批 DH 段新增 3 条 ⇒ 1180 → 1183（**三处同改**）；⚠⚠⚨ **批 DI**：批 DI 段新增 4 条 ⇒ 1183 → 1187（**三处同改**）；⚠⚠⚨ **批 DJ**：批 DJ 段新增 3 条 ⇒ 1187 → 1190（**三处同改**）；⚠⚠⚨ **批 DK**：批 DK 段新增 12 条 ⇒ 1190 → 1202（**三处同改**）；⚠⚠⚨ **批 DL**：批 DL 段新增 8 条 ⇒ 1202 → 1210（**三处同改**）；⚠⚠⚨ **批 DM**：批 DM 段新增 9 条 ⇒ 1210 → 1219（**三处同改**）；⚠⚠⚨ **批 DN**：批 DN 段新增 15 条 ⇒ 1219 → 1234（**三处同改**）；⚠⚠⚨ **批 DO**：批 DO 段新增 10 条 ⇒ 1234 → 1244（**三处同改**）；⚠⚠⚨ **批 DP**：批 DP 段新增 14 条 ⇒ 1244 → 1258（**三处同改**）；⚠⚠⚨ **批 DQ**：批 DR 段新增 39 条 ⇒ 1258 → 1297（**三处同改**）｜⚠⚠⚨ **批 DS**：批 DS 段新增 7 条（live 判定收紧 ⇒ 自检**从不被调用**也算「覆盖」的洞被堵）⇒ 1321 → 1328（**三处同改**）｜⚠⚠⚨ **批 DT**：批 DT 段新增 7 条（门型函数的诊断输出不许随执行 shell 变）⇒ 1328 → 1335（**三处同改**）｜⚠⚠⚨ **批 CR**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^\s+if gbase is not None and gbase != GATE_LINES_EXPECTED:$' 1 '基线与常量的**交叉核对判定行**必须**是那一行原样**（⚠⚠⚨ **批 CR**：⚠ 只盯「串在不在」⇒ 判定被掏空成 `and False:` 就躲过了 ⇒ 没人发现 ⇒ **交叉核对形同虚设** ⇒ 那批承诺也就没人守了）｜⚠ **整行锚定**｜⚠⚠⚨ **批 CR**'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
@@ -4842,7 +4842,7 @@ ARCH_FAIL=0
 #   ⇒ 本段把以上几处**逐条钉住**（正则从改后的真实行现抽 ⇒ 不手抄）。
 
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GUARD_SHAPE_OK = \(ast\.Name, ast\.Subscript\)$' 1 '失败态上报的**守卫口径常量**必须在（⚠⚠⚨ **批 DO**：⚠⚠⚨ **实测坐实** —— 把**盲区那一档的守卫**改成恒假 ⇒ **审计器自己有盲区**时**不再上报** ⇒ 审计器 rc=0 + 接线门 rc=0 ⇒ **全绿假绿**）｜⚠ **整行锚定**'
-arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^FAIL_GUARDS = \(.anchbad., .anchor_exempt_bad., .anchor_exempt_missing., .bad_all., .dead., .es_bad., .exempt_missing., .failed., .fg_bad., .fr_bad., "g\[.blind.\]", "g\[.dups.\]", "g\[.total_bad.\]", .guard_bad., .judge_bad., .rxmiss., .rxsyn., .rxunreg., .self_bad., .stbad., .undef., .zero.\)$' 1 '失败态上报的**守卫登记册**必须在（⚠⚠⚨ **批 DO**：⚠ 登记册**双向红** ⇒ 「用到的守卫」不在册里 ⇒ 新增失败态忘了登记；「册里的守卫」没被用到 ⇒ 那个收集点**被挪走 / 删了** ⇒ 它**永远不会报出来** ⇒ ⚠ 这一条抓的是「挪进一个**以变量为条件**的少真分支」（新守卫**仍是名字** ⇒ 形态那条抓不到））｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^FAIL_GUARDS = \(.anchbad., .anchor_exempt_bad., .anchor_exempt_missing., .bad_all., .dead., .dt_bad., .es_bad., .exempt_missing., .failed., .fg_bad., .fr_bad., "g\[.blind.\]", "g\[.dups.\]", "g\[.total_bad.\]", .guard_bad., .judge_bad., .rxmiss., .rxsyn., .rxunreg., .self_bad., .stbad., .undef., .zero.\)$' 1 '失败态上报的**守卫登记册**必须在（⚠⚠⚨ **批 DO**：⚠ 登记册**双向红** ⇒ 「用到的守卫」不在册里 ⇒ 新增失败态忘了登记；「册里的守卫」没被用到 ⇒ 那个收集点**被挪走 / 删了** ⇒ 它**永远不会报出来**）｜⚠ **整行锚定**｜⚠⚠⚨ **批 DT**：加了 dt_bad（门型输出体检的失败出口）'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^        for gname in sorted\(set\(FAIL_GUARDS\) - used\):$' 1 '登记册**「没被用到」**那一半的判定行必须在（⚠⚠⚨ **批 DO**：⚠ 少了这一半 ⇒ 收集点被挪走 / 删了**没人知道** ⇒ 假绿）｜⚠ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^        for gname in sorted\(used - set\(FAIL_GUARDS\)\):$' 1 '登记册**「不在册里」**那一半的判定行必须在（⚠⚠⚨ **批 DO**：⚠ 少了这一半 ⇒ 新增失败态忘了登记 ⇒ 登记册与实际**漂了**）｜⚠ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_fail_guards\(\):$' 1 '失败态上报体检的**判定函数**必须在（⚠⚠⚨ **批 DO**：⚠ **零名单维护** ⇒ 扫全文件所有 `FAILS.append` 调用点 ⇒ 不用维护名单）｜⚠ **整行锚定**'
@@ -4998,6 +4998,13 @@ arch_need_count "$SRC/scripts/ci-tautology-check.py" '^        elif kind == .swi
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^                    _na, _ni, _nb = scan_swift_file\(_p, .self-test.\)$' 1 '自检必须**真的经过** `scan_swift_file`（⚠⚠⚨ **批 DS**：⚠ 批 DF 纪律 ⇒ 抽坏 ⇒ 自检当场红）｜⚠ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    \(.assert_call_extract., \(.check "标签" "模式"\\n., 1\), True\),$' 1 '断言调用点那档的**「该抽到」样例**必须在（⚠⚠⚨ **批 DS**：⚠ 样例被删 ⇒ 自检**恒过** ⇒ 抽取器抽坏没人知道 ⇒ ⚠ 批 DN 同款纪律：样例必须**既含「该抽到」也含「不该抽到」**）｜⚠ **整行锚定**'
 arch_need_count "$SRC/scripts/ci-tautology-check.py" '^    \(.swift_file_extract., \(.let x = 1\\n., 0\), True\),$' 1 'Swift 那档的**「不该抽到」样例**必须在（⚠⚠⚨ **批 DS**：⚠ 只测「该抽到」⇒ 判反了也能过（⚠ 批 BF 纪律））｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^GATE_FN_PREFIX = .arch_.$' 1 '门型函数的**前缀**必须在（⚠⚠⚨ **批 DT**：⚠ **零名单维护** ⇒ 口径 = 函数名以这个前缀开头 ⇒ 新门型**自动纳入** ⇒ 新门型若用 echo ⇒ **立即红**）｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^def check_gate_output_shell\(\):$' 1 '门型输出体检的**判定函数**必须在（⚠⚠⚨ **批 DT**：⚠ echo 会解释反斜杠（dash 解释、bash 不解释）⇒ 诊断文案**随执行 shell 变** ⇒ 负控的文案命中判定不可信）｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^        names = sorted\(set\(re\.findall\(r.\^\(%s\[a-z_\]\+\)\\\(\\\) \\\{. % GATE_FN_PREFIX, src, re\.M\)\)\)$' 1 '**门型前缀口径**的判定行必须在（⚠⚠⚨ **批 DT**：⚠ 少了它 ⇒ 找不出门型函数 ⇒ 体检**恒不触发** ⇒ 静默失去牙 ⇒ **收成单行** ⇒ 可整行钉住）｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^            if re\.search\(r.\(\?:\^\|\\s\)echo\\s., ln\):$' 1 '「**不许用 echo**」的判定行必须在（⚠⚠⚨ **批 DT**：⚠⚠⚨ 这是整条规则的**牙**所在 ⇒ 少了它 ⇒ 规则**恒不触发** ⇒ 门型函数改回 echo 也没人知道）｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^        if not fn or not fn\.rstrip\(\)\.endswith\(.\}.\):$' 1 '**fail closed** 的判定行必须在（⚠⚠⚨ **批 DT**：⚠ 抽不出 / 抽不全函数体 ⇒ 体检做不了 ⇒ 必须**判红** ⇒ 不许静默当「没问题」）｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^        dt_bad = check_gate_output_shell\(\)$' 1 '门型输出体检**必须被调用**（审计模式 = CI 实际跑的那条路）（⚠⚠⚨ **批 DT**：⚠ 必须与前面那几条**放在同一处** ⇒ 前面的检查一红就 exit ⇒ 这条永远没机会跑 ⇒ 形同虚设（批 DP 同款教训））｜⚠ **整行锚定**'
+arch_need_count "$SRC/scripts/ci-wiring-audit.py" '^    dtrep = check_gate_output_shell\(\)$' 1 '门型输出体检**必须被调用**（报告模式）（⚠⚠⚨ **批 DT**：⚠ 报告模式是**人**看的诊断入口 ⇒ 它不报 ⇒ 人看不到「那些门型函数的输出随 shell 变」）｜⚠ **整行锚定**'
 
 if [ "$ARCH_FAIL" -ne 0 ]; then
     echo "✗ 接线门失败：批 DS 段有门项红（上面带 ✗ 的行）" >&2

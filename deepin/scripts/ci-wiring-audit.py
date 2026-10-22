@@ -110,7 +110,7 @@ GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1328
+GATE_LINES_EXPECTED = 1335
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -1475,7 +1475,7 @@ GUARD_SHAPE_OK = (ast.Name, ast.Subscript)
 #   ⇒ 「用到的守卫」必须在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
 #   ⇒ 「册里的守卫」必须都被用到 ⇒ 某个收集点被挪走 / 删了 ⇒ 红。
 #   ⇒ ⚠ 登记册**内容由本仓的收集点现抽生成** ⇒ 不手抄 ⇒ 零漂移。
-FAIL_GUARDS = ('anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'dead', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'stbad', 'undef', 'zero')
+FAIL_GUARDS = ('anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'dead', 'dt_bad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'stbad', 'undef', 'zero')
 
 
 def _is_fails_append(node):
@@ -2049,6 +2049,14 @@ def check_fail_guard_shapes():
 # ⚠ **前缀是单一真相源** ⇒ 新抽取器自动纳入 ⇒ **零名单维护**
 EXTRACTOR_PREFIXES = ('extract_', 'find_', 'scan_', 'parse_', 'collect_', 'strip_')
 
+# ⚠⚠⚨ **实测坐实的洞**（不是推演）：`dash` 的 `echo` **解释**反斜杠转义，
+#   而 `bash` 的 `echo` **不解释**（POSIX 规定）⇒ 同一份判据脚本，
+#   在 `sh`（dash）与 `bash` 下**输出不同** ⇒ 门项的**诊断文案随执行 shell 变**
+#   ⇒ 而**负控的「真红」判定靠文案命中** ⇒ 文案不稳定 ⇒ 真红判定不可信
+#   ⇒ ⇒ 门型函数体内**不许用 `echo`** ⇒ 一律 `printf '%s\n'`
+# ⚠ **零名单维护**：口径 = 函数名以这个前缀开头（门型前缀）⇒ 新门型自动纳入
+GATE_FN_PREFIX = 'arch_'
+
 
 # ⚠ **「模块级入口」不算函数体 / 类体 / lambda 体里的调用**
 #   （⚠ 写成**单行** ⇒ 可整行钉住 ⇒ 批 AH~AX 纪律）
@@ -2194,6 +2202,47 @@ def check_extractor_self_tests():
                             '（批 DF / 批 DN 同款洞）'
                             % (name, funcs[name].lineno)))
     return bad
+
+
+def check_gate_output_shell():
+    """门型函数体内**不许用 `echo`** ⇒ [(说明)]
+
+    ⚠⚠⚨ **为什么**（实测坐实，不是推演）：POSIX 规定 **`dash` 的 `echo`
+      解释反斜杠转义、`bash` 的 `echo` 不解释** ⇒ 同一份判据脚本，
+      在 `sh`（dash）与 `bash` 下**输出不同**
+      ⇒ 实测 `ci-wiring.sh`：2 条门项的**诊断文案分叉**（label 含反斜杠的共 11 条）
+      ⇒ 而**负控的「真红」判定靠文案命中** ⇒ 文案不稳定 ⇒ 真红判定不可信
+      ⇒ ⇒ 门型函数体内一律 `printf '%s\n'`（**不解释**参数里的转义 ⇒ 跨 shell 一致）。
+    ⚠ **零名单维护**：口径 = 函数名以 `GATE_FN_PREFIX` 开头（门型前缀）
+      ⇒ 新门型**自动纳入** ⇒ 新门型若用 `echo` ⇒ **立即红**。
+    ⚠ **fail closed**：列不出门型 / 抽不出函数体 / 函数体**抽不全** ⇒ 判红。
+    ⚠ 判定口径：`echo` 前面是**行首或空白**（= 独立的命令 token）
+      ⇒ awk 程序里的 `/^echo` / `sub(/^echo` **不算**（那是正则字面量，改了会坏 awk）。
+    ⚠ **规则自己也被规则保护**（批 DM/DN/DO/DP/DS 同款）：名字以 `check_` 开头
+      ⇒ 批 DM 管它 ⇒ **只有一条 return**。
+    """
+    bad = []
+    try:
+        src = read_source(WIRING)
+        names = sorted(set(re.findall(r'^(%s[a-z_]+)\(\) \{' % GATE_FN_PREFIX, src, re.M)))
+    except (UnreadableSource, OSError) as e:
+        bad.append(('(范围)', '读不出 ci-wiring.sh ⇒ 门型输出体检做不了（fail closed）%s' % e))
+        names = []
+    for n in names:
+        fn = extract_shell_func(n)
+        if not fn or not fn.rstrip().endswith('}'):
+            bad.append(('(门型)', '门型函数 `%s` **抽不出 / 抽不全** ⇒ 门型输出体检做不了（fail closed）' % n))
+            continue
+        body = [ln for ln in fn.split('\n') if ln.strip()]
+        for ln in body:
+            if re.search(r'(?:^|\s)echo\s', ln):
+                bad.append(('ci-wiring.sh',
+                            '门型函数 `%s` 体内**不许用 `echo`** ⇒ `echo` 会解释反斜杠'
+                            '（dash 解释、bash 不解释）⇒ 诊断文案**随执行 shell 变** ⇒ '
+                            '负控的文案命中判定不可信 ⇒ **必须用 printf 的 %%s 形式**' % n))
+                break
+    return bad
+
 
 def check_anchor_scope(cnt_items, exempt):
     """盯**适用范围**内的 `arch_need_count` 门项必须**整行锚定**（或被显式豁免）。
@@ -2547,6 +2596,22 @@ def main_body():
             print('  ⇒ 抽取器必须**从某个自检函数可达**'
                   '（前缀是单一真相源 ⇒ 新抽取器自动纳入）', file=sys.stderr)
             FAILS.append(2)
+        # ⚠⚠⚨ 批 DT · 门型函数的**诊断输出不许随执行 shell 变**
+        #   ⇒ 必须与前面那几条**放在同一处** ⇒ 前面的检查一红就 exit
+        #     ⇒ 这条永远没机会跑 ⇒ 形同虚设（批 DP 同款教训）
+        #   ⇒ `dash` 的 `echo` 解释反斜杠、`bash` 的不解释（POSIX 规定）
+        #     ⇒ 同一份脚本两种 shell **输出不同** ⇒ 负控的文案命中判定不可信
+        dt_bad = check_gate_output_shell()
+        if dt_bad:
+            print('门型函数的**诊断输出随执行 shell 变**（%d 处）'
+                  ' ⇒ `echo` 解释反斜杠（dash 解释、bash 不解释）'
+                  ' ⇒ 同一份脚本在 `sh` 与 `bash` 下输出不同'
+                  ' ⇒ **负控的文案命中判定不可信**' % len(dt_bad), file=sys.stderr)
+            for fnm, jwhy in dt_bad:
+                print('  · scripts/%s  %s' % (fnm, jwhy), file=sys.stderr)
+            print('  ⇒ 门型函数体内一律 `printf`（不解释参数里的转义）'
+                  ' ⇒ 跨 shell 一致', file=sys.stderr)
+            FAILS.append(2)
         # ⚠⚠⚨ 批 BN · 豁免基线**坏行**必须红（理由为空 / 字段数不对）
         #   ⚠ **fail closed**：坏行 ⇒ **不豁免** ⇒ 对应门项照红
         #   ⇒ 但坏行本身也要报出来 ⇒ 否则人只会看到「门红」而不知道「豁免文件坏了」
@@ -2831,6 +2896,10 @@ def main_body():
     esrep = check_extractor_self_tests()
     print('判据脚本的**抽取器没有 e2e 自检覆盖**：%d 处' % len(esrep))
     for fnm, jwhy in esrep:
+        print('  · scripts/%s  %s' % (fnm, jwhy))
+    dtrep = check_gate_output_shell()
+    print('门型函数的**诊断输出随执行 shell 变**：%d 处' % len(dtrep))
+    for fnm, jwhy in dtrep:
         print('  · scripts/%s  %s' % (fnm, jwhy))
     if anchor_exempt_bad:
         print('锚定豁免基线**坏行**：%d 条（这些行没有豁免任何门项）'
