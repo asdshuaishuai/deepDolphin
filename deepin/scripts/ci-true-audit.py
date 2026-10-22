@@ -128,6 +128,65 @@ def selftest_strip_parity(paths):
 # ══════════════════════════════════════════════════════════════
 # 命令替换跨度扫描（剥注释后 · 跳过引号内的文本）
 # ══════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════
+# 抽取器自检（批 DS · 批 DF/DN 纪律：自检**真的经过被测的抽取器**）
+# ══════════════════════════════════════════════════════════════
+def selftest_extractors():
+    """两个抽取器（`find_subst_spans` / `scan_file`）的自检。
+
+    ⚠⚠⚨ **批 DF 纪律**：自检必须**真的经过被测的抽取器** ⇒ 样例直接喂进去
+      ⇒ 抽取器坏了 ⇒ 自检红 ⇒ 盘点**不会**带着坏抽取器绿着出去。
+
+    ⚠⚠⚨ **批 DS 实测坐实的洞**（不是推演）：把 `find_subst_spans` 的
+      **反引号分支**摘掉 ⇒ 新增一处**反引号形态**的 `|| true`
+      **不再被发现** ⇒ 而盘点 rc=0 + 审计器 rc=0 + 接线门 rc=0
+      ⇒ ⚠⚠⚨ **全绿假绿**。
+      ⇒ ⚠ 实测当前登记册里**反引号形态站点 = 0** ⇒ 抽坏那个分支
+        **不会**让登记册对不上 ⇒ 才有「静默」的可能。
+
+    ⚠ **每档两条样例**（批 DN 纪律）：「该抽到 N 条」+「不该抽到 0 条」
+      ⇒ 只测一边 ⇒ 判反了也能过（⚠ 批 BF 纪律）。
+    """
+    bad = []
+    # ── 档 ① `find_subst_spans`（命令替换跨度扫描）────────────────
+    for _label, _text, _want in (
+            ('样例 A（$() 形态）', 'x=$(cmd || true)\n', 1),
+            ('样例 B（反引号形态 · 批 DS 的洞就在这里）',
+             'x=`cmd || true`\n', 1),
+            ('样例 C（单引号内不做替换 ⇒ 不是站点）',
+             "echo '$(not a subst)'\n", 0)):
+        _got = len(find_subst_spans(_text))
+        if _got != _want:
+            bad.append('find_subst_spans %s：期望抽到 %d 个跨度，实得 %d'
+                       % (_label, _want, _got))
+    # ⚠ 不只数条数 ⇒ 还要断言跨度**内容**对（否则「抽到 1 个但抽错了」也过）
+    _sp = find_subst_spans('x=$(cmd || true)\n')
+    if _sp and '|| true' not in _sp[0][2]:
+        bad.append('find_subst_spans 样例 A：期望跨度内容含 `|| true`，实得 %r'
+                   % _sp[0][2][:40])
+    # ── 档 ② `scan_file`（单文件扫描 · 站点 + 分类 + 段）──────────
+    _p = '/tmp/az-ds-selfcheck-true.sh'
+    try:
+        with open(_p, 'w', encoding='utf-8') as _fh:
+            _fh.write('x=$(cmd || true)\n')
+        _sites = scan_file(_p)
+        if len(_sites) != 1:
+            bad.append('scan_file 样例 A：期望抽到 1 处站点，实得 %d' % len(_sites))
+        elif _sites[0]['kind'] != 'other':
+            bad.append('scan_file 样例 A：期望分类 other，实得 %r'
+                       % _sites[0]['kind'])
+        with open(_p, 'w', encoding='utf-8') as _fh:
+            _fh.write('echo hi\n')
+        _sites0 = scan_file(_p)
+        if len(_sites0) != 0:
+            bad.append('scan_file 样例 B：期望抽到 0 处站点，实得 %d'
+                       % len(_sites0))
+    finally:
+        if os.path.exists(_p):
+            os.unlink(_p)
+    return bad
+
 def find_subst_spans(text):
     """找出所有 `$( ... )` 与反引号 `...` 的跨度（返回**绝对下标**对）。
 
@@ -424,6 +483,12 @@ def main():
     # ⚠⚠⚨ 批 DQ · 先列**范围**（fail closed）⇒ 再跑抽取自检
     files, counts = scope_files()
     shs = [p for _k, p in files]
+    # ⚠⚠⚨ 批 DS · **抽取器自检**必须真的跑
+    #   ⇒ 抽取器被抽坏 ⇒ 盘点的数字**不可信** ⇒ 必须判红（不许带着坏抽取器绿着出去）
+    _ex_bad = selftest_extractors()
+    if _ex_bad:
+        sys.exit('✗ 抽取器自检失败（抽取器被抽坏 ⇒ 盘点的数字不可信）：\n  '
+                 + '\n  '.join(_ex_bad))
     # ⚠ 抽取自检：口径漂移（两侧剥注释结果不同）⇒ 立即判红
     selftest_strip_parity(shs)
 

@@ -613,6 +613,16 @@ SELF_TEST_CASES = [
     ('swift_e2e', ('check("x") {\n    return "OK"\n}\n', 1), True),
     ('swift_e2e', ('check("x") {\n    guard y else { throw fail("z") }\n    return "OK"\n}\n', 0), True),
     ('swift_e2e', ('if true {\n    print("x")\n}\n', 1), True),
+
+    # ⚠⚠⚨ **批 DS**：下面三档是**抽取器自检**（批 DF/DN 纪律）
+    #   ⇒ 自检必须**真的经过被测的抽取器** ⇒ 抽取器被抽坏 ⇒ 自检当场红
+    #   ⇒ ⚠ 样例必须**既含「该抽到」也含「不该抽到」**（批 BF 纪律）
+    ('assert_call_extract', ('check "标签" "模式"\n', 1), True),
+    ('assert_call_extract', ('echo hi\n', 0), True),
+    ('shell_file_extract', ('if [ -f "$x" ]; then\n  echo hi\nfi\n', 1), True),
+    ('shell_file_extract', ('echo hi\n', 0), True),
+    ('swift_file_extract', ('check("样例") {\n    return "ok"\n}\n', 1), True),
+    ('swift_file_extract', ('let x = 1\n', 0), True),
 ]
 
 
@@ -688,6 +698,48 @@ def self_test():
             with contextlib.redirect_stderr(_buf):
                 _na, _ni, got_bad = scan_swift_text(text, 'self-test')
             got = (got_bad == want_bad)
+        elif kind == 'assert_call_extract':
+            # ⚠⚠⚨ **批 DS**：断言调用点**抽取器**必须自检证明有牙
+            #   ⇒ 这一档**真的经过 `find_assert_calls`** ⇒ 抽取器坏了自检当场红
+            #   ⇒ ⚠ 抽取器要**读文件** ⇒ 样例先落临时文件 ⇒ 用完删掉
+            text, want_n = inp
+            _p = '/tmp/az-ds-selfcheck-assert.txt'
+            with open(_p, 'w', encoding='utf-8') as _fh:
+                _fh.write(text)
+            try:
+                _found = find_assert_calls(_p, ['check'])
+                got = (len(_found.get('check', [])) == want_n)
+            finally:
+                os.unlink(_p)
+        elif kind == 'shell_file_extract':
+            # ⚠⚠⚨ **批 DS**：shell **文件级**扫描必须自检证明有牙
+            #   ⇒ 这一档**真的经过 `scan_shell_file`** ⇒ 抽取器坏了自检当场红
+            #   ⇒ ⚠ 扫描会往 stderr 打诊断 ⇒ 自检期间**必须静音**（批 AZ 纪律）
+            text, want_n = inp
+            _p = '/tmp/az-ds-selfcheck-shell.sh'
+            with open(_p, 'w', encoding='utf-8') as _fh:
+                _fh.write(text)
+            try:
+                _buf = io.StringIO()
+                with contextlib.redirect_stderr(_buf):
+                    _nc, _nb = scan_shell_file(_p, 'self-test')
+                got = (_nc == want_n)
+            finally:
+                os.unlink(_p)
+        elif kind == 'swift_file_extract':
+            # ⚠⚠⚨ **批 DS**：Swift **文件级**扫描必须自检证明有牙
+            #   ⇒ 这一档**真的经过 `scan_swift_file`** ⇒ 抽取器坏了自检当场红
+            text, want_n = inp
+            _p = '/tmp/az-ds-selfcheck-swift.swift'
+            with open(_p, 'w', encoding='utf-8') as _fh:
+                _fh.write(text)
+            try:
+                _buf = io.StringIO()
+                with contextlib.redirect_stderr(_buf):
+                    _na, _ni, _nb = scan_swift_file(_p, 'self-test')
+                got = (_na == want_n)
+            finally:
+                os.unlink(_p)
         else:
             helper, arg = inp
             got = assertion_arg_is_tautology(helper, arg)

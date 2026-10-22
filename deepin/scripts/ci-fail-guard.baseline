@@ -21,6 +21,7 @@ ci-true-audit.py	not os.path.isfile(BASELINE)	登记册不存在 ⇒ 盘点**无
 ci-true-audit.py	'\ufffd' in raw	登记册里有 **U+FFFD**（乱码）⇒ 拒绝落盘/判读（防污染）
 ci-true-audit.py	len(parts) != 6	登记册每行必须**恰好 6 段** ⇒ 否则登记册**永远读不出来**（批 CJ）
 ci-true-audit.py	not parts[5].strip()	登记册每行必须**写清理由** ⇒ 「登记了但没写为什么」不许过（批 BN）
+ci-true-audit.py	_ex_bad	**抽取器自检**失败必须判红（⚠⚠⚨ **批 DS**：⚠ 抽取器（命令替换跨度扫描 / 单文件扫描）被抽坏 ⇒ 盘点的数字**不可信** ⇒ 必须判红 ⇒ 不许带着坏抽取器绿着出去）
 ci-true-audit.py	scope_expect is None	恒真探针的扫描范围基线**读不到 / 坏了** ⇒ 本盘点范围**无处对账** ⇒ 必须判红（fail closed）
 ci-true-audit.py	want is None or got != want	**逐范围对账**：两个盘点的范围必须一致 ⇒ 不一致必须判红（批 DQ）
 ci-true-audit.py	extra_shell	**反向对账**：恒真探针扩了范围而本盘点没跟上 ⇒ 必须判红（批 DQ）
@@ -32,3 +33,4 @@ ci-unverified-audit.py	(except 兜底)	读不了某个判据脚本 ⇒ 盘点做
 ci-unverified-audit.py	not os.path.isfile(BASELINE)	登记册不存在 ⇒ 盘点**无处对照** ⇒ 必须判红（批 BC：清单不许被删）
 ci-unverified-audit.py	bad	登记册有**坏行**（段数不对 / 处数非正整数 / 理由为空）⇒ 必须判红
 ci-unverified-audit.py	len(rows) != UNVERIFIED_EXPECTED_ROWS	登记册条数 ≠ 基线 ⇒ **清单不许被删**（批 BC）
+ci-unverified-audit.py	_ex_bad	**抽取器自检**失败必须判红（⚠⚠⚨ **批 DS**：⚠ 抽取器（未验证出口的站点扫描）被抽坏 ⇒ 盘点的数字**不可信** ⇒ 必须判红）

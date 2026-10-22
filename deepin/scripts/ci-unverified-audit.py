@@ -195,6 +195,39 @@ def scan_file(path):
     return sites, excluded
 
 
+# ══════════════════════════════════════════════════════════════
+# 抽取器自检（批 DS · 批 DF/DN 纪律：自检**真的经过被测的抽取器**）
+# ══════════════════════════════════════════════════════════════
+def selftest_extractors():
+    """`scan_file`（未验证出口的**站点抽取器**）的自检。
+
+    ⚠⚠⚨ **批 DF 纪律**：自检必须**真的经过被测的抽取器** ⇒ 样例直接喂进去
+      ⇒ 抽取器坏了 ⇒ 自检红 ⇒ 盘点**不会**带着坏抽取器绿着出去。
+    ⚠ **每档两条样例**（批 DN 纪律）：「该抽到 N 条」+「不该抽到 0 条」
+      ⇒ 只测一边 ⇒ 判反了也能过（⚠ 批 BF 纪律）。
+    """
+    bad = []
+    _p = '/tmp/az-ds-selfcheck-unv.sh'
+    try:
+        with open(_p, 'w', encoding='utf-8') as _fh:
+            _fh.write('exit 3\n')
+        _sites, _exc = scan_file(_p)
+        if len(_sites) != 1:
+            bad.append('scan_file 样例 A：期望抽到 1 处站点，实得 %d' % len(_sites))
+        elif _sites[0][0] != '未验证逻辑出口':
+            bad.append('scan_file 样例 A：期望分类「未验证逻辑出口」，实得 %r'
+                       % _sites[0][0])
+        with open(_p, 'w', encoding='utf-8') as _fh:
+            _fh.write('echo hi\n')
+        _sites0, _exc0 = scan_file(_p)
+        if len(_sites0) != 0:
+            bad.append('scan_file 样例 B：期望抽到 0 处站点，实得 %d'
+                       % len(_sites0))
+    finally:
+        if os.path.exists(_p):
+            os.unlink(_p)
+    return bad
+
 def collect():
     """扫**盘点范围**内的全部判据脚本 ⇒ 返回 (计数表, 站点明细, 排除明细, 文件列表)。"""
     files = []
@@ -281,6 +314,12 @@ def load_baseline():
 
 
 def main():
+    # ⚠⚠⚨ 批 DS · **抽取器自检**必须真的跑
+    #   ⇒ 抽取器被抽坏 ⇒ 盘点的数字**不可信** ⇒ 必须判红（不许带着坏抽取器绿着出去）
+    _ex_bad = selftest_extractors()
+    if _ex_bad:
+        sys.exit('✗ 抽取器自检失败（抽取器被抽坏 ⇒ 盘点的数字不可信）：\n  '
+                 + '\n  '.join(_ex_bad))
     counts, detail, excluded, files = collect()
 
     # ⚠ `--list` **不读登记册** ⇒ 否则「登记册还没建」时连清单都列不出来

@@ -110,7 +110,7 @@ GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1297
+GATE_LINES_EXPECTED = 1328
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -1475,7 +1475,7 @@ GUARD_SHAPE_OK = (ast.Name, ast.Subscript)
 #   ⇒ 「用到的守卫」必须在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
 #   ⇒ 「册里的守卫」必须都被用到 ⇒ 某个收集点被挪走 / 删了 ⇒ 红。
 #   ⇒ ⚠ 登记册**内容由本仓的收集点现抽生成** ⇒ 不手抄 ⇒ 零漂移。
-FAIL_GUARDS = ('anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'dead', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'stbad', 'undef', 'zero')
+FAIL_GUARDS = ('anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'dead', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'stbad', 'undef', 'zero')
 
 
 def _is_fails_append(node):
@@ -1630,7 +1630,7 @@ DP_SELF = os.path.basename(os.path.abspath(__file__))
 #   ⇒ ⚠ 类别：`fail_exit` = 失败出口（`sys.exit(X)`，X 非 `main()` 调用）
 #     / `fail_ret` = 失败返回（`return <非零>`）
 #     / `fail_count` = 失败累加器上的**追加型写**（`X += …` / `X.append(…)`）
-FAIL_REPORT_COUNTS = (('bootstrap-deps.py', 'fail_count', 2), ('bootstrap-deps.py', 'fail_ret', 1), ('ci-tautology-check.py', 'fail_count', 18), ('ci-tautology-check.py', 'fail_ret', 3), ('ci-true-audit.py', 'fail_count', 2), ('ci-true-audit.py', 'fail_exit', 15), ('ci-true-audit.py', 'fail_ret', 1), ('ci-unverified-audit.py', 'fail_count', 7), ('ci-unverified-audit.py', 'fail_exit', 8), ('ci-unverified-audit.py', 'fail_ret', 1))
+FAIL_REPORT_COUNTS = (('bootstrap-deps.py', 'fail_count', 2), ('bootstrap-deps.py', 'fail_ret', 1), ('ci-tautology-check.py', 'fail_count', 18), ('ci-tautology-check.py', 'fail_ret', 3), ('ci-true-audit.py', 'fail_count', 7), ('ci-true-audit.py', 'fail_exit', 16), ('ci-true-audit.py', 'fail_ret', 1), ('ci-unverified-audit.py', 'fail_count', 10), ('ci-unverified-audit.py', 'fail_exit', 9), ('ci-unverified-audit.py', 'fail_ret', 1))
 
 
 def _dp_is_main_call(node):
@@ -1875,7 +1875,7 @@ def check_fail_report_points():
 FAIL_GUARD_BASELINE = os.path.join(SRC, 'scripts', 'ci-fail-guard.baseline')
 
 # ⚠⚠⚨ **登记册条数基线**（批 BC 纪律：清单不许被删）⇒ **恰好**（批 BB 口径）
-FAIL_GUARD_EXPECTED_ROWS = 23
+FAIL_GUARD_EXPECTED_ROWS = 25
 
 
 def _fg_ascii(s):
@@ -2033,6 +2033,167 @@ def check_fail_guard_shapes():
                         % (key[1], actual[key], reg[key])))
     return bad
 
+
+
+# ══════════════════════════════════════════════════════════════
+# ⚠⚠⚨ 批 DS · **抽取器必须被 e2e 自检覆盖**
+# ══════════════════════════════════════════════════════════════
+# ⚠⚠⚨ **实测坐实的洞**（不是推演）：把 `ci-true-audit.py` 的
+#   `find_subst_spans` 的**反引号分支**摘掉 ⇒ 新增一处**反引号形态**的
+#   `|| true` **不再被发现** ⇒ 而盘点 rc=0 + 审计器 rc=0 + 接线门 rc=0
+#   ⇒ ⚠⚠⚨ **全绿假绿**。
+#   ⇒ ⚠ 恒真探针抓不到（那是**条件**恒真，不是**抽取器**坏）
+#   ⇒ ⚠ 批 DR 的守卫登记册抓不到（守卫没被改，是**抽取器**坏了）
+#   ⇒ ⇒ 抽取器必须**有 e2e 自检**（批 DF / 批 DN 同款纪律）
+#
+# ⚠ **前缀是单一真相源** ⇒ 新抽取器自动纳入 ⇒ **零名单维护**
+EXTRACTOR_PREFIXES = ('extract_', 'find_', 'scan_', 'parse_', 'collect_', 'strip_')
+
+
+# ⚠ **「模块级入口」不算函数体 / 类体 / lambda 体里的调用**
+#   （⚠ 写成**单行** ⇒ 可整行钉住 ⇒ 批 AH~AX 纪律）
+_DS_SKIP_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+
+
+def _ds_module_calls(tree):
+    """模块级语句里**直接调用**到的函数名（⚠ **不进入**函数体 / 类体 / lambda 体）
+
+    ⚠⚠⚨ **为什么要「不进入」**（⚠ 批 DS 负控 NC8/NC9 实测坐实）：
+      `ast.walk` 会**走进函数体** ⇒ 函数体内的调用会被**误当成**顶层调用
+      ⇒ 「模块级入口」被算多 ⇒ 「自检会不会真的执行」这条判定**失效**。
+    ⚠ 顶层 `if __name__ == '__main__': main()` 里的调用**算**模块级入口
+      ⇒ 递归进 If / For / While / Try / With 的体里找。
+    """
+    out = set()
+
+    def walk(nodes):
+        for node in nodes:
+            if isinstance(node, _DS_SKIP_NODES):
+                continue
+            if isinstance(node, ast.Call):
+                f = node.func
+                nm = (f.attr if isinstance(f, ast.Attribute)
+                      else (f.id if isinstance(f, ast.Name) else None))
+                if nm:
+                    out.add(nm)
+            for child in ast.iter_child_nodes(node):
+                walk([child])
+
+    walk(tree.body)
+    return out
+
+
+def _ds_live_funcs(tree, callees):
+    """「会被执行」的函数集合（live）= 从**模块级入口**沿调用图**反向**可达
+
+    ⚠⚠⚨ **为什么必须算 live**（⚠ 批 DS 负控 NC8/NC9 实测坐实）：
+      抽取器**被某个自检函数调用**还不够 ⇒ 那个自检函数**从不被调用**
+      ⇒ 自检**永远不会执行** ⇒ 抽取器坏了**没人发现**
+      ⇒ ⚠ 而 `selftest_extractors` 自己的名字就含 `selftest`
+      ⇒ 「从自检函数出发做传递闭包」会把它**当成起点**
+      ⇒ ⇒ **覆盖判定必须加上「这个自检函数真的会被执行」这一条**。
+    ⚠ **反向可达**（不动点）：X 被某个 live 的 Y 调用 ⇒ X 也会被执行。
+      ⚠⚠⚨ **方向不能反**（⚠ 批 DS 收紧时踩到）：
+        `callees[X]` = X **调用了谁** ⇒ 「X 调用了 live 的 Y」**推不出** X live
+        ⇒ 必须先建**反向边** `callers[Y] = {X}` ⇒ 再按「谁调用了 live 的」扩张。
+    """
+    callers = {}
+    for name, cs in callees.items():
+        for c in cs:
+            callers.setdefault(c, set()).add(name)
+    live = set(_ds_module_calls(tree))
+    changed = True
+    while changed:
+        changed = False
+        for name, cs in callees.items():
+            if name in live or not (callers.get(name, set()) & live):
+                continue
+            live.add(name)
+            changed = True
+    return live
+
+
+def _ds_is_selftest(name):
+    """这个函数名是不是「自检函数」？（批 DN 的口径：`selftest` / `self_test`）"""
+    return ('selftest' in name) or ('self_test' in name)
+
+
+def check_extractor_self_tests():
+    """判据脚本里**以抽取器前缀开头**的函数必须**能被自检覆盖** ⇒ [(文件, 说明)]
+
+    ⚠⚠⚨ **为什么**（批 DF 纪律）：抽取器的输出是**判据的原料**
+      ⇒ 抽取器坏了 ⇒ 判据看的是**错的东西**
+      ⇒ 而脚本自己**照样绿**（批 DN/DF 的实测洞）⇒ 必须有 e2e 自检兜住。
+    ⚠ **「被覆盖」= 能从某个**会被执行的**自检函数沿调用图**传递**到达**
+      ⇒ 薄封装也算覆盖（它被自检**真的走过**了）
+      ⇒ ⚠⚠⚨ **「会被执行」这一条不能少**（⚠ 批 DS 负控 NC8/NC9 实测坐实）：
+        `selftest_extractors` 自己的名字就含 `selftest` ⇒ 若只看名字
+        ⇒ 它**从不被调用**时也算「覆盖」⇒ 覆盖判定**静默失效**
+        ⇒ ⇒ 起点必须再过 `n in live`（live = 从模块级入口反向可达）
+    ⚠ **fail closed**：列不出目录 / 解析失败 ⇒ 判红。
+    ⚠ **规则自己也被规则保护**（批 DM/DN/DO/DP 同款）：名字以 `check_` 开头
+      ⇒ 批 DM 管它 ⇒ **只有一条 return**。
+    """
+    bad = []
+    scripts_dir = os.path.join(SRC, 'scripts')
+    try:
+        names = sorted(os.listdir(scripts_dir))
+    except OSError as e:
+        bad.append(('(范围)',
+                    '列不出判据脚本目录（%s）⇒ 抽取器体检做不了（fail closed）' % e))
+        names = []
+    for fn in names:
+        if not fn.endswith('.py') or fn == DP_SELF:
+            continue
+        path = os.path.join(scripts_dir, fn)
+        try:
+            tree = ast.parse(read_source(path))
+        except (UnreadableSource, SyntaxError) as e:
+            bad.append((fn, '解析失败（%s）⇒ 抽取器体检做不了（fail closed）' % e))
+            continue
+        funcs = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                funcs.setdefault(node.name, node)
+        # 调用图：每个函数**调用了谁**（⚠ 嵌套函数体也进图 ⇒ 嵌套的同样被覆盖）
+        callees = {}
+        for name, node in funcs.items():
+            cs = set()
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Call):
+                    f = sub.func
+                    nm = (f.attr if isinstance(f, ast.Attribute)
+                          else (f.id if isinstance(f, ast.Name) else None))
+                    if nm:
+                        cs.add(nm)
+            callees[name] = cs
+        # 从**会被执行的自检函数**出发做**传递闭包**
+        # ⚠⚠⚨ 「会被执行」这一条**必须有**（⚠ 批 DS 负控 NC8/NC9 实测坐实）：
+        #   只看「是不是自检函数」⇒ `selftest_extractors` 自己就含 `selftest`
+        #   ⇒ 它**从不被调用**时也算「覆盖」⇒ 覆盖判定**失效**
+        #   ⇒ ⇒ 起点必须再过一道「**这个自检函数真的会被执行**」。
+        live = _ds_live_funcs(tree, callees)
+        covered = set()
+        stack = [n for n in funcs if _ds_is_selftest(n) and n in live]
+        while stack:
+            cur = stack.pop()
+            if cur in covered:
+                continue
+            covered.add(cur)
+            for c in callees.get(cur, ()):
+                if c not in covered:
+                    stack.append(c)
+        for name in sorted(funcs):
+            if not name.startswith(EXTRACTOR_PREFIXES):
+                continue
+            if _ds_is_selftest(name):
+                continue
+            if name not in covered:
+                bad.append((fn, '抽取器 `%s`（行 %d）**没有任何 e2e 自检覆盖**'
+                            ' ⇒ 它被抽坏 ⇒ 判据看的是**错的东西**而脚本照样绿'
+                            '（批 DF / 批 DN 同款洞）'
+                            % (name, funcs[name].lineno)))
+    return bad
 
 def check_anchor_scope(cnt_items, exempt):
     """盯**适用范围**内的 `arch_need_count` 门项必须**整行锚定**（或被显式豁免）。
@@ -2373,6 +2534,19 @@ def main_body():
             print('  ⇒ 守卫登记册双向红（表达式级）'
                   ' + 守卫里不许有布尔字面量', file=sys.stderr)
             FAILS.append(2)
+        # ⚠⚠⚨ 批 DS · 判据脚本的**抽取器**必须被 e2e 自检覆盖
+        #   ⇒ 必须与前面那几条**放在同一处** ⇒ 前面的检查一红就 exit
+        #     ⇒ 这条永远没机会跑 ⇒ 形同虚设（批 DP 同款教训）
+        es_bad = check_extractor_self_tests()
+        if es_bad:
+            print('判据脚本的**抽取器没有 e2e 自检覆盖**（%d 处）'
+                  ' ⇒ 那些抽取器被抽坏 ⇒ 判据看的是**错的东西**而脚本照样绿'
+                  % len(es_bad), file=sys.stderr)
+            for fnm, jwhy in es_bad:
+                print('  · scripts/%s  %s' % (fnm, jwhy), file=sys.stderr)
+            print('  ⇒ 抽取器必须**从某个自检函数可达**'
+                  '（前缀是单一真相源 ⇒ 新抽取器自动纳入）', file=sys.stderr)
+            FAILS.append(2)
         # ⚠⚠⚨ 批 BN · 豁免基线**坏行**必须红（理由为空 / 字段数不对）
         #   ⚠ **fail closed**：坏行 ⇒ **不豁免** ⇒ 对应门项照红
         #   ⇒ 但坏行本身也要报出来 ⇒ 否则人只会看到「门红」而不知道「豁免文件坏了」
@@ -2654,6 +2828,10 @@ def main_body():
     print('判据脚本的**失败出口守卫被改弱**：%d 处' % len(fgrep))
     for fnm, jl, jwhy in fgrep:
         print('  · scripts/%s:%d  %s' % (fnm, jl, jwhy))
+    esrep = check_extractor_self_tests()
+    print('判据脚本的**抽取器没有 e2e 自检覆盖**：%d 处' % len(esrep))
+    for fnm, jwhy in esrep:
+        print('  · scripts/%s  %s' % (fnm, jwhy))
     if anchor_exempt_bad:
         print('锚定豁免基线**坏行**：%d 条（这些行没有豁免任何门项）'
               % len(anchor_exempt_bad))
