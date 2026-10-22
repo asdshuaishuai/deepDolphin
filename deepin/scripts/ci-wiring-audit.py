@@ -44,10 +44,12 @@ arch_forbid 判的是「**不该有的东西没了**」⇒ 它的目标串出现
   python3 ci-wiring-audit.py --list          # 机器可读：`相对路径|正则`（每行一条）
   python3 ci-wiring-audit.py --changed HEAD~1 # 只审 base..HEAD 里**新增**的门项
 退出码：
-  0 绿 / 2 审计器有盲区或缺文件 / 3 豁免外隐患（命中 >1）/ 4 次数门没配准
+  0 绿 / 2 审计器有盲区或缺文件 / **或有门型没登记在正则体检登记册里
+     （那一族门项的正则从来没被体检过）** / 3 豁免外隐患（命中 >1）/ 4 次数门没配准
   5 正则写法体检不过 / 6 门项总数与基线不符 / 7 审计器自己有重名常量
   8 锚定形态违规（含自检不过）
   9 审计器引用了未定义的名字（改名漏改调用点）/ 锚定豁免基线有坏行
+    / **或门型清单与正则体检登记册对不上（漏登记）**
 """
 import os
 import re
@@ -107,7 +109,7 @@ GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1202
+GATE_LINES_EXPECTED = 1210
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -1628,7 +1630,7 @@ def main_body():
         # ⚠⚠⚠ **门项正则的写法体检**（批 AX）：正则里写了 GNU grep -E **不认**的转义
         #   （`\d` / `\D`）⇒ 那条门**永远匹配不到任何东西** ⇒ **门形同虚设**。
         #   ⚠ 对 `arch_forbid` 门这是**静默**失效（forbid 本来就常年绿 ⇒ 写坏了跟没写一样）。
-        rxsyn = check_rx_syntax()
+        rxsyn, rxunreg = check_rx_syntax()
         if rxsyn:
             print('门项正则里有 grep -E **不认**的转义（%d 条）⇒ 这些门**永远匹配不到**'
                   % len(rxsyn), file=sys.stderr)
@@ -1638,6 +1640,28 @@ def main_body():
                          ','.join(t for _, t in be)), file=sys.stderr)
             print('  ⇒ 改用 POSIX 写法：`\\d` → `[0-9]`、`\\D` → `[^0-9]`', file=sys.stderr)
             FAILS.append(5)
+        # ⚠⚠⚨ 批 DL · **fail closed**：有门型没登记在正则体检登记册里 ⇒
+        #   那一族门项的正则**从来没被体检过** ⇒ 审计器有盲区 ⇒ 必红
+        if rxunreg:
+            print('有门型**没登记在正则体检登记册**（%d 种）⇒ 那一族门项的正则'
+                  '**从来没被体检过**（写坏了也不会有人知道）' % len(rxunreg),
+                  file=sys.stderr)
+            for kind, lineno in rxunreg:
+                print('  · %s:%d  门型 %s ⇒ 登记册 `RX_ARG_IDX` 里没有它'
+                      % (os.path.basename(WIRING), lineno, kind), file=sys.stderr)
+            print('  ⇒ 要么把它登记进去，要么**显式**登记成「本门型没有正则参数」'
+                  '（`None`）⇒ 不许静默跳过', file=sys.stderr)
+            FAILS.append(2)
+        # ⚠⚠⚨ 批 DL · 两份门型登记册必须一致（漂移即红）
+        rxmiss, rxstale = check_rx_registry()
+        if rxmiss:
+            print('门型清单与正则体检登记册**对不上**（漏登记 %d 种）⇒ 那族门项永远不会被体检'
+                  % len(rxmiss), file=sys.stderr)
+            for kind in rxmiss:
+                print('  · %s' % kind, file=sys.stderr)
+            print('  ⇒ 登记册必须**覆盖全部**门型（没有正则参数的显式登记成 `None`）',
+                  file=sys.stderr)
+            FAILS.append(9)
         # ⚠⚠ **「命中 0 次」也是红**（批 AX 补的第二个盲区）：
         #   `arch_need` / `arch_need_ml` 的语义是「**必须存在**这个串」
         #   ⇒ 命中 0 次 = 门永远匹配不到 = 门是空的。
@@ -1719,7 +1743,7 @@ def main_body():
         print('⚠ **审计器有盲区**：有 %d 行门项没解析到（%s）'
               % (len(failed), ','.join('%d行/%s' % x for x in failed)))
         print('   ⇒ 这些门**审不到**（写法变了？）⇒ 审计器本身要改，不能静默漏审')
-    rxsyn = check_rx_syntax()
+    rxsyn, rxunreg = check_rx_syntax()
     print('门项正则写法体检（grep -E 认不认）：%d 条危险' % len(rxsyn))
     for lineno, kind, rx, be in rxsyn:
         print('  · %s:%d  [%s] 正则=%s  危险转义=%s'
@@ -1727,6 +1751,16 @@ def main_body():
                  ','.join(t for _, t in be)))
     if rxsyn:
         print('   ⇒ 这些门**永远匹配不到**（形同虚设）⇒ 改用 POSIX 写法（`\\d` → `[0-9]`）')
+    print('⚠ 没登记在正则体检登记册里的门型：%d 种' % len(rxunreg))
+    for kind, lineno in rxunreg:
+        print('  · %s:%d  %s' % (os.path.basename(WIRING), lineno, kind))
+    rxmiss, rxstale = check_rx_registry()
+    print('门型清单与正则体检登记册对不上：漏登记 %d 种 / 陈旧登记 %d 种'
+          % (len(rxmiss), len(rxstale)))
+    for kind in rxmiss:
+        print('  · 漏登记 %s' % kind)
+    for kind in rxstale:
+        print('  · 陈旧登记 %s（没人用这一族门项了）' % kind)
     if base is not None:
         print('（只审 %s..HEAD 的新增门项）' % base)
 
@@ -1884,7 +1918,10 @@ def split_args(rest):
 
 
 # 门型 → **正则参数**在参数列表里的下标（0-based）。
-# ⚠ `arch_forbid_han`（盯内容不看写法）与 `arch_forbid_text_dup`（盯重复文本）没有正则参数。
+# ⚠ `arch_forbid_han`（盯内容不看写法）与 `arch_forbid_text_dup`（盯重复文本）没有正则参数
+#   ⇒ 批 DL 起**显式**登记为 None（见下）⇒ 「显式没有」与「漏登记」可区分。
+# ⚠⚠⚨ 批 DL · 值可以是**元组** ⇒ 一个门型有**多个**正则实参时全都要体检
+#   （配对门 `arch_need_count_pair` = 报错行正则 + 计数行正则）。
 RX_ARG_IDX = {
     'arch_need': 1, 'arch_need_ml': 1, 'arch_need_min': 1,
     'arch_need_count': 1, 'arch_need_count_in_fn': 2,
@@ -1893,6 +1930,14 @@ RX_ARG_IDX = {
     'arch_need_any_count': 0, 'arch_need_any_min': 0,
     'arch_forbid': 1, 'arch_forbid_ml': 1, 'arch_forbid_raw': 1,
     'arch_forbid_tree': 0,
+    # ⚠⚠⚨ 批 DL · **配对门有两个正则实参**（报错行正则 + 计数行正则）
+    #   ⇒ 以前登记册只支持「一个下标」⇒ 这一族**根本没被登记** ⇒
+    #   ⇒ 那 14 个正则**从来没被体检过**（写坏了也不会有人知道）。
+    'arch_need_count_pair': (1, 2),
+    # ⚠⚠⚨ 批 DL · 本门型**没有正则参数**（盯内容不看写法）⇒ **显式**登记为 None
+    #   ⇒ 「显式没有」与「漏登记」从此**可区分** ⇒ fail closed 才有意义
+    #   ⇒ 否则漏登记会被误当成「这一族本来就没有正则」。
+    'arch_forbid_han': None, 'arch_forbid_text_dup': None,
 }
 GATE_LINE = re.compile(r'^\s*(arch_[a-z_]+)\s+(.*)$')
 
@@ -1919,26 +1964,79 @@ def bad_escapes(rx):
     return out
 
 
+def rx_arg_indices(kind):
+    """门型 → **正则参数**的下标列表（0-based）。
+
+    ⚠ 返回 `None` = **该门型没登记** ⇒ 调用方**必须判红**（fail closed）
+    ⚠ 返回 `[]`  = **该门型显式登记为「没有正则参数」**（盯内容不看写法的门型）
+    ⚠ 返回 `(i,)` / `(i, j)` = 该门型的正则参数下标（**配对门有两个**）
+
+    ⚠⚠⚨ 批 DL · 以前这里是 `RX_ARG_IDX.get(kind)` ⇒ 取不到就 `continue`
+      ⇒ **静默跳过** ⇒ 那一族门项的正则**从来没被体检过**
+      ⇒ ⚠⚠⚨ **实测坐实**：删登记册一行 ⇒ 审计器 rc=0 + 接线门 rc=0
+      ⇒ 一条「永远匹配不到任何东西」的门项就这么混过去了 ⇒ **假绿坐实**。
+    ⇒ 现在「取不到」与「显式没有」是**两回事** ⇒ 取不到必须报出来。
+    """
+    if kind not in RX_ARG_IDX:
+        return None
+    v = RX_ARG_IDX[kind]
+    if v is None:
+        return []
+    return tuple(v) if isinstance(v, tuple) else (v,)
+
+
+def gate_kind_names():
+    """审计器**认领**的门型名单（`GATE_TYPES` 的键，统一补 `arch_` 前缀）。"""
+    return set('arch_' + name for name, _ in GATE_TYPES)
+
+
+def check_rx_registry():
+    """两份门型登记册（`GATE_TYPES` 与 `RX_ARG_IDX`）必须对得上 ⇒ (漏登记, 陈旧登记)
+
+    ⚠⚠⚨ 批 DL · **实测坐实的洞**：两份登记册**已经漂移** ⇒
+      `arch_need_count_pair`（在用 7 条门项 / **14 个**正则实参）不在 `RX_ARG_IDX` 里
+      ⇒ 那 14 个正则**从来没被体检过** ⇒ 而 `RX_ARG_IDX` **全仓没有任何门在盯**
+      ⇒ 删一行 ⇒ 覆盖面**静默缩小** ⇒ **假绿坐实**。
+    ⚠ 漏登记 = **红**（那族门项的体检是空的 ⇒ 审计器有盲区）
+    ⚠ 陈旧登记（登记了但没人用）= **只报不红**
+      ⇒ 多登记 = 体检范围更广 = **安全方向** ⇒ 假红比假绿更坏 ⇒ 不判红。
+    """
+    want = gate_kind_names()
+    have = set(RX_ARG_IDX.keys())
+    return sorted(want - have), sorted(have - want)
+
+
 def check_rx_syntax():
-    """体检**所有**门项的正则参数 ⇒ [(行号, 门型, 正则, 危险转义)]"""
+    """体检**所有**门项的正则参数 ⇒ (危险转义列表, 未登记门型列表)
+
+    ⚠⚠⚨ 批 DL · **fail closed**：门型没登记 ⇒ **不再静默跳过**
+      ⇒ 记进 `unreg` ⇒ 调用方判红（rc=2 盲区）。
+    """
     bad = []
+    unreg = {}
     src = read_source(WIRING)
     for i, ln in enumerate(src.split('\n'), 1):
         m = GATE_LINE.match(ln)
         if not m:
             continue
         kind, rest = m.group(1), m.group(2)
-        idx = RX_ARG_IDX.get(kind)
-        if idx is None:
+        idxs = rx_arg_indices(kind)
+        if idxs is None:
+            # ⚠⚠⚨ 批 DL：这一族门项的正则**从来没被体检过** ⇒ 记下来判红
+            if kind not in unreg:
+                unreg[kind] = i
+            continue
+        if not idxs:
             continue
         args = split_args(rest)
-        if len(args) <= idx:
-            continue
-        rx = args[idx]
-        be = bad_escapes(rx)
-        if be:
-            bad.append((i, kind, rx, be))
-    return bad
+        for idx in idxs:
+            if len(args) <= idx:
+                continue
+            rx = args[idx]
+            be = bad_escapes(rx)
+            if be:
+                bad.append((i, kind, rx, be))
+    return bad, sorted(unreg.items())
 
 
 if __name__ == '__main__':
