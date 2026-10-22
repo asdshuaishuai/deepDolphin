@@ -519,7 +519,10 @@ def tautology_reason(cond):
 #   每次运行先拿**合成样例**跑一遍判定 ⇒ 判定逻辑被掏空/改坏 ⇒ 本门当场红。
 #   ⚠ 合成样例必须**同时**含「该判为恒真的」与「不该判为恒真的」⇒
 #   只测前者 ⇒ 判成「恒真」也能过；只测后者 ⇒ 判成「不是恒真」也能过。
-#   ⚠ 类别：`cond` = 判定层的判据条件；`assert_arg` = 断言函数实参里的判据。
+#   ⚠ 类别：`cond` = 判定层的判据条件（**裸条件串**，不经抽取器）；
+#     `cpp_e2e` = 判定层的判据条件（**经 `extract_check_conds` 抽取**⇒ 抽的是
+#     `check(...)` 的**第三个实参**，与实扫同一条路径 ⇒ 抽取器被掏空 ⇒ 自检红）；
+#     `assert_arg` = 断言函数实参里的判据。
 SELF_TEST_CASES = [
     ('cond', 'true', True),
     ('cond', 'false', True),
@@ -531,6 +534,17 @@ SELF_TEST_CASES = [
     ('cond', 'env.has_value()', False),
     ('cond', 'covered && count == expected', False),
     ('cond', 'true false nullptr NULL this sizeof static_cast const_cast reinterpret_cast dynamic_cast new delete not and or int bool char double float void unsigned signed long short auto return', True),
+    # ⚠⚠⚨ **批 DF**：**C++ 侧的条件抽取器**也必须**自检证明有牙**
+    #   ⇒ 样例**必须经过 `extract_check_conds`**（而不是像 `cond` 那一档
+    #     那样直接喂**裸条件串** ⇒ 压根不经过抽取器 ⇒ 抽取器坏了自检照样绿）
+    #   ⇒ ⚠⚠⚨ **实测坐实**：把 `len(args) >= 3` 改成 `>= 99`
+    #     ⇒ 判定层 **396 条判据一条都抽不出来**（报「判定层 0 条判据」）
+    #     ⇒ 而**接线门 / 探针 / 审计器三样全绿** ⇒ **假绿**
+    #   ⇒ 这一档让抽取器被掏空时**自检当场红**
+    #   ⇒ ⚠ 必须**同时**含「该判红」与「不该判红」⇒ 只测一边 ⇒ 判反了也能过
+    ('cpp_e2e', ('check(log, "标签", true);\n', 1), True),
+    ('cpp_e2e', ('check(log, "标签", ok && count == 3);\n', 0), True),
+    ('cpp_e2e', ('check(log, "标签1", true);\ncheck(log, "标签2", false);\n', 2), True),
     ('assert_arg', ('check', 'True'), True),
     ('assert_arg', ('check', '1 == 1'), True),
     ('assert_arg', ('check', "d.get('x')==1"), False),
@@ -597,6 +611,17 @@ def self_test():
     for kind, inp, want in SELF_TEST_CASES:
         if kind == 'cond':
             got = tautology_reason(inp) is not None
+        elif kind == 'cpp_e2e':
+            # ⚠⚠⚨ **批 DF**：走**同一条**抽取 + 判定路径（自检与实扫必须一致）
+            #   ⇒ ⚠⚠⚨ 实测的洞：原来 `cond` 那一档喂的是**裸条件串**
+            #     ⇒ **压根不经过 `extract_check_conds`** ⇒ 抽取器被掏空时
+            #     ⇒ 自检**照样绿** ⇒ 判定层 396 条判据**一条都不被查**
+            #     ⇒ 而三样全绿 ⇒ **假绿坐实**
+            #   ⇒ 这一档必须**真的经过抽取器** ⇒ 抽取器坏了 ⇒ 自检红
+            text, want_bad = inp
+            conds = extract_check_conds(text)
+            got_bad = sum(1 for _ln, _c in conds if tautology_reason(_c) is not None)
+            got = (got_bad == want_bad)
         elif kind == 'py_const_if':
             # ⚠ 走**同一条**判定路径（自检与实扫必须调同一个正则）
             #   ⇒ python 侧的 `if True:` / `if False:` / `if 1:` / `if 0:`
