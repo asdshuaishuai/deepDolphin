@@ -619,12 +619,47 @@ echo "✓ Canvas2D 覆盖契约清单 ${CANVAS_N}/26 个方法；logic/ 与 mode
 
 echo "› 9/16 接线门（源扫描：判定层与接线点必须都在，撤入口 ≠ 撤能力）"
 # 接线门独立成 scripts/ci-wiring.sh：可单独跑，负控也能精确打它。
-if sh "$SRC/scripts/ci-wiring.sh" "$SRC"; then
-    :
-else
+# ⚠⚠⚨ 批 DU · **双跑**：接线门在 `sh` 与 `bash` 下各跑一遍 ⇒ **输出与退出码必须一致**
+#   ⇒ 判据层的**结论不许随执行 shell 变**（批 DT 立的承诺 ⇒ 这里给它装上牙齿）。
+#   ⇒ ⚠ **双跑是通用的**：任何新的分叉（不论什么构造）都会被它抓住
+#     ⇒ 而批 DT 的规则只管「门型函数体内的 echo」⇒ 口径之外的靠这道门兜住。
+#   ⇒ ⚠ **不新增步骤**（⚠ 新增步骤会牵动 16 个步骤标记 + 一条 arch_need_ml 门）
+#     ⇒ 改成在**第 9 步内部**双跑 ⇒ 步骤数不变 ⇒ 那些门不受影响。
+#   ⇒ ⚠ **无自引用**：双跑逻辑在 `ci.sh`（入口）⇒ `ci-wiring.sh` 不跑 `ci.sh`。
+#   ⇒ ⚠ 退出码**接住**（批 CQ 纪律：不用管道读退出码）；差异**落文件**再读（不用 | head）。
+#   ⇒ ⚠ 只在**接线门绿时**才跑第二遍 ⇒ 红了就照旧报错退出（省时间）。
+# ⚠⚠⚨ 批 DU · 双跑的两份日志必须落在 **TMPDIR**，不许落 `$BUILD`（CI 的工作目录）
+#   ⇒ 理由（**前瞻性加固**，与批 DU 首次端到端那次「未能复现的分叉」无因果关系）：
+#     双跑的第二遍会比第一遍**多看到第一遍的产物** ⇒ 若产物落在**会被扫描的目录**里
+#     ⇒ 第二遍的输入就与第一遍不同 ⇒ 双跑门会**自己制造分叉** ⇒ 假红（批 DL：假红比假绿更坏）。
+#   ⇒ 现在落 `${TMPDIR:-/tmp}`（与 `STRIP_FAIL_FILE` 同款惯例）⇒ 两遍读到的输入严格一致。
+#   ⇒ ⚠ 可观测性不丢：第一遍的输出仍然 `cat` 出来（下面），diff 也照样落盘。
+#   ⇒ ⚠ 带 `$$`（PID）⇒ 并发跑 CI 时两份日志不会互相覆盖。
+_W_DASH_LOG="${TMPDIR:-/tmp}/deepdolphin-wiring-dash.$$.log"
+_W_BASH_LOG="${TMPDIR:-/tmp}/deepdolphin-wiring-bash.$$.log"
+_W_DIFF_LOG="${TMPDIR:-/tmp}/deepdolphin-wiring-shell-diff.$$.log"
+_w_dash_rc=0
+sh "$SRC/scripts/ci-wiring.sh" "$SRC" > "$_W_DASH_LOG" 2>&1 || _w_dash_rc=$?
+cat "$_W_DASH_LOG"
+if [ "$_w_dash_rc" -ne 0 ]; then
     echo "✗ 接线门失败：取数/判定/渲染/接线任一段被摘掉" >&2
     exit 1
 fi
+_w_bash_rc=0
+bash "$SRC/scripts/ci-wiring.sh" "$SRC" > "$_W_BASH_LOG" 2>&1 || _w_bash_rc=$?
+if [ "$_w_bash_rc" -ne "$_w_dash_rc" ]; then
+    echo "✗ ⚠⚠⚨ 接线门在 sh 与 bash 下**退出码不同**（sh=$_w_dash_rc / bash=$_w_bash_rc）⇒ 判据层的**结论随执行 shell 变** ⇒ 不可信（批 DT）" >&2
+    exit 1
+fi
+if ! cmp -s "$_W_DASH_LOG" "$_W_BASH_LOG"; then
+    echo "✗ ⚠⚠⚨ 接线门在 sh 与 bash 下**输出不同** ⇒ 诊断文案**随执行 shell 变** ⇒ 负控的文案命中判定不可信（批 DT）" >&2
+    _w_diff_rc=0
+    diff "$_W_DASH_LOG" "$_W_BASH_LOG" > "$_W_DIFF_LOG" 2>&1 || _w_diff_rc=$?
+    echo "   差异已写 $_W_DIFF_LOG（diff 退出码 $_w_diff_rc）前 20 行：" >&2
+    head -20 "$_W_DIFF_LOG" >&2
+    exit 1
+fi
+echo "✓ 接线门在 sh 与 bash 下**输出与退出码一致**（判据层的结论不随执行 shell 变）"
 
 echo "› 10/16 引擎契约门（真引擎沙箱；**未验证 ⇒ 判红**，不许说通过）"
 # contract-check.sh 之前是**游离脚本** —— CI 从来没跑过它，契约漂移不会被拦。
