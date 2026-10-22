@@ -110,7 +110,7 @@ GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1234
+GATE_LINES_EXPECTED = 1244
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -1467,6 +1467,153 @@ def check_self_test_funcs():
     return bad
 
 
+# ⚠⚠⚨ 批 DO · 「失败态上报」的**守卫口径**（**零名单维护**）
+#   ⇒ 守卫条件**只许**「名字 / 下标」两种形态 ⇒ 取反 / 与或 / 比较 / 调用 /
+#     布尔字面量 一律不许 ⇒ 理由见 `check_fail_guards` 的说明。
+GUARD_SHAPE_OK = (ast.Name, ast.Subscript)
+# ⚠⚠⚨ 批 DO · **守卫登记册**（口径 ④ 的另一半 ⇒ **双向红**）
+#   ⇒ 「用到的守卫」必须在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
+#   ⇒ 「册里的守卫」必须都被用到 ⇒ 某个收集点被挪走 / 删了 ⇒ 红。
+#   ⇒ ⚠ 登记册**内容由本仓的收集点现抽生成** ⇒ 不手抄 ⇒ 零漂移。
+FAIL_GUARDS = ('anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'dead', 'exempt_missing', 'failed', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'stbad', 'undef', 'zero')
+
+
+def _is_fails_append(node):
+    """这个表达式是不是 `FAILS.append(...)`？"""
+    return (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == 'append'
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == 'FAILS')
+
+
+def _guard_shape_ok(test):
+    """守卫条件的**形态**合不合规？⇒ 只许「名字 / 下标」。
+
+    ⚠ **不用 `return True` / `return False` 字面量** ⇒ 全文件「`return True` 恰好
+      1 处」那条门盯的是 `has_unbounded_wildcard` 的「判违规」返回 ⇒ 多一处就失准。
+    """
+    ok = False
+    if isinstance(test, ast.Name):
+        ok = True
+    elif isinstance(test, ast.Subscript) and isinstance(test.value, ast.Name):
+        ok = True
+    return ok
+
+
+def check_fail_guards():
+    """审计器自己的**失败态上报**不许被静默关掉 ⇒ [(行号, 说明)]
+
+    ⚠⚠⚨ 批 DO · **实测坐实的洞**（不是推演）：把 main_body 里的
+      `if g['blind']:` 改成恒假 ⇒ **审计器自己有盲区**（比如门型登记册
+      被摘了一条）时**不再上报** ⇒ 审计器 rc=0 + 接线门 rc=0
+      ⇒ **全绿假绿** ⇒ 「那些门项**从来没被审**」这件事**彻底没人知道**。
+      ⇒ 批 DM 的规则只管 `check_` 前缀**函数**里的 `return`
+        ⇒ **main_body 的内联判定是一个逃逸口**。
+
+    ⇒ 判定口径（三条腿，**零名单维护**）：
+      ① 每个 `FAILS.append(rc)` 调用点**必须有守卫**
+        （最内层 `if` 的条件；或处在 `except` 里 —— 崩了的兜底）
+        ⇒ 没有守卫 ⇒ 那个失败态**恒定触发** ⇒ 假红 ⇒ 必红；
+        ⇒ ⚠⚠⚨ **实测如实记着**：现有 20 处收集点**全都**嵌在某个 `if` 里
+        ⇒ ⇒ 这一条**当前触发不到** ⇒ **它现在是面向将来的**，**现在没有牙**
+        ⇒ 现在的牙在 ② ③ 两条腿上 ⇒ ⚠ **不假装它现在就有用**；
+      ② 守卫条件**只许**是「名字 / 下标」两种形态
+        ⇒ **不许**取反（`if not x:` ⇒ 判定被**反过来**）
+        / 与或（`if a and b:` ⇒ 判定被**改窄**）
+        / 比较（`if x == 0:`）/ 调用（`if g.get('blind'):`）
+        / 布尔字面量（`if False:` ⇒ 判定被**关掉**）
+        ⇒ 守卫的职责是「**取出一个判定结果**」⇒ 写成常量或表达式
+        ⇒ 就是在**改判定** ⇒ 必须走门 ⇒ 逼着人同步；
+      ③ 守卫**不许重复**
+        ⇒ 每个失败态各有**自己的**判定结果 ⇒ 两个收集点用同一个守卫
+        ⇒ 说明其中一个**指错了判定**（如把「盲区」那一档换成「总数」那一档）
+        ⇒ ⇒ 那一类失败**不再上报**而没人知道 ⇒ 必红
+        ⇒ ⚠ 这条抓的是**换指向**（形态不变 ⇒ ② 抓不到）。
+
+    ⚠ **规则自己也被规则保护**（批 DM/DN 同款）：本函数名字以 `check_` 开头
+      ⇒ 批 DM 的「判定函数不许被掏空」管它；本函数**自己**也在批 DN 的
+      「自检函数不许提前 return」口径外（它不是自检函数）
+      ⇒ ⚠ 但它**必须**只有一条 `return` ⇒ 本函数用 `tree = None` + 条件分支
+      ⇒ **没有提前 return**（批 DN 口径 ③：自检/判定函数不许没有结论）。
+
+    ⚠ **fail closed**：解析不了审计器自己 ⇒ 判红（不许「读不到就当没问题」）。
+    """
+    bad = []
+    try:
+        tree = ast.parse(read_source(os.path.abspath(__file__)))
+    except (UnreadableSource, SyntaxError) as e:
+        bad.append((0, '解析审计器自己失败（%s）⇒ 守卫体检做不了（fail closed）' % e))
+        tree = None
+    if tree is not None:
+        found = []
+
+        def scan_body(body, guard, in_except):
+            for stmt in body:
+                if isinstance(stmt, ast.If):
+                    scan_body(stmt.body, stmt.test, in_except)
+                    scan_body(stmt.orelse, guard, in_except)
+                elif isinstance(stmt, ast.Try):
+                    scan_body(stmt.body, guard, in_except)
+                    for h in stmt.handlers:
+                        scan_body(h.body, None, True)
+                    scan_body(stmt.orelse, guard, in_except)
+                    scan_body(stmt.finalbody, guard, in_except)
+                elif isinstance(stmt, (ast.For, ast.While, ast.With,
+                                       ast.AsyncFor, ast.AsyncWith)):
+                    scan_body(stmt.body, guard, in_except)
+                    scan_body(getattr(stmt, 'orelse', []) or [], guard, in_except)
+                elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    # ⚠ 进入函数 ⇒ 守卫**不继承**外层（函数体里的 append
+                    #   该由**它自己**的 if 守卫 ⇒ 否则外层的 if 会替它背书）
+                    scan_body(stmt.body, None, False)
+                elif isinstance(stmt, ast.Expr) and _is_fails_append(stmt.value):
+                    found.append((stmt.lineno, guard, in_except))
+
+        scan_body(tree.body, None, False)
+        for lineno, guard, in_except in found:
+            if guard is None and not in_except:
+                bad.append((lineno, '`FAILS.append(...)` **没有守卫**'
+                            ' ⇒ 那个失败态**恒定触发** ⇒ 必红'))
+            elif guard is not None and not _guard_shape_ok(guard):
+                bad.append((lineno, '`FAILS.append(...)` 的守卫条件形态不合规'
+                            '（%s）⇒ 只许「名字 / 下标」⇒ 取反 / 与或 / 比较 /'
+                            ' 调用 / 布尔字面量 都是**在改判定**'
+                            % type(guard).__name__))
+        # ⚠⚠⚨ 口径 ④ · **守卫登记册双向红**
+        #   ⇒ 「用到的守卫」不在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
+        #   ⇒ 「册里的守卫」没被用到 ⇒ 那个收集点**被挪走 / 删了** ⇒ 红
+        #     ⇒ ⚠ 这一条抓的是「挪进一个**以变量为条件**的少真分支」
+        #       （新守卫**仍是名字** ⇒ ② 不抓、③ 不重复 ⇒ 只有它抓得住）
+        used = set()
+        for lineno, guard, in_except in found:
+            if guard is None or in_except:
+                continue
+            used.add(ast.unparse(guard))
+        for gname in sorted(set(FAIL_GUARDS) - used):
+            bad.append((0, '登记册里的守卫 `%s` **没有被任何收集点用到** ⇒ '
+                        '那个失败态的收集点**被挪走或删了** ⇒ 它**永远不会报出来**'
+                        % gname))
+        for gname in sorted(used - set(FAIL_GUARDS)):
+            bad.append((0, '收集点的守卫 `%s` **不在登记册里** ⇒ 新增失败态忘了登记'
+                        ' ⇒ 登记册与实际**漂了**' % gname))
+        # ⚠⚠⚨ 口径 ③ · **守卫不许重复**（抓「换指向」：形态不变 ⇒ ② 抓不到）
+        #   ⇒ 每个失败态各有**自己的**判定结果 ⇒ 两个收集点用同一个守卫
+        #     ⇒ 其中的一个**指错了判定** ⇒ 那一类失败**不再上报**而没人知道
+        seen = {}
+        for lineno, guard, in_except in found:
+            if guard is None or in_except:
+                continue
+            key = ast.unparse(guard)
+            if key in seen:
+                bad.append((lineno, '`FAILS.append(...)` 的守卫与第 %d 行**重复**'
+                            '（%s）⇒ 两个失败态用同一个判定 ⇒ 其中的一个'
+                            '**指错了判定** ⇒ 那一类失败**不再上报**'
+                            % (seen[key], key)))
+            else:
+                seen[key] = lineno
+    return bad
+
+
 def check_anchor_scope(cnt_items, exempt):
     """盯**适用范围**内的 `arch_need_count` 门项必须**整行锚定**（或被显式豁免）。
 
@@ -1664,6 +1811,8 @@ def main_body():
     # ⚠⚠⚨ 批 BN · 「整行锚定」的豁免基线（**先读** ⇒ 后面两处判定共用同一份）
     anchor_exempt, anchor_exempt_exists, anchor_exempt_rows, anchor_exempt_bad = \
         read_anchor_exempt()
+    # ⚠⚠⚨ 批 DO · 守卫条件**只许「名字 / 下标」**（口径 ②）⇒ 取反要**先算好**
+    anchor_exempt_missing = not anchor_exempt_exists
 
     if base is not None:
         nums = changed_lines(base)
@@ -1716,6 +1865,8 @@ def main_body():
     keys = ['need:%s|%s' % (rel(f), rx) for _, f, rx, _ in multi]
     keys += ['ml:%s|%s' % (rel(f), rx) for _, f, rx, _ in mlmulti]
     exempt, exempt_exists, exempt_rows = read_exempt()
+    # ⚠⚠⚨ 批 DO · 守卫条件**只许「名字 / 下标」**（口径 ②）⇒ 取反要**先算好**
+    exempt_missing = not exempt_exists
     outside = [k for k in keys if k not in exempt]
     stale = [k for k in exempt if k not in set(keys)]
 
@@ -1762,6 +1913,19 @@ def main_body():
             print('  ⇒ 自检函数（名字含 `selftest` / `self_test`）**不许有提前 return**'
                   ' ⇒ 提前 return 就是「掏空」', file=sys.stderr)
             FAILS.append(2)
+        # ⚠⚠⚨ 批 DO · **失败态上报**不许被静默关掉（零名单维护）
+        #   ⇒ 必须**放在最前**：前面的检查一红就 exit ⇒ 这条永远没机会跑 ⇒ 形同虚设
+        guard_bad = check_fail_guards()
+        if guard_bad:
+            print('审计器自己的**失败态上报被静默关掉**（%d 处）'
+                  ' ⇒ 那些失败态**永远不会报出来** ⇒ 假绿'
+                  % len(guard_bad), file=sys.stderr)
+            for jl, jwhy in guard_bad:
+                print('  · ci-wiring-audit.py%s  %s'
+                      % (':%d' % jl if jl else '', jwhy), file=sys.stderr)
+            print('  ⇒ 每个 `FAILS.append(rc)` **必须有守卫**（最内层 `if` 的条件）'
+                  '，且守卫条件**只许「名字 / 下标」**', file=sys.stderr)
+            FAILS.append(2)
         # ⚠⚠⚨ 批 BN · 豁免基线**坏行**必须红（理由为空 / 字段数不对）
         #   ⚠ **fail closed**：坏行 ⇒ **不豁免** ⇒ 对应门项照红
         #   ⇒ 但坏行本身也要报出来 ⇒ 否则人只会看到「门红」而不知道「豁免文件坏了」
@@ -1773,7 +1937,7 @@ def main_body():
                       % (os.path.relpath(ANCHOR_EXEMPT, REPO), lineno, why),
                       file=sys.stderr)
             FAILS.append(9)
-        if not anchor_exempt_exists:
+        if anchor_exempt_missing:
             print('锚定豁免基线文件不在：%s' % ANCHOR_EXEMPT, file=sys.stderr)
             FAILS.append(9)
         # ⚠⚠⚨ 批 CQ · 「先红遮后红」不许再遮 ⇒ **依赖失败**的检查要**明确跳过**，
@@ -1848,7 +2012,7 @@ def main_body():
                     print(m, file=sys.stderr)
                 FAILS.append(6)
         # 硬门模式：只吐**豁免之外**的隐患；有 ⇒ 退出码 3（红）
-        if not exempt_exists:
+        if exempt_missing:
             print('豁免基线文件不在：%s' % EXEMPT, file=sys.stderr)
             FAILS.append(2)
         if failed:
@@ -2031,6 +2195,10 @@ def main_body():
     print('判据脚本里的**自检函数被掏空**：%d 处' % len(selfrep))
     for fnm, fn2, jl, jwhy in selfrep:
         print('  · scripts/%s:%d  %s  ⇒ %s' % (fnm, jl, fn2, jwhy))
+    guardrep = check_fail_guards()
+    print('审计器自己的**失败态上报被静默关掉**：%d 处' % len(guardrep))
+    for jl, jwhy in guardrep:
+        print('  · ci-wiring-audit.py:%d  %s' % (jl, jwhy))
     if anchor_exempt_bad:
         print('锚定豁免基线**坏行**：%d 条（这些行没有豁免任何门项）'
               % len(anchor_exempt_bad))
