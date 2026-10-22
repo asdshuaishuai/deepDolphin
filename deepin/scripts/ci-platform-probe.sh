@@ -62,6 +62,17 @@ if [ -z "$PANEL_VALID" ] || [ -z "$SCREEN_RECT" ] || [ -z "$TARGET_RECT" ]; then
     echo "✗ platform-probe 缺 panelValid/screenRect/trayPopupTarget（面板几何不可见 ⇒ 弹窗落点没人知道）" >&2
     exit 1
 fi
+# ⚠⚠⚨ 批 DJ · **抽取值必须格式合法**（治本第二步 ⇒ 让探针脚本**自己**有牙）。
+#   ⚠⚠⚨ **批 DI 实测坐实的洞**：这一段原来**只有非空检查** ⇒
+#     把抽取口径 `s/^panelValid=//p` 改成 `s/^panel//p` ⇒ 抽到 `Valid=1`
+#     ⇒ **非空检查照样通过** ⇒ `[ "$PANEL_VALID" = "1" ]` 不成立
+#     ⇒ ⚠⚠⚨ **面板几何那一整段断言被静默跳过**（不是失败，是「没人看」）。
+#   ⇒ 现在补**格式校验**：`panelValid` 只能是 `0` 或 `1`（**排除 `=`**
+#     ⇒ `Valid=1` 这种前缀残留一律被抓）。
+if ! printf '%s' "$PANEL_VALID" | grep -Eq '^[01]$'; then
+    echo "✗ platform-probe 的 panelValid= 不是 0/1（得到 '$PANEL_VALID'）⇒ 判定失效：面板几何那一整段没人看" >&2
+    exit 1
+fi
 if ! printf '%s' "$SCREEN_RECT" | grep -Eq '^-?[0-9]+,-?[0-9]+,-?[0-9]+,-?[0-9]+$'; then
     echo "✗ screenRect= 不是四个整数（得到 '$SCREEN_RECT'）" >&2
     exit 1
@@ -205,6 +216,18 @@ ICON_THEME="$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^iconTheme=//p')"
 ICON_MISSING="$(printf '%s\n' "$PROBE_OUT" | sed -n 's/^iconMissing=//p')"
 if [ -z "$ICON_MISSING" ]; then
     echo "✗ platform-probe 输出缺 iconMissing= 行（图标解析不可见 ⇒ 缺失没人知道）" >&2
+    exit 1
+fi
+# ⚠⚠⚨ 批 DJ · **抽取值必须格式合法**（治本第二步 ⇒ 让探针脚本**自己**有牙）。
+#   ⚠⚠⚨ **批 DI 实测坐实的洞**：原来**只有非空检查** ⇒
+#     把抽取口径 `s/^iconMissing=//p` 改成 `s/^icon//p` ⇒ 抽到 `Missing=0`
+#     ⇒ **非空检查照样通过** ⇒ `[ "$ICON_MISSING" != "0" ]` 成立
+#     ⇒ ⚠⚠⚨ 在**无图标主题**的离屏环境里这条断言**根本不触发**
+#     ⇒ 图标缺失**没人查**（而接线门 / 审计器 / 探针脚本全绿）。
+#   ⇒ 现在补**格式校验**：`iconMissing` 只能是**非负整数**（**排除 `=`**
+#     ⇒ `Missing=0` 这种前缀残留一律被抓）。
+if ! printf '%s' "$ICON_MISSING" | grep -Eq '^[0-9]+$'; then
+    echo "✗ platform-probe 的 iconMissing= 不是非负整数（得到 '$ICON_MISSING'）⇒ 判定失效：图标缺失数没人知道" >&2
     exit 1
 fi
 if [ -n "$ICON_THEME" ] && [ "$ICON_MISSING" != "0" ]; then
