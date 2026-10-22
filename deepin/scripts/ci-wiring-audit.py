@@ -110,7 +110,7 @@ GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1244
+GATE_LINES_EXPECTED = 1258
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -1475,7 +1475,7 @@ GUARD_SHAPE_OK = (ast.Name, ast.Subscript)
 #   ⇒ 「用到的守卫」必须在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
 #   ⇒ 「册里的守卫」必须都被用到 ⇒ 某个收集点被挪走 / 删了 ⇒ 红。
 #   ⇒ ⚠ 登记册**内容由本仓的收集点现抽生成** ⇒ 不手抄 ⇒ 零漂移。
-FAIL_GUARDS = ('anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'dead', 'exempt_missing', 'failed', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'stbad', 'undef', 'zero')
+FAIL_GUARDS = ('anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'dead', 'exempt_missing', 'failed', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'stbad', 'undef', 'zero')
 
 
 def _is_fails_append(node):
@@ -1613,6 +1613,238 @@ def check_fail_guards():
                 seen[key] = lineno
     return bad
 
+
+
+# ══════════════════════════════════════════════════════════════
+# ⚠⚠⚨ 批 DP · 「失败态上报」的**跨脚本**体检（零名单维护）
+# ══════════════════════════════════════════════════════════════
+# ⚠⚠⚨ **范围** = `deepin/scripts/*.py` 全部，**审计器自己除外**
+#   ⇒ 排除项**由本文件名现算**（不是手抄名单）⇒ 零名单维护
+#   ⇒ 审计器自己由**批 DO** 的 `check_fail_guards` 管 ⇒ 两批口径**不重叠**
+DP_SELF = os.path.basename(os.path.abspath(__file__))
+
+# ⚠⚠⚨ **失败上报点登记册**（口径 ④ ⇒ **双向红**）
+#   ⇒ 「用到的」不在册 ⇒ 新增失败态忘了登记 ⇒ 红
+#   ⇒ 「册里的」实测数对不上 ⇒ 那个失败上报点**被挪走 / 删了 / 变了** ⇒ 红
+#   ⇒ ⚠ 数量**由本仓的判据脚本现抽生成** ⇒ 不手抄 ⇒ 零漂移
+#   ⇒ ⚠ 类别：`fail_exit` = 失败出口（`sys.exit(X)`，X 非 `main()` 调用）
+#     / `fail_ret` = 失败返回（`return <非零>`）
+#     / `fail_count` = 失败累加器上的**追加型写**（`X += …` / `X.append(…)`）
+FAIL_REPORT_COUNTS = (('bootstrap-deps.py', 'fail_count', 2), ('bootstrap-deps.py', 'fail_ret', 1), ('ci-tautology-check.py', 'fail_count', 18), ('ci-tautology-check.py', 'fail_ret', 3), ('ci-true-audit.py', 'fail_count', 2), ('ci-true-audit.py', 'fail_exit', 10), ('ci-true-audit.py', 'fail_ret', 1), ('ci-unverified-audit.py', 'fail_count', 7), ('ci-unverified-audit.py', 'fail_exit', 8), ('ci-unverified-audit.py', 'fail_ret', 1))
+
+
+def _dp_is_main_call(node):
+    """这个表达式是不是 `main()` 调用？（成功出口 ⇒ 不算失败出口）"""
+    ok = False
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == 'main'):
+        ok = True
+    return ok
+
+
+def _dp_is_sys_exit(node):
+    """这个表达式是不是 `sys.exit(...)`？"""
+    ok = False
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == 'exit' and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == 'sys'):
+        ok = True
+    return ok
+
+
+def _dp_nonzero_int(node):
+    """是不是「非零整数字面量」？（⚠ bool 是 int 的子类 ⇒ 必须排除）"""
+    ok = False
+    if (isinstance(node, ast.Constant) and isinstance(node.value, int)
+            and not isinstance(node.value, bool) and node.value != 0):
+        ok = True
+    return ok
+
+
+def _dp_is_literal_int(node):
+    """是不是「整数字面量」？（含 0；⚠ bool 排除）"""
+    ok = False
+    if (isinstance(node, ast.Constant) and isinstance(node.value, int)
+            and not isinstance(node.value, bool)):
+        ok = True
+    return ok
+
+
+def _dp_zero_exit_code(node):
+    """这个 `sys.exit(...)` 的实参会不会让退出码变成 **0**？
+
+    ⚠⚠⚨ `sys.exit(0)` / `sys.exit(False)` / `sys.exit(None)` ⇒ **退出码 0**
+      ⇒ 失败被报成「成功」⇒ **假绿**。
+    ⚠ `sys.exit('…')` ⇒ 退出码是 **1**（Python 语义）⇒ 合规。
+    ⚠ `sys.exit('…' % x)` ⇒ 还是字符串 ⇒ 退出码 1 ⇒ 合规。
+    ⚠ 其它形态（变量 / 调用）⇒ **静态判不了** ⇒ 放行（**如实记为边界**）。
+    """
+    zero = False
+    if isinstance(node, ast.Constant):
+        v = node.value
+        # ⚠⚠⚨ **三个形态一次算完**（`None` / `False` / `0`）⇒ **一行**
+        #   ⇒ 这一行是**关键判定** ⇒ 被门**整行钉住** ⇒ 改它 ⇒ 门红
+        #   ⇒ ⚠ 分成三个分支 ⇒ 三行都没被钉 ⇒ 改任何一行都**静默失去牙**
+        zero = (v is None) or (v is False) or (v == 0)
+    return zero
+
+
+# ⚠⚠⚨ 批 DP · 守卫形态的判定**复用批 DO 的 `_guard_shape_ok`**
+#   ⇒ 「判定逻辑只有一份」（批 BF/BG 纪律）⇒ 零漂移
+#   ⇒ ⚠ **不要另写一份**：另写一份若与它**逐字相同** ⇒ 批 DO 那条门命中数翻倍
+#     ⇒ 期望 1 ≠ 实际 2 ⇒ 门没牙（实测踩到过，已改）
+
+
+def check_fail_report_points():
+    """判据脚本（**审计器之外**）的「失败态上报」不许被静默关掉 ⇒ [(文件, 行号, 说明)]
+
+    ⚠⚠⚨ 批 DP · **实测坐实的洞**（不是推演；两个都跑过对照实验）：
+      ① `ci-tautology-check.py` 的 **16 处 `bad += 1`** 全被改成 `bad += 0`
+         ⇒ 探针**不再计数** ⇒ 真的恒真判据（注入的 `if True:`）**照样打印到
+           stderr**，但**退出码是 0** ⇒ 探针 rc=0 + 接线门 rc=0
+         ⇒ **全绿假绿**（CI 第 16 步照样绿 ⇒ 那批判据**不再被查**没人知道）。
+      ② `ci-true-audit.py` 的 `sys.exit('✗ 登记册不存在：%s' % BASELINE)`
+         被改成 `sys.exit(0)` ⇒ 登记册真被藏起来时，盘点**静默退出 0**
+         （输出为空）⇒ 盘点 rc=0 + 接线门 rc=0 ⇒ **全绿假绿**。
+
+    ⇒ 判定口径（四条腿，**零名单维护**）：
+      ① **失败出口不许以 0 退出**
+         （`sys.exit(X)` 且 X 不是 `main()` 调用 ⇒ X 是 0 / False / None ⇒ 红）
+      ② **失败计数增量不许是 0**
+         （**失败累加器**上的 `X += <整数字面量>` ⇒ 增量必须 ≠ 0）
+      ③ **失败返回的守卫不许被改形**
+         （`return 1` 所在的最内层 `if` 守卫**必须存在**，
+           且测试**只许「名字 / 下标」** ⇒ 取反 / 比较 / 与或 / 布尔字面量 一律红）
+      ④ **失败上报点不许被摘掉**（登记册**双向红**）
+
+    ⚠ **失败累加器** = 出现在「失败守卫」测试里的名字；
+      「失败守卫」= 直接 body 里含 `return <非零>` 或 `sys.exit(...)` 的 `if`。
+    ⚠ **rc 语义**：rc=1 = 失败；rc=2 = 用法错（批 CC 立的约定）⇒ 腿 ③ **不管 rc=2**。
+    ⚠ **规则自己也被规则保护**（批 DM/DN/DO 同款）：本函数名字以 `check_` 开头
+      ⇒ 批 DM 的「判定函数不许被掏空」管它 ⇒ 本函数**只有一条 return**。
+    ⚠ **fail closed**：列不出目录 / 解析失败 ⇒ 判红（不许「读不到就当没问题」）。
+    """
+    bad = []
+    counts = {}
+    scripts_dir = os.path.join(SRC, 'scripts')
+    try:
+        names = sorted(os.listdir(scripts_dir))
+    except OSError as e:
+        bad.append(('(范围)', 0,
+                    '列不出判据脚本目录（%s）⇒ 失败态体检做不了（fail closed）' % e))
+        names = []
+    for fn in names:
+        if not fn.endswith('.py') or fn == DP_SELF:
+            continue
+        path = os.path.join(scripts_dir, fn)
+        try:
+            tree = ast.parse(read_source(path))
+        except (UnreadableSource, SyntaxError) as e:
+            bad.append((fn, 0,
+                        '解析失败（%s）⇒ 失败态体检做不了（fail closed）' % e))
+            continue
+        exits = []
+        rets = []
+        augs = []
+        appends = []
+        accs = set()
+
+        def scan(body, guard):
+            for stmt in body:
+                if isinstance(stmt, ast.If):
+                    # ⚠ 「失败守卫」？⇒ 它的测试里的名字 = 失败累加器候选
+                    if isinstance(stmt.test, ast.Name):
+                        for st in stmt.body:
+                            if ((isinstance(st, ast.Return)
+                                 and _dp_nonzero_int(st.value))
+                                    or (isinstance(st, ast.Expr)
+                                        and _dp_is_sys_exit(st.value))):
+                                accs.add(stmt.test.id)
+                                break
+                    scan(stmt.body, stmt.test)
+                    scan(stmt.orelse, guard)
+                elif isinstance(stmt, ast.Try):
+                    scan(stmt.body, guard)
+                    for h in stmt.handlers:
+                        scan(h.body, guard)
+                    scan(stmt.orelse, guard)
+                    scan(stmt.finalbody, guard)
+                elif isinstance(stmt, (ast.For, ast.While, ast.With,
+                                       ast.AsyncFor, ast.AsyncWith)):
+                    scan(stmt.body, guard)
+                    scan(getattr(stmt, 'orelse', []) or [], guard)
+                elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    # ⚠ 进入函数 ⇒ 守卫**不继承**外层
+                    scan(stmt.body, None)
+                elif isinstance(stmt, ast.Return):
+                    if _dp_nonzero_int(stmt.value):
+                        rets.append((stmt.lineno, stmt.value.value, guard))
+                elif isinstance(stmt, ast.Expr) and _dp_is_sys_exit(stmt.value):
+                    arg = stmt.value.args[0] if stmt.value.args else None
+                    if not (arg is not None and _dp_is_main_call(arg)):
+                        exits.append((stmt.lineno, arg))
+                elif isinstance(stmt, ast.AugAssign):
+                    if isinstance(stmt.target, ast.Name):
+                        augs.append((stmt.lineno, stmt.target.id, stmt.value))
+                elif (isinstance(stmt, ast.Expr)
+                      and isinstance(stmt.value, ast.Call)
+                      and isinstance(stmt.value.func, ast.Attribute)
+                      and stmt.value.func.attr == 'append'
+                      and isinstance(stmt.value.func.value, ast.Name)):
+                    appends.append((stmt.lineno, stmt.value.func.value.id))
+
+        scan(tree.body, None)
+        # ⚠⚠⚨ 口径 ① · **失败出口不许以 0 退出**
+        for lineno, arg in exits:
+            if arg is None:
+                bad.append((fn, lineno,
+                            '`sys.exit()` **没有实参** ⇒ 退出码是 0 ⇒ 失败被报成成功'))
+            elif _dp_zero_exit_code(arg):
+                bad.append((fn, lineno,
+                            '`sys.exit(...)` 的实参会让**退出码变成 0**'
+                            ' ⇒ 失败被报成成功'))
+        # ⚠⚠⚨ 口径 ② · **失败计数增量不许是 0**
+        for lineno, name, val in augs:
+            if name in accs and _dp_is_literal_int(val) and val.value == 0:
+                bad.append((fn, lineno,
+                            '失败累加器 `%s` 上的增量是 **0** ⇒ 那个失败'
+                            '**永远不被计数** ⇒ 退出码永远是 0' % name))
+        # ⚠⚠⚨ 口径 ③ · **失败返回的守卫不许被改形**
+        for lineno, code, guard in rets:
+            if code == 2:
+                continue          # rc=2 = 用法错（批 CC 立的约定）⇒ 不在口径内
+            if guard is None:
+                bad.append((fn, lineno,
+                            '`return %d` **没有守卫** ⇒ 那个失败**恒定触发**（假红）'
+                            % code))
+            elif not _guard_shape_ok(guard):
+                bad.append((fn, lineno,
+                            '`return %d` 的守卫条件形态不合规（%s）⇒ 只许「名字 / 下标」'
+                            ' ⇒ 取反 / 与或 / 比较 / 布尔字面量 都是**在改判定**'
+                            % (code, type(guard).__name__)))
+        # ⚠⚠⚨ 口径 ④ 的**实测数**（追加型写 = `X += …` 与 `X.append(…)`）
+        n_count = len([1 for _l, n, _v in augs if n in accs]) \
+            + len([1 for _l, n in appends if n in accs])
+        counts[fn] = {'fail_exit': len(exits), 'fail_ret': len(rets),
+                      'fail_count': n_count}
+    # ⚠⚠⚨ 口径 ④ · **登记册双向红**
+    used = set()
+    for fn in sorted(counts):
+        for kind in sorted(counts[fn]):
+            if counts[fn][kind]:
+                used.add((fn, kind))
+    reg = set((a, b) for a, b, _n in FAIL_REPORT_COUNTS)
+    for key in sorted(used - reg):
+        bad.append((key[0], 0,
+                    '失败上报点 `%s/%s` **不在登记册里** ⇒ 新增失败态忘了登记'
+                    ' ⇒ 登记册与实际**漂了**' % key))
+    for a, b, n in FAIL_REPORT_COUNTS:
+        got = counts.get(a, {}).get(b, 0)
+        if got != n:
+            bad.append((a, 0,
+                        '登记册记的 `%s/%s` 数量 %d ≠ 实测 %d ⇒ 那个失败上报点'
+                        '**被挪走 / 删了**（或数量变了没登记）' % (a, b, n, got)))
+    return bad
 
 def check_anchor_scope(cnt_items, exempt):
     """盯**适用范围**内的 `arch_need_count` 门项必须**整行锚定**（或被显式豁免）。
@@ -1926,6 +2158,19 @@ def main_body():
             print('  ⇒ 每个 `FAILS.append(rc)` **必须有守卫**（最内层 `if` 的条件）'
                   '，且守卫条件**只许「名字 / 下标」**', file=sys.stderr)
             FAILS.append(2)
+        # ⚠⚠⚨ 批 DP · 判据脚本（**审计器之外**）的「失败态上报」不许被静默关掉
+        #   ⇒ 必须**放在最前**：前面的检查一红就 exit ⇒ 这条永远没机会跑 ⇒ 形同虚设
+        fr_bad = check_fail_report_points()
+        if fr_bad:
+            print('判据脚本的**失败态上报被静默关掉**（%d 处）'
+                  ' ⇒ 那些失败态**永远不会报出来** ⇒ 假绿'
+                  % len(fr_bad), file=sys.stderr)
+            for fnm, jl, jwhy in fr_bad:
+                print('  · scripts/%s%s  %s'
+                      % (fnm, (':%d' % jl) if jl else '', jwhy), file=sys.stderr)
+            print('  ⇒ 失败出口不许以 0 退出 + 失败计数增量不许是 0'
+                  ' + 失败返回的守卫不许被改形 + 登记册双向红', file=sys.stderr)
+            FAILS.append(2)
         # ⚠⚠⚨ 批 BN · 豁免基线**坏行**必须红（理由为空 / 字段数不对）
         #   ⚠ **fail closed**：坏行 ⇒ **不豁免** ⇒ 对应门项照红
         #   ⇒ 但坏行本身也要报出来 ⇒ 否则人只会看到「门红」而不知道「豁免文件坏了」
@@ -2199,6 +2444,10 @@ def main_body():
     print('审计器自己的**失败态上报被静默关掉**：%d 处' % len(guardrep))
     for jl, jwhy in guardrep:
         print('  · ci-wiring-audit.py:%d  %s' % (jl, jwhy))
+    frrep = check_fail_report_points()
+    print('判据脚本的**失败态上报被静默关掉**：%d 处' % len(frrep))
+    for fnm, jl, jwhy in frrep:
+        print('  · scripts/%s:%d  %s' % (fnm, jl, jwhy))
     if anchor_exempt_bad:
         print('锚定豁免基线**坏行**：%d 条（这些行没有豁免任何门项）'
               % len(anchor_exempt_bad))
