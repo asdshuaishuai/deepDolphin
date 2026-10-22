@@ -1,0 +1,22 @@
+# ci-shell-parity.baseline — 批 DV · 「哪些判据脚本被双跑」的**仓内常驻登记册**
+#
+# ⚠ 格式：**恰好 4 段**，段间用 **TAB**（理由里若有 TAB ⇒ 段数错位 ⇒ 读不出来）
+#   ① 路径 = **相对仓库根**的路径（批 CY 教训：裸文件名做键 ⇒ 两个目录里同名 ⇒ 合并 ⇒ 假绿）
+#   ② 状态 = DUAL（被双跑）或 EXEMPT（不双跑 ⇒ **必须**写理由）
+#   ③ 双跑位置 = parity（由 scripts/ci-shell-parity.sh 跑）或 ci.sh（由 CI 入口第 9 步跑）
+#   ④ 理由 = 为什么是这个状态（**逐条写清** ⇒ 机器判不了「理由写得对不对」⇒ 危险方向靠人工）
+#
+# ⚠⚠⚨ **本清单不许被悄悄改窄**：CI 里跑的每一个 shell 判据脚本都必须在册
+#   ⇒ 要么 DUAL，要么 EXEMPT + 理由 ⇒ 门项把「登记册行数」与「门项条数」对账（批 CR 记三遍）
+#   ⇒ 新增一个判据脚本却忘了登记 ⇒ 两个数字对不上 ⇒ **红**
+deepin/scripts/ci-wiring.sh	DUAL	ci.sh	批 DU 已在 CI 入口第 9 步双跑（输出与退出码都必须一致）⇒ 本脚本不重复跑它（白跑一遍要 14 秒）
+deepin/scripts/ci-d2.sh	DUAL	parity	纯源扫描（参数只有仓库根）⇒ 两遍输入完全相同 ⇒ 实测两版逐字节一致 ⇒ 可双跑
+deepin/scripts/ci-orphan-probe.sh	DUAL	parity	纯源扫描（参数只有仓库根）⇒ 两遍输入完全相同 ⇒ 实测两版逐字节一致 ⇒ 可双跑
+deepin/scripts/ci-platform-probe.sh	EXEMPT	-	参数含二进制路径与运行库环境（QT_QPA_PLATFORM 等）⇒ 登记册只按仓库根传参 ⇒ 传参机制未就位 ⇒ 下一批
+deepin/scripts/ci-docs-lang-probe.sh	EXEMPT	-	参数含二进制路径与运行库环境 ⇒ 传参机制未就位 ⇒ 下一批（实测两版一致 ⇒ 值得做）
+deepin/scripts/ci-divider-probe.sh	EXEMPT	-	参数含二进制路径与运行库环境 ⇒ 传参机制未就位 ⇒ 下一批（实测两版一致 ⇒ 值得做）
+deepin/scripts/probe-agent-tool-surface.sh	EXEMPT	-	参数含二进制路径且还需引擎 ⇒ 传参机制未就位 ⇒ 下一批（实测两版一致 ⇒ 值得做）
+deepin/scripts/contract-check.sh	EXEMPT	-	输出含**随机沙箱名**与**时间戳文件名**⇒ 逐字节比对必然不同 ⇒ 恒红 ⇒ 假红（批 DL：假红比假绿更坏）
+deepin/scripts/build-deb.sh	EXEMPT	-	**有副作用**（构建 deb 包）⇒ 双跑 = 构建两遍 ⇒ CI 时间翻倍且产物可能含时间戳 ⇒ 不双跑
+deepin/scripts/check-deb-layout.sh	EXEMPT	-	需 deb 产物（第 11 步才构建）⇒ 双跑点在其之前 ⇒ 依赖未就位 ⇒ 要双跑得把双跑点挪到第 12 步之后
+deepin/scripts/ci-shell-parity.sh	EXEMPT	-	**自引用** ⇒ 双跑自己会递归 ⇒ 它的正确性由门项逐字钉住 + 负控保证（不靠双跑保证）
