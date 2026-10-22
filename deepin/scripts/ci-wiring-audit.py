@@ -45,12 +45,13 @@ arch_forbid 判的是「**不该有的东西没了**」⇒ 它的目标串出现
   python3 ci-wiring-audit.py --changed HEAD~1 # 只审 base..HEAD 里**新增**的门项
 退出码：
   0 绿 / 2 审计器有盲区或缺文件 / **或有门型没登记在正则体检登记册里
-     （那一族门项的正则从来没被体检过）** / 3 豁免外隐患（命中 >1）/ 4 次数门没配准
+     （那一族门项的正则从来没被体检过）/ 或有判定函数被掏空** / 3 豁免外隐患（命中 >1）/ 4 次数门没配准
   5 正则写法体检不过 / 6 门项总数与基线不符 / 7 审计器自己有重名常量
   8 锚定形态违规（含自检不过）
   9 审计器引用了未定义的名字（改名漏改调用点）/ 锚定豁免基线有坏行
     / **或门型清单与正则体检登记册对不上（漏登记）**
 """
+import ast
 import os
 import re
 import shlex
@@ -109,7 +110,7 @@ GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1210
+GATE_LINES_EXPECTED = 1219
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -900,7 +901,7 @@ def count_lines(path, rx):
         return None
 
 
-def pair_segment_bad(path, ra, rb):
+def check_pair_segment_bad(path, ra, rb):
     """逐段核对「报错行 ↔ 计数行」：每一段（从一处报错行到**下一处报错行之前**）
     必须**恰好有 1 处**计数行。
 
@@ -914,41 +915,57 @@ def pair_segment_bad(path, ra, rb):
     ⚠ 口径：**行号**用 `grep -nE`（与门侧 `grep -cE` **同一份正则、同一份剥注释文本**）
       ⇒ 两侧口径一致 ⇒ 零漂移。
     ⚠ 段的定义：从一处报错行（含）到下一处报错行（不含）；**最后一段**到文件末。
-    ⚠ 返回 (违规段列表, 报错行数) 或 None（工具失败 ⇒ 调用方跳过）。
+    ⚠⚠⚨ 批 DM · **工具失败必须判红**（批 CD/CH 纪律）：
+      以前这里返回 `None`（=「工具失败 ⇒ 调用方跳过」）
+      ⇒ 这一族配对门的**逐段配对检查静默失效**而**没人知道** ⇒ **假绿**
+      ⇒ 现在：工具失败 / 文件不存在 ⇒ 返回一条违规（说清失败原因）⇒ 红。
+    ⚠ **判定函数 = 名字以 `check_` 开头** ⇒ 批 DM 的 AST 自检自动纳入它
+      ⇒ 它**不许被掏空**成「返回字面量」。
     """
     if not os.path.isfile(path):
-        return None
+        why = '文件不存在 ⇒ 逐段配对无法核对（未验证不许被当成通过）'
+        return [(0, 0, why)]
     text = strip_comments(path)
 
     def line_numbers(rx):
+        err = None
+        res = []
         try:
             out = subprocess.run(['grep', '-nE', '--', rx], input=text,
                                  capture_output=True, text=True)
-        except OSError:
-            return None
+        except OSError as e:
+            err = 'grep 调用失败：%s' % e
+            return err, res
         if out.returncode not in (0, 1):
-            return None
-        res = []
+            err = 'grep 退出码 %d（既不是 0 也不是 1）' % out.returncode
+            return err, res
         for ln in out.stdout.split('\n'):
             if not ln.strip():
                 continue
             head = ln.split(':', 1)[0]
             if head.isdigit():
                 res.append(int(head))
-        return res
+        return err, res
 
-    errs = line_numbers(ra)
-    cnts = line_numbers(rb)
-    if errs is None or cnts is None:
-        return None
+    err_a, errs = line_numbers(ra)
+    err_b, cnts = line_numbers(rb)
+    if err_a is not None or err_b is not None:
+        why = ('工具失败（%s）⇒ 逐段配对**无法核对**'
+               '（工具失败 ≠ 没找到 ⇒ 未验证不许被当成通过）'
+               % (err_a or err_b))
+        return [(0, 0, why)]
     nlines = len(text.split('\n'))
     bad = []
     for k, s in enumerate(errs):
         e = errs[k + 1] if k + 1 < len(errs) else nlines
         seg_n = sum(1 for c in cnts if s <= c < e)
         if seg_n != 1:
-            bad.append((s, seg_n))
-    return bad, len(errs)
+            why = ('「%s」第 %d 行那一段（从这处报错到下一处报错之前）**段内计数 %d 处**'
+                   ' ⇒ 必须是 **1** 处 ⇒ 那一处报错**没被计数** ⇒ 末尾判定恒真'
+                   ' ⇒ **CI 假绿**（⚠ 批 CS：**总数相等也躲不过**）'
+                   % (rel(path), s, seg_n))
+            bad.append((s, seg_n, why))
+    return bad
 
 
 def check_pair_count_gates(pair_items):
@@ -975,19 +992,13 @@ def check_pair_count_gates(pair_items):
                       if na != nb else '两个数都与期望不符 ⇒ 门恒红/没牙'))
             bad.append((lineno, f, rx_desc, want,
                         '报错 %d / 计数 %d' % (na, nb), why))
-        # ⚠⚠⚨ 批 CS · **逐段配对**（总数相等**不够** ⇒ 见 pair_segment_bad 的说明）
-        seg = pair_segment_bad(f, ra, rb)
-        if seg is None:
-            continue
-        segbad, nseg = seg
-        for seg_line, seg_n in segbad:
+        # ⚠⚠⚨ 批 CS · **逐段配对**（总数相等**不够** ⇒ 见 check_pair_segment_bad 的说明）
+        # ⚠⚠⚨ 批 DM · 判定函数**自己**把失败原因写进 `why`（判定逻辑只有一份）
+        segbad = check_pair_segment_bad(f, ra, rb)
+        for seg_line, seg_n, why in segbad:
             # ⚠⚠⚨ **关键信息必须进 `why`**（批 CS 负控撞出来的）：6 字段形态的打印器
             #   **只打 `why`**（`got` 那一项被丢）⇒ 消息里少写 ⇒ 诊断就少一截
             #   ⇒ ⇒ 消息要自带：文件、行号、段内计数数、为什么是红
-            why = ('「%s」第 %d 行那一段（从这处报错到下一处报错之前）**段内计数 %d 处**'
-                   ' ⇒ 必须是 **1** 处 ⇒ 那一处报错**没被计数** ⇒ 末尾判定恒真'
-                   ' ⇒ **CI 假绿**（⚠ 批 CS：**总数相等也躲不过**）'
-                   % (rel(f), seg_line, seg_n))
             bad.append((lineno, f, rx_desc, want,
                         '段内计数 %d' % seg_n, why))
     return bad
@@ -1261,6 +1272,96 @@ def check_undefined_names():
     return missing
 
 
+def check_judge_return_literals(tree):
+    """判定一棵 AST 里有没有「**判定函数返回了字面量**」⇒ [(函数名, 行号, 说明)]
+
+    ⚠⚠⚨ 批 DM · **实测坐实的洞**（不是推演）：
+      审计器的判定函数（`check_` 前缀）被掏空成「返回 `[]` / `None`」
+      ⇒ 那一族门项的**校准静默失效**
+      ⇒ 实测：**13 个**判定函数逐个掏空 ⇒ ⚠⚠⚨ **审计器 rc=0 + 接线门 rc=0**
+      ⇒ **全绿假绿**（承诺悄悄消失，没有任何机制报警）。
+    ⇒ 判定口径：**判定函数的 `return` 表达式里必须至少有一个「名字」**
+      ⇒ 返回字面量（`[]` / `None` / `True` / `0` / 字符串 …）⇒ 掏空 ⇒ 必红。
+    ⚠ **判定函数 = 名字以 `check_` 开头**（自动纳入 ⇒ 新增判定函数自动受管
+      ⇒ **零名单维护** ⇒ 不存在「忘了登记」这一类漏）。
+    ⚠ **嵌套函数也算**（否则嵌套 helper 被掏空仍然静默）。
+    """
+    bad = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        if not node.name.startswith('check_'):
+            continue
+        for r in ast.walk(node):
+            if not isinstance(r, ast.Return):
+                continue
+            v = r.value
+            if v is None:
+                bad.append((node.name, r.lineno,
+                            '裸 return（没返回值）⇒ 判定函数被掏空'))
+                continue
+            if not any(isinstance(x, ast.Name) for x in ast.walk(v)):
+                bad.append((node.name, r.lineno,
+                            'return 的是**字面量**（%s）⇒ 判定函数被掏空'
+                            % type(v).__name__))
+    return bad
+
+
+def check_judge_funcs_selftest():
+    """自检：让**判定逻辑自己**证明自己有牙（批 BF 纪律：两种极性都要有样例）。
+
+    ⚠⚠⚨ 样例必须**既含「该判为违规」也含「不该判为违规」** ⇒ 只有「该违规」的样例
+      ⇒ 「永远判违规」也能过 ⇒ 自检没牙。
+    """
+    cases = [
+        # 返回空列表 ⇒ 掏空 ⇒ 必须判违规
+        ('def check_a():\n    return []\n', True),
+        # 返回 None ⇒ 掏空 ⇒ 必须判违规
+        ('def check_b():\n    return None\n', True),
+        # 返回常量 True ⇒ 掏空 ⇒ 必须判违规
+        ('def check_c():\n    return True\n', True),
+        # 返回变量 ⇒ 正常 ⇒ 不许判违规
+        ('def check_d():\n    return bad\n', False),
+        # 返回元组（都含名字）⇒ 正常 ⇒ 不许判违规
+        ('def check_e():\n    return bad, need\n', False),
+        # ⚠ **不叫 `check_` 前缀** ⇒ 不在判定函数口径内 ⇒ 不许判违规
+        ('def helper_f():\n    return []\n', False),
+    ]
+    bad = []
+    for src, should in cases:
+        got = bool(check_judge_return_literals(ast.parse(src)))
+        if got != should:
+            bad.append((src.replace('\n', ' / '), should, got))
+    return bad
+
+
+def check_judge_funcs():
+    """判定函数（`check_` 前缀）不许被掏空 ⇒ [(函数名, 行号, 说明)]
+
+    ⚠⚠⚨ 批 DM · **一次挡住整类**：实测 13 个判定函数逐个掏空
+      ⇒ 审计器与接线门**双双全绿** ⇒ 假绿坐实 ⇒ 现在由这条 AST 自检一次挡住。
+    ⚠⚠⚨ **自检必须放最前**（批 BI 纪律）：前面的检查一红就 exit
+      ⇒ 自检永远没机会跑 ⇒ 形同虚设。
+    ⚠⚠⚨ **自检自己也要有自检**（批 BF 纪律：两种极性都要有样例）。
+    ⚠ **fail closed**：解析自己失败 ⇒ 判红（不许「读不到就当没问题」）。
+    """
+    bad = []
+    for src, should, got in check_judge_funcs_selftest():
+        bad.append(('judge-funcs-selftest', 0,
+                    '判定逻辑**自检不过**（样例 %s：期望判违规=%s，实际=%s）'
+                    % (src, should, got)))
+    try:
+        tree = ast.parse(read_source(os.path.abspath(__file__)))
+    except (UnreadableSource, SyntaxError) as e:
+        bad.append(('judge-funcs', 0,
+                    '解析审计器自己失败（%s）⇒ 判定体检做不了'
+                    '（fail closed：未验证不许被当成通过）' % e))
+        return bad
+    for name, lineno, why in check_judge_return_literals(tree):
+        bad.append((name, lineno, why))
+    return bad
+
+
 def check_anchor_scope(cnt_items, exempt):
     """盯**适用范围**内的 `arch_need_count` 门项必须**整行锚定**（或被显式豁免）。
 
@@ -1303,9 +1404,15 @@ def check_count_in_fn_gates(cif_items):
     ⚠ 切函数体的那段 awk **从 ci-wiring.sh 原文抽取** ⇒ 零漂移。
     """
     awk_src = extract_fn_body_awk()
-    if awk_src is None:
-        return []
     bad = []
+    if awk_src is None:
+        # ⚠⚠⚨ 批 DM：以前这里是 `return []` ⇒ **工具失败 ⇒ 这一族校准被静默跳过**
+        #   ⇒ 那些门项的期望次数失准**没人知道** ⇒ **假绿**
+        #   ⇒ 现在：**工具失败必须判红**（批 CD/CH 纪律：未验证不许被当成通过）
+        bad.append((0, '', '', '', 0, None,
+                    '切不出函数体（工具失败）⇒ 这一族门项**根本没被校准**'
+                    '（未验证不许被当成通过）'))
+        return bad
     for lineno, f, sig, rx, want in cif_items:
         if not os.path.isfile(f):
             bad.append((lineno, f, sig, rx, want, None, '文件不存在'))
@@ -1335,9 +1442,13 @@ def check_count_in_step_gates(cis_items):
     ⚠ 期望值被改大来躲变异（例如 1 改成 2）⇒ 这里立刻报「没配准」⇒ 红。
     """
     awk_src = extract_step_awk()
-    if awk_src is None:
-        return []
     bad = []
+    if awk_src is None:
+        # ⚠⚠⚨ 批 DM：同款（工具失败 ⇒ 静默跳过 ⇒ 假绿）⇒ 改成判红
+        bad.append((0, '', '', 0, None,
+                    '切不出步骤正文（工具失败）⇒ 这一族门项**根本没被校准**'
+                    '（未验证不许被当成通过）'))
+        return bad
     for lineno, f, step, rx, want in cis_items:
         if not os.path.isfile(f):
             bad.append((lineno, f, rx, want, None, '文件不存在'))
@@ -1521,6 +1632,19 @@ def main_body():
             print('  ⇒ 改名时**所有**引用点都要一起改；本批的 `check_undefined_names` '
                   '就是为「漏改」而设的', file=sys.stderr)
             FAILS.append(9)
+        # ⚠⚠⚨ 批 DM · **判定函数不许被掏空**（一次挡住整类）
+        #   ⇒ 必须**放在最前**：前面的检查一红就 exit ⇒ 自检永远没机会跑 ⇒ 形同虚设
+        judge_bad = check_judge_funcs()
+        if judge_bad:
+            print('审计器的**判定函数被掏空**（%d 处）⇒ 那些门项**根本没被校准**'
+                  % len(judge_bad), file=sys.stderr)
+            for fnm, jl, jwhy in judge_bad:
+                print('  · %s:%d  %s  ⇒ %s'
+                      % (os.path.basename(os.path.abspath(__file__)), jl, fnm, jwhy),
+                      file=sys.stderr)
+            print('  ⇒ 判定函数（`check_` 前缀）的 `return` 必须返回**含名字**的表达式'
+                  '（不许返回 `[]` / `None` / `True` 这类字面量）', file=sys.stderr)
+            FAILS.append(2)
         # ⚠⚠⚨ 批 BN · 豁免基线**坏行**必须红（理由为空 / 字段数不对）
         #   ⚠ **fail closed**：坏行 ⇒ **不豁免** ⇒ 对应门项照红
         #   ⇒ 但坏行本身也要报出来 ⇒ 否则人只会看到「门红」而不知道「豁免文件坏了」
@@ -1781,6 +1905,11 @@ def main_body():
     print('审计器**引用了未定义的名字**：%d 处' % len(undefrep))
     for scope, name in undefrep:
         print('  · 作用域 %s ⇒ %s' % (scope, name))
+    judgerep = check_judge_funcs()
+    print('判定函数**被掏空**（返回字面量）：%d 处' % len(judgerep))
+    for fnm, jl, jwhy in judgerep:
+        print('  · %s:%d  %s  ⇒ %s'
+              % (os.path.basename(os.path.abspath(__file__)), jl, fnm, jwhy))
     if anchor_exempt_bad:
         print('锚定豁免基线**坏行**：%d 条（这些行没有豁免任何门项）'
               % len(anchor_exempt_bad))
@@ -1942,7 +2071,7 @@ RX_ARG_IDX = {
 GATE_LINE = re.compile(r'^\s*(arch_[a-z_]+)\s+(.*)$')
 
 
-def bad_escapes(rx):
+def check_bad_escapes(rx):
     """找出「**单个**反斜杠 + d/D」的位置 —— GNU grep -E 不认 ⇒ 门永远匹配不到。
 
     ⚠ `\\\\d`（**两个**反斜杠）是「字面反斜杠 + d」⇒ 合法，不算。
@@ -2033,7 +2162,7 @@ def check_rx_syntax():
             if len(args) <= idx:
                 continue
             rx = args[idx]
-            be = bad_escapes(rx)
+            be = check_bad_escapes(rx)
             if be:
                 bad.append((i, kind, rx, be))
     return bad, sorted(unreg.items())
