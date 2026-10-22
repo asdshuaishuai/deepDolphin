@@ -110,7 +110,7 @@ GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1275
+GATE_LINES_EXPECTED = 1297
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -1475,7 +1475,7 @@ GUARD_SHAPE_OK = (ast.Name, ast.Subscript)
 #   ⇒ 「用到的守卫」必须在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
 #   ⇒ 「册里的守卫」必须都被用到 ⇒ 某个收集点被挪走 / 删了 ⇒ 红。
 #   ⇒ ⚠ 登记册**内容由本仓的收集点现抽生成** ⇒ 不手抄 ⇒ 零漂移。
-FAIL_GUARDS = ('anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'dead', 'exempt_missing', 'failed', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'stbad', 'undef', 'zero')
+FAIL_GUARDS = ('anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'dead', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'stbad', 'undef', 'zero')
 
 
 def _is_fails_append(node):
@@ -1846,6 +1846,194 @@ def check_fail_report_points():
                         '**被挪走 / 删了**（或数量变了没登记）' % (a, b, n, got)))
     return bad
 
+# ══════════════════════════════════════════════════════════════
+# ⚠⚠⚨ 批 DR · **失败出口的守卫不许被悄悄改弱**
+# ══════════════════════════════════════════════════════════════
+# ⚠⚠⚨ **实测坐实的洞（不是推演）**：
+#   把 `ci-true-audit.py` 的 `if '\ufffd' in raw:` 改成
+#   `if '\ufffd' in raw and False:` ⇒ 那个失败出口**恒不触发**
+#   ⇒ 登记册里真的塞了 U+FFFD 时**不再被报出来**
+#   ⇒ 而盘点 rc=0 + 审计器 rc=0 + 接线门 rc=0 ⇒ ⚠⚠⚨ **全绿假绿**
+#   ⇒ ⚠ 恒真探针抓不到（条件里还有标识符 ⇒ 不是「恒真」）
+#   ⇒ ⚠ 批 DP 的口径 ③ 只管「决定退出码的守卫」（`return 1`）⇒ 管不到这里
+#   ⇒ ⚠ 批 DO / 批 DM 只管审计器自己 ⇒ 也管不到这里
+#   ⇒ ⇒ **这批失败出口的守卫，一个门都没钉住**（实测：23 处里只有 9 处被门钉住）。
+#
+# ⚠⚠⚨ **修法（两条腿）**：
+#   腿 ① **守卫登记册（双向红）** ⇒ 守卫**表达式**级 ⇒ 改弱（`and False` /
+#       `or True` / 换形态 / 换比较值 / 换标识符）⇒ 表达式对不上 ⇒ 红
+#   腿 ② **守卫里不许有布尔字面量** ⇒ 一次挡住整类（批 CD 纪律：一次挡住整类）
+#       ⇒ 布尔字面量 ⇒ 守卫要么**恒假**（死代码 ⇒ 失败永远不被报出）
+#         要么**恒真**（永远被报出 ⇒ 变成无条件失败）
+#         ⇒ 两种都不是「失败条件的忠实表达」
+#
+# ⚠ 本登记册是**名单** ⇒ 「改代码 + 改登记册」的协同编辑**抓不到**
+#   （⚠ 批 CR / 批 DO / 批 DP 同款已知边界）
+# ⚠ 腿 ② **不依赖登记册** ⇒ 协同编辑躲不过这一腿（部分独立）
+
+# ⚠⚠⚨ **守卫登记册**的路径（⚠ 与其它基线**分开文件** ⇒ 批 BH 纪律）
+FAIL_GUARD_BASELINE = os.path.join(SRC, 'scripts', 'ci-fail-guard.baseline')
+
+# ⚠⚠⚨ **登记册条数基线**（批 BC 纪律：清单不许被删）⇒ **恰好**（批 BB 口径）
+FAIL_GUARD_EXPECTED_ROWS = 23
+
+
+def _fg_ascii(s):
+    r"""非 ASCII 一律转成 `\uXXXX` ⇒ 登记册里**不会有真 U+FFFD**。"""
+    out = []
+    for ch in s:
+        if ord(ch) < 128:
+            out.append(ch)
+        else:
+            out.append('\\u%04x' % ord(ch))
+    return ''.join(out)
+
+
+def _fg_bool_literal(node):
+    """这个表达式里**有没有布尔字面量**（`True` / `False`）？
+
+    ⚠⚠⚨ 守卫里出现布尔字面量 ⇒ 守卫**要么恒假**（死代码 ⇒ 失败永远不被报出）
+      ⇒ **要么恒真**（永远被报出 ⇒ 变成无条件失败）
+      ⇒ 两种都不是「失败条件的忠实表达」⇒ 一律红（批 DR）。
+    ⚠ **判定收成单行** ⇒ 门项可**整行钉住**（批 AH~AX 纪律：关键判定整行锚定）
+      ⇒ 改它 ⇒ 门红 ⇒ 规则不会**静默失去牙**。
+    """
+    return any(isinstance(s, ast.Constant) and isinstance(s.value, bool) for s in ast.walk(node))
+
+
+def _fg_collect_exits(tree):
+    """判据脚本里全部**失败出口** ⇒ [(行号, 守卫表达式, 守卫 AST 节点)]。
+
+    ⚠⚠⚨ **「失败出口」的定义与批 DP 口径①**完全一致（`_dp_is_sys_exit` +
+      `_dp_is_main_call`）⇒ 两批口径**不会各算各的**（批 BF：判定逻辑只有一份）。
+    ⚠ **守卫** = **最内层**那个 `if` 的条件（`else` 分支**不继承**那个 `if`）。
+    ⚠ **函数体 / 类体不继承**外层守卫（与批 DP 口径③的 `scan` 同款约定）。
+    """
+    out = []
+
+    def walk_body(stmts, if_test, in_except):
+        for st in stmts:
+            if isinstance(st, ast.If):
+                walk_body(st.body, st.test, in_except)
+                walk_body(st.orelse, if_test, in_except)
+            elif isinstance(st, ast.Try):
+                walk_body(st.body, if_test, in_except)
+                for h in st.handlers:
+                    walk_body(h.body, if_test, True)
+                walk_body(st.orelse, if_test, in_except)
+                walk_body(st.finalbody, if_test, in_except)
+            elif isinstance(st, (ast.For, ast.AsyncFor, ast.While,
+                                 ast.With, ast.AsyncWith)):
+                walk_body(st.body, if_test, in_except)
+                walk_body(getattr(st, 'orelse', []) or [], if_test, in_except)
+            elif isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                 ast.ClassDef)):
+                walk_body(st.body, None, False)
+            elif isinstance(st, ast.Expr) and _dp_is_sys_exit(st.value):
+                arg = st.value.args[0] if st.value.args else None
+                if arg is not None and _dp_is_main_call(arg):
+                    continue        # `sys.exit(main())` ⇒ 入口，不是失败出口
+                if if_test is not None:
+                    try:
+                        g = _fg_ascii(ast.unparse(if_test))
+                    except Exception:
+                        g = '(unparse 失败)'
+                elif in_except:
+                    g = '(except 兜底)'
+                else:
+                    g = '(无 if 守卫)'
+                out.append((st.lineno, g, if_test))
+
+    walk_body(tree.body, None, False)
+    return out
+
+
+def check_fail_guard_shapes():
+    """失败出口的守卫**不许被悄悄改弱** ⇒ [(文件, 行号, 说明)]
+
+    ⚠⚠⚨ 两条腿（见上方注释）：
+      腿 ① 守卫登记册**双向红**（表达式级）
+      腿 ② 守卫里**不许有布尔字面量**
+    ⚠ **fail closed**：列不出目录 / 解析失败 / 读不了登记册 ⇒ 判红。
+    ⚠ **规则自己也被规则保护**（批 DM/DN/DO/DP 同款）：本函数名字以 `check_`
+      开头 ⇒ 批 DM 管它 ⇒ **只有一条 return**。
+    """
+    bad = []
+    scripts_dir = os.path.join(SRC, 'scripts')
+    try:
+        names = sorted(os.listdir(scripts_dir))
+    except OSError as e:
+        bad.append(('(范围)', 0,
+                    '列不出判据脚本目录（%s）⇒ 守卫体检做不了（fail closed）' % e))
+        names = []
+    actual = {}
+    for fn in names:
+        if not fn.endswith('.py') or fn == DP_SELF:
+            continue
+        path = os.path.join(scripts_dir, fn)
+        try:
+            tree = ast.parse(read_source(path))
+        except (UnreadableSource, SyntaxError) as e:
+            bad.append((fn, 0,
+                        '解析失败（%s）⇒ 守卫体检做不了（fail closed）' % e))
+            continue
+        for lineno, g, node in _fg_collect_exits(tree):
+            key = (fn, g)
+            actual[key] = actual.get(key, 0) + 1
+            # ⚠⚠⚨ 腿 ② · 守卫里**不许有布尔字面量**
+            if node is not None and _fg_bool_literal(node):
+                bad.append((fn, lineno,
+                            '失败出口的守卫里**有布尔字面量**（`True` / `False`）'
+                            ' ⇒ 守卫要么**恒假**（死代码 ⇒ 失败永远不被报出）'
+                            '、要么**恒真**（永远被报出）'
+                            ' ⇒ 都不是「失败条件的忠实表达」'))
+    # ⚠⚠⚨ 腿 ① · **登记册双向红**（表达式级 ⇒ 改弱就红）
+    reg = {}
+    n_reg = 0
+    raw = None
+    try:
+        with open(FAIL_GUARD_BASELINE, encoding='utf-8') as fh:
+            raw = fh.read()
+    except OSError as e:
+        bad.append(('(登记册)', 0,
+                    '读不了守卫登记册（%s）⇒ 无处对账 ⇒ 判红（fail closed）' % e))
+    if raw is not None:
+        for no, line in enumerate(raw.split('\n'), 1):
+            t = line.rstrip('\r\n')
+            if not t.strip() or t.strip().startswith('#'):
+                continue
+            parts = t.split('\t')
+            if len(parts) != 3:
+                bad.append(('(登记册)', no,
+                            '不是 3 段（脚本|守卫表达式|理由）：%r' % t))
+                continue
+            if not parts[2].strip():
+                bad.append(('(登记册)', no,
+                            '**没有理由** ⇒ 不许「登记了但没写为什么」'))
+                continue
+            key = (parts[0], parts[1])
+            reg[key] = reg.get(key, 0) + 1
+            n_reg += 1
+        if n_reg != FAIL_GUARD_EXPECTED_ROWS:
+            bad.append(('(登记册)', 0,
+                        '登记册条数 %d ≠ 基线 %d ⇒ 整份清单被删/被改'
+                        % (n_reg, FAIL_GUARD_EXPECTED_ROWS)))
+    for key in sorted(set(actual) - set(reg)):
+        bad.append((key[0], 0,
+                    '失败出口的守卫 `%s` **不在登记册里** ⇒ 新增失败出口忘了登记'
+                    ' ⇒ 登记册与实际**漂了**' % key[1]))
+    for key in sorted(set(reg) - set(actual)):
+        bad.append((key[0], 0,
+                    '登记册里的守卫 `%s` **实测没有** ⇒ 那个失败出口'
+                    '**被挪走 / 删了 / 改了形态**' % key[1]))
+    for key in sorted(set(actual) & set(reg)):
+        if actual[key] != reg[key]:
+            bad.append((key[0], 0,
+                        '守卫 `%s` 的处数：实测 %d ≠ 登记册 %d'
+                        % (key[1], actual[key], reg[key])))
+    return bad
+
+
 def check_anchor_scope(cnt_items, exempt):
     """盯**适用范围**内的 `arch_need_count` 门项必须**整行锚定**（或被显式豁免）。
 
@@ -2171,6 +2359,20 @@ def main_body():
             print('  ⇒ 失败出口不许以 0 退出 + 失败计数增量不许是 0'
                   ' + 失败返回的守卫不许被改形 + 登记册双向红', file=sys.stderr)
             FAILS.append(2)
+        # ⚠⚠⚨ 批 DR · 判据脚本的**失败出口守卫**不许被悄悄改弱
+        #   ⇒ 必须与批 DP 那条**放在同一处** ⇒ 前面的检查一红就 exit
+        #     ⇒ 这条永远没机会跑 ⇒ 形同虚设（批 DP 同款教训）
+        fg_bad = check_fail_guard_shapes()
+        if fg_bad:
+            print('判据脚本的**失败出口守卫被改弱**（%d 处）'
+                  ' ⇒ 那些失败**永远不会被报出来** ⇒ 假绿'
+                  % len(fg_bad), file=sys.stderr)
+            for fnm, jl, jwhy in fg_bad:
+                print('  · scripts/%s%s  %s'
+                      % (fnm, (':%d' % jl) if jl else '', jwhy), file=sys.stderr)
+            print('  ⇒ 守卫登记册双向红（表达式级）'
+                  ' + 守卫里不许有布尔字面量', file=sys.stderr)
+            FAILS.append(2)
         # ⚠⚠⚨ 批 BN · 豁免基线**坏行**必须红（理由为空 / 字段数不对）
         #   ⚠ **fail closed**：坏行 ⇒ **不豁免** ⇒ 对应门项照红
         #   ⇒ 但坏行本身也要报出来 ⇒ 否则人只会看到「门红」而不知道「豁免文件坏了」
@@ -2447,6 +2649,10 @@ def main_body():
     frrep = check_fail_report_points()
     print('判据脚本的**失败态上报被静默关掉**：%d 处' % len(frrep))
     for fnm, jl, jwhy in frrep:
+        print('  · scripts/%s:%d  %s' % (fnm, jl, jwhy))
+    fgrep = check_fail_guard_shapes()
+    print('判据脚本的**失败出口守卫被改弱**：%d 处' % len(fgrep))
+    for fnm, jl, jwhy in fgrep:
         print('  · scripts/%s:%d  %s' % (fnm, jl, jwhy))
     if anchor_exempt_bad:
         print('锚定豁免基线**坏行**：%d 条（这些行没有豁免任何门项）'

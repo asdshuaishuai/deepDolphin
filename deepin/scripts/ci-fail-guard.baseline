@@ -1,0 +1,34 @@
+# ⚠⚠⚨ 批 DR · **失败出口的守卫登记册**
+#   ⇒ 每一行 = 一个失败出口（`sys.exit(...)`）的**守卫表达式**
+#     ⇒ 守卫被改弱（`and False` / `or True` / 换形态 / 换比较值 / 换标识符）
+#       ⇒ 表达式对不上 ⇒ **红**（批 DR）
+#   ⇒ **逐条理由**（批 BN 纪律）：第 3 段不许为空
+#   ⇒ 哨兵：`(except 兜底)`（在 except 里兜底）/ `(无 if 守卫)`
+#   ⇒ ⚠ **键 = 脚本名 + 守卫表达式** ⇒ 两者任一改 ⇒ 对不上 ⇒ 红
+#   ⇒ ⚠ 非 ASCII 一律写成 `\uXXXX` ⇒ 登记册里不会有真 U+FFFD
+#   ⇒ ⚠ 本文件是**名单** ⇒ 「改代码 + 改本文件」的协同编辑**抓不到**
+#     （⚠ 批 CR / 批 DO / 批 DP 同款已知边界）
+
+ci-true-audit.py	spec is None or spec.loader is None	加载判据层自己的审计器失败 ⇒ **口径无法复用** ⇒ 必须判红（批 CF：口径单一真相源的前提）
+ci-true-audit.py	not hasattr(mod, fn)	审计器里缺 `read_source` / `strip_comments` ⇒ **口径无法复用** ⇒ 必须判红
+ci-true-audit.py	not os.access(wiring, os.R_OK)	`ci-wiring.sh` 读不了 ⇒ **抽取自检做不了** ⇒ 必须判红（fail closed）
+ci-true-audit.py	not m	从 `ci-wiring.sh` 抽不出 `strip_comments` ⇒ **抽取自检做不了** ⇒ 必须判红（fail closed）
+ci-true-audit.py	out.returncode != 0	抽出来的 `strip_comments` **跑不起来** ⇒ 两侧口径不可比 ⇒ 必须判红
+ci-true-audit.py	bad	两侧剥注释结果**不一致**（口径漂移）⇒ 必须判红（批 CF 纪律）
+ci-true-audit.py	not os.path.isdir(base)	盘点范围目录**不存在** ⇒ 范围被悄悄改窄 ⇒ 必须判红（批 CX / 批 CY 的 fail closed）
+ci-true-audit.py	n == 0	范围里**一个 `.sh` 都没有** ⇒ 范围被掏空 ⇒ 盘点等于没跑 ⇒ 必须判红
+ci-true-audit.py	not os.path.isfile(BASELINE)	登记册不存在 ⇒ 盘点**无处对照** ⇒ 必须判红（批 BC：清单不许被删）
+ci-true-audit.py	'\ufffd' in raw	登记册里有 **U+FFFD**（乱码）⇒ 拒绝落盘/判读（防污染）
+ci-true-audit.py	len(parts) != 6	登记册每行必须**恰好 6 段** ⇒ 否则登记册**永远读不出来**（批 CJ）
+ci-true-audit.py	not parts[5].strip()	登记册每行必须**写清理由** ⇒ 「登记了但没写为什么」不许过（批 BN）
+ci-true-audit.py	scope_expect is None	恒真探针的扫描范围基线**读不到 / 坏了** ⇒ 本盘点范围**无处对账** ⇒ 必须判红（fail closed）
+ci-true-audit.py	want is None or got != want	**逐范围对账**：两个盘点的范围必须一致 ⇒ 不一致必须判红（批 DQ）
+ci-true-audit.py	extra_shell	**反向对账**：恒真探针扩了范围而本盘点没跟上 ⇒ 必须判红（批 DQ）
+ci-unverified-audit.py	spec is None or spec.loader is None	加载 `ci-true-audit.py` 失败 ⇒ **口径无法复用** ⇒ 必须判红
+ci-unverified-audit.py	not hasattr(mod, fn)	`ci-true-audit.py` 里缺 `read_source` / `strip_comments` ⇒ **口径无法复用** ⇒ 必须判红
+ci-unverified-audit.py	not os.path.isdir(base)	盘点范围目录**不存在** ⇒ 范围被悄悄改窄 ⇒ 必须判红（批 CY 的 fail closed）
+ci-unverified-audit.py	n_scope == 0	范围里**一个判据脚本都没有** ⇒ 范围被掏空 ⇒ 必须判红（批 CY 的 fail closed）
+ci-unverified-audit.py	(except 兜底)	读不了某个判据脚本 ⇒ 盘点做不了 ⇒ 必须判红（**在 except 里兜底** ⇒ 崩了也不许静默）
+ci-unverified-audit.py	not os.path.isfile(BASELINE)	登记册不存在 ⇒ 盘点**无处对照** ⇒ 必须判红（批 BC：清单不许被删）
+ci-unverified-audit.py	bad	登记册有**坏行**（段数不对 / 处数非正整数 / 理由为空）⇒ 必须判红
+ci-unverified-audit.py	len(rows) != UNVERIFIED_EXPECTED_ROWS	登记册条数 ≠ 基线 ⇒ **清单不许被删**（批 BC）
