@@ -522,7 +522,11 @@ def tautology_reason(cond):
 #   ⚠ 类别：`cond` = 判定层的判据条件（**裸条件串**，不经抽取器）；
 #     `cpp_e2e` = 判定层的判据条件（**经 `extract_check_conds` 抽取**⇒ 抽的是
 #     `check(...)` 的**第三个实参**，与实扫同一条路径 ⇒ 抽取器被掏空 ⇒ 自检红）；
-#     `assert_arg` = 断言函数实参里的判据。
+#     `assert_arg` = 断言函数实参里的判据；
+#     `py_extract` = python 侧条件的**抽取器**（**经 `python_if_conds` 抽取**
+#       ⇒ 抽到几条必须与期望一致 ⇒ 抽取器被掏空 ⇒ 自检红）；
+#     `heredoc_extract` = heredoc 体的**抽取器**（**经 `heredoc_spans` 抽取**
+#       ⇒ 同上）。
 SELF_TEST_CASES = [
     ('cond', 'true', True),
     ('cond', 'false', True),
@@ -575,6 +579,13 @@ SELF_TEST_CASES = [
     ('shortcut', 'ok || truthful', False),
     ('shortcut', 'ok and Falsey', False),
     ('shortcut', 'ok and other', False),
+    # ⚠⚠⚨ **批 DN**：两个**抽取器**（`python_if_conds` / `heredoc_spans`）的自检档
+    #   ⇒ 样例**真的经过抽取器** ⇒ 抽取器被掏空时**自检当场红**
+    #   ⇒ ⚠ 必须**既含「该抽到」也含「不该抽到」**⇒ 只测一边 ⇒ 判反了也能过
+    ('py_extract', ('if a:\n    pass\n', 1), True),
+    ('py_extract', ('x = 1\n', 0), True),
+    ('heredoc_extract', ('cat <<EOF\nbody\nEOF\n', 1), True),
+    ('heredoc_extract', ('echo hi\n', 0), True),
     ('py_const_if', 'if True:', True),
     ('py_const_if', 'if False:', True),
     ('py_const_if', 'if 1:', True),
@@ -652,6 +663,23 @@ def self_test():
         elif kind == 'swift_taut':
             # ⚠ 走**同一条**判定路径（自检与实扫必须调同一个判定函数）
             got = swift_assert_reason(inp) is not None
+        elif kind == 'py_extract':
+            # ⚠⚠⚨ **批 DN**：python 侧的条件**抽取器**必须自检证明有牙
+            #   ⇒ ⚠⚠⚨ **实测坐实的洞**：把 `python_if_conds` 掏空（提前 `return []`）
+            #     ⇒ python 侧的**捷径**检查（`if x and False:`）**静默失效**
+            #     ⇒ 而**探针 rc=0 + 接线门 rc=0** ⇒ **全绿假绿**
+            #   ⇒ 这一档**真的经过 `python_if_conds`** ⇒ 抽取器坏了自检当场红
+            #   ⇒ ⚠ 样例必须**既含「该抽到」也含「不该抽到」**（批 BF 纪律）
+            text, want_n = inp
+            got = (len(python_if_conds(text)) == want_n)
+        elif kind == 'heredoc_extract':
+            # ⚠⚠⚨ **批 DN**：heredoc 体**抽取器**同样必须自检证明有牙
+            #   ⇒ ⚠⚠⚨ **实测坐实的洞**：把 `heredoc_spans` 掏空 ⇒ heredoc 里的
+            #     内嵌脚本（python / awk）**整段不再被查** ⇒ 静默失效 ⇒ 假绿
+            #   ⇒ 这一档**真的经过 `heredoc_spans`** ⇒ 抽取器坏了自检当场红
+            #   ⇒ ⚠ `heredoc_spans` 收的是**行列表** ⇒ 这里要自己切行
+            text, want_n = inp
+            got = (len(heredoc_spans(text.splitlines())) == want_n)
         elif kind == 'swift_e2e':
             # ⚠ 走**同一条**扫描路径（自检与实扫必须调同一个扫描函数）
             #   ⇒ 扫描会往 stderr 打诊断 ⇒ 自检期间**必须静音**

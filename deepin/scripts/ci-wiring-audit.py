@@ -110,7 +110,7 @@ GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1219
+GATE_LINES_EXPECTED = 1234
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -1356,9 +1356,114 @@ def check_judge_funcs():
         bad.append(('judge-funcs', 0,
                     '解析审计器自己失败（%s）⇒ 判定体检做不了'
                     '（fail closed：未验证不许被当成通过）' % e))
-        return bad
-    for name, lineno, why in check_judge_return_literals(tree):
-        bad.append((name, lineno, why))
+    else:
+        for name, lineno, why in check_judge_return_literals(tree):
+            bad.append((name, lineno, why))
+    return bad
+
+
+SELF_TEST_NAME_HINTS = ('selftest', 'self_test')
+
+
+def _name_has_hint(name):
+    """名字里含「自检」提示词（`selftest` / `self_test`）⇒ 是**自检函数**。"""
+    return any(h in name for h in SELF_TEST_NAME_HINTS)
+
+
+def _calls_named(node, names):
+    """函数体里**直接调用**了 `names` 里的任意一个（只看 `Name` 形态的调用）。
+
+    ⚠ **不用 `return True` / `return False` 字面量** ⇒ 全文件「`return True` 恰好 1 处」
+      那条门盯的是 `has_unbounded_wildcard` 的「判违规」返回 ⇒ 多一处就失准。
+    """
+    found = False
+    for sub in ast.walk(node):
+        if (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name)
+                and sub.func.id in names):
+            found = True
+            break
+    return found
+
+
+def _own_return_nodes(node):
+    """函数**自己**的 `return` 节点（**不进嵌套函数**）。
+
+    ⚠ 为什么要排除嵌套函数：嵌套 helper 的多个出口（早返回/多分支返回）
+      是**正常写法** ⇒ 混进来会把「提前 return」这个口径**判得过宽** ⇒ 假红。
+    """
+    nested = set()
+    for sub in ast.walk(node):
+        if sub is node:
+            continue
+        if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            nested.add(id(sub))
+            for d in ast.walk(sub):
+                nested.add(id(d))
+    return [r for r in ast.walk(node)
+            if isinstance(r, ast.Return) and id(r) not in nested]
+
+
+def check_self_test_funcs():
+    """判据脚本里的**自检函数**不许被掏空 ⇒ [(文件名, 函数名, 行号, 说明)]
+
+    ⚠⚠⚨ 批 DN · **实测坐实的洞**（不是推演）：
+      `ci-true-audit.py` 的 `selftest_strip_parity` 被掏空（在函数体里插一句
+      提前 `return`）⇒ 那道「两侧剥注释口径必须一致」的自检**静默失效**
+      ⇒ 该脚本 rc=0 + 接线门 rc=0 ⇒ **全绿假绿**（承诺悄悄消失，没人报警）。
+
+    ⇒ 判定口径（**零名单维护**）：
+      ① **自检函数**（名字含 `selftest` / `self_test`）**不许有提前 return**
+         ⇒ 提前 return 就是「掏空」⇒ 必红；
+      ② **自检的宿主**（`check_` 前缀、且函数体里**调用了**自检函数）
+         **同样不许有提前 return** ⇒ 否则「在跑自检之前先 return」
+         ⇒ 自检**根本没机会跑**而门全绿；
+      ③ 自检函数**一条 return 都没有** ⇒ 也算被掏空（自检必须**给出结论**）。
+
+    ⚠ **跨脚本**（扫 `deepin/scripts/*.py` 全部）⇒ 别的判据脚本里的自检自动受管。
+    ⚠ **fail closed**：列不出目录 / 解析失败 ⇒ 判红（不许「读不到就当没问题」）。
+    ⚠ **规则自己也被规则保护**（批 DM 同款）：本函数名字含 `self_test`
+      ⇒ 它自己也在口径内 ⇒ 它不许有提前 return。
+    """
+    bad = []
+    scripts_dir = os.path.join(SRC, 'scripts')
+    try:
+        names = sorted(os.listdir(scripts_dir))
+    except OSError as e:
+        bad.append(('(范围)', '(范围)', 0,
+                    '列不出判据脚本目录（%s）⇒ 自检体检做不了（fail closed）' % e))
+        names = []
+    for fn in names:
+        if not fn.endswith('.py'):
+            continue
+        path = os.path.join(scripts_dir, fn)
+        try:
+            tree = ast.parse(read_source(path))
+        except (UnreadableSource, SyntaxError) as e:
+            bad.append((fn, '(解析)', 0,
+                        '解析失败（%s）⇒ 自检体检做不了（fail closed）' % e))
+            continue
+        hints = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and _name_has_hint(node.name):
+                hints.add(node.name)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            host = node.name.startswith('check_') and _calls_named(node, hints)
+            if not (_name_has_hint(node.name) or host):
+                continue
+            rets = _own_return_nodes(node)
+            if not rets:
+                bad.append((fn, node.name, node.lineno,
+                            '自检函数**一条 return 都没有** ⇒ 自检被掏空'
+                            '（自检必须给出结论）'))
+                continue
+            last = node.body[-1]
+            early = [r for r in rets if r is not last]
+            if early:
+                bad.append((fn, node.name, early[0].lineno,
+                            '自检函数有**提前 return**（第 %d 行）⇒ 自检被掏空'
+                            % early[0].lineno))
     return bad
 
 
@@ -1645,6 +1750,18 @@ def main_body():
             print('  ⇒ 判定函数（`check_` 前缀）的 `return` 必须返回**含名字**的表达式'
                   '（不许返回 `[]` / `None` / `True` 这类字面量）', file=sys.stderr)
             FAILS.append(2)
+        # ⚠⚠⚨ 批 DN · **自检函数不许被掏空**（跨脚本 ⇒ 零名单维护）
+        #   ⇒ 必须**放在最前**：前面的检查一红就 exit ⇒ 自检永远没机会跑 ⇒ 形同虚设
+        self_bad = check_self_test_funcs()
+        if self_bad:
+            print('判据脚本里的**自检函数被掏空**（%d 处）⇒ 那些自检**静默失效**'
+                  % len(self_bad), file=sys.stderr)
+            for fnm, fn2, jl, jwhy in self_bad:
+                print('  · scripts/%s:%d  %s  ⇒ %s'
+                      % (fnm, jl, fn2, jwhy), file=sys.stderr)
+            print('  ⇒ 自检函数（名字含 `selftest` / `self_test`）**不许有提前 return**'
+                  ' ⇒ 提前 return 就是「掏空」', file=sys.stderr)
+            FAILS.append(2)
         # ⚠⚠⚨ 批 BN · 豁免基线**坏行**必须红（理由为空 / 字段数不对）
         #   ⚠ **fail closed**：坏行 ⇒ **不豁免** ⇒ 对应门项照红
         #   ⇒ 但坏行本身也要报出来 ⇒ 否则人只会看到「门红」而不知道「豁免文件坏了」
@@ -1910,6 +2027,10 @@ def main_body():
     for fnm, jl, jwhy in judgerep:
         print('  · %s:%d  %s  ⇒ %s'
               % (os.path.basename(os.path.abspath(__file__)), jl, fnm, jwhy))
+    selfrep = check_self_test_funcs()
+    print('判据脚本里的**自检函数被掏空**：%d 处' % len(selfrep))
+    for fnm, fn2, jl, jwhy in selfrep:
+        print('  · scripts/%s:%d  %s  ⇒ %s' % (fnm, jl, fn2, jwhy))
     if anchor_exempt_bad:
         print('锚定豁免基线**坏行**：%d 条（这些行没有豁免任何门项）'
               % len(anchor_exempt_bad))
