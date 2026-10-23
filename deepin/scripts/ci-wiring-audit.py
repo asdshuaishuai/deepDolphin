@@ -112,7 +112,7 @@ AUDIT_SELF = os.path.join(HERE, 'ci-wiring-audit.py')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1447
+GATE_LINES_EXPECTED = 1449
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -157,6 +157,11 @@ ANY_MIN_LINE = re.compile(
 # ⚠ `arch_need_count`（单文件、**恰好** N 次）：批 AV 起纳入校准。
 COUNT_LINE = re.compile(
     r'^\s*arch_need_count\s+"([^"]+)"\s+\'([^\']*)\'\s+(\d+)\s+')
+# ⚠⚠⚨ 批 EF 新门型：`arch_need_count_ml`（**跨行**、**恰好** N 次）
+#   ⇒ ⇒ 段级 trailer 的「判定 ⇒ 报红 ⇒ 记全局红过」是**跨行**的关系
+#   ⇒ ⇒ 按行匹配的 count 门盯不住 ⇒ ⇒ 「判定被掏空但那几行还在」⇒ 假绿
+COUNT_ML_LINE = re.compile(
+    r'^\s*arch_need_count_ml\s+"([^"]+)"\s+\'([^\']*)\'\s+(\d+)\s+')
 # ⚠ `arch_need_count_in_fn`（**函数体内**恰好 N 次）：它**自己数次数** ⇒ 天然有牙，
 #   但「把期望从 1 改成 2 来躲变异」这种手法没人盯 ⇒ 批 AV 起也校准。
 #   ⚠ 期望值校准要复刻「切函数体」那段 awk ⇒ **从 ci-wiring.sh 里抽取原文**（零漂移）。
@@ -486,6 +491,7 @@ GATE_TYPES = [
     ('need_any_count', ANY_COUNT_LINE),
     ('need_any_min', ANY_MIN_LINE),
     ('need_count', COUNT_LINE),
+    ('need_count_ml', COUNT_ML_LINE),
     ('need_count_in_fn', COUNT_IN_FN_LINE),
     ('need_count_in_step', COUNT_IN_STEP_LINE),
     ('need_count_pair', PAIR_COUNT_LINE),
@@ -781,9 +787,10 @@ def parse_wiring():
     src = read_source(WIRING)
     lines = src.split('\n')
     need, ml, anyc, anym, cnt, cif, cis, pair = [], [], [], [], [], [], [], []
+    cntml = []
     totals = {'need': 0, 'ml': 0, 'any_count': 0, 'any_min': 0,
               'count': 0, 'count_in_fn': 0, 'count_in_step': 0,
-              'count_pair': 0}
+              'count_pair': 0, 'count_ml': 0}
     failed, forbid_lines = [], 0
     for i, ln in enumerate(lines, 1):
         if ANY_FORBID_LINE.match(ln) and not FUNC_DEF_LINE.match(ln):
@@ -818,6 +825,11 @@ def parse_wiring():
             m = COUNT_LINE.match(ln)
             cnt.append((i, resolve(m.group(1)), m.group(2), int(m.group(3))))
             continue
+        if COUNT_ML_LINE.match(ln):
+            totals['count_ml'] += 1
+            m = COUNT_ML_LINE.match(ln)
+            cntml.append((i, resolve(m.group(1)), m.group(2), int(m.group(3))))
+            continue
         if COUNT_IN_STEP_LINE.match(ln):
             totals['count_in_step'] += 1
             m = COUNT_IN_STEP_LINE.match(ln)
@@ -839,7 +851,7 @@ def parse_wiring():
             #   （批 BE：写坏的 count 族门项以前是**静默忽略** ⇒ 没人知道它没被审）
             failed.append((i, 'count-family'))
             continue
-    return (need, ml, anyc, anym, cnt, cif, cis, pair,
+    return (need, ml, anyc, anym, cnt, cif, cis, pair, cntml,
             totals, failed, forbid_lines)
 
 
@@ -1155,6 +1167,27 @@ def _raw_gate_line(lineno):
     if lineno < 1 or lineno > len(lines):
         return None
     return lines[lineno - 1]
+
+
+def check_count_ml_gates(count_ml_items):
+    """校准 `arch_need_count_ml` 的期望次数：必须 == **压行后**的实际命中数。
+
+    ⚠⚠⚨ 批 EF 新门型：口径与 `arch_need_ml` **完全一致**（同一段剥注释 + 同一个
+      `tr '\n' ' '`）⇒ ⇒ 门侧与审计侧**同口径** ⇒ ⇒ 不漂移。
+    """
+    bad = []
+    for lineno, f, rx, want in count_ml_items:
+        if not os.path.isfile(f):
+            bad.append((lineno, f, rx, want, None, '文件不存在'))
+            continue
+        got = count_hits_ml(f, rx)
+        if got is None:
+            continue
+        if got != want:
+            bad.append((lineno, f, rx, want, got,
+                        '期望 %d ≠ 实际命中 %d ⇒ %s'
+                        % (want, got, '门没牙（删一处仍够）' if got > want else '门恒红')))
+    return bad
 
 
 def check_count_gates(count_items):
@@ -1628,7 +1661,7 @@ GUARD_SHAPE_OK = (ast.Name, ast.Subscript)
 #   ⇒ 「用到的守卫」必须在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
 #   ⇒ 「册里的守卫」必须都被用到 ⇒ 某个收集点被挪走 / 删了 ⇒ 红。
 #   ⇒ ⚠ 登记册**内容由本仓的收集点现抽生成** ⇒ 不手抄 ⇒ 零漂移。
-FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'dead', 'dt_bad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'labelbad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'skipbad', 'stbad', 'undef', 'zero')
+FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'cntmlbad', 'dead', 'dt_bad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'labelbad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'skipbad', 'stbad', 'undef', 'zero')
 
 
 def _is_fails_append(node):
@@ -2635,7 +2668,7 @@ def main_body():
         i = args.index('--changed')
         base = args[i + 1] if i + 1 < len(args) else 'HEAD~1'
 
-    (need, ml, anyc, anym, cnt, cif, cis, pair,
+    (need, ml, anyc, anym, cnt, cif, cis, pair, cntml,
      totals, failed, forbid_lines) = parse_wiring()
 
     # ⚠⚠⚨ 批 BN · 「整行锚定」的豁免基线（**先读** ⇒ 后面两处判定共用同一份）
@@ -2980,8 +3013,17 @@ def main_body():
                                '下限 %d ≠ 实际命中 %d ⇒ %s'
                                % (want, got, '门没牙（删一处仍够）' if got > want else '门恒红')))
         cntbad = check_count_gates(cnt)
+        cntmlbad = check_count_ml_gates(cntml)
+        if cntmlbad:
+            print('arch_need_count_ml 期望校准（须 == **压行后**实际次数）：%d 条失准'
+                  % len(cntmlbad), file=sys.stderr)
+            for cmb in cntmlbad:
+                print('  · ci-wiring.sh:%d  %s | %s ⇒ 期望 %d，实际 %d ⇒ %s'
+                      % (cmb[0], rel(cmb[1]), cmb[2], cmb[3], cmb[4], cmb[5]),
+                      file=sys.stderr)
+            FAILS.append(9)
         # ⚠⚠⚨ 批 EA · **说明文字里的条数 == 期望值**（文字撒谎 ⇒ 判红）
-        labelbad = check_label_count_text(cnt)
+        labelbad = check_label_count_text(cnt + cntml)
         if labelbad:
             print('门项的**说明文字里的条数**与期望值对不上（%d 条）⇒ **文字在骗人**'
                   % len(labelbad), file=sys.stderr)
@@ -3039,6 +3081,8 @@ def main_body():
     print('  arch_need %d 条 / arch_need_ml %d 条 / arch_need_any_count %d 条 / '
           'arch_need_any_min %d 条' % (totals['need'], totals['ml'],
                                         totals['any_count'], totals['any_min']))
+    print('  arch_need_count_ml %d 条（批 EF 新门型：**跨行**、**恰好** N 次）'
+          % totals['count_ml'])
     print('  arch_need_count %d 条 / arch_need_count_in_fn %d 条'
           % (totals['count'], totals['count_in_fn']))
     print('  arch_need_count_in_step %d 条（批 BE 新门型：盯「标记串**还在这一步里**」）'
@@ -3164,8 +3208,14 @@ def main_body():
               % (os.path.basename(WIRING), lineno, rel(f), rx, why))
 
     cntbad = check_count_gates(cnt)
+    cntmlbad = check_count_ml_gates(cntml)
+    print('arch_need_count_ml 期望校准（须 == **压行后**实际次数）：%d 条失准'
+          % len(cntmlbad))
+    for cmb in cntmlbad:
+        print('  · %s:%d  %s | %s ⇒ %s'
+              % (os.path.basename(WIRING), cmb[0], rel(cmb[1]), cmb[2], cmb[5]))
     # ⚠⚠⚨ 批 EA · **说明文字里的条数 == 期望值**（文字撒谎 ⇒ 判红）
-    labelbad = check_label_count_text(cnt)
+    labelbad = check_label_count_text(cnt + cntml)
     if labelbad:
         print('门项的**说明文字里的条数**与期望值对不上（%d 条）⇒ **文字在骗人**'
               % len(labelbad), file=sys.stderr)
@@ -3287,6 +3337,8 @@ def split_args(rest):
 RX_ARG_IDX = {
     'arch_need': 1, 'arch_need_ml': 1, 'arch_need_min': 1,
     'arch_need_count': 1, 'arch_need_count_in_fn': 2,
+    # ⚠⚠⚨ 批 EF 新门型：跨行、恰好 N 次（正则实参在第 2 个参数 ⇒ index 1）
+    'arch_need_count_ml': 1,
     # ⚠ 批 BE 新门型：<文件> <步号> <正则> <期望次数> ⇒ 正则在第 3 个参数（index 2）
     'arch_need_count_in_step': 2,
     'arch_need_any_count': 0, 'arch_need_any_min': 0,
