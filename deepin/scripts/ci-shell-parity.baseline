@@ -3,9 +3,9 @@
 # ⚠ 格式：**恰好 5 段**，段间用 **TAB**（理由里若有 TAB ⇒ 段数错位 ⇒ 读不出来 ⇒ 判红）
 #   ① 路径 = **相对仓库根**的路径（批 CY 教训：裸文件名做键 ⇒ 两个目录里同名 ⇒ 合并 ⇒ 假绿）
 #   ② 状态 = DUAL（被双跑）或 EXEMPT（不双跑 ⇒ **必须**写理由）
-#   ③ 双跑位置 = parity（由 scripts/ci-shell-parity.sh 跑）或 ci.sh（由 CI 入口第 9 步跑）
+#   ③ 双跑位置 = parity（由 scripts/ci-shell-parity.sh 跑）或 ci.sh（由 **CI 入口**跑：第 9 步接线门 / 第 12 步 deb 布局验收）
 #   ④ 参数 = **传给被双跑脚本的第一个位置参数**是谁
-#        src = 源码根目录（deepin/）；bin = **已构建的二进制**（deepDolphin）
+#        src = 源码根目录（deepin/）；bin = **已构建的二进制**（deepDolphin）；deb = **deb 产物**（build/deb/*.deb）
 #        ⚠⚠⚨ 批 DW：这一列**必须显式写出来** ⇒ 「入口共用 ≠ 口径共用」（批 DG 教训）
 #        ⇒ 靠脚本名**猜**参数 ⇒ 就是把约定藏起来 ⇒ 换个参数 ⇒ 没人发现
 #        ⇒ 且 `bin` 的来源**只有一个**：`ci.sh` export 出来的 `$BIN`（单一真相源）
@@ -23,5 +23,5 @@ deepin/scripts/ci-divider-probe.sh	DUAL	parity	bin	同上（参数是二进制�
 deepin/scripts/probe-agent-tool-surface.sh	DUAL	parity	bin	同上（参数是二进制）⇒ 实测两版逐字节一致；⚠ 它会**建 4 个文件**（引擎沙箱）⇒ 实测「建完再看」的输出与首遍逐字节相同 ⇒ 可双跑
 deepin/scripts/contract-check.sh	DUAL	parity	bin	⚠ 批 DY：输出里的**随机量已清掉**（沙箱路径 + 报告文件名里的时间戳）⇒ 实测两遍**逐字节相同** ⇒ 可双跑；参数是**已构建的二进制**（客户端）⇒ 由 `ci.sh` export 的 `$BIN` 喂（脚本也吃位置参数）⇒ 单一真相源
 deepin/scripts/build-deb.sh	EXEMPT	-	-	**有副作用**（构建 deb 包）⇒ 双跑 = 构建两遍 ⇒ CI 时间翻倍且产物可能含时间戳 ⇒ 不双跑
-deepin/scripts/check-deb-layout.sh	EXEMPT	-	-	需 deb 产物（第 11 步才构建）⇒ 双跑点在其之前 ⇒ 依赖未就位 ⇒ 要双跑得把双跑点挪到第 12 步之后
+deepin/scripts/check-deb-layout.sh	DUAL	ci.sh	deb	⚠ 批 DZ：**双跑点挪到 CI 第 12 步内部**（deb 产物第 11 步才构建 ⇒ 早于第 12 步双跑 ⇒ 依赖没到位）⇒ 由 **CI 入口**在第 12 步双跑（sh + bash ⇒ 退出码与输出都必须一致）⇒ ⚠ 它的输出里的**随机量已清掉**（`mktemp -d` 的临时根路径 ⇒ 两遍必然不同 ⇒ 恒红 ⇒ 假红）⇒ 实测两遍**逐字节相同** ⇒ 可双跑
 deepin/scripts/ci-shell-parity.sh	EXEMPT	-	-	**自引用** ⇒ 双跑自己会递归 ⇒ 它的正确性由门项逐字钉住 + 负控保证（不靠双跑保证）

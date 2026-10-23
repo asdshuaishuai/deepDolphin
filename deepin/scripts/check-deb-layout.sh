@@ -46,7 +46,10 @@ trap 'rm -rf "$TMP"' EXIT
 ROOT="$TMP/root"
 mkdir -p "$ROOT"
 if ! dpkg-deb -x "$DEB" "$ROOT" 2>"$TMP/extract.log"; then
-    echo "✗ 解包失败：$(head -3 "$TMP/extract.log")" >&2
+    # ⚠⚠⚨ 批 DZ：解包日志里**可能带随机临时目录名** ⇒ 剥掉再打印
+    #   ⇒ 输出里不许有随机量 ⇒ 两遍输出才能**逐字节相同**（批 DY 纪律：清随机量在**产出侧**）
+    _ex="$(head -3 "$TMP/extract.log" | sed "s|$TMP||g")"
+    echo "✗ 解包失败：$_ex" >&2
     exit 1
 fi
 
@@ -58,17 +61,24 @@ dval() { # dval <文件> <键>
     sed -n 's/^'"$2"'=//p' "$1" 2>/dev/null | head -1
 }
 
-DESKTOP="$ROOT/usr/share/applications/cn.deepdolphin.app.desktop"
-SERVICE="$ROOT/usr/share/dbus-1/services/cn.deepdolphin.app.service"
-METAINFO="$ROOT/usr/share/metainfo/cn.deepdolphin.app.metainfo.xml"
-BIN="$ROOT/usr/bin/deepDolphin"
+# ⚠⚠⚨ 批 DZ · **包内相对路径**单独记一份（打印用）⇒ 输出里不许出现随机量
+#   ⇒ `$ROOT` 是 `mktemp -d` 的**随机名** ⇒ 直接打印它 ⇒ 两遍输出**必然不同**
+#   ⇒ ⇒ 双跑门**恒红** ⇒ **假红**（批 DL：假红比假绿更坏）⇒ 打印一律用相对路径
+DESKTOP_REL="/usr/share/applications/cn.deepdolphin.app.desktop"
+SERVICE_REL="/usr/share/dbus-1/services/cn.deepdolphin.app.service"
+METAINFO_REL="/usr/share/metainfo/cn.deepdolphin.app.metainfo.xml"
+BIN_REL="/usr/bin/deepDolphin"
+DESKTOP="$ROOT$DESKTOP_REL"
+SERVICE="$ROOT$SERVICE_REL"
+METAINFO="$ROOT$METAINFO_REL"
+BIN="$ROOT$BIN_REL"
 
 # ① 可执行
-if [ -x "$BIN" ]; then ok "可执行在包内且可执行（/usr/bin/deepDolphin）"; else no "可执行缺失或不可执行：$BIN"; fi
+if [ -x "$BIN" ]; then ok "可执行在包内且可执行（/usr/bin/deepDolphin）"; else no "可执行缺失或不可执行：$BIN_REL"; fi
 
 # ② D-Bus service：绝对路径 + 指向包内存在的可执行
 if [ ! -f "$SERVICE" ]; then
-    no "D-Bus service 文件缺失（$SERVICE）"
+    no "D-Bus service 文件缺失（$SERVICE_REL）"
 else
     SEXEC="$(dval "$SERVICE" Exec)"
     SPATH="${SEXEC%% *}"
@@ -96,7 +106,7 @@ fi
 
 # ④ desktop 的 Exec
 if [ ! -f "$DESKTOP" ]; then
-    no "desktop 文件缺失（$DESKTOP）"
+    no "desktop 文件缺失（$DESKTOP_REL）"
 else
     DEXEC="$(dval "$DESKTOP" Exec)"
     DPATH="${DEXEC%% *}"
@@ -126,7 +136,7 @@ fi
 
 # ⑦ metainfo 的 app id
 if [ ! -f "$METAINFO" ]; then
-    no "metainfo 缺失（$METAINFO）"
+    no "metainfo 缺失（$METAINFO_REL）"
 else
     MID="$(sed -n 's/.*<id>\(.*\)<\/id>.*/\1/p' "$METAINFO" | head -1)"
     if [ "$MID" = "cn.deepdolphin.app" ]; then
@@ -157,8 +167,8 @@ fi
 
 # ⑨ 图标非空
 EMPTY_ICON=0
-for f in $(find "$ROOT/usr/share/icons" -type f 2>/dev/null); do
-    [ -s "$f" ] || { EMPTY_ICON=1; echo "      零字节图标：${f#$ROOT}"; }
+for f in $(cd "$ROOT/usr/share/icons" 2>/dev/null && find . -type f 2>/dev/null | LC_ALL=C sort); do
+    [ -s "$ROOT/usr/share/icons/$f" ] || { EMPTY_ICON=1; echo "      零字节图标：/usr/share/icons/${f#./}"; }
 done
 if [ "$EMPTY_ICON" -eq 0 ]; then ok "包内图标都非空"; else no "包内存在零字节图标（装了也是空白）"; fi
 

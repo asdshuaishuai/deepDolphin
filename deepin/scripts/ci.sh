@@ -783,9 +783,35 @@ else
     #     ⇒ 那个立场会让 CI 继续跑 ⇒ 最后照样打「**✓ CI 门通过**」
     #     ⇒ **未验的组被当成「通过」** ⇒ 假绿。
     #     ⇒ 现在：**未验证 ⇒ 计入 `skip` ⇒ 末尾判红**（退出码 3）。
-    _dl_log="$BUILD/deb-layout.log"
+    _dl_log="${TMPDIR:-/tmp}/deepdolphin-deb-layout-sh.$$.log"
     _dl_rc=0
     sh "$SRC/scripts/check-deb-layout.sh" "$DEB_OUT" > "$_dl_log" 2>&1 || _dl_rc=$?
+    # ⚠⚠⚨ 批 DZ · **双跑**：判据层的**结论不许随执行 shell 变**（批 DT 立的承诺）
+    #   ⇒ 这一门以前是 EXEMPT（deb 产物第 11 步才就位 ⇒ 双跑点在它之前 ⇒ 依赖没到位）
+    #   ⇒ 现在双跑点就在**本步内部**（deb 产物已经在）⇒ 覆盖面扩到这一门
+    #   ⇒ `sh` 一遍（CI 真正用的就是 dash）+ `bash` 一遍
+    #   ⇒ **退出码必须一致** + **输出必须逐字节一致**（stdout 与 stderr 合流后比）
+    #   ⇒ ⚠ **两份日志都落 TMPDIR**（批 DU 纪律）：不许落 CI 工作目录
+    #     ⇒ 否则第二遍会多看到第一遍的产物 ⇒ 双跑**自己制造分叉** ⇒ 假红
+    #   ⇒ ⚠ **无自引用**：本门只跑 check-deb-layout.sh
+    _dl_bash_log="${TMPDIR:-/tmp}/deepdolphin-deb-layout-bash.$$.log"
+    _dl_bash_rc=0
+    bash "$SRC/scripts/check-deb-layout.sh" "$DEB_OUT" > "$_dl_bash_log" 2>&1 || _dl_bash_rc=$?
+    if [ "$_dl_rc" -ne "$_dl_bash_rc" ]; then
+        echo "✗ ⚠⚠⚨ deb 布局验收在 sh 与 bash 下**退出码不同**（sh=$_dl_rc / bash=$_dl_bash_rc）⇒ 判据层的**结论随执行 shell 变** ⇒ 不可信（批 DT）" >&2
+        exit 1
+    fi
+    if ! cmp -s "$_dl_log" "$_dl_bash_log"; then
+        echo "✗ ⚠⚠⚨ deb 布局验收在 sh 与 bash 下**输出不同** ⇒ 诊断文案**随执行 shell 变** ⇒ 不可信（批 DT）" >&2
+        _dl_diff_log="${TMPDIR:-/tmp}/deepdolphin-deb-layout-shell-diff.$$.log"
+        _dl_diff_rc=0
+        diff "$_dl_log" "$_dl_bash_log" > "$_dl_diff_log" 2>&1 || _dl_diff_rc=$?
+        echo "   差异已写 $_dl_diff_log（diff 退出码 $_dl_diff_rc）前 20 行：" >&2
+        head -20 "$_dl_diff_log" >&2
+        exit 1
+    fi
+    # ⚠⚠⚨ **退出码必须被报出来**（批 DW 纪律）：「两版一致」不许掩盖「这一组跑通没跑通」
+    echo "✓ deb 布局验收在 sh 与 bash 下**输出与退出码一致**（退出码 $_dl_rc ⇒ 判据层的结论不随执行 shell 变）"
     if [ "$_dl_rc" -eq 0 ]; then
         tail -3 "$_dl_log"
         echo "✓ deb 布局验收通过（装完能不能用：service/desktop/图标/metainfo/空环境启动）"

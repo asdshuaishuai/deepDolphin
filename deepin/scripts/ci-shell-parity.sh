@@ -58,6 +58,10 @@ _SB="${TMPDIR:-/tmp}/deepdolphin-parity-bash.$$.log"
 _SD="${TMPDIR:-/tmp}/deepdolphin-parity-diff.$$.log"
 
 n_dual=0
+# ⚠⚠⚨ 批 DZ：**由 CI 入口双跑**的那几条也要计数
+#   ⇒ 否则汇总行只说「本脚本双跑了几个」⇒ 登记册的三个数字对不上
+#   ⇒ 谁被漏掉**看不出来**（批 DQ 教训：一条本该被登记的承诺，从未生效）
+n_dual_cish=0
 n_exempt=0
 n_ok=0
 
@@ -94,6 +98,8 @@ while IFS="$TAB" read -r rel mode where param why; do
     fi
     if [ "$where" != "parity" ]; then
         # 位置是 `ci.sh` ⇒ 由批 DU 的门项负责（那半边在 CI 入口里）⇒ 本脚本不管
+        # ⚠⚠⚨ 批 DZ：但**要计数** ⇒ parity / ci.sh / 豁免 三个数字必须对得上
+        n_dual_cish=$((n_dual_cish + 1))
         continue
     fi
     # ⚠⚠⚨ 批 DW：参数列只许 `src` 或 `bin` ⇒ 别的 ⇒ 「传给它的参数是谁」没人知道
@@ -159,4 +165,4 @@ while IFS="$TAB" read -r rel mode where param why; do
     echo "  ✓ $rel：两版一致（退出码 $_rc_a ⇒ $_rc_note）"
 done < "$BASE"
 
-echo "✓ 双跑覆盖面：本脚本双跑了 $n_dual 个判据脚本，在 sh 与 bash 下**输出与退出码一致**（豁免 $n_exempt 个，每个带理由）"
+echo "✓ 双跑覆盖面：登记册共 $((n_dual + n_dual_cish + n_exempt)) 条 = 本脚本双跑 $n_dual 个（sh 与 bash 下**输出与退出码一致**）+ CI 入口双跑 $n_dual_cish 个 + 豁免 $n_exempt 个（每个带理由）"
