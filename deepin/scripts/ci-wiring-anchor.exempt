@@ -39,3 +39,14 @@ arch_need_count	deepin/scripts/probe-agent-tool-surface.sh	^[[:space:]]*echo "[ 
 arch_need_count	deepin/scripts/check-deb-layout.sh	^[[:space:]]*(no|ok) "	清单门数的是**调用点数量**（ok/no 后面是自由说明文本）⇒ 整行锚定等于把每条说明逐字写进正则⇒ 会把「清单不许被删」改窄成「这几种文案不许被删」⇒ 显式豁免
 arch_need_count	deepin/scripts/contract-check.sh	^[[:space:]]*check	清单门数的是**调用点数量**（93 处断言的名字与表达式都是自由文本）⇒ 整行锚定等于把 93 条断言逐字写进正则⇒ 会把「清单不许被删」改窄成「这几种断言不许被删」⇒ 显式豁免
 arch_need_count	deepin/scripts/build-deb.sh	\b(die|fail) "	die/fail 调用点常写在**行中** ⇒ 没法行首锚定 ⇒ 这条门盯的是「**调用点总数**」（不是「✗ 标记数」）⇒ 强度弱于整行锚定 ⇒ 如实记为已知边界（批 BU 同款）
+
+# ⚠⚠⚨ 批 EE · `ci-shell-parity.sh` 纳入「整行锚定」适用范围 ⇒ 它上面
+#   这 6 条「盯串」门项必须**逐条**登记豁免（豁免表 ≡「非锚定门项」集合
+#   ⇒ **双向配准** ⇒ 条数是**推导出来的**，不另写条数基线）。
+#   ⇒ 每条的理由都写明「盯的是**文案措辞**，判定行已由批 EE 的新门单独守住」。
+arch_need_count	deepin/scripts/ci-shell-parity.sh	⇒ 诊断文案\*\*随执行 shell 变\*\* ⇒ 负控的文案命中判定不可信（批 DT）	盯的是**归因文案的措辞** ⇒ 整行锚定会把它改窄 ⇒ 但**归因判定行**已由 批 EE 的新门**整行锚定**单独守住 ⇒ 本门只负责措辞
+arch_need_count	deepin/scripts/ci-shell-parity.sh	但\*\*两遍都没跑通\*\*	盯的是**提示文案的措辞** ⇒ 整行锚定会把它改窄 ⇒ 这条是「两遍都没跑通」**单独成支**（批 DX）的文案 ⇒ 判定层由别的门守着 ⇒ 本门只负责措辞
+arch_need_count	deepin/scripts/ci-shell-parity.sh	先查外部依赖	盯的是**归因文案的措辞**（判「退出码不同」时必须先叫读者查外部依赖）⇒ 整行锚定会把它改窄 ⇒ 但**归因判定行**已由批 EE 的新门**整行锚定**单独守住 ⇒ 本门只负责措辞
+arch_need_count	deepin/scripts/ci-shell-parity.sh	差异已写 \$_SD（diff 退出码 \$_drc）前 20 行	盯的是**诊断文案的措辞** ⇒ 整行锚定会把它改窄 ⇒ 但**判定行**已由批 EE 的新门**整行锚定**单独守住 ⇒ 本门只负责「诊断话术不许被改掉」这一层
+arch_need_count	deepin/scripts/ci-shell-parity.sh	标了 EXEMPT 却\*\*没写理由\*\*	盯的是**提示文案的措辞**（「标了 EXEMPT 却没写理由」这句话还在不在）⇒ 整行锚定会把它改窄 ⇒ 但**判定行**已由批 EE 的新门**整行锚定**单独守住 ⇒ 本门只负责「文案不许被改掉」这一层 ⇒ 两层互补
+arch_need_count	deepin/scripts/ci-shell-parity.sh	登记册共 \$\(\(n_dual \+ n_dual_cish \+ n_exempt\)\) 条	盯的是**汇总行里的数字咬合**（登记册条数必须等于三个计数之和）⇒ 整行锚定会把它改窄（那行还有别的内容）⇒ 数字咬合另由「三个数字对账」那组门守着 ⇒ 本门只负责这个串不许消失
