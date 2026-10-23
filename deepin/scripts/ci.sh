@@ -673,10 +673,39 @@ echo "✓ 接线门在 sh 与 bash 下**输出与退出码一致**（判据层�
 #   ⇒ ⚠ **不新增步骤**（新增步骤会牵动 16 个步骤标记 + 一条 arch_need_ml 门）⇒ 并在第 9 步里。
 #   ⇒ ⚠ **无自引用**：本门只跑登记册里标 `parity` 的条目 ⇒ 不跑自己（自引用会递归）。
 #   ⇒ ⚠ 登记册里标 `ci.sh` 的条目（接线门）由上面的批 DU 双跑负责 ⇒ 「入口共用 ≠ 口径共用」。
-if ! sh "$SRC/scripts/ci-shell-parity.sh" "$SRC"; then
+# ⚠⚠⚨ 批 EA · **双跑覆盖面门自己进双跑**（登记册里最后一条**可动的**豁免消失）
+#   ⇒ 「谁守双跑覆盖面」的最后一道闭环 ⇒ **守覆盖面那道门自己**也被双跑
+#   ⇒ ⚠ **「自引用 ⇒ 递归」只在 `parity` 位置成立**：本门只跑登记册里标 `parity` 的条目
+#     ⇒ 自己那行是 `ci.sh` 位置 ⇒ **被跳过** ⇒ ⇒ **不递归**
+#   ⇒ ⚠ **两份日志都落 TMPDIR**（批 DU 纪律）：第二遍会多看到第一遍的产物 ⇒ 假红
+#   ⇒ ⚠ **无自引用**：本门不跑 `ci.sh`
+#   ⇒ 退出码**接住**（批 CQ 纪律：不用管道读退出码）；差异**落文件**再读
+_P_SH_LOG="${TMPDIR:-/tmp}/deepdolphin-paritygate-sh.$$.log"
+_P_BASH_LOG="${TMPDIR:-/tmp}/deepdolphin-paritygate-bash.$$.log"
+_P_DIFF_LOG="${TMPDIR:-/tmp}/deepdolphin-paritygate-shell-diff.$$.log"
+_p_sh_rc=0
+sh "$SRC/scripts/ci-shell-parity.sh" "$SRC" > "$_P_SH_LOG" 2>&1 || _p_sh_rc=$?
+# ⚠ 可观测性不丢：第一遍的输出照样打出来（和批 DU 的接线门双跑同款）
+cat "$_P_SH_LOG"
+if [ "$_p_sh_rc" -ne 0 ]; then
     echo "✗ 双跑覆盖面门失败（某个判据脚本在 sh 与 bash 下**结论不一致** ⇒ 判据层的结论随执行 shell 变 ⇒ 不可信）" >&2
     exit 1
 fi
+_p_bash_rc=0
+bash "$SRC/scripts/ci-shell-parity.sh" "$SRC" > "$_P_BASH_LOG" 2>&1 || _p_bash_rc=$?
+if [ "$_p_bash_rc" -ne "$_p_sh_rc" ]; then
+    echo "✗ ⚠⚠⚨ 双跑覆盖面门在 sh 与 bash 下**退出码不同**（sh=$_p_sh_rc / bash=$_p_bash_rc）⇒ **守覆盖面**的那道门自己随 shell 变 ⇒ 不可信（批 DT）" >&2
+    exit 1
+fi
+if ! cmp -s "$_P_SH_LOG" "$_P_BASH_LOG"; then
+    echo "✗ ⚠⚠⚨ 双跑覆盖面门在 sh 与 bash 下**输出不同** ⇒ 覆盖面报告**随执行 shell 变** ⇒ 读者看到的覆盖面口径不可信（批 DT）" >&2
+    _p_diff_rc=0
+    diff "$_P_SH_LOG" "$_P_BASH_LOG" > "$_P_DIFF_LOG" 2>&1 || _p_diff_rc=$?
+    echo "   差异已写 $_P_DIFF_LOG（diff 退出码 $_p_diff_rc）前 20 行：" >&2
+    head -20 "$_P_DIFF_LOG" >&2
+    exit 1
+fi
+echo "✓ 双跑覆盖面门在 sh 与 bash 下**输出与退出码一致**（守覆盖面那道门自己也不随执行 shell 变）"
 
 echo "› 10/16 引擎契约门（真引擎沙箱；**未验证 ⇒ 判红**，不许说通过）"
 # contract-check.sh 之前是**游离脚本** —— CI 从来没跑过它，契约漂移不会被拦。

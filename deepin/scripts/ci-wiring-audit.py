@@ -110,7 +110,7 @@ GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1404
+GATE_LINES_EXPECTED = 1416
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -1004,6 +1004,48 @@ def check_pair_count_gates(pair_items):
     return bad
 
 
+# ⚠⚠⚨ 批 EA · **说明文字里的条数必须等于期望值**
+#
+#   ⇒ 起因（实测）：批 DZ 台账坑 ③ 立的纪律「改条数时说明文字也要改」
+#   ⇒ **批 EA 又踩了一次** ⇒ 「人工纪律」已被证明不可靠 ⇒ 必须落成门。
+#   ⇒ ⚠ 审计器本来**只校准期望值**（对不对由 grep 说了算）⇒ **不管说明文字**
+#   ⇒ ⇒ 说明文字可以在期望值变了之后**继续说旧数字** ⇒ **文字在骗人**。
+#
+#   ⚠ **口径**：只认「（恰好 N 处」（**紧跟左括号**）⇒ 只命中「这条门项**自己**的条数」
+#   ⇒ ⇒ 「必须恰好 N 处」「有门钉住**恰好 23 处**」那种**说的是别的门**的写法**不算**
+#   （⚠ 实测：`build-deb.sh` 那条门项的说明里写着「die 调用点有门钉住**恰好 23 处**」
+#   ⇒ 那是**另一个门**的条数 ⇒ 若按「说明文字里有『恰好 N 处』就查」⇒ **误报**）
+def check_label_count_text(count_items):
+    """核对门项说明文字里的「（恰好 N 处」与该门项的期望值是否一致。"""
+    bad = []
+    for lineno, f, rx, want in count_items:
+        # ⚠ 说明文字是门项行的第 4 个参数 ⇒ 从**行原文**里取（不复刻解析）
+        raw = _raw_gate_line(lineno)
+        if raw is None:
+            continue
+        ms = re.findall(r'（恰好 (\d+) 处', raw)
+        if not ms:
+            continue
+        said = int(ms[0])
+        if said != want:
+            bad.append((lineno, f, rx, want, said,
+                        '说明文字称「恰好 %d 处」但期望值是 %d ⇒ **文字在骗人**'
+                        % (said, want)))
+    return bad
+
+
+def _raw_gate_line(lineno):
+    """取 ci-wiring.sh 第 lineno 行的**原文**（1 起算）。"""
+    try:
+        with open(WIRING, encoding='utf-8') as fh:
+            lines = fh.read().split('\n')
+    except OSError:
+        return None
+    if lineno < 1 or lineno > len(lines):
+        return None
+    return lines[lineno - 1]
+
+
 def check_count_gates(count_items):
     """校准 `arch_need_count` 的期望次数：必须 **== 当前命中数**。
 
@@ -1475,7 +1517,7 @@ GUARD_SHAPE_OK = (ast.Name, ast.Subscript)
 #   ⇒ 「用到的守卫」必须在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
 #   ⇒ 「册里的守卫」必须都被用到 ⇒ 某个收集点被挪走 / 删了 ⇒ 红。
 #   ⇒ ⚠ 登记册**内容由本仓的收集点现抽生成** ⇒ 不手抄 ⇒ 零漂移。
-FAIL_GUARDS = ('anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'dead', 'dt_bad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'stbad', 'undef', 'zero')
+FAIL_GUARDS = ('anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'dead', 'dt_bad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'labelbad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'stbad', 'undef', 'zero')
 
 
 def _is_fails_append(node):
@@ -2779,6 +2821,15 @@ def main_body():
                                '下限 %d ≠ 实际命中 %d ⇒ %s'
                                % (want, got, '门没牙（删一处仍够）' if got > want else '门恒红')))
         cntbad = check_count_gates(cnt)
+        # ⚠⚠⚨ 批 EA · **说明文字里的条数 == 期望值**（文字撒谎 ⇒ 判红）
+        labelbad = check_label_count_text(cnt)
+        if labelbad:
+            print('门项的**说明文字里的条数**与期望值对不上（%d 条）⇒ **文字在骗人**'
+                  % len(labelbad), file=sys.stderr)
+            for lb in labelbad:
+                print('  · ci-wiring.sh:%d  %s | %s ⇒ 期望 %d，但说明文字称「恰好 %d 处」'
+                      % (lb[0], rel(lb[1]), lb[2], lb[3], lb[4]), file=sys.stderr)
+            FAILS.append(9)
         cifbad = check_count_in_fn_gates(cif)
         cisbad = check_count_in_step_gates(cis)
         pairbad = check_pair_count_gates(pair)
@@ -2938,6 +2989,14 @@ def main_body():
               % (os.path.basename(WIRING), lineno, rel(f), rx, why))
 
     cntbad = check_count_gates(cnt)
+    # ⚠⚠⚨ 批 EA · **说明文字里的条数 == 期望值**（文字撒谎 ⇒ 判红）
+    labelbad = check_label_count_text(cnt)
+    if labelbad:
+        print('门项的**说明文字里的条数**与期望值对不上（%d 条）⇒ **文字在骗人**'
+              % len(labelbad), file=sys.stderr)
+        for lb in labelbad:
+            print('  · ci-wiring.sh:%d  %s | %s ⇒ 期望 %d，但说明文字称「恰好 %d 处」'
+                  % (lb[0], rel(lb[1]), lb[2], lb[3], lb[4]), file=sys.stderr)
     print('arch_need_count 期望校准（须 == 实际命中数）：%d 条失准' % len(cntbad))
     for lineno, f, rx, want, got, why in cntbad:
         print('  · %s:%d  %s | %s ⇒ %s'

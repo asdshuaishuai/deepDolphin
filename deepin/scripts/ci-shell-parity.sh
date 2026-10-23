@@ -47,6 +47,16 @@ BIN="${BIN:-}"
 
 TAB=$(printf '\t')
 
+# ⚠⚠⚨ 批 EA · **递归保护**（负控 NC26 实测撞上）：本脚本**自己**的登记册键
+#   ⇒ ⇒ 登记册里自己那行若是 `parity` 位置 ⇒ 本脚本会**自己跑自己** ⇒ ⇒ **无限递归**
+#   ⇒ ⇒ 实测：进程链一路往下 ⇒ **CI 挂死**（比假绿更坏：什么都得不到）
+#   ⇒ ⇒ **认出自己** ⇒ 自己那行若是 `parity` ⇒ **拒绝继续**（fail closed ⇒ 变红）
+#   ⚠ **两种键都认**：登记册的键是**相对仓库根**的路径（批 CY 纪律）
+#   ⇒ `$SRC` 是 `deepin/` 时键是 `deepin/scripts/ci-shell-parity.sh`
+#   ⇒ `$SRC` 是仓库根时键是 `scripts/ci-shell-parity.sh`
+_SELF_REL="$SRC/scripts/ci-shell-parity.sh"
+_SELF_KEY_ROOT="scripts/ci-shell-parity.sh"
+
 if [ ! -f "$BASE" ]; then
     echo "✗ 双跑登记册不存在：$BASE ⇒ 「哪些判据脚本被双跑」这件事**无处可查** ⇒ 拒绝继续" >&2
     exit 1
@@ -96,6 +106,20 @@ while IFS="$TAB" read -r rel mode where param why; do
         echo "✗ 双跑登记册里有不认识的双跑位置：$rel ⇒ $where（只许 parity 或 ci.sh）" >&2
         exit 1
     fi
+    # ⚠⚠⚨ 批 EA · **递归保护**（fail closed）：登记册里**本脚本自己**那行
+    #   ⇒ ⇒ 若是 `parity` 位置 ⇒ 本脚本会**自己跑自己** ⇒ ⇒ **无限递归**
+    #   ⇒ ⇒ 实测：进程链一路往下 ⇒ **CI 挂死**（比假绿更坏：什么都得不到）
+    #   ⇒ ⇒ **拒绝继续** ⇒ ⇒ 变成**红的**而不是挂死的
+    #   ⚠ 两种键都认（登记册的键 = 相对仓库根 ⇒ `$SRC` 可能是仓库根也可能是 `deepin/`）
+    case "$rel" in
+        "$_SELF_REL"|"$_SELF_KEY_ROOT"|*/ci-shell-parity.sh)
+            if [ "$where" = "parity" ]; then
+                echo "✗ 双跑登记册里**双跑覆盖面门自己**（$rel）被列在 \`parity\` 位置" >&2
+                echo "  ⇒ 本脚本会**自己跑自己** ⇒ **无限递归** ⇒ CI 会挂死 ⇒ 拒绝继续" >&2
+                exit 1
+            fi
+            ;;
+    esac
     if [ "$where" != "parity" ]; then
         # 位置是 `ci.sh` ⇒ 由批 DU 的门项负责（那半边在 CI 入口里）⇒ 本脚本不管
         # ⚠⚠⚨ 批 DZ：但**要计数** ⇒ parity / ci.sh / 豁免 三个数字必须对得上
