@@ -28,7 +28,11 @@
 # 用法：scripts/probe-agent-tool-surface.sh <deepDolphin 二进制>
 set -uo pipefail
 BIN="${1:-}"
-if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
+# ⚠⚠⚨ 批 DX：**`-f` 也要查**（实测）：`-x` 对**目录**也返回 true ⇒ 目录能冒充二进制
+#   ⇒ 探针要等到 exec 时才炸 ⇒ 而两个 shell 的**报错文案不同**（dash: Permission denied
+#   / bash: 是一个目录）⇒ 双跑门会**误诊**成「输出不同」
+#   ⇒ ⇒ 必须在**喂之前**就挡住（fail closed）⇒ 这一组**根本没验过**，不许当成通过
+if [ -z "$BIN" ] || [ ! -f "$BIN" ] || [ ! -x "$BIN" ]; then
     echo "✗ 用法：$0 <deepDolphin 二进制>" >&2
     exit 2
 fi
