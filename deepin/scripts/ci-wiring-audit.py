@@ -85,6 +85,8 @@ ANCHOR_EXEMPT = os.path.join(SRC, 'scripts', 'ci-wiring-anchor.exempt')
 #   写死 ⇒ 审计器既是「执行者」又是「裁判」⇒ 改审计器就能同时改标准。
 #   ⇒ 基线放在**独立文件** ⇒ 删基线文件 ⇒ 门与审计器**双双红**。
 GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
+# ⚠⚠⚨ 批 EB · **审计器自己的源码路径**（「静默跳过」规则要扫它 ⇒ 路径要**可被门钉住**）
+AUDIT_SELF = os.path.join(HERE, 'ci-wiring-audit.py')
 # ⚠⚠⚠ **注意**：这里**不要**再定义 `GATE_LINE` —— 文件下方**已经有一个**
 #   `GATE_LINE`（带捕获组，`check_rx_syntax` 在用）⇒ 同名 ⇒ **后者覆盖前者**
 #   ⇒ 先定义的那个成了**死代码**。
@@ -110,7 +112,7 @@ GATE_BASELINE = os.path.join(SRC, 'scripts', 'ci-wiring-gates.baseline')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1416
+GATE_LINES_EXPECTED = 1423
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -336,18 +338,41 @@ def require_perl():
     return 0
 
 
+# ⚠⚠⚨ 批 EB · **工具失败登记簿**（零名单维护 ⇒ 工具失败**自己登记**）
+#
+#   ⇒ 起因（实测坐实）：`count_hits` 以前在工具起不来时 `return None`
+#     ⇒ 而 5 个调用点都是 `if got is None: continue`
+#     ⇒ ⇒ 那些次数门**根本没被校准** ⇒ ⇒ 审计器**照样 rc=0** ⇒ ⇒ **假绿**
+#     （单测证据：期望 999 vs 实际 1 ⇒ 工具坏了 ⇒ **一条失准都不报**）
+#   ⇒ 现在：工具失败 ⇒ **登记到这里** ⇒ `main_body` 统一判红（fail closed）
+#   ⇒ ⇒ **只改一处收口点** ⇒ ⇒ 不会漏（漏一处 = 洞还在）
+#   ⚠ 键 = (相对路径, 正则) ⇒ 与门项的键同口径 ⇒ 报错能指名道姓
+TOOL_FAILURES = []
+
+
+def _tool_failed(path, rx, why):
+    """登记一次「工具用不了」⇒ 返回 None（调用点照旧，但**信息不丢**）。"""
+    TOOL_FAILURES.append((rel(path), rx, why))
+    return None
+
+
 def count_hits(path, rx):
-    """用 grep -oE 数命中次数（与 arch_need_count 的口径一致）。"""
+    """用 grep -oE 数命中次数（与 arch_need_count 的口径一致）。
+
+    ⚠⚠⚨ 批 EB · **工具失败不许静默跳过**：起不来 ⇒ 登记 ⇒ 统一判红（fail closed）
+    """
     if not os.path.isfile(path):
         return None
     text = strip_comments(path)
     try:
         out = subprocess.run(['grep', '-oE', '--', rx], input=text,
                              capture_output=True, text=True)
-    except OSError:
-        return None
+    except OSError as e:
+        # ⚠⚠⚨ 批 EB：以前是 `return None` ⇒ **静默跳过** ⇒ 那一族次数门**没被校准**
+        #   ⇒ ⇒ 审计器照样 rc=0 ⇒ ⇒ **假绿** ⇒ ⇒ 现在**登记** ⇒ 统一判红
+        return _tool_failed(path, rx, 'grep 起不来（%s）' % e)
     if out.returncode not in (0, 1):
-        return None
+        return _tool_failed(path, rx, 'grep 退出码 %d（不是 0/1）' % out.returncode)
     return len([ln for ln in out.stdout.split('\n') if ln])
 
 
@@ -359,10 +384,12 @@ def count_hits_ml(path, rx):
     try:
         out = subprocess.run(['grep', '-oE', '--', rx], input=text,
                              capture_output=True, text=True)
-    except OSError:
-        return None
+    except OSError as e:
+        # ⚠⚠⚨ 批 EB：以前是 `return None` ⇒ **静默跳过** ⇒ 那一族次数门**没被校准**
+        #   ⇒ ⇒ 审计器照样 rc=0 ⇒ ⇒ **假绿** ⇒ ⇒ 现在**登记** ⇒ 统一判红
+        return _tool_failed(path, rx, 'grep 起不来（%s）' % e)
     if out.returncode not in (0, 1):
-        return None
+        return _tool_failed(path, rx, 'grep 退出码 %d（不是 0/1）' % out.returncode)
     return len([ln for ln in out.stdout.split('\n') if ln])
 
 
@@ -823,10 +850,13 @@ def changed_lines(base):
             ['git', '-C', REPO, 'diff', '--unified=0', '%s..HEAD' % base,
              '--', 'deepin/scripts/ci-wiring.sh'],
             capture_output=True, text=True)
-    except OSError:
-        return None
+    except OSError as e:
+        # ⚠⚠⚨ 批 EB：以前是裸 `return None` ⇒ 静默跳过 ⇒ 那些门项**没被校准**
+        #   ⇒ ⇒ 现在**登记** ⇒ 统一收口判红（fail closed）
+        return _tool_failed(__file__, '(git diff 新增行)', 'git 起不来（%s）' % e)
     if out.returncode != 0:
-        return None
+        return _tool_failed(__file__, '(git diff 新增行)',
+                            'git diff 退出码 %d' % out.returncode)
     nums = set()
     for ln in out.stdout.split('\n'):
         m = re.match(r'^@@ -\S+ \+(\d+)(?:,(\d+))? @@', ln)
@@ -891,14 +921,80 @@ def count_lines(path, rx):
     try:
         out = subprocess.run(['grep', '-cE', '--', rx], input=text,
                              capture_output=True, text=True)
-    except OSError:
-        return None
+    except OSError as e:
+        # ⚠⚠⚨ 批 EB：以前是 `return None` ⇒ **静默跳过** ⇒ 配对门的行数**没被校准**
+        #   ⇒ ⇒ **假绿** ⇒ ⇒ 现在**登记** ⇒ 统一判红
+        return _tool_failed(path, rx, 'grep 起不来（%s）' % e)
     if out.returncode not in (0, 1):
-        return None
+        return _tool_failed(path, rx, 'grep 退出码 %d（不是 0/1）' % out.returncode)
     try:
         return int(out.stdout.strip() or '0')
-    except ValueError:
-        return None
+    except ValueError as e:
+        return _tool_failed(path, rx, 'grep 输出不是数字（%s）' % e)
+
+
+# ⚠⚠⚨ 批 EB · **「静默跳过」的零名单维护规则**
+#
+#   ⇒ 起因（实测坐实）：`except OSError` 块里裸 `return None`
+#     ⇒ 调用点 `if got is None: continue` ⇒ ⇒ 那一族门项**根本没被校准**
+#     ⇒ ⇒ 审计器**照样 rc=0** ⇒ ⇒ **假绿**
+#   ⇒ ⇒ 手工登记名单**必然会漏**（新增一个工具调用点 ⇒ 忘了登记 ⇒ 洞回来）
+#     ⇒ ⇒ 改成**扫全文件**：凡 `except OSError` 块里出现
+#       ① 裸 `return None`，或 ② `continue`
+#     ⇒ 而该块内**没有** `_tool_failed(...)` 登记 ⇒ ⇒ 判红（rc=2 = 盲区）
+#
+#   ⚠ **口径只管 `except OSError`**（工具坏了 ⇒ 门项没被校准 ⇒ 盲区）
+#     ⇒ `except (UnreadableSource, SyntaxError)`（源读不了）与 `except ValueError`
+#       （门项解析失败）**不在本规则范围**（那是**另一个家族** ⇒ 已知边界，如实记着）
+#
+#   ⚠ **零名单维护** ⇒ 扫**全文件**所有 except 块 ⇒ 不用维护名单
+#   ⚠ **判定逻辑只有一份**（批 BF/BG 纪律）⇒ 实扫与自检走同一函数
+def check_silent_tool_skip(path):
+    """审计器里**不许有「静默跳过」**：`except OSError` 块里的裸 `return None` / `continue`。
+
+    ⇒ 返回 [(行号, 说明)]；空列表 = 通过。
+    """
+    bad = []
+    try:
+        with open(path, encoding='utf-8') as fh:
+            tree = ast.parse(fh.read(), filename=path)
+    except (OSError, SyntaxError) as e:
+        return [(0, '读不了/解析不了 %s（%s）⇒ 自检做不了（fail closed）' % (path, e))]
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ExceptHandler):
+            continue
+        # ⚠ 只认 `except OSError`（含 `except OSError as e`）
+        types = []
+        if node.type is None:
+            types = []
+        elif isinstance(node.type, ast.Tuple):
+            types = [ast.dump(t) for t in node.type.elts]
+        else:
+            types = [ast.dump(node.type)]
+        if not any('OSError' in t for t in types):
+            continue
+        # ⚠ 该块内**有没有**登记（`_tool_failed(...)`）
+        registered = any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                         and n.func.id == '_tool_failed' for n in ast.walk(node))
+        if registered:
+            continue
+        for st in node.body:
+            # ⚠⚠⚨ **AST 里 `return None` ≠ 裸 `return`**：
+            #   裸 `return`     ⇒ `Return(value=None)`             ⇒ `st.value is None`
+            #   `return None`   ⇒ `Return(value=Constant(value=None))` ⇒ ⚠ **`st.value is None` 是 False**！
+            #   ⇒ ⇒ 批 EB **第一版规则只抓得住裸 `return`** ⇒ ⇒ 审计器里**真实的静默点全是 `return None`**
+            #   ⇒ ⇒ **一条都抓不到** ⇒ ⇒ **规则是空的**（负控 NC31 实测撞出 ⇒ 幸好有负控）
+            #   ⇒ ⇒ 现在两种都认。
+            is_none_return = (isinstance(st, ast.Return) and
+                              (st.value is None or
+                               (isinstance(st.value, ast.Constant) and st.value.value is None)))
+            if is_none_return:
+                bad.append((st.lineno, '`except OSError` 块里裸 `return None` ⇒ **静默略过** ⇒ '
+                                     '那些门项**根本没被校准** ⇒ 假绿'))
+            elif isinstance(st, ast.Continue):
+                bad.append((st.lineno, '`except OSError` 块里 `continue` ⇒ **静默略过** ⇒ '
+                                     '那些门项**根本没被校准** ⇒ 假绿'))
+    return bad
 
 
 def check_pair_segment_bad(path, ra, rb):
@@ -935,9 +1031,14 @@ def check_pair_segment_bad(path, ra, rb):
                                  capture_output=True, text=True)
         except OSError as e:
             err = 'grep 调用失败：%s' % e
+            # ⚠⚠⚨ 批 EB：以前只返回 err（**不登记**）⇒ 逐段配对的结论**不可信**
+            #   ⇒ ⇒ 却**没人知道** ⇒ ⇒ 现在**登记** ⇒ 统一判红
+            _tool_failed(path, rx, 'grep 起不来（%s）' % e)
             return err, res
         if out.returncode not in (0, 1):
             err = 'grep 退出码 %d（既不是 0 也不是 1）' % out.returncode
+            # ⚠⚠⚨ 批 EB：同上 ⇒ 登记
+            _tool_failed(path, rx, err)
             return err, res
         for ln in out.stdout.split('\n'):
             if not ln.strip():
@@ -1011,26 +1112,34 @@ def check_pair_count_gates(pair_items):
 #   ⇒ ⚠ 审计器本来**只校准期望值**（对不对由 grep 说了算）⇒ **不管说明文字**
 #   ⇒ ⇒ 说明文字可以在期望值变了之后**继续说旧数字** ⇒ **文字在骗人**。
 #
-#   ⚠ **口径**：只认「（恰好 N 处」（**紧跟左括号**）⇒ 只命中「这条门项**自己**的条数」
-#   ⇒ ⇒ 「必须恰好 N 处」「有门钉住**恰好 23 处**」那种**说的是别的门**的写法**不算**
-#   （⚠ 实测：`build-deb.sh` 那条门项的说明里写着「die 调用点有门钉住**恰好 23 处**」
-#   ⇒ 那是**另一个门**的条数 ⇒ 若按「说明文字里有『恰好 N 处』就查」⇒ **误报**）
+#   ⚠ **口径（批 EB 扩展）**：现在**两种写法都认** ——
+#     ① 「（恰好 N 处」（紧跟左括号）
+#     ② 「**必须恰好 N 处**」（主语就是本门 ⇒ 说的是**自己**的条数）
+#   ⇒ ⇒ **批 EA 当时的口径太窄**：它把 ② 和「**有门钉住恰好 23 处**」
+#      （那个**说的是别的门**）混为一谈 ⇒ ⇒ **为避开一个例子 ⇒ 误排了 30 条真·自己的门项**
+#      ⇒ ⇒ 实测：全仓 **44 条**门项的说明文字写了条数，其中 **30 条**用 ② 写法
+#      ⇒ ⇒ ② 那些门项的说明文字**完全不受管** ⇒ ⇒ **已经有 2 条在骗人**：
+#      ① ci-wiring.sh:3323  实参 **6** 而文字称「恰好 5 处」（批 CQ 历史遗留）
+#      ② ci-wiring.sh:3943  实参 **13** 而文字称「恰好 12 处」（**批 EB 自己引入的**）
+#      ⇒ ⇒ 口径扩开后实测：**零误报**（44 条里只有那 2 条真失准）⇒ 可以扩
+#   ⚠ **只查第一个** ⇒ 改成**全部都要对上**（一行里写了两个数 ⇒ 两个都得对）
 def check_label_count_text(count_items):
-    """核对门项说明文字里的「（恰好 N 处」与该门项的期望值是否一致。"""
+    """核对门项说明文字里的「条数」与该门项的期望值是否一致。"""
     bad = []
     for lineno, f, rx, want in count_items:
         # ⚠ 说明文字是门项行的第 4 个参数 ⇒ 从**行原文**里取（不复刻解析）
         raw = _raw_gate_line(lineno)
         if raw is None:
             continue
-        ms = re.findall(r'（恰好 (\d+) 处', raw)
+        ms = re.findall(r"(?:（恰好 |必须恰好 )(\d+) 处", raw)
         if not ms:
             continue
-        said = int(ms[0])
-        if said != want:
-            bad.append((lineno, f, rx, want, said,
-                        '说明文字称「恰好 %d 处」但期望值是 %d ⇒ **文字在骗人**'
-                        % (said, want)))
+        for m in ms:
+            said = int(m)
+            if said != want:
+                bad.append((lineno, f, rx, want, said,
+                            '说明文字称「恰好 %d 处」但期望值是 %d ⇒ **文字在骗人**'
+                            % (said, want)))
     return bad
 
 
@@ -1039,8 +1148,10 @@ def _raw_gate_line(lineno):
     try:
         with open(WIRING, encoding='utf-8') as fh:
             lines = fh.read().split('\n')
-    except OSError:
-        return None
+    except OSError as e:
+        # ⚠⚠⚨ 批 EB：以前是裸 `return None` ⇒ 调用点 `if raw is None: continue`
+        #   ⇒ ⇒ **说明文字的条数校准被静默跳过** ⇒ ⇒ 假绿 ⇒ ⇒ 现在**登记** ⇒ 统一判红
+        return _tool_failed(WIRING, '(门项说明文字)', '读不了 %s（%s）' % (WIRING, e))
     if lineno < 1 or lineno > len(lines):
         return None
     return lines[lineno - 1]
@@ -1517,7 +1628,7 @@ GUARD_SHAPE_OK = (ast.Name, ast.Subscript)
 #   ⇒ 「用到的守卫」必须在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
 #   ⇒ 「册里的守卫」必须都被用到 ⇒ 某个收集点被挪走 / 删了 ⇒ 红。
 #   ⇒ ⚠ 登记册**内容由本仓的收集点现抽生成** ⇒ 不手抄 ⇒ 零漂移。
-FAIL_GUARDS = ('anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'dead', 'dt_bad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'labelbad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'stbad', 'undef', 'zero')
+FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'dead', 'dt_bad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'labelbad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'skipbad', 'stbad', 'undef', 'zero')
 
 
 def _is_fails_append(node):
@@ -2348,8 +2459,17 @@ def check_count_in_fn_gates(cif_items):
         if not body.strip():
             bad.append((lineno, f, sig, rx, want, None, '找不到函数体'))
             continue
-        r = subprocess.run(['grep', '-oE', '--', rx], input=body,
-                           capture_output=True, text=True)
+        try:
+            r = subprocess.run(['grep', '-oE', '--', rx], input=body,
+                               capture_output=True, text=True)
+        except OSError as e:
+            # ⚠⚠⚨ 批 EB：以前**没保护** ⇒ grep 挂 ⇒ 整个审计器**崩**（rc=10）
+            #   ⇒ 方向对（红）但**诊断失真**（说「崩了」而不是「工具用不了」）
+            #   ⇒ ⇒ 现在**登记** ⇒ 统一判红 + 指名道姓
+            _tool_failed(f, rx, 'grep 起不来（%s）' % e)
+            bad.append((lineno, f, sig, rx, want, None,
+                        '**工具用不了** ⇒ 函数体内的实际次数**算不出来** ⇒ 校准**没做成**'))
+            continue
         got = len([x for x in r.stdout.split('\n') if x])
         if got != want:
             bad.append((lineno, f, sig, rx, want, got,
@@ -2385,8 +2505,18 @@ def check_count_in_step_gates(cis_items):
             bad.append((lineno, f, rx, want, None,
                         '抽不出第 %d 步的正文（打点行没找到？）' % step))
             continue
-        r = subprocess.run(['grep', '-oE', '--', rx], input=body,
-                           capture_output=True, text=True)
+        try:
+            r = subprocess.run(['grep', '-oE', '--', rx], input=body,
+                               capture_output=True, text=True)
+        except OSError as e:
+            # ⚠⚠⚨ 批 EB：以前**没保护** ⇒ grep 挂 ⇒ 整个审计器**崩**（rc=10）
+            #   ⇒ 方向对（红）但**诊断失真**（说「崩了」而不是「工具用不了」）
+            #   ⇒ ⇒ 现在**登记** ⇒ 统一判红 + 指名道姓
+            _tool_failed(f, rx, 'grep 起不来（%s）' % e)
+            # ⚠ **in_step 的 bad 元组是 6 元组**（没有 sig 那一段）⇒ 别照抄 in_fn
+            bad.append((lineno, f, rx, want, None,
+                        '**工具用不了** ⇒ 该步正文里的实际次数**算不出来** ⇒ 校准**没做成**'))
+            continue
         got = len([x for x in r.stdout.split('\n') if x])
         if got != want:
             bad.append((lineno, f, rx, want, got,
@@ -2458,6 +2588,34 @@ def main():
         #   ⇒ ⚠ 上面 `FAILS.append(2)` **照旧**（崩 ⇒ 那些检查没跑完 ⇒ **性质**
         #     仍是盲区）⇒ 报告里的「性质」分桶不变 ⇒ 只改**分诊用的 rc**
         return CRASH_RC
+
+
+def tool_failure_rc():
+    """⚠⚠⚨ 批 EB · **工具用不了 ⇒ 那些门项根本没被校准 ⇒ 判红**（fail closed）
+
+    ⇒ 起因（实测坐实）：`count_hits` 以前在工具起不来时 `return None`
+      ⇒ 而 5 个调用点都是 `if got is None: continue`
+      ⇒ ⇒ 那些次数门**根本没被校准** ⇒ ⇒ 审计器**照样 rc=0** ⇒ ⇒ **假绿**
+      （单测证据：期望 999 vs 实际 1 ⇒ 工具坏了 ⇒ **一条失准都不报**）
+
+    ⚠⚠⚨ **必须在**所有出口**之前**都调它 —— 批 EB 第一版把它插在**硬门模式**分支里
+      ⇒ ⇒ 而 `--list`（CI 实际用的）与**报告模式**都没被覆盖
+      ⇒ ⇒ 单测跑出来 **rc=0** ⇒ ⇒ **看着像没修** ⇒ ⇒ 教训：收口点不能只管一个分支。
+
+    ⇒ 返回 rc（2 = 盲区：那些门项**根本没被审**）/ None（没失败）
+    """
+    if TOOL_FAILURES:
+        print('**工具用不了** ⇒ %d 条门项**根本没被校准**'
+              '（未验证不许被当成通过）：' % len(TOOL_FAILURES), file=sys.stderr)
+        for tf in TOOL_FAILURES[:20]:
+            print('  · %s | %s ⇒ %s' % (tf[0], tf[1], tf[2]), file=sys.stderr)
+        if len(TOOL_FAILURES) > 20:
+            print('  … 另有 %d 条' % (len(TOOL_FAILURES) - 20), file=sys.stderr)
+        print('  ⇒ 那些次数门**没被校准** ⇒ 期望值对不对**没人知道** ⇒ 判红',
+              file=sys.stderr)
+        FAILS.append(2)
+        return 2
+    return None
 
 
 def main_body():
@@ -2545,7 +2703,8 @@ def main_body():
     if want_list_all:
         for k in keys:
             print(k)
-        return 0
+        # ⚠⚠⚨ 批 EB：工具用不了 ⇒ 那些键**不完整** ⇒ ⇒ 也要判红
+        return tool_failure_rc() or 0
 
     if want_list:
         # ⚠⚠⚨ 批 BN · 审计器**自己**引用了未定义的名字 ⇒ **改名漏改调用点**
@@ -2833,6 +2992,17 @@ def main_body():
         cifbad = check_count_in_fn_gates(cif)
         cisbad = check_count_in_step_gates(cis)
         pairbad = check_pair_count_gates(pair)
+        # ⚠⚠⚨ 批 EB · 「静默跳过」体检（零名单维护 ⇒ 扫全文件）
+        #   ⇒ 审计器自己**不许**有「工具坏了 ⇒ 跳过校准」的那种写法
+        #   ⇒ 报失准 ⇒ rc=2（盲区：那些门项**根本没被审**）
+        skipbad = check_silent_tool_skip(AUDIT_SELF)
+        if skipbad:
+            print('审计器自己有「**静默略过**」的写法（%d 处）⇒ **工具坏了 ⇒ 那些门项'
+                  '根本没被校准** ⇒ 判红' % len(skipbad), file=sys.stderr)
+            for sb in skipbad:
+                print('  · %s:%d  %s' % (os.path.basename(AUDIT_SELF), sb[0], sb[1]),
+                      file=sys.stderr)
+            FAILS.append(2)
         anybad = check_any_gates(anyc, anym, counter)
         bad_all = minbad + cntbad + cifbad + cisbad + pairbad + anybad
         if bad_all:
@@ -2858,7 +3028,12 @@ def main_body():
             print(k)
         # ⚠⚠⚨ 批 CQ · rc 取**最先失败**的那个（与旧行为**完全一致** ⇒
         #   门侧按 rc 分诊的文案表零改动）⇒ 差别只在「**其余失败也一并报出来**」
-        return FAILS[0] if FAILS else (3 if outside else 0)
+        # ⚠⚠⚨ 批 EB：工具用不了 ⇒ 那些次数门**没被校准** ⇒ ⇒ 判红（fail closed）
+        #   ⇒ ⚠⚠⚨ **必须先跑** `tool_failure_rc()`（**无条件**）⇒ 否则
+        #     `FAILS[0] if FAILS else …` 会**短路** ⇒ ⇒ 工具失败的消息**丢失**
+        #     ⇒ ⇒ 实测：grep 挂掉时收口消息**根本没打印**（只印了逐条失准）
+        _tool_rc = tool_failure_rc()
+        return FAILS[0] if FAILS else (_tool_rc or (3 if outside else 0))
 
     print('门自审计：ci-wiring.sh 里的门项')
     print('  arch_need %d 条 / arch_need_ml %d 条 / arch_need_any_count %d 条 / '
@@ -2997,6 +3172,13 @@ def main_body():
         for lb in labelbad:
             print('  · ci-wiring.sh:%d  %s | %s ⇒ 期望 %d，但说明文字称「恰好 %d 处」'
                   % (lb[0], rel(lb[1]), lb[2], lb[3], lb[4]), file=sys.stderr)
+    # ⚠⚠⚨ 批 EB · 「静默跳过」体检（零名单维护 ⇒ 扫全文件）
+    skipbad = check_silent_tool_skip(AUDIT_SELF)
+    if skipbad:
+        print('审计器自己有「**静默略过**」的写法（%d 处）⇒ **工具坏了 ⇒ 那些门项'
+              '根本没被校准** ⇒ 判红' % len(skipbad))
+        for sb in skipbad:
+            print('  · %s:%d  %s' % (os.path.basename(AUDIT_SELF), sb[0], sb[1]))
     print('arch_need_count 期望校准（须 == 实际命中数）：%d 条失准' % len(cntbad))
     for lineno, f, rx, want, got, why in cntbad:
         print('  · %s:%d  %s | %s ⇒ %s'
@@ -3038,7 +3220,8 @@ def main_body():
     for lineno, f, rx, why in zero:
         print('  · %s:%d  %s  %s' % (os.path.basename(WIRING), lineno, why, rel(f)))
         print('      正则：%s' % rx)
-    return 0
+    # ⚠⚠⚨ 批 EB：工具用不了 ⇒ 那些次数门**没被校准** ⇒ ⇒ 判红（fail closed）
+    return tool_failure_rc() or 0
 
 
 def parse_min_gates():
