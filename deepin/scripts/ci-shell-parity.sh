@@ -1,5 +1,5 @@
 #!/bin/sh
-# ci-shell-parity.sh — 批 DV · 「判据层的结论不许随执行 shell 变」的门（覆盖面版）
+# ci-shell-parity.sh — 批 DV / DW · 「判据层的结论不许随执行 shell 变」的门（覆盖面版）
 #
 # 【为什么要有它 —— 承接批 DT / 批 DU】
 #   批 DT 立了承诺（「判据结果的诊断输出不许随执行 shell 变」）⇒ 批 DU 给它装上牙齿
@@ -23,7 +23,15 @@
 #   `ci.sh` 第 9 步也双跑接线门（批 DU）⇒ 那**不是**本脚本的口径 ⇒
 #   ⇒ 登记册里用「**双跑位置**」这一列区分（`ci.sh` / `parity`）⇒ 两边各算各的。
 #
+# ⚠⚠⚨ **「入口共用 ≠ 参数共用」**（批 DW）：
+#   `ci-d2.sh` 吃的是**源码根**，而 `ci-platform-probe.sh` 吃的是**已构建的二进制**
+#   ⇒ ⇒ 登记册里用「**参数**」这一列显式写出来（`src` / `bin`）
+#   ⇒ 靠脚本名**猜**参数 ⇒ 就是把约定藏起来 ⇒ 换个参数 ⇒ 没人发现。
+#
 # 用法：scripts/ci-shell-parity.sh [源码根目录]（默认脚本所在目录的上一级）
+#   ⚠ 批 DW：**环境里必须有 `BIN`**（指向已构建的二进制）⇒ 它由 `ci.sh` export
+#     ⇒ 单一真相源（两个地方各算一遍 ⇒ 算出不同路径 ⇒ 又一个新洞）
+#     ⇒ 没有它 ⇒ 登记册里标 `bin` 的条目**双跑不了** ⇒ 拒绝继续（fail closed）
 set -uo pipefail
 
 SRC="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
@@ -34,6 +42,8 @@ SRC_ABS="$(cd "$SRC" 2>/dev/null && pwd)"
 # ⚠ 仓库根（`macos/` 与 `deepin/` 同仓）⇒ 登记册的键用**相对仓库根的路径**（批 CY 教训）
 ROOT="$(cd "$SRC/.." && pwd)"
 BASE="$SRC/scripts/ci-shell-parity.baseline"
+# ⚠ 批 DW：二进制路径**只从环境拿**（`ci.sh` export）⇒ 单一真相源
+BIN="${BIN:-}"
 
 TAB=$(printf '\t')
 
@@ -51,7 +61,7 @@ n_dual=0
 n_exempt=0
 n_ok=0
 
-while IFS="$TAB" read -r rel mode where why; do
+while IFS="$TAB" read -r rel mode where param why; do
     [ -z "$rel" ] && continue
     case "$rel" in '#'*) continue ;; esac
     if [ "$mode" = "EXEMPT" ]; then
@@ -71,6 +81,13 @@ while IFS="$TAB" read -r rel mode where why; do
         echo "✗ 双跑登记册里 $rel 标了 DUAL 却**没写理由**（为什么它能双跑）⇒ 拒绝继续" >&2
         exit 1
     fi
+    # ⚠⚠⚨ 批 DW：段数必须**恰好 5** ⇒ 理由里混进 TAB ⇒ 多出来的那段会被吞进理由
+    #   ⇒ 机器看不出「登记册被人动过」⇒ ⇒ 段数错位 ⇒ 拒绝继续
+    _why_rest="${why#*"$TAB"}"
+    if [ "$_why_rest" != "$why" ]; then
+        echo "✗ 双跑登记册里 $rel 的理由里**混进了 TAB** ⇒ 段数不是 5 ⇒ 登记册被人动过 ⇒ 拒绝继续" >&2
+        exit 1
+    fi
     if [ "$where" != "parity" ] && [ "$where" != "ci.sh" ]; then
         echo "✗ 双跑登记册里有不认识的双跑位置：$rel ⇒ $where（只许 parity 或 ci.sh）" >&2
         exit 1
@@ -79,6 +96,28 @@ while IFS="$TAB" read -r rel mode where why; do
         # 位置是 `ci.sh` ⇒ 由批 DU 的门项负责（那半边在 CI 入口里）⇒ 本脚本不管
         continue
     fi
+    # ⚠⚠⚨ 批 DW：参数列只许 `src` 或 `bin` ⇒ 别的 ⇒ 「传给它的参数是谁」没人知道
+    #   ⇒ 双跑的**输入都不确定** ⇒ 拒绝继续
+    if [ "$param" != "src" ] && [ "$param" != "bin" ]; then
+        echo "✗ 双跑登记册里有不认识的参数：$rel ⇒ $param（只许 src 或 bin）⇒ 「双跑时喂给它什么」没人知道 ⇒ 拒绝继续" >&2
+        exit 1
+    fi
+    # ⚠⚠⚨ 批 DW：`bin` 的前置检查 ⇒ 二进制不在 ⇒ 子脚本会走「用法错」那条路（exit 2）
+    #   ⇒ **两遍都那样** ⇒ 「两版一致」又变成**空洞的一致** ⇒ 假绿 ⇒ ⇒ 必须先挡住
+    if [ "$param" = "bin" ]; then
+        # ⚠⚠⚨ 批 DW：**`-f` 也要查**（实测踩出来的）：`-x` 对**目录**也返回 true
+        #   ⇒ 目录能通过「可执行」检查 ⇒ 喂给探针的是**目录** ⇒ 探针要等到 exec 时才炸
+        #   ⇒ 而两个 shell 的**报错文案不同**（dash 说 Permission denied / bash 说 是一个目录）
+        #   ⇒ 双跑门会报「输出不同」⇒ **误诊**（真正的问题是「二进制不是文件」）
+        #   ⇒ ⇒ 必须在**喂之前**就挡住（fail closed）⇒ 这一组**根本没验过**，不许当成通过
+        if [ -z "$BIN" ] || [ ! -f "$BIN" ] || [ ! -x "$BIN" ]; then
+            echo "✗ 双跑登记册里的 $rel 要双跑**二进制**（参数列 = bin）⇒ 但 BIN=${BIN:-（没设）} 不是一个可执行的二进制**文件** ⇒ 双跑做不了 ⇒ 这一组**根本没验过**（不许当成通过）" >&2
+            exit 1
+        fi
+        _arg="$BIN"
+    else
+        _arg="$SRC_ABS"
+    fi
     n_dual=$((n_dual + 1))
     _script="$ROOT/$rel"
     if [ ! -r "$_script" ]; then
@@ -86,15 +125,18 @@ while IFS="$TAB" read -r rel mode where why; do
         exit 1
     fi
     _rc_a=0
-    sh   "$_script" "$SRC_ABS" > "$_SA" 2>&1 || _rc_a=$?
+    sh   "$_script" "$_arg" > "$_SA" 2>&1 || _rc_a=$?
     _rc_b=0
-    bash "$_script" "$SRC_ABS" > "$_SB" 2>&1 || _rc_b=$?
+    bash "$_script" "$_arg" > "$_SB" 2>&1 || _rc_b=$?
     if [ "$_rc_a" -ne "$_rc_b" ]; then
         echo "✗ ⚠⚠⚨ $rel 在 sh 与 bash 下**退出码不同**（sh=$_rc_a / bash=$_rc_b）⇒ 判据层的**结论随执行 shell 变** ⇒ 不可信（批 DT）" >&2
         exit 1
     fi
     if ! cmp -s "$_SA" "$_SB"; then
-        echo "✗ ⚠⚠⚨ $rel 在 sh 与 bash 下**输出不同** ⇒ 诊断文案**随执行 shell 变** ⇒ 负控的文案命中判定不可信（批 DT）" >&2
+        # ⚠⚠⚨ 批 DW：把**两遍的退出码**一起报出来 ⇒ 读者一眼能看出「两遍是不是都没跑通」
+        #   ⇒ 只说「输出不同」⇒ 「两遍都失败」这个事实被吞掉了 ⇒ **结论悄悄消失**
+        #   ⇒ ⚠ 退出码非 0 ⇒ 更可能是「**喂错了参数**」/「**环境坏掉**」，**不一定是**「随 shell 变」
+        echo "✗ ⚠⚠⚨ $rel 在 sh 与 bash 下**输出不同**（退出码 sh=$_rc_a / bash=$_rc_b）⇒ 诊断文案**随执行 shell 变** ⇒ 负控的文案命中判定不可信（批 DT）" >&2
         _drc=0
         diff "$_SA" "$_SB" > "$_SD" 2>&1 || _drc=$?
         echo "   差异已写 $_SD（diff 退出码 $_drc）前 20 行：" >&2
@@ -102,6 +144,13 @@ while IFS="$TAB" read -r rel mode where why; do
         exit 1
     fi
     n_ok=$((n_ok + 1))
+    # ⚠⚠⚨ 批 DW：把**子判据的退出码**报出来 ⇒ 「一致」这两个字**不掩盖**它到底跑通没跑通
+    #   ⇒ 门打绿勾，读者还能看到「这一组其实没跑通」⇒ 结论不许悄悄消失
+    _rc_note="判据**真的跑通**"
+    if [ "$_rc_a" -ne 0 ]; then
+        _rc_note="这一组**没跑通**；结论本身由该脚本自己的门负责"
+    fi
+    echo "  ✓ $rel：两版一致（退出码 $_rc_a ⇒ $_rc_note）"
 done < "$BASE"
 
 echo "✓ 双跑覆盖面：本脚本双跑了 $n_dual 个判据脚本，在 sh 与 bash 下**输出与退出码一致**（豁免 $n_exempt 个，每个带理由）"

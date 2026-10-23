@@ -43,6 +43,10 @@ BUILD="${1:-$SRC/build}"
 #   ⇒ 这里先绝对化（`cd` 到不存在的目录会失败 ⇒ 用 `|| true` 兜住，保留原值）。
 BUILD="$(cd "$BUILD" 2>/dev/null && pwd || echo "$BUILD")"
 BIN="$BUILD/deepDolphin"
+# ⚠⚠⚨ 批 DW：`BIN` **export** 出去 ⇒ 双跑覆盖面门（`ci-shell-parity.sh`）拿的是**同一个**二进制
+#   ⇒ **单一真相源** ⇒ 两个地方各算一遍 ⇒ 算出不同路径 ⇒ 又一个新洞
+#   ⇒ 登记册里参数列 = `bin` 的条目就靠它（没它 ⇒ 那几条双跑不了 ⇒ 门 fail closed）
+export BIN
 # ⚠⚠⚨ 批 CK · 「未验证」不许被当成「通过」——**CI 自己这层**。
 #   ⇒ 盘点 `scripts/` 下所有「跳过/未验证」出口 ⇒ ci.sh 自己就有 **6 处**
 #     「只打印、不计数」⇒ CI 继续 ⇒ 最后照样打「✓ CI 门通过」
