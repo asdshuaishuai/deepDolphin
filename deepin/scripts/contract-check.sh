@@ -45,7 +45,7 @@ command -v python3 >/dev/null || { echo "SKIP contract-check：需要 python3 �
 
 # 客户端二进制（第 12 组要拿它的工具清单）。找不到 → 该组显式 SKIP，
 # **不算通过**（否则「清单没对过」会被当成「对过了」）。
-CLIENT_BIN="${DEEPGIT_CLIENT_BIN:-}"
+CLIENT_BIN="${1:-${DEEPGIT_CLIENT_BIN:-}}"
 if [ -z "$CLIENT_BIN" ]; then
     CLIENT_BIN="$(cd "$(dirname "$0")/.." && pwd)/build/deepDolphin"
 fi
@@ -103,7 +103,7 @@ check_text() { # check_text <名称> <ERE> <文本>
 }
 
 trap 'rm -rf "$SANDBOX"' EXIT
-echo "› 沙箱：$SANDBOX（DEEPGIT_HOME 隔离，退出即清）"
+echo "› 沙箱：已隔离（DEEPGIT_HOME 指向临时目录，退出即清）"
 
 # 1+2. add → status 恒等式与项目键
 "$BIN" add "$FIX" --json >/dev/null 2>&1
@@ -620,10 +620,10 @@ print(json.dumps({'out': out, 'err': err}, ensure_ascii=False))
             echo "  ✗ 进度报告端到端：客户端从真回执里抽不出 .md 路径（「打开报告」入口永远是坏的）" >&2
             fail=$((fail+1))
         elif [ -f "$REPORT_PATH" ]; then
-            echo "  ✓ 进度报告端到端：客户端抽出的路径存在且是绝对路径（$REPORT_PATH）"
+            echo "  ✓ 进度报告端到端：客户端抽出的路径存在且是绝对路径"
             pass=$((pass+1))
         else
-            echo "  ✗ 进度报告端到端：客户端抽出的路径不存在（$REPORT_PATH）" >&2
+            echo "  ✗ 进度报告端到端：客户端抽出的路径不存在" >&2
             fail=$((fail+1))
         fi
     fi
@@ -878,7 +878,7 @@ EOF
         echo "  ✓ 引擎获取：落盘的引擎可执行且改名成 moongit"
         pass=$((pass+1))
     else
-        echo "  ✗ 引擎获取：落盘的引擎不存在或不可执行（$ENG_TMP/dest/moongit）" >&2
+        echo "  ✗ 引擎获取：落盘的引擎不存在或不可执行" >&2
         fail=$((fail+1))
     fi
     # ⚠ 整包落盘：真二进制与运行库**必须一起**跟过来 ——

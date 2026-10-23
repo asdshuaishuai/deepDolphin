@@ -21,7 +21,7 @@ deepin/scripts/ci-platform-probe.sh	DUAL	parity	bin	参数是**已构建的二�
 deepin/scripts/ci-docs-lang-probe.sh	DUAL	parity	bin	同上（参数是二进制）⇒ 实测两版逐字节一致 ⇒ 缓存不影响输出 ⇒ 可双跑
 deepin/scripts/ci-divider-probe.sh	DUAL	parity	bin	同上（参数是二进制）⇒ 实测两版逐字节一致 ⇒ 缓存不影响输出 ⇒ 可双跑
 deepin/scripts/probe-agent-tool-surface.sh	DUAL	parity	bin	同上（参数是二进制）⇒ 实测两版逐字节一致；⚠ 它会**建 4 个文件**（引擎沙箱）⇒ 实测「建完再看」的输出与首遍逐字节相同 ⇒ 可双跑
-deepin/scripts/contract-check.sh	EXEMPT	-	-	输出含**随机沙箱名**与**时间戳文件名**⇒ 逐字节比对必然不同 ⇒ 恒红 ⇒ 假红（批 DL：假红比假绿更坏）
+deepin/scripts/contract-check.sh	DUAL	parity	bin	⚠ 批 DY：输出里的**随机量已清掉**（沙箱路径 + 报告文件名里的时间戳）⇒ 实测两遍**逐字节相同** ⇒ 可双跑；参数是**已构建的二进制**（客户端）⇒ 由 `ci.sh` export 的 `$BIN` 喂（脚本也吃位置参数）⇒ 单一真相源
 deepin/scripts/build-deb.sh	EXEMPT	-	-	**有副作用**（构建 deb 包）⇒ 双跑 = 构建两遍 ⇒ CI 时间翻倍且产物可能含时间戳 ⇒ 不双跑
 deepin/scripts/check-deb-layout.sh	EXEMPT	-	-	需 deb 产物（第 11 步才构建）⇒ 双跑点在其之前 ⇒ 依赖未就位 ⇒ 要双跑得把双跑点挪到第 12 步之后
 deepin/scripts/ci-shell-parity.sh	EXEMPT	-	-	**自引用** ⇒ 双跑自己会递归 ⇒ 它的正确性由门项逐字钉住 + 负控保证（不靠双跑保证）
