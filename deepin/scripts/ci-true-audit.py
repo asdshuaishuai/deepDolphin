@@ -53,7 +53,7 @@ SCOPE_BASELINE = os.path.join(SCRIPTS, 'ci-tautology-scope.baseline')
 #   ⇒ 整份登记册被删/被截短 ⇒ 这里就红 ⇒ 门项另有一条盯这一行本身
 #   ⇒ ⚠⚠⚨ 批 DQ：范围扩到 mac 侧 + linux 侧 ⇒ 21 → **33**
 #     （实测：deepin/scripts 21 + macos 7 + linux/scripts 5 + assets 0）
-TRUE_AUDIT_EXPECTED_ROWS = 33
+TRUE_AUDIT_EXPECTED_ROWS = 26
 
 
 # ══════════════════════════════════════════════════════════════

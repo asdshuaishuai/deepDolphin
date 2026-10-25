@@ -50,13 +50,6 @@ deepin/scripts/ci-d2.sh	(顶层)	other	"	2	同上一行的**对称段**（规则
 deepin/scripts/ci-d2.sh	(顶层)	count	grep_-c_.	2	同上的**对称段**（规则 2 的计数）⇒ 靠序号区分
 deepin/scripts/ci-d2.sh	(顶层)	count	grep_-c_"^$_p_"_"$EXEMPT	1	`$EXEMPT_HITS` 是**运行时生成**的文件 ⇒ 若它读不了 ⇒ `grep -c` 输出 0 ⇒ 落到「豁免已失效」那一支 ⇒ **判红**（**偏严方向** ⇒ 不会假绿）
 deepin/scripts/ci-docs-lang-probe.sh	count_lines	count	grep_-c_.	1	上游 `$vals` 是**内存里的文本** ⇒ 同计数型口径
-deepin/scripts/ci-wiring.sh	arch_need_count	count	grep_-c_.	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
-deepin/scripts/ci-wiring.sh	arch_need_count_ml	count	grep_-c_.	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
-deepin/scripts/ci-wiring.sh	arch_need_count_pair	count	grep_-cE_--_"$ra"	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
-deepin/scripts/ci-wiring.sh	arch_need_count_pair	count	grep_-cE_--_"$rb"	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
-deepin/scripts/ci-wiring.sh	arch_need_min	count	grep_-c_.	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
-deepin/scripts/ci-wiring.sh	arch_need_count_in_fn	count	grep_-c_.	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
-deepin/scripts/ci-wiring.sh	arch_need_count_in_step	count	grep_-c_.	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
 deepin/scripts/ci.sh	(顶层)	other	grep_-oE_'[0-9]+'	1	上游 `$SELFCHECK_OUT` 是**内存里的文本**；且批 CI 已加 `[ -z "$SC_PASSED" ]` **先判空** ⇒ 取数失败 ⇒ 判红（不再落进「判通过」那一支）
 deepin/scripts/ci.sh	(顶层)	other	grep_-oE_'[0-9]+'	2	同上一行（`SC_FAILED` 那一条）⇒ 靠序号区分
 deepin/scripts/ci.sh	(顶层)	other	#include[[:space:]]*<[A-	1	⚠⚠⚨ **批 CJ 修的真洞**：这处原先**没有**先验可读性 ⇒ 源文件对 grep 不可读 ⇒ grep **静默跳过** ⇒ **分层纪律门放行** ⇒ 假绿；⇒ 批 CJ 已在扫描前加 `find … ! -readable` 预检（批 CD 同款口径）⇒ 此处 `|| true` 只吞「无匹配」
