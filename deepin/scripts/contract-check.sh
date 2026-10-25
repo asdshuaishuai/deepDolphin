@@ -1129,7 +1129,22 @@ EOF
         "d.get('ok') is False and d.get('stage') == 'noPlatformAsset' and 'darwin' in d.get('message','')" \
         "$ENG_NOASSET"
     # 真 GitHub API：latest release 载荷能被判定层读懂
-    if command -v curl >/dev/null 2>&1; then
+    # ⚠⚠⚨ 批 EJ-18 · **出网必须由调用方显式钉死**（不许靠「代理变量碰巧生效」）
+    #   ⇒ ⚠⚠⚨ **实测坐实**（不是推演）：批 ED 的钉死是「把代理指向 127.0.0.1:9」
+    #     ⇒ ⇒ 它依赖「curl 认这个代理变量」⇒ ⇒ 而 curl **还读 `~/.curlrc`**
+    #     ⇒ ⇒ 里面的 `noproxy = "*"` **直接绕过代理** ⇒ ⇒ 实测：钉死照样拿到
+    #     **6181 字节**真 GitHub API 载荷（curl rc=0）⇒ ⇒ 契约门整门 rc 从 3 变 0
+    #     ⇒ ⇒ 两遍之间宿主环境一变 ⇒ ⇒ 双跑门**自造分叉** ⇒ ⇒ CI **间歇性假红**
+    #     ⇒ ⇒ 而且**误诊**（归因成「结论随执行 shell 变」⇒ 读者被带去查错的地方）
+    #   ⇒ ⇒ 现在改成**显式契约**：调用方（覆盖面探针）说「本轮不许打外网」
+    #     ⇒ ⇒ 契约门**恒定**不打 ⇒ ⇒ 恒定输出 ⇒ ⇒ 恒定退出码 ⇒ ⇒ 不可能分叉
+    #   ⇒ ⚠ **只在这里生效**（`ci.sh` 第 10 步**真跑**不设这个变量 ⇒ 仍真打真 API）
+    #     ⇒ ⇒ 「覆盖面不许被悄悄改窄」这条承诺**不受影响**
+    if [ "${DEEPGIT_CONTRACT_OFFLINE:-0}" = "1" ]; then
+        echo "  ‣ SKIP 第 21 组真 API 那条：本轮**钉死出网**（覆盖面探针 ⇒ 外部依赖不许进入结论）"
+        echo "    ‣ 本条**未验证**，不算通过"
+        skip=$((skip+1))
+    elif command -v curl >/dev/null 2>&1; then
         ENG_API="$(curl -fsSL --max-time 25 https://api.github.com/repos/asdshuaishuai/moongit/releases/latest 2>/dev/null)"
         if [ -z "$ENG_API" ]; then
             echo "  ‣ SKIP 第 21 组真 API 那条：GitHub API 不可达（网络问题）"

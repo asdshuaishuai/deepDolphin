@@ -59,7 +59,7 @@ deepin/scripts/ci.sh	失败上报	3	批 CI/CK 收的失败上报（分层纪律�
 deepin/scripts/ci.sh	跳过提示	12	① desktop-file-validate 缺席 ② appstream-util 缺席 ③ deb 构建脚本自报 SKIP（批 CL）④ deb 构建没有 dpkg-deb ⑤ 其说明行 ⑥ deb 布局验收没有 deb 产物 ⑦ deb 布局验收自报 SKIP ⑧ agent 工具面门 ⑨ 其说明行 ⑩ Pillow 缺席（批 DG：assets 图标判据未验证）⑪ **契约门脚本自报 SKIP（批 EC）** ⑫ **引擎缺席（批 EC）**⇒ 其中 **10 处真出口全部已计数**（`skip=$((skip+1))`），另 **2 处是同一声明的说明行** ⇒ 批 CK/CL/DG/EC 收
 deepin/scripts/ci.sh	未验证逻辑出口	1	末尾「有 $skip 组**未验证**（SKIP）」那一个**逻辑出口**（专属码 3）（⚠ 批 CX：**出口**也登记）
 deepin/scripts/contract-check.sh	失败上报	1	末尾「有 $skip 组未验证 ⇒ 专属码 3」⇒ **已判红**（批 CI 收）
-deepin/scripts/contract-check.sh	跳过提示	26	契约门的内层 SKIP 提示（客户端二进制缺席 / 打桩服务器没起来 / GitHub API 不可达 / 没有 curl / 没有 python3 …）⇒ **14 处内层 SKIP 全部已计数**（4/7/3 缩进，批 CI 收），其余是同一声明的说明行 ⇒ **未验证 ⇒ 末尾专属码 3**（批 CI 收）
+deepin/scripts/contract-check.sh	跳过提示	28	契约门的内层 SKIP 提示（客户端二进制缺席 / 打桩服务器没起来 / GitHub API 不可达 / 没有 curl / 没有 python3 …）⇒ **14 处内层 SKIP 全部已计数**（4/7/3 缩进，批 CI 收），其余是同一声明的说明行 ⇒ **未验证 ⇒ 末尾专属码 3**（批 CI 收）
 deepin/scripts/contract-check.sh	未验证逻辑出口	2	① 顶部「引擎缺席 ⇒ 未验证」② 末尾「有 $skip 组未验证」⇒ 两个**逻辑出口**（专属码 3）（⚠ 批 CX：**出口**也登记）
 deepin/scripts/probe-agent-tool-surface.sh	失败上报	2	① 探针退出码非 0 且非 3 ⇒ 判失败 ② 退出码 0 却什么都没报 ⇒ 判失败（假绿）⇒ 批 BW 收
 deepin/scripts/probe-agent-tool-surface.sh	跳过提示	2	① 引擎未找到 ② 引擎太老（无 deprecated 标记）⇒ 两处都**专属退出码 3**（批 BW/CC 收）

@@ -105,6 +105,16 @@ export HTTP_PROXY="$_PIN_PROXY"
 export HTTPS_PROXY="$_PIN_PROXY"
 export ALL_PROXY="$_PIN_PROXY"
 export no_proxy="127.0.0.1,localhost,::1"
+# ⚠⚠⚨ 批 EJ-18 · **显式契约**：本轮**不许打外网**（外部依赖不许进入结论）
+#   ⇒ ⚠⚠⚨ 实测坐实：上面那组代理**钉死是软的** ⇒ ⇒ curl 还读 `~/.curlrc`
+#     ⇒ ⇒ 里面的 `noproxy = "*"` **绕过代理** ⇒ ⇒ 真 API 那条照样打得到
+#     ⇒ ⇒ 契约门 rc 在 0/3 之间摆 ⇒ ⇒ 双跑门**自造分叉** ⇒ ⇒ CI **间歇性假红**
+#   ⇒ ⇒ 现在由**契约门自己**认这个开关 ⇒ ⇒ 恒定不打 ⇒ ⇒ 恒定输出 + 恒定退出码
+#   ⇒ ⚠ **代理那组钉死仍然保留**（纵深防御：万一以后有第二个出网点）
+#   ⇒ ⚠ **只影响本脚本的子进程** ⇒ ⇒ `ci.sh` 第 10 步**真跑**仍真打真 API
+export DEEPGIT_CONTRACT_OFFLINE=1
+# ⚠ 批 EJ-18：**把这一轮的性质报出来**（不许「结论悄悄消失」⇒ 读者得知道这轮是离线的）
+echo "› 本轮钉死出网：外部依赖不进入结论（覆盖面探针 ⇒ 只问「结论随执行 shell 变吗」）"
 export NO_PROXY="127.0.0.1,localhost,::1"
 while IFS="$TAB" read -r rel mode where param why; do
     [ -z "$rel" ] && continue
