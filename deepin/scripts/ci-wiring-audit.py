@@ -112,7 +112,7 @@ AUDIT_SELF = os.path.join(HERE, 'ci-wiring-audit.py')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1647
+GATE_LINES_EXPECTED = 1658
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -286,6 +286,41 @@ def read_source(path):
         raise UnreadableSource(path, '读不了（%s）' % e)
 
 
+class ToolResult(object):
+    """⚠ 形状与 `subprocess.CompletedProcess` **完全一致** ⇒ ⇒ 调用点**不用改**。
+
+    ⚠⚠⚨ 批 EJ-12：所有外部工具调用都走 `run_tool` ⇒ ⇒ 「接住退出码」这条纪律
+    **不再靠自觉**（⇒ 有一条**零名单**的 AST 规则盯着 ⇒ 新增调用点必须走它）。
+    """
+
+    __slots__ = ('returncode', 'stdout', 'stderr')
+
+    def __init__(self, returncode, stdout, stderr):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def run_tool(cmd, ok_codes=(0,), input=None, cwd=None, retry=False):
+    """跑一次外部工具 ⇒ ⇒ **接住退出码** ⇒ ⇒（`retry=True` 时）**重试一次**。
+
+    ⚠⚠⚨ 批 EJ-12：**工具瞬时失败**（负载抖一下）不许变成假红 ⇒ ⇒ 重试。
+    ⚠ **口径（批 EJ-11）**：重试成功 ⇒ ⇒ 返回**第一次 + 第二次**的输出
+      ⇒ ⇒ 与门侧同口径 ⇒ ⇒ 不会一边绿一边红。
+    ⚠ **retry=False（默认）**：**两侧都拿不到**管道中间工具的退出码 ⇒ ⇒ 重试不了
+      ⇒ ⇒ 保持「首次失败即失败」⇒ ⇒ **两侧口径一致**（结论一致，只是都红）。
+    ⚠ **零名单**：审计器里**所有**外部工具调用都必须走这里
+      ⇒ ⇒ 有 AST 规则盯着（凡 `subprocess.run` 不在 `run_tool` 体内 ⇒ 判红）。
+    """
+    out = subprocess.run(cmd, input=input, capture_output=True, text=True, cwd=cwd)
+    if out.returncode in ok_codes or not retry:
+        return ToolResult(out.returncode, out.stdout, out.stderr)
+    again = subprocess.run(cmd, input=input, capture_output=True, text=True, cwd=cwd)
+    if again.returncode in ok_codes:
+        return ToolResult(0, out.stdout + again.stdout, again.stderr)
+    return ToolResult(again.returncode, again.stdout, again.stderr)
+
+
 def strip_comments(path):
     """剥注释 —— ⚠ **直接调 ci-wiring.sh 用的同一条 perl/sed**，不复刻。
 
@@ -315,20 +350,13 @@ def strip_comments(path):
     #     ⇒ **两侧口径一致**，不会一边绿一边红）
     if not os.access(path, os.R_OK):
         raise UnreadableSource(path, '对工具不可读（权限）')
-    out = subprocess.run(cmd + [path], capture_output=True, text=True)
-    # ⚠⚠⚨ 批 CH · **接住工具的退出码**（批 CG 纪律：工具失败 ≠ 没找到）
-    #   ⇒ 工具失败 ⇒ 抛（不许把空输出当成「这个文件里没有」）
-    #   ⚠⚠⚨ **变量名带前缀** ⇒ 这一行在仓里**唯一**
-    #     （与别处同缩进的 `if out.returncode != 0:` 撞形态 ⇒ 整行锚定罩不住 ⇒ 批 CG 教训）
-    _tool_rc = out.returncode
-    if _tool_rc != 0:
-        _first_out = out.stdout
-        _retry = subprocess.run(cmd + [path], capture_output=True, text=True)
-        _tool_rc = _retry.returncode
-        if _tool_rc != 0:
-            raise UnreadableSource(path, '剥注释工具退出码 %d' % _tool_rc)
-        return _first_out + _retry.stdout
-    return out.stdout
+    # ⚠⚠⚨ 批 EJ-12 · **收进 `run_tool`**（唯一入口 ⇒ 接住退出码 ⇒ 指名道姓）
+    #   ⇒ ⇒ 批 EJ-11 的「两侧各重试一次」也一并收在这里 ⇒ ⇒ **判定逻辑只有一份**
+    #   ⇒ ⚠ **只有这一处许 retry=True**（门侧在**管道**里 ⇒ 拿不到退出码 ⇒ 别的都重试不了）
+    _tool = run_tool(cmd + [path], ok_codes=(0,), retry=True)
+    if _tool.returncode != 0:
+        raise UnreadableSource(path, '剥注释工具退出码 %d' % _tool.returncode)
+    return _tool.stdout
 
 
 def require_perl():
@@ -375,8 +403,7 @@ def count_hits(path, rx):
         return None
     text = strip_comments(path)
     try:
-        out = subprocess.run(['grep', '-oE', '--', rx], input=text,
-                             capture_output=True, text=True)
+        out = run_tool(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=text)
     except OSError as e:
         # ⚠⚠⚨ 批 EB：以前是 `return None` ⇒ **静默跳过** ⇒ 那一族次数门**没被校准**
         #   ⇒ ⇒ 审计器照样 rc=0 ⇒ ⇒ **假绿** ⇒ ⇒ 现在**登记** ⇒ 统一判红
@@ -392,8 +419,7 @@ def count_hits_ml(path, rx):
         return None
     text = strip_comments(path).replace('\n', ' ')
     try:
-        out = subprocess.run(['grep', '-oE', '--', rx], input=text,
-                             capture_output=True, text=True)
+        out = run_tool(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=text)
     except OSError as e:
         # ⚠⚠⚨ 批 EB：以前是 `return None` ⇒ **静默跳过** ⇒ 那一族次数门**没被校准**
         #   ⇒ ⇒ 审计器照样 rc=0 ⇒ ⇒ **假绿** ⇒ ⇒ 现在**登记** ⇒ 统一判红
@@ -407,9 +433,12 @@ def count_hits_ml(path, rx):
 #   拼成临时脚本再调 ⇒ 门侧改了口径，审计侧自动跟着变 ⇒ 零漂移。
 def extract_shell_func(name):
     """从 ci-wiring.sh 里 `sed` 抽出名为 <name> 的 shell 函数原文。"""
-    out = subprocess.run(
+    out = run_tool(
         ['sed', '-n', '/^%s() {/,/^}/p' % re.escape(name), WIRING],
-        capture_output=True, text=True)
+        ok_codes=(0,))
+    if out.returncode != 0:
+        raise UnreadableSource(WIRING, '抽函数 %s 的 sed 退出码 %d（工具坏了 ≠ 抽不出）'
+                               % (name, out.returncode))
     return out.stdout
 
 
@@ -462,7 +491,7 @@ class AnyCounter(object):
             path = os.path.join(tmpd, 'count.sh')
             with open(path, 'w', encoding='utf-8') as fh:
                 fh.write(self._script())
-            out = subprocess.run(['bash', path], capture_output=True, text=True)
+            out = run_tool(['bash', path], ok_codes=(0,))
             if out.returncode != 0:
                 raise RuntimeError('any_hits 批量计数失败：%s' % out.stderr.strip()[:400])
             for ln in out.stdout.split('\n'):
@@ -863,10 +892,10 @@ def parse_wiring():
 def changed_lines(base):
     """git diff base..HEAD 里 ci-wiring.sh 的**新增行行号**集合。"""
     try:
-        out = subprocess.run(
+        out = run_tool(
             ['git', '-C', REPO, 'diff', '--unified=0', '%s..HEAD' % base,
              '--', 'deepin/scripts/ci-wiring.sh'],
-            capture_output=True, text=True)
+            ok_codes=(0,))
     except OSError as e:
         # ⚠⚠⚨ 批 EB：以前是裸 `return None` ⇒ 静默跳过 ⇒ 那些门项**没被校准**
         #   ⇒ ⇒ 现在**登记** ⇒ 统一收口判红（fail closed）
@@ -936,8 +965,7 @@ def count_lines(path, rx):
         return None
     text = strip_comments(path)
     try:
-        out = subprocess.run(['grep', '-cE', '--', rx], input=text,
-                             capture_output=True, text=True)
+        out = run_tool(['grep', '-cE', '--', rx], ok_codes=(0, 1), input=text)
     except OSError as e:
         # ⚠⚠⚨ 批 EB：以前是 `return None` ⇒ **静默跳过** ⇒ 配对门的行数**没被校准**
         #   ⇒ ⇒ **假绿** ⇒ ⇒ 现在**登记** ⇒ 统一判红
@@ -966,6 +994,65 @@ def count_lines(path, rx):
 #
 #   ⚠ **零名单维护** ⇒ 扫**全文件**所有 except 块 ⇒ 不用维护名单
 #   ⚠ **判定逻辑只有一份**（批 BF/BG 纪律）⇒ 实扫与自检走同一函数
+def _tool_call_entry_violations(tree):
+    """**零名单**判定：凡 `subprocess.run` 调用**不在 `run_tool` 体内** ⇒ ⇒ 违规。
+
+    ⇒ 返回 [(行号, 说明)]；空列表 = 通过。
+    ⚠⚠⚨ 批 EJ-12：这是「一次挡住整类」—— 以后新增任何外部工具调用点
+      ⇒ ⇒ 都得走 `run_tool` ⇒ ⇒ 「接住退出码」这条纪律**不再靠自觉**。
+    """
+    bad = []
+    allowed = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == 'run_tool':
+            for sub in ast.walk(node):
+                if (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute)
+                        and sub.func.attr == 'run'):
+                    allowed.add(id(sub))
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == 'run'
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == 'subprocess'
+                and id(node) not in allowed):
+            bad.append((node.lineno, '`subprocess.run` 不在 `run_tool` 体内 ⇒ 退出码没人接'))
+    return bad
+
+
+def check_tool_call_entry(path):
+    """审计器里**不许有裸 `subprocess.run`** ⇒ ⇒ 全部外部工具调用必须走 `run_tool`。
+
+    ⚠⚠⚨ 批 EJ-12：实测坐实 —— `extract_shell_func` 以前**根本不检查退出码**
+      ⇒ ⇒ 工具抖一下 ⇒ ⇒ 空串 ⇒ ⇒ **rc=2「盲区」** ⇒ ⇒ ⇒ **假红**（且诊断指错方向）
+      ⇒ ⇒ 现在：① 全部调用点走 `run_tool` ② **零名单**规则盯着不许有漏网的。
+    ⇒ 返回 [(行号, 说明)]；空列表 = 通过。
+    """
+    try:
+        with open(path, encoding='utf-8') as fh:
+            tree = ast.parse(fh.read(), filename=path)
+    except (OSError, SyntaxError) as e:
+        return [(0, '读不了/解析不了 %s（%s）⇒ 自检做不了（fail closed）' % (path, e))]
+    return _tool_call_entry_violations(tree)
+
+
+def check_tool_call_entry_selftest():
+    """⚠⚠⚨ 批 EJ-12 · **自检必须证明自己有牙**（批 DF 纪律）。
+
+    ⇒ 构造一棵**含裸 `subprocess.run`** 的 AST ⇒ ⇒ 规则必须抓到它。
+    ⇒ ⇒ 规则被掏空 ⇒ ⇒ 自检不过 ⇒ ⇒ 判红。
+    """
+    src = 'def f():\n    return subprocess.run(["x"])\n'
+    problems = []
+    try:
+        tree = ast.parse(src)
+    except SyntaxError as e:
+        problems = ['样例解析不了 ⇒ 自检做不了（fail closed）：%s' % e]
+    else:
+        if not _tool_call_entry_violations(tree):
+            problems = ['样例里的裸 `subprocess.run` 没被抓到 ⇒ 规则没牙']
+    return problems
+
+
 def check_silent_tool_skip(path):
     """审计器里**不许有「静默跳过」**：`except OSError` 块里的裸 `return None` / `continue`。
 
@@ -1044,8 +1131,7 @@ def check_pair_segment_bad(path, ra, rb):
         err = None
         res = []
         try:
-            out = subprocess.run(['grep', '-nE', '--', rx], input=text,
-                                 capture_output=True, text=True)
+            out = run_tool(['grep', '-nE', '--', rx], ok_codes=(0, 1), input=text)
         except OSError as e:
             err = 'grep 调用失败：%s' % e
             # ⚠⚠⚨ 批 EB：以前只返回 err（**不登记**）⇒ 逐段配对的结论**不可信**
@@ -1666,7 +1752,7 @@ GUARD_SHAPE_OK = (ast.Name, ast.Subscript)
 #   ⇒ 「用到的守卫」必须在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
 #   ⇒ 「册里的守卫」必须都被用到 ⇒ 某个收集点被挪走 / 删了 ⇒ 红。
 #   ⇒ ⚠ 登记册**内容由本仓的收集点现抽生成** ⇒ 不手抄 ⇒ 零漂移。
-FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'cntmlbad', 'dead', 'dt_bad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'labelbad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'skipbad', 'stbad', 'undef', 'zero')
+FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'cntmlbad', 'dead', 'dt_bad', 'entrybad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'labelbad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'skipbad', 'stbad', 'undef', 'zero')
 
 
 def _is_fails_append(node):
@@ -2490,16 +2576,18 @@ def check_count_in_fn_gates(cif_items):
         if not os.path.isfile(f):
             bad.append((lineno, f, sig, rx, want, None, '文件不存在'))
             continue
-        out = subprocess.run(
+        out = run_tool(
             ['awk', '-v', 'sig=' + sig, awk_src],
-            input=strip_comments(f), capture_output=True, text=True)
+            ok_codes=(0,), input=strip_comments(f))
+        if out.returncode != 0:
+            _tool_failed(f, rx, 'awk 退出码 %d（工具坏了 ≠ 找不到函数体）'
+                         % out.returncode)
         body = out.stdout
         if not body.strip():
             bad.append((lineno, f, sig, rx, want, None, '找不到函数体'))
             continue
         try:
-            r = subprocess.run(['grep', '-oE', '--', rx], input=body,
-                               capture_output=True, text=True)
+            r = run_tool(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=body)
         except OSError as e:
             # ⚠⚠⚨ 批 EB：以前**没保护** ⇒ grep 挂 ⇒ 整个审计器**崩**（rc=10）
             #   ⇒ 方向对（红）但**诊断失真**（说「崩了」而不是「工具用不了」）
@@ -2535,17 +2623,19 @@ def check_count_in_step_gates(cis_items):
         if not os.path.isfile(f):
             bad.append((lineno, f, rx, want, None, '文件不存在'))
             continue
-        out = subprocess.run(
+        out = run_tool(
             ['awk', '-v', 'step=%d' % step, awk_src],
-            input=strip_comments(f), capture_output=True, text=True)
+            ok_codes=(0,), input=strip_comments(f))
+        if out.returncode != 0:
+            _tool_failed(f, rx, 'awk 退出码 %d（工具坏了 ≠ 抽不出正文）'
+                         % out.returncode)
         body = out.stdout
         if not body.strip():
             bad.append((lineno, f, rx, want, None,
                         '抽不出第 %d 步的正文（打点行没找到？）' % step))
             continue
         try:
-            r = subprocess.run(['grep', '-oE', '--', rx], input=body,
-                               capture_output=True, text=True)
+            r = run_tool(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=body)
         except OSError as e:
             # ⚠⚠⚨ 批 EB：以前**没保护** ⇒ grep 挂 ⇒ 整个审计器**崩**（rc=10）
             #   ⇒ 方向对（红）但**诊断失真**（说「崩了」而不是「工具用不了」）
@@ -3050,6 +3140,18 @@ def main_body():
                 print('  · %s:%d  %s' % (os.path.basename(AUDIT_SELF), sb[0], sb[1]),
                       file=sys.stderr)
             FAILS.append(2)
+        # ⚠⚠⚨ 批 EJ-12 · 「外部工具调用的唯一入口」体检（零名单维护 ⇒ 扫全文件）
+        #   ⇒ 审计器里**不许有裸 `subprocess.run`** ⇒ ⇒ 以后新增调用点必须走 `run_tool`
+        #   ⇒ ⇒ 「接住退出码」这条纪律**不再靠自觉**
+        entrybad = check_tool_call_entry(AUDIT_SELF)
+        if entrybad:
+            print('审计器自己有**裸 `subprocess.run`**（%d 处，不在 `run_tool` 体内）'
+                  '⇒ ⇒ 那些调用点的退出码**没人接** ⇒ ⇒ 工具抖一下就假红 ⇒ ⇒ 判红'
+                  % len(entrybad), file=sys.stderr)
+            for eb in entrybad:
+                print('  · %s:%d  %s' % (os.path.basename(AUDIT_SELF), eb[0], eb[1]),
+                      file=sys.stderr)
+            FAILS.append(2)
         anybad = check_any_gates(anyc, anym, counter)
         bad_all = minbad + cntbad + cifbad + cisbad + pairbad + anybad
         if bad_all:
@@ -3234,6 +3336,12 @@ def main_body():
               '根本没被校准** ⇒ 判红' % len(skipbad))
         for sb in skipbad:
             print('  · %s:%d  %s' % (os.path.basename(AUDIT_SELF), sb[0], sb[1]))
+    entrybad = check_tool_call_entry(AUDIT_SELF)
+    if entrybad:
+        print('审计器自己有**裸 `subprocess.run`**（%d 处，不在 `run_tool` 体内）'
+              '⇒ ⇒ 那些调用点的退出码**没人接**' % len(entrybad))
+        for eb in entrybad:
+            print('  · %s:%d  %s' % (os.path.basename(AUDIT_SELF), eb[0], eb[1]))
     print('arch_need_count 期望校准（须 == 实际命中数）：%d 条失准' % len(cntbad))
     for lineno, f, rx, want, got, why in cntbad:
         print('  · %s:%d  %s | %s ⇒ %s'
