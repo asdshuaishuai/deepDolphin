@@ -348,7 +348,7 @@ let L10n_zhCN: L10nTable = [
     "bar.notGit": "非 git 项目",
     // 原生菜单栏 + 关于窗口
     "menu.about": "关于 deepDolphin",
-    "menu.help": "deepGit 帮助",
+    "menu.help": "moonGit 帮助",
     "menu.github": "GitHub 仓库",
     "menu.engine": "moonGit 引擎",
     "about.tagline": "基于 git 历史的本地项目群进度管理客户端",
@@ -853,7 +853,7 @@ let L10n_en: L10nTable = [
     "bar.notGit": "Non-git project",
     // Native menus + About window
     "menu.about": "About deepDolphin",
-    "menu.help": "deepGit Help",
+    "menu.help": "moonGit Help",
     "menu.github": "GitHub Repository",
     "menu.engine": "moonGit Engine",
     "about.tagline": "Local project-group progress client built on git history",
@@ -1351,7 +1351,7 @@ let L10n_zhTW: L10nTable = [
     "bar.notGit": "非 git 專案",
     // 原生選單列 + 關於視窗
     "menu.about": "關於 deepDolphin",
-    "menu.help": "deepGit 說明",
+    "menu.help": "moonGit 說明",
     "menu.github": "GitHub 專案庫",
     "menu.engine": "moonGit 引擎",
     "about.tagline": "基於 git 歷史的本機專案群進度管理用戶端",
@@ -1849,7 +1849,7 @@ let L10n_ja: L10nTable = [
     "bar.notGit": "非 git プロジェクト",
     // ネイティブメニュー + このAppについて
     "menu.about": "deepDolphin について",
-    "menu.help": "deepGit ヘルプ",
+    "menu.help": "moonGit ヘルプ",
     "menu.github": "GitHub リポジトリ",
     "menu.engine": "moonGit エンジン",
     "about.tagline": "git 履歴に基づくローカル プロジェクト群の進捗クライアント",

@@ -18,11 +18,11 @@ import UserNotifications
 /// ⚠️ 原来标题字面量散在 4 处，而其中 2 处**判的字符串根本不会成立**：
 ///     · `Window("deepDolphin", id: "panel")`     —— 场景的初始标题
 ///     · `PanelView` 的 `.navigationTitle("deepDolphin 面板")` —— 实际生效的标题
-///     · `AppDelegate.openPanel()` 的 `w.title == "deepGit"`
-///     · `DockMenuTarget.openPanel()` 的 `w.title == "deepGit"`
+///     · `AppDelegate.openPanel()` 的 `w.title == PanelWindow.title（deepDolphin）`
+///     · `DockMenuTarget.openPanel()` 的 `w.title == PanelWindow.title（deepDolphin）`
 ///
 /// `NSApp.windows[i].title` 取的是**导航标题**，也就是 `.navigationTitle`
-/// 覆盖之后的那个值（真 app 的 AX 窗口名读到的正是「deepGit 面板」）。
+/// 覆盖之后的那个值（真 app 的 AX 窗口名读到的正是「deepDolphin 面板」）。
 /// ⇒ 后面那两处比较**永不成立**，「窗口已经开着就直接 focus」的快路径
 /// 从来没跑过，每次都落到后面的通知转发。
 ///
@@ -287,7 +287,7 @@ struct AppCommands: Commands {
         // CommandGroup(.help) 的存在本身让「帮助」菜单出现在菜单栏 ——
         // 原来应用根本没有这一项，而「设置/关于/帮助」是正经 Mac 应用的三件套。
         CommandGroup(after: .help) {
-            Button(l10n.str["menu.help"] ?? "deepGit 帮助") {
+            Button(l10n.str["menu.help"] ?? "moonGit 帮助") {
                 openWindow(id: "help")
                 NSApp.activate(ignoringOtherApps: true)
             }
