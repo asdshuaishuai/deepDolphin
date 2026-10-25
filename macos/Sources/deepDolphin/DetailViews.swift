@@ -8,6 +8,10 @@ struct ProjectDetailView: View {
     @EnvironmentObject var model: AppModel
     let projectName: String
     @State private var commitMessage = ""
+    /// 操作行「提交」按钮的弹窗（单仓库本地提交：信息在弹窗里输入）
+    @State private var showCommitPrompt = false
+    @State private var promptProject: ProjectStatus?
+    @State private var promptMessage = ""
     // 图谱触发入口（用户定稿：两图只能从具体仓库的面板触发，单仓库锁定）
     @State private var showCodeGraph = false
     @State private var showArch = false
@@ -43,6 +47,17 @@ struct ProjectDetailView: View {
         }
         .sheet(isPresented: $showCodeGraph) {
             CodeGraphPage(projectName: projectName)
+        }
+        .alert(L10n.t("gitop.commit"), isPresented: $showCommitPrompt) {
+            TextField(L10n.t("gitop.messagePlaceholder"), text: $promptMessage)
+            Button(L10n.t("gitop.commit"), role: .destructive) {
+                guard let p = promptProject, !promptMessage.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                Task { await model.gitOp(p, op: "commit", message: promptMessage) }
+                promptMessage = ""
+            }
+            Button(L10n.t("common.cancel"), role: .cancel) { promptMessage = "" }
+        } message: {
+            Text(promptProject.map { DestructiveGuard.commitTitle(project: $0.name) } ?? "")
         }
         .sheet(isPresented: $showArch) {
             ArchPage(projectName: projectName)
@@ -151,6 +166,17 @@ struct ProjectDetailView: View {
     private func gitOpButtons(_ p: ProjectStatus) -> some View {
         HStack(spacing: DSSpacing.xs) {
             gitOpButton(p, L10n.t("gitop.pull"), "arrow.down.to.line", "pull")
+            // 本地提交（用户定稿：入口放在推送旁边）——点开带信息输入的提交弹窗
+            Button {
+                promptProject = p
+                promptMessage = ""
+                showCommitPrompt = true
+            } label: {
+                Label(L10n.t("gitop.commit"), systemImage: "square.and.pencil")
+            }
+            .disabled(model.busyProject == p.name || model.busyAll)
+            .help(L10n.t("gitop.messagePlaceholder"))
+            .accessibilityLabel(A11y.label(L10n.t("gitop.commit")))
             gitOpButton(p, L10n.t("gitop.push"), "arrow.up.to.line", "push")
             gitOpButton(p, L10n.t("gitop.fetch"), "arrow.triangle.2.circlepath", "fetch")
             Divider().frame(height: 14)
