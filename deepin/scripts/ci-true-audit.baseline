@@ -50,7 +50,6 @@ deepin/scripts/ci-d2.sh	(顶层)	other	"	2	同上一行的**对称段**（规则
 deepin/scripts/ci-d2.sh	(顶层)	count	grep_-c_.	2	同上的**对称段**（规则 2 的计数）⇒ 靠序号区分
 deepin/scripts/ci-d2.sh	(顶层)	count	grep_-c_"^$_p_"_"$EXEMPT	1	`$EXEMPT_HITS` 是**运行时生成**的文件 ⇒ 若它读不了 ⇒ `grep -c` 输出 0 ⇒ 落到「豁免已失效」那一支 ⇒ **判红**（**偏严方向** ⇒ 不会假绿）
 deepin/scripts/ci-docs-lang-probe.sh	count_lines	count	grep_-c_.	1	上游 `$vals` 是**内存里的文本** ⇒ 同计数型口径
-deepin/scripts/ci-wiring.sh	any_hits	count	grep_-c_.	1	上游 `strip_comments`（批 CG 已**先验可读性**）⇒ 源文件读不了 ⇒ 剥注释阶段就红 ⇒ 不会静默算成 0
 deepin/scripts/ci-wiring.sh	arch_need_count	count	grep_-c_.	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
 deepin/scripts/ci-wiring.sh	arch_need_count_ml	count	grep_-c_.	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）
 deepin/scripts/ci-wiring.sh	arch_need_count_pair	count	grep_-cE_--_"$ra"	1	同 `any_hits`（上游 `strip_comments` 已先验可读性）

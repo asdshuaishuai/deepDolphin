@@ -112,7 +112,7 @@ AUDIT_SELF = os.path.join(HERE, 'ci-wiring-audit.py')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1690
+GATE_LINES_EXPECTED = 1692
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -479,8 +479,12 @@ class AnyCounter(object):
                 raise RuntimeError('抽不出 ci-wiring.sh 里的 %s() ⇒ 口径会漂移' % fn)
             parts.append(body)
         for i, (rx, gl) in enumerate(self.pairs):
-            parts.append("printf '%d\\t%%s\\n' \"$(any_hits %s %s)\""
-                         % (i, shlex.quote(rx), shlex.quote(gl)))
+            # ⚠⚠⚨ 批 EJ-15 · 以前是 `printf … "$(any_hits …)"` ⇒ ⇒ 命令替换
+            #   ⇒ ⇒ **退出码被吞掉** ⇒ ⇒ 门侧 `any_hits` 的失败**传不出来**
+            #   ⇒ ⇒ 现在：先取值、**失败就非 0 退出** ⇒ ⇒ 审计器看得见
+            parts.append("_v=$(any_hits %s %s) || exit $?"
+                         % (shlex.quote(rx), shlex.quote(gl)))
+            parts.append("printf '%d\\t%%s\\n' \"$_v\"" % i)
         return '\n'.join(parts) + '\n'
 
     def _run(self):
@@ -493,7 +497,21 @@ class AnyCounter(object):
                 fh.write(self._script())
             out = run_tool(['bash', path], ok_codes=(0,))
             if out.returncode != 0:
-                raise RuntimeError('any_hits 批量计数失败：%s' % out.stderr.strip()[:400])
+                # ⚠⚠⚨ 批 EJ-15 · 以前是 `raise RuntimeError(...)` ⇒ ⇒ **整个审计器中止**
+                #   ⇒ ⇒ 其它门型**根本没审** ⇒ ⇒ 明细只剩 1 行（批 CR「一次报全」被破坏）
+                #   ⇒ ⇒ 那 145 条 count_in_fn/count_in_step 的「工具用不了」明细
+                #     ⇒ ⇒ **根本没机会打印** ⇒ ⇒ 「诊断指错方向」只是它的一个切面
+                #   ⇒ ⇒ 现在：**登记**进工具失败通道 ⇒ ⇒ **继续跑完所有检查**
+                #   ⇒ ⇒ 最后由 `tool_failure_rc()` **统一收口**判红（rc=2）+ 逐条明细
+                #   ⇒ ⇒ ⚠ 与 `count_hits` 的既有语义**一致**（登记 ⇒ 调用点 continue ⇒ 收口判红）
+                why = (out.stderr.strip()[:400]
+                       or ('批量计数脚本退出码 %d' % out.returncode))
+                for rx_, gl_ in self.pairs:
+                    _tool_failed(os.path.join(SRC, gl_), rx_,
+                                 'any_hits 批量计数失败 ⇒ **工具用不了** ⇒ '
+                                 'glob %s 的总命中数**算不出来** ⇒ 校准**没做成**'
+                                 ' ⇒ %s' % (gl_, why))
+                return
             for ln in out.stdout.split('\n'):
                 if '\t' not in ln:
                     continue
@@ -2580,13 +2598,10 @@ def check_count_in_fn_gates(cif_items):
             ['awk', '-v', 'sig=' + sig, awk_src],
             ok_codes=(0,), input=strip_comments(f))
         if out.returncode != 0:
-            _tool_failed(f, rx, 'awk 退出码 %d（工具坏了 ≠ 找不到函数体）'
-                         % out.returncode)
+            _tool_failed(f, rx, 'awk 退出码 %d（工具坏了 ≠ 找不到函数体） ⇒ **工具用不了** ⇒ 函数体**抽不出来** ⇒ 校准**没做成**' % out.returncode)
             # ⚠⚠⚨ 批 EJ-14 · 以前**不 continue** ⇒ ⇒ 工具坏了 ⇒ ⇒ 还会再报一条
             #   「找不到函数体」⇒ ⇒ **双报**（工具失败 + 找不到）⇒ ⇒ 诊断被带偏
             #   ⇒ ⇒ 现在失败即 continue（⇒ 只报一条、且是指名道姓那条）
-            bad.append((lineno, f, sig, rx, want, None,
-                        '**工具用不了** ⇒ 函数体**抽不出来** ⇒ 校准**没做成**'))
             continue
         body = out.stdout
         if not body.strip():
@@ -2598,18 +2613,14 @@ def check_count_in_fn_gates(cif_items):
             # ⚠⚠⚨ 批 EB：以前**没保护** ⇒ grep 挂 ⇒ 整个审计器**崩**（rc=10）
             #   ⇒ 方向对（红）但**诊断失真**（说「崩了」而不是「工具用不了」）
             #   ⇒ ⇒ 现在**登记** ⇒ 统一判红 + 指名道姓
-            _tool_failed(f, rx, 'grep 起不来（%s）' % e)
-            bad.append((lineno, f, sig, rx, want, None,
-                        '**工具用不了** ⇒ 函数体内的实际次数**算不出来** ⇒ 校准**没做成**'))
+            _tool_failed(f, rx, 'grep 起不来（%s） ⇒ **工具用不了** ⇒ 函数体内的实际次数**算不出来** ⇒ 校准**没做成**' % e)
             continue
         # ⚠⚠⚨ 批 EJ-14 · **接住退出码却不判** ⇒ ⇒ 工具坏了 ⇒ ⇒ 静默算成「实际 0 次」
         #   ⇒ ⇒ 「期望 N ≠ 实际 0 ⇒ 门恒红」⇒ ⇒ **假红 + 诊断指错方向**
         #   ⇒ ⇒ （读起来像「代码里的失败上报被掏空了」，实际是「**工具抖了**」）
         #   ⇒ ⇒ 现在**与 count_hits 同口径**（批 EB 的写法）⇒ ⇒ **指名道姓** + 判红
         if r.returncode not in (0, 1):
-            _tool_failed(f, rx, 'grep 退出码 %d（不是 0/1）' % r.returncode)
-            bad.append((lineno, f, sig, rx, want, None,
-                        '**工具用不了** ⇒ 函数体内的实际次数**算不出来** ⇒ 校准**没做成**'))
+            _tool_failed(f, rx, 'grep 退出码 %d（不是 0/1） ⇒ **工具用不了** ⇒ 函数体内的实际次数**算不出来** ⇒ 校准**没做成**' % r.returncode)
             continue
         got = len([x for x in r.stdout.split('\n') if x])
         if got != want:
@@ -2642,13 +2653,10 @@ def check_count_in_step_gates(cis_items):
             ['awk', '-v', 'step=%d' % step, awk_src],
             ok_codes=(0,), input=strip_comments(f))
         if out.returncode != 0:
-            _tool_failed(f, rx, 'awk 退出码 %d（工具坏了 ≠ 抽不出正文）'
-                         % out.returncode)
+            _tool_failed(f, rx, 'awk 退出码 %d（工具坏了 ≠ 抽不出正文） ⇒ **工具用不了** ⇒ 该步正文**抽不出来** ⇒ 校准**没做成**' % out.returncode)
             # ⚠⚠⚨ 批 EJ-14 · 以前**不 continue** ⇒ ⇒ **双报**（工具失败 + 抽不出正文）
             #   ⇒ ⇒ 诊断被带偏 ⇒ ⇒ 现在失败即 continue
             # ⚠ **in_step 的 bad 元组是 6 元组**（没有 sig 那一段）⇒ 别照抄 in_fn
-            bad.append((lineno, f, rx, want, None,
-                        '**工具用不了** ⇒ 该步正文**抽不出来** ⇒ 校准**没做成**'))
             continue
         body = out.stdout
         if not body.strip():
@@ -2661,19 +2669,15 @@ def check_count_in_step_gates(cis_items):
             # ⚠⚠⚨ 批 EB：以前**没保护** ⇒ grep 挂 ⇒ 整个审计器**崩**（rc=10）
             #   ⇒ 方向对（红）但**诊断失真**（说「崩了」而不是「工具用不了」）
             #   ⇒ ⇒ 现在**登记** ⇒ 统一判红 + 指名道姓
-            _tool_failed(f, rx, 'grep 起不来（%s）' % e)
+            _tool_failed(f, rx, 'grep 起不来（%s） ⇒ **工具用不了** ⇒ 该步正文里的实际次数**算不出来** ⇒ 校准**没做成**' % e)
             # ⚠ **in_step 的 bad 元组是 6 元组**（没有 sig 那一段）⇒ 别照抄 in_fn
-            bad.append((lineno, f, rx, want, None,
-                        '**工具用不了** ⇒ 该步正文里的实际次数**算不出来** ⇒ 校准**没做成**'))
             continue
         # ⚠⚠⚨ 批 EJ-14 · **接住退出码却不判** ⇒ ⇒ 工具坏了 ⇒ ⇒ 静默算成「实际 0 次」
         #   ⇒ ⇒ 「期望 N ≠ 实际 0 ⇒ 门恒红」⇒ ⇒ **假红 + 诊断指错方向**
         #   ⇒ ⇒ 现在**与 count_hits 同口径**（批 EB 的写法）⇒ ⇒ **指名道姓** + 判红
         if r.returncode not in (0, 1):
-            _tool_failed(f, rx, 'grep 退出码 %d（不是 0/1）' % r.returncode)
+            _tool_failed(f, rx, 'grep 退出码 %d（不是 0/1） ⇒ **工具用不了** ⇒ 该步正文里的实际次数**算不出来** ⇒ 校准**没做成**' % r.returncode)
             # ⚠ **in_step 的 bad 元组是 6 元组**（没有 sig 那一段）⇒ 别照抄 in_fn
-            bad.append((lineno, f, rx, want, None,
-                        '**工具用不了** ⇒ 该步正文里的实际次数**算不出来** ⇒ 校准**没做成**'))
             continue
         got = len([x for x in r.stdout.split('\n') if x])
         if got != want:
