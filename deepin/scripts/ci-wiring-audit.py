@@ -112,7 +112,7 @@ AUDIT_SELF = os.path.join(HERE, 'ci-wiring-audit.py')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1706
+GATE_LINES_EXPECTED = 1710
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -492,6 +492,21 @@ class AnyCounter(object):
             return
         tmpd = tempfile.mkdtemp(prefix='wiring-audit-')
         try:
+            try:
+                script = self._script()
+            except RuntimeError as e:
+                # ⚠⚠⚨ 批 EJ-20 ⇒ 以前是 `raise` ⇒ ⇒ **整个审计器中止** ⇒ ⇒
+                #   ⇒ ⇒ 其它门型**根本没审** ⇒ ⇒ 「一次报全」被破坏（批 CR/CQ）⇒ ⇒
+                #   ⇒ ⇒ rc=10（崩了）⇒ ⇒ 诊断说「崩了」而不是「工具用不了」⇒ ⇒ **指错方向**
+                #   ⇒ ⇒ 现在：**登记**进工具失败通道 ⇒ ⇒ **不中止** ⇒ ⇒ 继续跑完所有检查
+                #   ⇒ ⇒ 最后由 `tool_failure_rc()` 统一收口判红（rc=2）+ 逐条明细
+                #   ⇒ ⇒ 与 `count_hits` 的既有语义**一致**（登记 ⇒ ⇒ 调用点 continue ⇒ ⇒ 收口判红）
+                for rx_, gl_ in self.pairs:
+                    _tool_failed(os.path.join(SRC, gl_), rx_,
+                                 'any_hits 口径抽不出 ⇒ **工具用不了** ⇒ glob %s 的总命中数**算不出来** ⇒ 校准**没做成**'
+                                 ' ⇒ %s' % (gl_, e))
+
+                return
             path = os.path.join(tmpd, 'count.sh')
             with open(path, 'w', encoding='utf-8') as fh:
                 fh.write(self._script())
@@ -522,7 +537,17 @@ class AnyCounter(object):
                     continue
             missing = [i for i in range(len(self.pairs)) if i not in self.values]
             if missing:
-                raise RuntimeError('any_hits 批量计数少 %d 条 ⇒ 对不上' % len(missing))
+                # ⚠⚠⚨ 批 EJ-20 ⇒ 以前是 `raise` ⇒ ⇒ **整个审计器中止** ⇒ ⇒
+                #   ⇒ ⇒ 其它门型**根本没审** ⇒ ⇒ 「一次报全」被破坏（批 CR/CQ）
+                #   ⇒ ⇒ 现在：**登记**进工具失败通道 ⇒ ⇒ **不中止** ⇒ ⇒ 继续跑完所有检查
+                #   ⇒ ⇒ 与「批量脚本跑不起来」那条**同一处置**（登记 ⇒ ⇒ 不中止 ⇒ ⇒ 收口判红）
+                for i in missing:
+                    rx_, gl_ = self.pairs[i]
+                    _tool_failed(os.path.join(SRC, gl_), rx_,
+                                 'any_hits 批量计数少了 %d 条 ⇒ 对不上 ⇒ **工具用不了** ⇒ glob %s 的总命中数**算不出来** ⇒ 校准**没做成**'
+                                 % (len(missing), gl_))
+
+                return
         finally:
             shutil.rmtree(tmpd, ignore_errors=True)
 
