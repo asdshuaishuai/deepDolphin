@@ -112,7 +112,7 @@ AUDIT_SELF = os.path.join(HERE, 'ci-wiring-audit.py')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1680
+GATE_LINES_EXPECTED = 1690
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -2582,6 +2582,12 @@ def check_count_in_fn_gates(cif_items):
         if out.returncode != 0:
             _tool_failed(f, rx, 'awk 退出码 %d（工具坏了 ≠ 找不到函数体）'
                          % out.returncode)
+            # ⚠⚠⚨ 批 EJ-14 · 以前**不 continue** ⇒ ⇒ 工具坏了 ⇒ ⇒ 还会再报一条
+            #   「找不到函数体」⇒ ⇒ **双报**（工具失败 + 找不到）⇒ ⇒ 诊断被带偏
+            #   ⇒ ⇒ 现在失败即 continue（⇒ 只报一条、且是指名道姓那条）
+            bad.append((lineno, f, sig, rx, want, None,
+                        '**工具用不了** ⇒ 函数体**抽不出来** ⇒ 校准**没做成**'))
+            continue
         body = out.stdout
         if not body.strip():
             bad.append((lineno, f, sig, rx, want, None, '找不到函数体'))
@@ -2593,6 +2599,15 @@ def check_count_in_fn_gates(cif_items):
             #   ⇒ 方向对（红）但**诊断失真**（说「崩了」而不是「工具用不了」）
             #   ⇒ ⇒ 现在**登记** ⇒ 统一判红 + 指名道姓
             _tool_failed(f, rx, 'grep 起不来（%s）' % e)
+            bad.append((lineno, f, sig, rx, want, None,
+                        '**工具用不了** ⇒ 函数体内的实际次数**算不出来** ⇒ 校准**没做成**'))
+            continue
+        # ⚠⚠⚨ 批 EJ-14 · **接住退出码却不判** ⇒ ⇒ 工具坏了 ⇒ ⇒ 静默算成「实际 0 次」
+        #   ⇒ ⇒ 「期望 N ≠ 实际 0 ⇒ 门恒红」⇒ ⇒ **假红 + 诊断指错方向**
+        #   ⇒ ⇒ （读起来像「代码里的失败上报被掏空了」，实际是「**工具抖了**」）
+        #   ⇒ ⇒ 现在**与 count_hits 同口径**（批 EB 的写法）⇒ ⇒ **指名道姓** + 判红
+        if r.returncode not in (0, 1):
+            _tool_failed(f, rx, 'grep 退出码 %d（不是 0/1）' % r.returncode)
             bad.append((lineno, f, sig, rx, want, None,
                         '**工具用不了** ⇒ 函数体内的实际次数**算不出来** ⇒ 校准**没做成**'))
             continue
@@ -2629,6 +2644,12 @@ def check_count_in_step_gates(cis_items):
         if out.returncode != 0:
             _tool_failed(f, rx, 'awk 退出码 %d（工具坏了 ≠ 抽不出正文）'
                          % out.returncode)
+            # ⚠⚠⚨ 批 EJ-14 · 以前**不 continue** ⇒ ⇒ **双报**（工具失败 + 抽不出正文）
+            #   ⇒ ⇒ 诊断被带偏 ⇒ ⇒ 现在失败即 continue
+            # ⚠ **in_step 的 bad 元组是 6 元组**（没有 sig 那一段）⇒ 别照抄 in_fn
+            bad.append((lineno, f, rx, want, None,
+                        '**工具用不了** ⇒ 该步正文**抽不出来** ⇒ 校准**没做成**'))
+            continue
         body = out.stdout
         if not body.strip():
             bad.append((lineno, f, rx, want, None,
@@ -2641,6 +2662,15 @@ def check_count_in_step_gates(cis_items):
             #   ⇒ 方向对（红）但**诊断失真**（说「崩了」而不是「工具用不了」）
             #   ⇒ ⇒ 现在**登记** ⇒ 统一判红 + 指名道姓
             _tool_failed(f, rx, 'grep 起不来（%s）' % e)
+            # ⚠ **in_step 的 bad 元组是 6 元组**（没有 sig 那一段）⇒ 别照抄 in_fn
+            bad.append((lineno, f, rx, want, None,
+                        '**工具用不了** ⇒ 该步正文里的实际次数**算不出来** ⇒ 校准**没做成**'))
+            continue
+        # ⚠⚠⚨ 批 EJ-14 · **接住退出码却不判** ⇒ ⇒ 工具坏了 ⇒ ⇒ 静默算成「实际 0 次」
+        #   ⇒ ⇒ 「期望 N ≠ 实际 0 ⇒ 门恒红」⇒ ⇒ **假红 + 诊断指错方向**
+        #   ⇒ ⇒ 现在**与 count_hits 同口径**（批 EB 的写法）⇒ ⇒ **指名道姓** + 判红
+        if r.returncode not in (0, 1):
+            _tool_failed(f, rx, 'grep 退出码 %d（不是 0/1）' % r.returncode)
             # ⚠ **in_step 的 bad 元组是 6 元组**（没有 sig 那一段）⇒ 别照抄 in_fn
             bad.append((lineno, f, rx, want, None,
                         '**工具用不了** ⇒ 该步正文里的实际次数**算不出来** ⇒ 校准**没做成**'))
