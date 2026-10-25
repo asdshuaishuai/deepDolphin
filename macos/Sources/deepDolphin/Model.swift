@@ -607,11 +607,11 @@ final class AppModel: ObservableObject {
     // MARK: git 操作（引擎侧执行，无破坏性命令）
 
     @discardableResult
-    func gitOp(_ project: ProjectStatus, op: String, message: String = "") async -> Bool {
+    func gitOp(_ project: ProjectStatus, op: String, message: String = "", paths: [String] = []) async -> Bool {
         busyProject = project.name
         defer { busyProject = nil }
         do {
-            let data = try await EngineCLI.shared.gitOp(project: project.name, op: op, message: message)
+            let data = try await EngineCLI.shared.gitOp(project: project.name, op: op, message: message, paths: paths)
             let r = try JSONDecoder().decode(GitOpResponse.self, from: data)
             let text = r.output.isEmpty ? (r.ok ? "完成" : "失败") : r.output
             lastGitOpOutput = (r.ok, "[\(r.op)] \(text)")
@@ -624,6 +624,25 @@ final class AppModel: ObservableObject {
         } catch {
             lastGitOpOutput = (false, "[\(op)] \(EngineError.userMessage(for: error))")
             return false
+        }
+    }
+
+    /// 提交弹窗的数据面：读该仓库的改动清单。
+    /// 信封与所有 git 操作同壳 `{op, ok, output, project}`（契约检查钉住），
+    /// 条目明细是 output 里的 JSON 字符串，二层解码。
+    /// 返回 nil = 读失败（原因已进 lastError，弹窗里显示成降级态而不是空清单）。
+    func fetchGitStatus(_ projectName: String) async -> GitStatusPayload? {
+        do {
+            let data = try await EngineCLI.shared.gitStatus(project: projectName)
+            let r = try JSONDecoder().decode(GitOpResponse.self, from: data)
+            guard r.ok, r.op == "status" else {
+                lastError = r.output.isEmpty ? "git status 失败" : r.output
+                return nil
+            }
+            return try JSONDecoder().decode(GitStatusPayload.self, from: Data(r.output.utf8))
+        } catch {
+            lastError = EngineError.userMessage(for: error)
+            return nil
         }
     }
 

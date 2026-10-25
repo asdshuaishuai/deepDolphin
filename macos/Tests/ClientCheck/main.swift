@@ -3140,7 +3140,8 @@ do {
 do {
     // —— 判据本身 ——
     check("四个破坏性动作必须都要确认，可逆的状态切换不许弹") {
-        let mustConfirm: [DestructiveAction] = [.removeMilestone, .dropMilestone, .bulkUpdate, .commitAll]
+        // 2026-10-25 起 commitAll 已随「提交全部改动」确认层一起删除（提交弹窗化）
+        let mustConfirm: [DestructiveAction] = [.removeMilestone, .dropMilestone, .bulkUpdate]
         for a in mustConfirm where !DestructiveGuard.needsConfirmation(for: a) {
             throw fail("\(a) 属于不可逆/高代价动作，却不要确认")
         }
@@ -3167,10 +3168,9 @@ do {
             guard t.contains("重构登录") else { throw fail("\(a) 标题没点名对象：\(t)") }
             guard !t.hasPrefix("确认") else { throw fail("\(a) 标题是无信息的「确认…」：\(t)") }
         }
-        // 提交确认必须带上仓库名
-        guard DestructiveGuard.commitTitle(project: "deepGit").contains("deepGit") else {
-            throw fail("提交确认标题没带仓库名")
-        }
+        // ⚠️ 2026-10-25 删掉了 commitAll 与 commitTitle/CommitScope 三件套：
+        //    提交已弹窗化（CommitSheetView 逐文件勾选 = 确认层），
+        //    「提交全部改动」的一次性确认没有调用方了——判据跟着删，不是放走。
         return "标题都点名了具体对象"
     }
 
@@ -3187,28 +3187,10 @@ do {
         return "空名兜底为「未命名」，正常名只 trim"
     }
 
-    check("提交确认必须报出真实数量（引擎是 git add -A，不是挑的那几个文件）") {
-        // 引擎 kernel/git.cj:1792 走 add -A ⇒ 提交整个工作区
-        let onlyTracked = DestructiveGuard.commitScopeText(
-            DestructiveGuard.CommitScope(trackedModified: 3, untracked: 0, staged: 0))
-        guard onlyTracked.contains("3") else { throw fail("没报出改动数：\(onlyTracked)") }
-
-        // 未跟踪文件是最容易出事的一种（误提交 .env/密钥），必须单独点名
-        // 判据只查「不该提交」这个**警告的实质**，不查「首次进入版本历史」——
-        // 后者只是现象描述，删掉它警告照样成立，判据容忍它就等于没守住。
-        let withUntracked = DestructiveGuard.commitScopeText(
-            DestructiveGuard.CommitScope(trackedModified: 1, untracked: 2, staged: 0))
-        guard withUntracked.contains("未跟踪") else { throw fail("没提未跟踪文件：\(withUntracked)") }
-        guard withUntracked.contains("不该提交") else {
-            throw fail("没警告未跟踪文件的风险：\(withUntracked)")
-        }
-
-        // 0 个 ⇒ 不该走到确认
-        let empty = DestructiveGuard.commitScopeText(
-            DestructiveGuard.CommitScope(trackedModified: 0, untracked: 0, staged: 0))
-        guard empty.contains("没有待提交") else { throw fail("空工作区文案不对：\(empty)") }
-        return "三种范围各自可区分"
-    }
+    // ⚠️ 2026-10-25 删掉了「提交确认必须报出真实数量」这条检查：
+    //    它测的 commitScopeText/CommitScope 已随「提交改动」长卡一起删除
+    //    —— 提交走 CommitSheetView 逐文件勾选，勾选清单本身就是真实数量。
+    //    新契约由「提交唯一入口是选文件弹窗」那条源码守卫钉住。
 
     check("确认按钮标题必须说会发生什么，不是「确定」") {
         guard DestructiveGuard.confirmTitle(for: .removeMilestone) == "删除" else {
@@ -3225,7 +3207,7 @@ do {
     }
 
     check("不可逆动作的确认按钮要染红，可逆的不染（满屏红会稀释信号）") {
-        for a in [DestructiveAction.removeMilestone, .dropMilestone, .commitAll] {
+        for a in [DestructiveAction.removeMilestone, .dropMilestone] {
             guard DestructiveGuard.isDestructiveRole(for: a) else { throw fail("\(a) 应染红") }
         }
         guard !DestructiveGuard.isDestructiveRole(for: .setMilestoneStatus) else {
@@ -3277,21 +3259,11 @@ do {
         return "删除/放弃都走确认"
     }
 
-    check("提交全部改动必须先确认（引擎走 git add -A）") {
-        let code = try strippedCode("DetailViews.swift")
-        // 提交按钮与回车都必须先进待确认状态，不能直接 doCommit
-        if code.contains("Button(\"提交\") { doCommit(") {
-            throw fail("提交按钮直接提交 ⇒ 绕过确认")
-        }
-        if code.contains("onSubmit { doCommit(") {
-            throw fail("回车提交直接提交 ⇒ 绕过确认")
-        }
-        guard code.contains("confirmationDialog") else { throw fail("提交没有确认对话框") }
-        guard code.contains("DestructiveGuard.commitMessage") else {
-            throw fail("提交确认没报出提交范围")
-        }
-        return "按钮与回车都先确认，且确认框报范围"
-    }
+    // ⚠️ 2026-10-25 删掉了「提交全部改动必须先确认」这条检查：
+    //    它钉的 confirmationDialog + DestructiveGuard.commitMessage 已随
+    //    「提交改动」长卡一起删除——提交弹窗化后，确认层就是弹窗本身
+    //    （逐文件勾选 + 填信息 + 空选/空信息闸门），由
+    //    「提交唯一入口是选文件弹窗」那条守卫钉住。
 
     check("批量更新的两个入口都要有确认（菜单栏 CommandMenu + BarView）") {
         // 同一动作两个入口，漏一个就等于没做
@@ -5469,39 +5441,56 @@ do {
         guard n == 1 else {
             throw fail("gitOpButtons(p) 在详情页里出现 \(n) 次（应为 1）⇒ 同一排按钮被列了两遍")
         }
-        // 提交表单**不许**混进按钮排：它要一个输入框，硬塞会把页头标题挤掉。
-        if let opButtons = slice(views, from: "private func gitOpButtons(", to: "private func gitCard") {
-            if opButtons.contains("TextField") {
-                throw fail("提交表单被塞进了页头按钮排 ⇒ 页头会多出一整行输入框")
-            }
+        // 提交表单**不许**混进按钮排：弹窗化之后按钮排里只该有触发入口。
+        // ⚠️ 墙从 gitCard 换成 gitOpButton：长卡（gitCard）已随选文件提交
+        //    弹窗化删除（用户定稿 2026-10-25），切片再拿它当墙会静默切不出。
+        guard let opButtons = slice(views, from: "private func gitOpButtons(", to: "private func gitOpButton(") else {
+            throw fail("切不出页头按钮排（结构变了，先更新这条判据）")
         }
-        return "页头与项目说明并排；按钮排唯一构造点；提交留在下面那张卡"
+        if opButtons.contains("TextField") {
+            throw fail("提交表单被塞进了页头按钮排 ⇒ 页头会多出一整行输入框")
+        }
+        // 提交入口必须真的连到弹窗（item 挂载的那个 @State）。
+        guard opButtons.contains("commitSheetProject = p") else {
+            throw fail("页头「提交」不再打开选文件弹窗 ⇒ 提交的唯一入口断了")
+        }
+        return "页头与项目说明并排；按钮排唯一构造点；提交入口连到选文件弹窗"
     }
 
-    // ── W6：提交卡紧跟在按钮排下面，不隔卡 ──
-    check("「提交改动」卡必须紧跟页头按钮排那一组，不许隔到页面中下部") {
-        // 原来它在 工程脉搏/提交构成 之后、分支进度之前，
-        // 而 git 操作按钮又在更下面 —— 同一组动作被拆成两半、中间隔着好几张卡。
-        //
-        // ⚠️ 切片边界不能用 `// MARK:` —— 那是注释，`strippedCode` 已经剥掉了，
-        //    拿它当墙会直接切不出东西（第一版就踩了，报「结构变了」，
-        //    实际是判据自己锚错了）。用下一个**真实**声明 `gitOpButtons` 当墙。
+    // ── W6：提交必须走「选文件弹窗」，add -A 口径的提交卡不许复活 ──
+    check("提交唯一入口是选文件弹窗；全量提交卡与无 paths 的提交不许回来") {
+        // 2026-10-25 用户定稿：删掉「提交改动」长卡，页头「提交」开弹窗、
+        // 展示改动文件让用户勾选。旧断言钉的是「卡紧跟按钮排」——结构已被
+        // 显式推翻，不是改绿了事：新契约钉的是「弹窗化 + 带 paths 提交」。
         let views = try strippedCode("DetailViews.swift")
-        guard let body = slice(views, from: "private func content(", to: "private func gitOpButtons(") else {
-            throw fail("切不出详情页内容装配（结构变了，先更新这条判据）")
+        // 长卡不许复活（它的口径是 add -A 提交整个工作区）。
+        guard !views.contains("detail.commitChanges") else {
+            throw fail("「提交改动」卡又回来了 ⇒ add -A 全量提交口径随卡复活，与「让用户自己选」冲突")
         }
-        guard let pulseAt = body.range(of: "detail.pulse"),
-              let commitCardAt = body.range(of: "detail.commitChanges") else {
-            throw fail("切不出「工程脉搏」或「提交改动」卡（结构变了，先更新这条判据）")
+        // 弹窗挂载：item 式（project 本身就是要提交的仓库）。
+        guard views.contains(".sheet(item: $commitSheetProject)"),
+              views.contains("CommitSheetView(project: p)") else {
+            throw fail("详情页没有把 CommitSheetView 挂到 commitSheetProject ⇒ 弹窗入口断了")
         }
-        guard commitCardAt.lowerBound > pulseAt.lowerBound else {
-            throw fail("「提交改动」卡跑到页头按钮排**上面**去了 ⇒ 动作与表单再次分离")
+        // git 操作的结果披露必须有出口（原住在长卡里，卡删了披露不能跟着消失）。
+        guard views.contains("model.lastGitOpOutput") else {
+            throw fail("详情页不再渲染 lastGitOpOutput ⇒ 拉取/推送/提交的失败会静默消失（不变量 17）")
         }
-        // 按钮排上面的「提交」入口必须真的连到 pendingCommit。
-        guard views.contains("pendingCommit = p") else {
-            throw fail("提交入口不再走 pendingCommit ⇒ 输入框与按钮没有同一个待提交目标")
+        let sheet = try strippedCode("CommitSheetView.swift")
+        // 数据面必须走引擎 status（勾选清单不是视图自己猜的）。
+        guard sheet.contains("model.fetchGitStatus(project.name)") else {
+            throw fail("弹窗没有走 model.fetchGitStatus ⇒ 改动清单与引擎 git status 脱钩")
         }
-        return "提交卡在页头按钮排之后、且是唯一提交入口"
+        // 提交必须带 paths —— 不许退回无 paths 的全量提交。
+        guard sheet.contains("op: \"commit\", message: msg, paths: paths") else {
+            throw fail("弹窗提交没有传 paths ⇒ 退化成 add -A 全量提交，勾选白做")
+        }
+        // 空选/空信息不许提交（弹窗自己就是确认层，闸门必须在提交按钮上）。
+        guard sheet.contains("!selected.isEmpty"),
+              sheet.contains("!message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty") else {
+            throw fail("弹窗提交按钮缺少空选/空信息闸门 ⇒ 空勾选也能点提交")
+        }
+        return "提交唯一入口=弹窗；带 paths 提交；空选闸门；结果披露有出口"
     }
 
     // ── W7：叫醒主面板这条路 ──

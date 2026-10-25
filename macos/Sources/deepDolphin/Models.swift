@@ -964,11 +964,32 @@ struct DocsEnvelope: Decodable {
     let unreadable: [String]
 }
 
-// MARK: - git 操作（deepgit git <op> <项目> --json）
+// MARK: - git 操作（moongit git <op> <项目> --json）
 
 struct GitOpResponse: Decodable {
     let op: String
     let ok: Bool
     let output: String
+    let project: String?
+}
+
+// MARK: - git status 条目（moongit git status <项目> --json，提交选文件弹窗消费）
+
+/// 引擎 `git status --json` 的单行：porcelain 两字符状态 + 路径 + 归一化的 kind。
+/// rename 行的 file 是引擎拼好的 "old -> new"，提交时**原样**传回 --paths。
+struct GitStatusEntry: Decodable, Equatable, Identifiable {
+    let xy: String
+    let file: String
+    let kind: String
+
+    var id: String { file }
+}
+
+/// 引擎 `git status <项目> --json` 的恒定形状。
+/// ⚠️ 键集恒定：ok / entries / total / project——项目不可读时 ok=false 而不是缺键。
+struct GitStatusPayload: Decodable, Equatable {
+    let ok: Bool
+    let entries: [GitStatusEntry]
+    let total: Int
     let project: String?
 }

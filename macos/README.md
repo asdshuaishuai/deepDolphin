@@ -118,6 +118,7 @@ Sources/deepDolphin/
                                 颜色 = 置信度指数；点文件下钻符号层，选中走右栏详情）
   CodeSnippet.swift             低置信度代码块组件（披露式行 + 源码/diff 片段提取）
   CommitCountScope.swift        纯函数：提交数分母口径
+  CommitSheetView.swift         提交弹窗：git status 清单逐文件勾选 + --paths 部分提交
   CommitTypeComposition.swift   纯函数：提交类型构成 + 截断披露
   Components.swift              StatusDot / StatCard / SegmentedBar / Card 等基础件
   ContextEnvelope.swift         纯函数：agent 上下文包裁剪
