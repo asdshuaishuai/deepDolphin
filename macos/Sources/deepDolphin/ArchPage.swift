@@ -179,6 +179,7 @@ struct ArchPage: View {
             .padding(.horizontal, DSSpacing.md)
             .padding(.bottom, DSSpacing.sm)
         }
+        .frame(minWidth: 960, minHeight: 640)
         .task {
             // 单仓库限制：项目名在仓库面板入口处锁定，直接加载
             await vm.load()

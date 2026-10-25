@@ -691,7 +691,9 @@ do {
         //
         // ⚠️ 墙不能选 `private var catalogProvider` —— 它声明在 `body` **之前**，
         //    拿它当墙切出来的只是一堆属性声明，`Form` 根本不在里面（判据会恒红）。
-        guard let aiPage = slice(t, from: "struct AISettingsPane: View {", to: "private func providerChanged()") else {
+        // 2026-10-13 结构演进：providerChanged 并入 applyEndpoint（端点联动），
+        // 切片终点跟着搬到下一个成员 modelLabel（判据随结构更新，不是放水）。
+        guard let aiPage = slice(t, from: "struct AISettingsPane: View {", to: "private func modelLabel") else {
             throw fail("切不出 AI 页的声明（结构变了，先更新这条判据）")
         }
         guard aiPage.contains("Form {") else {

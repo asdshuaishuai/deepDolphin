@@ -289,11 +289,17 @@ struct ScheduleCard: View {
 /// ⚠️ 本页**不许**再自持一份可编辑的 `AIConfig`。
 ///    父层那份同时供输入框编辑与页脚保存；两份真身必然分叉 ——
 ///    界面上改的是这一份，存下去的是那一份，而哪里出错不报错。
+///
+/// 2026-10-13 按用户定稿简化为四段：端点（可选/自定义）、模型（下拉+手输）、
+/// API Key、测试。provider 目录退居幕后——选已知端点即选定 provider，
+/// 自定义端点沿用当前 provider 的请求格式（OpenAI 兼容）。
 struct AISettingsPane: View {
     @Binding var draft: AIConfig
     @State private var modelFilter = ""
     @State private var testing = false
     @State private var testResult: (ok: Bool, text: String)?
+    /// 自定义端点模式（URL 手输；未选中时走下方已知端点下拉）
+    @State private var customEndpoint = false
 
     private var catalogProvider: CatalogProvider? {
         ModelCatalog.shared.provider(draft.providerID)
@@ -309,43 +315,75 @@ struct AISettingsPane: View {
         return list
     }
 
+    /// 已知端点（目录里有 api 的常用 provider）
+    private var knownEndpoints: [(id: String, name: String, api: String)] {
+        ModelCatalog.shared.popularProviders().compactMap { p in
+            guard let api = p.api, !api.isEmpty else { return nil }
+            return (p.id, p.name, api)
+        }
+    }
+
+    /// 当前端点落在哪个选项上：从草稿反推（磁盘加载也能对上号），
+    /// 自定义 = 没有已知端点能同时对上 providerID + baseURL。
+    private var endpointKey: String {
+        if customEndpoint { return "custom" }
+        if let hit = knownEndpoints.first(where: { $0.id == draft.providerID && $0.api == draft.baseURL }) {
+            return "p:" + hit.id
+        }
+        // baseURL 为空 = 还没配过：如果当前 provider 有已知端点就落在它上面
+        if draft.baseURL.isEmpty,
+           let hit = knownEndpoints.first(where: { $0.id == draft.providerID }) {
+            return "p:" + hit.id
+        }
+        return "custom"
+    }
+
+    private func applyEndpoint(_ key: String) {
+        if key == "custom" {
+            customEndpoint = true
+            return
+        }
+        customEndpoint = false
+        let pid = String(key.dropFirst(2))
+        guard let p = ModelCatalog.shared.provider(pid) else { return }
+        draft.providerID = p.id
+        draft.baseURL = p.api ?? ""
+        draft.model = ""
+        modelFilter = ""
+    }
+
     var body: some View {
         Form {
-            Section("Provider（models.dev 目录 · \(ModelCatalog.shared.providers.count) 家）") {
-                // ⚠️ 标题里的 225 与列表里的 40 讲的是**不同的集合**（缺陷 #209）：
-                // 目录 225 家里只有 199 家有可用端点，列表只列前 40 家。
-                // 原来标题零限定词 ⇒ 读成「225 家里随便挑」，而 provider 栏
-                // 又没有过滤框（只有模型栏有），于是那 159 家用户根本选不到。
-                let coverage = ModelCatalog.shared.providerPickerCoverage
-                Picker("Provider", selection: $draft.providerID) {
-                    ForEach(ModelCatalog.shared.popularProviders(), id: \.id) { p in
-                        Text("\(p.name) (\(p.id))").tag(p.id)
+            Section("端点") {
+                Picker("端点", selection: Binding(
+                    get: { endpointKey },
+                    set: { applyEndpoint($0) }
+                )) {
+                    ForEach(knownEndpoints, id: \.id) { e in
+                        Text("\(e.name) — \(e.api)").tag("p:\(e.id)")
                     }
-                    if ModelCatalog.shared.provider(draft.providerID) == nil {
-                        Text(draft.providerID).tag(draft.providerID)
-                    }
+                    Text("自定义…").tag("custom")
                 }
-                .onChange(of: draft.providerID) { _ in providerChanged() }
-                // 披露恒发：哪怕没被砍（比如目录只有 12 家有端点），
-                // 也不许把「这个数字是什么口径」留给读者猜。
-                if let note = coverage.note {
-                    Text(note)
+                .onChange(of: draft.providerID) { _ in
+                    // provider 变了（端点联动）→ 模型重选
+                    draft.model = ""
+                    modelFilter = ""
+                }
+                if customEndpoint || draft.baseURL.isEmpty && knownEndpoints.isEmpty {
+                    TextField("https://…/v1", text: $draft.baseURL)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.caption)
+                    Text("自定义端点沿用当前请求格式（OpenAI 兼容）。")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                LabeledContent("端点") {
-                    Text(draft.baseURL.isEmpty ? "（空 — 将在测试时报错）" : draft.baseURL)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
                 }
             }
 
             Section("模型") {
-                TextField("过滤模型…", text: $modelFilter)
-                    .textFieldStyle(.roundedBorder)
+                if !customEndpoint {
+                    TextField("过滤模型…", text: $modelFilter)
+                        .textFieldStyle(.roundedBorder)
+                }
                 Picker("模型", selection: $draft.model) {
                     Text("（手动输入）").tag("")
                     ForEach(modelCandidates, id: \.id) { m in
@@ -356,32 +394,16 @@ struct AISettingsPane: View {
                         Text(draft.model).tag(draft.model)
                     }
                 }
-                if let m = catalogProvider?.model(draft.model) {
-                    HStack(spacing: DSSpacing.sm) {
-                        if m.toolCall { Chip(text: "tool_call ✓", tint: .green) }
-                        if m.reasoning { Chip(text: "reasoning", tint: .purple) }
-                        if let ctx = m.contextTokens {
-                            Chip(text: "ctx \(ctx / 1000)k", tint: .secondary)
-                        }
-                        if let cin = m.costInputPerMTok {
-                            Chip(text: String(format: "$%.2f/M in", cin), tint: .secondary)
-                        }
-                    }
-                }
                 TextField("或手动输入模型 id", text: $draft.model)
                     .textFieldStyle(.roundedBorder)
             }
+
             Section("API Key（存入 macOS 钥匙串）") {
-                SecureField(draft.providerID == "ollama" ? "本地服务通常无需 Key" : "sk-…",
+                SecureField(catalogProvider?.id == "ollama" ? "本地服务通常无需 Key" : "sk-…",
                             text: $draft.apiKey)
-                LabeledContent("Base URL 覆盖") {
-                    TextField("留空 = 目录默认", text: $draft.baseURL)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.caption)
-                }
             }
 
-            Section {
+            Section("测试") {
                 HStack {
                     Button("测试连接") {
                         testing = true
@@ -399,18 +421,12 @@ struct AISettingsPane: View {
                             .lineLimit(2)
                     }
                 }
-                Text("AI 全部在客户端执行：模型目录来自 models.dev（启动后会联网刷新一次），上下文与工具经引擎本地调用；密钥只存本机钥匙串。注意：项目路径、分支、文档摘要等上下文会发送到你所配置的 provider 服务器。")
+                Text("上下文与工具经引擎本地调用；密钥只存本机钥匙串。注意：项目路径、分支、文档摘要等上下文会发送到你所配置的端点服务器。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-    }
-
-    private func providerChanged() {
-        draft.model = ""
-        modelFilter = ""
-        draft.baseURL = ModelCatalog.shared.provider(draft.providerID)?.api ?? ""
     }
 
     private func modelLabel(_ m: CatalogModel) -> String {

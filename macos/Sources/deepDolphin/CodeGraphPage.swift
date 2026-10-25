@@ -651,6 +651,7 @@ struct CodeGraphPage: View {
                 emptyHint
             }
         }
+        .frame(minWidth: 1080, minHeight: 700)
         .task {
             // 单仓库限制：页面只在仓库面板打开（init 锁定），直接加载
             await vm.load()
