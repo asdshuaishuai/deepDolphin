@@ -127,7 +127,7 @@ AUDIT_SELF = os.path.join(HERE, 'ci-wiring-audit.py')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1729
+GATE_LINES_EXPECTED = 1733
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -497,9 +497,20 @@ class AnyCounter(object):
             # ⚠⚠⚨ 批 EJ-15 · 以前是 `printf … "$(any_hits …)"` ⇒ ⇒ 命令替换
             #   ⇒ ⇒ **退出码被吞掉** ⇒ ⇒ 门侧 `any_hits` 的失败**传不出来**
             #   ⇒ ⇒ 现在：先取值、**失败就非 0 退出** ⇒ ⇒ 审计器看得见
-            parts.append("_v=$(any_hits %s %s) || exit $?"
-                         % (shlex.quote(rx), shlex.quote(gl)))
-            parts.append("printf '%d\\t%%s\\n' \"$_v\"" % i)
+            # ⚠⚠⚨ 批 EJ-25 · 以前是 `_v=$(any_hits …) || exit $?` ⇒ ⇒ **任何一对**失败
+            #   ⇒ ⇒ 整批脚本立刻退出 ⇒ ⇒ 后面的对**根本没跑** ⇒ ⇒ 审计器只能看到
+            #     「rc≠0」⇒ ⇒ ⇒ 把**全部 82 条门项**都登记成「工具用不了」⇒ ⇒ **放大 82 倍**
+            #     ⇒ ⇒ 而登记的语义是「**没被审**」⇒ ⇒ 其余 81 对**其实被审了**
+            #   ⇒ ⇒ 现在：**逐对容错继续** ⇒ ⇒ 失败的那对**没有 stdout 行**
+            #     ⇒ ⇒ 落进审计器**本来就有的** `missing` 分支 ⇒ ⇒ ⇒ **逐对**登记
+            #     ⇒ ⇒ ⇒ **零放大** ⇒ ⇒ 且 rc 仍是 2（失败**没被吞掉**）
+            #   ⇒ ⇒ stderr 打一行 ANYFAIL ⇒ ⇒ 排障时能直接看到**是哪一对**
+            parts.append("if _v=$(any_hits %s %s); then" % (shlex.quote(rx),
+                                                              shlex.quote(gl)))
+            parts.append("  printf '%d\\t%%s\\n' \"$_v\"" % i)
+            parts.append("else")
+            parts.append("  printf 'ANYFAIL\\t%d\\n' >&2" % i)
+            parts.append("fi")
         return '\n'.join(parts) + '\n'
 
     def _run(self):
