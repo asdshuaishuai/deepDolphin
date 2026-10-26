@@ -127,7 +127,7 @@ AUDIT_SELF = os.path.join(HERE, 'ci-wiring-audit.py')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1736
+GATE_LINES_EXPECTED = 1743
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -211,7 +211,9 @@ FUNC_DEF_LINE = re.compile(r'^\s*arch_\w+\s*\(\)\s*\{')
 # ⚠⚠⚠ 批 BH：门型清单 —— 「审计器认出来的门项行数」要能对上「文件里实际的门项行数」
 #   ⇒ **每一种门型都要有一条自己的正则** ⇒ 将来新增一种门型而忘了在审计器里登记
 #   ⇒ 审计器数出来的门项数会**少于**文件里的实际行数 ⇒ **当场红**（覆盖缺口）。
-# ⚠ forbid 家族是**有意不审**（它判「不该有的东西没了」⇒ 目标串出现 >0 本来就红），
+# ⚠ forbid 家族**不审「命中 >1」那一类**（它判「不该有的东西没了」⇒ 目标串出现 >0
+#   本来就红）；⚠⚠⚨ 批 EJ-29 起**它的正则有效性被审**（有牙自检 ⇒ RX 匹配不到任何
+#   东西 ⇒ 恒绿 = 没牙 ⇒ 报红）⇒ ⇒ 「有意不审」这句话**只对「命中 >1」那一类成立**，
 #   但**行数仍然要计入** ⇒ 否则「物理行数」对不上 ⇒ 假红。
 FORBID_FAMILY = {
     'forbid': re.compile(r'^\s*arch_forbid\s'),
@@ -605,6 +607,20 @@ class AnyCounter(object):
                             anyfail[int(ln.split('\t', 1)[1].strip())] = ln
                         except ValueError:
                             continue
+                # ⚠⚠⚨ 批 EJ-29 · **腿的指名**（批 EJ-15 的承诺 · 被改版丢了）
+                #   ⇒ ⇒ 批 EJ-15 白纸黑字承诺：「只有计数档 `grep -c` 坏 ⇒ ⇒ 审计器要
+                #   ⇒ ⇒   **指名道姓**说「计数工具 grep 不可用」」⇒ ⇒ 而批 EJ-25/EJ-28
+                #   ⇒ ⇒   改版只留了「**哪一对**」⇒ ⇒ **「哪条腿」这一维丢了**
+                #   ⇒ ⇒ ⇒ 回归实测逮到（NC276 · 正向对照不过）⇒ ⇒ 这就是**真阳性**
+                #   ⇒ ⇒ ⇒ 现在把**腿**那一维也透出（**去重** ⇒ 同一句话只打一次）
+                #   ⇒ ⇒ ⇒ 放在**这里**（`for i in missing:` **之前**）⇒ ⇒ 保住批 EJ-25
+                #   ⇒ ⇒   那条门守的「`rx_, gl_ = self.pairs[i]` **紧跟** `_tool_failed(`」
+                _leg = []
+                for ln in out.stderr.split('\n'):
+                    if 'grep 不可用' in ln and ln.strip() not in _leg:
+                        _leg.append(ln.strip())
+                for _ln in _leg:
+                    print('  → 工具坏了（腿）：%s' % _ln, file=sys.stderr)
                 for i in missing:
                     rx_, gl_ = self.pairs[i]
                     _tool_failed(os.path.join(SRC, gl_), rx_,
@@ -1960,7 +1976,7 @@ GUARD_SHAPE_OK = (ast.Name, ast.Subscript)
 #   ⇒ 「用到的守卫」必须在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
 #   ⇒ 「册里的守卫」必须都被用到 ⇒ 某个收集点被挪走 / 删了 ⇒ 红。
 #   ⇒ ⚠ 登记册**内容由本仓的收集点现抽生成** ⇒ 不手抄 ⇒ 零漂移。
-FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'cntmlbad', 'dead', 'dt_bad', 'entrybad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'labelbad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'skipbad', 'stbad', 'undef', 'winbad', 'zero')
+FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'cntmlbad', 'dead', 'dt_bad', 'entrybad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'forbid_teeth_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'labelbad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'skipbad', 'stbad', 'undef', 'winbad', 'zero')
 
 
 def _is_fails_append(node):
@@ -2905,6 +2921,568 @@ def check_any_gates(anyc_items, anym_items, counter):
     return bad
 
 
+# ══════════════════════════════════════════════════════════════
+# ⚠⚠⚨ 批 EJ-29 · forbid 族门项的「**RX 有效性**」自检（**有牙**自检）
+# ══════════════════════════════════════════════════════════════
+#
+# ⚠⚠⚨ **为什么需要它**（**原理**，不是偏好）：
+#   `arch_forbid*` 门项的**正确状态就是「目标串出现 0 次」** ⇒ ⇒
+#   「命中 0」既是「**禁住了**」（对）也可能是「**RX 匹配不到任何东西**」
+#   （**恒绿 = 没牙** ⇒ 门形同虚设 ⇒ 比没门更坏：给人虚假的安全感）⇒ ⇒
+#   ⇒ ⇒ 两者在仓内**静态状态下无法区分** ⇒ ⇒ ⇒ 静态校准**原理上不可能**
+#   ⇒ ⇒ ⇒ **唯一解**：造一个**必然匹配**的样本 ⇒ ⇒ 注入被查文件的副本
+#     ⇒ ⇒ 门必须红 ⇒ ⇒ ⇒ 这才是「有牙」的**正面证据**
+#   ⇒ ⇒ 仓内自己早就写着这件事（批 AX：「不许用 `\d`（GNU grep -E 不认 ⇒
+#     ⇒ 门永远匹配不到 ⇒ 形同虚设）」）⇒ ⇒ 本批把那句话**变成机器检查**
+#
+# ⚠⚠⚨ **两条腿**（都要走，缺一条都不算「有牙」）：
+#   ① **RX 可满足性**：采样出的样本 ⇒ ⇒ **真 grep** 必须匹配得上
+#     ⇒ ⇒ 三个变体都匹配不上 ⇒ ⇒ **这条门匹配不到任何东西** ⇒ ⇒ **没牙** ⇒ 报洞
+#   ② **门真能红**：把样本注入被查文件的副本 ⇒ ⇒ 命中数必须**涨**
+#     ⇒ ⇒ 没涨 ⇒ ⇒ 样本被当成注释剥掉了（门本来就看不见它）⇒ ⇒ **无法判定**
+#     ⇒ ⇒ ⇒ **不报洞**（不制造假阳性）
+#
+# ⚠⚠⚨ **口径纪律**：
+#   · 正则参数的位置**复用** `RX_ARG_IDX`（批 DL 的登记册）⇒ ⇒ 零漂移
+#   · 分词**复用** `split_args` ⇒ ⇒ 与 `check_rx_syntax` **同一份**解析
+#   · 剥注释**复用**审计器自己的 `strip_comments`（批 AS 纪律：不许复刻）
+#   · 采不出来 ⇒ ⇒ 报「**无法判定**」⇒ ⇒ ⇒ **不报洞**（绝不假阳性）
+#   · 只报**确定项**：能确定「RX 匹配不到任何东西」才报
+
+# ⚠ POSIX 字符类 ⇒ 取一个代表字符
+ERE_POSIX_SAMPLE = {
+    'alpha': 'a', 'digit': '0', 'alnum': 'a', 'upper': 'A', 'lower': 'a',
+    'space': ' ', 'blank': ' ', 'punct': '.', 'print': 'a', 'graph': 'a',
+    'cntrl': 'a', 'xdigit': '0', 'word': 'a', 'ascii': 'a',
+}
+# ⚠ GNU grep -E 的**扩展**类（`\d` `\w` `\s`）⇒ 取一个代表字符
+#   ⇒ ⚠⚠⚨ **不含** `b`/`B`（那是**零宽断言** ⇒ 产出空串 ⇒ 见 `ere_skip_esc`）
+ERE_SHORT_SAMPLE = {'d': '0', 'D': 'a', 'w': 'a', 'W': '-', 's': ' ', 'S': 'a'}
+# ⚠⚠⚨ **零宽断言**（GNU grep -E 认 `\b` ⇒ **实测**：`\bEngineDownload::\b`
+#   匹配得到「EngineDownload::」⇒ ⇒ 它是「词边界」而不是字符 ⇒ ⇒ 产出**空串**
+ERE_ZERO_WIDTH = ('b', 'B', '<', '>')
+
+
+class EreSampleError(Exception):
+    """采不出来 ⇒ ⇒ 调用方**必须**当「无法判定」处理 ⇒ ⇒ **不许**报成洞。"""
+
+
+def ere_skip_class(rx, i, b):
+    """跳过一个字符类 `[...]`（含 POSIX 类与否定）⇒ 返回新位置。"""
+    j = i + 1
+    if j < b and rx[j] == '^':
+        j += 1
+    if rx[j:j + 2] == '[:':
+        k = rx.find(':]', j)
+        if k >= 0:
+            j = k + 2
+            if j < b and rx[j] == ']':
+                j += 1
+            return j
+    while j < b:
+        if rx[j] == '\\':
+            j += 2
+            continue
+        if rx[j] == ']':
+            return j + 1
+        j += 1
+    return b
+
+
+def ere_find_top_alt(rx, a, b):
+    """找 [a, b) 内**顶层**的 `|`（不在组内、不在转义后、不在字符类里）⇒ 没有则 b。"""
+    depth = 0
+    j = a
+    while j < b:
+        c = rx[j]
+        if c == '\\':
+            j += 2
+            continue
+        if c == '[':
+            j = ere_skip_class(rx, j, b)
+            continue
+        if c == '(':
+            depth += 1
+        elif c == ')':
+            depth -= 1
+        elif c == '|' and depth == 0:
+            return j
+        j += 1
+    return b
+
+
+def ere_match_paren(rx, i, b):
+    """`(` 的**配对 `)`** 的下标 ⇒ 找不到则 -1。"""
+    depth = 0
+    j = i
+    while j < b:
+        c = rx[j]
+        if c == '\\':
+            j += 2
+            continue
+        if c == '[':
+            j = ere_skip_class(rx, j, b)
+            continue
+        if c == '(':
+            depth += 1
+        elif c == ')':
+            depth -= 1
+            if depth == 0:
+                return j
+        j += 1
+    return -1
+
+
+def ere_read_quant(rx, i, b):
+    """读量词 ⇒ ⇒ 返回 (lo, hi, 新位置)；没有量词则返回 None。"""
+    if i >= b:
+        return None
+    c = rx[i]
+    if c == '*':
+        return (0, 1, i + 1)
+    if c == '+':
+        return (1, 2, i + 1)
+    if c == '?':
+        return (0, 1, i + 1)
+    if c == '{':
+        j = rx.find('}', i, b)
+        if j < 0:
+            return None
+        spec = rx[i + 1:j]
+        m = re.fullmatch(r'(\d*)(,?)(\d*)', spec)
+        if not m:
+            return None
+        lo = int(m.group(1)) if m.group(1) else 0
+        hi = int(m.group(3)) if m.group(3) else lo
+        if not m.group(2) and m.group(1):
+            hi = lo
+        return (lo, hi, j + 1)
+    return None
+
+
+def ere_apply_quant(rx, i, atom):
+    """量词 ⇒ ⇒ **回看原子**并重复它（`*`/`?` 取 1 次 ⇒ ⇒ 也能匹配）。"""
+    q = ere_read_quant(rx, i, len(rx))
+    if q is None:
+        return atom
+    lo = q[0]
+    return atom * max(1, lo)
+
+
+def ere_skip_quant(rx, i):
+    """跳过量词（没有则原样返回）。"""
+    q = ere_read_quant(rx, i, len(rx))
+    return q[2] if q else i
+
+
+def ere_skip_esc(rx, i, b):
+    """跳过一段转义 ⇒ ⇒ 返回 (字面字符, 新位置)。
+
+    ⚠⚠⚨ **零宽断言**（`\\b` `\\B` `\\<` `\\>`）⇒ ⇒ 产出**空串**
+      ⇒ ⇒ 它们是「词边界」而不是字符 ⇒ ⇒ 实测 GNU grep -E **认** `\\b`
+      ⇒ ⇒ ⇒ 与 grep **同口径**（实测：`\\bEngineDownload::\\b` 匹配得到
+      ⇒ ⇒ ⇒ 「EngineDownload::」⇒ ⇒ 所以它**不是**字面的 b）
+    """
+    if i + 1 >= b:
+        raise EreSampleError('RX 以孤立的 `\\` 结尾')
+    n = rx[i + 1]
+    if n in ERE_ZERO_WIDTH:
+        return '', i + 2
+    if n in ERE_SHORT_SAMPLE:
+        return ERE_SHORT_SAMPLE[n], i + 2
+    return n, i + 2
+
+
+def ere_sample_class(rx, i, b):
+    """采样字符类 `[...]` ⇒ ⇒ 返回 (代表字符, 新位置)。"""
+    j = i + 1
+    negated = False
+    if j < b and rx[j] == '^':
+        negated = True
+        j += 1
+    if rx[j:j + 2] == '[:':
+        k = rx.find(':]', j)
+        if k < 0:
+            raise EreSampleError('POSIX 字符类没闭合')
+        name = rx[j + 2:k]
+        if name not in ERE_POSIX_SAMPLE:
+            raise EreSampleError('不认识的 POSIX 类：%r' % name)
+        i2 = k + 2
+        if i2 < b and rx[i2] == ']':
+            i2 += 1
+        return ERE_POSIX_SAMPLE[name], i2
+    first = None
+    while j < b:
+        c = rx[j]
+        if c == ']' and j > i + 1:
+            if first is None:
+                raise EreSampleError('空字符类 `[]`')
+            if negated:
+                for cand in 'a0_-':
+                    if cand not in rx[i:j]:
+                        return cand, j + 1
+                raise EreSampleError('否定类里找不到可用字符')
+            return first, j + 1
+        if c == '\\' and j + 1 < b:
+            cand, j2 = ere_skip_esc(rx, j, b)
+            if first is None:
+                first = cand
+            j = j2
+            continue
+        if first is None:
+            first = c
+        j += 1
+    raise EreSampleError('字符类没闭合')
+
+
+def ere_sample_seq(rx, i, b):
+    """采样一段「连接」（**没有顶层 `|`**）⇒ ⇒ 返回 (串, 新位置)。"""
+    out = []
+    while i < b:
+        c = rx[i]
+        if c == '|' or c == ')':
+            break
+        if c == '(':
+            j = ere_match_paren(rx, i, b)
+            if j < 0:
+                raise EreSampleError('`(` 没有配对的 `)`')
+            sub = ere_sample_first_alt(rx, i + 1, j)
+            out.append(ere_apply_quant(rx, j + 1, sub))
+            i = ere_skip_quant(rx, j + 1)
+            continue
+        if c == '\\':
+            atom, i2 = ere_skip_esc(rx, i, b)
+        elif c == '[':
+            atom, i2 = ere_sample_class(rx, i, b)
+        elif c == '.':
+            atom, i2 = 'a', i + 1
+        elif c in '^$':
+            i += 1
+            continue
+        else:
+            atom, i2 = c, i + 1
+        out.append(ere_apply_quant(rx, i2, atom))
+        i = ere_skip_quant(rx, i2)
+    return ''.join(out), i
+
+
+def ere_sample_first_alt(rx, a, b):
+    """采样 [a, b) 的**第一支**（顶层 `|` **之前**的那一支）。
+
+    ⚠⚠⚨ **为什么必须取「`|` 之前」**：ERE 的 `a|b` 里 `a` 才是第一支
+      ⇒ ⇒ 旧版把「`|` 之后到结尾」当成第一支 ⇒ ⇒ `a|b` 采成 `b`
+      ⇒ ⇒ 组内 `(pm|barPm)` 采成 `pmbarPm` ⇒ ⇒ **真 grep 匹配不上**
+      ⇒ ⇒ ⇒ 会被误判成「RX 没牙」⇒ ⇒ ⇒ **假阳性** ⇒ 必须取对。
+    """
+    end = ere_find_top_alt(rx, a, b)
+    s, _i = ere_sample_seq(rx, a, end)
+    return s
+
+
+def ere_sample(rx):
+    """从 ERE 生成一个**必然匹配**的样本串 ⇒ ⇒ 采不出来抛 `EreSampleError`。"""
+    return ere_sample_first_alt(rx, 0, len(rx))
+
+
+def ere_witnesses(rx):
+    """采出**几个**候选样本 ⇒ ⇒ 覆盖「词边界」那类需要旁边有词字符的情况。
+
+    ⚠⚠⚨ **为什么要好几个**：`\\b` 是**零宽断言** ⇒ ⇒ 样本末尾若不是词字符
+      ⇒ ⇒ 末尾那个 `\\b` **不成立** ⇒ ⇒ grep 匹配不上 ⇒ ⇒ 但那**不是** RX 的毛病
+      ⇒ ⇒ ⇒ 加一个词字符当邻居就成立 ⇒ ⇒ ⇒ 三个变体依次试。
+    """
+    base = ere_sample(rx)
+    out = [base]
+    if base + 'X' not in out:
+        out.append(base + 'X')
+    if 'X' + base not in out:
+        out.append('X' + base)
+    return out
+
+
+def selftest_ere_sampler():
+    """自检：采样器**自己**必须能采出「真 grep 匹配得上」的串（批 BF 纪律）。
+
+    ⚠⚠⚨ 样例必须**既含「该采得出」也含「该采不出」** ⇒ 只测前者 ⇒
+      「永远返回空串」也能过 ⇒ ⇒ 自检没牙。
+    ⚠⚠⚨ **判据是「真 grep 匹配得上」** ⇒ ⇒ 不许自说自话（样例自证）。
+    """
+    # ⚠⚠⚨ **样例用「列表」不用「元组」**：审计器里另有一条门数
+    #   「锚定形态自检的样例条数」（元组形态 `(r…, True)`）⇒ ⇒ 同一形态会**撞车**
+    #   ⇒ ⇒ 那条门的期望值会**失准** ⇒ ⇒ 所以这里**刻意用不同形态**（列表）。
+    cases = [
+        [r'^arch_need_count_in_fn "[^"]*\.py"', True],
+        [r'\bloadScene\b', True],
+        [r'^QIcon\(', True],
+        [r'fromTheme\(QStringLiteral\(', True],
+        [r'[[:space:]]+', True],
+        [r'^\s+ARCH_ANY_FAIL=1$', True],
+        [r'a|b', True],
+        [r'(ab|cd)+', True],
+        [r'^\$ARCH_FAIL$', True],
+        [r'[^"]*', True],
+        [r'x{2,3}y', True],
+        [r'^deepin/[^ ]*$', True],
+        # ⚠⚠⚨ **组内 `|` 必须取第一支**（旧版采成「两支拼起来」⇒ 假阳性）
+        [r'QPixmap\s+(pm|barPm)\(', True],
+        [r'\b(dockGap|edgeMargin)\b[ ]*=[ ]*-?[1-9]', True],
+        # ⚠⚠⚨ **该采不出的**：不闭合的字符类 ⇒ ⇒ 必须**报「无法判定」**
+        [r'abc[def', False],
+    ]
+    bad = []
+    for rx, should in cases:
+        try:
+            cands = ere_witnesses(rx)
+        except EreSampleError as e:
+            if should:
+                bad.append(('bad', rx, '该采得出却采不出：%s' % e))
+            continue
+        if not should:
+            bad.append(('bad', rx, '该采不出却采出来了'))
+            continue
+        hit = False
+        tool_bad = False
+        for cand in cands:
+            ok, _why = _ere_grep(rx, cand + '\n', AUDIT_SELF)
+            if ok:
+                hit = True
+                break
+            if ok is None:
+                tool_bad = True
+                break
+        if tool_bad:
+            bad.append(('undet', rx, 'grep 不可用 ⇒ 自检判不了 ⇒ 无法判定'))
+            continue
+        if not hit:
+            bad.append(('bad', rx, '采出来的样本真 grep 匹配不上：%r' % (cands,)))
+    return bad
+
+
+def parse_forbid_gate_items():
+    """解析所有 **forbid 族**门项 ⇒ [(行号, 门型, 目标文件, 正则, 说明, 允许列表)]
+
+    ⚠⚠⚨ **零漂移**：正则参数的位置**复用** `RX_ARG_IDX`（批 DL 的登记册），
+      分词**复用** `split_args` ⇒ ⇒ 与 `check_rx_syntax` **同一份**解析
+      ⇒ ⇒ ⇒ 「体检过转义」与「体检 RX 有效性」看的是**同一批**门项。
+    ⚠ **无正则的门型**（`arch_forbid_han` / `arch_forbid_text_dup`）
+      ⇒ ⇒ 显式登记为 None ⇒ ⇒ 「显式没有」与「漏登记」可区分。
+    """
+    items = []
+    src = read_source(WIRING)
+    for i, ln in enumerate(src.split('\n'), 1):
+        m = GATE_LINE.match(ln)
+        if not m:
+            continue
+        kind, rest = m.group(1), m.group(2)
+        if not any(_fr.match(ln) for _fr in FORBID_FAMILY.values()):
+            continue
+        idxs = rx_arg_indices(kind)
+        if idxs is None:
+            continue                      # 漏登记 ⇒ `check_rx_registry` 负责报
+        args = split_args(rest)
+        if not args:
+            continue
+        target = None
+        if kind in ('arch_forbid', 'arch_forbid_ml', 'arch_forbid_raw'):
+            target = resolve(args[0]) if args else None
+        rx = None
+        if idxs:
+            if len(args) <= idxs[0]:
+                continue
+            rx = args[idxs[0]]
+        allow = args[2:] if kind == 'arch_forbid_tree' else []
+        label = args[1] if kind == 'arch_forbid_tree' and len(args) > 1 else ''
+        items.append((i, kind, target, rx, label, allow))
+    return items
+
+
+def count_forbid_gate_lines():
+    """文件里 forbid 门项的**条数**（与解析器**独立**算 ⇒ ⇒ 交叉对账）。
+
+    ⚠⚠⚨ **为什么必须独立算一遍**：解析器被掏空（`return []`）⇒ ⇒
+      「一条门都没审」⇒ ⇒ 而自检**照样绿** ⇒ ⇒ ⇒ **静默失效**
+      ⇒ ⇒ ⇒ 所以必须有一道**对账**：解析出的条数 ≠ 文件里的条数 ⇒ ⇒ 报洞。
+    ⚠ **零名单维护**：用审计器自己的 `FORBID_FAMILY` 登记册 ⇒ ⇒ 不手抄名单。
+    """
+    n = 0
+    src = read_source(WIRING)
+    for ln in src.split('\n'):
+        if FUNC_DEF_LINE.match(ln):
+            continue
+        if any(_fr.match(ln) for _fr in FORBID_FAMILY.values()):
+            n += 1
+    return n
+
+
+def _ere_grep(rx, text, path):
+    """用**真 grep**（`-oE`）判「这个 RX 能不能匹配这段文本」⇒ ⇒ (匹配上了吗, 说明)
+
+    ⚠⚠⚨ **工具起不来不许崩**（实测坐实）：`run_tool` **不接** OSError
+      ⇒ ⇒ `grep` 不可达时抛 `FileNotFoundError` ⇒ ⇒ **审计器崩了**（rc=10）
+      ⇒ ⇒ ⇒ 这里统一接住 ⇒ ⇒ 登记「工具用不了」⇒ ⇒ 返回 (None, 说明)
+      ⇒ ⇒ ⇒ 调用方当「**无法判定**」处理 ⇒ ⇒ ⇒ **不报洞**（不制造假阳性）
+    """
+    try:
+        out = run_tool(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=text)
+    except OSError as e:
+        _tool_failed(path, rx, 'grep 起不来（%s）' % e)
+        return None, 'grep 起不来（%s）' % e
+    if out.returncode not in (0, 1):
+        _tool_failed(path, rx, 'grep 退出码 %d（不是 0/1）' % out.returncode)
+        return None, 'grep 退出码 %d（不是 0/1）' % out.returncode
+    return out.returncode == 0, ''
+
+
+def _grep_count_text(text, rx, path):
+    """对**已经处理好注释的文本**数命中个数（`grep -oE` ⇒ 数**匹配个数**）。
+
+    ⚠⚠⚨ 口径：与 `count_hits` **完全一致**（同一份 grep、同一份剥注释）
+      ⇒ ⇒ ⇒ 门侧与审计侧**同口径** ⇒ 零漂移。
+    ⚠ 工具失败 ⇒ ⇒ **登记**（批 EB 纪律：工具坏了 ≠ 没找到）⇒ ⇒ 返回 None。
+    """
+    try:
+        out = run_tool(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=text)
+    except OSError as e:
+        return _tool_failed(path, rx, 'grep 起不来（%s）' % e)
+    if out.returncode not in (0, 1):
+        return _tool_failed(path, rx, 'grep 退出码 %d（不是 0/1）' % out.returncode)
+    return len([ln for ln in out.stdout.split('\n') if ln])
+
+
+def _forbid_tree_pick_file(allow):
+    """给 `arch_forbid_tree` 挑一个**不在允许列表里**的被扫文件 ⇒ (路径, 说明)
+
+    ⚠⚠⚨ 门侧扫的是 `find src \\( -name '*.cpp' -o -name '*.h' \\)`
+      ⇒ ⇒ 这里用**同一条命令**取清单（口径一致 ⇒ 零漂移）。
+    ⚠ 挑「不在允许列表里」的那个 ⇒ ⇒ 否则注入样本也不会让门红
+      ⇒ ⇒ ⇒ 测的就不是「这条门有没有牙」。
+    """
+    # ⚠⚠⚨ **不调外部工具**（实测坐实）：以前这里调 `find` ⇒ ⇒ **受限 PATH 下
+    #   `find` 不可达** ⇒ ⇒ `FileNotFoundError` ⇒ ⇒ **审计器崩了**（rc=10）
+    #   ⇒ ⇒ ⇒ 违反「工具坏了不许崩」⇒ ⇒ ⇒ 改用 Python 的 `os.walk`
+    #   ⇒ ⇒ ⇒ 口径与门侧那条 `find` 一致（`src` 下的 `*.cpp` / `*.h`）
+    allow_set = set(' %s ' % ' '.join(allow))
+    for root, _dirs, files in os.walk(os.path.join(SRC, 'src')):
+        for name in sorted(files):
+            if not (name.endswith('.cpp') or name.endswith('.h')):
+                continue
+            f = os.path.relpath(os.path.join(root, name), SRC)
+            if (' %s ' % f) in allow_set:
+                continue
+            return os.path.join(SRC, f), ''
+    return None, '源码树里没有「不在允许列表里」的文件 ⇒ 无从注入'
+
+
+def check_forbid_teeth(forbid_items, expect_total):
+    """forbid 族门项的「**RX 有效性**」自检 ⇒ (没牙的, 无法判定的)
+
+    ⚠⚠⚨ **原理**：见本节开头的说明 ⇒ ⇒ forbid 门的「有没有牙」
+      **原理上**只能靠「造一个必然匹配的样本」来回答 ⇒ ⇒ 这里就是那个实现。
+    ⚠⚠⚨ **只报确定项**：能确定「RX 匹配不到任何东西」才报「没牙」；
+      采不出来 / 样本被当成注释剥掉 ⇒ ⇒ 一律「**无法判定**」⇒ ⇒ **不报洞**。
+    ⚠ **判定函数 = 名字以 `check_` 开头** ⇒ 批 DM 的 AST 自检自动纳入它
+      ⇒ ⇒ 它**不许**被掏空、**不许**有提前 return（批 DN 口径）。
+    """
+    bad = []
+    undet = []
+    st_bad = selftest_ere_sampler()
+    # ⚠⚠⚨ **解析器的覆盖率必须对账**（零名单维护）
+    #   ⇒ ⇒ 解析器被掏空（`return []`）⇒ ⇒ 审到的条数 ≠ 文件里的条数
+    #   ⇒ ⇒ ⇒ 「有门项**根本没被审**」这件事必须**报出来**（否则静默失效）
+    if len(forbid_items) != expect_total:
+        bad.append((0, 'parse', None, '', '',
+                    'forbid 门项**只解析出 %d 条**，而文件里实际有 **%d 条** ⇒ ⇒ '
+                    '有 %d 条门项**根本没被审** ⇒ ⇒ 静默失效'
+                    % (len(forbid_items), expect_total,
+                       expect_total - len(forbid_items))))
+    for (lineno, kind, target, rx, label, allow) in forbid_items:
+        if rx is None:
+            undet.append((lineno, kind, '这一族没有正则参数（RX 无从采样）'))
+            continue
+        try:
+            cands = ere_witnesses(rx)
+        except EreSampleError as e:
+            undet.append((lineno, kind, '采不出样本（%s）⇒ 无法判定' % e))
+            continue
+        # ⚠⚠⚨ **第 ① 腿**：RX 可满足性 ⇒ ⇒ **真 grep** 必须匹配得上
+        hit = None
+        tool_bad = False
+        for cand in cands:
+            ok, _why = _ere_grep(rx, cand + '\n', WIRING)
+            if ok:
+                hit = cand
+                break
+            if ok is None:
+                tool_bad = True
+                break
+        if tool_bad:
+            undet.append((lineno, kind, 'grep 不可用 ⇒ 无法判定'))
+            continue
+        if hit is None:
+            bad.append((lineno, kind, target, rx, label,
+                        '采样出的样本真 grep 都匹配不上（%r）⇒ 这条门**匹配不到'
+                        '任何东西** ⇒ 恒绿 = 没牙' % (cands,)))
+            continue
+        # ⚠⚠⚨ **第 ② 腿**：把样本注入被查文件的副本 ⇒ ⇒ 门必须真的能红
+        if kind == 'arch_forbid_tree':
+            path, why = _forbid_tree_pick_file(allow)
+            if path is None:
+                undet.append((lineno, kind, why))
+                continue
+        else:
+            path = target
+            why = ''
+            if path is None or not os.path.isfile(path):
+                undet.append((lineno, kind, '被查文件不存在 ⇒ 无法判定'))
+                continue
+        ml = 1 if kind == 'arch_forbid_ml' else 0
+        raw = 1 if kind == 'arch_forbid_raw' else 0
+        try:
+            orig_text = read_source(path)
+        except UnreadableSource as e:
+            undet.append((lineno, kind, '源文件读不了（%s）⇒ 无法判定' % e))
+            continue
+        tmpd = tempfile.mkdtemp(prefix='wiring-forbid-teeth-')
+        try:
+            copy_path = os.path.join(tmpd, 'probe.txt')
+            with open(copy_path, 'w', encoding='utf-8') as fh:
+                fh.write(orig_text)
+                if orig_text and not orig_text.endswith('\n'):
+                    fh.write('\n')
+                fh.write(hit + '\n')
+            if raw:
+                t0, t1 = orig_text, read_source(copy_path)
+            else:
+                t0 = strip_comments(path)
+                t1 = strip_comments(copy_path)
+            if ml:
+                t0 = t0.replace('\n', ' ')
+                t1 = t1.replace('\n', ' ')
+            if hit not in t1:
+                undet.append((lineno, kind,
+                              '样本在剥注释后**不见了**（它长得像注释）'
+                              ' ⇒ 这一门本来就看不见它 ⇒ 无法判定'))
+                continue
+            h0 = _grep_count_text(t0, rx, path)
+            h1 = _grep_count_text(t1, rx, copy_path)
+            if h0 is None or h1 is None:
+                undet.append((lineno, kind, '工具用不了 ⇒ 无法判定'))
+                continue
+            if h1 <= h0:
+                undet.append((lineno, kind,
+                              '注入样本后命中数没涨（%d → %d）⇒ 无法判定'
+                              % (h0, h1)))
+                continue
+        finally:
+            shutil.rmtree(tmpd, ignore_errors=True)
+    for _sk, _srx, _swhy in st_bad:
+        if _sk == 'undet':
+            undet.append((0, 'selftest', '采样器自检：%s' % _swhy))
+        else:
+            bad.append((0, 'selftest', None, _srx, '',
+                        '采样器自检不过（%s）' % (_swhy,)))
+    return bad, undet
+
 def main():
     """⚠⚠⚨ 批 CH · 顶层**兜住「源文件读不了」** ⇒ 指名道姓 + 退出码 **2**。
 
@@ -3308,6 +3886,31 @@ def main_body():
             print('  ⇒ 登记册必须**覆盖全部**门型（没有正则参数的显式登记成 `None`）',
                   file=sys.stderr)
             FAILS.append(9)
+        # ⚠⚠⚨ 批 EJ-29 · forbid 门项的「**RX 有效性**」自检（硬门模式）
+        #   ⇒ forbid 门的**正确状态就是 0 命中** ⇒ ⇒ 「禁住了」与「RX 匹配不到
+        #   ⇒ 任何东西」**静态不可区分** ⇒ ⇒ ⇒ 唯一解 = 造一个必然匹配的样本
+        #   ⇒ ⇒ 注入被查文件的副本 ⇒ ⇒ 门必须红 ⇒ ⇒ 这才是「有牙」的正面证据
+        forbid_teeth_bad, forbid_teeth_undet = check_forbid_teeth(
+            parse_forbid_gate_items(), count_forbid_gate_lines())
+        if forbid_teeth_bad:
+            # ⚠⚠⚨ **故意放在最前**：⇒ ⇒ 「守卫 ⇒ 报红」这两行**紧挨着**
+            #   ⇒ ⇒ 跨行门（`arch_need_count_ml`）能**逐字**钉住这条关系
+            #   ⇒ ⇒ 诊断照旧全打（不丢一条）⇒ ⇒ rc 语义不变（仍是 5）
+            FAILS.append(5)
+            print('forbid 门项的**正则匹配不到任何东西**（%d 条）⇒ ⇒ 这些门**恒绿**'
+                  ' ⇒ ⇒ 门形同虚设（比没门更坏：给人虚假的安全感）'
+                  % len(forbid_teeth_bad), file=sys.stderr)
+            for _bl, _bk, _bt, _brx, _blab, _bwhy in forbid_teeth_bad:
+                print('  · %s:%d  [%s] %s | %s ⇒ %s'
+                      % (os.path.basename(WIRING), _bl, _bk,
+                         rel(_bt) if _bt else '-', _brx, _bwhy), file=sys.stderr)
+            print('  ⇒ 把正则改成**真 grep 认得**的写法（`\\d` → `[0-9]`、'
+                  '`\\D` → `[^0-9]`）', file=sys.stderr)
+        print('forbid 门项的 RX 有效性自检（有牙自检）：%d 条**没牙** / %d 条**无法判定**'
+              % (len(forbid_teeth_bad), len(forbid_teeth_undet)))
+        for _ul, _uk, _uwhy in forbid_teeth_undet:
+            print('  · %s:%d  [%s] ⇒ %s'
+                  % (os.path.basename(WIRING), _ul, _uk, _uwhy))
         # ⚠⚠ **「命中 0 次」也是红**（批 AX 补的第二个盲区）：
         #   `arch_need` / `arch_need_ml` 的语义是「**必须存在**这个串」
         #   ⇒ 命中 0 次 = 门永远匹配不到 = 门是空的。
@@ -3435,8 +4038,10 @@ def main_body():
     print('  arch_need_count_pair %d 条（批 BZ 新门型：盯「**报错行数 == 计数行数**」'
           '；⚠⚠⚨ 批 CS：审计器侧**逐段**核对 ⇒ 每段恰好 1 处计数）'
           % totals['count_pair'])
-    print('（arch_forbid 门项 %d 条**有意不审**：它判「不该有的东西没了」，'
-          '目标串出现 >0 本来就红，不属于「被别处顶替」的隐患）' % forbid_lines)
+    print('（arch_forbid 门项 %d 条**不审「命中 >1」那一类**：它判「不该有的东西没了」，'
+          '目标串出现 >0 本来就红；⚠⚠⚨ 但**它们的正则有效性由批 EJ-29 的有牙自检**'
+          '（`--list` 模式）审 ⇒ ⇒ 「RX 匹配不到任何东西 ⇒ 恒绿 = 没牙」**不再是盲区**）'
+          % forbid_lines)
     # ⚠⚠⚠ 门项行总数（批 BH）：三个数摆在一起 ⇒ 差在哪一眼看得出
     g = check_gate_totals()
     print('门项行总数：文件里 **%d** 条（审计器认领 %d 条）｜基线 %s'
