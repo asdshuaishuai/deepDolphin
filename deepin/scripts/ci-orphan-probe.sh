@@ -196,7 +196,8 @@ n_orphan_total=0
 n_wl_total=0
 
 for _plat in $PLATFORMS; do
-    _fail_before="$fail"
+    # ⚠⚠⚨ 批 EJ-24 · **平台局部失败标志**（`fail` 是全局粘滞 0/1 ⇒ 不能拿它做平台间比较）
+    _plat_fail=0
     # ⚠⚠⚨ 批 DG · **路径前缀按平台各一份**：默认是 `scripts/`（deepin/macos 共用）
     #   ⇒ assets 那支**单独**改成 `assets/`（它的脚本不在 `scripts/` 下）
     #   ⇒ ⚠ deepin/macos 两支**一个字都不改** ⇒ 批 DE 那两条门**不用动**
@@ -206,7 +207,7 @@ for _plat in $PLATFORMS; do
         macos)  _scope="$MACOS_SCOPE";  _entry="$MACOS_ENTRY";  _re="$CALL_RE_MACOS" ;;
         assets) _scope="$ASSETS_SCOPE"; _entry="$ASSETS_ENTRY"; _re="$CALL_RE_ASSETS"; _strip="$_STRIP_ASSETS" ;;
         *) echo "  ✗ 平台名不认识：$_plat（平台清单里出现未知平台 ⇒ 那一整个平台不会被查）" >&2
-           fail=1
+           fail=1; _plat_fail=1
            continue ;;
     esac
 
@@ -214,12 +215,12 @@ for _plat in $PLATFORMS; do
     #   ⇒ 不许当成「这个平台没有判据脚本」（那等于把整个平台悄悄移出范围）
     if [ ! -d "$_scope" ]; then
         echo "  ✗ 平台 $_plat 的判据脚本目录不存在：$_scope（范围被静默移走 ⇒ 那一整个平台没人查）" >&2
-        fail=1
+        fail=1; _plat_fail=1
         continue
     fi
     if [ ! -f "$_entry" ]; then
         echo "  ✗ 平台 $_plat 的 CI 入口不存在：$_entry（入口算错 ⇒ 可达集合为空 ⇒ 全成「游离」或全成「可达」）" >&2
-        fail=1
+        fail=1; _plat_fail=1
         continue
     fi
 
@@ -249,19 +250,19 @@ for _plat in $PLATFORMS; do
         esac
         if [ -z "$_reason" ]; then
             echo "  ✗ 白名单条目没写理由：$_rel（例外必须说清「为什么它进不了 CI」）" >&2
-            fail=1
+            fail=1; _plat_fail=1
             continue
         fi
         if [ ! -f "$_scope/$_rel_in" ]; then
             echo "  ✗ 白名单条目指向不存在的脚本：$_rel" >&2
-            fail=1
+            fail=1; _plat_fail=1
             continue
         fi
         case " $REACH " in
             *" $_rel_in "*)
                 echo "  ✗ 白名单条目已失效：$_rel 现在**在 $_plat 的 CI 里**（可达）⇒ 它不该留在白名单" \
                      "（留着等于给它开后门：随时可以被踢出 CI 而无人知晓）" >&2
-                fail=1
+                fail=1; _plat_fail=1
                 ;;
         esac
         n_wl_total=$((n_wl_total + 1))
@@ -275,20 +276,32 @@ for _plat in $PLATFORMS; do
     #     ⇒ **游离断言脚本漏检 ⇒ 假绿坐实**（而接线门全绿 ⇒ 没人看得见）。
     #   ⇒ 所以在扫之前**先验可读性**：读不了 ⇒ 必须红，**不许当成「不是断言脚本」**
     #     （⚠ 与批 CB/CC 同款口径：**未验证不许被当成通过**）。
+    # ⚠⚠⚨ 批 EJ-24 ⇒ **清单取不到 ⇒ 什么都没扫 ⇒ 报「无游离」⇒ 假绿**
+    #   ⇒ `find` 坏了 ⇒ 清单为空 ⇒ 两个循环都**一次都不跑**
+    #   ⇒ ⇒ n_assert=0 ⇒ 报「✓ 平台 X：无游离断言脚本（**0 个**断言脚本全部可达）」
+    #   ⇒ ⇒ 仓里明明有几十个断言脚本 ⇒ **结论自相矛盾却是绿的**
+    #   ⇒ ⚠ 开了 `pipefail` ⇒ 管道 rc = 「最右侧失败者」⇒ rc≥2 = 「工具坏了」⇒ 判红
+    #   ⇒ ⚠ **清单只算一次** ⇒ 可读性预检与断言脚本识别**共用同一份** ⇒ 口径不可能分叉
+    _orphan_files="$(find "$_scope" -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null | LC_ALL=C sort)"
+    _orphan_rc=$?
+    if [ "$_orphan_rc" -ge 2 ]; then
+        echo "  ✗ 平台 $_plat 的判据脚本扫描工具坏了（find 退出码 $_orphan_rc）⇒ 清单取不到 ⇒ **断言脚本根本没被扫** ⇒ 判红" >&2
+        fail=1; _plat_fail=1
+    fi
     _orphan_unread=""
-    for _f in $(find "$_scope" -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null | LC_ALL=C sort); do
+    for _f in $_orphan_files; do
         [ -f "$_f" ] || continue
         [ -r "$_f" ] || _orphan_unread="$_orphan_unread $(basename "$_f")"
     done
     if [ -n "$_orphan_unread" ]; then
         echo "  ✗ 有脚本对工具不可读：$_orphan_unread（平台 $_plat）⇒ grep 会静默跳过它们 ⇒ 本门会漏检 ⇒ **未验证不许当成通过**" >&2
-        fail=1    # ⚠⚠⚨ 批 CD：不可读 ⇒ 判失败（末尾统一 exit 1 ⇒ 「✓ 无游离断言脚本」永远打不出来）
+        fail=1; _plat_fail=1    # ⚠⚠⚨ 批 CD：不可读 ⇒ 判失败（末尾统一 exit 1 ⇒ 「✓ 无游离断言脚本」永远打不出来）
     fi
 
     # ── 3. 每个断言脚本都必须在**本平台 CI** 里可达（否则进白名单） ───────
     n_assert=0
     n_orphan=0
-    for _f in $(find "$_scope" -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null | LC_ALL=C sort); do
+    for _f in $_orphan_files; do
         [ -f "$_f" ] || continue
         grep -q '✗ ' "$_f" 2>/dev/null || continue
         n_assert=$((n_assert + 1))
@@ -302,12 +315,20 @@ for _plat in $PLATFORMS; do
         echo "  ✗ 断言脚本游离在 $_plat 的 CI 之外：$_rel_in" \
              "（$_plat 的 CI 从来不跑它 ⇒ 它的断言没人执行；把它整个删掉也没人知道）" >&2
         n_orphan=$((n_orphan + 1))
-        fail=1
+        fail=1; _plat_fail=1
     done
 
+    # ⚠⚠⚨ 批 EJ-24 ⇒ **一个断言脚本都没判上 ⇒ 判定工具坏了 ⇒ 报「0 个」⇒ 假绿**
+    #   ⇒ `grep` 坏了 ⇒ `grep -q` 全部失败 ⇒ 全部 continue ⇒ n_assert 恒为 0
+    #   ⇒ ⇒ 报「✓ 平台 X：无游离断言脚本（**0 个**断言脚本全部在本平台 CI 里可达）」
+    #   ⇒ ⚠ 本仓三个平台实测分别是 19 / 12 / 2 个 ⇒ **0 个只可能是工具坏了**
+    if [ "$n_assert" -eq 0 ]; then
+        echo "  ✗ 平台 $_plat 一个断言脚本都没判上（n_assert=0）⇒ 判定工具坏了或清单为空 ⇒ **断言脚本根本没被扫** ⇒ 判红" >&2
+        fail=1; _plat_fail=1
+    fi
     n_assert_total=$((n_assert_total + n_assert))
     n_orphan_total=$((n_orphan_total + n_orphan))
-    if [ "$fail" -ne "$_fail_before" ]; then
+    if [ "$_plat_fail" -ne 0 ]; then
         echo "✗ 平台 $_plat：这一段有门项红（详见上面带 ✗ 的行）" >&2
     else
         echo "✓ 平台 $_plat：无游离断言脚本（$n_assert 个断言脚本全部在本平台 CI 里可达）"

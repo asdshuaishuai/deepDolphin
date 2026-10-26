@@ -118,7 +118,19 @@ if [ "$_d2_find_rc" -ne 0 ] || [ -n "$_d2_unread" ]; then
 fi
 
 # ── 规则 1：文件内散值（剥注释后）──
-for _f in $(grep -rlE "$D2_PATTERN" "$SRC/src" 2>/dev/null | sort); do
+# ⚠⚠⚨ 批 EJ-24 ⇒ **清单取不到 ⇒ 什么都没扫 ⇒ 报「干净」⇒ 假绿**
+#   ⇒ `grep` 坏了 ⇒ 命令替换 stdout 为空 ⇒ 循环**一次都不跑**
+#   ⇒ ⇒ D2_COUNT 恒为 0 ⇒ 报「✓ D2 命中 0/0」⇒ **散值漏检**
+#   ⇒ ⚠ 存量已清零 ⇒ **命中 0 是合法的** ⇒ 不能用「清单不许为空」判红
+#   ⇒ 必须按**退出码**分诊：本脚本开着 `pipefail` ⇒ 管道 rc = 「最右侧失败者」
+#     ⇒ rc=1 = 「没匹配」（合法）/ rc≥2 = 「**工具坏了**」⇒ 判红
+_d2_files1="$(grep -rlE "$D2_PATTERN" "$SRC/src" 2>/dev/null | sort)"
+_d2_rc1=$?
+if [ "$_d2_rc1" -ge 2 ]; then
+    printf '%s\n' "  ✗ D2 的扫描工具坏了（grep 退出码 $_d2_rc1）⇒ 被扫的文件清单取不到 ⇒ **散值根本没被扫** ⇒ 判红" >&2
+    FAIL=1
+fi
+for _f in $_d2_files1; do
     _rel="${_f#$SRC/}"
     _hits="$(strip_comments "$_f" | grep -nE "$D2_PATTERN" | sed "s|^|${_f}:|" || true)"
     [ -z "$_hits" ] && continue
@@ -133,7 +145,14 @@ for _f in $(grep -rlE "$D2_PATTERN" "$SRC/src" 2>/dev/null | sort); do
 done
 
 # ── 规则 2：含 font-size: 的文件里的裸数字 .arg(N) ──
-for _f in $(grep -rlE 'font-size:' "$SRC/src" 2>/dev/null | sort); do
+# ⚠⚠⚨ 批 EJ-24 ⇒ 同款收口（清单取不到 ⇒ 规则 2 根本没跑 ⇒ **漏检**）
+_d2_files2="$(grep -rlE 'font-size:' "$SRC/src" 2>/dev/null | sort)"
+_d2_rc2=$?
+if [ "$_d2_rc2" -ge 2 ]; then
+    printf '%s\n' "  ✗ D2 规则 2 的扫描工具坏了（grep 退出码 $_d2_rc2）⇒ 清单取不到 ⇒ **裸数字 .arg(N) 根本没被扫** ⇒ 判红" >&2
+    FAIL=1
+fi
+for _f in $_d2_files2; do
     _rel="${_f#$SRC/}"
     _hits="$(strip_comments "$_f" | grep -nE "$D2_ARG_PATTERN" | sed "s|^|${_f}:|" || true)"
     [ -z "$_hits" ] && continue

@@ -167,10 +167,27 @@ fi
 
 # ⑨ 图标非空
 EMPTY_ICON=0
-for f in $(cd "$ROOT/usr/share/icons" 2>/dev/null && find . -type f 2>/dev/null | LC_ALL=C sort); do
-    [ -s "$ROOT/usr/share/icons/$f" ] || { EMPTY_ICON=1; echo "      零字节图标：/usr/share/icons/${f#./}"; }
+# ⚠⚠⚨ 批 EJ-24 ⇒ **图标清单取不到 ⇒ 一个图标都没扫 ⇒ 报「都非空」⇒ 假绿**
+#   ⇒ `find` 坏了 ⇒ 清单为空 ⇒ 循环不跑 ⇒ EMPTY_ICON 恒为 0 ⇒ 「✓ 包内图标都非空」
+#   ⇒ ⚠ `cd … && find …` 里 **cd 失败返回 1** ⇒ 与「没匹配」撞码 ⇒ 必须**另加目录存在性**检查
+_dl_icon_dir="$ROOT/usr/share/icons"
+if [ ! -d "$_dl_icon_dir" ]; then
+    no "包内图标目录不存在：/usr/share/icons（装了也没图标）"
+fi
+_dl_icons="$(cd "$_dl_icon_dir" 2>/dev/null && find . -type f 2>/dev/null | LC_ALL=C sort)"
+_dl_rc=$?
+_dl_scan_ok=1
+if [ "$_dl_rc" -ge 2 ]; then
+    no "图标扫描工具坏了（find 退出码 $_dl_rc）⇒ 图标清单取不到 ⇒ **图标根本没被扫**"
+    _dl_scan_ok=0
+fi
+for f in $_dl_icons; do
+    [ -s "$_dl_icon_dir/$f" ] || { EMPTY_ICON=1; echo "      零字节图标：/usr/share/icons/${f#./}"; }
 done
-if [ "$EMPTY_ICON" -eq 0 ]; then ok "包内图标都非空"; else no "包内存在零字节图标（装了也是空白）"; fi
+# ⚠⚠⚨ 批 EJ-24 ⇒ 扫描失败时**不许**再打「✓ 包内图标都非空」（那与上面的 ✗ 自相矛盾）
+if [ "$_dl_scan_ok" -eq 1 ]; then
+    if [ "$EMPTY_ICON" -eq 0 ]; then ok "包内图标都非空"; else no "包内存在零字节图标（装了也是空白）"; fi
+fi
 
 echo "──── check-deb-layout: $pass passed, $fail failed ────"
 [ "$fail" -eq 0 ]
