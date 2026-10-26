@@ -127,7 +127,7 @@ AUDIT_SELF = os.path.join(HERE, 'ci-wiring-audit.py')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1733
+GATE_LINES_EXPECTED = 1736
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -477,6 +477,30 @@ def extract_step_awk():
     return m.group(1) if m else None
 
 
+def _anyfail_why(idx, rx_, gl_, anyfail, n_missing):
+    """⚠⚠⚨ 批 EJ-28 · **指名道姓**：失败的是**哪一对**（path + RX）⇒ ⇒ 并**原样透出**。
+
+    ⚠⚠⚨ **实测坐实**（批 EJ-23 收尾取证）：以前 ANYFAIL 只打在**子进程**的 stderr 上
+      ⇒ ⇒ 而批量脚本的 stderr 在 **rc=0 分支被直接丢弃** ⇒ ⇒ 那行**白打了**
+      ⇒ ⇒ 「指名道姓」**只在源码里** ⇒ ⇒ 运行时**没兑现**（**形态门 ≠ 行为门**）
+    ⇒ ⇒ 现在：**读 stderr** ⇒ ⇒ 解析 ANYFAIL ⇒ ⇒ 翻译成**那一对** ⇒ ⇒ 透出到这里
+      ⇒ ⇒ 排障时一眼看到**是哪一对**（不是「少了 N 条」那种不指名的说法）
+
+    ⚠ **为什么抽成函数**：批 EJ-25 那条门守的是「`missing` 分支**逐对**登记」
+      ⇒ ⇒ 它的 RX 钉的是「`rx_, gl_ = self.pairs[i]` **紧跟** `_tool_failed(`」
+      ⇒ ⇒ 把指名逻辑**内联**进循环体会**打断**那个紧挨关系 ⇒ ⇒ 那道门会恒红
+      ⇒ ⇒ 抽成函数 ⇒ ⇒ **紧挨关系原封不动** ⇒ ⇒ 旧门继续有效
+      （⚠ 批 DA/DB 纪律：判定抽成函数 ＋ 扫描拆出文本入口 ⇒ 本条同款）
+    """
+    if idx in anyfail:
+        print('  → ANYFAIL 第 %d 对：%s | %s' % (idx, gl_, rx_), file=sys.stderr)
+        return ('any_hits 批量计数的**第 %d 对**失败（%s | %s）⇒ ⇒ **工具用不了**'
+                ' ⇒ ⇒ glob %s 的总命中数**算不出来** ⇒ 校准**没做成**'
+                % (idx, gl_, rx_, gl_))
+    return ('any_hits 批量计数少了 %d 条 ⇒ 对不上 ⇒ **工具用不了** ⇒ glob %s 的总命中数**算不出来** ⇒ 校准**没做成**'
+            % (n_missing, gl_))
+
+
 class AnyCounter(object):
     """批量数「glob 范围内**总命中数**」—— 口径 = ci-wiring.sh 的 `any_hits`（抽取原文）。"""
 
@@ -567,11 +591,24 @@ class AnyCounter(object):
                 #   ⇒ ⇒ 其它门型**根本没审** ⇒ ⇒ 「一次报全」被破坏（批 CR/CQ）
                 #   ⇒ ⇒ 现在：**登记**进工具失败通道 ⇒ ⇒ **不中止** ⇒ ⇒ 继续跑完所有检查
                 #   ⇒ ⇒ 与「批量脚本跑不起来」那条**同一处置**（登记 ⇒ ⇒ 不中止 ⇒ ⇒ 收口判红）
+                # ⚠⚠⚨ 批 EJ-28 · 以前**只**登记「少了 N 条」⇒ ⇒ **没说是哪一对**
+                #   ⇒ ⇒ 「指名道姓」只**写在源码里**（EJ-25 那行 `printf 'ANYFAIL\t%d\n' >&2`）
+                #   ⇒ ⇒ 而**批量脚本的 stderr 在 rc=0 分支被直接丢弃** ⇒ ⇒ 那行**白打了**
+                #   ⇒ ⇒ 实测（批 EJ-23 收尾取证）：恰好一对失败 ⇒ ⇒ 审计器输出里
+                #   ⇒ ⇒   ANYFAIL **0 次** ⇒ ⇒ 「指名道姓」**运行时没兑现**（形态门 ≠ 行为门）
+                #   ⇒ ⇒ 现在：**把 stderr 里的 ANYFAIL 行读出来** ⇒ ⇒ 翻译成**那一对**的
+                #   ⇒ ⇒   path + RX ⇒ ⇒ **指名道姓**（运行时可见）⇒ ⇒ 零放大不受影响
+                anyfail = {}
+                for ln in out.stderr.split('\n'):
+                    if ln.startswith('ANYFAIL\t'):
+                        try:
+                            anyfail[int(ln.split('\t', 1)[1].strip())] = ln
+                        except ValueError:
+                            continue
                 for i in missing:
                     rx_, gl_ = self.pairs[i]
                     _tool_failed(os.path.join(SRC, gl_), rx_,
-                                 'any_hits 批量计数少了 %d 条 ⇒ 对不上 ⇒ **工具用不了** ⇒ glob %s 的总命中数**算不出来** ⇒ 校准**没做成**'
-                                 % (len(missing), gl_))
+                                 _anyfail_why(i, rx_, gl_, anyfail, len(missing)))
 
                 return
         finally:
