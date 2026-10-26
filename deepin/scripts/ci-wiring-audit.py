@@ -46,6 +46,7 @@ arch_forbid 判的是「**不该有的东西没了**」⇒ 它的目标串出现
 退出码：
   0 绿 / 2 审计器有盲区或缺文件 / **或有门型没登记在正则体检登记册里
      （那一族门项的正则从来没被体检过）/ 或有判定函数被掏空** / 3 豁免外隐患（命中 >1）/ 4 次数门没配准
+     / **或门项的「有界通配窗口」有余量（⇒ 中间还能塞东西 ⇒ 插一行照样绿 ⇒ 门没牙）**
   5 正则写法体检不过 / 6 门项总数与基线不符 / 7 审计器自己有重名常量
   8 锚定形态违规（含自检不过）
   9 审计器引用了未定义的名字（改名漏改调用点）/ 锚定豁免基线有坏行
@@ -64,6 +65,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))   # deepin/scripts
 SRC = os.path.dirname(HERE)                        # deepin/（客户端源根）
 REPO = os.path.dirname(SRC)                        # 仓根（macos/ 与 deepin/ 同仓）
 WIRING = os.path.join(SRC, 'scripts', 'ci-wiring.sh')
+
+# ⚠⚠⚨ 批 EJ-26 · **locale 钉死**（结论不许随环境变）
+#   ⇒ 起因（**实测坐实**）：GNU grep 的 `.` 在 **UTF-8 locale** 匹配**字符**、
+#     在 **C locale** 匹配**字节**⇒ ⇒ 门项正则里的 `.{0,N}`（**有界通配**）
+#     在两种 locale 下的「能跨多远」**根本不是一回事**
+#     ⇒ ⇒ **同一份代码、同一道门，在两种环境里结论相反**
+#   ⇒ 这里：**整个进程**固定 `LC_ALL=C`（字节口径）⇒ ⇒ 本进程拉起的**每一个**
+#     外部工具（grep / awk / sed / perl / 拼出来的 count.sh）都继承它
+#     ⇒ ⇒ 审计侧的「命中数」与门侧的「命中数」**永远是同一把尺子**
+#   ⇒ ⚠ **门侧也钉同一行**（`ci-wiring.sh` 顶部 `export LC_ALL=C`）
+#     ⇒ ⇒ 两侧同口径 ⇒ ⇒ 结论不随机器、不随 locale 变
+#   ⇒ ⚠ 这里只改**子进程**的环境；Python 自己的 locale 不动
+#     ⇒ ⇒ 不影响本审计器的文本处理（编码一律显式 `encoding='utf-8'`）
+os.environ['LC_ALL'] = 'C'
 # 豁免基线：已知「串不唯一」的历史门项，一行一条。
 # ⚠ 键格式 = `<类型>:<相对路径或glob>|<正则>`
 #   类型 ∈ {need, ml}（只有这两类会出「命中 >1」的隐患）
@@ -112,7 +127,7 @@ AUDIT_SELF = os.path.join(HERE, 'ci-wiring-audit.py')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1724
+GATE_LINES_EXPECTED = 1729
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -1346,6 +1361,108 @@ def check_count_gates(count_items):
     return bad
 
 
+# ⚠⚠⚨ 批 EJ-26 · 「有界通配窗口」的**零余量**校准 ————————————————————————
+#
+# ⚠⚠⚨ **起因（实测坐实，不是推演）**：门项用 `.{0,N}`（**有界通配**）表达
+#   「这两个东西**必须紧挨**」这个关系 ⇒ ⇒ 而 **N 比实际空隙宽** ⇒ ⇒
+#   **往中间插一行照样绿** ⇒ ⇒ 门**没牙** ⇒ ⇒ 说明文字在骗人。
+#   ⇒ 实测：审计器「工具用不了」汇总块那道门（`ci-wiring.sh` 里的
+#     `TOOL_FAILURES:.{0,600}FAILS\.append\(2\)`）⇒ 窗口 600、实际空隙 557 字节
+#     ⇒ ⇒ 插一行（+54 字节）⇒ ⇒ **610 ≤ 600 ⇒ 门照样绿**（负控 NC289 坐实）。
+#   ⇒ ⚠⚠⚨ 还有第二层：`.` 的口径**随 locale 变**（UTF-8 匹配**字符**、
+#     C 匹配**字节**）⇒ ⇒ 同一份代码在两种环境里**结论相反**
+#     ⇒ ⇒ 现在两侧都钉 `LC_ALL=C`（字节口径）⇒ ⇒ 窗口语义只由字节数决定。
+#
+# ⚠ **口径**：窗口必须 == 「**刚好还能匹配**期望次数」的最小值 ⇒ ⇒ **零余量**
+#   ⇒ ⇒ 任何空隙增长（插一行 / 挪位置 / 拆开）⇒ ⇒ 匹配不上 ⇒ ⇒ **门红**。
+#
+# ⚠ **逐个通配位**校准（不是整体一个窗口）⇒ ⇒ 多通配的门项
+#   （一串锚点那种）也能**逐段**收紧。
+#
+# ⚠ **工具失败不许静默跳过**（批 EB 纪律）：`count_hits` 返回 None 时
+#   ⇒ 它**自己已经登记**进工具失败通道 ⇒ ⇒ 这里 `break` 掉这一条
+#   ⇒ ⇒ 由 `tool_failure_rc()` 统一收口判红（rc=2）。
+WINDOW_RX = re.compile(r'\.\{0,(\d+)\}')
+
+
+def _window_vals(rx):
+    """⇒ 取出 RX 里 `.{0,N}` 的 N 列表（没有 ⇒ 空列表）。"""
+    return [int(x) for x in WINDOW_RX.findall(rx)]
+
+
+def _rx_with_windows(rx, vals):
+    """⇒ 把 RX 里的**各个**通配换成给定值（顺序对应）。
+
+    ⚠⚠⚨ 「字符串位置」与「通配序号」必须**分开**（曾经混用 ⇒ RX 被截断
+      ⇒ ⇒ 二分永远找不到匹配 ⇒ ⇒ 报「即使取 0 也匹配不上」的**假结论**）。
+    """
+    out = []
+    pos = 0
+    w = 0
+    for m in WINDOW_RX.finditer(rx):
+        out.append(rx[pos:m.start()])
+        out.append('.{0,%d}' % vals[w])
+        w += 1
+        pos = m.end()
+    out.append(rx[pos:])
+    return ''.join(out)
+
+
+def check_window_slack(items, ml):
+    """校准「有界通配窗口」：窗口必须**零余量**（== 刚好还能匹配的那个值）。
+
+    ⚠ `ml=True` ⇒ 压行口径（`arch_need_count_ml`）；`ml=False` ⇒ 逐行口径。
+    ⇒ 返回 [(行号, 文件, 正则, 期望次数, 原窗口, 最小窗口, 说明)]
+    """
+    bad = []
+    for lineno, f, rx, want in items:
+        vals = _window_vals(rx)
+        if not vals:
+            continue
+        if not os.path.isfile(f):
+            continue
+        counter = count_hits_ml if ml else count_hits
+        cur = list(vals)
+        broken = False
+        for _round in range(4):
+            changed = False
+            for i in range(len(cur)):
+                lo, hi = 0, cur[i]
+                best = None
+                while lo <= hi:
+                    mid = (lo + hi) // 2
+                    trial = list(cur)
+                    trial[i] = mid
+                    c = counter(f, _rx_with_windows(rx, trial))
+                    if c is None:
+                        # ⚠ 工具坏了 ⇒ `count_hits` **自己已登记** ⇒ 这里不再折腾
+                        broken = True
+                        break
+                    if c == want:
+                        best = mid
+                        hi = mid - 1
+                    else:
+                        lo = mid + 1
+                if broken:
+                    break
+                if best is None:
+                    changed = False
+                    break
+                if best != cur[i]:
+                    cur[i] = best
+                    changed = True
+            if broken or not changed:
+                break
+        if broken:
+            continue
+        if cur != vals:
+            bad.append((lineno, f, rx, want, vals, cur,
+                        '窗口 %s 比「刚好还能匹配」的值 %s **宽** ⇒ ⇒ '
+                        '中间还能塞下东西 ⇒ ⇒ **插一行照样绿** ⇒ ⇒ 门没牙'
+                        % (vals, cur)))
+    return bad
+
+
 # ⚠⚠⚨ 批 BL/BM/BN/BR · 「整行锚定」的**适用范围**（单一真相源）──────────────────
 #
 # ⚠⚠⚨ **起因（批 BJ 负控坐实，批 BK 根治了一半）**：
@@ -1795,7 +1912,7 @@ GUARD_SHAPE_OK = (ast.Name, ast.Subscript)
 #   ⇒ 「用到的守卫」必须在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
 #   ⇒ 「册里的守卫」必须都被用到 ⇒ 某个收集点被挪走 / 删了 ⇒ 红。
 #   ⇒ ⚠ 登记册**内容由本仓的收集点现抽生成** ⇒ 不手抄 ⇒ 零漂移。
-FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'cntmlbad', 'dead', 'dt_bad', 'entrybad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'labelbad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'skipbad', 'stbad', 'undef', 'zero')
+FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'cntmlbad', 'dead', 'dt_bad', 'entrybad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'labelbad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'skipbad', 'stbad', 'undef', 'winbad', 'zero')
 
 
 def _is_fails_append(node):
@@ -3178,6 +3295,18 @@ def main_body():
                       % (cmb[0], rel(cmb[1]), cmb[2], cmb[3], cmb[4], cmb[5]),
                       file=sys.stderr)
             FAILS.append(9)
+        # ⚠⚠⚨ 批 EJ-26 · 「有界通配窗口」的**零余量**校准
+        #   ⇒ 窗口比实际空隙宽 ⇒ ⇒ 插一行照样绿 ⇒ ⇒ 门没牙 ⇒ ⇒ 判红
+        winbad = check_window_slack(cntml, True)
+        winbad += check_window_slack(cnt, False)
+        if winbad:
+            print('门项的**有界通配窗口有余量**（%d 条）⇒ ⇒ 中间还能塞下东西 ⇒ ⇒ '
+                  '**插一行照样绿** ⇒ ⇒ 门没牙 ⇒ ⇒ 判红'
+                  % len(winbad), file=sys.stderr)
+            for wb in winbad:
+                print('  · ci-wiring.sh:%d  %s | %s ⇒ %s'
+                      % (wb[0], rel(wb[1]), wb[2], wb[6]), file=sys.stderr)
+            FAILS.append(4)
         # ⚠⚠⚨ 批 EA · **说明文字里的条数 == 期望值**（文字撒谎 ⇒ 判红）
         labelbad = check_label_count_text(cnt + cntml)
         if labelbad:
@@ -3382,6 +3511,14 @@ def main_body():
     for cmb in cntmlbad:
         print('  · %s:%d  %s | %s ⇒ %s'
               % (os.path.basename(WIRING), cmb[0], rel(cmb[1]), cmb[2], cmb[5]))
+    # ⚠⚠⚨ 批 EJ-26 · 「有界通配窗口」的**零余量**校准（报告段也说要）
+    winbad = check_window_slack(cntml, True)
+    winbad += check_window_slack(cnt, False)
+    print('有界通配窗口的零余量校准（须 == **刚好还能匹配**的值）：%d 条有余量'
+          % len(winbad))
+    for wb in winbad:
+        print('  · %s:%d  %s | %s ⇒ %s'
+              % (os.path.basename(WIRING), wb[0], rel(wb[1]), wb[2], wb[6]))
     # ⚠⚠⚨ 批 EA · **说明文字里的条数 == 期望值**（文字撒谎 ⇒ 判红）
     labelbad = check_label_count_text(cnt + cntml)
     if labelbad:
