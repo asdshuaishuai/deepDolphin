@@ -86,11 +86,18 @@ extension EngineCLI {
         return try await runData([cmd, "--json", "--quiet"], timeout: deep ? 1800 : 900)
     }
 
-    func gitOp(project: String, op: String, message: String = "") async throws -> Data {
+    func gitOp(project: String, op: String, message: String = "", paths: [String] = []) async throws -> Data {
         var args = ["git", op, project]
         if !message.isEmpty { args += ["--message", message] }
+        // 选文件提交：引擎按逗号拆 --paths；rename 行原样传 "old -> new"（引擎拆两侧）
+        if !paths.isEmpty { args += ["--paths", paths.joined(separator: ",")] }
         args.append("--json")
         return try await runData(args, timeout: 120)
+    }
+
+    /// 提交弹窗的数据面：该仓库的改动清单（xy/file/kind）。
+    func gitStatus(project: String) async throws -> Data {
+        try await runData(["git", "status", project, "--json"], timeout: 60)
     }
 
     func milestoneAction(project: String, name: String, action: String) async throws {

@@ -347,7 +347,7 @@ enum AgentCore {
 
         let scopeLine = "scope: \(target.label)"
         let system = """
-        你是 deepGit 项目群管理助手。引擎（AI 无关内核）已把当前范围的确定性事实整理给你。
+        你是 moonGit 项目群管理助手。引擎（AI 无关内核）已把当前范围的确定性事实整理给你。
 
         ## 当前上下文
         用户关注的范围：\(scopeLine)

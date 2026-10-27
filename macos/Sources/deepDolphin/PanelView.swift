@@ -369,7 +369,7 @@ struct PanelView: View {
         case .dashboard:  return "square.grid.2x2"
         case .board:      return "rectangle.split.3x1"
         case .milestones: return "flag.2.crossed"
-        case .confidence: return "gauge.with.dial"
+        case .confidence: return "checkmark.seal"
         case .patchCheck: return "stethoscope"
         case .project:    return "folder"
         }

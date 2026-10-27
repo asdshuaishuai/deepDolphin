@@ -7,16 +7,12 @@ struct ProjectDetailView: View {
     @ObservedObject private var l10n = L10n.shared
     @EnvironmentObject var model: AppModel
     let projectName: String
-    @State private var commitMessage = ""
+    /// 提交弹窗（选文件提交，用户定稿：页头「提交」是唯一入口）。
+    /// `item` 挂载：project 本身就是要提交的仓库，不需要独立的 Bool。
+    @State private var commitSheetProject: ProjectStatus?
     // 图谱触发入口（用户定稿：两图只能从具体仓库的面板触发，单仓库锁定）
     @State private var showCodeGraph = false
     @State private var showArch = false
-    /// 待确认的「提交全部改动」。nil = 没在等确认。
-    ///
-    /// ⚠️ 这条原来点一下就提交。引擎的 `commit` 走 `git add -A`
-    /// （kernel/git.cj:1792）—— 提交的是**整个工作区**，不是用户挑的那几个文件。
-    /// 而「全部」两个字只藏在输入框的 placeholder 里，一填就被盖掉。
-    @State private var pendingCommit: ProjectStatus?
 
     private var project: ProjectStatus? {
         model.projectDetails[projectName] ?? model.projects.first { $0.name == projectName }
@@ -44,6 +40,9 @@ struct ProjectDetailView: View {
         .sheet(isPresented: $showCodeGraph) {
             CodeGraphPage(projectName: projectName)
         }
+        .sheet(item: $commitSheetProject) { p in
+            CommitSheetView(project: p)
+        }
         .sheet(isPresented: $showArch) {
             ArchPage(projectName: projectName)
         }
@@ -64,15 +63,35 @@ struct ProjectDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .tinted(.red.opacity(0.08))
                 }
+                // git 操作的结果横幅（拉取/推送/提交/暂存……共用一个出口）。
+                // ⚠️ 原来它住在下面那张「提交改动」卡里，卡删掉后它没了落脚点 ——
+                //    披露必须出现在每一个出口：失败静默消失等于谎报成功（不变量 17）。
+                if let out = model.lastGitOpOutput {
+                    HStack(alignment: .top, spacing: DSSpacing.sm) {
+                        Image(systemName: out.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundStyle(out.ok ? Color.green : Color.red)
+                            .font(.caption)
+                        Text(out.text)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .lineLimit(4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button {
+                            model.lastGitOpOutput = nil
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.borderless)
+                        .help(L10n.t("gitop.clearOutput"))
+                        .accessibilityLabel(A11y.label(L10n.t("gitop.clearOutput")))
+                    }
+                    .padding(DSSpacing.sm)
+                    .surface()
+                }
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
                     Card(title: L10n.t("detail.pulse")) { pulseCard(p) }
                     Card(title: L10n.t("detail.composition")) { commitTypeCard(p) }
-                }
-                // ⚠️ 提交卡在页头那排按钮**下面**（不是原来的中下部）。
-                //    页头已经放了拉取/推送/抓取/暂存/恢复，
-                //    把提交留在四张卡之后等于「同一组动作被拆成两半、还隔了四张卡」。
-                if p.isGit {
-                    Card(title: L10n.t("detail.commitChanges")) { gitCard(p) }
                 }
                 // ⚠️ branches.count 是引擎**追踪到基线**的数量，不是仓库真实分支数。
                 // 实测 16 个分支的仓库这里只显示 7 个；刚注册还没 track 过的仓库显示 0，
@@ -139,17 +158,25 @@ struct ProjectDetailView: View {
 
     // MARK: Git 操作
 
-    /// 页头那一排 git 操作按钮（拉取 / 推送 / 抓取 / 暂存 / 恢复）。
+    /// 页头那一排 git 操作按钮（提交 / 拉取 / 推送 / 抓取 / 暂存 / 恢复）。
     ///
-    /// ⚠️ 原来这张「Git 操作」卡里同时装着按钮排和提交表单。
-    /// 按钮排挪到页头之后，卡里只剩提交 ——
-    /// 标题也因此从「Git 操作」改成「提交改动」，
-    /// 否则一个只讲提交的卡顶着「Git 操作」的名字，与页头那排对不上。
-    /// 页头那一排 git 操作按钮。**唯一构造点** ——
-    /// 一旦下面那张提交卡里再抄一份 `gitOpButton(...)`，
-    /// 两处的可用性判定就会分叉（这里要判 `busyProject`），而那只有真点一次才发现。
+    /// 用户定稿：**提交是唯一入口在这里**，点开选文件提交弹窗
+    /// （CommitSheetView）。原来下面的「提交改动」长卡已删除——
+    /// 它的 `git add -A` 口径把整个工作区提交掉，与「让用户自己选」冲突；
+    /// 结果输出则移到页头下的横幅（所有 git 操作共用一个出口）。
+    /// **唯一构造点** —— 不要在别处再抄一份 `gitOpButton(...)`，
+    /// 两处的可用性判定会分叉（这里要判 `busyProject`）。
     private func gitOpButtons(_ p: ProjectStatus) -> some View {
         HStack(spacing: DSSpacing.xs) {
+            // 本地提交（用户定稿：放在推送旁边）——点开选文件提交弹窗
+            Button {
+                commitSheetProject = p
+            } label: {
+                Label(L10n.t("gitop.commit"), systemImage: "square.and.pencil")
+            }
+            .disabled(model.busyProject == p.name || model.busyAll || !p.isGit)
+            .help(L10n.t("gitop.commitSheet.title"))
+            .accessibilityLabel(A11y.label(L10n.t("gitop.commit")))
             gitOpButton(p, L10n.t("gitop.pull"), "arrow.down.to.line", "pull")
             gitOpButton(p, L10n.t("gitop.push"), "arrow.up.to.line", "push")
             gitOpButton(p, L10n.t("gitop.fetch"), "arrow.triangle.2.circlepath", "fetch")
@@ -162,76 +189,6 @@ struct ProjectDetailView: View {
         }
     }
 
-    private func gitCard(_ p: ProjectStatus) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: DSSpacing.sm) {
-                TextField(L10n.t("gitop.messagePlaceholder"), text: $commitMessage)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { pendingCommit = p }
-                Button(L10n.t("gitop.commit")) { pendingCommit = p }
-                    .disabled(commitMessage.trimmingCharacters(in: .whitespaces).isEmpty || model.busyProject == p.name)
-            }
-
-            if let out = model.lastGitOpOutput {
-                VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                    HStack {
-                        Image(systemName: out.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundStyle(out.ok ? Color.green : Color.red)
-                            .font(.caption)
-                        Text(out.ok ? L10n.t("common.success") : L10n.t("common.failure"))
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(out.ok ? Color.green : Color.red)
-                        Spacer()
-                        Button {
-                            model.lastGitOpOutput = nil
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.caption2)
-                        }
-                        .buttonStyle(.borderless)
-                        .help(L10n.t("gitop.clearOutput"))
-                        .accessibilityLabel(A11y.label(L10n.t("gitop.clearOutput")))
-                    }
-                    ScrollView {
-                        Text(out.text)
-                            .font(.system(.caption, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(maxHeight: 130)
-                }
-                .padding(10)
-                .surface()
-            }
-        }
-        .confirmationDialog(
-            pendingCommit.map { DestructiveGuard.commitTitle(project: $0.name) } ?? "",
-            isPresented: Binding(
-                get: { pendingCommit != nil },
-                set: { if !$0 { pendingCommit = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button(L10n.t("gitop.commitAll"), role: .destructive) {
-                if let p = pendingCommit { doCommit(p) }
-                pendingCommit = nil
-            }
-            Button(L10n.t("common.cancel"), role: .cancel) { pendingCommit = nil }
-        } message: {
-            Text(pendingCommit.map { DestructiveGuard.commitMessage(scope: commitScope($0)) } ?? "")
-        }
-    }
-
-    /// 提交范围。引擎只有 `userDirtyCount` / `untrackedCount` 两个口径，
-    /// 没有「已暂存」——所以那个字段恒 0，**不编造**。
-    private func commitScope(_ p: ProjectStatus) -> DestructiveGuard.CommitScope {
-        DestructiveGuard.CommitScope(
-            trackedModified: max(p.userDirtyCount, 0),
-            untracked: max(p.untrackedCount, 0),
-            staged: 0
-        )
-    }
-
     private func gitOpButton(_ p: ProjectStatus, _ label: String, _ icon: String, _ op: String) -> some View {
         Button {
             Task { await model.gitOp(p, op: op) }
@@ -239,14 +196,6 @@ struct ProjectDetailView: View {
             Label(label, systemImage: icon)
         }
         .disabled(model.busyProject == p.name || model.busyAll)
-    }
-
-    private func doCommit(_ p: ProjectStatus) {
-        let msg = commitMessage.trimmingCharacters(in: .whitespaces)
-        guard !msg.isEmpty else { return }
-        let message = msg
-        commitMessage = ""
-        Task { await model.gitOp(p, op: "commit", message: message) }
     }
 
     // MARK: 头部
