@@ -127,7 +127,7 @@ AUDIT_SELF = os.path.join(HERE, 'ci-wiring-audit.py')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1806
+GATE_LINES_EXPECTED = 1811
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -2169,7 +2169,7 @@ GUARD_SHAPE_OK = (ast.Name, ast.Subscript)
 #   ⇒ 「用到的守卫」必须在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
 #   ⇒ 「册里的守卫」必须都被用到 ⇒ 某个收集点被挪走 / 删了 ⇒ 红。
 #   ⇒ ⚠ 登记册**内容由本仓的收集点现抽生成** ⇒ 不手抄 ⇒ 零漂移。
-FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'cntmlbad', 'dead', 'dt_bad', 'entrybad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'forbid_teeth_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'label_self_bad', 'labelbad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'skipbad', 'stbad', 'undef', 'winbad', 'zero')
+FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'cntmlbad', 'dead', 'dt_bad', 'entrybad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'forbid_teeth_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'label_self_bad', 'labelbad', 'rxidx_self_bad', 'rxmiss', 'rxsyn', 'rxunreg', 'rxvalbad', 'self_bad', 'skipbad', 'stbad', 'undef', 'winbad', 'zero')
 
 
 def _is_fails_append(node):
@@ -3759,6 +3759,15 @@ def main_body():
         for sp in label_self_bad:
             print('  · %s' % sp, file=sys.stderr)
         FAILS.append(9)
+    # ⚠⚠⚨ 批 EJ-37 · 「正则参数下标」推导的**自检**必须**最先**跑
+    #   （批 BI 纪律：前面的检查一红就 exit ⇒ ⇒ 自检永远没机会跑 ⇒ ⇒ 形同虚设）
+    rxidx_self_bad = check_rx_index_selftest()
+    if rxidx_self_bad:
+        print('「正则参数下标自动推导」的**自检**不过（%d 条）⇒ ⇒ 推导可能已被掏空'
+              ' ⇒ ⇒ 判红' % len(rxidx_self_bad), file=sys.stderr)
+        for sp in rxidx_self_bad:
+            print('  · %s' % sp, file=sys.stderr)
+        FAILS.append(9)
     args = sys.argv[1:]
     want_list = '--list' in args
     want_list_all = '--list-all' in args
@@ -4088,6 +4097,19 @@ def main_body():
             print('  ⇒ 登记册必须**覆盖全部**门型（没有正则参数的显式登记成 `None`）',
                   file=sys.stderr)
             FAILS.append(9)
+        # ⚠⚠⚨ 批 EJ-37 · 登记册的**值**必须与**自动推导**的值一致
+        #   （以前只对拍**键集合** ⇒ ⇒ 值改错 ⇒ ⇒ 全绿 ⇒ ⇒ 真正则逃过体检）
+        rxvalbad = check_rx_registry_values()
+        if rxvalbad:
+            print('正则体检登记册的**值**与自动推导的**正则参数下标**对不上（%d 种）'
+                  ' ⇒ ⇒ 体检会打在**错的参数**上 ⇒ ⇒ 那一族的真正则**逃过体检**'
+                  % len(rxvalbad), file=sys.stderr)
+            for kind, reg, dv in rxvalbad:
+                print('  · 门型 %s ⇒ 登记册写的是 %r，自动推导出来的是 %r'
+                      % (kind, reg, dv), file=sys.stderr)
+            print('  ⇒ 登记册的**值**必须改成推导出来的那个（或改**门型的 local 行**）',
+                  file=sys.stderr)
+            FAILS.append(9)
         # ⚠⚠⚨ 批 EJ-29 · forbid 门项的「**RX 有效性**」自检（硬门模式）
         #   ⇒ forbid 门的**正确状态就是 0 命中** ⇒ ⇒ 「禁住了」与「RX 匹配不到
         #   ⇒ 任何东西」**静态不可区分** ⇒ ⇒ ⇒ 唯一解 = 造一个必然匹配的样本
@@ -4274,6 +4296,12 @@ def main_body():
         print('  · 漏登记 %s' % kind)
     for kind in rxstale:
         print('  · 陈旧登记 %s（没人用这一族门项了）' % kind)
+    # ⚠⚠⚨ 批 EJ-37 · 登记册的**值**与自动推导对不上 ⇒ 报告模式也要说
+    #   （⚠ 报告模式退出码恒 0 ⇒ 判红在 `--list` 模式 ⇒ 这里只报）
+    rxvalbad = check_rx_registry_values()
+    print('正则体检登记册的**值**与自动推导对不上：%d 种' % len(rxvalbad))
+    for kind, reg, dv in rxvalbad:
+        print('  · 门型 %s ⇒ 登记册 %r / 推导 %r' % (kind, reg, dv))
     if base is not None:
         print('（只审 %s..HEAD 的新增门项）' % base)
 
@@ -4519,6 +4547,154 @@ RX_ARG_IDX = {
     #   ⇒ 否则漏登记会被误当成「这一族本来就没有正则」。
     'arch_forbid_han': None, 'arch_forbid_text_dup': None,
 }
+# ── 批 EJ-37 · 正则参数下标**自动推导** + 登记册**值**对账 ──
+#
+#   ⇒ 起因（**实测坐实**，不是推演）：`RX_ARG_IDX` 这份登记册以前只被
+#     **键集合**对拍（`check_rx_registry`：漏登记 = 红）⇒ ⇒ **值**（正则实参的
+#     下标）**没人校准** ⇒ ⇒ 实测：把 `arch_need_count_in_fn` 的下标从
+#     **2** 改成 **1** ⇒ ⇒ **审计器 rc=0、接线门 rc=0、0 红行** ⇒ ⇒ **全绿**
+#     ⇒ ⇒ 而那 45 条门项的**真正则**从此**逃过体检** ⇒ ⇒ 在那一族的正则里
+#     塞一个 `\d`（GNU grep -E 不认）⇒ ⇒ 审计器**照样全绿** ⇒ ⇒ ⇒
+#     **承诺悄悄变弱**（体检打在错的参数上 ⇒ 没人看得见）。
+#   ⇒ 修法：**下标从门型的 `local` 行推导**（每个门型都写着 `re="$N"` /
+#     `ra="$N"` / `rb="$N"`）⇒ ⇒ ⇒ **零名单维护** ⇒ ⇒ 新增门型**自动**纳入
+#     ⇒ ⇒ 登记册的**值**错了 ⇒ 立刻对不上 ⇒ 立刻被抓。
+#   ⇒ ⚠ **变量名白名单**：正则参数一律叫 `re` / `ra` / `rb`
+#     ⇒ ⇒ 收紧成**精确名字**（不是「含字母 r」）⇒ ⇒ `arch_forbid_text_dup`
+#       的 `srcf` / `dir` **不是**正则参数（实测 `dir` 会误匹配）⇒ ⇒ 排除。
+RX_VAR_NAMES = ('re', 'rx', 'ra', 'rb')
+
+
+def derive_rx_arg_indices():
+    """从**门型的 `local` 行**推导「正则参数在实参列表里的下标」（0-based）。
+
+    ⚠⚠⚨ 批 EJ-37 · **零名单维护**：下标**从源码推导** ⇒ ⇒ 登记册的值
+      错了 ⇒ 对不上 ⇒ 立刻被抓（以前只对拍**键集合**，值没人管）。
+
+    ⇒ 口径：门型函数的 `local` 行里，形如 `re="$N"` / `ra="$N"` / `rb="$N"`
+      的绑定 ⇒ 正则参数在**第 N 个** shell 实参 ⇒ 换算成 `args` 下标 =
+      **N - 1**（`args[0]` 是门型名）。
+    ⇒ **推不出** ⇒ 该门型**显式没有正则参数** ⇒ 返回 `None`
+      （与登记册里的 `None` 同义 ⇒ 可区分「推不出」与「漏登记」）。
+    ⇒ ⚠ 变量名**精确匹配**白名单（`re`/`rx`/`ra`/`rb`）⇒ ⇒ `dir` /
+      `srcf` 这类**含字母 r 但不是正则**的变量**不会**被误认。
+    """
+    out = {}
+    lines = read_source(WIRING).split('\n')
+    n = len(lines)
+    for i, ln in enumerate(lines):
+        m = FUNC_DEF_LINE.match(ln)
+        if not m:
+            continue
+        name = m.group(1) if m.lastindex else ln.strip().split('(')[0]
+        pos = None
+        for j in range(i + 1, min(i + 13, n)):
+            lm = re.match(r'^\s*local\s+(.*)$', lines[j])
+            if not lm:
+                continue
+            got = []
+            for vm in re.finditer(r'(\w+)="\$(\d+)"', lm.group(1)):
+                if vm.group(1) in RX_VAR_NAMES:
+                    got.append(int(vm.group(2)))
+            if got:
+                pos = tuple(sorted(set(x - 1 for x in got)))
+            break
+        out[name] = pos
+    return out
+
+
+def check_rx_registry_values():
+    """登记册 `RX_ARG_IDX` 的**值**必须与**自动推导**的值一致 ⇒ 列出不一致的门型。
+
+    ⚠⚠⚨ 批 EJ-37 · **实测坐实**：以前只对拍**键集合** ⇒ ⇒ **值**没人管
+      ⇒ ⇒ 把 `arch_need_count_in_fn` 的下标从 2 改成 1 ⇒ ⇒ **全绿**
+      ⇒ ⇒ 那 45 条门项的真正则**逃过体检** ⇒ ⇒ 塞一个坏转义也**没人知道**。
+    ⇒ 返回 [(门型, 登记册值, 推导值)]；空列表 = 通过。
+    ⚠⚠⚨ **判红的口径**：推导不出来（None）但登记册写了值 ⇒ **不一致**
+      ⇒ ⇒ 登记册说有、源码推不出 ⇒ 有人在骗自己 ⇒ 判红。
+    ⚠ 登记册是 None 但推导出了值 ⇒ 也是**不一致** ⇒ 那一族的正则**没被体检**
+      ⇒ ⇒ 判红。
+    """
+    derived = derive_rx_arg_indices()
+    bad = []
+    for kind, reg in sorted(RX_ARG_IDX.items()):
+        dv = derived.get(kind, 'MISSING')
+        if dv == 'MISSING':
+            bad.append((kind, reg, dv))
+            continue
+        if reg is None:
+            reg_t = None
+        elif isinstance(reg, tuple):
+            reg_t = tuple(reg)
+        else:
+            reg_t = (reg,)
+        if dv is None:
+            dv_t = None
+        else:
+            dv_t = tuple(dv)
+        if reg_t != dv_t:
+            bad.append((kind, reg_t, dv_t))
+    return bad
+
+
+def check_rx_index_selftest():
+    """⚠⚠⚨ 批 EJ-37 · **自检必须证明自己有牙**（批 DF 纪律）。
+
+    ⇒ ① **推导得对**：拿**真实的** ci-wiring.sh 验证 ⇒ 凡门型在推导映射里的，
+      其正则参数下标必须**落在门项实参范围内** ⇒ ⇒ 推导越界 ⇒ 立刻被抓。
+    ⇒ ② **推导不是空的**：推导出来的门型数必须 > 0 ⇒ ⇒ 推导坏了 ⇒ 立刻被抓。
+    ⇒ ③ **登记册的值必须与推导一致**：把登记册**临时改错**一个值 ⇒ 对账
+      判定**必须报出来** ⇒ ⇒ ⇒ 证明「对账有牙」⇒ ⇒ 否则这张对账纸是摆设。
+    """
+    problems = []
+    derived = derive_rx_arg_indices()
+    if not derived:
+        problems.append('自动推导的门型映射是空的 ⇒ 推导坏了')
+    real = [k for k, v in derived.items() if v is not None]
+    if not real:
+        problems.append('自动推导出来的「有正则参数」门型是空的 ⇒ 推导坏了')
+    # ① 推导出来的下标必须落在真实门项的实参范围内
+    src = read_source(WIRING)
+    checked = 0
+    for i, ln in enumerate(src.split('\n'), 1):
+        m = GATE_LINE.match(ln)
+        if not m:
+            continue
+        kind = m.group(1)
+        pos = derived.get(kind)
+        if pos is None:
+            continue
+        args = split_args(m.group(2))
+        if not args:
+            continue
+        for p in pos:
+            checked += 1
+            if p >= len(args):
+                problems.append('ci-wiring.sh:%d 门型 %s 的正则下标 %d 越界'
+                                '（实参 %d 个）⇒ 推导错了'
+                                % (i, kind, p, len(args)))
+                break
+    if not checked:
+        problems.append('一个门项的正则下标都没验到 ⇒ 推导坏了')
+    # ③ 对账判定**必须有牙**：临时改错一个值 ⇒ 必须报出来
+    #   ⚠⚠⚨ **踩过的坑**：先写成 `saved = dict(RX_ARG_IDX)` 再改 `saved` ⇒ ⇒
+    #   `check_rx_registry_values()` 读的是**全局** `RX_ARG_IDX` ⇒ ⇒ 改错
+    #   **根本没生效** ⇒ ⇒ 自检自己判自己「没牙」⇒ ⇒ 反而把好代码判红
+    #   ⇒ ⇒ 必须**直接改全局字典里的那个键**，用完**逐键还原**。
+    probe_kind = sorted(RX_ARG_IDX.keys())[0]
+    old_val = RX_ARG_IDX[probe_kind]
+    try:
+        RX_ARG_IDX[probe_kind] = 999
+        if not check_rx_registry_values():
+            problems.append('把登记册的值改错后对账判定**没报出来** ⇒ 对账没牙')
+    finally:
+        RX_ARG_IDX[probe_kind] = old_val
+    # ⚠ 还原后必须**真的还原了**（否则自检自己污染了全局状态）
+    if RX_ARG_IDX[probe_kind] != old_val:
+        problems.append('自检的探针**没还原**登记册的值 ⇒ 自检污染了全局状态')
+    return problems
+
+
 GATE_LINE = re.compile(r'^\s*(arch_[a-z_]+)\s+(.*)$')
 
 
