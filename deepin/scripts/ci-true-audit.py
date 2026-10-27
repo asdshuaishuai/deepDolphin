@@ -96,10 +96,29 @@ def shell_strip_comments(path):
         sys.exit('✗ ci-wiring.sh 里抽不出 strip_comments() ⇒ 抽取自检做不了')
     fn = m.group(0)
     probe = '/tmp/az-cj-selfcheck-probe.sh'
+    # ⚠⚠⚨ 批 EJ-31 · **探针必须复刻生产的失败通道**
+    #   ⇒ 生产的 `strip_comments` 失败时把文件名写进 `$STRIP_FAIL_FILE`
+    #     ⇒ 末尾统一判红 + 指名道姓（批 CG 口径）
+    #   ⇒ 探针**没设**这个变量 ⇒ ⇒ 失败分支的 `printf … >> "$STRIP_FAIL_FILE"`
+    #     会去写一个**空路径** ⇒ ⇒ 报「cannot create : Directory nonexistent」
+    #     ⇒ ⇒ **失败被记成「工具没法写标记」**⇒ ⇒ **诊断指错方向**
+    #   ⇒ 现在：探针也落标记 ⇒ 失败时**指名道姓**说是哪个文件剥不了
+    # ⚠⚠⚨ **逐行列表**写法（不是一串塞满转义的长行）⇒ ⇒ 门可**逐条整行锚定**
+    probe_lines = [
+        '#!/bin/sh\n',
+        'STRIP_FAIL_FILE="${TMPDIR:-/tmp}/deepdolphin-strip-fail-probe.$$"\n',
+        fn,
+        '\nstrip_comments "$1"\n',
+        '_probe_rc=$?\n',
+        'if [ -s "$STRIP_FAIL_FILE" ]; then\n',
+        '    printf \'%s\\n\' "✗ 剥注释工具失败（工具坏了 ≠ 没找到）：" >&2\n',
+        '    while read -r _probe_f; do printf \'%s\\n\' "$_probe_f" >&2; done < "$STRIP_FAIL_FILE"\n',
+        '    rm -f "$STRIP_FAIL_FILE"\n',
+        'fi\n',
+        'exit $_probe_rc\n',
+    ]
     with open(probe, 'w', encoding='utf-8') as fh:
-        fh.write('#!/bin/sh\n')
-        fh.write(fn)
-        fh.write('\nstrip_comments "$1"\n')
+        fh.write(''.join(probe_lines))
     out = subprocess.run(['sh', probe, path], capture_output=True, text=True)
     if out.returncode != 0:
         sys.exit('✗ 抽取出来的 strip_comments 跑不了（rc=%d）⇒ %s'
