@@ -10,9 +10,6 @@ struct ProjectDetailView: View {
     /// 提交弹窗（选文件提交，用户定稿：页头「提交」是唯一入口）。
     /// `item` 挂载：project 本身就是要提交的仓库，不需要独立的 Bool。
     @State private var commitSheetProject: ProjectStatus?
-    // 图谱触发入口（用户定稿：两图只能从具体仓库的面板触发，单仓库锁定）
-    @State private var showCodeGraph = false
-    @State private var showArch = false
 
     private var project: ProjectStatus? {
         model.projectDetails[projectName] ?? model.projects.first { $0.name == projectName }
@@ -37,14 +34,8 @@ struct ProjectDetailView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .sheet(isPresented: $showCodeGraph) {
-            CodeGraphPage(projectName: projectName)
-        }
         .sheet(item: $commitSheetProject) { p in
             CommitSheetView(project: p)
-        }
-        .sheet(isPresented: $showArch) {
-            ArchPage(projectName: projectName)
         }
         .task {
             await model.loadProject(projectName)
@@ -218,9 +209,13 @@ struct ProjectDetailView: View {
                         ProgressView().controlSize(.small)
                     }
                     // 图谱触发入口（用户定稿：两图只能从具体仓库的面板触发，
-                    // 打开即锁该仓库——项目群侧栏没有这两个入口）
+                    // 打开即锁该仓库——项目群侧栏没有这两个入口。
+                    // 2026-10-27：独立窗口直接最大化显示，不局限在主面板内）
                     Button {
-                        showCodeGraph = true
+                        GraphWindows.open(kind: "graph", projectName: projectName,
+                                          title: "\(L10n.t("nav.graph")) · \(projectName)") {
+                            CodeGraphPage(projectName: projectName)
+                        }
                     } label: {
                         Label(L10n.t("nav.graph"), systemImage: "point.3.filled.connected.trianglepath.dotted")
                     }
@@ -228,7 +223,10 @@ struct ProjectDetailView: View {
                     .help(L10n.t("nav.graph"))
                     .accessibilityLabel(A11y.label(L10n.t("nav.graph")))
                     Button {
-                        showArch = true
+                        GraphWindows.open(kind: "arch", projectName: projectName,
+                                          title: "\(L10n.t("nav.arch")) · \(projectName)") {
+                            ArchPage(projectName: projectName)
+                        }
                     } label: {
                         Label(L10n.t("nav.arch"), systemImage: "diagram.projective")
                     }

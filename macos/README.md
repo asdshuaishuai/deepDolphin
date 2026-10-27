@@ -132,6 +132,7 @@ Sources/deepDolphin/
   EngineFailure.swift           纯函数：引擎失败分类与文案
   GraphPages.swift              代码图谱页 / 置信度页 / 补丁体检页（三层置信度的人工裁决层）
   GraphWebView.swift            图谱交付物容器（WKWebView 渲染引擎 render 产物，token 强制刷新）
+  GraphChrome.swift             图谱窗口管理（独立最大化 NSWindow）+ 两页公共头部/状态条/加载态
   GraphScene.swift              引擎图谱 JSON 服务桥（置信度体检页数据面；scene 场景模型已删）
   L10n.swift                    多语言系统（zh-CN/en/zh-TW/ja 四语言表 + t() + 固定文档入口）
   LanguageCoverage.swift        纯函数：语言分布占比
