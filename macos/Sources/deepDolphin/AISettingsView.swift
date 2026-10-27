@@ -376,27 +376,25 @@ struct AISettingsPane: View {
             }
 
             Section("模型") {
-                // 用户定稿：与端点行同构——一个输入框 + 后面一个下拉，只此一行。
-                // 下拉选中即填入输入框；输入框里手打的 id 也合法（tag 兜底行
-                // 让下拉显示当前值而不是空白）。
+                // 用户定稿：一个输入框 + 后面一个下拉，**值只显示一次**。
+                // 用 Menu 不用 Picker：Picker 会把选中的 id 再显示一遍
+                // （输入框一份、下拉一份，同一串截断两次）；Menu 只是
+                // 选择入口，选中即映射进输入框，手打 id 随时合法。
                 HStack {
                     TextField("模型 id（可手动输入）", text: $draft.model)
                         .textFieldStyle(.roundedBorder)
-                    Picker("模型", selection: Binding(
-                        get: { draft.model },
-                        set: { draft.model = $0 }
-                    )) {
-                        Text("（手动输入）").tag("")
+                    Menu {
                         ForEach(modelCandidates, id: \.id) { m in
-                            Text(modelLabel(m)).tag(m.id)
+                            Button(modelLabel(m)) { draft.model = m.id }
                         }
-                        if !draft.model.isEmpty
-                            && !modelCandidates.contains(where: { $0.id == draft.model }) {
-                            Text(draft.model).tag(draft.model)
-                        }
+                    } label: {
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption.weight(.medium))
                     }
-                    .labelsHidden()
-                    .frame(maxWidth: 190)
+                    .disabled(modelCandidates.isEmpty)
+                    .help("从目录选择模型，选中即填入输入框")
+                    .accessibilityLabel(A11y.label("从目录选择模型"))
+                    .fixedSize()
                 }
             }
 
