@@ -36,6 +36,7 @@ import io
 import os
 import re
 import sys
+import tempfile
 
 # ── 关键字/字面量：抽掉它们之后，「一个标识符都不剩」才算恒真 ──────────────
 KEYWORDS = {
@@ -626,6 +627,24 @@ SELF_TEST_CASES = [
 ]
 
 
+def selfcheck_probe_path(tag, ext):
+    """自检样例的临时文件路径 —— ⚠⚠⚨ **必须带 PID**（批 EJ-33）。
+
+    ⚠⚠⚨ **批 EJ-33 · 实测坐实**：原先三处样例文件都写死**同一批固定前缀**的临时路径
+      ⇒ ⇒ **全局固定路径** ⇒ ⇒ 两个进程并发跑（`ci.sh` 第 16 步会跑本脚本）
+      ⇒ ⇒ 后写的**覆盖**先写的 ⇒ ⇒ 先写的**读到对方**的样例
+      ⇒ ⇒ 自检结论**不是自己的那份** ⇒ ⇒ 或先写的 `os.unlink` 把后写者**要读的文件删掉**
+      ⇒ ⇒ 崩了 ⇒ ⇒ ⇒ ⇒ **假红**
+      ⇒ ⇒ ⚠⚠⚨ 与**批 EJ-32 同款**（那三个自检脚本）⇒ ⇒ 但 EJ-32 只修了其中**两个**
+      ⇒ ⇒ ⇒ ⇒ **本文件漏网** ⇒ ⇒ 教训：forbid 门**逐个文件点名** ⇒ ⇒ **漏同类**
+      ⇒ ⇒ ⇒ ⇒ 必须**整类**覆盖（批 EJ-33 的整类门）
+      ⇒ ⇒ 路径**一律**带 PID ⇒ ⇒ 进程之间互不覆盖。
+    ⚠ ⚠⚠⚨ **不许**在本文件里写「临时目录」的**字面量** ⇒ ⇒ 整类门（`scripts/*.py`
+      范围里不许有固定临时路径）会把**文档里提一嘴**也算成命中 ⇒ ⇒ 只好绕着写。
+    """
+    return os.path.join(tempfile.gettempdir(), 'az-ds-selfcheck-%s-%d.%s' % (tag, os.getpid(), ext))
+
+
 def self_test():
     """跑合成样例 ⇒ 判定逻辑不对就红。"""
     bad = 0
@@ -703,7 +722,7 @@ def self_test():
             #   ⇒ 这一档**真的经过 `find_assert_calls`** ⇒ 抽取器坏了自检当场红
             #   ⇒ ⚠ 抽取器要**读文件** ⇒ 样例先落临时文件 ⇒ 用完删掉
             text, want_n = inp
-            _p = '/tmp/az-ds-selfcheck-assert.txt'
+            _p = selfcheck_probe_path('assert', 'txt')
             with open(_p, 'w', encoding='utf-8') as _fh:
                 _fh.write(text)
             try:
@@ -716,7 +735,7 @@ def self_test():
             #   ⇒ 这一档**真的经过 `scan_shell_file`** ⇒ 抽取器坏了自检当场红
             #   ⇒ ⚠ 扫描会往 stderr 打诊断 ⇒ 自检期间**必须静音**（批 AZ 纪律）
             text, want_n = inp
-            _p = '/tmp/az-ds-selfcheck-shell.sh'
+            _p = selfcheck_probe_path('shell', 'sh')
             with open(_p, 'w', encoding='utf-8') as _fh:
                 _fh.write(text)
             try:
@@ -730,7 +749,7 @@ def self_test():
             # ⚠⚠⚨ **批 DS**：Swift **文件级**扫描必须自检证明有牙
             #   ⇒ 这一档**真的经过 `scan_swift_file`** ⇒ 抽取器坏了自检当场红
             text, want_n = inp
-            _p = '/tmp/az-ds-selfcheck-swift.swift'
+            _p = selfcheck_probe_path('swift', 'swift')
             with open(_p, 'w', encoding='utf-8') as _fh:
                 _fh.write(text)
             try:

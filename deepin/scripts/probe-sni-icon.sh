@@ -30,7 +30,10 @@ SRC="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 APP="${2:-$SRC/build/deepDolphin}"
 SERVICE="org.deepin.deepDolphin"
 OBJPATH="/StatusNotifierItem"
-LOG=/tmp/probe-sni-icon.app.log
+# ⚠⚠⚨ **批 EJ-33**：日志路径**必须带 PID**（`$$`）⇒ ⇒ 全局固定路径 ⇒ ⇒
+#   并发跑同一探针 ⇒ ⇒ 后写的**覆盖**先写的 ⇒ ⇒ 而本脚本**读回自己的日志**
+#   ⇒ ⇒ 结论可能**读成对方的** ⇒ ⇒ **假红/假绿** ⇒ ⇒ 路径**一律**带 PID。
+LOG=/tmp/probe-sni-icon.app.$$.log
 
 fail() { echo "✗ $1" >&2; exit 1; }
 
