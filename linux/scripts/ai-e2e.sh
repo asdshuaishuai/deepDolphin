@@ -45,10 +45,7 @@ if [[ -x "$HOME/.local/bin/ld" ]]; then
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
-PLAIN_PORT=18741
-AGENT_PORT=18742
-MULTI_PORT=18743
-# ⚠⚠⚨ **批 EJ-34**：临时路径**必须进程唯一**（带 PID）⇒ ⇒ 全局固定路径 ⇒ ⇒
+# ⚠⚠⚨ 批 EJ-34：临时路径**必须进程唯一**（带 PID）⇒ ⇒ 全局固定路径 ⇒ ⇒
 #   并发跑同一脚本 ⇒ ⇒ 后写的**覆盖**先写的 ⇒ ⇒ 而本脚本**读回自己的输出**
 #   ⇒ ⇒ 结论可能**读成对方的** ⇒ ⇒ ⇒ **假红/假绿** ⇒ ⇒ 路径**一律**带 PID。
 MOCK_TMP="/tmp/deepdolphin-mock.$$"
@@ -58,6 +55,29 @@ MULTI_LOG="$MOCK_TMP-multi.log"
 MULTI_ERR="$MOCK_TMP-multi.err"
 PLAIN_ERR="$MOCK_TMP-plain.err"
 AGENT_ERR="$MOCK_TMP-agent.err"
+
+# ⚠⚠⚨ 批 EJ-35：**端口**也是同一族的资源 ⇒ ⇒ 全局固定端口 ⇒ ⇒ 并发跑 ⇒ ⇒
+#   后一个 bind 失败（OSError: Address already in use）⇒ ⇒ 本脚本会报
+#   「端口 $PORT_N 可能被占用」⇒ ⇒ ⇒ 这次失败**与被测代码无关** ⇒ ⇒ ⇒ **假红**
+#   ⇒ ⇒ **实测坐实**：同一端口起第二个假 provider ⇒ ⇒ 第二个当场死，
+#   报 `OSError: [Errno 98] Address already in use`。
+#   ⇒ ⇒ 修法：端口**一律让内核分配**（`MOCK_PORT=0`）⇒ ⇒ **天然进程唯一**
+#   ⇒ ⇒ 永不撞；实际端口**从假 provider 的输出里读回**（它 bind 完才知道
+#   自己拿到哪个）⇒ ⇒ 不许猜。
+wait_mock_port() { # wait_mock_port <假 provider 的输出文件> <名字> ⇒ 打印它报出来的端口
+    local errf="$1" name="$2" i=0 p=""
+    while [ "$i" -lt 100 ]; do
+        p="$(sed -n 's/^LISTENING=//p' "$errf" 2>/dev/null | head -1)"
+        if [ -n "$p" ]; then
+            printf '%s\n' "$p"
+            return 0
+        fi
+        i=$((i + 1))
+        sleep 0.1
+    done
+    printf '%s\n' "✗ 假 provider（$name）没报出端口（等了 10 秒还没有 LISTENING= 那行）" >&2
+    return 1
+}
 
 cleanup() {
   # wait 一下再返回：不等的话 shell 会在脚本退出时打印
@@ -98,14 +118,20 @@ if [[ ! -x "$ENGINE" ]]; then
 fi
 echo "› 引擎：$ENGINE"
 
-echo "› 起假 provider（plain :$PLAIN_PORT / agent :$AGENT_PORT）…"
-MOCK_MODE=plain MOCK_PORT=$PLAIN_PORT MOCK_LOG=$PLAIN_LOG python3 tests/mock_agent.py >"$PLAIN_ERR" 2>&1 &
+echo "› 起假 provider（plain / agent / multi，**端口让内核分配**）…"
+# ⚠⚠⚨ 批 EJ-35：`MOCK_PORT=0` ⇒ ⇒ **内核分配** ⇒ ⇒ 天然进程唯一 ⇒ ⇒ 永不撞
+#   ⇒ ⇒ 实际端口**从各自的输出里读回**（下面 wait_mock_port）⇒ ⇒ 不许猜。
+MOCK_MODE=plain MOCK_PORT=0 MOCK_LOG=$PLAIN_LOG python3 tests/mock_agent.py >"$PLAIN_ERR" 2>&1 &
 PLAIN_PID=$!
-MOCK_MODE=agent MOCK_PORT=$AGENT_PORT MOCK_LOG=$AGENT_LOG python3 tests/mock_agent.py >"$AGENT_ERR" 2>&1 &
+MOCK_MODE=agent MOCK_PORT=0 MOCK_LOG=$AGENT_LOG python3 tests/mock_agent.py >"$AGENT_ERR" 2>&1 &
 AGENT_PID=$!
-MOCK_MODE=multi MOCK_PORT=$MULTI_PORT MOCK_LOG=$MULTI_LOG python3 tests/mock_agent.py >"$MULTI_ERR" 2>&1 &
+MOCK_MODE=multi MOCK_PORT=0 MOCK_LOG=$MULTI_LOG python3 tests/mock_agent.py >"$MULTI_ERR" 2>&1 &
 MULTI_PID=$!
-sleep 2
+# ⚠ 以前这里是固定 `sleep 2` ⇒ ⇒ 赌机器够快 ⇒ ⇒ 慢机器上**假红**。
+#   ⇒ 现在改成**轮询到端口行为止** ⇒ ⇒ 端口行出现 = 服务**真的**起来了。
+PLAIN_PORT="$(wait_mock_port "$PLAIN_ERR" plain)" || exit 1
+AGENT_PORT="$(wait_mock_port "$AGENT_ERR" agent)" || exit 1
+MULTI_PORT="$(wait_mock_port "$MULTI_ERR" multi)" || exit 1
 
 # ⚠⚠ 必须**真的确认服务在监听**。
 # 这个脚本的第一版没有这一步，于是：端口被上一次残留的进程占着 →
@@ -114,11 +140,18 @@ sleep 2
 # 脚本最后打印「✓ AI 通道端到端通过」，而实际这次一条都没验。
 # 「构建/检查对自己的成败说谎」正是本项目反复修的那族缺陷，
 # 写检查脚本时最容易自己又犯一遍。
+# ⚠⚠⚨ 批 EJ-35：端口**改成内核分配**之后，这一条从「防残留进程占端口」
+#   变成「防**别的**原因起不来」（例如 python 崩了）⇒ ⇒ 诊断文字**必须跟着改**
+#   ⇒ ⇒ 不许再写「可能被占用」（现在**不可能**是端口被占 ⇒ ⇒ 那是**骗人**）。
 for pair in "$PLAIN_PORT:$PLAIN_PID" "$AGENT_PORT:$AGENT_PID" "$MULTI_PORT:$MULTI_PID"; do
   PORT_N="${pair%%:*}"; PID_N="${pair##*:}"
   if ! kill -0 "$PID_N" 2>/dev/null; then
-    echo "✗ 假 provider 没起来（端口 $PORT_N 可能被占用）：" >&2
-    ERR_FILE="$PLAIN_ERR"; [[ "$PORT_N" == "$AGENT_PORT" ]] && ERR_FILE="$AGENT_ERR"
+    echo "✗ 假 provider 没起来（端口 $PORT_N；端口是**内核分配**的 ⇒ ⇒ 不可能是被占用 ⇒ ⇒ 看下面的输出）：" >&2
+    # ⚠⚠⚨ 批 EJ-35：原来这里只认 plain 与 agent ⇒ ⇒ **multi 的错会报成 plain 的**
+    #   ⇒ ⇒ **诊断指错方向** ⇒ ⇒ 三个都得认。
+    ERR_FILE="$PLAIN_ERR"
+    if [ "$PORT_N" = "$AGENT_PORT" ]; then ERR_FILE="$AGENT_ERR"; fi
+    if [ "$PORT_N" = "$MULTI_PORT" ]; then ERR_FILE="$MULTI_ERR"; fi
     sed 's/^/    /' "$ERR_FILE" 2>/dev/null | tail -5 >&2
     exit 1
   fi

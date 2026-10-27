@@ -8,9 +8,27 @@ import http.server
 import json
 import os
 import sys
+import tempfile
 
-PORT = int(os.environ.get("MOCK_PORT", "18742"))
-LOG = open(os.environ.get("MOCK_LOG", "/tmp/deepdolphin-mock-agent.log"), "w")
+# ⚠⚠⚨ 批 EJ-35：端口与日志路径**都不许有全局固定默认值**。
+#   ⇒ ⇒ 端口写死 ⇒ ⇒ 两个进程抢同一个端口 ⇒ ⇒ 后一个 bind 失败
+#     （OSError: Address already in use）⇒ ⇒ 调用方会报「端口可能被占用」
+#     ⇒ ⇒ ⇒ 这次失败**与被测代码无关** ⇒ ⇒ ⇒ **假红**。
+#     ⇒ ⇒ 实测：ai-e2e.sh 的 AGENT_PORT 与本文件原来的默认值**就是同一个端口**。
+#   ⇒ ⇒ 日志路径写死 ⇒ ⇒ 两个进程写同一个文件 ⇒ ⇒ 互相覆盖
+#     ⇒ ⇒ 结论可能读成对方的 ⇒ ⇒ ⇒ **假红/假绿**。
+#   ⇒ ⇒ 端口**必填**（缺 ⇒ 明确报错退出 ⇒ fail closed，不静默取默认）。
+#   ⇒ ⇒ 端口值 **0 = 让内核分配**（⇒ ⇒ 天然进程唯一 ⇒ ⇒ 永不撞）。
+#   ⇒ ⇒ 日志路径的默认值**带 PID**（⇒ ⇒ 进程唯一）。
+_RAW_PORT = os.environ.get("MOCK_PORT")
+if _RAW_PORT is None:
+    sys.stderr.write("✗ MOCK_PORT 必须由调用方显式给出（0 = 让内核分配）\n")
+    raise SystemExit(2)
+PORT = int(_RAW_PORT)
+LOG = open(os.environ.get(
+    "MOCK_LOG",
+    os.path.join(tempfile.gettempdir(),
+                 "deepdolphin-mock-agent-%d.log" % os.getpid())), "w")
 MODE = os.environ.get("MOCK_MODE", "agent")
 
 
@@ -83,4 +101,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    http.server.HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    _srv = http.server.HTTPServer(("127.0.0.1", PORT), Handler)
+    # ⚠⚠⚨ 批 EJ-35：端口**由内核分配**时，调用方**事先不知道**是哪个
+    #   ⇒ ⇒ 得**报出来** ⇒ ⇒ 调用方从这一行读回实际端口 ⇒ ⇒ 不许猜。
+    print("LISTENING=%d" % _srv.server_address[1], flush=True)
+    _srv.serve_forever()
