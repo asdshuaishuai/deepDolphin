@@ -127,7 +127,7 @@ AUDIT_SELF = os.path.join(HERE, 'ci-wiring-audit.py')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1743
+GATE_LINES_EXPECTED = 1754
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -338,6 +338,30 @@ def run_tool(cmd, ok_codes=(0,), input=None, cwd=None, retry=False):
     return ToolResult(again.returncode, again.stdout, again.stderr)
 
 
+# ⚠⚠⚨ 批 EJ-30 · **计数类的工具调用 ⇒ ⇒ 瞬时失败重试一次**
+#   ⇒ ⇒ 起因（**实测复现**，不是推演）：批 EJ-29 全量回归里 **多次**出现「变异前就红了」
+#     ⇒ ⇒ 隔离重跑 = **真红**⇒ ⇒ 仓内承诺没破 ⇒ ⇒ 是**环境**把门弄红了
+#     ⇒ ⇒ 指纹（门输出里含 ✗ 的行数 = **31 + 4 = 35**）⇒ ⇒ **精确指向审计器 rc=2**
+#     ⇒ ⇒ 即「计数那两条腿的 grep 瞬时失败」⇒ ⇒ 门红 ⇒ ⇒ **假红**
+#     ⇒ ⇒ 批 DL 纪律：**假红比假绿更坏** ⇒ ⇒ 负载抖一下不该让门翻脸
+#   ⇒ ⇒ **为什么不走 `run_tool(retry=True)`**：批 EJ-11 的口径是「重试成功 ⇒ 返回
+#     **第一次 + 第二次**的输出」⇒ ⇒ 对**计数**来说那会把命中数**翻倍**
+#     ⇒ ⇒ ⇒ 与门侧口径不一致（门侧是**覆盖写**）⇒ ⇒ 这里显式调**两次** `run_tool`
+#     ⇒ ⇒ （不传 retry）⇒ ⇒ **只取第二次的输出**⇒ ⇒ 与门侧**逐字同口径**
+#   ⇒ ⇒ **只重试一次**（不许无限重试 ⇒ 不许把「工具坏了」拖成假绿）
+def run_tool_count(cmd, ok_codes=(0, 1), input=None):
+    """计数类工具调用 ⇒ ⇒ **瞬时失败重试一次**⇒ ⇒ **只取第二次的输出**。
+
+    ⚠ **两次调用 `run_tool`（不传 `retry`）**⇒ ⇒ 第二次的结果**直接返回**
+      ⇒ ⇒ 命中数**不会翻倍**⇒ ⇒ 与门侧 `wiring_count_hits` 的**覆盖写**同口径。
+    ⚠⚠⚨ **只重试一次**⇒ ⇒ 第二次仍失败 ⇒ ⇒ 照旧判红（fail closed 不变）。
+    """
+    out = run_tool(cmd, ok_codes=ok_codes, input=input)
+    if out.returncode in ok_codes:
+        return out
+    return run_tool(cmd, ok_codes=ok_codes, input=input)
+
+
 def strip_comments(path):
     """剥注释 —— ⚠ **直接调 ci-wiring.sh 用的同一条 perl/sed**，不复刻。
 
@@ -420,7 +444,7 @@ def count_hits(path, rx):
         return None
     text = strip_comments(path)
     try:
-        out = run_tool(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=text)
+        out = run_tool_count(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=text)
     except OSError as e:
         # ⚠⚠⚨ 批 EB：以前是 `return None` ⇒ **静默跳过** ⇒ 那一族次数门**没被校准**
         #   ⇒ ⇒ 审计器照样 rc=0 ⇒ ⇒ **假绿** ⇒ ⇒ 现在**登记** ⇒ 统一判红
@@ -436,7 +460,7 @@ def count_hits_ml(path, rx):
         return None
     text = strip_comments(path).replace('\n', ' ')
     try:
-        out = run_tool(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=text)
+        out = run_tool_count(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=text)
     except OSError as e:
         # ⚠⚠⚨ 批 EB：以前是 `return None` ⇒ **静默跳过** ⇒ 那一族次数门**没被校准**
         #   ⇒ ⇒ 审计器照样 rc=0 ⇒ ⇒ **假绿** ⇒ ⇒ 现在**登记** ⇒ 统一判红
@@ -1087,7 +1111,7 @@ def count_lines(path, rx):
         return None
     text = strip_comments(path)
     try:
-        out = run_tool(['grep', '-cE', '--', rx], ok_codes=(0, 1), input=text)
+        out = run_tool_count(['grep', '-cE', '--', rx], ok_codes=(0, 1), input=text)
     except OSError as e:
         # ⚠⚠⚨ 批 EB：以前是 `return None` ⇒ **静默跳过** ⇒ 配对门的行数**没被校准**
         #   ⇒ ⇒ **假绿** ⇒ ⇒ 现在**登记** ⇒ 统一判红
@@ -2814,7 +2838,7 @@ def check_count_in_fn_gates(cif_items):
             bad.append((lineno, f, sig, rx, want, None, '找不到函数体'))
             continue
         try:
-            r = run_tool(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=body)
+            r = run_tool_count(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=body)
         except OSError as e:
             # ⚠⚠⚨ 批 EB：以前**没保护** ⇒ grep 挂 ⇒ 整个审计器**崩**（rc=10）
             #   ⇒ 方向对（红）但**诊断失真**（说「崩了」而不是「工具用不了」）
@@ -2870,7 +2894,7 @@ def check_count_in_step_gates(cis_items):
                         '抽不出第 %d 步的正文（打点行没找到？）' % step))
             continue
         try:
-            r = run_tool(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=body)
+            r = run_tool_count(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=body)
         except OSError as e:
             # ⚠⚠⚨ 批 EB：以前**没保护** ⇒ grep 挂 ⇒ 整个审计器**崩**（rc=10）
             #   ⇒ 方向对（红）但**诊断失真**（说「崩了」而不是「工具用不了」）
@@ -3341,7 +3365,7 @@ def _grep_count_text(text, rx, path):
     ⚠ 工具失败 ⇒ ⇒ **登记**（批 EB 纪律：工具坏了 ≠ 没找到）⇒ ⇒ 返回 None。
     """
     try:
-        out = run_tool(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=text)
+        out = run_tool_count(['grep', '-oE', '--', rx], ok_codes=(0, 1), input=text)
     except OSError as e:
         return _tool_failed(path, rx, 'grep 起不来（%s）' % e)
     if out.returncode not in (0, 1):
