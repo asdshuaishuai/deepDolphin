@@ -127,7 +127,7 @@ AUDIT_SELF = os.path.join(HERE, 'ci-wiring-audit.py')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1801
+GATE_LINES_EXPECTED = 1806
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -1372,25 +1372,194 @@ def check_pair_count_gates(pair_items):
 #      ② ci-wiring.sh:3943  实参 **13** 而文字称「恰好 12 处」（**批 EB 自己引入的**）
 #      ⇒ ⇒ 口径扩开后实测：**零误报**（44 条里只有那 2 条真失准）⇒ 可以扩
 #   ⚠ **只查第一个** ⇒ 改成**全部都要对上**（一行里写了两个数 ⇒ 两个都得对）
-def check_label_count_text(count_items):
-    """核对门项说明文字里的「条数」与该门项的期望值是否一致。"""
+# ⚠⚠⚨ 批 EJ-36 · 「说明文字里的条数」校准的**覆盖面自动推导**
+#
+#   ⇒ 起因（**实测坐实**，不是推演）：以前那道门（rc=9）只喂
+#     `arch_need_count` + `arch_need_count_ml` **两个手写列表** ⇒ ⇒
+#     另外 **6 个**带 `want` 字段的门型（pair / in_fn / in_step / any_count /
+#     min / any_min）—— 实测 **174 条门项** —— 的说明文字**根本没人校准**
+#     ⇒ ⇒ 而且覆盖面是**手写**的 ⇒ ⇒ **新增一个带 want 的门型 ⇒ 自动漏**
+#     ⇒ ⇒ ⇒ 「承诺悄悄消失」的**元层**：判据层对自己的覆盖面没有承诺。
+#   ⇒ 修法：**从门型函数定义的 `local` 行推导**（每个门型都写着
+#     `want="$N"` 与 `label="$M"`）⇒ ⇒ **零名单维护**
+#     ⇒ ⇒ 新增门型照约定写 ⇒ ⇒ **自动纳入**（不许手写覆盖面）。
+#
+#   ⚠⚠⚨ **实测坐实的真洞**（本批一并订正）：两条门项的说明文字**确实在骗人**
+#     —— `arch_forbid_han` 的失败上报那条写着「函数体内恰好 2 处」而实际是
+#     **3** 处；`arch_forbid_text_dup` 那条写着「恰好 6 处」而实际是 **7** 处
+#     ⇒ ⇒ 写的时候是 2/6，批 CN 加了一支之后**没同步** ⇒ ⇒ 而当时的校准口径
+#     **看不见**（写法不在认的两种里 + 那两个门型压根没进覆盖面）⇒ ⇒ 双盲。
+#
+#   ⚠ **写法口径**（实测全仓零误报）：
+#     ① `恰好 N <单位>` —— 前缀**任意**（不再要求前面是「（」或「必须恰好」）
+#     ② `至少 N <单位>`
+#     ⇒ 单位只收 处/次/条/个/篇（实测这 5 个就够；「步/支/张」那些是**别的**
+#       计数，不是门项自己的条数 ⇒ 放进去只会误报）
+#     ⇒ 汉字数字**不收**（实测：放宽到不限空格 ⇒ **266 条误报**；带空格又零增量
+#       ⇒ ⇒ 收了只增加脆弱性 ⇒ ⇒ 明确不收）
+LABEL_COUNT_RX = (re.compile(r"恰好 (\d+) ([处次条个篇])"),
+                  re.compile(r"至少 (\d+) ([处次条个篇])"))
+
+
+def _label_declared_counts(label):
+    """抽出说明文字里**声明的条数** ⇒ [(数值, 原文片段)]。
+
+    ⚠ 口径见上面 `LABEL_COUNT_RX` 的说明（批 EJ-36，**实测全仓零误报**）。
+    ⇒ ⚠ 增量语境（「新增 1 处」「多 1 处」）**不算**声明 ⇒ 靠「恰好 / 至少」
+      这两个词把历史沿革挡在外面 ⇒ ⇒ 不必维护增量词名单。
+    """
+    out = []
+    for rx in LABEL_COUNT_RX:
+        for mm in rx.finditer(label):
+            out.append((int(mm.group(1)), mm.group(0)))
+    return out
+
+
+def gate_want_label_positions():
+    """从**门型函数定义**推导「期望值在第几个实参 / 说明文字在第几个实参」。
+
+    ⚠⚠⚨ 批 EJ-36 · **零名单维护**：每个门型的 `local` 行都写着
+      `want="$N"` 与 `label="$M"` ⇒ ⇒ 位置**从源码推导** ⇒ ⇒
+      新增门型照约定写 ⇒ ⇒ **自动纳入**条数校准 ⇒ ⇒ 覆盖面不会漏。
+    ⇒ 返回 {门型名: (want 位置, label 位置)}；位置 = 实参下标（args[0] 是门型名
+      ⇒ ⇒ 所以 `args[N]` 对应 shell 的 `$N`）。
+    ⇒ ⚠ **fail closed**：推导不出来 ⇒ 那个门型**不校准** ⇒ 但自检会红
+      （见 `check_label_count_selftest`）⇒ ⇒ 不会静默漏。
+    """
+    out = {}
+    lines = read_source(WIRING).split('\n')
+    n = len(lines)
+    i = 0
+    while i < n:
+        if not FUNC_DEF_LINE.match(lines[i]):
+            i += 1
+            continue
+        name = lines[i].strip().split('(')[0]
+        found = None
+        j = i + 1
+        while j < n and j <= i + 12:
+            lm = re.match(r'^\s*local\s+(.*)$', lines[j])
+            if lm:
+                d = {}
+                for k, v in re.findall(r'(\w+)="\$(\d+)"', lm.group(1)):
+                    d[k] = int(v)
+                if 'want' in d and 'label' in d:
+                    found = (d['want'], d['label'])
+                break
+            j += 1
+        if found is not None:
+            out[name] = found
+        i = j if j > i else i + 1
+    return out
+
+
+def collect_label_count_items():
+    """按**自动推导**的覆盖面收集「(行号, 期望值, 说明文字)」⇒ 零名单维护。
+
+    ⚠⚠⚨ 批 EJ-36：覆盖面**不再手写** ⇒ ⇒ 所有带 `want` 字段的门型**全部**纳入
+      ⇒ ⇒ 新增带 `want` 的门型**自动**纳入 ⇒ ⇒ 「覆盖面手写 ⇒ 自动漏」被堵死。
+    ⇒ ⚠ 实参切分用审计器**自己**的 `split_shell_args`（与别处同口径 ⇒ 零漂移）。
+    """
+    pos = gate_want_label_positions()
+    items = []
+    for i, ln in enumerate(read_source(WIRING).split('\n'), 1):
+        if not GATE_CALL_LINE.match(ln):
+            continue
+        args = split_shell_args(ln)
+        if not args:
+            continue
+        p = pos.get(args[0])
+        if p is None:
+            continue
+        want_pos, label_pos = p
+        if len(args) <= max(want_pos, label_pos):
+            continue
+        w = args[want_pos]
+        if not w.isdigit():
+            continue
+        items.append((i, int(w), args[label_pos]))
+    return items
+
+
+def check_label_count_text(items):
+    """核对门项说明文字里的「条数」与该门项的期望值是否一致。
+
+    ⚠⚠⚨ 批 EJ-36 · **覆盖面自动推导**（`collect_label_count_items()`）
+      + **写法扩宽**（`_label_declared_counts()`，实测全仓零误报）。
+
+      ⇒ 口径：标签里**所有**声明的条数都必须 == 期望值 ⇒ ⇒
+        **跨门引用**（「有门钉住恰好 23 处」）与**子计数**（「每段恰好 1 处」）
+        **不许**用这个写法 ⇒ ⇒ 措辞要改 ⇒ ⇒ 免得「说自己」与「说别人」
+        混在一句里 ⇒ ⇒ 两种含义混在一起时，谁也分不清哪个是门项自己的条数。
+    ⇒ 返回 [(行号, 期望值, 文字称的数, 原文片段)]；空列表 = 通过。
+    """
     bad = []
-    for lineno, f, rx, want in count_items:
-        # ⚠ 说明文字是门项行的第 4 个参数 ⇒ 从**行原文**里取（不复刻解析）
-        raw = _raw_gate_line(lineno)
-        if raw is None:
-            continue
-        ms = re.findall(r"(?:（恰好 |必须恰好 )(\d+) 处", raw)
-        if not ms:
-            continue
-        for m in ms:
-            said = int(m)
+    for lineno, want, label in items:
+        for said, txt in _label_declared_counts(label):
             if said != want:
-                bad.append((lineno, f, rx, want, said,
-                            '说明文字称「恰好 %d 处」但期望值是 %d ⇒ **文字在骗人**'
-                            % (said, want)))
+                bad.append((lineno, want, said, txt))
+                break
     return bad
 
+
+def check_label_count_selftest():
+    """⚠⚠⚨ 批 EJ-36 · **自检必须证明自己有牙**（批 DF 纪律）。
+
+    ⇒ ① 写法：认得「恰好 N 处/次/条/个/篇」「至少 N 次」，且**数字不符能抓住**；
+      ⇒ 增量语境（「新增 1 处」）**不算**声明 ⇒ 放行。
+    ⇒ ② 覆盖面：`local` 行里的 `want`/`label` 位置**推导得对**
+      ⇒ 拿**真实的** ci-wiring.sh 验证：凡门型在映射里的，第 want 个实参
+      **必须**是数字 ⇒ ⇒ 位置被挪 ⇒ 立刻被抓 ⇒ ⇒ 不会静默漏。
+    ⇒ ③ 覆盖面**不是手写的**：推导出的映射**必须**含全部带 `want` 的门型
+      ⇒ ⇒ 少一个门型 ⇒ 立刻被抓。
+    """
+    problems = []
+    cases = [
+        ('（恰好 3 处）', 3, False),
+        ('（恰好 2 处）', 3, True),
+        ('（函数体内恰好 3 处）', 3, False),
+        ('（恰好 7 条）', 7, False),
+        ('意图天然是「至少 4 次」', 4, False),
+        ('意图天然是「至少 5 次」', 4, True),
+        ('批 EJ-33 段新增 1 处', 3, False),
+        ('面板的 7 处激活动作都走统一入口', 7, False),
+    ]
+    for label, want, should_bad in cases:
+        got = bool(check_label_count_text([(0, want, label)]))
+        if got != should_bad:
+            problems.append('写法样例 %r：期望判违规=%s，实际=%s'
+                            % (label, should_bad, got))
+    pos = gate_want_label_positions()
+    if 'arch_need_count' not in pos:
+        problems.append('推导不出 arch_need_count 的位置 ⇒ 覆盖面推导坏了')
+    elif pos['arch_need_count'] != (3, 4):
+        problems.append('arch_need_count 的位置推导成 %r，期望 (3, 4)'
+                        % (pos['arch_need_count'],))
+    src = read_source(WIRING)
+    for i, ln in enumerate(src.split('\n'), 1):
+        if not GATE_CALL_LINE.match(ln):
+            continue
+        args = split_shell_args(ln)
+        if not args:
+            continue
+        p = pos.get(args[0])
+        if p is None:
+            continue
+        want_pos, label_pos = p
+        if len(args) <= max(want_pos, label_pos):
+            problems.append('ci-wiring.sh:%d 门型 %s 的实参不够（推导位置越界）'
+                            % (i, args[0]))
+            continue
+        if not args[want_pos].isdigit():
+            problems.append('ci-wiring.sh:%d 门型 %s 的第 %d 个实参不是数字（%r）'
+                            ' ⇒ 位置推导错了'
+                            % (i, args[0], want_pos, args[want_pos][:20]))
+        if not args[label_pos].strip():
+            problems.append('ci-wiring.sh:%d 门型 %s 的说明文字是空的' % (i, args[0]))
+    items = collect_label_count_items()
+    if not items:
+        problems.append('自动推导的覆盖面是空的 ⇒ 推导坏了')
+    return problems
 
 def _raw_gate_line(lineno):
     """取 ci-wiring.sh 第 lineno 行的**原文**（1 起算）。"""
@@ -2000,7 +2169,7 @@ GUARD_SHAPE_OK = (ast.Name, ast.Subscript)
 #   ⇒ 「用到的守卫」必须在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
 #   ⇒ 「册里的守卫」必须都被用到 ⇒ 某个收集点被挪走 / 删了 ⇒ 红。
 #   ⇒ ⚠ 登记册**内容由本仓的收集点现抽生成** ⇒ 不手抄 ⇒ 零漂移。
-FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'cntmlbad', 'dead', 'dt_bad', 'entrybad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'forbid_teeth_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'labelbad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'skipbad', 'stbad', 'undef', 'winbad', 'zero')
+FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'cntmlbad', 'dead', 'dt_bad', 'entrybad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'forbid_teeth_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'label_self_bad', 'labelbad', 'rxmiss', 'rxsyn', 'rxunreg', 'self_bad', 'skipbad', 'stbad', 'undef', 'winbad', 'zero')
 
 
 def _is_fails_append(node):
@@ -3581,6 +3750,15 @@ def main_body():
     _rp = require_perl()
     if _rp != 0:
         return _rp
+    # ⚠⚠⚨ 批 EJ-36 · 「说明文字里的条数」校准的**自检**必须**最先**跑
+    #   （批 BI 纪律：前面的检查一红就 exit ⇒ ⇒ 自检永远没机会跑 ⇒ ⇒ 形同虚设）
+    label_self_bad = check_label_count_selftest()
+    if label_self_bad:
+        print('「说明文字里的条数」校准的**自检**不过（%d 条）⇒ ⇒ 规则可能已被掏空'
+              ' ⇒ ⇒ 判红' % len(label_self_bad), file=sys.stderr)
+        for sp in label_self_bad:
+            print('  · %s' % sp, file=sys.stderr)
+        FAILS.append(9)
     args = sys.argv[1:]
     want_list = '--list' in args
     want_list_all = '--list-all' in args
@@ -3983,13 +4161,13 @@ def main_body():
                       % (wb[0], rel(wb[1]), wb[2], wb[6]), file=sys.stderr)
             FAILS.append(4)
         # ⚠⚠⚨ 批 EA · **说明文字里的条数 == 期望值**（文字撒谎 ⇒ 判红）
-        labelbad = check_label_count_text(cnt + cntml)
+        labelbad = check_label_count_text(collect_label_count_items())
         if labelbad:
             print('门项的**说明文字里的条数**与期望值对不上（%d 条）⇒ **文字在骗人**'
                   % len(labelbad), file=sys.stderr)
             for lb in labelbad:
-                print('  · ci-wiring.sh:%d  %s | %s ⇒ 期望 %d，但说明文字称「恰好 %d 处」'
-                      % (lb[0], rel(lb[1]), lb[2], lb[3], lb[4]), file=sys.stderr)
+                print('  · ci-wiring.sh:%d ⇒ 期望 %d，但说明文字称「%s」'
+                      % (lb[0], lb[1], lb[3]), file=sys.stderr)
             FAILS.append(9)
         cifbad = check_count_in_fn_gates(cif)
         cisbad = check_count_in_step_gates(cis)
@@ -4197,13 +4375,13 @@ def main_body():
         print('  · %s:%d  %s | %s ⇒ %s'
               % (os.path.basename(WIRING), wb[0], rel(wb[1]), wb[2], wb[6]))
     # ⚠⚠⚨ 批 EA · **说明文字里的条数 == 期望值**（文字撒谎 ⇒ 判红）
-    labelbad = check_label_count_text(cnt + cntml)
+    labelbad = check_label_count_text(collect_label_count_items())
     if labelbad:
         print('门项的**说明文字里的条数**与期望值对不上（%d 条）⇒ **文字在骗人**'
               % len(labelbad), file=sys.stderr)
         for lb in labelbad:
-            print('  · ci-wiring.sh:%d  %s | %s ⇒ 期望 %d，但说明文字称「恰好 %d 处」'
-                  % (lb[0], rel(lb[1]), lb[2], lb[3], lb[4]), file=sys.stderr)
+            print('  · ci-wiring.sh:%d ⇒ 期望 %d，但说明文字称「%s」'
+                  % (lb[0], lb[1], lb[3]), file=sys.stderr)
     # ⚠⚠⚨ 批 EB · 「静默跳过」体检（零名单维护 ⇒ 扫全文件）
     skipbad = check_silent_tool_skip(AUDIT_SELF)
     if skipbad:
