@@ -127,7 +127,7 @@ AUDIT_SELF = os.path.join(HERE, 'ci-wiring-audit.py')
 #     跨 2 个文件 ⇒ **极显眼** ⇒ 惯常动作不再是掩护
 #   ⇒ ⚠⚠⚨ 名字**故意不叫** `GATE_BASELINE_EXPECTED`（那太像上面的路径常量
 #     `GATE_BASELINE` ⇒ 批 AS 的「同名互相顶替 / 看错」那一族）
-GATE_LINES_EXPECTED = 1811
+GATE_LINES_EXPECTED = 1817
 # 一行门项：arch_need <路径> '<正则>' '<说明>'
 NEED_RE = re.compile(
     r'^\s*arch_need\s+'      # 门类型
@@ -215,14 +215,60 @@ FUNC_DEF_LINE = re.compile(r'^\s*arch_\w+\s*\(\)\s*\{')
 #   本来就红）；⚠⚠⚨ 批 EJ-29 起**它的正则有效性被审**（有牙自检 ⇒ RX 匹配不到任何
 #   东西 ⇒ 恒绿 = 没牙 ⇒ 报红）⇒ ⇒ 「有意不审」这句话**只对「命中 >1」那一类成立**，
 #   但**行数仍然要计入** ⇒ 否则「物理行数」对不上 ⇒ 假红。
-FORBID_FAMILY = {
-    'forbid': re.compile(r'^\s*arch_forbid\s'),
-    'forbid_tree': re.compile(r'^\s*arch_forbid_tree\s'),
-    'forbid_han': re.compile(r'^\s*arch_forbid_han\s'),
-    'forbid_raw': re.compile(r'^\s*arch_forbid_raw\s'),
-    'forbid_ml': re.compile(r'^\s*arch_forbid_ml\s'),
-    'forbid_text_dup': re.compile(r'^\s*arch_forbid_text_dup\s'),
-}
+# ⚠⚠⚨ 批 EJ-38 · forbid 家族**不许手写** ⇒ ⇒ 改成**从物理门型自动推导**
+#   ⇒ ⇒ 以前是**手写** 6 条正则 ⇒ ⇒ 新增一个 forbid 门型 ⇒ ⇒ 忘了登记
+#   ⇒ ⇒ 那一族的 forbid 专项体检（RX 有效性有牙自检 / 转义体检 /
+#   ⇒ ⇒ 解析覆盖率对账）**全不做** ⇒ ⇒ 覆盖面**静默缩小**
+#   ⇒ ⇒ 实测坐实：登记前该门项**不在**体检清单里，登记后**在**。
+#   ⇒ ⇒ **零名单维护**：凡是门型名以 `arch_forbid` 开头 ⇒ ⇒ 自动入族。
+#   ⇒ ⚠ 用**惰性代理**：推导函数定义在文件**后部**（要用 `read_source`）
+#     ⇒ ⇒ 模块级不能直接调用 ⇒ ⇒ 首次访问时才推导并缓存。
+class _LazyForbidFamily(object):
+    """forbid 家族的**惰性代理** ⇒ ⇒ 首次访问时自动推导 ⇒ ⇒ 缓存。
+
+    ⚠⚠⚨ 批 EJ-38 · **零名单维护**：族成员从**物理门型**推导
+      ⇒ ⇒ 新增 forbid 门型**自动**纳入 ⇒ ⇒ 不会静默漏。
+    ⚠ 接口与普通 dict **完全一致**（`.items()` / `.values()` /
+      `.keys()` / `[]` / `in`）⇒ ⇒ 调用方**零改动**。
+    """
+
+    def __init__(self):
+        self._d = None
+
+    def _ensure(self):
+        if self._d is None:
+            self._d = derive_forbid_family()
+        return self._d
+
+    def keys(self):
+        return self._ensure().keys()
+
+    def values(self):
+        return self._ensure().values()
+
+    def items(self):
+        return self._ensure().items()
+
+    def get(self, k, default=None):
+        return self._ensure().get(k, default)
+
+    def __getitem__(self, k):
+        return self._ensure()[k]
+
+    def __contains__(self, k):
+        return k in self._ensure()
+
+    def __iter__(self):
+        return iter(self._ensure())
+
+    def __len__(self):
+        return len(self._ensure())
+
+    def __repr__(self):
+        return repr(self._ensure())
+
+
+FORBID_FAMILY = _LazyForbidFamily()
 
 DEFAULT_ANY_GLOB = 'src/app/SelfCheck*.cpp'
 
@@ -301,6 +347,89 @@ def read_source(path):
             return fh.read()
     except OSError as e:
         raise UnreadableSource(path, '读不了（%s）' % e)
+
+
+
+FORBID_FAMILY_PREFIX = 'arch_forbid'
+
+
+def derive_forbid_family():
+    """从**物理门型**推导 forbid 家族 ⇒ {门型名: 匹配该门型门项行的正则}。
+
+    ⚠⚠⚨ 批 EJ-38 · **零名单维护**：以前是**手写** 6 条正则 ⇒ ⇒ 新增一个
+      forbid 门型 ⇒ ⇒ 忘了登记 ⇒ ⇒ 那一族的 forbid 专项体检**全不做**
+      ⇒ ⇒ 覆盖面**静默缩小** ⇒ ⇒ 实测坐实。
+    ⇒ 现在：凡是门型名以 `arch_forbid` 开头 ⇒ ⇒ 自动入族 ⇒ ⇒ **自动纳入**。
+    ⇒ ⚠ 匹配正则必须**逐字**含门型全名 ⇒ ⇒ `arch_forbid` 不会误认
+      `arch_forbid_ml`（前者后面跟空白，后者跟 `_`）。
+    """
+    out = {}
+    src = read_source(WIRING)
+    for m in re.finditer(r'^(arch_[a-z_]+)\(\)\s*\{', src, re.M):
+        name = m.group(1)
+        if not name.startswith(FORBID_FAMILY_PREFIX):
+            continue
+        # ⚠ 键必须是**短名**（去掉 `arch_` 前缀）⇒ ⇒ 与 `GATE_TYPES` 的
+        #   need 族键形态**一致** ⇒ ⇒ `gate_kind_names()` 补前缀后得到全名
+        #   ⇒ ⇒ `check_rx_registry()` 的键集合比对才对得上。
+        short = name[len('arch_'):]
+        out[short] = re.compile(r'^\s*%s\s' % re.escape(name))
+    return out
+
+
+
+def derive_gate_semantics():
+    """从**门型定义**推导语义 ⇒ {门型名: (target_is_file, ml, raw)}。
+
+    ⚠⚠⚨ 批 EJ-38 · **零名单维护**：
+      · **目标文件** ⇐ `local` 行第一个绑定变量（`f` / `srcf` ⇒ 文件；
+        `re` ⇒ 正则 ⇒ tree 族没有单一目标文件）
+      · **ml / raw** ⇐ 函数体里 `probe_scan_find "$f" "$re" <ml> <raw>`
+        的调用（**语义真源头**）
+    ⇒ 推导不出来 ⇒ 返回 `None`（该门型**没有正则参数** ⇒ 不参与 forbid
+      专项体检 ⇒ 与 `RX_ARG_IDX` 里的 `None` 同义 ⇒ 可区分「推不出」与
+      「漏登记」）。
+    """
+    out = {}
+    lines = read_source(WIRING).split('\n')
+    n = len(lines)
+    for i, ln in enumerate(lines):
+        m = FUNC_DEF_LINE.match(ln)
+        if not m:
+            continue
+        name = m.group(1) if m.lastindex else ln.strip().split('(')[0]
+        local_body = None
+        body_lines = []
+        for j in range(i + 1, min(i + 13, n)):
+            lm = re.match(r'^\s*local\s+(.*)$', lines[j])
+            if lm:
+                local_body = lm.group(1)
+                break
+        # 函数体（到闭合大括号）
+        depth = 0
+        k = i
+        while k < n:
+            depth += lines[k].count('{') - lines[k].count('}')
+            body_lines.append(lines[k])
+            if depth <= 0 and k > i:
+                break
+            k += 1
+        body = '\n'.join(body_lines)
+        # ① 目标文件：local 行第一个绑定变量
+        binds = re.findall(r'(\w+)="\$(\d+)"', local_body or '')
+        target_is_file = bool(binds) and binds[0][0] in ('f', 'srcf')
+        # ② ml / raw：从 probe_scan_find 调用推导（语义真源头）
+        sem = None
+        for c in re.findall(r'probe_scan_find\s+(.+)', body):
+            mm = re.search(r'\s(\d)\s(\d)\s*$', c.strip())
+            if mm:
+                sem = (int(mm.group(1)), int(mm.group(2)))
+                break
+        if sem is None:
+            out[name] = None          # 没有正则参数 ⇒ 不参与 forbid 专项体检
+        else:
+            out[name] = (target_is_file, sem[0], sem[1])
+    return out
 
 
 class ToolResult(object):
@@ -1415,6 +1544,35 @@ def _label_declared_counts(label):
     return out
 
 
+def _gate_label_pos(kind):
+    """门型的**说明文字**（`label`）在实参列表里的下标（0-based）⇒ 推不出 ⇒ None。
+
+    ⚠⚠⚨ 批 EJ-38 · **零名单维护**：门型的 `local` 行写着 `label="$M"`
+      ⇒ ⇒ 位置**从源码推导** ⇒ ⇒ 新增门型照约定写就自动对。
+    ⇒ ⚠ 与 `gate_want_label_positions()` 的区别：那个要求**同时**有 `want`
+      与 `label`（只服务条数校准）；这个只要 `label`（服务「allow 列表位置」）。
+    ⇒ ⚠ `args[0]` 是门型名 ⇒ ⇒ shell 的 `$M` 对应 `args[M-1]`。
+    """
+    lines = read_source(WIRING).split('\n')
+    n = len(lines)
+    for i, ln in enumerate(lines):
+        m = FUNC_DEF_LINE.match(ln)
+        if not m:
+            continue
+        name = ln.strip().split('(')[0]
+        if name != kind:
+            continue
+        for j in range(i + 1, min(i + 13, n)):
+            lm = re.match(r'^\s*local\s+(.*)$', lines[j])
+            if not lm:
+                continue
+            for k, v in re.findall(r'(\w+)="\$(\d+)"', lm.group(1)):
+                if k == 'label':
+                    return int(v) - 1
+            return None
+    return None
+
+
 def gate_want_label_positions():
     """从**门型函数定义**推导「期望值在第几个实参 / 说明文字在第几个实参」。
 
@@ -2169,7 +2327,7 @@ GUARD_SHAPE_OK = (ast.Name, ast.Subscript)
 #   ⇒ 「用到的守卫」必须在册里 ⇒ 新增失败态忘了登记 ⇒ 红；
 #   ⇒ 「册里的守卫」必须都被用到 ⇒ 某个收集点被挪走 / 删了 ⇒ 红。
 #   ⇒ ⚠ 登记册**内容由本仓的收集点现抽生成** ⇒ 不手抄 ⇒ 零漂移。
-FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'cntmlbad', 'dead', 'dt_bad', 'entrybad', 'es_bad', 'exempt_missing', 'failed', 'fg_bad', 'forbid_teeth_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'label_self_bad', 'labelbad', 'rxidx_self_bad', 'rxmiss', 'rxsyn', 'rxunreg', 'rxvalbad', 'self_bad', 'skipbad', 'stbad', 'undef', 'winbad', 'zero')
+FAIL_GUARDS = ('TOOL_FAILURES', 'anchbad', 'anchor_exempt_bad', 'anchor_exempt_missing', 'bad_all', 'cntmlbad', 'dead', 'dt_bad', 'entrybad', 'es_bad', 'exempt_missing', 'failed', 'famsem_cov_bad', 'famsem_self_bad', 'fg_bad', 'forbid_teeth_bad', 'fr_bad', "g['blind']", "g['dups']", "g['total_bad']", 'guard_bad', 'judge_bad', 'label_self_bad', 'labelbad', 'rxidx_self_bad', 'rxmiss', 'rxsyn', 'rxunreg', 'rxvalbad', 'self_bad', 'skipbad', 'stbad', 'undef', 'winbad', 'zero')
 
 
 def _is_fails_append(node):
@@ -3470,21 +3628,50 @@ def parse_forbid_gate_items():
         if not any(_fr.match(ln) for _fr in FORBID_FAMILY.values()):
             continue
         idxs = rx_arg_indices(kind)
-        if idxs is None:
-            continue                      # 漏登记 ⇒ `check_rx_registry` 负责报
+        # ⚠⚠⚨ 批 EJ-38 · **不许静默跳过**未登记门型
+        #   ⇒ ⇒ 以前是 `continue` ⇒ ⇒ 解析出的条数 ≠ 独立计数的条数
+        #   ⇒ ⇒ 「forbid 门项只解析出 N 条，而文件里实际有 M 条 ⇒ ⇒ 有 M-N 条
+        #   ⇒ ⇒ 门项**根本没被审** ⇒ ⇒ 静默失效」⇒ ⇒ **诊断指错方向**
+        #   ⇒ ⇒ （真因是「登记册漏登记」，不是「解析器被掏空」）
+        #   ⇒ ⇒ 实测坐实：登记后那条红消失 ⇒ ⇒ 差别就在「跳过」。
+        #   ⇒ ⇒ 现在：**照样产出条目**（RX 未知 ⇒ None）⇒ ⇒ 两个口径一致
+        #   ⇒ ⇒ ⇒ 「漏登记」由 `check_rx_registry` 那条**指名道姓**去报。
         args = split_args(rest)
         if not args:
             continue
+        # ⚠⚠⚨ 批 EJ-38 · 目标文件**从门型定义推导**（不再手写门型名元组）
+        #   ⇒ ⇒ 以前是 `('arch_forbid', 'arch_forbid_ml', 'arch_forbid_raw')`
+        #   ⇒ ⇒ 新增 forbid 门型不在里面 ⇒ ⇒ `target = None`
+        #   ⇒ ⇒ 「被查文件不存在 ⇒ **无法判定**」⇒ ⇒ 那条门项**永远判不了**
+        #   ⇒ ⇒ **静默漏检**（实测坐实）。
+        #   ⇒ ⇒ 现在：门型的 `local` 行**第一个**绑定变量是 `f` / `srcf`
+        #   ⇒ ⇒ ⇒ 是**文件**（`re` ⇒ 是正则 ⇒ tree 族没有单一目标文件）。
         target = None
-        if kind in ('arch_forbid', 'arch_forbid_ml', 'arch_forbid_raw'):
-            target = resolve(args[0]) if args else None
+        _sem = derive_gate_semantics().get(kind)
+        if _sem is not None and _sem[0] and args:
+            target = resolve(args[0])
         rx = None
         if idxs:
             if len(args) <= idxs[0]:
                 continue
             rx = args[idxs[0]]
-        allow = args[2:] if kind == 'arch_forbid_tree' else []
-        label = args[1] if kind == 'arch_forbid_tree' and len(args) > 1 else ''
+        # ⚠⚠⚨ 批 EJ-38 · 「允许存在的文件」列表的位置**从门型定义推导**
+        #   ⇒ ⇒ 以前是 `args[2:] if kind == 'arch_forbid_tree' else []`
+        #   ⇒ ⇒ 新增树型门型不在里面 ⇒ ⇒ allow 算错 ⇒ ⇒ 那一族的「豁免文件」
+        #   ⇒ ⇒ **静默失准**。
+        #   ⇒ ⇒ 现在：门型签名里**第二个**参数是 `label` ⇒ ⇒ allow 从**第三个**起
+        #   ⇒ ⇒ ⇒ （`arch_forbid_tree` 的签名 = `<正则> <说明> <允许…>`）
+        allow = []
+        _lb = _gate_label_pos(kind)
+        if _lb is not None and len(args) > _lb + 1:
+            allow = args[_lb + 1:]
+        # ⚠⚠⚨ 批 EJ-38 · 说明文字的位置**从门型定义推导**（不再手写门型名）
+        #   ⇒ ⇒ 以前是 `args[1] if kind == 'arch_forbid_tree' else ''`
+        #   ⇒ ⇒ 只有 tree 族取得到说明文字 ⇒ ⇒ 其它门型的 label **恒为空**
+        #   ⇒ ⇒ ⇒ 诊断里那一族永远显示不出说明文字 ⇒ ⇒ **诊断失真**。
+        label = ''
+        if _lb is not None and len(args) > _lb:
+            label = args[_lb]
         items.append((i, kind, target, rx, label, allow))
     return items
 
@@ -3617,7 +3804,15 @@ def check_forbid_teeth(forbid_items, expect_total):
                         '任何东西** ⇒ 恒绿 = 没牙' % (cands,)))
             continue
         # ⚠⚠⚨ **第 ② 腿**：把样本注入被查文件的副本 ⇒ ⇒ 门必须真的能红
-        if kind == 'arch_forbid_tree':
+        # ⚠⚠⚨ 批 EJ-38 · 「树型」判定**从门型定义推导**（不再手写门型名）
+        #   ⇒ ⇒ 以前是 `kind == 'arch_forbid_tree'` ⇒ ⇒ 新增树型门型不在里面
+        #   ⇒ ⇒ ⇒ 会走「单一目标文件」那一支 ⇒ ⇒ `target` 是 None ⇒ ⇒
+        #   ⇒ ⇒ 「被查文件不存在 ⇒ 无法判定」⇒ ⇒ 那条门项**永远判不了**。
+        #   ⇒ ⇒ 现在：**没有单一目标文件**（推导出的 target_is_file 为假）
+        #   ⇒ ⇒ ⇒ 就是树型 ⇒ ⇒ 逐个挑文件。
+        _sem3 = derive_gate_semantics().get(kind)
+        _is_tree = not (_sem3 is not None and _sem3[0])
+        if _is_tree:
             path, why = _forbid_tree_pick_file(allow)
             if path is None:
                 undet.append((lineno, kind, why))
@@ -3628,8 +3823,18 @@ def check_forbid_teeth(forbid_items, expect_total):
             if path is None or not os.path.isfile(path):
                 undet.append((lineno, kind, '被查文件不存在 ⇒ 无法判定'))
                 continue
-        ml = 1 if kind == 'arch_forbid_ml' else 0
-        raw = 1 if kind == 'arch_forbid_raw' else 0
+        # ⚠⚠⚨ 批 EJ-38 · ml / raw **从门型定义推导**（语义真源头）
+        #   ⇒ ⇒ 以前是手写门型名（`kind == 'arch_forbid_ml'`）⇒ ⇒
+        #   ⇒ 新增一个 ml 语义的 forbid 门型 ⇒ ⇒ 审计器按 raw 口径算
+        #   ⇒ ⇒ 「有牙自检」结论**失真**。
+        #   ⇒ ⇒ 现在：门型函数体里 `probe_scan_find "$f" "$re" <ml> <raw>`
+        #   ⇒ ⇒ ⇒ **门型自己怎么调的就是什么语义** ⇒ ⇒ 不会漂。
+        _sem2 = derive_gate_semantics().get(kind)
+        if _sem2 is None:
+            undet.append((lineno, kind, '这一族的 ml/raw 语义**推导不出来**'
+                          ' ⇒ 无法判定'))
+            continue
+        ml, raw = _sem2[1], _sem2[2]
         try:
             orig_text = read_source(path)
         except UnreadableSource as e:
@@ -3766,6 +3971,15 @@ def main_body():
         print('「正则参数下标自动推导」的**自检**不过（%d 条）⇒ ⇒ 推导可能已被掏空'
               ' ⇒ ⇒ 判红' % len(rxidx_self_bad), file=sys.stderr)
         for sp in rxidx_self_bad:
+            print('  · %s' % sp, file=sys.stderr)
+        FAILS.append(9)
+    # ⚠⚠⚨ 批 EJ-38 · forbid 家族成员与语义的**自检**必须**最先**跑
+    #   （批 BI 纪律：前面的检查一红就 exit ⇒ ⇒ 自检永远没机会跑 ⇒ ⇒ 形同虚设）
+    famsem_self_bad = check_gate_semantics_selftest()
+    if famsem_self_bad:
+        print('forbid 家族成员与语义的**自检**不过（%d 条）⇒ ⇒ 推导可能已被掏空'
+              ' ⇒ ⇒ 判红' % len(famsem_self_bad), file=sys.stderr)
+        for sp in famsem_self_bad:
             print('  · %s' % sp, file=sys.stderr)
         FAILS.append(9)
     args = sys.argv[1:]
@@ -4135,6 +4349,17 @@ def main_body():
         for _ul, _uk, _uwhy in forbid_teeth_undet:
             print('  · %s:%d  [%s] ⇒ %s'
                   % (os.path.basename(WIRING), _ul, _uk, _uwhy))
+        # ⚠⚠⚨ 批 EJ-38 · forbid 家族必须**覆盖全部** `arch_forbid*` 物理门型
+        #   ⇒ ⇒ 推导器坏了（或被掏空）⇒ ⇒ 家族缩小 ⇒ ⇒ 覆盖面静默缩小
+        #   ⇒ ⇒ ⇒ 这道对账是「零名单维护」的**兜底** ⇒ ⇒ 必须报出来
+        famsem_cov_bad = check_forbid_family_coverage()
+        if famsem_cov_bad:
+            print('forbid 家族**没覆盖全部**物理门型（%d 种）⇒ ⇒ 那一族的 forbid '
+                  '专项体检**全不做** ⇒ ⇒ 覆盖面**静默缩小**'
+                  % len(famsem_cov_bad), file=sys.stderr)
+            for _fk, _fwhy in famsem_cov_bad:
+                print('  · %s ⇒ %s' % (_fk, _fwhy), file=sys.stderr)
+            FAILS.append(9)
         # ⚠⚠ **「命中 0 次」也是红**（批 AX 补的第二个盲区）：
         #   `arch_need` / `arch_need_ml` 的语义是「**必须存在**这个串」
         #   ⇒ 命中 0 次 = 门永远匹配不到 = 门是空的。
@@ -4692,6 +4917,113 @@ def check_rx_index_selftest():
     # ⚠ 还原后必须**真的还原了**（否则自检自己污染了全局状态）
     if RX_ARG_IDX[probe_kind] != old_val:
         problems.append('自检的探针**没还原**登记册的值 ⇒ 自检污染了全局状态')
+    return problems
+
+
+# ── 批 EJ-38 · forbid 家族成员与语义**自动推导** ──
+#
+#   ⇒ 起因（**实测坐实**，不是推演）：判据层里凡**按门型名字枚举**的地方
+#     都是手写名单 ⇒ ⇒ 新增门型 ⇒ ⇒ 忘了登记 ⇒ ⇒ **静默漏**。
+#     本批实测坐实三处：
+#     ① `FORBID_FAMILY`（手写 6 条正则）⇒ ⇒ 漏登记 ⇒ ⇒ 那一族的 forbid
+#        专项体检（RX 有效性有牙自检 / 转义体检 / 解析覆盖率对账）**全不做**
+#        ⇒ ⇒ 实测：登记前该门项**不在**体检清单里，登记后**在**。
+#     ② `('arch_forbid', 'arch_forbid_ml', 'arch_forbid_raw')`（手写元组）
+#        决定「第一个实参是不是目标文件」⇒ ⇒ 新增 forbid 门型不在里面
+#        ⇒ ⇒ `target = None` ⇒ ⇒ 「被查文件不存在 ⇒ **无法判定**」
+#        ⇒ ⇒ 那条门项**永远判不了** ⇒ ⇒ **静默漏检**（实测坐实）。
+#     ③ `ml = 1 if kind == 'arch_forbid_ml' else 0` /
+#        `raw = 1 if kind == 'arch_forbid_raw' else 0` ⇒ ⇒ **手写门型名**
+#        ⇒ ⇒ 新增一个 ml 语义的 forbid 门型 ⇒ ⇒ 审计器按 raw 口径算
+#        ⇒ ⇒ 「有牙自检」结论**失真**。
+#   ⇒ 修法：**全部从门型定义推导** ⇒ ⇒ ⇒ ⇒ **零名单维护**
+#     ⇒ ⇒ ⇒ ⇒ 新增门型**自动**纳入 ⇒ ⇒ ⇒ ⇒ ⇒ ⇒ ⇒ ⇒ **自动漏**被堵死。
+#
+#   ⚠ **语义真源头**：门型函数体里 `probe_scan_find "$f" "$re" <ml> <raw>`
+#     的调用 ⇒ ⇒ 门型自己怎么调的就是什么语义 ⇒ ⇒ 不必在审计器里
+#     再抄一份 ⇒ ⇒ 抄的那份（手写门型名）永远会漂。
+#   ⚠ **目标文件**：门型的 `local` 行**第一个**绑定变量 ⇒ ⇒ `f` / `srcf`
+#     ⇒ 是**文件**；`re` ⇒ 是**正则**（tree 族没有单一目标文件）。
+#   ⚠ **家族成员**：门型名以 `arch_forbid` 开头 ⇒ ⇒ 属于 forbid 家族。
+
+
+def check_forbid_family_coverage(family=None):
+    """forbid 家族必须**覆盖全部** `arch_forbid*` 物理门型 ⇒ 列出漏的。
+
+    ⚠⚠⚨ 批 EJ-38 · 这道对账是「手写名单」的**兜底** ⇒ ⇒ 推导器坏了
+      （或被掏空）⇒ ⇒ 家族缩小 ⇒ ⇒ 覆盖面静默缩小 ⇒ ⇒ 这里必须报出来。
+    ⇒ 返回 [(门型名, 说明)]；空列表 = 通过。
+    ⚠ `family` 可传 ⇒ ⇒ **自检**用它证明「这道对账**有牙**」
+      （传一个故意缺一个门型的表 ⇒ ⇒ 必须报出来 ⇒ ⇒ 否则这张对账纸是摆设）。
+    """
+    physical = []
+    for m in re.finditer(r'^(arch_[a-z_]+)\(\)\s*\{', read_source(WIRING), re.M):
+        name = m.group(1)
+        if name.startswith(FORBID_FAMILY_PREFIX):
+            physical.append(name)
+    have = set(FORBID_FAMILY.keys()) if family is None else set(family.keys())
+    bad = []
+    for name in sorted(physical):
+        if name[len('arch_'):] not in have:
+            bad.append((name, '物理门型存在但**不在** forbid 家族里'
+                        ' ⇒ ⇒ 那一族的 forbid 专项体检**全不做**'
+                        ' ⇒ ⇒ 覆盖面**静默缩小**'))
+    return bad
+
+
+def check_gate_semantics_selftest():
+    """⚠⚠⚨ 批 EJ-38 · **自检必须证明自己有牙**（批 DF 纪律）。
+
+    ⇒ ① 家族推导**不空**：必须推出门型 ⇒ ⇒ 推导坏了 ⇒ 立刻被抓
+    ⇒ ② 家族推导必须**覆盖全部** `arch_forbid*` 物理门型 ⇒ ⇒ 漏一个立刻被抓
+    ⇒ ③ 语义推导**有牙**：拿**真实的** forbid 门型验 ⇒ `arch_forbid_ml`
+      必须推出 ml=1、`arch_forbid_raw` 必须推出 raw=1、`arch_forbid_tree`
+      必须推出「没有单一目标文件」⇒ ⇒ 语义推导错了立刻被抓
+    """
+    problems = []
+    fam = derive_forbid_family()
+    if not fam:
+        problems.append('推导出来的 forbid 家族是空的 ⇒ 推导坏了')
+    physical = [m.group(1) for m in
+                re.finditer(r'^(arch_[a-z_]+)\(\)\s*\{', read_source(WIRING), re.M)
+                if m.group(1).startswith(FORBID_FAMILY_PREFIX)]
+    # ⚠ `FORBID_FAMILY` 的键是**短名**（与 `GATE_TYPES` 一致）⇒ ⇒ 比对时
+    #   也要用短名 ⇒ ⇒ 否则「键形态不一致」会被误报成「漏登记」。
+    missing = sorted(set(physical) - set('arch_' + k for k in fam.keys()))
+    if missing:
+        problems.append('forbid 家族漏了物理门型: %s ⇒ ⇒ 推导坏了'
+                        % ', '.join(missing))
+    sem = derive_gate_semantics()
+    if not sem:
+        problems.append('推导出来的门型语义映射是空的 ⇒ 推导坏了')
+    # ③ 真实门型的语义必须对
+    expect = {
+        'arch_forbid': (True, 0, 0),
+        'arch_forbid_ml': (True, 1, 0),
+        'arch_forbid_raw': (True, 0, 1),
+        'arch_forbid_tree': (False, 0, 0),
+    }
+    for kind, want in sorted(expect.items()):
+        got = sem.get(kind)
+        if got != want:
+            problems.append('门型 %s 的语义推导出 %r，期望 %r ⇒ ⇒ 推导错了'
+                            % (kind, got, want))
+    # ④ 没有正则参数的门型必须推出 None
+    for kind in ('arch_forbid_han', 'arch_forbid_text_dup'):
+        if sem.get(kind) is not None:
+            problems.append('门型 %s 没有正则参数，却推导出 %r ⇒ ⇒ 推导错了'
+                            % (kind, sem.get(kind)))
+    # ⑤ ⚠⚠⚨ 家族覆盖对账**必须有牙**：传一个**故意缺一个**门型的家族表
+    #   ⇒ ⇒ 对账**必须报出来** ⇒ ⇒ 否则这道对账是摆设（被掏空也没人知道）
+    #   ⚠⚠⚨ **踩过的坑**：只验「推导结果对不对」⇒ ⇒ 对账函数被掏空
+    #   （`return []`）⇒ ⇒ 推导仍对 ⇒ ⇒ 自检**照样绿**⇒ ⇒ 兜底形同虚设。
+    if fam:
+        _broken = dict(fam)
+        _k = sorted(_broken.keys())[0]
+        del _broken[_k]
+        if not check_forbid_family_coverage(_broken):
+            problems.append('家族覆盖对账传进一个**故意缺门型**的家族表，'
+                            '却**没报出来** ⇒ ⇒ 对账没牙 ⇒ ⇒ 兜底形同虚设')
     return problems
 
 
