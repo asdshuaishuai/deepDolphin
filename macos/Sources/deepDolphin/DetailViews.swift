@@ -10,6 +10,13 @@ struct ProjectDetailView: View {
     /// 提交弹窗（选文件提交，用户定稿：页头「提交」是唯一入口）。
     /// `item` 挂载：project 本身就是要提交的仓库，不需要独立的 Bool。
     @State private var commitSheetProject: ProjectStatus?
+    /// 图谱产物存在性（用户定稿 2026-10-28：产物已在 → 显示「打开」；
+    /// 未生成 → 先显示「生成」，生成完成替换为打开按钮）。
+    /// nil = 探测中（按钮先按打开形态渲染但禁用，探测是毫秒级只读）。
+    @State private var graphArtifact: Bool?
+    @State private var archArtifact: Bool?
+    @State private var generatingGraph = false
+    @State private var generatingArch = false
 
     private var project: ProjectStatus? {
         model.projectDetails[projectName] ?? model.projects.first { $0.name == projectName }
@@ -40,6 +47,9 @@ struct ProjectDetailView: View {
         .task {
             await model.loadProject(projectName)
             await model.loadDocs(projectName)
+            // 产物探测（毫秒级只读，引擎 render check 不做自愈）
+            graphArtifact = await GraphArtifact.exists(projectName, kind: "index")
+            archArtifact = await GraphArtifact.exists(projectName, kind: "arch")
         }
     }
 
@@ -163,8 +173,10 @@ struct ProjectDetailView: View {
             Button {
                 commitSheetProject = p
             } label: {
-                Label(L10n.t("gitop.commit"), systemImage: "square.and.pencil")
+                // 同排六个操作统一图标 + tooltip（Label 文字会被挤成省略号）
+                Image(systemName: "square.and.pencil")
             }
+            .buttonStyle(.borderless)
             .disabled(model.busyProject == p.name || model.busyAll || !p.isGit)
             .help(L10n.t("gitop.commitSheet.title"))
             .accessibilityLabel(A11y.label(L10n.t("gitop.commit")))
@@ -180,13 +192,19 @@ struct ProjectDetailView: View {
         }
     }
 
+    /// 图标 + tooltip 形态：页头一行要放下六个 git 操作，Label 的文字
+    /// 会被挤成「图标 …」（半截省略号比纯图标更难猜）。文字进 help
+    /// 与 a11y——悬停看得见，读屏听得见，排列不再截断。
     private func gitOpButton(_ p: ProjectStatus, _ label: String, _ icon: String, _ op: String) -> some View {
         Button {
             Task { await model.gitOp(p, op: op) }
         } label: {
-            Label(label, systemImage: icon)
+            Image(systemName: icon)
         }
+        .buttonStyle(.borderless)
         .disabled(model.busyProject == p.name || model.busyAll)
+        .help(label)
+        .accessibilityLabel(A11y.label(label))
     }
 
     // MARK: 头部
@@ -209,30 +227,77 @@ struct ProjectDetailView: View {
                         ProgressView().controlSize(.small)
                     }
                     // 图谱触发入口（用户定稿：两图只能从具体仓库的面板触发，
-                    // 打开即锁该仓库——项目群侧栏没有这两个入口。
-                    // 2026-10-27：独立窗口直接最大化显示，不局限在主面板内）
-                    Button {
-                        GraphWindows.open(kind: "graph", projectName: projectName,
-                                          title: "\(L10n.t("nav.graph")) · \(projectName)") {
-                            CodeGraphPage(projectName: projectName)
+                    // 打开即锁该仓库——项目群侧栏没有这两个入口；
+                    // 2026-10-27 独立窗口直接最大化显示；2026-10-28 先探测产物：
+                    // 已生成 → 打开；未生成 → 生成，完成后替换为打开）
+                    if graphArtifact == false {
+                        Button {
+                            generatingGraph = true
+                            Task {
+                                let r = await GraphArtifact.generateGraph(projectName)
+                                generatingGraph = false
+                                graphArtifact = r.ok
+                                if !r.ok { model.lastError = r.receipt }
+                            }
+                        } label: {
+                            if generatingGraph {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label(L10n.t("graph.generate"), systemImage: "wand.and.stars")
+                            }
                         }
-                    } label: {
-                        Label(L10n.t("nav.graph"), systemImage: "point.3.filled.connected.trianglepath.dotted")
-                    }
-                    .buttonStyle(.borderless)
-                    .help(L10n.t("nav.graph"))
-                    .accessibilityLabel(A11y.label(L10n.t("nav.graph")))
-                    Button {
-                        GraphWindows.open(kind: "arch", projectName: projectName,
-                                          title: "\(L10n.t("nav.arch")) · \(projectName)") {
-                            ArchPage(projectName: projectName)
+                        .buttonStyle(.borderless)
+                        .disabled(generatingGraph)
+                        .help(L10n.t("graph.generate.help"))
+                        .accessibilityLabel(A11y.label(L10n.t("graph.generate")))
+                    } else {
+                        Button {
+                            GraphWindows.open(kind: "graph", projectName: projectName,
+                                              title: "\(L10n.t("nav.graph")) · \(projectName)") {
+                                CodeGraphPage(projectName: projectName)
+                            }
+                        } label: {
+                            Label(L10n.t("nav.graph"), systemImage: "point.3.filled.connected.trianglepath.dotted")
                         }
-                    } label: {
-                        Label(L10n.t("nav.arch"), systemImage: "diagram.projective")
+                        .buttonStyle(.borderless)
+                        .disabled(graphArtifact == nil)   // 探测中先禁用（毫秒级）
+                        .help(L10n.t("nav.graph"))
+                        .accessibilityLabel(A11y.label(L10n.t("nav.graph")))
                     }
-                    .buttonStyle(.borderless)
-                    .help(L10n.t("nav.arch"))
-                    .accessibilityLabel(A11y.label(L10n.t("nav.arch")))
+                    if archArtifact == false {
+                        Button {
+                            generatingArch = true
+                            Task {
+                                let r = await GraphArtifact.generateArch(projectName)
+                                generatingArch = false
+                                archArtifact = r.ok
+                                if !r.ok { model.lastError = r.receipt }
+                            }
+                        } label: {
+                            if generatingArch {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label(L10n.t("arch.generate.short"), systemImage: "wand.and.stars")
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(generatingArch)
+                        .help(L10n.t("arch.generate"))
+                        .accessibilityLabel(A11y.label(L10n.t("arch.generate")))
+                    } else {
+                        Button {
+                            GraphWindows.open(kind: "arch", projectName: projectName,
+                                              title: "\(L10n.t("nav.arch")) · \(projectName)") {
+                                ArchPage(projectName: projectName)
+                            }
+                        } label: {
+                            Label(L10n.t("nav.arch"), systemImage: "diagram.projective")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(archArtifact == nil)
+                        .help(L10n.t("nav.arch"))
+                        .accessibilityLabel(A11y.label(L10n.t("nav.arch")))
+                    }
                 }
                 Text(p.headline)
                     .foregroundStyle(.secondary)
@@ -255,7 +320,10 @@ struct ProjectDetailView: View {
                 // 而界面上除了那句笼统的 headline，没有任何地方提「2 处」。
                 // 引擎算了、模型收了、界面不说 ⇒ 等于没算。
                 if let notes = p.overall?.displayNotes, !notes.isEmpty {
-                    ForEach(notes, id: \.self) { n in
+                    // 引擎的 notes 会把 warnings 原样复读一遍（narrative 把
+                    // warnings 收进 notes）——同一句话同屏两行，一遍橙一遍灰。
+                    // 警示已经画过就不重复：notes 只补 warnings 没说的。
+                    ForEach(notes.filter { !p.warnings.contains($0) }, id: \.self) { n in
                         Label(n, systemImage: "info.circle")
                             .font(.caption)
                             .foregroundStyle(DSColor.textSecondary)
@@ -387,9 +455,13 @@ struct ProjectDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Text(L10n.t("detail.branches.currentDefault", p.currentBranch.isEmpty ? "—" : p.currentBranch, p.defaultBranch.isEmpty ? "—" : p.defaultBranch))
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+            // 分支名两个都空（典型：非 git 项目）时整行不画——
+            // 「当前 — · 默认 —」是空壳文案，读者会以为哪里出了错。
+            if !p.currentBranch.isEmpty || !p.defaultBranch.isEmpty {
+                Text(L10n.t("detail.branches.currentDefault", p.currentBranch.isEmpty ? "—" : p.currentBranch, p.defaultBranch.isEmpty ? "—" : p.defaultBranch))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
         }
     }
 

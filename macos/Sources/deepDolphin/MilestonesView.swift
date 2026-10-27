@@ -155,6 +155,10 @@ struct MilestonesView: View {
                 } label: {
                     Label(L10n.t("ms.new"), systemImage: "plus")
                 }
+                // 工具栏窄时 Label 文字会被压成裸「+」（同页筛选条的教训），
+                // 图标形态必须有 tooltip 与读屏名兜底
+                .help(L10n.t("ms.new"))
+                .accessibilityLabel(A11y.label(L10n.t("ms.new")))
             }
         }
         .sheet(isPresented: $showAddSheet) {

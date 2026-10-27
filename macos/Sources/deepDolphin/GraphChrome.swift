@@ -164,3 +164,62 @@ struct GraphLoadingHint: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
+
+// MARK: - 图谱产物（探测/生成的唯一构造点）
+
+@MainActor
+enum GraphArtifact {
+    /// 产物是否已生成。引擎 `render check` **只探测不自愈**（自愈可能触发
+    /// 整库重建，分钟级——「看一眼按钮该亮哪个」付不起这个代价）。
+    /// 探测失败（旧引擎没有这个子命令 / 进程错误）按「未生成」处理：
+    /// 按钮退到生成形态，点生成走 render 照样能打开，不会把路堵死。
+    static func exists(_ project: String, kind: String) async -> Bool {
+        guard let data = try? await EngineCLI.shared.runData(
+            ["render", "check", kind, project, "--json"], timeout: 60),
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return false
+        }
+        return (obj["exists"] as? Bool) ?? false
+    }
+
+    /// 生成架构图：arch gen（写 arch.json，探针对账）+ render arch（落交互 HTML）。
+    /// 返回 (成功?, 引擎回执末行)。
+    @discardableResult
+    static func generateArch(_ project: String) async -> (ok: Bool, receipt: String?) {
+        do {
+            let r = try await EngineCLI.shared.runData(["arch", "gen", project], timeout: 600)
+            let line = lastLine(String(data: r, encoding: .utf8) ?? "")
+            let out = try await EngineCLI.shared.runData(["render", "arch", project], timeout: 600)
+            return (true, lastLine(String(data: out, encoding: .utf8) ?? "") ?? line)
+        } catch {
+            return (false, EngineError.userMessage(for: error))
+        }
+    }
+
+    /// 生成代码图谱：index gen（建库）+ confidence gen（置信度）+ render index。
+    /// 置信度一步失败不拦渲染（引擎对缺席置信度恒发「无置信度数据」图例）。
+    @discardableResult
+    static func generateGraph(_ project: String) async -> (ok: Bool, receipt: String?) {
+        do {
+            let a = try await EngineCLI.shared.runData(["index", "gen", project], timeout: 600)
+            let lineA = lastLine(String(data: a, encoding: .utf8) ?? "")
+            var line = lineA
+            if let b = try? await EngineCLI.shared.runData(["confidence", "gen", project], timeout: 600) {
+                line = lastLine(String(data: b, encoding: .utf8) ?? "") ?? lineA
+            }
+            let out = try await EngineCLI.shared.runData(
+                ["render", "index", project, "--confidence"], timeout: 600)
+            return (true, lastLine(String(data: out, encoding: .utf8) ?? "") ?? line)
+        } catch {
+            return (false, EngineError.userMessage(for: error))
+        }
+    }
+
+    private static func lastLine(_ text: String) -> String? {
+        for line in text.split(separator: "\n").reversed() {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if !t.isEmpty { return t }
+        }
+        return nil
+    }
+}
