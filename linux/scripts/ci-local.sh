@@ -138,10 +138,15 @@ cd "$HERE"
 # 任何混入 3.4.x 的目录被找到（3.4 要 glibc 2.43，本机 2.38）。
 export LD_LIBRARY_PATH="$SDL3DIR:$SDL_USER/ex32/usr/lib/x86_64-linux-gnu:$SDL_USER/ex/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 say "cjpm test …"
-if ! cjpm test 2>&1 | tee /tmp/dd-cjtest.log; then
+# ⚠⚠⚨ **批 EJ-34**：临时路径**必须进程唯一**（带 PID）⇒ ⇒ 全局固定路径 ⇒ ⇒
+#   并发跑本脚本 ⇒ ⇒ 后写的**覆盖**先写的 ⇒ ⇒ 而下面**读回自己的日志**
+#   ⇒ ⇒ 结论可能**读成对方的** ⇒ ⇒ ⇒ **假红/假绿** ⇒ ⇒ 路径**一律**带 PID。
+CJTEST_LOG="/tmp/dd-cjtest.$$.log"
+if ! cjpm test 2>&1 | tee "$CJTEST_LOG"; then
     die "cjpm test 失败（详见上方输出）"
 fi
-CLEAN_LOG="$(sed -e $'s/\x1b\\[[0-9;?]*[A-Za-z]//g' /tmp/dd-cjtest.log)"
+CLEAN_LOG="$(sed -e $'s/\x1b\\[[0-9;?]*[A-Za-z]//g' "$CJTEST_LOG")"
+rm -f "$CJTEST_LOG"
 PASSED="$(printf '%s' "$CLEAN_LOG" | grep -E 'PASSED: *[0-9]+, *SKIPPED: *[0-9]+' | tail -1 | grep -oE 'PASSED: *[0-9]+' | grep -oE '[0-9]+' || echo 0)"
 SKIPPED="$(printf '%s' "$CLEAN_LOG" | grep -E 'PASSED: *[0-9]+, *SKIPPED: *[0-9]+' | tail -1 | grep -oE 'SKIPPED: *[0-9]+' | grep -oE '[0-9]+' || echo 0)"
 FAILED="$(printf '%s' "$CLEAN_LOG" | grep -E 'FAILED: *[0-9]+' | tail -1 | grep -oE '[0-9]+' || echo 1)"

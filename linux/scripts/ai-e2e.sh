@@ -48,12 +48,16 @@ fi
 PLAIN_PORT=18741
 AGENT_PORT=18742
 MULTI_PORT=18743
-PLAIN_LOG=/tmp/deepdolphin-mock-plain.log
-AGENT_LOG=/tmp/deepdolphin-mock-agent.log
-MULTI_LOG=/tmp/deepdolphin-mock-multi.log
-MULTI_ERR=/tmp/deepdolphin-mock-multi.err
-PLAIN_ERR=/tmp/deepdolphin-mock-plain.err
-AGENT_ERR=/tmp/deepdolphin-mock-agent.err
+# ⚠⚠⚨ **批 EJ-34**：临时路径**必须进程唯一**（带 PID）⇒ ⇒ 全局固定路径 ⇒ ⇒
+#   并发跑同一脚本 ⇒ ⇒ 后写的**覆盖**先写的 ⇒ ⇒ 而本脚本**读回自己的输出**
+#   ⇒ ⇒ 结论可能**读成对方的** ⇒ ⇒ ⇒ **假红/假绿** ⇒ ⇒ 路径**一律**带 PID。
+MOCK_TMP="/tmp/deepdolphin-mock.$$"
+PLAIN_LOG="$MOCK_TMP-plain.log"
+AGENT_LOG="$MOCK_TMP-agent.log"
+MULTI_LOG="$MOCK_TMP-multi.log"
+MULTI_ERR="$MOCK_TMP-multi.err"
+PLAIN_ERR="$MOCK_TMP-plain.err"
+AGENT_ERR="$MOCK_TMP-agent.err"
 
 cleanup() {
   # wait 一下再返回：不等的话 shell 会在脚本退出时打印

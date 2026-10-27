@@ -53,7 +53,10 @@ fi
 echo "› 引擎：$BIN"
 "$BIN" version >/dev/null || { echo "✗ 引擎探活失败"; exit 1; }
 
-SANDBOX="$(mktemp -d /tmp/dd-contract.XXXXXX)"
+# ⚠⚠⚨ **批 EJ-34**：临时路径**不许硬编码固定前缀** ⇒ ⇒ `mktemp` 本来就用
+#   `TMPDIR` ⇒ ⇒ 模板**多余** ⇒ ⇒ 去掉即可（固定前缀 ⇒ ⇒ 并发跑会撞同一个目录
+#   ⇒ ⇒ ⇒ 结论可能读成对方的 ⇒ ⇒ ⇒ **假红/假绿**）。
+SANDBOX="$(mktemp -d)"
 export DEEPGIT_HOME="$SANDBOX/home"
 FIX="$SANDBOX/fixture/atlas"
 mkdir -p "$FIX/src"

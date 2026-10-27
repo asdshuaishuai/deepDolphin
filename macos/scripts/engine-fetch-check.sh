@@ -69,9 +69,14 @@ done
 if [ "$FULL" -eq 1 ]; then
     SUFFIX="$(case "$(uname -s)" in Darwin) echo darwin-arm64 ;; *) echo linux-x64 ;; esac)"
     DEST="$(mktemp -d)/engine"
-    BIN="$(bash "$FETCH" "$DEST" "$SUFFIX" 2>/tmp/engine-fetch-err.txt || true)"
+    # ⚠⚠⚨ **批 EJ-34**：临时路径**必须进程唯一**（带 PID）⇒ ⇒ 全局固定路径 ⇒ ⇒
+    #   并发跑本脚本 ⇒ ⇒ 后写的**覆盖**先写的 ⇒ ⇒ 而下面**读回自己的错误输出**
+    #   ⇒ ⇒ 报错可能**读成对方的** ⇒ ⇒ ⇒ **假红/假绿** ⇒ ⇒ 路径**一律**带 PID。
+    FETCH_ERR="/tmp/engine-fetch-err.$$.txt"
+    BIN="$(bash "$FETCH" "$DEST" "$SUFFIX" 2>"$FETCH_ERR" || true)"
     if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
-        bad "下载/解包失败：$(cat /tmp/engine-fetch-err.txt 2>/dev/null | tail -3)"
+        bad "下载/解包失败：$(cat "$FETCH_ERR" 2>/dev/null | tail -3)"
+        rm -f "$FETCH_ERR"
     else
         ok "下载并解包成功：$BIN"
         # ② 包根的启动器
