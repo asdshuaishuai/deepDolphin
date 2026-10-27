@@ -1,176 +1,12 @@
-// GraphScene.swift — moongit-graph-scene v1 的 Swift 侧模型 + 引擎图谱服务。
+// GraphScene.swift — 引擎图谱服务的 Swift 桥（数据面）。
 //
-// 契约：moonGit 仓库 docs/graph-scene-schema.md（两层）：
-//   ① 渲染契约 = 标准 Canvas2D 子集（本文件 + ArchCanvasView 用 SwiftUI
-//      Canvas/GraphicsContext 逐条对应：fillRect/strokeRect/arc/bezierCurveTo/
-//      setLineDash/shadow/globalAlpha/font/textAlign/linearGradient）；
-//   ② 数据契约 = 场景 JSON（本文件解析）。
-//
-// 【token 解析规则】颜色一律 token，四类形态：
-//   "text"/"muted"/…           → themes.<主题> 直取
-//   "cols.N" / "fills.N"       → themes.<主题>.cols/fills 数组下标
-//   "langs.<lang>"             → themes.<主题>.langs 字典
-//   "node:<id>"                → **二跳**：视图级 nodeTheme[<id>] 得到再一个
-//                                token，递归解析。二跳结果必然落在前三类。
-// 契约原文：引擎只发 token 表里存在的键；未知 token 视为引擎违约——
-// 这里按 muted 兜底并保留日志，不静默当黑。
+// ⚠️ 用户定稿 2026-10-27：架构图/代码图谱**不再原生绘制**——本文件原有的
+// moongit-graph-scene v1 场景模型（GraphTheme/GraphScene/GraphSceneViewData
+// + token 解析）随原生 Canvas 驱动一起删除，引擎侧 scene 出口同步移除；
+// 交付正身 = 引擎 render 的交互 HTML，客户端用 WKWebView 直接渲染。
+// 这里只保留仍然有消费方的 JSON 数据面（置信度体检页在用）。
 import Foundation
 import SwiftUI
-
-// MARK: - 主题
-
-struct GraphTheme {
-    let simple: [String: String]      // bg0/bg1/grid/text/muted/border/arrow/accent/panel
-    let cols: [String]
-    let fills: [String]
-    let langs: [String: String]
-
-    static func parse(_ dict: [String: Any]) -> GraphTheme {
-        var simple: [String: String] = [:]
-        for (k, v) in dict where k != "cols" && k != "fills" && k != "langs" {
-            if let s = v as? String { simple[k] = s }
-        }
-        return GraphTheme(
-            simple: simple,
-            cols: dict["cols"] as? [String] ?? [],
-            fills: dict["fills"] as? [String] ?? [],
-            langs: dict["langs"] as? [String: String] ?? [:]
-        )
-    }
-}
-
-// MARK: - 视图
-
-struct GraphSceneViewData {
-    let id: String
-    let label: String
-    let parent: String
-    let nodeTheme: [String: String]
-    let shapes: [[String: Any]]
-    let particles: [[String: Any]]
-    let hits: [[String: Any]]
-    let edgesDropped: Int
-    /// 内容包围盒（契约 bounds: x0/y0/x1/y1）。
-    let bx0: Double, by0: Double, bx1: Double, by1: Double
-
-    static func parse(id: String, _ dict: [String: Any]) -> GraphSceneViewData {
-        let b = dict["bounds"] as? [String: Any] ?? [:]
-        func num(_ k: String) -> Double { b[k] as? Double ?? (b[k] as? Int).map(Double.init) ?? 0 }
-        return GraphSceneViewData(
-            id: id,
-            label: dict["label"] as? String ?? id,
-            parent: dict["parent"] as? String ?? "",
-            nodeTheme: dict["nodeTheme"] as? [String: String] ?? [:],
-            shapes: dict["shapes"] as? [[String: Any]] ?? [],
-            particles: dict["particles"] as? [[String: Any]] ?? [],
-            hits: dict["hits"] as? [[String: Any]] ?? [],
-            edgesDropped: dict["edgesDropped"] as? Int ?? (dict["edgesDropped"] as? Int64).map(Int.init) ?? 0,
-            bx0: num("x0"), by0: num("y0"), bx1: num("x1"), by1: num("y1")
-        )
-    }
-}
-
-// MARK: - 场景文档
-
-struct GraphScene {
-    let meta: [String: Any]
-    let dark: GraphTheme
-    let light: GraphTheme
-    /// 保持引擎导出顺序（arch 在前，module:* 在后）。
-    let views: [GraphSceneViewData]
-    let panels: [String: [String: Any]]
-
-    func view(_ id: String) -> GraphSceneViewData? {
-        views.first { $0.id == id }
-    }
-
-    static func parse(_ data: Data) throws -> GraphScene {
-        let obj = try JSONSerialization.jsonObject(with: data)
-        guard let root = obj as? [String: Any] else {
-            throw GraphServiceError.badScene("root 不是对象")
-        }
-        guard root["v"] as? Int == 1 else {
-            // 契约版本不认识就明说，不做静默兼容
-            throw GraphServiceError.badScene("场景版本不是 v1")
-        }
-        let themes = root["themes"] as? [String: Any] ?? [:]
-        let viewsDict = root["views"] as? [String: Any] ?? [:]
-        let views = viewsDict
-            .compactMap { key, value -> GraphSceneViewData? in
-                guard let d = value as? [String: Any] else { return nil }
-                return GraphSceneViewData.parse(id: key, d)
-            }
-            .sorted { a, b in
-                // arch 恒排第一；其余按引擎导出顺序（字典序，module:xxx）
-                if a.id == "arch" { return true }
-                if b.id == "arch" { return false }
-                return a.id < b.id
-            }
-        return GraphScene(
-            meta: root["meta"] as? [String: Any] ?? [:],
-            dark: GraphTheme.parse(themes["dark"] as? [String: Any] ?? [:]),
-            light: GraphTheme.parse(themes["light"] as? [String: Any] ?? [:]),
-            views: views,
-            panels: root["panels"] as? [String: [String: Any]] ?? [:]
-        )
-    }
-
-    // MARK: token 解析
-
-    func color(for token: String, theme isDark: Bool, view: GraphSceneViewData?) -> Color {
-        let t = isDark ? dark : light
-        if token.hasPrefix("node:") {
-            // 二跳：node:<id> → 视图 nodeTheme[<id>] → 基础 token
-            let id = String(token.dropFirst("node:".count))
-            if let v = view, let next = v.nodeTheme[id] {
-                return color(for: next, theme: isDark, view: nil)
-            }
-            return color(for: "text", theme: isDark, view: nil)
-        }
-        if token.hasPrefix("langs.") {
-            let lang = String(token.dropFirst("langs.".count))
-            if let hex = t.langs[lang] { return SwiftColor(hexOrRgba: hex) }
-            return color(for: "text", theme: isDark, view: nil)
-        }
-        if token.hasPrefix("cols.") {
-            let i = Int(token.dropFirst("cols.".count)) ?? -1
-            if i >= 0 && i < t.cols.count { return SwiftColor(hexOrRgba: t.cols[i]) }
-        } else if token.hasPrefix("fills.") {
-            let i = Int(token.dropFirst("fills.".count)) ?? -1
-            if i >= 0 && i < t.fills.count { return SwiftColor(hexOrRgba: t.fills[i]) }
-        } else if let hex = t.simple[token] {
-            return SwiftColor(hexOrRgba: hex)
-        }
-        // 未知 token = 引擎违约（契约原话），显式洋红兜底而不是悄悄融进背景
-        return Color(red: 1.0, green: 0.0, blue: 0.8)
-    }
-}
-
-/// #RRGGBB / #RRGGBBAA / rgba(r,g,b,a) → Color。
-/// 引擎 themes 里两种形态都有（cols 是 #hex，fills 是 rgba()）。
-func SwiftColor(hexOrRgba s: String) -> Color {
-    let t = s.trimmingCharacters(in: .whitespaces)
-    if t.hasPrefix("rgba") {
-        let inner = t.dropFirst(4).trimmingCharacters(in: CharacterSet(charactersIn: "()"))
-        let parts = inner.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-        if parts.count >= 4 {
-            return Color(red: parts[0] / 255, green: parts[1] / 255, blue: parts[2] / 255, opacity: parts[3])
-        }
-    }
-    var hex = String(t.dropFirst(t.hasPrefix("#") ? 1 : 0))
-    if hex.count == 3 {
-        hex = String(hex.map { "\($0)\($0)" }.joined())
-    }
-    guard hex.count >= 6, let v = UInt64(hex.prefix(6), radix: 16) else { return .gray }
-    let r = Double((v >> 16) & 0xff) / 255
-    let g = Double((v >> 8) & 0xff) / 255
-    let b = Double(v & 0xff) / 255
-    var a = 1.0
-    if hex.count >= 8, let av = UInt64(hex.suffix(2), radix: 16) { a = Double(av) / 255 }
-    return Color(red: r, green: g, blue: b, opacity: a)
-}
-
-// MARK: - 服务
 
 enum GraphServiceError: LocalizedError {
     case badScene(String)
@@ -182,7 +18,7 @@ enum GraphServiceError: LocalizedError {
     }
 }
 
-/// 引擎图谱七件套的 Swift 桥。全部走 EngineCLI 子进程（与既有数据通道同一条）。
+/// 引擎图谱数据的 Swift 桥。全部走 EngineCLI 子进程（与既有数据通道同一条）。
 enum GraphService {
     static func runJSON(_ args: [String], timeout: TimeInterval = 180) async throws -> [String: Any] {
         let data = try await EngineCLI.shared.runData(args, timeout: timeout)
@@ -192,46 +28,6 @@ enum GraphService {
         }
         return dict
     }
-
-    static func loadScene(project: String) async throws -> GraphScene {
-        let data = try await EngineCLI.shared.runData(
-            ["graph", "arch", project, "--format", "scene"], timeout: 300)
-        return try GraphScene.parse(data)
-    }
-
-    static func loadOverview(project: String) async throws -> [String: Any] {
-        try await runJSON(["graph", "overview", project, "--json"])
-    }
-
-    static func loadSymbol(project: String, symbol: String) async throws -> [String: Any] {
-        try await runJSON(["graph", "symbol", project, symbol, "--json"])
-    }
-
-    static func loadImpact(project: String, symbol: String) async throws -> [String: Any] {
-        try await runJSON(["graph", "impact", project, symbol, "--json"])
-    }
-
-    /// 关系树（扁平契约）：files[{path,lang,lines,symbols[]}] + import/reference 边。
-    static func loadTree(project: String) async throws -> [String: Any] {
-        try await runJSON(["graph", "tree", project, "--depth", "8", "--json"], timeout: 300)
-    }
-
-    /// 函数级图谱（functionGraph）：functions[{id,file,name,kind,line,lang,findings,weight}]
-    /// + functionEdges[{from,to,w}] + codeSnippets{id:code}——图谱×置信度结合的数据源。
-    static func loadFunctionGraph(project: String) async throws -> [String: Any] {
-        let tree = try await loadTree(project: projectName(project))
-        return tree["functionGraph"] as? [String: Any] ?? [:]
-    }
-
-    /// `graph functions --json`：函数级图谱的专用 CLI 面（engine c7a2ddc）。
-    /// findings 带 kind/label/dim/evidence——树形代码图谱页的数据源。
-    /// ⚠️ 不能改回读 tree --json 的 functionGraph 键：那个契约里根本没有
-    /// 这个键（恒为空），旧页面因此从没渲染出函数级内容。
-    static func loadFunctions(project: String) async throws -> [String: Any] {
-        try await runJSON(["graph", "functions", project, "--json"], timeout: 300)
-    }
-
-    private static func projectName(_ name: String) -> String { name }
 
     static func loadConfidence(project: String) async throws -> [String: Any] {
         try await runJSON(["graph", "confidence", project, "--json"], timeout: 300)

@@ -109,20 +109,17 @@ Sources/deepDolphin/
   AgentView.swift               AI 助手：会话 UI + 工具调用循环（多轮上下文）
   AppSettingsView.swift         设置面板（通用/AI/自动化/关于四 Tab，关于页含四段固定文档）
   BarView.swift                 菜单栏弹窗 UI
-  ArchPage.swift                架构图页（scene 画布独立页：分层/依赖治理信号 + chips 图例）
+  ArchPage.swift                架构图页（WKWebView 渲染 render arch 交互 HTML + 生成/刷新/外部打开）
   BoardView.swift               看板页（按可执行性分列的原生分组列表）
   ChatMessage.swift             聊天消息模型（零依赖，供 agent-check 编译）
   ClientDecisions.swift         纯函数：刷新合并门闩等（撞上不丢弃，排队补跑）
-  CodeGraphPage.swift           代码图谱页（deepOrca 式三列符号关系 × 置信度徽标叠加）
-  CodeGraphHeatmap.swift        符号索引热力图（原生 Canvas treemap：面积 ∝ 行数，
-                                颜色 = 置信度指数；点文件下钻符号层，选中走右栏详情）
+  CodeGraphPage.swift           代码图谱页（WKWebView 渲染 render index 交互 HTML）
   CodeSnippet.swift             低置信度代码块组件（披露式行 + 源码/diff 片段提取）
   CommitCountScope.swift        纯函数：提交数分母口径
   CommitSheetView.swift         提交弹窗：git status 清单逐文件勾选 + --paths 部分提交
   CommitTypeComposition.swift   纯函数：提交类型构成 + 截断披露
   Components.swift              StatusDot / StatCard / SegmentedBar / Card 等基础件
   ContextEnvelope.swift         纯函数：agent 上下文包裁剪
-  ArchCanvasView.swift          moongit-graph-scene v1 的 SwiftUI 驱动（Canvas + 命中区下钻/选中 + 粒子流光）
   DashboardParts.swift          仪表盘四段式零件：筛选行 / KPI 宽卡 / 逐项目进度卡（设计稿布局）
   DashboardScope.swift          纯函数：时间窗 + 提交类型筛选、4 张 KPI 的归并口径
   DeepGitApp.swift              入口：Window 面板 + MenuBarExtra + Settings + 原生菜单（关于/帮助）+ 深链
@@ -134,7 +131,8 @@ Sources/deepDolphin/
   EngineCLI.swift               引擎发现 + 按需拉起 CLI 子进程 + ProcessRegistry（批量更新可真停）
   EngineFailure.swift           纯函数：引擎失败分类与文案
   GraphPages.swift              代码图谱页 / 置信度页 / 补丁体检页（三层置信度的人工裁决层）
-  GraphScene.swift              moongit-graph-scene v1 模型 + token 解析 + 引擎图谱七件套服务
+  GraphWebView.swift            图谱交付物容器（WKWebView 渲染引擎 render 产物，token 强制刷新）
+  GraphScene.swift              引擎图谱 JSON 服务桥（置信度体检页数据面；scene 场景模型已删）
   L10n.swift                    多语言系统（zh-CN/en/zh-TW/ja 四语言表 + t() + 固定文档入口）
   LanguageCoverage.swift        纯函数：语言分布占比
   LoadState.swift               纯函数：一个数据源的加载四态 → 该画加载/空/错误哪一种

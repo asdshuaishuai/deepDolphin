@@ -2501,7 +2501,7 @@ do {
         // 30/40 明显不是节奏值而是结构性留白（面板分隔、hero 区），
         // 记下来是为了将来有人收敛时知道它们存在，而不是漏了。
         let pending = [1, 2, 3, 5, 6, 7, 10, 11, 14, 18, 30, 40]
-        let baseline = 95   // 2026-10-13 +8：CodeGraphHeatmap Canvas 绘图坐标（理由见 README §spacing 基线）
+        let baseline = 95   // 2026-10-27 图谱原生绘制删除后待确认散值大幅回落；基线暂不动（只降不升）
         let SCALE_NAME: [Int: String] = [4: "xs", 8: "sm", 12: "md", 16: "lg", 20: "xl", 24: "xxl"]
         // ⚠️ **三种拼法都要查**，少查一种就等于给另一种开了后门。
         //   原版只查 `spacing: N`（Stack 的参数），而 `.padding(.edge, N)` 与
@@ -5586,9 +5586,20 @@ do {
             }
         }
     }
-    // ② 空态守卫在：未选定仓库时必须走引导空态，画布不渲染
-    guard cgraph.contains("vm.projectName.isEmpty") else {
+    // ② 空态守卫在：未选定仓库时必须走引导空态，不渲染。
+    //    （2026-10-27 WebView 化：原生 CodeGraphVM 已删，页面直用构造参数）
+    guard cgraph.contains("projectName.isEmpty") else {
         throw fail("CodeGraphPage 没有未选定仓库的空态守卫")
+    }
+    // ②' WebView 化契约：两页必须把引擎 render 产物装进 GraphWebView——
+    //    原生绘制已删，若有人改回手绘/改用其它视图，这里红。
+    for (name, text, needle) in [("CodeGraphPage.swift", cgraph, "GraphWebView(htmlPath:"), ("ArchPage.swift", arch, "GraphWebView(htmlPath:")] {
+        guard text.contains(needle) else {
+            throw fail("\(name) 不再通过 GraphWebView 渲染引擎 HTML 产物 ⇒ 原生绘制回潮（用户定稿 2026-10-27：客户端只渲染文件）")
+        }
+        guard text.contains("reloadToken") else {
+            throw fail("\(name) 缺 reloadToken ⇒ 重新渲染后 WebView 不刷新，用户看到旧图")
+        }
     }
     // 2026-10-13 入口移进仓库面板：项目名在 init 锁定（无选择器可切），
     // 空态守卫由「页面必须在仓库面板触发」这一入口约束替代——

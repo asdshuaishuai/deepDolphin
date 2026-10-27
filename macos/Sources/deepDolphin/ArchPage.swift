@@ -1,33 +1,33 @@
-// ArchPage.swift — 架构图页（独立于代码图谱）。
+// ArchPage.swift — 架构图页（单仓库锁定，仓库面板入口触发）。
 //
-// ⚠️ 渲染归属：本页**直接用客户端自己的 Canvas 实现**（ArchCanvasView 的
-// SwiftUI GraphicsContext = Swift 语言版的 Canvas2D 对应物）把 scene 契约
-// 画在应用内——不导出 HTML、不开浏览器。Web 驱动只是引擎多出口之一，
-// 客户端的正路永远是 scene 数据 + 本机 Canvas。
+// ⚠️ 用户定稿 2026-10-27：**不再原生绘制**。引擎 `render arch` 的交互 HTML
+// 产物（零依赖单文件，含关系连线/模块下钻/返回/搜索/明暗主题）就是正身，
+// 本页用 WKWebView 直接渲染该文件；原生 Canvas 版已删除——
+// 两份绘制实现必然漂移，且 HTML 的交互面客户端追不上。
 //
-// 分工：**架构图**回答「模块怎么分层、依赖是否违规」（scene 画布，引擎确定性
-// 布局与治理信号）；**代码图谱**（CodeGraphPage）回答「符号谁连着谁、哪里
-// 不能信」。两者数据源不同（scene JSON vs symbol/impact/confidence），页面
-// 也就必须分开——上一版揉在一页里，两个问题都答不清。
+// 页面职责收敛为三件事：
+//   ① 触发引擎生成（arch gen：写 arch.json，探针对账）
+//   ② 触发引擎渲染（render arch：复用或重绘交互 HTML，回执带版本）
+//   ③ 把产物装进 WebView（并在渲染后强制刷新）；外部打开只是入口便利
 import SwiftUI
 
 @MainActor
 final class ArchPageVM: ObservableObject {
     /// 单仓库限制：项目名在仓库面板的入口处锁定（页面内无切换选择器）
-    @Published var projectName: String
+    let projectName: String
     @Published var loading = false
     @Published var error: String?
-    @Published var overview: [String: Any] = [:]
-    let canvas = ArchCanvasVM()
+    /// WebView 正在展示的产物路径（nil = 还没有，显示引导空态）
+    @Published var htmlPath: String?
+    /// 重新渲染后路径不变也要刷新 WebView
+    @Published var reloadToken = 0
+    /// 引擎回执（末行）：版本/探针/违规数直接给用户看
+    @Published var genStatus: String?
+    @Published var generating = false
 
     init(projectName: String) {
         self.projectName = projectName
     }
-
-    @Published var generating = false
-    /// 引擎回执（末行）：版本/探针/违规数直接给用户看
-    @Published var genStatus: String?
-    @Published var exportedPath: String?
 
     private func receipt(_ text: String) -> String? {
         for line in text.split(separator: "\n").reversed() {
@@ -35,6 +35,41 @@ final class ArchPageVM: ObservableObject {
             if !t.isEmpty { return t }
         }
         return nil
+    }
+
+    /// render arch：复用判定在引擎侧（产物新鲜就只报 reused，代价小）。
+    /// 页面打开与「刷新」都走这里。
+    func render() async {
+        loading = true
+        error = nil
+        defer { loading = false }
+        do {
+            let out = try await EngineCLI.shared.runData(["render", "arch", projectName], timeout: 600)
+            let text = String(data: out, encoding: .utf8) ?? ""
+            genStatus = receipt(text)
+            if let p = extractHTMLPath(text) {
+                htmlPath = p
+                reloadToken += 1
+            } else {
+                error = text
+            }
+        } catch {
+            self.error = EngineError.userMessage(for: error)
+        }
+    }
+
+    /// arch gen：重建 arch.json（探针对账决定首版/版本号），完成后重渲染。
+    func generate() async {
+        generating = true
+        genStatus = nil
+        defer { generating = false }
+        do {
+            let r = try await EngineCLI.shared.runData(["arch", "gen", projectName], timeout: 600)
+            genStatus = receipt(String(data: r, encoding: .utf8) ?? "")
+            await render()
+        } catch {
+            genStatus = EngineError.userMessage(for: error)
+        }
     }
 
     private func extractHTMLPath(_ text: String) -> String? {
@@ -47,63 +82,16 @@ final class ArchPageVM: ObservableObject {
         return nil
     }
 
-    /// 生成架构（写 arch.json，探针对账决定首版/版本号），完成后重载画布。
-    func generate() async {
-        generating = true
-        genStatus = nil
-        defer { generating = false }
-        do {
-            let r = try await EngineCLI.shared.runData(
-                ["arch", "gen", projectName], timeout: 600)
-            genStatus = receipt(String(data: r, encoding: .utf8) ?? "")
-            await load()
-        } catch {
-            genStatus = EngineError.userMessage(for: error)
-        }
-    }
-
-    /// 导出架构交互 HTML（render arch；回执带路径与复用/新绘判定）
-    func exportHTML() async {
-        generating = true
-        genStatus = nil
-        defer { generating = false }
-        do {
-            let out = try await EngineCLI.shared.runData(
-                ["render", "arch", projectName], timeout: 600)
-            let text = String(data: out, encoding: .utf8) ?? ""
-            exportedPath = extractHTMLPath(text)
-            genStatus = receipt(text)
-        } catch {
-            genStatus = EngineError.userMessage(for: error)
-        }
-    }
-
-    func openExport() {
-        if let p = exportedPath {
+    func openExternal() {
+        if let p = htmlPath {
             NSWorkspace.shared.open(URL(fileURLWithPath: p))
         }
-    }
-
-    func load() async {
-        guard !projectName.isEmpty else { return }
-        loading = true
-        error = nil
-        do {
-            async let ov = GraphService.loadOverview(project: projectName)
-            async let sc: Void = canvas.load(project: projectName)
-            overview = try await ov
-            await sc
-        } catch {
-            self.error = EngineError.userMessage(for: error)
-        }
-        loading = false
     }
 }
 
 struct ArchPage: View {
     /// 单仓库限制：项目名在仓库面板的入口处锁定（页面内无切换选择器）
     let projectName: String
-    // ObservedObject：观察 VM 的 loading/error 变化（VM 由入口持有）
     @ObservedObject var vm: ArchPageVM
 
     init(projectName: String) {
@@ -113,113 +101,77 @@ struct ArchPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: DSSpacing.md) {
-                // 单仓库限制：页面在仓库面板打开时锁死该仓库（无切换选择器）
-                Image(systemName: "shippingbox").font(.caption).foregroundStyle(.tertiary)
-                Text(projectName).font(.system(.caption, design: .monospaced).weight(.semibold))
-                Button {
-                    Task { await vm.load() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .disabled(vm.loading)
-                .help(L10n.t("common.refresh"))
-                .accessibilityLabel(A11y.label(L10n.t("common.refresh")))
-                // 生成动作：GUI 具现化引擎的 arch_gen（写 arch.json，探针对账）
-                Button {
-                    Task { await vm.generate() }
-                } label: {
-                    Image(systemName: "wand.and.stars")
-                }
-                .buttonStyle(.borderless)
-                .disabled(vm.generating)
-                .help(L10n.t("arch.generate"))
-                .accessibilityLabel(A11y.label(L10n.t("arch.generate")))
-                // 导出动作：GUI 具现化引擎的 render arch（落盘交互 HTML）
-                Button {
-                    Task { await vm.exportHTML() }
-                } label: {
-                    Image(systemName: "square.and.arrow.up")
-                }
-                .buttonStyle(.borderless)
-                .disabled(vm.generating)
-                .help(L10n.t("arch.export"))
-                .accessibilityLabel(A11y.label(L10n.t("arch.export")))
-                Spacer()
-                if vm.loading || vm.generating { ProgressView().controlSize(.small) }
-            }
-            .padding(DSSpacing.md)
+            toolbar
             if let err = vm.error {
                 Text(err).foregroundStyle(.orange).font(.callout)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, DSSpacing.md)
             }
             if let status = vm.genStatus {
-                // 生成/导出回执：版本/探针/违规数直接给用户看
                 HStack(spacing: DSSpacing.sm) {
                     Image(systemName: "gearshape.2").foregroundStyle(.tertiary)
                     Text(status).font(.caption.monospaced()).foregroundStyle(.secondary)
                         .lineLimit(1)
                     Spacer()
-                    if let p = vm.exportedPath {
-                        Button(L10n.t("arch.export")) {
-                            vm.openExport()
-                        }
-                        .buttonStyle(.borderless).controlSize(.small)
-                        .help(p)
-                        .accessibilityLabel(A11y.label(L10n.t("arch.export")))
-                    }
                 }
                 .padding(.horizontal, DSSpacing.md).padding(.vertical, DSSpacing.xs)
             }
-            VStack(spacing: DSSpacing.sm) {
-                ArchCanvasView(vm: vm.canvas)
+            if vm.htmlPath == nil && !vm.loading {
+                emptyHint
+            } else {
+                GraphWebView(htmlPath: vm.htmlPath, reloadToken: vm.reloadToken)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                sceneFooter
             }
-            .padding(.horizontal, DSSpacing.md)
-            .padding(.bottom, DSSpacing.sm)
         }
         .frame(minWidth: 960, minHeight: 640)
         .task {
-            // 单仓库限制：项目名在仓库面板入口处锁定，直接加载
-            await vm.load()
+            // 单仓库限制：项目名在仓库面板入口处锁定，直接渲染
+            if !projectName.isEmpty { await vm.render() }
         }
     }
 
-
-    /// 契约要求：警示与截断必须如实披露（缺键不得当作「没有」）。
-    @ViewBuilder
-    private var sceneFooter: some View {
-        if let s = vm.canvas.scene, let v = vm.canvas.currentView {
-            let w = s.meta["warnings"] as? [String: Any]
-            let violations = w?["violations"] as? Int ?? 0
-            let cycleEdges = w?["cycleEdges"] as? Int ?? 0
-            HStack(spacing: DSSpacing.md) {
-                if violations > 0 || cycleEdges > 0 {
-                    Label(L10n.t("graph.warnings", violations, cycleEdges),
-                          systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-                if v.edgesDropped > 0 {
-                    Label(L10n.t("graph.edgesDropped", v.edgesDropped),
-                          systemImage: "arrow.down.to.line.compact")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if let chips = s.meta["chips"] as? [[String: Any]] {
-                    HStack(spacing: DSSpacing.sm) {
-                        ForEach(Array(chips.enumerated()), id: \.offset) { _, chip in
-                            // count 是数字字段；label 只是文案（契约原文）
-                            let count = chip["count"] as? Int ?? 0
-                            Text(chip["label"] as? String ?? "").font(.caption2)
-                                .foregroundStyle(.secondary)
-                                + Text(" \(count)").font(.caption2).bold()
-                        }
-                    }
-                }
+    private var toolbar: some View {
+        HStack(spacing: DSSpacing.md) {
+            Image(systemName: "shippingbox").font(.caption).foregroundStyle(.tertiary)
+            Text(projectName).font(.system(.caption, design: .monospaced).weight(.semibold))
+            // 生成动作：GUI 具现化引擎的 arch gen（写 arch.json，探针对账）
+            Button {
+                Task { await vm.generate() }
+            } label: {
+                Label(L10n.t("arch.generate"), systemImage: "wand.and.stars")
             }
+            .disabled(vm.generating || projectName.isEmpty)
+            // 渲染/刷新：render arch（复用判定在引擎，产物新鲜代价小）
+            Button {
+                Task { await vm.render() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .disabled(vm.loading || projectName.isEmpty)
+            .help(L10n.t("cgraph.reload"))
+            .accessibilityLabel(A11y.label(L10n.t("cgraph.reload")))
+            Button {
+                vm.openExternal()
+            } label: {
+                Image(systemName: "safari")
+            }
+            .disabled(vm.htmlPath == nil)
+            .help(L10n.t("graph.openExternal"))
+            .accessibilityLabel(A11y.label(L10n.t("graph.openExternal")))
+            Spacer()
+            if vm.loading || vm.generating { ProgressView().controlSize(.small) }
         }
+        .padding(DSSpacing.md)
+    }
+
+    private var emptyHint: some View {
+        VStack(spacing: DSSpacing.sm) {
+            Image(systemName: "shippingbox")
+                .font(.title).foregroundStyle(.tertiary)
+            Text(projectName.isEmpty
+                 ? L10n.t("graph.needProject")
+                 : L10n.t("arch.renderFirst"))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
