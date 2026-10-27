@@ -295,7 +295,6 @@ struct ScheduleCard: View {
 /// 自定义端点沿用当前 provider 的请求格式（OpenAI 兼容）。
 struct AISettingsPane: View {
     @Binding var draft: AIConfig
-    @State private var modelFilter = ""
     @State private var testing = false
     @State private var testResult: (ok: Bool, text: String)?
     /// 自定义端点模式（URL 手输；未选中时走下方已知端点下拉）
@@ -305,14 +304,13 @@ struct AISettingsPane: View {
         ModelCatalog.shared.provider(draft.providerID)
     }
 
-    /// 目录里的候选模型（按过滤词过滤；无过滤词时 tool_call 的排前）
+    /// 目录里的候选模型（tool_call 可用的排前）。
+    /// ⚠️ 用户定稿 2026-10-27：模型行 = 一个输入框 + 后面一个下拉，
+    /// 与端点行同构——**不做过滤框**（模型目录量级用不着搜索，
+    /// 多一个框就多一个要理解的东西）。
     private var modelCandidates: [CatalogModel] {
         guard let p = catalogProvider else { return [] }
-        let q = modelFilter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let list = q.isEmpty
-            ? p.modelWithToolCall + p.models.filter { !$0.toolCall }
-            : p.models.filter { $0.id.lowercased().contains(q) || $0.name.lowercased().contains(q) }
-        return list
+        return p.modelWithToolCall + p.models.filter { !$0.toolCall }
     }
 
     /// 已知端点（目录里有 api 的常用 provider）
@@ -349,7 +347,6 @@ struct AISettingsPane: View {
         draft.providerID = p.id
         draft.baseURL = p.api ?? ""
         draft.model = ""
-        modelFilter = ""
     }
 
     var body: some View {
@@ -367,7 +364,6 @@ struct AISettingsPane: View {
                 .onChange(of: draft.providerID) { _ in
                     // provider 变了（端点联动）→ 模型重选
                     draft.model = ""
-                    modelFilter = ""
                 }
                 if customEndpoint || draft.baseURL.isEmpty && knownEndpoints.isEmpty {
                     TextField("https://…/v1", text: $draft.baseURL)
@@ -380,22 +376,28 @@ struct AISettingsPane: View {
             }
 
             Section("模型") {
-                if !customEndpoint {
-                    TextField("过滤模型…", text: $modelFilter)
+                // 用户定稿：与端点行同构——一个输入框 + 后面一个下拉，只此一行。
+                // 下拉选中即填入输入框；输入框里手打的 id 也合法（tag 兜底行
+                // 让下拉显示当前值而不是空白）。
+                HStack {
+                    TextField("模型 id（可手动输入）", text: $draft.model)
                         .textFieldStyle(.roundedBorder)
-                }
-                Picker("模型", selection: $draft.model) {
-                    Text("（手动输入）").tag("")
-                    ForEach(modelCandidates, id: \.id) { m in
-                        Text(modelLabel(m)).tag(m.id)
+                    Picker("模型", selection: Binding(
+                        get: { draft.model },
+                        set: { draft.model = $0 }
+                    )) {
+                        Text("（手动输入）").tag("")
+                        ForEach(modelCandidates, id: \.id) { m in
+                            Text(modelLabel(m)).tag(m.id)
+                        }
+                        if !draft.model.isEmpty
+                            && !modelCandidates.contains(where: { $0.id == draft.model }) {
+                            Text(draft.model).tag(draft.model)
+                        }
                     }
-                    if !draft.model.isEmpty
-                        && !modelCandidates.contains(where: { $0.id == draft.model }) {
-                        Text(draft.model).tag(draft.model)
-                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 190)
                 }
-                TextField("或手动输入模型 id", text: $draft.model)
-                    .textFieldStyle(.roundedBorder)
             }
 
             Section("API Key（存入 macOS 钥匙串）") {
