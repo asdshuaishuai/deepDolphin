@@ -207,7 +207,7 @@ def selftest_extractors():
       ⇒ 只测一边 ⇒ 判反了也能过（⚠ 批 BF 纪律）。
     """
     bad = []
-    _p = '/tmp/az-ds-selfcheck-unv.sh'
+    _p = HELPER.selfcheck_probe_path('ds-unv')
     try:
         with open(_p, 'w', encoding='utf-8') as _fh:
             _fh.write('exit 3\n')

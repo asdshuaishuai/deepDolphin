@@ -25,6 +25,7 @@ import importlib.util
 import os
 import re
 import subprocess
+import tempfile
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -83,6 +84,25 @@ AUDIT = load_audit()
 # ══════════════════════════════════════════════════════════════
 # 抽取自检（批 CF 教训：复用实现的方式本身要有自检）
 # ══════════════════════════════════════════════════════════════
+# ⚠⚠⚨ 批 EJ-32 · **自检探针路径必须进程唯一**
+#   ⇒ ⇒ 起因（实测复现）：以前三个自检临时文件都是**全局固定**路径
+#     （`az-cj-selfcheck-probe.sh` / `az-ds-selfcheck-true.sh` /
+#     `az-ds-selfcheck-unv.sh`）⇒ ⇒ **每次跑都重写** ⇒ ⇒ ⇒ **两个并发的进程
+#     会互相覆盖** ⇒ ⇒ ⇒ 某一边可能**执行对方**写下的探针/样例
+#     ⇒ ⇒ ⇒ 抽出来的 `strip_comments` **不是自己那棵树**的
+#     ⇒ ⇒ ⇒ 两侧口径对不上 ⇒ ⇒ ⇒ 报「剥注释口径漂移」⇒ ⇒ ⇒ **假红**
+#   ⇒ ⇒ 现在：路径**带 PID** ⇒ ⇒ 进程之间**互不干扰**
+#   ⇒ ⇒ ⚠ 同一进程内**复用**同一路径（不每次新建）⇒ ⇒ 不 proliferate
+def selfcheck_probe_path(tag):
+    """自检探针 / 样例的临时文件路径 —— ⚠⚠⚨ **必须带 PID**（批 EJ-32）。
+
+    ⚠ **带 PID** ⇒ ⇒ 进程之间**互不覆盖** ⇒ ⇒ 并发跑不会互相污染
+    ⇒ ⇒ ⇒ 口径不再漂移 ⇒ ⇒ ⇒ 「变异前就红了」那一族**假红**少一个来源。
+    """
+    return os.path.join(tempfile.gettempdir(),
+                        'az-%s-selfcheck-%d.sh' % (tag, os.getpid()))
+
+
 def shell_strip_comments(path):
     """从 `ci-wiring.sh` **原文抽取** `strip_comments` 并跑一遍
     ⇒ 拿它与审计器的 `strip_comments` 对拍 ⇒ 两边不一致 ⇒ 口径漂移 ⇒ 判红。"""
@@ -95,7 +115,7 @@ def shell_strip_comments(path):
     if not m:
         sys.exit('✗ ci-wiring.sh 里抽不出 strip_comments() ⇒ 抽取自检做不了')
     fn = m.group(0)
-    probe = '/tmp/az-cj-selfcheck-probe.sh'
+    probe = selfcheck_probe_path('cj')
     # ⚠⚠⚨ 批 EJ-31 · **探针必须复刻生产的失败通道**
     #   ⇒ 生产的 `strip_comments` 失败时把文件名写进 `$STRIP_FAIL_FILE`
     #     ⇒ 末尾统一判红 + 指名道姓（批 CG 口径）
@@ -120,6 +140,11 @@ def shell_strip_comments(path):
     with open(probe, 'w', encoding='utf-8') as fh:
         fh.write(''.join(probe_lines))
     out = subprocess.run(['sh', probe, path], capture_output=True, text=True)
+    # ⚠⚠⚨ 批 EJ-32 · **用完即删**（路径带 PID ⇒ 每进程一个 ⇒ 不删就堆）
+    try:
+        os.unlink(probe)
+    except OSError:
+        pass
     if out.returncode != 0:
         sys.exit('✗ 抽取出来的 strip_comments 跑不了（rc=%d）⇒ %s'
                  % (out.returncode, out.stderr.strip()[:200]))
@@ -185,7 +210,7 @@ def selftest_extractors():
         bad.append('find_subst_spans 样例 A：期望跨度内容含 `|| true`，实得 %r'
                    % _sp[0][2][:40])
     # ── 档 ② `scan_file`（单文件扫描 · 站点 + 分类 + 段）──────────
-    _p = '/tmp/az-ds-selfcheck-true.sh'
+    _p = selfcheck_probe_path('ds-true')
     try:
         with open(_p, 'w', encoding='utf-8') as _fh:
             _fh.write('x=$(cmd || true)\n')
