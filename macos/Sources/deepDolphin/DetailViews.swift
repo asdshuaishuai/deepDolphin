@@ -231,13 +231,18 @@ struct ProjectDetailView: View {
                     // 2026-10-27 独立窗口直接最大化显示；2026-10-28 先探测产物：
                     // 已生成 → 打开；未生成 → 生成，完成后替换为打开）
                     if graphArtifact == false {
+                        // 生成 = LLM 驱动（用户定稿 2026-10-28）：播种引擎 skill
+                        // 工作流给 agent 执行；关掉 agent 窗口自动重探产物，
+                        // 按钮原地替换为「打开」。
                         Button {
                             generatingGraph = true
                             Task {
-                                let r = await GraphArtifact.generateGraph(projectName)
-                                generatingGraph = false
-                                graphArtifact = r.ok
-                                if !r.ok { model.lastError = r.receipt }
+                                _ = await GraphAgentTask.launch(project: projectName, kind: "graph") {
+                                    Task { @MainActor in
+                                        graphArtifact = await GraphArtifact.exists(projectName, kind: "index")
+                                        generatingGraph = false
+                                    }
+                                }
                             }
                         } label: {
                             if generatingGraph {
@@ -268,10 +273,12 @@ struct ProjectDetailView: View {
                         Button {
                             generatingArch = true
                             Task {
-                                let r = await GraphArtifact.generateArch(projectName)
-                                generatingArch = false
-                                archArtifact = r.ok
-                                if !r.ok { model.lastError = r.receipt }
+                                _ = await GraphAgentTask.launch(project: projectName, kind: "arch") {
+                                    Task { @MainActor in
+                                        archArtifact = await GraphArtifact.exists(projectName, kind: "arch")
+                                        generatingArch = false
+                                    }
+                                }
                             }
                         } label: {
                             if generatingArch {

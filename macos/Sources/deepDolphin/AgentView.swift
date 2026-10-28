@@ -103,10 +103,15 @@ struct AgentView: View {
     @StateObject private var chat: AgentChatModel
     @Environment(\.dismiss) private var dismiss
     @FocusState private var inputFocused: Bool
+    /// 打开即执行的任务（LLM 驱动生成的播种口：仓库面板/图谱页把
+    /// 引擎 skill 工作流 + 目标仓库拼好传进来）。nil = 普通空对话。
+    /// 未配置 LLM 时不自动发送——任务留在输入框里，用户配好再发。
+    var initialTask: String?
 
-    init(target: AgentTarget) {
+    init(target: AgentTarget, initialTask: String? = nil) {
         // StateObject 的初值只在这一处被求值，必须先拿到实例再包起来。
         _chat = StateObject(wrappedValue: AgentChatModel(target: target))
+        self.initialTask = initialTask
     }
 
     var body: some View {
@@ -121,7 +126,16 @@ struct AgentView: View {
             inputBar
         }
         .frame(width: 720, height: 620)
-        .onAppear { inputFocused = true }
+        .onAppear {
+            inputFocused = true
+            // 播种任务：填入并自动发送（发送闸门照常生效——未配置/忙时不发）
+            if let t = initialTask, chat.draft.isEmpty {
+                chat.draft = t
+                if case .allowed = chat.sendDecision {
+                    chat.send()
+                }
+            }
+        }
         .onDisappear { chat.stop() }
     }
 

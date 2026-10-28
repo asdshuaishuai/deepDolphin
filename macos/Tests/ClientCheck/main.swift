@@ -5621,18 +5621,20 @@ do {
     guard l10n.contains("\"graph.needProject\"") else {
         throw fail("L10n 缺 graph.needProject 键——空态引导文案缺失")
     }
-    // ④ 生成能力必须齐全（GUI 具现化 = 查 + 生成 + 导出三件套）：
-    //    代码图谱页 = index_gen + confidence_gen + render index；
-    //    架构页 = arch_gen + render arch。缺生成 = 客户端只能看不能产
-    for (name, text, needles) in [
-        ("CodeGraphPage.swift", cgraph, ["[\"index\", \"gen\"", "[\"confidence\", \"gen\"",
-                                          "[\"render\", \"index\""]),
-        ("ArchPage.swift", arch, ["[\"arch\", \"gen\"", "[\"render\", \"arch\""]),
-    ] {
-        for needle in needles {
-            guard text.contains(needle) else {
-                throw fail("\(name) 缺生成触发（\(needle)…）——GUI 必须具现化引擎的全部生成能力")
-            }
+    // ④ 生成必须 LLM 驱动（用户定稿 2026-10-28 显式推翻旧的「页面直调
+    //    gen 管线」断言）：两页的生成按钮都播种引擎 skill 工作流给 agent
+    //    （GraphAgentTask），引擎侧 playbook 的唯一出口是 `skill graph`。
+    //    客户端直调生成管线 = 绕过 LLM 编排，这里红。
+    let chrome = try String(contentsOf: base.appendingPathComponent("Sources/deepDolphin/GraphChrome.swift"), encoding: .utf8)
+    guard chrome.contains("[\"skill\", \"graph\"") else {
+        throw fail("GraphAgentTask 没有取引擎 skill graph 工作流 ⇒ 播种内容与引擎脱钩（第二份手抄必然漂移）")
+    }
+    for (name, text) in [("CodeGraphPage.swift", cgraph), ("ArchPage.swift", arch)] {
+        guard text.contains("GraphAgentTask.launch") else {
+            throw fail("\(name) 生成按钮不走 GraphAgentTask ⇒ 直调生成管线绕过了 LLM 驱动（用户定稿 2026-10-28）")
+        }
+        guard !text.contains("\"index\", \"gen\"") && !text.contains("\"arch\", \"gen\"") else {
+            throw fail("\(name) 仍直调 gen 管线 ⇒ GUI 静默直出，不是 LLM 驱动")
         }
     }
     print("  ✓ 图谱两页只能按显式选定的单仓库执行（无回退/有空态/无聚合选项）")

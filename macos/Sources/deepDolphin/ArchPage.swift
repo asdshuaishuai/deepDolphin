@@ -82,17 +82,15 @@ final class ArchPageVM: ObservableObject {
     }
 
     /// arch gen：重建 arch.json（探针对账决定首版/版本号），完成后重渲染。
+    /// 生成 = LLM 驱动（用户定稿 2026-10-28）：播种引擎 skill 工作流给 agent，
+    /// agent 关窗后回读产物（后台核验刷新，复用就不闪）。
     func generate() async {
         generating = true
-        defer { generating = false }
-        do {
-            let r = try await EngineCLI.shared.runData(["arch", "gen", projectName], timeout: 600)
-            let text = String(data: r, encoding: .utf8) ?? ""
-            status = (true, receipt(text) ?? "")
-            await render()
-        } catch {
-            let msg = EngineError.userMessage(for: error)
-            status = (false, msg)
+        _ = await GraphAgentTask.launch(project: projectName, kind: "arch") { [weak self] in
+            Task { @MainActor in
+                self?.generating = false
+                await self?.render(background: true)
+            }
         }
     }
 

@@ -16,9 +16,19 @@ enum GraphWindows {
     /// 残留（isReleasedWhenClosed=false），前置前用 isVisible 校验。
     private static var live: [String: NSWindow] = [:]
 
+    /// 供 GraphAgentTask 等特殊窗口（尺寸策略不同）复用同一张登记表。
+    static func register(key: String, window: NSWindow) {
+        live[key] = window
+    }
+
+    static func liveWindow(_ key: String) -> NSWindow? {
+        live[key]
+    }
+
     /// 打开（或前置）某个图谱窗口。frame 直接铺满可见工作区 = 最大化。
     @MainActor
     static func open(kind: String, projectName: String, title: String,
+                     maximize: Bool = true,
                      @ViewBuilder view: () -> some View) {
         let key = "\(kind):\(projectName)"
         NSApp.activate(ignoringOtherApps: true)
@@ -35,8 +45,9 @@ enum GraphWindows {
         w.minSize = NSSize(width: 960, height: 640)
         w.contentView = NSHostingView(rootView: view())
         w.center()
-        if let screen = w.screen ?? NSScreen.main {
-            w.setFrame(screen.visibleFrame, display: true)   // 直接最大化
+        // 用户定稿：图谱窗口打开直接铺满工作区；对话窗口按内容尺寸居中
+        if maximize, let screen = w.screen ?? NSScreen.main {
+            w.setFrame(screen.visibleFrame, display: true)
         }
         w.makeKeyAndOrderFront(nil)
         live[key] = w
@@ -182,38 +193,9 @@ enum GraphArtifact {
         return (obj["exists"] as? Bool) ?? false
     }
 
-    /// 生成架构图：arch gen（写 arch.json，探针对账）+ render arch（落交互 HTML）。
-    /// 返回 (成功?, 引擎回执末行)。
-    @discardableResult
-    static func generateArch(_ project: String) async -> (ok: Bool, receipt: String?) {
-        do {
-            let r = try await EngineCLI.shared.runData(["arch", "gen", project], timeout: 600)
-            let line = lastLine(String(data: r, encoding: .utf8) ?? "")
-            let out = try await EngineCLI.shared.runData(["render", "arch", project], timeout: 600)
-            return (true, lastLine(String(data: out, encoding: .utf8) ?? "") ?? line)
-        } catch {
-            return (false, EngineError.userMessage(for: error))
-        }
-    }
-
-    /// 生成代码图谱：index gen（建库）+ confidence gen（置信度）+ render index。
-    /// 置信度一步失败不拦渲染（引擎对缺席置信度恒发「无置信度数据」图例）。
-    @discardableResult
-    static func generateGraph(_ project: String) async -> (ok: Bool, receipt: String?) {
-        do {
-            let a = try await EngineCLI.shared.runData(["index", "gen", project], timeout: 600)
-            let lineA = lastLine(String(data: a, encoding: .utf8) ?? "")
-            var line = lineA
-            if let b = try? await EngineCLI.shared.runData(["confidence", "gen", project], timeout: 600) {
-                line = lastLine(String(data: b, encoding: .utf8) ?? "") ?? lineA
-            }
-            let out = try await EngineCLI.shared.runData(
-                ["render", "index", project, "--confidence"], timeout: 600)
-            return (true, lastLine(String(data: out, encoding: .utf8) ?? "") ?? line)
-        } catch {
-            return (false, EngineError.userMessage(for: error))
-        }
-    }
+    // ⚠️ 2026-10-28 删除了直出的 generateArch/generateGraph：生成改由
+    // agent 播种引擎 skill 工作流驱动（GraphAgentTask）——引擎 AI 无关，
+    // 编排归 LLM；确定性命令仍由 agent 的引擎工具执行，只是不再由 GUI 静默直出。
 
     private static func lastLine(_ text: String) -> String? {
         for line in text.split(separator: "\n").reversed() {
@@ -221,5 +203,70 @@ enum GraphArtifact {
             if !t.isEmpty { return t }
         }
         return nil
+    }
+}
+
+// MARK: - LLM 驱动的图谱生成（用户定稿 2026-10-28：生成必须走 agent）
+//
+// 引擎提供 `moongit skill graph`（生成工作流 playbook，唯一来源），
+// 客户端把 playbook + 目标仓库播种给 agent——agent 用它的引擎工具
+// （index gen / confidence gen / confidence query / render / arch gen /
+// graph arch --json …）执行工作流并向用户报告治理信号。
+// 客户端不再直接调生成管线；探测（render check）仍是本地毫秒级只读。
+
+@MainActor
+enum GraphAgentTask {
+    /// 引擎工作流文本的进程内缓存（同一会话只取一次）。
+    private static var cachedSkill: String?
+
+    private static func skillText() async -> String {
+        if let c = cachedSkill { return c }
+        let text = (try? await EngineCLI.shared.runData(["skill", "graph"], timeout: 60))
+            .flatMap { String(data: $0, encoding: .utf8) }
+        // 取不到（旧引擎没有该子命令）也要给 agent 一句可执行的最低指令，
+        // 不能把 nil 播种成空任务。
+        let fallback = "用引擎 CLI 为目标仓库生成交付物：index gen / confidence gen / render index --confidence，或 arch gen / render arch；用 render check 验证产物，报告路径与治理信号。"
+        let v = text ?? fallback
+        cachedSkill = v
+        return v
+    }
+
+    /// 播种任务 = 引擎工作流 + 目标仓库 + 本次交付物 + 期望的报告。
+    static func task(project: String, kind: String) async -> String {
+        let skill = await skillText()
+        let what = kind == "arch"
+            ? "交付物 B——架构图（render/arch.html）"
+            : "交付物 A——代码图谱 / 置信度热力图（render/index.html）"
+        return skill + "\n---\n目标仓库：\(project)\n本次要生成：\(what)\n完成后报告：产物路径 + 治理信号（违规/环/职责违规）。"
+    }
+
+    /// 打开独立 agent 窗口执行任务（不最大化：对话窗口按内容尺寸居中）。
+    /// 窗口关闭时回调 onClose——调用方借此重探产物、替换生成/打开按钮。
+    @discardableResult
+    static func launch(project: String, kind: String, onClose: (() -> Void)? = nil) async -> NSWindow {
+        let full = await task(project: project, kind: kind)
+        let key = "agent-\(kind):\(project)"
+        NSApp.activate(ignoringOtherApps: true)
+        if let w = GraphWindows.liveWindow(key), w.isVisible {
+            w.makeKeyAndOrderFront(nil)
+            return w
+        }
+        let w = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 640),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered, defer: false)
+        w.title = "AI 生成 · \(project)"
+        w.isReleasedWhenClosed = false
+        w.contentView = NSHostingView(rootView: AgentView(target: .project(project), initialTask: full))
+        w.center()
+        w.makeKeyAndOrderFront(nil)
+        GraphWindows.register(key: key, window: w)
+        if let onClose {
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: w, queue: .main) { note in
+                if (note.object as? NSWindow) === w { onClose() }
+            }
+        }
+        return w
     }
 }

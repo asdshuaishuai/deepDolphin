@@ -78,20 +78,15 @@ final class CodeGraphPageVM: ObservableObject {
         }
     }
 
-    /// 生成 = 建索引 + 生成置信度，随后重渲染。
+    /// 生成 = LLM 驱动（用户定稿 2026-10-28）：播种引擎 skill 工作流给 agent，
+    /// agent 关窗后回读产物（后台核验刷新）。
     func generate() async {
         generating = true
-        defer { generating = false }
-        do {
-            let a = try await EngineCLI.shared.runData(["index", "gen", projectName], timeout: 600)
-            status = (true, receipt(String(data: a, encoding: .utf8) ?? "") ?? "")
-            let b = try await EngineCLI.shared.runData(["confidence", "gen", projectName], timeout: 600)
-            status = (true, receipt(String(data: b, encoding: .utf8) ?? "") ?? "")
-            await render()
-        } catch {
-            let msg = EngineError.userMessage(for: error)
-            self.error = msg
-            status = (false, msg)
+        _ = await GraphAgentTask.launch(project: projectName, kind: "graph") { [weak self] in
+            Task { @MainActor in
+                self?.generating = false
+                await self?.render(background: true)
+            }
         }
     }
 
