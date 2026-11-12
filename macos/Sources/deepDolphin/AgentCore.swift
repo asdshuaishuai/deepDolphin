@@ -217,8 +217,21 @@ enum AgentCore {
                 let data = try await EngineCLI.shared.runData(argv, timeout: 120)
                 return (true, String(data: data, encoding: .utf8) ?? "")
             case "render":
-                // 回执只有落盘路径与复用/新绘判定（不内塞 HTML 全文）
+                // 回执只有落盘路径与复用/新绘判定（不内塞 HTML 全文）。
+                // target=check：产物存在性探测（**绝不自愈**），CLI 形如
+                // `render check <arch|index> <项目>`——顺序不同，必须单独拼；
+                // 原本这里只认 arch|index，agent 的生成工作流（skill graph）
+                // 教了它用 check 验证产物，却根本调不到。
                 let target = str("target").isEmpty ? "index" : str("target")
+                if target == "check" {
+                    let artifact = str("artifact")
+                    guard artifact == "arch" || artifact == "index" else {
+                        return (false, "render target=check 需要 artifact=arch|index（收到：\(artifact)）")
+                    }
+                    let data = try await EngineCLI.shared.runData(
+                        ["render", "check", artifact, str("name"), "--json"], timeout: 60)
+                    return (true, String(data: data, encoding: .utf8) ?? "")
+                }
                 var argv = ["render", target, str("name")]
                 if flag("confidence") { argv += ["--confidence"] }
                 if flag("force") { argv += ["--force"] }
