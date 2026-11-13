@@ -2851,6 +2851,7 @@ impl blenderui::Render for AppRoot {
 
         let mut root = div()
             .class("app")
+            .id("app-root")
             .child(style().child(crate::design::SHEET))
             .child(
                 div()

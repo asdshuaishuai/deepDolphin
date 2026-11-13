@@ -433,8 +433,8 @@ pub const SHEET: &str = r#"
   --bg-2: #0C1424;
   --surface: rgba(255,255,255,.035);
   --surface-2: rgba(255,255,255,.06);
-  --glass: rgba(255,255,255,.06);
-  --glass-2: rgba(14,22,38,.78);
+  --glass: rgba(16,24,40,.86);
+  --glass-2: rgba(12,19,32,.94);
   --stroke: rgba(255,255,255,.08);
   --stroke-2: rgba(255,255,255,.14);
   --text: #E9EEF7;
@@ -490,7 +490,7 @@ pub const SHEET: &str = r#"
    只有 `.app` 的纯渐变时，backdrop-filter 的结果与平涂几乎一样，
    Mica 分层只是名义上的。指针事件必须穿透（它不是内容）。 */
 .app-bg { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-.aurora { position: absolute; width: 720px; height: 720px; border-radius: 999px; opacity: .18; }
+.aurora { position: absolute; width: 720px; height: 720px; border-radius: 999px; opacity: .10; }
 .aurora-a { left: -220px; top: -280px; background: linear-gradient(135deg, #4C8DFF 0%, rgba(76,141,255,0) 72%); }
 .aurora-b { right: -240px; top: 90px; background: linear-gradient(135deg, #B08CFF 0%, rgba(176,140,255,0) 72%); }
 .aurora-c { left: 28%; bottom: -360px; background: linear-gradient(135deg, #3FCF8E 0%, rgba(63,207,142,0) 72%); }
@@ -613,16 +613,17 @@ pub const SHEET: &str = r#"
   background: var(--glass);
   border: 1px solid var(--stroke-2);
   border-top-color: rgba(255,255,255,.20);
-  backdrop-filter: blur(18px) saturate(1.2);
-  box-shadow: var(--shadow-1);
+  /* ⚠️ 不用 backdrop-filter：BUI 0.5 的 Cocoa 宿主上带它会**整窗不呈现**
+     （实测：带=14s 仍是灰块，去=4s 完整渲染）。Fluent 观感改用
+     「近不透明玻璃底 + 顶部内高光 + 细描边」，不依赖背景采样。 */
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), var(--shadow-1);
 }
 /* 只给模态用：第 4 个玻璃面 */
 .glass-strong {
   background: var(--glass-2);
   border: 1px solid var(--stroke-2);
   border-top-color: rgba(255,255,255,.20);
-  backdrop-filter: blur(24px) saturate(1.15);
-  box-shadow: var(--shadow-2);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), var(--shadow-2);
 }
 .card {
   background: var(--surface);
@@ -640,7 +641,7 @@ pub const SHEET: &str = r#"
 .card-title { font-size: 13px; font-weight: 600; color: #DCE6F5; display: flex; flex-direction: row; align-items: center; gap: 8px; }
 .card-sub { font-size: 11px; color: var(--text-3); }
 .card-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.card-foot { display: flex; flex-direction: row; align-items: center; gap: 8px; border-top: 1px solid var(--stroke); padding-top: 10px; }
+.card-foot { display: flex; flex-direction: row; align-items: center; gap: 8px; flex-wrap: wrap; border-top: 1px solid var(--stroke); padding-top: 10px; }
 
 .hero { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .hero-title { font-size: 12px; color: var(--text-2); }
@@ -687,7 +688,7 @@ pub const SHEET: &str = r#"
 .t-num { font-family: monospace; }
 .t-accent { color: var(--accent-2); }
 .t-ellipsis { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.t-clamp-2 { overflow: hidden; max-height: 2.9em; }
+.t-clamp-2 { overflow: hidden; max-height: 36px; }
 .t-clamp-3 { overflow: hidden; max-height: 4.35em; }
 .mono { font-family: monospace; letter-spacing: .2px; }
 .num { font-family: monospace; }
@@ -709,6 +710,8 @@ pub const SHEET: &str = r#"
    控件（div 按钮；原生控件只设几何）
    ══════════════════════════════════════════════════════════════════════ */
 .btn {
+  white-space: nowrap;
+  flex-shrink: 0;
   display: inline-flex; flex-direction: row; align-items: center; justify-content: center; gap: 6px;
   padding: 6px 12px; border-radius: 8px; font-size: 13px;
   border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.05);
@@ -1082,11 +1085,11 @@ pub const SHEET: &str = r#"
    业务组件
    ══════════════════════════════════════════════════════════════════════ */
 .board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; width: 100%; padding: 14px 20px 24px 20px; }
-.board-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; background: rgba(255,255,255,.02); border: 1px solid var(--stroke); border-radius: 12px; padding: 10px; }
+.board-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; overflow: hidden; background: rgba(255,255,255,.02); border: 1px solid var(--stroke); border-radius: 12px; padding: 10px; }
 .board-col-head { display: flex; flex-direction: row; align-items: center; gap: 8px; }
 .board-col-count { margin-left: auto; font-size: 11px; color: var(--text-3); }
 .board-col-criteria { font-size: 11px; color: var(--text-3); }
-.board-card { background: var(--surface); border: 1px solid var(--stroke); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; cursor: pointer; }
+.board-card { background: var(--surface); border: 1px solid var(--stroke); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 100%; cursor: pointer; }
 .board-card:hover { background: var(--surface-2); border-color: rgba(124,166,255,.28); }
 
 .score { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }

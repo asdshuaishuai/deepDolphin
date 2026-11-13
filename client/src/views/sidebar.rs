@@ -34,6 +34,7 @@ pub fn render(state: &AppState, cx: &mut Context<AppRoot>) -> Div {
 
     div()
         .class("sidebar glass")
+        .id("sidebar")
         .child(brand())
         .child(search_box(state, &query, cx))
         .child(scroll(state, &query, &filtered, all.len(), cx))

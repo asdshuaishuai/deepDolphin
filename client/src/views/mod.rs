@@ -290,3 +290,40 @@ pub fn on_enter_route(state: &mut AppState, route: &Route) {
         Route::Settings(_) | Route::Agent => {}
     }
 }
+
+// ── 文本折行/截断（BUI 0.5 不对无空格文本折行，视图层主动处理）──
+
+/// 按字符数硬折行。ASCII 路径、连续中文在 BUI 里不会自动换行，长串会横向
+/// 溢出到相邻列（看板列头实测）。每行 per_line 个字符，保留原有换行。
+pub fn wrap_chars(s: &str, per_line: usize) -> String {
+    let per = per_line.max(1);
+    let mut out = String::new();
+    for (li, line) in s.lines().enumerate() {
+        if li > 0 {
+            out.push('\n');
+        }
+        let chars: Vec<char> = line.chars().collect();
+        for (ci, chunk) in chars.chunks(per).enumerate() {
+            if ci > 0 {
+                out.push('\n');
+            }
+            out.extend(chunk.iter());
+        }
+    }
+    out
+}
+
+/// 长路径中段省略（保留头尾，信息量最高）：`/Volumes/…/x-studio/d2note`。
+pub fn truncate_mid(s: &str, max: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= max || max < 10 {
+        return s.to_string();
+    }
+    let head = max / 2 - 2;
+    let tail = max - head - 3;
+    let mut out = String::new();
+    out.extend(chars.iter().take(head));
+    out.push('…');
+    out.extend(chars.iter().skip(chars.len() - tail));
+    out
+}

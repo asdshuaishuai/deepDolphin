@@ -66,6 +66,27 @@ client/
   assets/fonts/          HarmonyOS Sans SC（Regular/Medium）+ 字体许可
 ```
 
+## 无头自检（截图/CI 前置）
+
+```sh
+./target/debug/deepdolphin-client --self-check
+```
+
+不弹窗、不依赖鼠标：打印引擎发现、数据到位情况、`app-root`/`sidebar` 布局
+边界，并把首帧离屏光栅化后统计颜色数（内容真的画出来了才不是单色块）。
+CI 与「截图前先确认没画崩」都走这条。
+
+## 设计边界（2026-11-13 实测）
+
+- **`backdrop-filter` 在 BUI 0.5 的 Cocoa 宿主上会让整窗不呈现**（实测：带它会
+  14s 仍是一片灰、去掉后 3–4s 完整渲染）。设计系统的「毛玻璃」改为
+  **近不透明玻璃底 + 顶部内高光 + 细描边**，不依赖背景采样；`design.rs`
+  里留了原因注释，禁止再把 `backdrop-filter` 加回来（除非上游修复并经
+  `--self-check` 验证）。
+- **BUI 不会为无空格文本（ASCII 路径、连续中文）自动折行**：长串会横向
+  溢出到相邻列。视图层统一用 `views::wrap_chars` / `views::truncate_mid`
+  处理长文本；窄列里按钮加 `white-space: nowrap` 并允许换行。
+
 ## 已知边界（v0 显式取舍）
 
 1. **同步引擎调用**：BUI 0.5 没有 spawn/定时器，动作在 UI 线程阻塞完成

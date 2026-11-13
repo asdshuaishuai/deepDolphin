@@ -358,7 +358,7 @@ fn board_column_view(
                         .child(format!("{}", rows.len())),
                 ),
         )
-        .child(div().class("board-col-criteria").child(criteria));
+        .child(div().class("board-col-criteria").child(crate::views::wrap_chars(&criteria, 16)));
 
     if rows.is_empty() {
         // 空列写**判据**，不写「暂无」：读者需要知道「为什么这里会空」。
@@ -403,7 +403,7 @@ fn board_card(p: &Project, cx: &mut Context<AppRoot>) -> Div {
             div()
                 .class("chip chip-sm idle t-ellipsis")
                 .title(branch.to_string())
-                .child(format!("⎇ {branch}")),
+                .child(format!("⎇ {}", crate::views::truncate_mid(branch, 16))),
         );
     } else if p.is_git() {
         // 缺键不是「没有分支」；对一个 git 项目说「分支未知」比留空诚实。
@@ -433,7 +433,7 @@ fn board_card(p: &Project, cx: &mut Context<AppRoot>) -> Div {
         card = card.child(
             div()
                 .class("banner err")
-                .child(div().class("banner-body").child(format!("读不出来：{err}"))),
+                .child(div().class("banner-body").child(crate::views::wrap_chars(&format!("读不出来：{err}"), 14))),
         );
     }
 
@@ -452,7 +452,7 @@ fn board_card(p: &Project, cx: &mut Context<AppRoot>) -> Div {
             div()
                 .class("t-caption unknown")
                 .title(ws.join("\n"))
-                .child(text),
+                .child(crate::views::wrap_chars(&text, 16)),
         );
     }
 
@@ -463,7 +463,7 @@ fn board_card(p: &Project, cx: &mut Context<AppRoot>) -> Div {
         card = card.child(
             div()
                 .class("path")
-                .child(div().class("path-text").title(path.clone()).child(path.clone()))
+                .child(div().class("path-text").title(path.clone()).child(crate::views::truncate_mid(&path, 30)))
                 .on_click(cx.listener(move |this, _, _window, cx| {
                     cx.stop_propagation();
                     this.state

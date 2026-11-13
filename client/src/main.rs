@@ -35,6 +35,7 @@ struct StartupArgs {
     project: Option<String>,
     section: Option<String>,
     open_settings: bool,
+    self_check: bool,
     project_tab: Option<ProjectTab>,
     notes: Vec<String>,
 }
@@ -57,6 +58,7 @@ fn main() {
                 None => args.notes.push("--section 缺少值".to_string()),
             },
             "--open-settings" => args.open_settings = true,
+            "--self-check" => args.self_check = true,
             "--lang" => match argv.next() {
                 Some(v) => match Lang::parse(&v) {
                     Some(l) => args.lang = Some(l),
@@ -175,6 +177,45 @@ fn main() {
     }
     if !args.notes.is_empty() {
         state.route_note = Some(args.notes.join("；"));
+    }
+
+    // 无头自检：不依赖鼠标/肉眼，回答三个问题——数据到位了吗、布局有边界吗、
+    // 离屏光栅有没有画出多种颜色。CI 与截图前的快速体检都走这条。
+    if args.self_check {
+        println!("engine: {}", state.engine_short());
+        println!("projects: {}", state.projects().len());
+        println!("status_ready: {}", state.status.is_some());
+        println!("milestones_ready: {}", state.milestones.is_some());
+        println!("startup_error: {:?}", state.startup_error.as_ref().map(|e| e.user_message()));
+        println!("feedback: {:?}", state.feedback.as_ref().map(|f| f.text.clone()));
+        Application::headless().run(move |cx| {
+            let win = cx
+                .open_window(
+                    WindowOptions {
+                        window_bounds: Some(WindowBounds::Windowed(Bounds {
+                            origin: point(px(0.0), px(0.0)),
+                            size: size(px(1280.0), px(860.0)),
+                        })),
+                        ..Default::default()
+                    },
+                    move |_, cx| cx.new(|_| app::AppRoot { state }),
+                )
+                .unwrap();
+            println!("app-root bounds: {:?}", cx.element_bounds(win.id, "app-root"));
+            println!("sidebar bounds: {:?}", cx.element_bounds(win.id, "sidebar"));
+            let (wd, ht, px_data) = cx.draw(win.id);
+            let mut counts: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+            for p in &px_data {
+                *counts.entry(*p).or_insert(0) += 1;
+            }
+            let mut top: Vec<(u32, usize)> = counts.into_iter().collect();
+            top.sort_by(|a, b| b.1.cmp(&a.1));
+            println!("draw: {}x{} unique_colors={}", wd, ht, top.len());
+            for (c, n) in top.iter().take(5) {
+                println!("  color {:#08X}: {}", c, n);
+            }
+        });
+        return;
     }
 
     Application::new().run(move |cx| {
