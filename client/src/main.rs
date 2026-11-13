@@ -36,14 +36,85 @@ struct StartupArgs {
     section: Option<String>,
     open_settings: bool,
     self_check: bool,
+    screenshot: Option<String>,
+    size: Option<(f32, f32)>,
     project_tab: Option<ProjectTab>,
     notes: Vec<String>,
+}
+
+/// macOS：把应用外观强制为深色（DarkAqua）。
+///
+/// BUI 的 Cocoa 宿主用标准 NSWindow 标题栏，其配色跟随**应用外观**；
+/// 系统处于浅色模式时标题栏是浅灰，与深海主体完全不搭（实测截图）。
+/// BUI 0.5 没有外观 API，这里用 objc2 直接设 `NSApp.appearance`
+/// （标题栏 / 红绿灯 / 系统菜单一起变深）。仅 macOS 目标编译。
+#[cfg(target_os = "macos")]
+fn force_dark_appearance() {
+    use objc2_app_kit::{NSAppearance, NSAppearanceNameDarkAqua, NSApplication};
+    use objc2_foundation::MainThreadMarker;
+    let Some(mtm) = MainThreadMarker::new() else {
+        return; // 非主线程拿不到 NSApplication
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    // NSAppearanceNameDarkAqua 是 extern static，读取需要 unsafe
+    let name = unsafe { NSAppearanceNameDarkAqua };
+    if let Some(appearance) = NSAppearance::appearanceNamed(name) {
+        app.setAppearance(Some(&appearance));
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn force_dark_appearance() {}
+
+/// 离屏截图：24bpp BMP（Read 工具不认 BMP，macOS 上再由 sips 转 PNG）。
+fn write_bmp(path: &str, w: usize, h: usize, px: &[u32]) -> bool {
+    use std::io::Write;
+    let row = (w * 3 + 3) & !3;
+    let size = 54 + row * h;
+    let mut out: Vec<u8> = Vec::with_capacity(size);
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&(size as u32).to_le_bytes());
+    out.extend_from_slice(&[0u8; 4]);
+    out.extend_from_slice(&54u32.to_le_bytes());
+    out.extend_from_slice(&40u32.to_le_bytes());
+    out.extend_from_slice(&(w as i32).to_le_bytes());
+    out.extend_from_slice(&(h as i32).to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&24u16.to_le_bytes());
+    out.extend_from_slice(&[0u8; 24]);
+    for y in (0..h).rev() {
+        let row_start = out.len();
+        for x in 0..w {
+            let c = px[y * w + x];
+            // BUI 的 draw 像素是 0x00RRGGBB；BMP 24bpp 行内顺序是 B,G,R。
+            // （先前"行内 byte0→R"的判断是被少补两字节的行错位误导的，
+            //   行填充修好后标准顺序即可，实测背景 0x0E1726 → (14,23,38)。）
+            out.push((c & 0xFF) as u8);
+            out.push(((c >> 8) & 0xFF) as u8);
+            out.push(((c >> 16) & 0xFF) as u8);
+        }
+        // ⚠️ 行填充按**本行**字节数补到 4 的倍数：按文件总长判断时，
+        // 54 字节头恰好占掉 2 mod 4，1190 宽（3570B/行）每行少补 2 字节，
+        // 整图逐行错位 → 颜色通道旋转（实测品红偏色）。
+        while out.len() - row_start < row {
+            out.push(0);
+        }
+    }
+    std::fs::File::create(path)
+        .and_then(|mut f| f.write_all(&out))
+        .is_ok()
 }
 
 fn main() {
     // 字体注册：常规 + 粗（用 Medium 顶 bold 位，中文 600 观感接近 mac 标题）
     blenderui::add_font("HarmonyOS Sans SC", false, false, FONT_REGULAR);
     blenderui::add_font("HarmonyOS Sans SC", true, false, FONT_MEDIUM);
+
+    // 原生标题栏跟随深色外观（见 force_dark_appearance 注释）
+    force_dark_appearance();
+    // Blender 控件主题：输入框等原生控件用深色主题（默认浅色主题在深海底上
+    // 是刺眼的白色长条——实测截图里搜索框就是它）。
+    blenderui::set_theme("dark");
 
     let mut args = StartupArgs::default();
     let mut argv = std::env::args().skip(1);
@@ -59,6 +130,22 @@ fn main() {
             },
             "--open-settings" => args.open_settings = true,
             "--self-check" => args.self_check = true,
+            "--screenshot" => match argv.next() {
+                Some(v) => args.screenshot = Some(v),
+                None => args.notes.push("--screenshot 缺少路径".to_string()),
+            },
+            "--size" => match argv.next() {
+                Some(v) => {
+                    let mut it = v.split('x');
+                    let w = it.next().and_then(|x| x.parse::<f32>().ok());
+                    let h = it.next().and_then(|x| x.parse::<f32>().ok());
+                    match (w, h) {
+                        (Some(w), Some(h)) if w >= 900.0 && h >= 600.0 => args.size = Some((w, h)),
+                        _ => args.notes.push(format!("--size 需要 WxH（≥900x600）：{v}")),
+                    }
+                }
+                None => args.notes.push("--size 缺少值（WxH）".to_string()),
+            },
             "--lang" => match argv.next() {
                 Some(v) => match Lang::parse(&v) {
                     Some(l) => args.lang = Some(l),
@@ -94,7 +181,10 @@ fn main() {
                      --section <页>        dashboard|board|milestones|confidence|patch|scan|settings|agent\n\
                      --open-settings      直接打开设置\n\
                      --engine <路径>       指定 moongit 可执行文件\n\
-                     --lang <zh|en|tw|ja> 引擎事实语言（zh/en；界面目前只有中文）"
+                     --lang <zh|en|tw|ja> 引擎事实语言（zh/en；界面目前只有中文）
+                     --size <WxH>          窗口尺寸（默认 1280x860，最小 900x600）
+                     --self-check          无头自检：数据/布局/离屏光栅颜色数
+                     --screenshot <路径>   配 --self-check 离屏截图（写 BMP，macOS 转 PNG）"
                 );
                 return;
             }
@@ -182,19 +272,25 @@ fn main() {
     // 无头自检：不依赖鼠标/肉眼，回答三个问题——数据到位了吗、布局有边界吗、
     // 离屏光栅有没有画出多种颜色。CI 与截图前的快速体检都走这条。
     if args.self_check {
+        println!("theme: {}", blenderui::theme_name());
         println!("engine: {}", state.engine_short());
         println!("projects: {}", state.projects().len());
         println!("status_ready: {}", state.status.is_some());
         println!("milestones_ready: {}", state.milestones.is_some());
         println!("startup_error: {:?}", state.startup_error.as_ref().map(|e| e.user_message()));
         println!("feedback: {:?}", state.feedback.as_ref().map(|f| f.text.clone()));
+        let screenshot_path = args.screenshot.clone();
+        let win_size = args.size.unwrap_or((1280.0, 860.0));
         Application::headless().run(move |cx| {
             let win = cx
                 .open_window(
                     WindowOptions {
                         window_bounds: Some(WindowBounds::Windowed(Bounds {
                             origin: point(px(0.0), px(0.0)),
-                            size: size(px(1280.0), px(860.0)),
+                            size: {
+                                let (w, h) = win_size;
+                                size(px(w), px(h))
+                            },
                         })),
                         ..Default::default()
                     },
@@ -203,7 +299,52 @@ fn main() {
                 .unwrap();
             println!("app-root bounds: {:?}", cx.element_bounds(win.id, "app-root"));
             println!("sidebar bounds: {:?}", cx.element_bounds(win.id, "sidebar"));
+            // 输入框像素采样：白底 input 是已知问题（BUI 浏览器风控件），
+            // 采样它的中心区域判断是否已换到 Blender 深色控件。
+            if let Some(b) = cx.element_bounds(win.id, "sidebar-search") {
+                let cx0 = (b.origin.x + b.size.width / 2.0) as usize;
+                let cy0 = (b.origin.y + b.size.height / 2.0) as usize;
+                println!("search-field at ({}, {})", cx0, cy0);
+            }
             let (wd, ht, px_data) = cx.draw(win.id);
+
+            // 离屏截图（--screenshot）：光栅化结果写 BMP，macOS 上用 sips 转 PNG。
+            if let Some(path) = &screenshot_path {
+                if write_bmp(path, wd, ht, &px_data) {
+                    println!("screenshot: {path}");
+                    #[cfg(target_os = "macos")]
+                    {
+                        let png = format!("{}.png", path.trim_end_matches(".bmp"));
+                        let _ = std::process::Command::new("sips")
+                            .args(["-s", "format", "png", path, "--out", &png])
+                            .output();
+                        println!("screenshot png: {png}");
+                    }
+                } else {
+                    println!("screenshot: write failed");
+                }
+            }
+            // 搜索框区域平均色（白底 input 会把它拉到很高；深色控件应 < 90）
+            if let Some(b) = cx.element_bounds(win.id, "sidebar-search") {
+                let (x0, y0) = (b.origin.x as usize, b.origin.y as usize);
+                let (x1, y1) = (
+                    (b.origin.x + b.size.width) as usize,
+                    (b.origin.y + b.size.height) as usize,
+                );
+                let mut sum = 0u64;
+                let mut n = 0u64;
+                for y in y0..y1.min(ht) {
+                    for x in x0..x1.min(wd) {
+                        let c = px_data[y * wd + x];
+                        let lum = ((c >> 16) & 0xFF) + ((c >> 8) & 0xFF) + (c & 0xFF);
+                        sum += lum as u64;
+                        n += 1;
+                    }
+                }
+                if n > 0 {
+                    println!("search-field avg luminance: {}", sum / n);
+                }
+            }
             let mut counts: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
             for p in &px_data {
                 *counts.entry(*p).or_insert(0) += 1;
@@ -218,10 +359,12 @@ fn main() {
         return;
     }
 
+    let win_size_main = args.size;
     Application::new().run(move |cx| {
+        let (win_w, win_h) = win_size_main.unwrap_or((1280.0, 860.0));
         let bounds = Bounds {
             origin: point(px(120.0), px(90.0)),
-            size: size(px(1280.0), px(860.0)),
+            size: size(px(win_w), px(win_h)),
         };
         cx.open_window(
             WindowOptions {
@@ -239,5 +382,22 @@ fn main() {
             },
         )
         .unwrap();
+        // 标题栏与主体同色：DarkAqua 只把标题栏变深灰，和深海主体仍有色差。
+        // 透明标题栏 + 窗口底色 = 主体底色，红绿灯直接坐在深海面上。
+        #[cfg(target_os = "macos")]
+        {
+            use objc2_app_kit::{NSApplication, NSColor};
+            use objc2_foundation::MainThreadMarker;
+            if let Some(mtm) = MainThreadMarker::new() {
+                let app = NSApplication::sharedApplication(mtm);
+                let bg = unsafe {
+                    NSColor::colorWithSRGBRed_green_blue_alpha(10.0 / 255.0, 15.0 / 255.0, 26.0 / 255.0, 1.0)
+                };
+                for w in app.windows().iter() {
+                    w.setTitlebarAppearsTransparent(true);
+                    w.setBackgroundColor(Some(&bg));
+                }
+            }
+        }
     });
 }

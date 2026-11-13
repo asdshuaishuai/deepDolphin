@@ -795,7 +795,7 @@ fn render_kpis(state: &AppState, s: &Summary) -> Div {
             "dash-kpi-total",
             "项目总数",
             s.listed_projects.to_string(),
-            "含采集失败的项目，不含已停用项目；失败项目仍逐条列出".to_string(),
+            "含采集失败、不含已停用".to_string(),
             kpi_foot(
                 format!(
                     "采集成功 {} · 失败 {} · 进度库降级 {}",
@@ -809,9 +809,9 @@ fn render_kpis(state: &AppState, s: &Summary) -> Div {
             "dash-kpi-pending",
             "待你动手",
             s.dirty_projects.to_string(),
-            "有未提交改动的项目数（summary.dirtyProjects）".to_string(),
+            "有未提交改动的项目".to_string(),
             kpi_foot(
-                "口径只算未提交改动；未跟踪与 stash 不计入这个数字，见项目卡".to_string(),
+                "未跟踪与 stash 不计入".to_string(),
                 None,
             ),
             if s.dirty_projects > 0 {
@@ -824,7 +824,7 @@ fn render_kpis(state: &AppState, s: &Summary) -> Div {
             "dash-kpi-active",
             "活跃",
             s.active_projects.to_string(),
-            "有 active 状态分支的项目（按分支 status，不是按提交日期）".to_string(),
+            "近 7 天有新进展".to_string(),
             kpi_foot(active_line.0, active_line.1),
             None,
         ))
@@ -832,7 +832,7 @@ fn render_kpis(state: &AppState, s: &Summary) -> Div {
             "dash-kpi-stale",
             "停滞（逾期未动）",
             s.stale_projects.to_string(),
-            "有 stale 状态分支的项目".to_string(),
+            "8–30 天无提交".to_string(),
             kpi_foot(branch_line.0, branch_line.1),
             if s.stale_projects > 0 {
                 Some(Tone::Stale)
@@ -860,15 +860,21 @@ fn kpi_tile(
             .id(id.to_string())
             .child(div().class("kpi-label").child(label.to_string()))
             .child(div().class(value_class).child(value))
-            .child(div().class("kpi-hint").child(hint))
+            .child(
+                div()
+                    .class("kpi-hint")
+                    .title(hint.clone())
+                    .child(crate::views::wrap_chars(&hint, 16)),
+            )
             .child(foot),
     )
 }
 
 fn kpi_foot(text: String, tone: Option<Tone>) -> Div {
+    let body = crate::views::wrap_chars(&text, 18);
     match tone {
-        Some(t) => div().class(format!("kpi-foot {}", t.class())).child(text),
-        None => div().class("kpi-foot").child(text),
+        Some(t) => div().class(format!("kpi-foot {}", t.class())).child(body),
+        None => div().class("kpi-foot").child(body),
     }
 }
 

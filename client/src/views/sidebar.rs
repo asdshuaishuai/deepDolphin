@@ -57,11 +57,11 @@ fn search_box(state: &AppState, query: &str, cx: &mut Context<AppRoot>) -> Div {
         .class("search-box")
         .child(div().class("nav-icon").child("○"))
         .child(
-            input()
+            TextField()
                 .class("search-input")
                 // 稳定 id：否则每帧重建会丢焦点/光标（PLAN §1.2 第 13 条）。
                 .id("sidebar-search")
-                .placeholder("搜索项目名 / 分支名")
+                .placeholder("Search projects…")
                 .value(state.ui.sidebar.search.clone())
                 .on_input(cx.listener(|this, e: &blenderui::ChangeEvent, _, cx| {
                     this.state

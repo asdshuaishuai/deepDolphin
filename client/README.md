@@ -66,15 +66,17 @@ client/
   assets/fonts/          HarmonyOS Sans SC（Regular/Medium）+ 字体许可
 ```
 
-## 无头自检（截图/CI 前置）
+## 无头自检与离屏截图（截图/CI 前置）
 
 ```sh
 ./target/debug/deepdolphin-client --self-check
+./target/debug/deepdolphin-client --self-check --size 1190x860 --screenshot /tmp/shot.bmp --section board
 ```
 
-不弹窗、不依赖鼠标：打印引擎发现、数据到位情况、`app-root`/`sidebar` 布局
-边界，并把首帧离屏光栅化后统计颜色数（内容真的画出来了才不是单色块）。
-CI 与「截图前先确认没画崩」都走这条。
+不弹窗、不依赖鼠标/显示器：打印引擎发现、数据到位情况、`app-root`/`sidebar`
+布局边界与搜索框区域亮度，把首帧离屏光栅化后统计颜色数（内容真的画出来了
+才不是单色块）。`--screenshot` 写出 BMP（macOS 上自动用 sips 转 PNG）；
+也可用 `--size WxH` 复现窄窗布局（≥900×600）。
 
 ## 设计边界（2026-11-13 实测）
 
@@ -86,6 +88,14 @@ CI 与「截图前先确认没画崩」都走这条。
 - **BUI 不会为无空格文本（ASCII 路径、连续中文）自动折行**：长串会横向
   溢出到相邻列。视图层统一用 `views::wrap_chars` / `views::truncate_mid`
   处理长文本；窄列里按钮加 `white-space: nowrap` 并允许换行。
+- **HTML `<input>` 是浏览器风控件**：CSS 背景/颜色被忽略（白底），控件字体
+  无 CJK 回退（中文占位符显示为竖条）。用大写组件 `TextField()`（带
+  `bui-blender` 标记）才是 Blender 深色控件；占位符一律用 ASCII。
+- **macOS 标题栏**：`force_dark_appearance` 用 objc2 把 `NSApp.appearance`
+  设为 DarkAqua，窗口创建后把 `titlebarAppearsTransparent` 置真、窗口底色
+  设为 `#0A0F1A`，标题栏与主体同色（仅 macOS 目标编译）。
+- **窄窗断点 1239px**：KPI 磁贴 4→2 列、项目磁贴 3→2 列、看板 4→2 列；
+  再窄（窗口最小 1040）由各页自身的 min-width 兜住。
 
 ## 已知边界（v0 显式取舍）
 

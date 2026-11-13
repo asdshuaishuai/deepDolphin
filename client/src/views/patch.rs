@@ -396,10 +396,10 @@ fn inputs_card(state: &AppState, selected: Option<&str>, cx: &mut Context<AppRoo
     diff_field = diff_field.child(div().class("field-label").child("diff 路径"));
     diff_field = diff_field.child(
         div().class("field-box").child(
-            input()
+            TextField()
                 .class("input")
                 .id("patch-diff-path")
-                .placeholder("留空 = 读取工作区 git diff HEAD")
+                .placeholder("blank = git diff HEAD")
                 .value(form.diff_path.clone())
                 .on_input(cx.listener(|this, e: &blenderui::ChangeEvent, _, cx| {
                     this.state.dispatch(Action::Patch(PatchAction::SetDiffPath(
@@ -556,7 +556,7 @@ fn inputs_card(state: &AppState, selected: Option<&str>, cx: &mut Context<AppRoo
             textarea()
                 .class("textarea")
                 .id("patch-agent-json")
-                .placeholder("{\"task\":\"layer2_review\",\"items\":[…]}")
+                .placeholder("{\"task\":\"layer2_review\",\"items\":[...]}")
                 .value(form.agent_json.clone())
                 .on_input(cx.listener(|this, e: &blenderui::ChangeEvent, _, cx| {
                     this.state.dispatch(Action::Patch(PatchAction::SetAgentJson(
@@ -616,7 +616,7 @@ fn merge_input(
         .child(div().class("field-label").child(label.to_string()))
         .child(
             div().class("field-box").child(
-                input()
+                TextField()
                     .class("input")
                     .id(id.to_string())
                     .value(value.to_string())

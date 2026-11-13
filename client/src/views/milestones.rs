@@ -259,10 +259,10 @@ fn filter_bar(state: &AppState, list: &MilestoneList, cx: &mut Context<AppRoot>)
             .child(div().class("t-caption").child("搜索"))
             .child(
                 div().class("field-box grow").child(
-                    input()
+                    TextField()
                         .class("input")
                         .id("ms-search")
-                        .placeholder("名称 / 描述 / 项目")
+                        .placeholder("Name / description / project")
                         .value(f.search.clone())
                         .on_input(cx.listener(|this, e: &blenderui::ChangeEvent, _, cx| {
                             this.state.apply(AppAction::SetMilestoneSearch(e.value.clone()));

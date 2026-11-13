@@ -300,11 +300,11 @@ fn filter_card(query: &str, shown: usize, total: usize, cx: &mut Context<AppRoot
     let mut field = div().class("field grow");
     field = field.child(div().class("field-label").child("搜索项目"));
     let mut boxed = div().class("field-box").child(
-        input()
+        TextField()
             .class("input")
             // 稳定 id：否则每帧重建会丢焦点/光标（PLAN §1.2 第 13 条）。
             .id("board-search")
-            .placeholder("项目名或摘要")
+            .placeholder("Search projects…")
             .value(query.to_string())
             .on_input(cx.listener(|this, e: &blenderui::ChangeEvent, _, cx| {
                 this.state

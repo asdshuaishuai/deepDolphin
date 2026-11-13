@@ -185,10 +185,10 @@ pub fn render(state: &AppState, cx: &mut Context<AppRoot>) -> Option<Div> {
         .child(div().class("field-label").child("提交信息（必填）"))
         .child(
             div().class("field-box").child(
-                input()
+                TextField()
                     .class("input")
                     .id("commit-sheet-message")
-                    .placeholder("一句话说明这次改了什么")
+                    .placeholder("Commit message")
                     .value(sheet.message.clone())
                     .on_input(
                         cx.listener(|this, e: &blenderui::ChangeEvent, _, cx| {

@@ -129,10 +129,10 @@ fn add_pane(state: &AppState, cx: &mut Context<AppRoot>) -> Div {
         .child(field(
             "路径（目录）",
             field_box(
-                input()
+                TextField()
                     .class("input")
                     .id("scan-path")
-                    .placeholder("例如 /Users/you/code/my-repo")
+                    .placeholder("/absolute/path/to/repo")
                     .value(path.clone())
                     .on_input(cx.listener(|this, e: &blenderui::ChangeEvent, _, cx| {
                         this.state
@@ -145,10 +145,10 @@ fn add_pane(state: &AppState, cx: &mut Context<AppRoot>) -> Div {
         .child(field(
             "名称（可选）",
             field_box(
-                input()
+                TextField()
                     .class("input")
                     .id("scan-name")
-                    .placeholder("留空则用目录名")
+                    .placeholder("blank = directory name")
                     .value(name)
                     .on_input(cx.listener(|this, e: &blenderui::ChangeEvent, _, cx| {
                         this.state
@@ -544,10 +544,10 @@ fn candidate_row(
     } else if selected {
         let cand_path = c.path.clone();
         side = side.child(field_box(
-            input()
+            TextField()
                 .class("input")
                 .id("candidate-name")
-                .placeholder("名称（可选）")
+                .placeholder("Name (optional)")
                 .value(state.ui.scan.name.clone())
                 .on_input(cx.listener(move |this, e: &blenderui::ChangeEvent, _, cx| {
                     this.state.dispatch(crate::app::Action::Scan(

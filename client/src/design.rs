@@ -550,8 +550,8 @@ pub const SHEET: &str = r#"
 .main-actions { display: flex; flex-direction: row; align-items: center; gap: 8px; }
 .main-scroll {
   flex: 1; min-height: 0; overflow-y: scroll; scrollbar-width: thin;
-  padding: 20px 24px 28px 24px;
-  display: flex; flex-direction: column; gap: 14px;
+  padding: 22px 26px 32px 26px;
+  display: flex; flex-direction: column; gap: 18px;
 }
 .main-scroll-flush { flex: 1; min-height: 0; overflow-y: scroll; scrollbar-width: thin; display: flex; flex-direction: column; gap: 0; }
 .dash-hero {
@@ -588,7 +588,7 @@ pub const SHEET: &str = r#"
 /* ── 12 列磁贴 ── */
 .tiles {
   display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 12px; grid-auto-flow: dense; width: 100%;
+  gap: 14px; grid-auto-flow: dense; width: 100%;
 }
 .tile { min-width: 0; display: flex; flex-direction: column; }
 .tile-hero { min-width: 0; min-height: 200px; display: flex; flex-direction: column; }
@@ -628,9 +628,9 @@ pub const SHEET: &str = r#"
 .card {
   background: var(--surface);
   border: 1px solid var(--stroke);
-  border-radius: 12px;
-  padding: 16px;
-  display: flex; flex-direction: column; gap: 10px;
+  border-radius: 14px;
+  padding: 18px;
+  display: flex; flex-direction: column; gap: 12px;
   min-width: 0;
 }
 .card.hoverable { transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), transform var(--dur) var(--ease); cursor: pointer; }
@@ -649,13 +649,21 @@ pub const SHEET: &str = r#"
 .hero-metric { font-size: 28px; font-weight: 600; letter-spacing: -.4px; color: #F4F8FF; }
 
 .kpi {
-  display: flex; flex-direction: column; gap: 4px;
-  background: var(--surface); border: 1px solid var(--stroke);
-  border-radius: 12px; padding: 14px 16px; min-width: 0;
+  display: flex; flex-direction: column; gap: 5px;
+  background: linear-gradient(180deg, rgba(255,255,255,.055) 0%, rgba(255,255,255,.022) 100%);
+  border: 1px solid var(--stroke); border-top-color: rgba(255,255,255,.14);
+  border-radius: 14px; padding: 16px 18px; min-width: 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.kpi:hover {
+  border-color: rgba(124,166,255,.36);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 10px 28px rgba(0,0,0,.34);
+  transform: translateY(-2px);
 }
 .kpi-label { font-size: 12px; color: var(--text-2); }
-.kpi-value { font-size: 28px; font-weight: 600; letter-spacing: -.4px; color: #F4F8FF; }
-.kpi-hint { font-size: 11px; color: var(--text-3); }
+.kpi-value { font-size: 32px; font-weight: 600; letter-spacing: -.4px; color: #F4F8FF; }
+.kpi-hint { font-size: 11px; line-height: 1.55; color: var(--text-3); }
 .kpi-foot { border-top: 1px solid var(--stroke); padding-top: 6px; margin-top: 2px; font-size: 11px; color: var(--text-3); }
 .stat { display: flex; flex-direction: column; gap: 1px; }
 .stat-value { font-size: 15px; font-weight: 600; color: #E6EDF9; }
@@ -712,6 +720,7 @@ pub const SHEET: &str = r#"
 .btn {
   white-space: nowrap;
   flex-shrink: 0;
+  height: 28px;
   display: inline-flex; flex-direction: row; align-items: center; justify-content: center; gap: 6px;
   padding: 6px 12px; border-radius: 8px; font-size: 13px;
   border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.05);
@@ -1144,7 +1153,8 @@ pub const SHEET: &str = r#"
 .search { display: flex; flex-direction: row; align-items: center; gap: 6px; padding: 6px 10px; }
 .search-box { flex: 1; min-width: 0; display: flex; flex-direction: row; align-items: center; gap: 6px; border: 1px solid var(--stroke); border-radius: 8px; padding: 2px; background: rgba(0,0,0,.16); }
 .search-box:focus-within { border-color: rgba(76,141,255,.55); }
-.search-input { width: 100%; height: 28px; padding: 5px 8px; font-size: 12px; }
+.search-input { width: 100%; height: 26px; padding: 4px 8px; font-size: 12px;
+  background: transparent; color: var(--text); border: none; font-family: HarmonyOS Sans SC; }
 .search-clear { width: 20px; height: 20px; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: var(--text-3); cursor: pointer; }
 .search-clear:hover { background: rgba(255,255,255,.08); color: var(--text); }
 
@@ -1185,7 +1195,7 @@ pub const SHEET: &str = r#"
 /* ══════════════════════════════════════════════════════════════════════
    窄窗（窗口最小 1040，所以只覆盖 1180）
    ══════════════════════════════════════════════════════════════════════ */
-@media (max-width: 1180px) {
+@media (max-width: 1239px) {
   .span-3 { grid-column: span 6; }
   .span-4 { grid-column: span 6; }
   .span-8 { grid-column: span 12; }
