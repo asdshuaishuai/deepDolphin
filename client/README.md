@@ -88,6 +88,9 @@ client/
 - **BUI 不会为无空格文本（ASCII 路径、连续中文）自动折行**：长串会横向
   溢出到相邻列。视图层统一用 `views::wrap_chars` / `views::truncate_mid`
   处理长文本；窄列里按钮加 `white-space: nowrap` 并允许换行。
+- **flex 列 + `overflow:hidden` 会把列高按首个子项测量**（实测：看板一列
+  10 个项目只画出 1 张卡，卡脚按钮一并消失）。看板列因此不做裁剪；
+  横向溢出一律由卡内 `min-width: 0` + `wrap_chars`/`truncate_mid` 兜住。
 - **HTML `<input>` 是浏览器风控件**：CSS 背景/颜色被忽略（白底），控件字体
   无 CJK 回退（中文占位符显示为竖条）。用大写组件 `TextField()`（带
   `bui-blender` 标记）才是 Blender 深色控件；占位符一律用 ASCII。

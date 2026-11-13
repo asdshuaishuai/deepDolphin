@@ -765,7 +765,8 @@ pub const SHEET: &str = r#"
 .seg {
   display: inline-flex; flex-direction: row; align-items: center; gap: 2px;
   padding: 2px; border-radius: 10px; border: 1px solid var(--stroke);
-  background: rgba(0,0,0,.18);
+  /* 与主体同色：不再挖一块比背景更黑的凹槽；行内控件也不许被父级拉伸成整条。 */
+  background: rgba(255,255,255,.035); align-self: flex-start;
 }
 .seg-item {
   padding: 4px 10px; border-radius: 8px; font-size: 12px; color: var(--text-2);
@@ -1094,7 +1095,10 @@ pub const SHEET: &str = r#"
    业务组件
    ══════════════════════════════════════════════════════════════════════ */
 .board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; width: 100%; padding: 14px 20px 24px 20px; }
-.board-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; overflow: hidden; background: rgba(255,255,255,.02); border: 1px solid var(--stroke); border-radius: 12px; padding: 10px; }
+.board-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; overflow: visible; background: rgba(255,255,255,.02); border: 1px solid var(--stroke); border-radius: 12px; padding: 10px; }
+/* BUI 0.5 实测：flex 列 + overflow:hidden 会把列高按首个子项测量，
+   后续卡片整体被裁掉（看板 10 个项目曾只显示 1 张卡、卡脚按钮也消失）。
+   列不再裁剪；横向安全由卡内 min-width:0 + wrap_chars/truncate_mid 保证。 */
 .board-col-head { display: flex; flex-direction: row; align-items: center; gap: 8px; }
 .board-col-count { margin-left: auto; font-size: 11px; color: var(--text-3); }
 .board-col-criteria { font-size: 11px; color: var(--text-3); }
