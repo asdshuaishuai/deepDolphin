@@ -264,6 +264,9 @@ pub struct Project {
     pub branches: Vec<Branch>,
     #[serde(default)]
     pub repo_branch_count: Option<i64>,
+    /// 合并建议（见 `MergeHint`）。缺键 = 当前就在默认分支，不是「没有」。
+    #[serde(default)]
+    pub merge_hint: Option<MergeHint>,
     // ── 日志 ──
     #[serde(default)]
     pub journal: Vec<JournalEntry>,
@@ -364,6 +367,30 @@ pub struct Overall {
     pub summary: String,
     #[serde(default)]
     pub notes: Vec<String>,
+}
+
+/// 合并建议（引擎 `MergePlan`，kernel/git.cj:1230，六键已 live 实测）。
+/// 引擎只对「当前分支 ≠ 默认分支」的 git 项目发 `mergeHint`（repo.cj:596-598）
+/// —— **缺键 = 当前就在默认分支（或非 git / 分支读不出来）**，不是「没有建议」。
+/// `aheadOfDefault`（分支列表口径）与这里的 `ahead` 是两个口径：前者含已合入提交。
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeHint {
+    /// `fast-forward` / `merge` / `merged` / `rebase` / `no-default`。
+    #[serde(default)]
+    pub kind: String,
+    /// 当前分支领先默认分支的独有提交数。
+    #[serde(default)]
+    pub ahead: i64,
+    #[serde(default)]
+    pub behind: i64,
+    #[serde(default)]
+    pub default_branch: String,
+    #[serde(default)]
+    pub target: String,
+    /// 引擎给的人话（如「main 可直接 fast-forward 到 dev（185 个新提交）」）。
+    #[serde(default)]
+    pub description: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -774,6 +801,11 @@ impl Milestone {
     }
 
     /// 目标日期的人话（`daysToTarget` 负数 = 已逾期）。
+    ///
+    /// 引擎语义（milestones.cj:506-512）：`-1` 是「未设置 / 日期非法」哨兵；
+    /// 合法日期恒可算（负 = 已过 N 天），而 `overdue` 只对 `status==open` 置位
+    /// —— 所以已达成/已放弃的里程碑带过期目标时是 `days=-N、overdue=false`，
+    /// 那是一个**可读的值**，不许报成「读不出来」（可读值误报成第三态）。
     pub fn target_label(&self) -> String {
         if self.target_date.trim().is_empty() {
             return "无目标日期".to_string();
@@ -782,7 +814,12 @@ impl Milestone {
             format!("已逾期 {} 天", self.days_to_target.abs())
         } else if self.days_to_target >= 0 {
             format!("还剩 {} 天", self.days_to_target)
+        } else if self.days_to_target <= -2 {
+            // 非 open 的过期目标（open 且过期会走上面的 overdue 分支）。
+            format!("目标已过 {} 天", -self.days_to_target)
         } else {
+            // days == -1：引擎的「未设置/非法日期」哨兵。与「目标恰是昨天」
+            // 在引擎输出上无法区分，按哨兵语义报「读不出来」，不编造天数。
             "目标日期读不出来".to_string()
         }
     }
@@ -1210,21 +1247,23 @@ pub struct ScanPayload {
 
 impl ScanPayload {
     /// 三轴各自一句话；不合并成「结果可能不完整」。
+    /// 这些字符串进 feedback/横幅等**纯文本面**：不带 markdown 标记，
+    /// 也不猜成因（权限 / SIP / 已消失分不出来，见 AGENTS #50）。
     pub fn coverage_notes(&self) -> Vec<String> {
         let mut out = Vec::new();
         match self.truncated {
-            Some(true) => out.push("目录数撞到引擎上限：本次**没有**覆盖全部范围".to_string()),
+            Some(true) => out.push("目录数撞到引擎上限：本次没有覆盖全部范围".to_string()),
             None => out.push("引擎未披露目录数是否被截断".to_string()),
             Some(false) => {}
         }
         match self.depth_capped {
-            Some(true) => out.push("深度撞到 --depth 上限：更深的子目录**没有被看过**".to_string()),
+            Some(true) => out.push("深度撞到 --depth 上限：更深的子目录没有被看过".to_string()),
             None => out.push("引擎未披露深度是否被截断".to_string()),
             Some(false) => {}
         }
         if !self.unreadable.is_empty() {
             out.push(format!(
-                "{} 个目录读不出来（权限/占用）：这些地方的结果不完整",
+                "{} 个目录读不到：这些地方的结果不完整",
                 self.unreadable.len()
             ));
         }
@@ -2115,6 +2154,94 @@ mod tests {
         };
         assert_eq!(unknown.status_word(), "无法核验");
         assert_eq!(unknown.commits_since_reading(), Reading::NotRead);
+    }
+
+    #[test]
+    fn merge_hint_decodes_engine_six_keys_and_missing_is_default_branch() {
+        // live 实测（moongit status --json，deepOrca）：
+        // {"kind":"fast-forward","ahead":789,...,"description":"master 可直接 …"}
+        let p: Project = serde_json::from_str(
+            r#"{"name":"deepOrca","kind":"git","mergeHint":{
+                "kind":"fast-forward","ahead":789,"behind":0,
+                "defaultBranch":"master","target":"feat/modern-ui-redesign",
+                "description":"master 可直接 fast-forward 到 feat/modern-ui-redesign（789 个新提交）"}}"#,
+        )
+        .unwrap();
+        let h = p.merge_hint.as_ref().unwrap();
+        assert_eq!(h.kind, "fast-forward");
+        assert_eq!(h.ahead, 789);
+        assert_eq!(h.behind, 0);
+        assert_eq!(h.default_branch, "master");
+        assert_eq!(h.target, "feat/modern-ui-redesign");
+        assert!(h.description.contains("789"));
+
+        // 引擎只对「当前分支 ≠ 默认分支」发这个键（repo.cj:596-598）：
+        // 缺键 = 当前就在默认分支，不是「没有建议」。
+        let plain: Project =
+            serde_json::from_str(r#"{"name":"x","kind":"git"}"#).unwrap();
+        assert!(plain.merge_hint.is_none());
+    }
+
+    #[test]
+    fn target_label_separates_readable_past_from_unreadable_sentinel() {
+        // done 的过期目标：days=-5 可读、overdue=false（引擎只对 open 置位）
+        // —— 是可读的值，不许报「读不出来」。
+        let done = Milestone {
+            target_date: "2026-11-01".to_string(),
+            days_to_target: -5,
+            overdue: false,
+            status: Some("done".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(done.target_label(), "目标已过 5 天");
+
+        // -1 是引擎的「未设置/非法日期」哨兵：不编造天数。
+        let invalid = Milestone {
+            target_date: "2026-13-01".to_string(),
+            days_to_target: -1,
+            overdue: false,
+            status: Some("done".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(invalid.target_label(), "目标日期读不出来");
+
+        // open 且过期照旧走 overdue 分支。
+        let open = Milestone {
+            target_date: "2026-11-01".to_string(),
+            days_to_target: -3,
+            overdue: true,
+            status: Some("open".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(open.target_label(), "已逾期 3 天");
+
+        let future = Milestone {
+            target_date: "2026-12-31".to_string(),
+            days_to_target: 10,
+            overdue: false,
+            status: Some("open".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(future.target_label(), "还剩 10 天");
+
+        assert_eq!(Milestone::default().target_label(), "无目标日期");
+    }
+
+    #[test]
+    fn coverage_notes_do_not_guess_unreadable_cause() {
+        // AGENTS #50：权限 / SIP / 已消失分不出来 ⇒ 只报「读不到」，不写成因。
+        let p = ScanPayload {
+            truncated: Some(true),
+            depth_capped: Some(true),
+            unreadable: vec!["/a".to_string(), "/b".to_string()],
+            ..Default::default()
+        };
+        let notes = p.coverage_notes().join("\n");
+        assert!(notes.contains("2 个目录读不到"), "{notes}");
+        assert!(!notes.contains("权限"), "{notes}");
+        assert!(!notes.contains("占用"), "{notes}");
+        // 纯文本面：不带 markdown 标记。
+        assert!(!notes.contains("**"), "{notes}");
     }
 
     #[test]

@@ -710,8 +710,13 @@ fn render_scroll(state: &AppState, cx: &mut Context<AppRoot>) -> Div {
                     cx,
                 ))
             } else {
-                scroll
-                    .child(render_kpis(state, &env.summary))
+                scroll = scroll.child(render_kpis(state, &env.summary));
+                // dashboard --json 独有的聚合披露（语言/工作区/里程碑计数）：
+                // 数据就绪才画；骨架/失败期不画（失败已由 KPI 行的 active_line 披露）。
+                if let Some(facts) = render_dash_facts(state) {
+                    scroll = scroll.child(facts);
+                }
+                scroll = scroll
                     .child(render_composition(state, &env.projects, &global_types, cx))
                     .child(render_projects(
                         state,
@@ -719,7 +724,8 @@ fn render_scroll(state: &AppState, cx: &mut Context<AppRoot>) -> Div {
                         &env.projects,
                         &global_types,
                         cx,
-                    ))
+                    ));
+                scroll
             }
         }
     }
@@ -875,6 +881,204 @@ fn kpi_foot(text: String, tone: Option<Tone>) -> Div {
     match tone {
         Some(t) => div().class(format!("kpi-foot {}", t.class())).child(body),
         None => div().class("kpi-foot").child(body),
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 聚合披露（dashboard --json 独有的口径）
+// 语言分布 / 工作区 / 里程碑计数只进 dashboard 的 JSON，status --json 不带；
+// 侧栏只取 open/unknown —— 「引擎说了 ≠ 用户看得到」（不变量 17），这三块
+// 必须在承接 DashboardData 的页面上渲染。恒发字段的空态分两套：
+// 真的没有 / 没采集到，绝不把「没采到」画成「没有」。
+// ══════════════════════════════════════════════════════════════════════
+
+/// Truncation → 披露条。shown/total 由调用方按「实际画出来的 / 引擎总数」给。
+fn truncation_banner(t: &crate::app::Truncation) -> Div {
+    let span = match t.total {
+        Some(total) => format!("（显示 {} / {}）", t.shown, total),
+        None => String::new(),
+    };
+    div()
+        .class("banner warn")
+        .child(div().class("banner-title").child(t.layer.to_string()))
+        .child(div().class("banner-body").child(format!("{}{}", t.note, span)))
+}
+
+/// 语言分布卡（跟踪文件数口径）。
+fn render_language_card(d: &models::DashboardData) -> Div {
+    let mut card = div().class("card").id("dash-languages");
+    card = card.child(
+        div()
+            .class("card-head")
+            .child(div().class("card-title").child("语言分布（跟踪文件数）")),
+    );
+
+    if d.languages.is_empty() {
+        // 空有两种含义，必须分开说（不变量 38）：真的没有 / 没采集到。
+        if d.languages_failed > 0 {
+            card = card
+                .child(div().class("t-caption").child("未采集到语言数据"))
+                .child(fail_reasons_banner(
+                    d.languages_failed,
+                    &d.languages_failed_reasons,
+                    "语言数据",
+                ));
+        } else {
+            card = card.child(div().class("t-caption t-dim").child("暂无语言数据"));
+        }
+        return card;
+    }
+
+    // 画全部条目：shown 就是画出来的条数（本页不在引擎之上再截一层；
+    // 若将来要截，必须把画出来的条数传给 language_disclosures）。
+    let shown = d.languages.len();
+    let mut legend = div()
+        .class("legend")
+        .child(div().class("t-caption t-dim").child(format!("共 {} 种", shown)));
+    for l in &d.languages {
+        legend = legend.child(
+            div()
+                .class("legend-item")
+                .child(div().class("t-caption").child(format!("{} ×{}", l.language, l.count))),
+        );
+    }
+    card = card.child(legend);
+    if d.languages_failed > 0 {
+        card = card.child(fail_reasons_banner(
+            d.languages_failed,
+            &d.languages_failed_reasons,
+            "语言数据",
+        ));
+    }
+    for t in crate::app::language_disclosures(d, shown) {
+        card = card.child(truncation_banner(&t));
+    }
+    card
+}
+
+/// 恒发失败字段（languagesFailed / work.untrackedFailed）共用的披露条：
+/// 数字与逐条原因都来自引擎原值，措辞不猜成因（不变量 50）。
+fn fail_reasons_banner(failed: i64, reasons: &[String], what: &str) -> Div {
+    let mut stack = div().class("stack-sm");
+    stack = stack.child(
+        div()
+            .class("banner warn")
+            .child(div().class("banner-body").child(format!(
+                "{} 个项目的{}没采集到：这里的分布不完整，不是全群画像。",
+                failed, what
+            ))),
+    );
+    for r in reasons {
+        stack = stack.child(div().class("t-caption t-dim").child(r.clone()));
+    }
+    stack
+}
+
+/// 工作区卡（dashboard 口径）。untrackedFiles 在有采集失败时是**下界**，
+/// 标注必须跟着走，否则「已数到的」会被读成「全部」。
+fn render_work_card(d: &models::DashboardData) -> Div {
+    let w = &d.work;
+    let mut card = div().class("card").id("dash-work");
+    card = card.child(
+        div()
+            .class("card-head")
+            .child(div().class("card-title").child("工作区（dashboard 口径）")),
+    );
+    let untracked_note = if w.untracked_failed > 0 { "（下界）" } else { "" };
+    let mut row = div().class("row-wrap");
+    row = row.child(chip(format!("分支 {}", w.branches), Tone::Idle));
+    row = row.child(chip(format!("待合入 {}", w.merge_candidates), Tone::Accent));
+    row = row.child(chip(
+        format!("未跟踪文件 {}{}", w.untracked_files, untracked_note),
+        Tone::Warn,
+    ));
+    row = row.child(chip(format!("stash {}", w.stashes), Tone::Idle));
+    card = card.child(row);
+    if w.untracked_failed > 0 {
+        card = card.child(fail_reasons_banner(
+            w.untracked_failed,
+            &w.untracked_failed_reasons,
+            "未跟踪文件数",
+        ));
+    }
+    card
+}
+
+/// 里程碑计数卡（dashboard 口径）：done/dropped/unknown/readCount/orphaned/degraded
+/// 都来自 MilestoneCounts 既有字段；unknown 单列，绝不并进 open/done（不变量 32）。
+fn render_milestone_counts_card(d: &models::DashboardData) -> Div {
+    let c = &d.milestones.counts;
+    let mut card = div().class("card").id("dash-milestone-counts");
+    card = card.child(
+        div()
+            .class("card-head")
+            .child(div().class("card-title").child("里程碑（dashboard 口径）")),
+    );
+
+    let mut row = div().class("row-wrap");
+    row = row.child(chip(format!("开放 {}", c.open), Tone::Accent));
+    row = row.child(chip(format!("完成 {}", c.done), Tone::Ok));
+    row = row.child(chip(format!("放弃 {}", c.dropped), Tone::Idle));
+    row = row.child(chip(format!("无法核验 {}", c.unknown), Tone::Unknown));
+    if c.other > 0 {
+        row = row.child(chip(format!("其他 {}", c.other), Tone::Idle));
+    }
+    row = row.child(chip(format!("引擎读到 {} 条", c.read_count), Tone::Info));
+    card = card.child(row);
+
+    if let Some(rate) = models::milestone_rate(c) {
+        card = card.child(div().class("t-caption t-dim").child(format!(
+            "完成率 {:.0}%（done/(done+open)；无法核验不进分母）",
+            rate * 100.0
+        )));
+    }
+
+    // readCount = open+done+dropped+unknown+other+excludedDisabled+orphaned（引擎恒发等式）。
+    // 孤儿/停用没进上面的分类 chip 时必须披露去向，等式的差额不能是隐形黑洞。
+    if c.orphaned > 0 {
+        card = card.child(
+            div().class("banner warn").child(div().class("banner-body").child(format!(
+                "{} 个孤儿里程碑（绑定的 tag 对不上/读不到）没进上面的分类计数，「引擎读到」含它们。",
+                c.orphaned
+            ))),
+        );
+    }
+    if c.excluded_disabled > 0 {
+        card = card.child(div().class("t-caption t-dim").child(format!(
+            "{} 个已停用项目不在计数里",
+            c.excluded_disabled
+        )));
+    }
+    match c.degraded {
+        Some(true) => card = card.child(
+            div().class("banner warn").child(div().class("banner-body").child(
+                "里程碑存储降级：读到的计数可能不完整，先看存储健康再解读上面的数字。",
+            )),
+        ),
+        None => card = card.child(
+            div().class("t-caption unknown").child("引擎未披露里程碑存储是否降级——不当作「未降级」"),
+        ),
+        Some(false) => {}
+    }
+    if !c.store_health.is_empty() {
+        card = card.child(div().class("t-caption t-dim").child(format!("存储健康：{}", c.store_health)));
+    }
+    card
+}
+
+/// 聚合披露区。Idle/Loading → None（骨架期不画）；Failed → None
+/// （KPI 行的 active_line 已披露 dashboard 失败，这里不重复开卡）。
+fn render_dash_facts(state: &AppState) -> Option<Div> {
+    match &state.dashboard {
+        Load::Ready(d) => {
+            let mut stack = div().class("stack");
+            stack = stack
+                .child(render_language_card(d))
+                .child(render_work_card(d))
+                .child(render_milestone_counts_card(d));
+            Some(stack)
+        }
+        _ => None,
     }
 }
 
@@ -1668,13 +1872,12 @@ fn render_project_types(p: &Project, global_types: &[(String, i64)]) -> Div {
         );
     }
     if rest > 0 {
+        // 「其余类型」是聚合段：中性灰走 design.rs 的 `.neutral-fill`（与全局条同源），
+        // 视图不写颜色。
         bar = bar.child(
             div()
-                .class("stack-seg")
-                .style(format!(
-                    "width: {:.2}%; background: rgba(255,255,255,.16);",
-                    pct(rest, total)
-                ))
+                .class("stack-seg neutral-fill")
+                .style(format!("width: {:.2}%;", pct(rest, total)))
                 .title(format!(
                     "其余 {} 类：合计 {} 次",
                     types.len() - top.len(),

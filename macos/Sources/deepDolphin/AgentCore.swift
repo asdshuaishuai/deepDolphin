@@ -113,20 +113,35 @@ enum AgentCore {
         do {
             switch name {
             case "get_group_context":
-                let data = try await rawGet("api/context", query: ["scope": "group", "budget": "8000"])
+                // manifest（tools --json）已声明 budget（上下文字符预算，默认 12000）：
+                // 模型真传才覆盖，缺省沿用原 8000。声明了却忽略 = 不变量 21/43 的漂移形状。
+                var query = ["scope": "group", "budget": "8000"]
+                let b = num("budget")
+                if !b.isEmpty { query["budget"] = b }
+                let data = try await rawGet("api/context", query: query)
                 return (true, ContextEnvelope.decode(data).context)
             case "get_project_context":
                 // ⚠️ 原来这里把整个 JSON 信封原样交给模型（#191）：
                 // `{"scope":"project","budget":8000,"context":"# deepGit…\n…"}`
                 // 系统提示词那条路交的是 markdown，引擎自己的 MCP 工具回的也是裸 markdown
                 // —— 同名工具三种形状，模型读到的第一行是 `{"scope":`。
-                let data = try await rawGet("api/context", query: ["scope": "project", "name": str("name"), "budget": "8000"])
+                // budget 同 get_group_context：声明即透传，缺省 8000。
+                var query = ["scope": "project", "name": str("name"), "budget": "8000"]
+                let b = num("budget")
+                if !b.isEmpty { query["budget"] = b }
+                let data = try await rawGet("api/context", query: query)
                 return (true, ContextEnvelope.decode(data).context)
             case "get_project_docs":
                 let data = try await EngineCLI.shared.runData(["docs", str("name"), "--json"], timeout: 60)
                 return (true, String(data: data, encoding: .utf8) ?? "")
             case "get_journal":
-                let data = try await EngineCLI.shared.journal(name: str("name"))
+                // manifest 已声明 limit（条数，默认 8）：模型真传才拼 --limit，
+                // 缺省交给引擎。引擎侧 --limit 在 VALUE_FLAGS 且非法值 usage 报错
+                // （cli.cj cmdJournal 的 parseIntStrict + 正整数闸门），不会静默回落。
+                var argv = ["journal", str("name"), "--json"]
+                let lim = num("limit")
+                if !lim.isEmpty { argv += ["--limit", lim] }
+                let data = try await EngineCLI.shared.runData(argv, timeout: 30)
                 return (true, String(data: data, encoding: .utf8) ?? "")
             case "get_milestones":
                 let data = try await EngineCLI.shared.runData(["milestone", "list", "--json"], timeout: 60)

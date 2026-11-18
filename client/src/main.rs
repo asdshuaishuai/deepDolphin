@@ -373,8 +373,10 @@ fn main() {
                     title: Some("deepDolphin".into()),
                 }),
                 is_resizable: Some(true),
-                // 12 列磁贴 + 260px 侧栏在 1040 以下会挤坏卡片
-                window_min_size: Some(size(px(1040.0), px(700.0))),
+                // 最小窗与 --size 校验（main.rs 上方 ≥900x600）、--help 文案是
+                // 同一份契约：900x600。窄窗下的磁贴降列 / 看板 2 列由
+                // design.rs 的 1239px 断点接管（900 < 1239，窄窗规则全部生效）。
+                window_min_size: Some(size(px(900.0), px(600.0))),
                 gpu: None,
             },
             move |_, cx| {

@@ -4,19 +4,22 @@
 // app.rs — 应用状态、路由与动作。
 //
 // 【同步 / 后台的分界】绝大多数读命令仍在 UI 线程同步执行（首屏在开窗前预取，
-// 见 `bootstrap`；status/dashboard/milestone 都是百毫秒级）。两个**长命令**
-// （`graph confidence` / `graph patchconf`，超时 300s）走后台 Job：
+// 见 `bootstrap`；status/dashboard/milestone 都是百毫秒级）。**长命令**走后台
+// Job（`graph confidence --json/--llm` 与 `graph patchconf --json/--skill/--merge`，
+// 超时 300s；补丁前置的 `git diff HEAD` 超时 180s）：
 //   · 动作层只把 `JobRequest` 放进 `AppState::pending_job`（同步语义不变）；
 //   · 根视图的 `start_pending_job` 用 `UiSender` 起线程，完成后回到 UI 线程
 //     更新同一个 `AppState`；
 //   · 「停止」置 `AtomicBool`，`engine.rs` 在 25ms 内 kill 子进程并返回
 //     `EngineError::Cancelled`（与超时分开）。
-// 仍未后台化的读命令会阻塞，这是已知边界；不要在此基础上再加第二套状态。
+// 已知边界：置信度 / 补丁两个 Job 有「停止」按钮；`--llm` / `--skill` / `--merge`
+// 三个入口只后台化（窗口不再冻结），还没有各自的停止按钮 —— 想停只能等超时。
+// 其余读命令仍在 UI 线程同步阻塞，这是已知边界；不要在此基础上再加第二套状态。
 //
 // 【兼容层】`views/{sidebar,dashboard,project,milestones}.rs` 是本轮不改的 v0 页面，
 // 由后续页面开发者重写。它们直接读 `status/milestones/error/commit_draft/feedback/
 // artifacts/last_refresh_note` 并调用 `refresh/select/git_action/milestone_action/
-// probe_artifact/open_artifact`。这些字段与方法**保留原签名**（v0 兼容层），
+// open_artifact`。这些字段与方法**保留原签名**（v0 兼容层），
 // 新页面应使用 `Load<T>` / `UiState` / `dispatch(Action)`；两者共享同一份状态，
 // 不是两套事实来源。
 //
@@ -398,6 +401,23 @@ pub enum JobRequest {
         repo_path: Option<String>,
         cancel: Arc<AtomicBool>,
     },
+    /// `graph confidence --llm`：纯文本复核任务书（300s 级）。完成后复制到剪贴板。
+    /// 暂无「停止」按钮（见模块头），所以不带取消旗标。
+    ConfidenceLlm {
+        project: String,
+    },
+    /// `graph patchconf --skill`：Agent 任务书（300s 级）。需要先取工作区 diff，
+    /// 取 diff 也在后台线程做（`git diff HEAD` 超时 180s）。完成后弹模态。
+    PatchSkill {
+        project: String,
+        explicit_diff: Option<String>,
+        repo_path: Option<String>,
+    },
+    /// `graph patchconf --merge`：Layer-1 + agent 两份报告合并终稿（300s 级）。
+    PatchMerge {
+        algorithm_path: PathBuf,
+        agent_path: PathBuf,
+    },
 }
 
 /// 补丁 Job 的完成结果：即使失败，已经解析出的 diff 路径也要带回，
@@ -408,6 +428,61 @@ struct PatchJobDone {
     /// 分析成功但 Layer-1 落盘失败时的原因（不能把成功的分析报成失败）。
     note: Option<String>,
     result: Result<PatchReport, EngineError>,
+}
+
+/// 取补丁输入：显式 diff 路径优先；否则读工作区 diff 并写临时文件。
+/// **只在后台线程调**：`git diff HEAD` 超时 180s，不能让窗口跟着冻住。
+/// 分析与取 diff 共用这一条路（`run_patch_job` / `JobRequest::PatchSkill`）。
+fn resolve_patch_input(
+    engine: &Engine,
+    explicit_diff: Option<String>,
+    repo_path: Option<String>,
+) -> Result<PathBuf, EngineError> {
+    let stamp = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    };
+    if let Some(p) = explicit_diff {
+        let path = PathBuf::from(&p);
+        if path.is_file() {
+            return Ok(path);
+        }
+        return Err(EngineError::Io(format!("diff 文件不存在：{p}")));
+    }
+    let Some(repo) = repo_path else {
+        return Err(EngineError::Io(
+            "没有可用的项目路径，也没有显式 diff 文件".to_string(),
+        ));
+    };
+    let repo = PathBuf::from(repo);
+    let r = engine.git_diff_head(&repo)?;
+    if r.timed_out {
+        return Err(EngineError::Io("读取工作区 diff 超时（180s），已终止".to_string()));
+    }
+    if !r.ok {
+        let reason = r.stderr.trim();
+        return Err(EngineError::Io(if reason.is_empty() {
+            "读取工作区 diff 失败（git 没有输出原因）".to_string()
+        } else {
+            format!("读取工作区 diff 失败：{reason}")
+        }));
+    }
+    if r.stdout.trim().is_empty() {
+        return Err(EngineError::Io(
+            "工作区没有未提交改动（git diff HEAD 为空）。先改点东西，或指定已有 diff 文件。"
+                .to_string(),
+        ));
+    }
+    let path = std::env::temp_dir().join(format!(
+        "deepdolphin-patch-{}-{}.diff",
+        std::process::id(),
+        stamp()
+    ));
+    std::fs::write(&path, &r.stdout)
+        .map_err(|e| EngineError::Io(format!("写临时 diff 失败（{}）：{e}", path.display())))?;
+    Ok(path)
 }
 
 /// 后台补丁分析：读 diff → `graph patchconf` → 把 Layer-1 原始 JSON 写到临时文件。
@@ -428,64 +503,7 @@ fn run_patch_job(
             .map(|d| d.as_millis())
             .unwrap_or(0)
     };
-
-    let patch_path: Result<PathBuf, EngineError> = if let Some(p) = explicit_diff {
-        let path = PathBuf::from(&p);
-        if path.is_file() {
-            Ok(path)
-        } else {
-            Err(EngineError::Io(format!("diff 文件不存在：{p}")))
-        }
-    } else if let Some(repo) = repo_path {
-        let repo = PathBuf::from(repo);
-        let r = match engine.git_diff_head(&repo) {
-            Ok(r) => r,
-            Err(e) => return failed_patch_job(None, e),
-        };
-        if r.timed_out {
-            return failed_patch_job(
-                None,
-                EngineError::Io("读取工作区 diff 超时（180s），已终止".to_string()),
-            );
-        }
-        if !r.ok {
-            let reason = r.stderr.trim();
-            return failed_patch_job(
-                None,
-                EngineError::Io(if reason.is_empty() {
-                    "读取工作区 diff 失败（git 没有输出原因）".to_string()
-                } else {
-                    format!("读取工作区 diff 失败：{reason}")
-                }),
-            );
-        }
-        if r.stdout.trim().is_empty() {
-            return failed_patch_job(
-                None,
-                EngineError::Io(
-                    "工作区没有未提交改动（git diff HEAD 为空）。先改点东西，或指定已有 diff 文件。"
-                        .to_string(),
-                ),
-            );
-        }
-        let path = std::env::temp_dir().join(format!(
-            "deepdolphin-patch-{}-{}.diff",
-            std::process::id(),
-            stamp()
-        ));
-        if let Err(e) = std::fs::write(&path, &r.stdout) {
-            return failed_patch_job(
-                None,
-                EngineError::Io(format!("写临时 diff 失败（{}）：{e}", path.display())),
-            );
-        }
-        Ok(path)
-    } else {
-        Err(EngineError::Io(
-            "没有可用的项目路径，也没有显式 diff 文件".to_string(),
-        ))
-    };
-    let patch_path = match patch_path {
+    let patch_path = match resolve_patch_input(&engine, explicit_diff, repo_path) {
         Ok(p) => p,
         Err(e) => return failed_patch_job(None, e),
     };
@@ -562,6 +580,9 @@ pub struct PaletteItem {
 }
 
 /// 提交弹层。默认全选；干净/读失败/有文件三态分开。
+/// `error` 是引擎/闸门失败的原因，画在 **sheet 内**（同 `MilestoneAddForm.error`）：
+/// 弹层刻意「失败不关窗」，但原因只写全局 feedback 时会被 overlay 盖住，
+/// 用户点提交后界面无变化、不知道为什么。
 #[derive(Debug, Clone)]
 pub struct CommitSheet {
     pub project: String,
@@ -569,6 +590,7 @@ pub struct CommitSheet {
     pub status: Load<GitStatusPayload>,
     pub selected: BTreeSet<String>,
     pub busy: bool,
+    pub error: Option<String>,
 }
 
 /// 新建里程碑表单。
@@ -1106,6 +1128,31 @@ impl AppState {
             ui: UiState::default(),
             next_toast_id: 1,
         };
+        // 引擎事实语言以 config.json 里存的值为准（外部脚本 / 旧客户端可能设过
+        // en）。读不到 / 解析不出就保持默认 zh —— 选择器不许把「没读」渲染成
+        // 「中文」，但也不许猜；没读成功的都要说明。
+        match st.engine.config_get_language() {
+            Ok(Some(code)) => match Lang::parse(&code) {
+                Some(l) => st.lang = l.engine_option(),
+                None => st.engine_warnings.push(format!(
+                    "引擎事实语言「{code}」不在 zh / en 里；界面按中文事实渲染，可在设置页修改"
+                )),
+            },
+            Ok(None) => {}
+            // 引擎不可用（没装/起不来）时首屏的 startup_error 会说，不重复报；
+            // 引擎在但没答上来，补一条告警。
+            Err(e) => {
+                if !matches!(
+                    e,
+                    EngineError::NotFound { .. } | EngineError::Spawn { .. }
+                ) {
+                    st.engine_warnings.push(format!(
+                        "引擎事实语言读取失败：{}；界面按中文事实渲染",
+                        e.user_message()
+                    ));
+                }
+            }
+        }
         st.update_engine_note();
         st.refresh_scope(RefreshScope::All);
         st
@@ -1316,6 +1363,15 @@ impl AppState {
     }
 
     pub fn navigate(&mut self, route: Route) {
+        // 提交弹层只在路由项目名匹配时挂载（views/project.rs）：
+        // 离开该项目（切走或切到别的项目）就关掉 —— 否则它隐身存活，
+        // 在别的页面按 Esc 会被无声消耗一次关闭，回到原项目又原样重现
+        // 打开时刻的旧快照。关闭走 close_commit_sheet（信息存回草稿）。
+        if let Some(sheet) = &self.commit_sheet {
+            if route.project_name() != Some(sheet.project.as_str()) {
+                self.close_commit_sheet();
+            }
+        }
         let entering_new_project = match (&self.route, &route) {
             (Route::Project(a), Route::Project(b)) => a != b,
             (_, Route::Project(_)) => true,
@@ -1432,25 +1488,32 @@ impl AppState {
         false
     }
 
-    /// 关闭最上层浮层（Esc）。一次只关一个：确认框盖在弹层上时，
-    /// 先关确认框而不是把底下的弹层一起收掉。
+    /// 关闭最上层浮层（Esc）。一次只关一个。
+    /// 顺序与 `AppRoot::render` 的 DOM 顺序**严格互逆**（后渲染的盖在上面，
+    /// 全部 overlay z-index 相同）：
+    ///   render 顺序 = commit_sheet（项目页内）→ menu → confirm → milestone_sheet
+    ///                 → palette → modal，
+    ///   关闭顺序   = modal → palette → milestone_sheet → confirm → menu
+    ///                 → commit_sheet。
+    /// 顺序错了会先关一个看不见的浮层（不可见变化），第二次 Esc 才关用户
+    /// 正看着的那个。
     fn close_top_overlay(&mut self) -> bool {
+        if self.modal.take().is_some() {
+            return true;
+        }
         if self.palette.take().is_some() {
-            return true;
-        }
-        if self.menu.take().is_some() {
-            return true;
-        }
-        if self.confirm.take().is_some() {
-            return true;
-        }
-        if self.commit_sheet.take().is_some() {
             return true;
         }
         if self.milestone_sheet.take().is_some() {
             return true;
         }
-        if self.modal.take().is_some() {
+        if self.confirm.take().is_some() {
+            return true;
+        }
+        if self.menu.take().is_some() {
+            return true;
+        }
+        if self.commit_sheet.take().is_some() {
             return true;
         }
         false
@@ -1511,7 +1574,10 @@ impl AppState {
     ///
     /// 客户端目前只有中文文案（全仓没有按 `lang` 分支的字符串）。所以：
     ///   · 成功回执只能说「引擎事实语言已设置」，**不许**说「界面语言已切换」；
-    ///   · 引擎不支持的取值（日本語）不写配置，也不改选择 —— 写 en 是谎报。
+    ///   · 引擎不支持的取值（日本語）不写配置，也不改选择 —— 写 en 是谎报；
+    ///   · `self.lang` 只在**引擎确认之后**才改：失败（ok=false / 引擎错误）时
+    ///     选择器必须保持原样，否则「显示 EN、引擎仍是 zh」的谎会一直挂着
+    ///     （feedback 一导航就被清，选择器的错却是持久的）。
     pub fn set_language(&mut self, lang: Lang) {
         let lang = lang.engine_option();
         let Some(code) = lang.engine_code() else {
@@ -1521,9 +1587,9 @@ impl AppState {
             )));
             return;
         };
-        self.lang = lang;
         match self.engine.config_set_language(code) {
             Ok(r) if r.ok => {
+                self.lang = lang;
                 self.feedback = Some(Feedback::success(format!(
                     "引擎事实语言已设为 {}；界面语言目前只有中文（多语言界面尚未实现）",
                     code
@@ -1759,7 +1825,7 @@ impl AppState {
                 "将对「{p}」执行{what}：改写 README/AGENTS 托管区并写进度库。旧文档有备份，但请在确认前了解它会写入你的仓库。"
             ),
             None => format!(
-                "将对**全部已注册项目**执行{what}：逐个改写托管文档并写进度库。这是批量写操作。"
+                "将对「全部已注册项目」执行{what}：逐个改写托管文档并写进度库。这是批量写操作。"
             ),
         };
         self.ask_confirm(Confirm {
@@ -1950,20 +2016,32 @@ impl AppState {
         };
         self.commit_sheet = Some(CommitSheet {
             project: project.to_string(),
-            message: String::new(),
+            // 带出上次没提交完的信息（close_commit_sheet 存回 commit_draft）；
+            // 提交成功会清空草稿，这里不会拿到已提交的旧信息。
+            message: self.commit_draft.clone(),
             status,
             selected,
             busy: false,
+            error: None,
         });
     }
 
     pub fn close_commit_sheet(&mut self) {
-        self.commit_sheet = None;
+        // 关闭 ≠ 丢弃：非空提交信息存回草稿（v0 字段），重开时带出。
+        // 背板 / Esc / × / 「取消」都不该吞掉用户已经打好的长信息。
+        if let Some(sheet) = self.commit_sheet.take() {
+            let msg = sheet.message.trim().to_string();
+            if !msg.is_empty() {
+                self.commit_draft = msg;
+            }
+        }
     }
 
     pub fn set_commit_message(&mut self, msg: String) {
         if let Some(s) = self.commit_sheet.as_mut() {
             s.message = msg;
+            // 改了信息就撤掉上一次的失败原因：它是针对旧输入说的。
+            s.error = None;
         }
     }
 
@@ -2045,16 +2123,23 @@ impl AppState {
                 self.toast(Tone::Ok, "提交完成", sheet.project.clone());
             }
             Ok(resp) => {
-                // 失败**不关窗**：用户的选择与信息都还在
+                // 失败**不关窗**：用户的选择与信息都还在。原因要写在 sheet 内
+                // （全局 feedback 被 overlay 盖住，弹层里看不见就等于没说）。
                 let reason = if resp.output.trim().is_empty() {
                     "引擎没有给出原因".to_string()
                 } else {
                     resp.output.trim().to_string()
                 };
+                if let Some(s) = self.commit_sheet.as_mut() {
+                    s.error = Some(reason.clone());
+                }
                 self.feedback = Some(Feedback::failure(format!("提交失败：{reason}")));
                 self.reload_commit_status(&sheet.project);
             }
             Err(e) => {
+                if let Some(s) = self.commit_sheet.as_mut() {
+                    s.error = Some(e.user_message());
+                }
                 self.feedback = Some(Feedback::failure(e.user_message()));
                 self.reload_commit_status(&sheet.project);
             }
@@ -2114,7 +2199,7 @@ impl AppState {
                     ))
                 } else {
                     Feedback::failure(format!(
-                        "扫描完成但**没有覆盖全部范围**：发现 {} · 新增 {}；{}",
+                        "扫描完成但没有覆盖全部范围：发现 {} · 新增 {}；{}",
                         p.found,
                         p.added,
                         p.coverage_notes().join("；")
@@ -2177,6 +2262,20 @@ impl AppState {
 
     // ── 置信度 / 补丁 ────────────────────────────────────────────
 
+    /// 排队后台 Job。槽位被占时**拒绝并说明**，绝不覆盖 —— 直接 `Some(…)`
+    /// 会把先排队的那个静默丢掉：它永远停在 Loading，「停止」按钮可点、
+    /// 点了弹「正在停止」却永远停不了（取消旗标变成无人消费的死旗标）。
+    fn queue_job(&mut self, job: JobRequest) -> bool {
+        if self.pending_job.is_some() {
+            self.feedback = Some(Feedback::failure(
+                "已有一个后台任务在排队；请稍候再点一次",
+            ));
+            return false;
+        }
+        self.pending_job = Some(job);
+        true
+    }
+
     pub fn run_confidence(&mut self) {
         let Some(project) = self.chosen_project(&self.ui.confidence.project) else {
             self.feedback = Some(Feedback::failure("先选择一个项目（置信度是单项目分析）"));
@@ -2185,12 +2284,18 @@ impl AppState {
         if self.confidence.is_loading() {
             return;
         }
+        let cancel = Arc::new(AtomicBool::new(false));
+        // 真正执行在根视图：那里拿得到 UiSender / Entity。这里只排队。
+        // 先排队再改 Load：排队被拒时界面不谎报「分析中」。
+        if !self.queue_job(JobRequest::Confidence {
+            project: project.clone(),
+            cancel: cancel.clone(),
+        }) {
+            return;
+        }
         self.ui.confidence.project = Some(project.clone());
         self.confidence = Load::Loading;
-        // 真正执行在根视图：那里拿得到 UiSender / Entity。这里只排队。
-        let cancel = Arc::new(AtomicBool::new(false));
-        self.confidence_cancel = Some(cancel.clone());
-        self.pending_job = Some(JobRequest::Confidence { project, cancel });
+        self.confidence_cancel = Some(cancel);
     }
 
     /// 用户点「停止」：旗标置位，后台线程会在 ~25ms 内 kill 子进程。
@@ -2203,16 +2308,14 @@ impl AppState {
     }
 
     /// `--llm` 的复核任务书是纯文本；取回后只复制，不当 JSON 解析。
+    /// 300s 级长命令走后台 Job（窗口不冻结）；完成后由根视图回到 UI 线程复制。
     pub fn run_confidence_llm_prompt(&mut self) {
         let Some(project) = self.chosen_project(&self.ui.confidence.project) else {
             self.feedback = Some(Feedback::failure("先选择一个项目"));
             return;
         };
         self.ui.confidence.project = Some(project.clone());
-        match self.engine.confidence_llm_prompt(&project) {
-            Ok(text) => self.copy(&text, "置信度复核提示词"),
-            Err(e) => self.fail(e),
-        }
+        self.queue_job(JobRequest::ConfidenceLlm { project });
     }
 
     pub fn run_patch(&mut self) {
@@ -2248,17 +2351,20 @@ impl AppState {
             return;
         }
 
-        self.patch = Load::Loading;
         // 读 diff / 跑 patchconf / 写 Layer-1 报告全在后台线程：
         // `git diff HEAD` 超时是 180s，不能让窗口跟着冻住。
+        // 先排队再改 Load：排队被拒时界面不谎报「分析中」。
         let cancel = Arc::new(AtomicBool::new(false));
-        self.patch_cancel = Some(cancel.clone());
-        self.pending_job = Some(JobRequest::Patch {
-            project,
+        if !self.queue_job(JobRequest::Patch {
+            project: project.clone(),
             explicit_diff,
             repo_path,
-            cancel,
-        });
+            cancel: cancel.clone(),
+        }) {
+            return;
+        }
+        self.patch = Load::Loading;
+        self.patch_cancel = Some(cancel);
     }
 
     pub fn stop_patch(&mut self) {
@@ -2268,73 +2374,41 @@ impl AppState {
         }
     }
 
-    /// 取补丁输入：显式路径优先；否则读工作区 diff 并写临时文件。
-    fn resolve_patch_path(&self, project: &str) -> Result<PathBuf, String> {
-        let explicit = self.ui.patch.diff_path.trim();
-        if !explicit.is_empty() {
-            let p = PathBuf::from(explicit);
-            if !p.is_file() {
-                return Err(format!("diff 文件不存在：{explicit}"));
-            }
-            return Ok(p);
-        }
-        let Some(entry) = self.project(project) else {
-            return Err(format!("注册表里没有项目「{project}」"));
-        };
-        let repo = PathBuf::from(&entry.path);
-        let r = self
-            .engine
-            .git_diff_head(&repo)
-            .map_err(|e| e.user_message())?;
-        if r.timed_out {
-            return Err("读取工作区 diff 超时（180s），已终止".to_string());
-        }
-        if !r.ok {
-            let reason = r.stderr.trim();
-            return Err(if reason.is_empty() {
-                "读取工作区 diff 失败（git 没有输出原因）".to_string()
-            } else {
-                format!("读取工作区 diff 失败：{reason}")
-            });
-        }
-        if r.stdout.trim().is_empty() {
-            return Err("工作区没有未提交改动（git diff HEAD 为空）。先改点东西，或指定已有 diff 文件。".to_string());
-        }
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
-        let path = std::env::temp_dir().join(format!(
-            "deepdolphin-patch-{}-{stamp}.diff",
-            std::process::id()
-        ));
-        std::fs::write(&path, &r.stdout)
-            .map_err(|e| format!("写临时 diff 失败（{}）：{e}", path.display()))?;
-        Ok(path)
-    }
-
+    /// Agent 任务书：`graph patchconf --skill`（300s 级）。取工作区 diff 与生成
+    /// 都在后台线程做（`git diff HEAD` 超时 180s）；完成后由根视图弹模态。
     pub fn run_patch_skill(&mut self) {
         let Some(project) = self.chosen_project(&self.ui.patch.project) else {
             self.feedback = Some(Feedback::failure("先选择一个项目"));
             return;
         };
-        let patch = match self.resolve_patch_path(&project) {
-            Ok(p) => p,
-            Err(msg) => {
-                self.feedback = Some(Feedback::failure(msg));
+        let explicit = self.ui.patch.diff_path.trim().to_string();
+        let explicit_diff = if explicit.is_empty() {
+            None
+        } else {
+            // 显式路径不存在不必等后台线程；这里先报，语义与旧同步路径一致。
+            if !PathBuf::from(&explicit).is_file() {
+                self.feedback = Some(Feedback::failure(format!(
+                    "diff 文件不存在：{explicit}"
+                )));
                 return;
             }
+            Some(explicit)
         };
-        self.ui.patch.last_diff_path = patch.to_string_lossy().into_owned();
-        match self.engine.patchconf_skill(&project, &patch) {
-            Ok(text) => {
-                self.modal = Some(ModalState::Text {
-                    title: "补丁体检 · Agent 任务书".to_string(),
-                    body: text,
-                });
-            }
-            Err(e) => self.fail(e),
+        let repo_path = self
+            .project(&project)
+            .map(|p| p.path.clone())
+            .filter(|p| !p.trim().is_empty());
+        if explicit_diff.is_none() && repo_path.is_none() {
+            self.feedback = Some(Feedback::failure(format!(
+                "注册表里没有项目「{project}」的可用路径，且没有显式 diff 文件"
+            )));
+            return;
         }
+        self.queue_job(JobRequest::PatchSkill {
+            project,
+            explicit_diff,
+            repo_path,
+        });
     }
 
     pub fn run_patch_merge(&mut self) {
@@ -2378,15 +2452,14 @@ impl AppState {
         } else {
             return self.set_feedback_failure("先指定 agent 结果文件，或粘贴 agent JSON");
         };
-        self.patch_merged = Load::Loading;
-        match self.engine.patchconf_merge(&algorithm_path, &agent_path) {
-            Ok(r) => self.patch_merged = Load::Ready(r),
-            Err(e) => {
-                let msg = e.user_message();
-                self.patch_merged = Load::Failed(e);
-                self.feedback = Some(Feedback::failure(msg));
-            }
+        // `--merge` 也是 300s 级长命令：后台跑，先排队再改 Load。
+        if !self.queue_job(JobRequest::PatchMerge {
+            algorithm_path,
+            agent_path,
+        }) {
+            return;
         }
+        self.patch_merged = Load::Loading;
     }
 
     fn set_feedback_failure(&mut self, msg: impl Into<String>) {
@@ -2452,28 +2525,10 @@ impl AppState {
         }
     }
 
-    /// v0 签名：返回产物路径（None = 未生成 or 探测失败）。**每次调用都真的检查。**
-    pub fn probe_artifact(&mut self, project: &str, artifact: &str) -> Option<String> {
-        let art = match artifact {
-            "index" => Artifact::Index,
-            "arch" => Artifact::Arch,
-            _ => return None,
-        };
-        let load = self.refresh_artifact(project, art);
-        if let Load::Failed(e) = &load {
-            // 旧 project.rs 的签名只有 Option，会把「探测失败」渲染成「尚未生成」。
-            // 至少用 feedback 把真相说出来（新页面用 artifact_states 的四态）。
-            self.feedback = Some(Feedback::failure(format!(
-                "产物探测失败（不是「未生成」）：{}",
-                e.user_message()
-            )));
-        }
-        match &load {
-            Load::Ready(rc) if rc.exists => Some(rc.path.clone()),
-            _ => None,
-        }
-    }
-
+    /// v0 的 `probe_artifact` 已删除：它把「探测失败」与「未生成」压成同一个
+    /// `None`，还会往全局 feedback 写失败 —— 而它唯一的调用方就是下面的
+    /// 入场预探（导航副作用，不该弹「动作失败」）。视图现在全部读四态的
+    /// `artifact_states` / 详情缓存（`Load::Failed` 在图谱卡片里渲染）。
     pub fn open_artifact(&mut self, project: &str, artifact: &str) {
         let art = match artifact {
             "index" => Artifact::Index,
@@ -2505,12 +2560,15 @@ impl AppState {
     }
 
     /// 进入项目页时预探两份产物（懒探测会先显示「尚未生成」——那是把
-    /// 「还没查」呈现成「没有」）。
+    /// 「还没查」呈现成「没有」）。**失败不写全局 feedback**：入场预探是
+    /// 导航的副作用，不是一次用户动作 —— 写全局会让「进项目页」本身冒出
+    /// 一条动作失败横幅。失败态由 `artifact_states` / 详情缓存的
+    /// `Load::Failed` 在图谱卡片里渲染。
     pub fn probe_all_artifacts(&mut self, project: &str) {
-        // `probe_artifact` 内部已经走 `probe_artifact_state` 并同步旧缓存，
-        // 这里不再重复调用，避免一次进入项目页打 4 次 render check。
-        for name in ["index", "arch"] {
-            let _ = self.probe_artifact(project, name);
+        // `refresh_artifact` 每次都真的重查（产物可能在上次探测后才生成），
+        // 并同步 `artifact_states` 与 v0 的旧缓存。
+        for art in Artifact::all() {
+            let _ = self.refresh_artifact(project, art);
         }
     }
 
@@ -2840,6 +2898,10 @@ impl blenderui::Render for AppRoot {
         // 启动后立刻返回，`Load::Loading` 这一帧才画得出来。
         self.start_pending_job(cx);
 
+        // toast 到期清理（`AppAction::Tick` 注释宣称的「由根视图每帧调用」在这里
+        // 接线）：过期的 toast 在画之前就被移除，不需要额外 notify。
+        self.state.tick();
+
         // 根视图统一 flush：dispatch/reduce 里没有 Window。
         if let Some(p) = self.state.pending_copy.take() {
             w.write_clipboard(&p.text);
@@ -3014,6 +3076,84 @@ impl AppRoot {
                     });
                 });
             }
+            JobRequest::ConfidenceLlm { project } => {
+                std::thread::spawn(move || {
+                    let result = base.confidence_llm_prompt(&project);
+                    sender.send(move |app| {
+                        entity.update(app, |this, cx| {
+                            match result {
+                                Ok(text) => {
+                                    // 任务书是纯文本：复制给用户，不当 JSON 解析。
+                                    this.state.copy(&text, "置信度复核提示词");
+                                }
+                                Err(e) => this.state.fail(e),
+                            }
+                            this.state.drain_warnings();
+                            cx.notify();
+                        });
+                    });
+                });
+            }
+            JobRequest::PatchSkill {
+                project,
+                explicit_diff,
+                repo_path,
+            } => {
+                std::thread::spawn(move || {
+                    let engine = base;
+                    // 取 diff 与生成任务书都在这条线程上：两条都是长命令。
+                    // diff 路径单独带回：解析成功就记入 last_diff_path，
+                    // 即使后面的生成失败（旧同步路径同语义）。
+                    let (diff_path, outcome): (Option<String>, Result<String, EngineError>) =
+                        match resolve_patch_input(&engine, explicit_diff, repo_path) {
+                            Ok(patch) => {
+                                let diff = patch.to_string_lossy().into_owned();
+                                (Some(diff), engine.patchconf_skill(&project, &patch))
+                            }
+                            Err(e) => (None, Err(e)),
+                        };
+                    sender.send(move |app| {
+                        entity.update(app, |this, cx| {
+                            if let Some(d) = diff_path {
+                                this.state.ui.patch.last_diff_path = d;
+                            }
+                            match outcome {
+                                Ok(text) => {
+                                    this.state.modal = Some(ModalState::Text {
+                                        title: "补丁体检 · Agent 任务书".to_string(),
+                                        body: text,
+                                    });
+                                }
+                                Err(e) => this.state.fail(e),
+                            }
+                            this.state.drain_warnings();
+                            cx.notify();
+                        });
+                    });
+                });
+            }
+            JobRequest::PatchMerge {
+                algorithm_path,
+                agent_path,
+            } => {
+                std::thread::spawn(move || {
+                    let result = base.patchconf_merge(&algorithm_path, &agent_path);
+                    sender.send(move |app| {
+                        entity.update(app, |this, cx| {
+                            match result {
+                                Ok(r) => this.state.patch_merged = Load::Ready(r),
+                                Err(e) => {
+                                    let msg = e.user_message();
+                                    this.state.patch_merged = Load::Failed(e);
+                                    this.state.feedback = Some(Feedback::failure(msg));
+                                }
+                            }
+                            this.state.drain_warnings();
+                            cx.notify();
+                        });
+                    });
+                });
+            }
         }
     }
 
@@ -3178,13 +3318,15 @@ impl AppRoot {
             && !form.name.trim().is_empty()
             && (form.date.trim().is_empty() || crate::models::valid_date(form.date.trim()));
 
-        let text_field = |label: &'static str, id: &'static str, value: String, placeholder: &'static str, cx: &mut blenderui::Context<AppRoot>, field: MilestoneField| {
-            div()
+        // BUI 0.5 硬边界：输入一律用大写组件 TextField()/TextArea()（裸 input()
+        // 不吃 CSS），占位符 ASCII —— 中文示例放 .field-hint，不进 placeholder。
+        let text_field = |label: &'static str, id: &'static str, value: String, placeholder: &'static str, hint: &'static str, cx: &mut blenderui::Context<AppRoot>, field: MilestoneField| {
+            let mut f = div()
                 .class("field")
                 .child(div().class("field-label").child(label))
                 .child(
                     div().class("field-box").child(
-                        input()
+                        TextField()
                             .class("input")
                             .id(id)
                             .placeholder(placeholder)
@@ -3194,7 +3336,11 @@ impl AppRoot {
                                 cx.notify();
                             })),
                     ),
-                )
+                );
+            if !hint.is_empty() {
+                f = f.child(div().class("field-hint").child(hint));
+            }
+            f
         };
 
         let body = div()
@@ -3203,6 +3349,7 @@ impl AppRoot {
                 "项目（必填）",
                 "ms-project",
                 form.project.clone(),
+                "project name",
                 "注册表里的项目名",
                 cx,
                 MilestoneField::Project,
@@ -3211,6 +3358,7 @@ impl AppRoot {
                 "名称（必填）",
                 "ms-name",
                 form.name.clone(),
+                "milestone name",
                 "例如 v0.2-面板版",
                 cx,
                 MilestoneField::Name,
@@ -3219,7 +3367,8 @@ impl AppRoot {
                 "tag（可选）",
                 "ms-tag",
                 form.tag.clone(),
-                "例如 v0.2",
+                "e.g. v0.2",
+                "",
                 cx,
                 MilestoneField::Tag,
             ))
@@ -3228,6 +3377,7 @@ impl AppRoot {
                 "ms-date",
                 form.date.clone(),
                 "2026-12-31",
+                "",
                 cx,
                 MilestoneField::Date,
             ))
@@ -3237,10 +3387,10 @@ impl AppRoot {
                     .child(div().class("field-label").child("描述（可选）"))
                     .child(
                         div().class("field-box").child(
-                            textarea()
+                            TextArea()
                                 .class("textarea")
                                 .id("ms-desc")
-                                .placeholder("这条里程碑要达成什么")
+                                .placeholder("What does this milestone achieve")
                                 .value(form.desc.clone())
                                 .on_input(cx.listener(|this, e: &blenderui::ChangeEvent, _, cx| {
                                     this.state.set_milestone_field(
@@ -3342,10 +3492,11 @@ impl AppRoot {
             .child(
                 div().class("palette-input").child(
                     div().class("field-box").child(
-                        input()
+                        // BUI 0.5 硬边界：输入用大写组件 TextField()，占位符 ASCII。
+                        TextField()
                             .class("input")
                             .id("palette-query")
-                            .placeholder("搜索视图 / 项目 / 动作")
+                            .placeholder("Search views / projects / actions")
                             .value(state.query.clone())
                             .on_input(cx.listener(|this, e: &blenderui::ChangeEvent, _, cx| {
                                 this.state.apply(AppAction::SetPaletteQuery(e.value.clone()));

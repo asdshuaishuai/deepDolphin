@@ -205,10 +205,12 @@ fn scan_pane(state: &AppState, cx: &mut Context<AppRoot>) -> Div {
     } else {
         for r in &roots {
             let target = r.clone();
+            // .chip 不折行：长路径必须先截断（t-ellipsis 兜底），悬停看全文。
             roots_row = roots_row.child(
                 div()
-                    .class("chip")
-                    .child(r.clone())
+                    .class("chip t-ellipsis")
+                    .title(r.clone())
+                    .child(crate::views::truncate_mid(r, 24))
                     .child(
                         div()
                             .class("search-clear")
@@ -414,8 +416,10 @@ fn coverage_block(p: &ScanPayload, cx: &mut Context<AppRoot>) -> Div {
         ));
     }
     if !p.unreadable.is_empty() {
+        // 措辞与 models::coverage_notes 同步（AGENTS #50）：不猜成因
+        // （权限/SIP/已消失分不出来），只报「读不到」。
         banner = banner.child(div().class("banner-body").child(format!(
-            "{} 个目录读不出来（权限/占用）：这些地方的结果不完整，不是「那里没有项目」。",
+            "{} 个目录读不到：这些地方的结果不完整，不是「那里没有项目」。",
             p.unreadable.len()
         )));
         let mut list = div().class("list");

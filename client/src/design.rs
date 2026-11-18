@@ -696,7 +696,10 @@ pub const SHEET: &str = r#"
 .t-num { font-family: monospace; }
 .t-accent { color: var(--accent-2); }
 .t-ellipsis { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.t-clamp-2 { overflow: hidden; max-height: 36px; }
+/* 两行截断的高度按行高单位（1.5 行高 × 2 行 = 3em）：em 随本元素字号缩放，
+   13px 文本两行 39px、12px 两行 36px 都正好容纳；固定 36px 会把
+   13px 第二行（board 卡 headline、里程碑描述）底部 3px 切掉。 */
+.t-clamp-2 { overflow: hidden; max-height: 3em; }
 .t-clamp-3 { overflow: hidden; max-height: 4.35em; }
 .mono { font-family: monospace; letter-spacing: .2px; }
 .num { font-family: monospace; }
@@ -754,6 +757,12 @@ pub const SHEET: &str = r#"
 .btn-block { width: 100%; }
 .btn-busy { color: var(--text-3); pointer-events: none; }
 .is-disabled { color: rgba(233,238,247,.45); pointer-events: none; border-color: rgba(255,255,255,.06); }
+/* accent 的禁用态：`.is-disabled` 只翻文字色，饱和蓝底原样留下，
+   禁用与启用读作同一个「可点的蓝色按钮」（实测禁用文字 ≈#85B0FC、
+   启用 #081120，同底色两种都像可点）。背景降到 25% 洗白蓝，
+   描边沿用 `.is-disabled` 的淡化，禁用一眼可辨。 */
+.btn-accent.is-disabled,
+.btn.accent.is-disabled { background: rgba(76,141,255,.25); }
 .spinner {
   width: 8px; height: 8px; border-radius: 999px;
   border: 1.5px solid rgba(255,255,255,.25); border-top-color: transparent;
@@ -815,7 +824,9 @@ pub const SHEET: &str = r#"
 }
 .switch.on { background: var(--accent); border-color: var(--accent); }
 .switch-knob { width: 16px; height: 16px; border-radius: 999px; background: #E9EEF7; }
-.switch.on .switch-knob { margin-left: 16px; }
+/* 旋钮行程 = 内容盒宽 − 旋钮宽 = (36 − 2×1 边框 − 2×2 内边距) − 16 = 14px；
+   16px 会让 ON 态旋钮右缘越进内边距/圆角 2px。 */
+.switch.on .switch-knob { margin-left: 14px; }
 .link { color: var(--accent-2); cursor: pointer; }
 .link:hover { color: #A9C7FF; }
 .picker-btn {
@@ -1200,7 +1211,7 @@ pub const SHEET: &str = r#"
 .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 
 /* ══════════════════════════════════════════════════════════════════════
-   窄窗（窗口最小 1040，所以只覆盖 1180）
+   窄窗（窗口最小 900x600，断点取 1239；窄窗布局由这组规则接管）
    ══════════════════════════════════════════════════════════════════════ */
 @media (max-width: 1239px) {
   .span-3 { grid-column: span 6; }
@@ -1214,7 +1225,7 @@ pub const SHEET: &str = r#"
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .btn, .card.hoverable, .nav-item, .tab, .seg-item { transition: none; }
+  .btn, .card.hoverable, .kpi, .nav-item, .tab, .seg-item { transition: none; }
   .skeleton, .skeleton-line { animation: none; }
   .toast { animation: none; }
 }

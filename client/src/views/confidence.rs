@@ -409,7 +409,7 @@ fn controls(state: &AppState, selected: Option<&str>, cx: &mut Context<AppRoot>)
     card = card.child(row);
 
     card = card.child(div().class("t-caption").child(
-        "「运行分析」在后台线程执行（`graph confidence` 超时 300s）：窗口不再冻结，可点「停止」终止引擎进程；停止不是超时，不会报成「分析失败」。`--llm` 复核提示词仍是同步执行。",
+        "「运行分析」在后台线程执行（`graph confidence` 超时 300s）：窗口不再冻结，可点「停止」终止引擎进程；停止不是超时，不会报成「分析失败」。`--llm` 复核提示词后台执行（ConfidenceLlm 走 queue_job），完成后复制到剪贴板；暂无停止按钮。",
     ));
     card
 }
@@ -666,7 +666,7 @@ fn capped_total_disclosure(r: &ConfidenceReport) -> Div {
                     .child("疑点总数被引擎截断（cappedTotal=true）"),
             )
             .child(div().class("banner-body").child(
-                "下面的疑点表是**样本**，不是全量。比例、排名、「最多的类型」都不能当全体结论。",
+                "下面的疑点表是样本，不是全量。比例、排名、「最多的类型」都不能当全体结论。",
             )),
         // false 是「没截断」，不必刷一条屏；缺键必须单独说，见下。
         // 仍返回一个 hidden 占位，避免 `.stack` 的 gap 留下一段空白。

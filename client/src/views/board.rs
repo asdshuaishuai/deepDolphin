@@ -335,6 +335,47 @@ fn filter_card(query: &str, shown: usize, total: usize, cx: &mut Context<AppRoot
     div().class("card").child(row)
 }
 
+/// 列判据折行：**空格优先**的词级折行。
+/// `wrap_chars` 按字符硬切，会把判据里的英文单词切在中间
+/// （实测「stash」被切成「stas / h」）；判据是中英混排，空格是天然断点。
+/// 超长的无空格段（连续中文）仍按字符硬切 —— 保留 `wrap_chars` 的兜底职责。
+fn wrap_criteria(s: &str, per_line: usize) -> String {
+    let per = per_line.max(1);
+    let mut out = String::new();
+    for (li, line) in s.lines().enumerate() {
+        if li > 0 {
+            out.push('\n');
+        }
+        let mut cur = 0usize;
+        let mut first = true;
+        for word in line.split(' ').filter(|w| !w.is_empty()) {
+            let len = word.chars().count();
+            if !first && cur + 1 + len > per {
+                out.push('\n');
+                cur = 0;
+            } else if !first {
+                out.push(' ');
+                cur += 1;
+            }
+            first = false;
+            if len <= per - cur {
+                out.push_str(word);
+                cur += len;
+            } else {
+                // 整词超长（必然在行首）：按字符硬切兜底。
+                for (ci, chunk) in crate::views::wrap_chars(word, per).lines().enumerate() {
+                    if ci > 0 {
+                        out.push('\n');
+                    }
+                    out.push_str(chunk);
+                    cur = chunk.chars().count();
+                }
+            }
+        }
+    }
+    out
+}
+
 fn board_column_view(
     key: &'static str,
     title: &'static str,
@@ -358,7 +399,7 @@ fn board_column_view(
                         .child(format!("{}", rows.len())),
                 ),
         )
-        .child(div().class("board-col-criteria").child(crate::views::wrap_chars(&criteria, 16)));
+        .child(div().class("board-col-criteria").child(wrap_criteria(criteria, 16)));
 
     if rows.is_empty() {
         // 空列写**判据**，不写「暂无」：读者需要知道「为什么这里会空」。
@@ -370,7 +411,8 @@ fn board_column_view(
                 .child(
                     div()
                         .class("empty-body")
-                        .child(format!("判据：{criteria}")),
+                        // BUI 不给无空格文本折行：判据与列头同口径折行。
+                        .child(wrap_criteria(&format!("判据：{criteria}"), 16)),
                 ),
         );
     } else {
@@ -623,8 +665,12 @@ fn dirty_files_line(p: &Project) -> Div {
             if d.files.len() > shown.len() {
                 text.push_str(&format!("（还有 {} 个）", d.files.len() - shown.len()));
             }
+            // 文本带中文前缀（改动：/还有 N 个）：等宽字体无 CJK 字形，按内容选类。
             div()
-                .class("t-caption mono t-ellipsis")
+                .class(format!(
+                    "t-caption {} t-ellipsis",
+                    crate::views::mono_class(&text)
+                ))
                 .title(d.files.join("\n"))
                 .child(text)
         }
@@ -678,4 +724,40 @@ fn board_btn(
             this.state.dispatch(action.clone());
             cx.notify();
         }))
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 单测（纯判定；不构造 UI）
+// ══════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn criteria_wrapping_keeps_english_words_whole() {
+        // 实测缺陷：wrap_chars 把「stash」按字符硬切成「stas / h」。
+        assert_eq!(
+            wrap_criteria("有未提交、未跟踪文件或 stash。读不出来的脏度不算「有改动」。", 16),
+            "有未提交、未跟踪文件或\nstash。读不出来的脏度不算「\n有改动」。"
+        );
+        assert_eq!(
+            wrap_criteria("最近 7 天内有提交（引擎的 staleDays 0–7）。", 16),
+            "最近 7 天内有提交（引擎的\nstaleDays 0–7）。"
+        );
+    }
+
+    #[test]
+    fn criteria_wrapping_hard_chunks_unspaced_cjk_runs() {
+        // 无空格的连续中文没有天然断点：退回按字符硬切（wrap_chars 兜底）。
+        assert_eq!(
+            wrap_criteria(&"汉".repeat(20), 16),
+            format!("{}\n{}", "汉".repeat(16), "汉".repeat(4))
+        );
+    }
+
+    #[test]
+    fn criteria_wrapping_preserves_existing_lines() {
+        assert_eq!(wrap_criteria("甲乙\n丙丁", 3), "甲乙\n丙丁");
+    }
 }

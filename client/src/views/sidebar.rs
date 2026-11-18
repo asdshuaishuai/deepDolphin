@@ -540,8 +540,15 @@ fn foot(state: &AppState, cx: &mut Context<AppRoot>) -> Div {
         .clone()
         .or_else(|| state.startup_error.as_ref().map(|e| e.user_message()))
     {
-        // stderr/错误原文可能很长：一行截断，完整内容仍在顶部反馈条/诊断里。
-        foot = foot.child(div().class("sidebar-status err").child(shorten(&line, 46)));
+        // stderr/错误原文可能很长：46 字上限在 CJK 下 ≈500px，横向溢出页脚
+        // （BUI 不给无空格文本折行）。压到 18 字并配 t-ellipsis；悬停看全文，
+        // 完整内容仍在顶部反馈条/诊断里。
+        foot = foot.child(div().class("sidebar-status err").child(
+            div()
+                .class("t-ellipsis")
+                .title(line.clone())
+                .child(shorten(&line, 18)),
+        ));
     }
 
     foot.child(language_row(state, cx)).child(

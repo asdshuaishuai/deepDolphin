@@ -207,6 +207,12 @@ pub fn render(state: &AppState, cx: &mut Context<AppRoot>) -> Option<Div> {
     }
     body = body.child(msg_field);
 
+    // 提交失败的原因（sheet.error）：只拦点击不说原因 = 界面无变化的旧坑。
+    // set_commit_message 已在信息变更时撤掉旧 error，这里只管渲染。
+    if let Some(err) = &sheet.error {
+        body = body.child(div().class("field-error").child(err.clone()));
+    }
+
     if !entries.is_empty() {
         let files_invert: Vec<String> = entries.iter().map(|e| e.file.clone()).collect();
         let toolbar = div()

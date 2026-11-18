@@ -492,7 +492,7 @@ fn inputs_card(state: &AppState, selected: Option<&str>, cx: &mut Context<AppRoo
     }
     card = card.child(actions);
     card = card.child(div().class("t-caption").child(
-        "「分析」在**后台线程**执行（读 diff 180s / 引擎 300s），窗口保持响应，可点「停止」终止引擎进程；停止不是超时，不会报成「分析失败」。「取 Agent 任务书」仍是同步执行（结果直接开模态，不受「停止」控制）。",
+        "「分析」在后台线程执行（读 diff 180s / 引擎 300s），窗口保持响应，可点「停止」终止引擎进程；停止不是超时，不会报成「分析失败」。「取 Agent 任务书」后台执行（PatchSkill 走 queue_job），完成后弹窗展示；暂无停止按钮。",
     ));
 
     // ── Layer-3 合并输入 ──
@@ -553,7 +553,7 @@ fn inputs_card(state: &AppState, selected: Option<&str>, cx: &mut Context<AppRoo
     json_field = json_field.child(div().class("field-label").child("或粘贴 agent JSON"));
     json_field = json_field.child(
         div().class("field-box").child(
-            textarea()
+            TextArea()
                 .class("textarea")
                 .id("patch-agent-json")
                 .placeholder("{\"task\":\"layer2_review\",\"items\":[...]}")
@@ -1305,7 +1305,7 @@ fn merge_card(state: &AppState, selected: Option<&str>, cx: &mut Context<AppRoot
                 div()
                     .class("row")
                     .child(spinner())
-                    .child(div().class("t-caption").child("合并中…（同步执行）")),
+                    .child(div().class("t-caption").child("合并中…（后台执行，完成后回执）")),
             );
         }
         Load::Failed(e) => {

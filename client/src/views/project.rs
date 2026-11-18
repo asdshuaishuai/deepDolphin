@@ -1060,6 +1060,19 @@ fn branches_tab(state: &AppState, p: &Project, cx: &mut Context<AppRoot>) -> Div
             .class("t-caption dim")
             .child("引擎的 branch 记录只有 aheadOfDefault，没有 behind 字段：本页显示「领先」，落后数标为「未提供」——不把缺失当成 0。"),
     );
+    // 合并建议（引擎 mergeHint.description 原文）。缺键 = 当前就在默认分支，
+    // 不是「没有建议」，不渲染占位；mergeHint.ahead 与分支列表的
+    // aheadOfDefault 是两个口径（前者是独有提交数），各说各的，不互相替换。
+    if let Some(h) = &p.merge_hint {
+        if h.description.trim().is_empty() {
+            stack = stack.child(div().class("t-caption unknown").child(format!(
+                "引擎给了合并建议但没给文案：kind={}，ahead={}，behind={}",
+                h.kind, h.ahead, h.behind
+            )));
+        } else {
+            stack = stack.child(tone_banner(Tone::Info, "合并建议", h.description.clone()));
+        }
+    }
     if let Some(s) = &state.status {
         if s.summary.branch_unknown_projects > 0 || s.summary.branch_truncated_projects > 0 {
             stack = stack.child(
