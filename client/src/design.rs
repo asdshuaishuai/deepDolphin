@@ -734,8 +734,11 @@ pub const SHEET: &str = r#"
 .btn-accent { background: var(--accent); border-color: var(--accent); color: #081120; font-weight: 600; }
 .btn-accent:hover { background: var(--accent-2); border-color: var(--accent-2); }
 .btn-accent:active { background: var(--accent-3); }
-.btn-ghost { background: transparent; border-color: transparent; color: var(--text-2); }
-.btn-ghost:hover { background: rgba(255,255,255,.06); border-color: transparent; color: var(--text); }
+/* ghost ≠ 不可见：全透明的按钮在深底上就是一行普通文字（实测扫描页
+   「把上面的路径加入根列表」被当成说明文字）。给一点表面 + 描边，
+   仍然是整套按钮里最轻的一档，但「可点」这件事必须看得出来。 */
+.btn-ghost { background: rgba(255,255,255,.035); border-color: rgba(255,255,255,.08); color: var(--text-2); }
+.btn-ghost:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.16); color: var(--text); }
 .btn-danger { background: rgba(255,107,129,.08); border-color: rgba(255,107,129,.35); color: #FF9AA8; }
 .btn-danger:hover { background: rgba(255,107,129,.16); }
 /* v0 兼容：旧页面用 `.btn.accent` / `.btn.ghost` / `.btn.danger`（点号组合），

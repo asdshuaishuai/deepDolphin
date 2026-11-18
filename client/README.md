@@ -41,6 +41,10 @@ MOONGIT_BIN=/path/to/moonGit/target/release/bin/main cargo run
 # 深链（与旧客户端同形）
 cargo run -- --project d2note
 cargo run -- --section milestones
+
+# 打包成 .app（内嵌引擎 + 仓颉运行时，rpath 重写 + ad-hoc 签名 + 空环境冒烟）
+sh package-macos.sh             # 产出 dist/deepDolphin.app
+sh package-macos.sh --install   # 再装到 /Applications；旧版移入回收站，不会启动
 ```
 
 跨平台构建：
