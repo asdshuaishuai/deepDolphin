@@ -7,6 +7,8 @@ package deepdolphin
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -23,8 +25,13 @@ import androidx.compose.ui.window.application
 import deepdolphin.engine.EngineLocator
 import deepdolphin.engine.EngineProbe
 import deepdolphin.ui.AppModel
+import deepdolphin.ui.AppModel.Route
+import deepdolphin.ui.BoardPage
 import deepdolphin.ui.DashboardPage
+import deepdolphin.ui.MilestonesPage
 import deepdolphin.ui.Palette
+import deepdolphin.ui.ProjectDetailView
+import deepdolphin.ui.Space
 import deepdolphin.ui.Type
 import kotlinx.coroutines.launch
 
@@ -78,7 +85,7 @@ fun App() {
             busy -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("正在定位引擎…", style = Type.body.copy(color = Palette.TextSecondary))
             }
-            probe != null && probe!!.found && model != null -> DashboardPage(model!!)
+            probe != null && probe!!.found && model != null -> SidebarShell(model!!)
             else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("未找到 moonGit 引擎", style = Type.title.copy(color = Palette.Amber))
@@ -97,5 +104,66 @@ fun main() = application {
         title = "deepDolphin",
     ) {
         App()
+    }
+}
+
+/** 侧栏外壳（C3 四页路由；项目行点击进详情）。 */
+@Composable
+fun SidebarShell(model: AppModel) {
+    val route by model.route.collectAsState()
+    val status by model.status.collectAsState()
+    val selected by model.selectedProject.collectAsState()
+
+    Row(Modifier.fillMaxSize()) {
+        // ── 侧栏 ──
+        Column(
+            Modifier.width(230.dp).fillMaxHeight().background(Palette.BgDeep).padding(Space.md),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Spacer(Modifier.height(Space.sm))
+            NavItem("仪表盘", Route.DASHBOARD == route) { model.goRoute(Route.DASHBOARD) }
+            NavItem("看板", Route.BOARD == route) { model.goRoute(Route.BOARD) }
+            NavItem("里程碑", Route.MILESTONES == route) { model.goRoute(Route.MILESTONES) }
+            Spacer(Modifier.height(Space.md))
+            Text("仓库", style = Type.micro.copy(fontWeight = FontWeight.Bold), color = Palette.TextSecondary)
+            status?.projects.orEmpty().forEach { p ->
+                NavItem(
+                    p.name + (if (p.isReadable) "" else "（读不出）"),
+                    Route.PROJECT == route && selected == p.name,
+                ) { if (p.isReadable) model.goRoute(Route.PROJECT, p.name) }
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                "引擎 moongit · 判据 11 条",
+                style = Type.micro, color = Palette.TextSecondary,
+            )
+        }
+        // ── 主区 ──
+        Box(Modifier.weight(1f).fillMaxHeight()) {
+            when (route) {
+                Route.DASHBOARD -> DashboardPage(model)
+                Route.BOARD -> BoardPage(model)
+                Route.MILESTONES -> MilestonesPage(model)
+                Route.PROJECT -> ProjectDetailView(model)
+            }
+        }
+    }
+}
+
+@Composable
+fun NavItem(label: String, selected: Boolean, onClick: () -> Unit) {
+    // Material 组件承载点击语义（自绘 Text+clickable 在本宿主下点击丢失——实测教训）
+    androidx.compose.material3.Surface(
+        onClick = onClick,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+        color = if (selected) Palette.Accent else androidx.compose.ui.graphics.Color.Transparent,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            label,
+            style = Type.body.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal),
+            color = if (selected) Color.White else Palette.TextPrimary,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        )
     }
 }
