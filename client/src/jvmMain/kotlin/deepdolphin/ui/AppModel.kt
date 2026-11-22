@@ -42,7 +42,7 @@ class AppModel(private val engineBin: String) {
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
     // ── 批 2：路由 + 详情 + 写操作反馈 ──
-    enum class Route { DASHBOARD, BOARD, MILESTONES, PROJECT }
+    enum class Route { DASHBOARD, BOARD, MILESTONES, PROJECT, SETTINGS, AI_CHAT }
     private val _route = MutableStateFlow(Route.DASHBOARD)
     val route: StateFlow<Route> = _route.asStateFlow()
     private val _selectedProject = MutableStateFlow<String?>(null)

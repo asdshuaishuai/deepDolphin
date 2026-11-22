@@ -11,7 +11,7 @@ import kotlinx.serialization.KSerializer
 
 class EngineException(val userMessage: String, cause: Throwable? = null) : Exception(userMessage, cause)
 
-class Engine(private val bin: String) {
+open class Engine(val bin: String) {
 
     private val quiet = listOf("--json", "--quiet")
     private val json = listOf("--json")

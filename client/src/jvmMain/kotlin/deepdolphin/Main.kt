@@ -26,6 +26,8 @@ import deepdolphin.engine.EngineLocator
 import deepdolphin.engine.EngineProbe
 import deepdolphin.ui.AppModel
 import deepdolphin.ui.AppModel.Route
+import deepdolphin.ui.AiChatPage
+import deepdolphin.ui.AiSettingsPage
 import deepdolphin.ui.BoardPage
 import deepdolphin.ui.DashboardPage
 import deepdolphin.ui.MilestonesPage
@@ -124,6 +126,8 @@ fun SidebarShell(model: AppModel) {
             NavItem("仪表盘", Route.DASHBOARD == route) { model.goRoute(Route.DASHBOARD) }
             NavItem("看板", Route.BOARD == route) { model.goRoute(Route.BOARD) }
             NavItem("里程碑", Route.MILESTONES == route) { model.goRoute(Route.MILESTONES) }
+            NavItem("AI 助手", Route.AI_CHAT == route) { model.goRoute(Route.AI_CHAT) }
+            NavItem("AI 设置", Route.SETTINGS == route) { model.goRoute(Route.SETTINGS) }
             Spacer(Modifier.height(Space.md))
             Text("仓库", style = Type.micro.copy(fontWeight = FontWeight.Bold), color = Palette.TextSecondary)
             status?.projects.orEmpty().forEach { p ->
@@ -145,6 +149,8 @@ fun SidebarShell(model: AppModel) {
                 Route.BOARD -> BoardPage(model)
                 Route.MILESTONES -> MilestonesPage(model)
                 Route.PROJECT -> ProjectDetailView(model)
+                Route.AI_CHAT -> AiChatPage(model)
+                Route.SETTINGS -> AiSettingsPage(model)
             }
         }
     }
@@ -152,18 +158,21 @@ fun SidebarShell(model: AppModel) {
 
 @Composable
 fun NavItem(label: String, selected: Boolean, onClick: () -> Unit) {
-    // Material 组件承载点击语义（自绘 Text+clickable 在本宿主下点击丢失——实测教训）
-    androidx.compose.material3.Surface(
+    // Material3 Surface(onClick=…) 的 selectable API 在 1.7.3 + 本宿主下曾静默丢点击——
+    // 改用最底层的 Button 组件契约（onClick 由 Material 保证，不依赖 selectable 状态）。
+    androidx.compose.material3.Button(
         onClick = onClick,
         shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-        color = if (selected) Palette.Accent else androidx.compose.ui.graphics.Color.Transparent,
+        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+            containerColor = if (selected) Palette.Accent else androidx.compose.ui.graphics.Color.Transparent,
+            contentColor = if (selected) Color.White else Palette.TextPrimary,
+        ),
+        elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Text(
             label,
             style = Type.body.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal),
-            color = if (selected) Color.White else Palette.TextPrimary,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
         )
     }
 }
