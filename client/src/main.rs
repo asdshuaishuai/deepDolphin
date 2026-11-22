@@ -377,7 +377,10 @@ fn main() {
                 // 同一份契约：900x600。窄窗下的磁贴降列 / 看板 2 列由
                 // design.rs 的 1239px 断点接管（900 < 1239，窄窗规则全部生效）。
                 window_min_size: Some(size(px(900.0), px(600.0))),
-                gpu: None,
+                // GPU 渲染默认开（本机 Intel/Mesa 实测：交互期累计 CPU 73%→56%，
+                // 且 GLX SwapBuffers 垂直同步上屏消灭软件帧 XPutImage 的撕裂横纹）。
+                // BUI_GPU=0 可强制回软件光栅排障；设备不存在时框架自动回退软件。
+                gpu: Some(std::env::var("BUI_GPU").map(|v| v != "0").unwrap_or(true)),
             },
             move |_, cx| {
                 cx.new(|_| app::AppRoot { state })
