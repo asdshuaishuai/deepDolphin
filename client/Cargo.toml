@@ -27,3 +27,4 @@ objc2-foundation = "0.3.2"
 # vendor/blenderui 内已修复；上游修复后可移除此段。
 [patch.crates-io]
 blenderui = { path = "vendor/blenderui" }
+blenderui-sys = { path = "vendor/blenderui-sys" }

@@ -1,0 +1,254 @@
+/* BUI seam implementations (stubs & extension points).
+ * SPDX-License-Identifier: GPL-2.0-or-later */
+#include "RNA_types.hh"
+
+#include "BIF_glutil.hh"
+#include "BKE_lib_id.hh"
+#include "ED_node.hh"
+#include "BKE_tracking.hh"
+#include "IMB_colormanagement.hh"
+#include "GPU_immediate.hh"
+#include "GPU_immediate_util.hh"
+#include "GPU_texture.hh"
+
+namespace blender {
+
+/* Complete the opaque RNA types with BUI-local dummies. */
+struct PropertyRNA {
+  int _bui_stub;
+};
+
+struct StructRNA {
+  int _bui_stub;
+};
+
+static StructRNA bui_rna_nodetree = {};
+StructRNA *const RNA_NodeTree = &bui_rna_nodetree;
+
+static StructRNA bui_rna_action_slot = {};
+StructRNA *const RNA_ActionSlot = &bui_rna_action_slot;
+
+/* -------------------------------------------------------------------- */
+/** 
+ame Image draw helpers (BIF_glutil seam, null rendering)
+ * \{ */
+
+IMMDrawPixelsTexState immDrawPixelsTexSetup(int builtin)
+{
+  IMMDrawPixelsTexState state = {};
+  state.pos = 0;
+  state.texco = 1;
+  (void)builtin;
+  return state;
+}
+
+void immDrawPixelsTexTiled(IMMDrawPixelsTexState *state,
+                           float x,
+                           float y,
+                           int img_w,
+                           int img_h,
+                           gpu::TextureFormat gpu_format,
+                           bool use_filter,
+                           const void *rect,
+                           float xzoom,
+                           float yzoom,
+                           const float color[4])
+{
+  (void)state; (void)x; (void)y; (void)img_w; (void)img_h; (void)gpu_format;
+  (void)use_filter; (void)rect; (void)xzoom; (void)yzoom; (void)color;
+}
+
+void immDrawPixelsTexTiled_clipping(IMMDrawPixelsTexState *state,
+                                    float x,
+                                    float y,
+                                    int img_w,
+                                    int img_h,
+                                    gpu::TextureFormat gpu_format,
+                                    bool use_filter,
+                                    const void *rect,
+                                    float clip_min_x,
+                                    float clip_min_y,
+                                    float clip_max_x,
+                                    float clip_max_y,
+                                    float xzoom,
+                                    float yzoom,
+                                    const float color[4])
+{
+  (void)state; (void)x; (void)y; (void)img_w; (void)img_h; (void)gpu_format;
+  (void)use_filter; (void)rect; (void)clip_min_x; (void)clip_min_y; (void)clip_max_x;
+  (void)clip_max_y; (void)xzoom; (void)yzoom; (void)color;
+}
+
+void immDrawPixelsTexTiled_scaling(IMMDrawPixelsTexState *state,
+                                   float x,
+                                   float y,
+                                   int img_w,
+                                   int img_h,
+                                   gpu::TextureFormat gpu_format,
+                                   bool use_filter,
+                                   const void *rect,
+                                   float scaleX,
+                                   float scaleY,
+                                   float xzoom,
+                                   float yzoom,
+                                   const float color[4])
+{
+  (void)state; (void)x; (void)y; (void)img_w; (void)img_h; (void)gpu_format;
+  (void)use_filter; (void)rect; (void)scaleX; (void)scaleY; (void)xzoom; (void)yzoom;
+  (void)color;
+}
+
+void immDrawPixelsTexTiled_scaling_clipping(IMMDrawPixelsTexState *state,
+                                            float x,
+                                            float y,
+                                            int img_w,
+                                            int img_h,
+                                            gpu::TextureFormat gpu_format,
+                                            bool use_filter,
+                                            const void *rect,
+                                            float scaleX,
+                                            float scaleY,
+                                            float clip_min_x,
+                                            float clip_min_y,
+                                            float clip_max_x,
+                                            float clip_max_y,
+                                            float xzoom,
+                                            float yzoom,
+                                            const float color[4])
+{
+  (void)state; (void)x; (void)y; (void)img_w; (void)img_h; (void)gpu_format;
+  (void)use_filter; (void)rect; (void)scaleX; (void)scaleY; (void)clip_min_x;
+  (void)clip_min_y; (void)clip_max_x; (void)clip_max_y; (void)xzoom; (void)yzoom; (void)color;
+}
+
+void immDrawPixelsTexScaledFullSize(const IMMDrawPixelsTexState *state,
+                                    float x,
+                                    float y,
+                                    int img_w,
+                                    int img_h,
+                                    gpu::TextureFormat gpu_format,
+                                    bool use_filter,
+                                    const void *rect,
+                                    float scaleX,
+                                    float scaleY,
+                                    float xzoom,
+                                    float yzoom,
+                                    const float color[4])
+{
+  (void)state; (void)x; (void)y; (void)img_w; (void)img_h; (void)gpu_format;
+  (void)use_filter; (void)rect; (void)scaleX; (void)scaleY; (void)xzoom; (void)yzoom;
+  (void)color;
+}
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** 
+ame Color management seam (identity transform)
+ * \{ */
+
+float IMB_colormanagement_get_luminance(const float rgb[3])
+{
+  return 0.2126f * rgb[0] + 0.7152f * rgb[1] + 0.0722f * rgb[2];
+}
+
+ocio::ScopeInfo IMB_colormanagement_get_scope_info(
+    const blender::ColorManagedDisplaySettings * /*display_settings*/, const char * /*view_name*/)
+{
+  return {};
+}
+
+void IMB_colormanagement_scene_linear_to_display_v3(float pixel[3],
+                                                    const blender::ColorManagedDisplay * /*display*/)
+{
+  /* Identity: scene linear == display space in the stub color management. */
+  (void)pixel;
+}
+
+void IMB_colormanagement_display_to_scene_linear_v3(float pixel[3],
+                                                    const blender::ColorManagedDisplay * /*display*/)
+{
+  (void)pixel;
+}
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** 
+ame Tracking seam (no clip data available)
+ * \{ */
+
+ImBuf *BKE_tracking_sample_pattern(int frame_width,
+                                   int frame_height,
+                                   const ImBuf *search_ib,
+                                   const MovieTrackingTrack *track,
+                                   const MovieTrackingMarker *marker,
+                                   bool from_anchor,
+                                   bool use_mask,
+                                   int num_samples_x,
+                                   int num_samples_y,
+                                   float pos[2])
+{
+  (void)frame_width; (void)frame_height; (void)search_ib; (void)track; (void)marker;
+  (void)from_anchor; (void)use_mask; (void)num_samples_x; (void)num_samples_y; (void)pos;
+  return nullptr;
+}
+
+/** \} */
+
+void BKE_id_full_name_ui_prefix_get(char name[MAX_ID_FULL_NAME_UI],
+                                    const ID *id,
+                                    bool /*add_lib_hint*/,
+                                    char /*separator_char*/,
+                                    int *r_prefix_len)
+{
+  name[0] = '\0';
+  if (r_prefix_len) {
+    *r_prefix_len = 0;
+  }
+  if (id && id->name[0]) {
+    /* Skip the two-letter ID-type prefix (e.g. "MA" for materials). */
+    snprintf(name, MAX_ID_FULL_NAME_UI, "%s", id->name + 2);
+  }
+}
+
+/* -------------------------------------------------------------------- */
+/** 
+ame Node socket drawing seam (null renderer)
+ * \{ */
+
+void ed::space_node::node_socket_draw(bNodeSocket * /*sock*/,
+                                      const rcti * /*rect*/,
+                                      const float /*color*/[4],
+                                      float /*scale*/)
+{
+}
+
+void ed::space_node::node_draw_nodesocket(const rctf * /*rect*/,
+                                          const float /*color_inner*/[4],
+                                          const float /*color_outline*/[4],
+                                          float /*outline_thickness*/,
+                                          int /*shape*/,
+                                          float /*aspect*/)
+{
+}
+
+/** \} */
+
+void IMB_colormanagement_scene_linear_to_color_picking_v3(float color_picking[3],
+                                                          const float scene_linear[3])
+{
+  color_picking[0] = scene_linear[0];
+  color_picking[1] = scene_linear[1];
+  color_picking[2] = scene_linear[2];
+}
+
+void IMB_colormanagement_color_picking_to_scene_linear_v3(float scene_linear[3],
+                                                          const float color_picking[3])
+{
+  scene_linear[0] = color_picking[0];
+  scene_linear[1] = color_picking[1];
+  scene_linear[2] = color_picking[2];
+}
+
+}  // namespace blender

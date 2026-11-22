@@ -11,8 +11,6 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 [[package]]
 name = "blenderui"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8be7f10974f3057fe0ef3b2ea4e406b2963bcf66ee1bb938361ef39ac74d1116"
 dependencies = [
  "blenderui-macros",
  "blenderui-sys",
@@ -42,8 +40,6 @@ checksum = "4b975b99afe5c38d8861dc374a1cc16a8185a24fda9daf0feb1c6f5af9028102"
 [[package]]
 name = "blenderui-sys"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d81f641d81003f8819f377cdcf320660ca016c7a4c96896aeb6f8c6f28cc2f4"
 dependencies = [
  "cmake",
 ]

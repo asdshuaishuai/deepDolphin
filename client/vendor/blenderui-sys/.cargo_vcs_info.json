@@ -1,0 +1,7 @@
+{
+  "git": {
+    "sha1": "37e6fb43112b9c656ccdbd252f58115cacbbeacd",
+    "dirty": true
+  },
+  "path_in_vcs": "bindings/rust/blenderui-sys"
+}

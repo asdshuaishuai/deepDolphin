@@ -1,0 +1,58 @@
+[package]
+name = "blenderui-sys"
+description = "Raw FFI bindings to the BUI C kit (Blender's UI as a C library)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+documentation = "https://docs.rs/blenderui-sys"
+links = "bui_kit"
+build = "build.rs"
+keywords = ["gui", "ui", "blender", "ffi"]
+categories = ["gui", "external-ffi-bindings"]
+# csrc/ is git-ignored (vendored by scripts/vendor_c.py), so list it explicitly
+include = ["src/**", "build.rs", "Cargo.toml", "LICENSE", "THIRD_PARTY_NOTICES.md", "csrc/**"]
+
+[features]
+# Windows' native GDI text engine (system fonts) instead of the portable
+# engine (embedded Inter, GPU Slug glyphs).
+gdi-text = []
+# GPU text drawn with Slug (glyph outlines in the pixel shader) by default;
+# without it, the per-glyph atlas. Switchable at runtime either way.
+slug = []
+default = ["slug", "png", "gif", "bmp", "tga", "qoi", "jpeg", "webp", "hdr", "pnm", "svg", "video", "gpu", "freetype", "filebrowser"]
+# The optional parts of the C kit: features.json (the one table CMake and
+# `bui build` read too; build.rs maps each to its CMake option and checks this
+# list has them all). Off, a part costs no binary size; its API stays.
+png = [] # PNG images
+gif = [] # GIF images and animations
+bmp = [] # BMP images
+tga = [] # TGA images
+qoi = [] # QOI images
+jpeg = [] # JPEG images
+webp = [] # WebP images and animations
+hdr = [] # Radiance HDR images
+pnm = [] # PNM (PGM, PPM) images
+svg = [] # SVG images
+video = [] # <video> through the OS decoders
+gpu = [] # GPU renderers: Direct3D 11 (Windows), OpenGL 3.3 (Linux)
+freetype = [] # Text through the vendored FreeType like Blender's BLF
+filebrowser = [] # Blender's File Browser
+# The Lua host (bindings/lua: bui-lua, bui.so). features.json lists it, so it is here too; the
+# crate's C sources (vendored for crates.io) leave bindings/lua out, so turning it on builds
+# nothing more for Rust.
+lua = []
+# Deprecated no-op: the portable engine is the default everywhere.
+portable-text = []
+# Also build and link Dear ImGui on BUI and its C API (bindings/imgui: bui_cimgui,
+# bui_imgui; C++). Used by the blenderui-imgui crate.
+imgui = []
+# With `imgui`: ImGui's widgets drawn and handled as Blender's widgets (CMake
+# BUI_IMGUI_BLENDER_WIDGETS; bindings/imgui/blender). Same API.
+imgui-blender-widgets = ["imgui"]
+
+[build-dependencies]
+cmake = "0.1"
