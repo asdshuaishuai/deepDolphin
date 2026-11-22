@@ -38,7 +38,7 @@ import deepdolphin.ui.Type
 import kotlinx.coroutines.launch
 
 @Composable
-fun App() {
+fun App(initialSection: String? = null, initialProject: String? = null) {
     val scope = rememberCoroutineScope()
     var probe by remember { mutableStateOf<EngineProbe?>(null) }
     var busy by remember { mutableStateOf(true) }
@@ -55,7 +55,15 @@ fun App() {
         }
     }
 
-    LaunchedEffect(Unit) { reprobe() }
+    LaunchedEffect(Unit) {
+        reprobe()
+        // C10 深链路由（引擎探活后落地；非法 section 已在 parseDeepLink 归 dashboard）
+        initialSection?.let { sec ->
+            deepdolphin.ui.AppModel.Route.entries.firstOrNull { it.name.lowercase() == sec }
+                ?.let { model?.goRoute(it) }
+        }
+        initialProject?.let { model?.goRoute(deepdolphin.ui.AppModel.Route.PROJECT, it) }
+    }
     DisposableEffect(Unit) { onDispose { model?.stop() } }
 
     Column(Modifier.fillMaxSize().background(Palette.BgBase)) {
@@ -99,13 +107,15 @@ fun App() {
     }
 }
 
-fun main() = application {
+fun main(vararg args: String) = application {
+    // C10 深链：--section dashboard|board|milestones / --project <名>
+    val link = deepdolphin.sysint.SysInt.parseDeepLink(args.toList())
     Window(
         onCloseRequest = ::exitApplication,
         state = WindowState(width = 1280.dp, height = 860.dp),
         title = "deepDolphin",
     ) {
-        App()
+        App(initialSection = link.section, initialProject = link.project)
     }
 }
 
