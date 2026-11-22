@@ -21,3 +21,9 @@ strip = true
 objc2 = "0.6.5"
 objc2-app-kit = "0.3.2"
 objc2-foundation = "0.3.2"
+
+# [deepdolphin 补丁] blenderui 0.5.0 的 anim.rs 阴影插值有急切求值越界 bug
+# （hover/常态阴影条数不一致时 panic → C 事件循环 abort，整窗崩溃）。
+# vendor/blenderui 内已修复；上游修复后可移除此段。
+[patch.crates-io]
+blenderui = { path = "vendor/blenderui" }
