@@ -57,10 +57,14 @@ fun ProjectDetailView(model: AppModel) {
                 ActionText("深更新", Palette.Accent, enabled = !busyAction) {
                     name?.let { model.updateProject(it, deep = true) }
                 }
+                // 一键项目说明（mac ProjectBriefButton 对位，L10n "detail.projectBrief"）：AI 融进操作——
+                // 动作条就地带固定问题预填打开 agent sheet（作用域=本详情项目），不做独立 AI 入口
+                ActionText("项目说明", Palette.Ai, enabled = name != null) {
+                    name?.let { model.openAgent(briefTask(it), title = "项目说明") }
+                }
                 ActionText("刷新", Palette.TextSecondary, enabled = !refreshing) {
                     name?.let { model.loadDetail(it) }
                 }
-                // 没有 AI 按钮：AI 融进操作——更新完成后结果行就地给「AI 解读」
             }
         }
 

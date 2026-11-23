@@ -80,7 +80,10 @@ scripts/run.sh              # 真窗口（DISPLAY=:0）
   落盘），不可用时按设计回退纯文本并在界面标注原因。复跑排障后再收口。
 
 **如实未落地 / 已知边界（截至 2026-11-23）**：
-- AI 设置无 models-dev 目录选择器；C5 整合更新流无代码（见批 3 标注）。
+- AI 设置无 models-dev 目录选择器；C5 整合更新流中的一键 **项目群/项目说明入口已落地**
+  （仪表盘 hero「项目群说明」+ 详情页动作条「项目说明」→ openAgent 固定问题预填，
+  mac GroupBriefButton/ProjectBriefButton 对位；任务串纯函数 briefTask +3 判据 BriefTaskTest）；
+  定时更新小时档 / 简报通知仍无代码（见批 3 标注）。
 - 通知/自启的界面开关未接线；SystemTray 未实现（见批 4 标注）。
 - 看板 fixture 口径差异（`summary.branchCount=8` vs 分支行数 7、`repoBranchCount=2` 只返回
   1 条）按判据只在页头披露「引擎返回 M/N」，不代引擎重算总数；merged 列无 fixture 样本
@@ -89,6 +92,24 @@ scripts/run.sh              # 真窗口（DISPLAY=:0）
   头注释有边界声明）；KCEF 每进程只尝试装载一次，彻底重试需重启应用。
 - Main.kt 侧栏底部「判据 11 条」是批 1 遗留陈旧文案（现 45），属代码改动，随下次代码批一并修。
 - MilestonesView.kt:32 模态遮罩 `Color(0x88000000)` 是遗留内联色值（此前里程碑批产物，未动）。
+
+## 引擎子命令能力清单（诊断批 `moongit --help` 实测 rc=0；只记录，不实现页面）
+
+通用：list/add/remove/scan/status/track/update（浅更新 `--docs --dry-run`）/deep（`--scope`）/
+journal（`--branch`）/git pull|push|commit|stash|unstash|fetch/hook/milestone add|list|done|drop|remove|reopen/
+dashboard/context（`--budget`）/docs/tools/mcp（MCP 服务器，stdio JSON-RPC）/skill print|install/
+report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
+
+- **置信度类**：`confidence <gen|query>`（confidence.json；索引过期自动重建；`--db` 额外写
+  confidence.db）；`confidence db`（findings/dimensions/罚分表写入单文件 SQLite）。
+- **补丁检查类**：`graph patchconf`（补丁级置信度三层架构：`--patch` 分析 / `--skill` 取 Agent
+  任务 / `--merge` 合并终稿）。
+- **代码图谱类**：`graph [overview|tree|symbol|impact|arch|confidence|patchconf]`、`graph db`
+  （符号级索引写 SQLite nodes/edges，含 tier 确信度）、`index <gen|overview|update|query>`
+  （持久化代码索引，query 支持符号/`--file`）。
+- **架构图类**：`graph arch`（`--format html|mermaid|dot|json|scene`，html 为 Canvas 交互图）、
+  `arch <gen|update|query>`（arch.json 含布局坐标、探针增量 `--force`、query [模块]
+  `--violations`）、`render <arch|index>`（`render index --confidence` 可叠加置信度）。
 
 ## 红线（每批必守）
 

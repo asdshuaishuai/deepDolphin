@@ -295,7 +295,8 @@ private fun FieldRow(label: String, value: String, password: Boolean = false, on
 
 /**
  * AI 报告 sheet（对位 mac AIResultSheet/AgentView：没有独立入口、没有「AI 助手」按钮——
- * AI 融进操作：深/浅更新完成后就地「AI 解读」带着预填任务打开（GraphChrome initialTask 同语义）。
+ * AI 融进操作：深/浅更新完成后就地「AI 解读」、仪表盘/详情页的「项目群说明/项目说明」
+ * 都带着预填任务打开（GraphChrome initialTask 同语义；mac GroupBriefButton/ProjectBriefButton 对位）。
  * 作用域跟随侧栏选中；最新一条回答走 Markdown 排版（AIResultSheet 的报告形态），
  * 底部输入行可就地追问（多轮）。
  */
@@ -303,6 +304,7 @@ private fun FieldRow(label: String, value: String, password: Boolean = false, on
 fun AgentSheet(model: AppModel) {
     val selected by model.selectedProject.collectAsState()
     val task by model.agentTask.collectAsState()
+    val title by model.agentTitle.collectAsState()
     val projectCount = model.status.value?.projects?.size ?: 0
     val scopeLabel = selected ?: "项目群（全部 $projectCount 个项目）"
     Dialog(
@@ -316,13 +318,13 @@ fun AgentSheet(model: AppModel) {
                 .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
                 .padding(Space.lg),
         ) {
-            AgentConversation(model, scopeLabel, task)
+            AgentConversation(model, scopeLabel, task, title)
         }
     }
 }
 
 @Composable
-private fun AgentConversation(model: AppModel, scopeLabel: String, initialTask: String?) {
+private fun AgentConversation(model: AppModel, scopeLabel: String, initialTask: String?, initialTitle: String?) {
     var draft by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var busy by remember { mutableStateOf(false) }
@@ -370,10 +372,9 @@ private fun AgentConversation(model: AppModel, scopeLabel: String, initialTask: 
     Column(Modifier.fillMaxSize().padding(Space.lg)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(
-                    if (initialTask != null) "更新解读 · $scopeLabel" else "AI · $scopeLabel",
-                    style = Type.title,
-                )
+                // 头部措辞按入口：说明入口给「项目群说明/项目说明」，更新解读与裸入口保持既有口径
+                val head = initialTitle ?: if (initialTask != null) "更新解读" else "AI"
+                Text("$head · $scopeLabel", style = Type.title)
                 Text("它只根据引擎返回的事实回答——工具没给的数据，它会说「不知道」。", style = Type.micro)
             }
             ActionText("停止", Palette.Amber, enabled = busy) {

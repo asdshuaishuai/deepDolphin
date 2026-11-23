@@ -139,16 +139,27 @@ fun DashboardPage(model: AppModel) {
                     style = Type.label.copy(color = Color.White.copy(alpha = 0.85f)),
                 )
             }
-            // 没有 AI 按钮：AI 融进操作（深/浅更新完成后就地「AI 解读」），不做独立入口
-            Button(
-                onClick = { model.refreshAll() },
-                enabled = !refreshing,
-                shape = RoundedCornerShape(Radius.control),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White.copy(alpha = 0.18f),
-                    contentColor = Color.White,
-                ),
-            ) { Text(if (refreshing) "刷新中…" else "刷新") }
+            // 一键项目群说明（mac GroupBriefButton 对位，L10n "dash.projectBrief"）：AI 融进操作——
+            // hero 就地带固定问题预填打开 agent sheet（作用域=项目群），不做独立 AI 入口
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Button(
+                    onClick = { model.openAgent(briefTask(null), title = "项目群说明") },
+                    shape = RoundedCornerShape(Radius.control),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.18f),
+                        contentColor = Color.White,
+                    ),
+                ) { Text("项目群说明") }
+                Button(
+                    onClick = { model.refreshAll() },
+                    enabled = !refreshing,
+                    shape = RoundedCornerShape(Radius.control),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.18f),
+                        contentColor = Color.White,
+                    ),
+                ) { Text(if (refreshing) "刷新中…" else "刷新") }
+            }
         }
 
         // ── 筛选行（时间窗胶囊）──

@@ -52,14 +52,23 @@ class AppModel(private val engineBin: String) {
 
     /**
      * agent sheet 开合（对位 mac GraphChrome 的 AgentView(initialTask:) 语义）。
-     * 没有独立入口——AI 融进操作：深/浅更新完成后就地「AI 解读」带着预填任务打开。
+     * 没有独立入口——AI 融进操作：深/浅更新完成后就地「AI 解读」、一键「项目群/项目说明」
+     * 都带着预填任务打开（mac GroupBriefButton / ProjectBriefButton 对位）。
+     * title = sheet 头部措辞（「项目群说明」「项目说明」…）；null 时由 AgentSheet
+     * 按有无任务回退到「更新解读 / AI」既有口径。
      */
     private val _agentOpen = MutableStateFlow(false)
     val agentOpen: StateFlow<Boolean> = _agentOpen.asStateFlow()
     private val _agentTask = MutableStateFlow<String?>(null)
     val agentTask: StateFlow<String?> = _agentTask.asStateFlow()
-    fun openAgent(task: String? = null) { _agentTask.value = task; _agentOpen.value = true }
-    fun closeAgent() { _agentOpen.value = false; _agentTask.value = null }
+    private val _agentTitle = MutableStateFlow<String?>(null)
+    val agentTitle: StateFlow<String?> = _agentTitle.asStateFlow()
+    fun openAgent(task: String? = null, title: String? = null) {
+        _agentTask.value = task; _agentTitle.value = title; _agentOpen.value = true
+    }
+    fun closeAgent() {
+        _agentOpen.value = false; _agentTask.value = null; _agentTitle.value = null
+    }
 
     private val _detail = MutableStateFlow<StatusEnvelope?>(null) // status <name> 单项目信封
     val detail: StateFlow<StatusEnvelope?> = _detail.asStateFlow()
@@ -239,3 +248,26 @@ class AppModel(private val engineBin: String) {
         scope.cancel()
     }
 }
+
+/**
+ * 一键说明任务串（纯函数，判据见 BriefTaskTest）。口径逐句对位 mac 基准，不发明问题：
+ * - project = null（或空白，defensive）→ 项目群说明：mac GroupBriefButton 的固定问题
+ *   （AIIntegration.swift:439，target .group）；
+ * - project = 名称 → 单项目说明：mac AgentCore.projectBrief 的四段式问题
+ *   （AgentCore.swift:469-476，target .project(name)）。
+ */
+fun briefTask(project: String?): String =
+    if (project.isNullOrBlank()) {
+        // mac 基准单行问题，字句保持一致
+        "生成一份项目群说明（markdown）：项目构成与定位、各项目一句话现状、需要人处理的事项（未提交/停滞/待合入）、整体建议。400 字以内。"
+    } else {
+        // mac 基准多行问题（Swift 多行字面量去除缩进后的原文；引号是 ASCII 直引号）
+        """
+        为项目「${project}」生成一份**项目说明**（markdown），包含：
+        1. 一句话定位（结合 README 与代码构成判断它是什么）
+        2. 当前状态（分支进度、未提交/未跟踪/stash、最近活跃）
+        3. 工程结构要点（语言构成、热点文件）
+        4. 风险与建议下一步
+        要求：面向"第一次接触这个项目的人"，500 字以内，具体、可执行、不编造。
+        """.trimIndent()
+    }
