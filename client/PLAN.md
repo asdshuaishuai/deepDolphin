@@ -73,7 +73,25 @@ scripts/run.sh              # 真窗口（DISPLAY=:0）
 | AI 助手 Markdown 渲染：最新一条助手消息走 KCEF/JCEF WebView 排版，缺席/失败回退纯文本并如实标注；markdown→html 纯函数（MarkdownHtml.kt / MarkdownWebView.kt） | `748dde9` | +8（MarkdownHtmlTest） | 36 绿 |
 | 仪表盘与详情页精修：aurora 渐变斑块层（对位 design.rs）+ 项目总数 0 空态扫描/添加 CTA（接引擎 scan/add）+ 磁贴描边/hover + 详情页 SectionCard 节奏（色值上收 Design.kt） | `0cb2a46` | +9（DesignRefinementTest） | 45 绿 |
 | 图谱两页：HtmlWebView 通用件（JCEF 单浏览器复用/reloadToken/看门狗/降级槽；MarkdownWebView 改为复用）+ CodeGraphPage/ArchPage 接 `render index --confidence`/`render arch` 文本回执（receiptLine/extractHtmlPath/renderReused 纯函数，fixture 真机落盘；产物缓存秒开旧图、复用不重载）+ Dialog 近全屏形态 + AppModel 开合流挂载；JCEF 缺席整页降级「WebView 不可用 + 产物路径」 | `72376da` | +10（GraphParseTest） | 61 绿 |
-| 详情页接图谱两页 + 扫描单 + 提交单：动作条「代码图谱/架构图」busy 生成→成功即开页（本机引擎无 render check，按 mac 降级先例不做两态按钮；复用=毫秒级秒开）；仪表盘 hero「添加/扫描」开扫描单（mac ScanSheet 对位：路径三态判定 + 逐项目新增/已在册——归属由扫描前在册集对照推导，聚合行以引擎口径为准 + ScanCoverage 三种「没扫完」分开说）；ScanPayload 镜像按真机修正（candidates/unreadable 原为凭空 Long，真跑必炸）+ fixture 真机落盘；git 提交区补类型前缀选择（引擎 COMMIT_TYPE_ORDER 词表）+ 引擎 ok/output 结果反馈（失败信息留住） | 本批 | +17（ScanSheetLogicTest 10 + CommitFormTest 5 + ContractTest 2） | 80 绿 |
+| 详情页接图谱两页 + 扫描单 + 提交单：动作条「代码图谱/架构图」busy 生成→成功即开页（本机引擎无 render check，按 mac 降级先例不做两态按钮；复用=毫秒级秒开）；仪表盘 hero「添加/扫描」开扫描单（mac ScanSheet 对位：路径三态判定 + 逐项目新增/已在册——归属由扫描前在册集对照推导，聚合行以引擎口径为准 + ScanCoverage 三种「没扫完」分开说）；ScanPayload 镜像按真机修正（candidates/unreadable 原为凭空 Long，真跑必炸）+ fixture 真机落盘；git 提交区补类型前缀选择（引擎 COMMIT_TYPE_ORDER 词表）+ 引擎 ok/output 结果反馈（失败信息留住） | `f75c255` | +17（ScanSheetLogicTest 10 + CommitFormTest 5 + ContractTest 2） | 80 绿 |
+| 置信度 + 补丁体检两页：侧栏「视图」组里程碑后两入口（mac PanelView.swift:143-145 对位）；置信度页 `graph confidence --json` 六维度总分 + 权重降序 findings 披露式行（默认只给位置、≥8 红档、点击展开引擎证据+实码）+ 只看高权重开关 + 复制 LLM 复核提示词（--llm 纯文本 → AWT 剪贴板，stdout/stderr 分流防迁移提示混入）；补丁体检页 diff 粘贴 → Layer1 S1..S10 信号 chip（null=分母0 降档披露）→ uncertain 三态人工裁决 → --merge 终稿；契约三份镜像以真机实测锚定 | `1d5dae0` | +15（ContractTest +5 / ConfidencePagesTest +10） | 95 绿 |
+| 交互层补齐：侧栏搜索（SearchFilter 纯函数：项目名+分支名大小写不敏感、emptyReason 两态、resultSummary、Ctrl+F 聚焦）；ShortcutMap 纯对象键位（Ctrl+1/2/3 视图、Ctrl+, 设置、Ctrl+R 刷新、Ctrl+F 搜索）挂窗口根 onPreviewKeyEvent 隧道相位；设置第四 tab「自动化」（间隔档 0/1/3/6/12/24 + 轨道浅/深，update.* 独立节，改完立即生效）+ AppModel 定时器；托盘速览（SystemTray 圆点 + 摘要行/打开/退出，X11 简版，isSupported false 静默降级）；hero 双轨按钮（浅/深更新带范围、待记录徽章 >0 才现、深更新动哪些文档写进副行） | `023f675` | +38（SearchFilterTest 11 / ShortcutMapTest 8 / AutoUpdateSettingsTest 9 / HeroUpdateScopeTest 6 / TrayQuickViewTest 4） | 133 绿 |
+
+**终验（2026-11-24，真机 DISPLAY=:0 全项过）**：
+- 判据门禁：随本批后由门禁脚本复跑（PLAN 记账口径 133 绿，`023f675` 时点）。
+- 真窗口八项逐一验证 + 截图落 `docs/ui-cmp/`：a/b 图谱两页（详情页动作条点按 → 引擎 render →
+  Dialog 打开 WebView 装载产物，底部回执 `✓ …/projects/vtest/render/index.html · 首版（第 0 版）`、
+  arch 同形态）`graph-index-page.png`/`graph-arch-page.png`；c 置信度页六维度数据
+  （vtest 总分 40、六维度行、疑点 9 条、AST 降级披露）`conf-confidence.png`；d 补丁体检跑真 diff
+  （选 vtest → 粘贴 diff → Layer1 总分 62、S1..S10 chip、三态裁决、低置信度实体、合并钮翻可用）
+  `conf-patchcheck.png`；e 侧栏搜索（Ctrl+F 聚焦 → 输入「2」→ 仅剩 vtest2、仓库组 1/2、
+  匹配行出现；× 清除复原 2/2）`interact-search-filter.png`；f Ctrl+1/2/3 三键切视图各一图
+  `interact-ctrl1-dashboard.png`/`interact-ctrl2-board.png`/`interact-ctrl3-milestones.png`
+  （首次 Ctrl+2 未生效——窗口尚未获得键盘焦点，点按窗口后三键均验）；g 设置-自动化 tab
+  （定时更新卡：档位 关闭/1/3/6/12/24 小时 + 轨道浅/深）`interact-settings-auto.png`；
+  h hero 双轨按钮（浅更新 · 全部 / 深更新 · 全部，副行「深更新动 README/AGENTS/CLAUDE」）
+  `interact-hero-dualtrack.png`——**待记录徽章未现**：vtest 当前分支 pendingCommits=0（如实）。
+- JCEF 150.0.14 本机缓存装载成功（~/.cache/deepDolphin/kcef，547M 既有缓存，无首跑下载）。
 
 **终验（2026-11-23）**：
 - 判据门禁绿：`scripts/build.sh --test` → `CMPTEST_SUMMARY passed=45 skipped=0 failed=0`。
@@ -81,12 +99,16 @@ scripts/run.sh              # 真窗口（DISPLAY=:0）
   KCEF 首跑需联网从 GitHub 下载 JCEF 二进制（缓存里已有 kcef/jcef jar，二进制是运行时
   落盘），不可用时按设计回退纯文本并在界面标注原因。复跑排障后再收口。
 
-**如实未落地 / 已知边界（截至 2026-11-23）**：
+**如实未落地 / 已知边界（截至 2026-11-24 终验后核对）**：
 - AI 设置无 models-dev 目录选择器；C5 整合更新流中的一键 **项目群/项目说明入口已落地**
   （仪表盘 hero「项目群说明」+ 详情页动作条「项目说明」→ openAgent 固定问题预填，
-  mac GroupBriefButton/ProjectBriefButton 对位；任务串纯函数 briefTask +3 判据 BriefTaskTest）；
-  定时更新小时档 / 简报通知仍无代码（见批 3 标注）。
-- 通知/自启的界面开关未接线；SystemTray 未实现（见批 4 标注）。
+  mac GroupBriefButton/ProjectBriefButton 对位；任务串纯函数 briefTask +3 判据 BriefTaskTest）。
+- ~定时更新小时档仍无代码~ **已落地**（`023f675`：设置「自动化」tab + AppModel 定时器；
+  与 mac 差异如实：CMP 无守护进程，协程随应用存活、退出即停；mac 的系统通知/AI 简报未接）。
+- ~SystemTray 未实现~ **已落地**（`023f675`：X11 简版圆点托盘 + 摘要行/打开/退出，
+  isSupported false 静默降级；mac 的弹窗项目行/迷你进度条不做）。
+- notify-send 的界面开关仍未接线（封装与判据在 sysint/SysInt.kt）；自启动开关已接线
+  （设置「通用」tab，仅打包安装态可开——gradle run 无客户端入口）。
 - 看板 fixture 口径差异（`summary.branchCount=8` vs 分支行数 7、`repoBranchCount=2` 只返回
   1 条）按判据只在页头披露「引擎返回 M/N」，不代引擎重算总数；merged 列无 fixture 样本
   （口径取自 macos 基准 StatusColor），引擎新口径由「口径未知」列兜底。
