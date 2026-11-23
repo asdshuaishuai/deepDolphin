@@ -140,8 +140,26 @@ fun DashboardPage(model: AppModel) {
                 )
             }
             // 一键项目群说明（mac GroupBriefButton 对位，L10n "dash.projectBrief"）：AI 融进操作——
-            // hero 就地带固定问题预填打开 agent sheet（作用域=项目群），不做独立 AI 入口
+            // hero 就地带固定问题预填打开 agent sheet（作用域=项目群），不做独立 AI 入口；
+            // 「添加/扫描」开扫描单（mac 侧栏添加/扫描动作 + PanelView.swift:92-94 sheet 挂点对位，
+            // 单是两种模式：单个添加 / 批量扫描——注册表非空时也要能再进项目）
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Button(
+                    onClick = { model.openScanSheet(single = true) },
+                    shape = RoundedCornerShape(Radius.control),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.18f),
+                        contentColor = Color.White,
+                    ),
+                ) { Text("添加") }
+                Button(
+                    onClick = { model.openScanSheet(single = false) },
+                    shape = RoundedCornerShape(Radius.control),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.18f),
+                        contentColor = Color.White,
+                    ),
+                ) { Text("扫描") }
                 Button(
                     onClick = { model.openAgent(briefTask(null), title = "项目群说明") },
                     shape = RoundedCornerShape(Radius.control),

@@ -1,10 +1,13 @@
-// ProjectDetailView.kt —— 项目详情页（C3）：脉搏/提交构成/分支/日志/文档四态 + git 操作（C8）+ 更新（C4）。
+// ProjectDetailView.kt —— 项目详情页（C3）：脉搏/提交构成/分支/日志/文档四态 + git 操作（C8）+ 更新（C4）
+// + 图谱两页入口（busy 生成→成功即开页）+ 提交单对位（类型前缀选择 + 引擎结果反馈）。
 //
 // 【口径】全部来自 status <n> / docs / journal 的引擎事实；读不出来的字段如实披露（-1 / 缺键）。
 
 package deepdolphin.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,6 +19,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import deepdolphin.engine.Project
@@ -62,6 +67,24 @@ fun ProjectDetailView(model: AppModel) {
                 ActionText("项目说明", Palette.Ai, enabled = name != null) {
                     name?.let { model.openAgent(briefTask(it), title = "项目说明") }
                 }
+                // 图谱两页入口（mac DetailViews.swift:229-307 按钮形态对位；用户定稿：两图只能从
+                // 具体仓库面板触发）。⚠️ 与 mac 探测逻辑的差异（如实标注）：mac 先探产物
+                // （render check：已生成→「打开」按钮 / 未生成→「生成」按钮走 agent 播种）；
+                // 本机引擎没有 render check 子命令——按 mac 降级先例（探测失败=未生成，
+                // GraphChrome.swift:185-187）不做两态按钮：点按统一 busy 态跑 render，
+                // 产物已在时引擎复用判定毫秒级返回（回执说「复用」）即秒开，
+                // 不在时这一发就是首次生成（分钟级）。详见 AppModel.renderGraphArtifact。
+                val graphRendering by model.graphRendering.collectAsState()
+                ActionText(
+                    if (name != null && graphRendering == "INDEX:$name") "图谱生成中…" else "代码图谱",
+                    Palette.Accent,
+                    enabled = name != null && graphRendering == null,
+                ) { name?.let { model.renderGraphArtifact(it, GraphKind.INDEX) } }
+                ActionText(
+                    if (name != null && graphRendering == "ARCH:$name") "架构生成中…" else "架构图",
+                    Palette.Deep,
+                    enabled = name != null && graphRendering == null,
+                ) { name?.let { model.renderGraphArtifact(it, GraphKind.ARCH) } }
                 ActionText("刷新", Palette.TextSecondary, enabled = !refreshing) {
                     name?.let { model.loadDetail(it) }
                 }
@@ -220,10 +243,31 @@ private fun BranchCard(p: Project) {
     }
 }
 
-/** git 白名单六操作（C8）+ 提交信息输入。 */
+/**
+ * git 白名单六操作（C8）+ 提交单对位（mac CommitSheetView 核心字段：提交信息 / 类型 / 结果反馈）。
+ *
+ * 【边界，如实】mac 的逐文件勾选（stage 级）不做：本机引擎 `git commit` 是 add -A 全量
+ * （kernel/git.cj:1848-1850 实测：先 add -A 再 commit -m，无 --paths），子集提交没有
+ * 引擎语义——造假勾选框比没有勾选框更糟。类型选择落在**提交信息前缀**上（真实效果：
+ * 新提交被引擎归入「提交构成」对应类型桶，词表=引擎 COMMIT_TYPE_ORDER 对位）。
+ * 改动构成行只报引擎 status 契约 dirty 里的四类计数（已暂存/修改/未跟踪/冲突）；
+ * mac 类型集的 added/deleted/renamed 是 per-file XY 归一词，本机引擎没有 git status
+ * 子命令、dirty.files 不带 kind——如实不造。
+ */
 @Composable
 private fun GitCard(model: AppModel, p: Project, busy: Boolean) {
     var message by remember { mutableStateOf("") }
+    var commitType by remember { mutableStateOf<String?>(null) }
+    val feedback by model.gitFeedback.collectAsState()
+
+    // 对位 mac「失败不关弹窗、提交信息留住」：只有**本项目的 commit 成功回执**才清空草稿；
+    // 失败（引擎 ok=false / 调用异常）信息原样留着改了再提。
+    LaunchedEffect(feedback) {
+        if (feedback != null && feedback!!.op == "commit" && feedback!!.project == p.name && feedback!!.ok) {
+            message = ""
+        }
+    }
+
     SectionCard("git 操作", Modifier.fillMaxWidth()) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             listOf("pull", "push", "stash", "unstash", "fetch").forEach { op ->
@@ -231,18 +275,73 @@ private fun GitCard(model: AppModel, p: Project, busy: Boolean) {
             }
         }
         Spacer(Modifier.height(Space.sm))
+        // ── 改动构成披露（引擎 dirty 四类计数；干净/读不出/缺键三态分开说）──
+        val dirty = p.dirty
+        Text(
+            when {
+                dirty == null -> "改动构成：引擎没发 dirty（缺键）"
+                !dirty.ok -> "改动构成读不出来：${dirty.err ?: "未给出原因"}"
+                dirty.clean -> "工作区干净（引擎会拒绝没有可提交内容的提交）"
+                else -> "本次全量提交将包含：已暂存 ${dirty.staged} · 修改 ${dirty.modified} · 未跟踪 ${dirty.untracked} · 冲突 ${dirty.conflicts}"
+            },
+            style = Type.body.copy(color = Palette.TextSecondary),
+        )
+        Spacer(Modifier.height(Space.sm))
+        // ── 类型选择（提交信息前缀；词表=引擎 COMMIT_TYPE_ORDER 去 other，见文件尾纯函数）──
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
+            Text("类型", style = Type.label)
+            Spacer(Modifier.width(Space.xs))
+            listOf(null).plus(COMMIT_TYPE_WORDS).forEach { t ->
+                val selected = commitType == t
+                Text(
+                    t ?: "无类型",
+                    style = Type.micro.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal),
+                    color = if (selected) Palette.BgBase else Palette.TextSecondary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(if (selected) Palette.Accent else Palette.Card)
+                        .clickable { commitType = t }
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(Space.sm))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedTextField(
                 value = message,
                 onValueChange = { message = it },
-                placeholder = { Text("提交信息（提交全部改动）", style = Type.micro) },
+                placeholder = { Text("提交信息（引擎提交全部改动，类型作为前缀）", style = Type.micro) },
                 singleLine = true,
                 modifier = Modifier.weight(1f),
                 textStyle = Type.body,
             )
-            ActionText("提交", Palette.Accent, enabled = !busy && message.isNotBlank()) {
-                model.gitOp("commit", p.name, message)
-                message = ""
+            ActionText(
+                "提交",
+                Palette.Accent,
+                enabled = !busy
+                    && commitMessage(commitType, message) != null
+                    // 干净工作区引擎必拒（git.cj 判据：干净仓库 commit → ok=false），按钮先如实禁用
+                    && !(dirty?.ok == true && dirty.clean == true),
+            ) {
+                commitMessage(commitType, message)?.let { model.gitOp("commit", p.name, it) }
+            }
+        }
+        // ── 结果反馈（mac CommitSheetView「失败不弹走」对位；六操作的结果都落在这里）──
+        feedback?.let { fb ->
+            Spacer(Modifier.height(Space.xs))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (fb.ok) "✓" else "⚠", style = Type.label.copy(color = if (fb.ok) Palette.Green else Palette.Amber))
+                Spacer(Modifier.width(Space.sm))
+                Text(
+                    "git ${fb.op} ${fb.project}：${fb.text.trim().take(240).ifEmpty { if (fb.ok) "（引擎无输出）" else "（引擎未给出原因）" }}",
+                    style = Type.micro.copy(fontFamily = FontFamily.Monospace),
+                    color = if (fb.ok) Palette.TextSecondary else Palette.Amber,
+                    maxLines = 3,
+                )
             }
         }
     }
@@ -300,4 +399,38 @@ private fun DocsCard(docs: List<deepdolphin.engine.DocContent>, unreadable: List
             }
         }
     }
+}
+
+// ── 提交单纯函数（判据见 CommitFormTest）──
+
+/**
+ * 提交类型词表（引擎 kernel/git.cj:888 COMMIT_TYPE_ORDER 去 other；other 是引擎对
+ * **无前缀**提交的归类，客户端用「无类型」表达同一件事，不发明第 13 类）。
+ * 别名表对位引擎 commitTypeOf 的归并（feature/add→feat 等，git.cj:922-936）——
+ * 只用于「信息已自带前缀就不重复加」的判定，不用于改写用户的信息。
+ */
+val COMMIT_TYPE_WORDS = listOf(
+    "feat", "fix", "perf", "refactor", "docs", "test", "build", "ci", "style", "chore", "revert",
+)
+
+private val COMMIT_TYPE_ALIASES = listOf("feature", "add", "bugfix", "hotfix", "bug", "performance", "tests", "tst")
+
+/** 信息开头是否已经是类型前缀（"feat: x" / "feat(api): x" / 别名同认）。 */
+private fun typedAlready(msg: String): Boolean {
+    val lower = msg.lowercase()
+    return (COMMIT_TYPE_WORDS + COMMIT_TYPE_ALIASES).any {
+        lower == it || lower.startsWith("$it:") || lower.startsWith("$it(")
+    }
+}
+
+/**
+ * 提交信息拼装：类型非空 → "<type>: <信息>"；信息已自带类型前缀 → 原样（不双前缀）；
+ * 信息空白 → null（引擎要求 --message 非空，git.cj:1846「需要提交信息」；按钮可用性挂在这里）。
+ */
+fun commitMessage(type: String?, raw: String): String? {
+    val msg = raw.trim()
+    if (msg.isEmpty()) return null
+    val t = type?.trim().orEmpty()
+    if (t.isEmpty() || typedAlready(msg)) return msg
+    return "$t: $msg"
 }

@@ -102,6 +102,49 @@ class AppModel(private val engineBin: String) {
         }
     }
 
+    /**
+     * 图谱两页的生成入口（详情页动作条接线，本批）。
+     *
+     * 【与 mac 探测逻辑的差异，如实标注】mac（DetailViews.swift:229-307）先探产物
+     * （render check，GraphChrome.swift:182-194：exists=true → 按钮直接是「打开」；
+     * exists=false → 「生成」形态，且生成走 GraphAgentTask 播种 agent 的 LLM 工作流）。
+     * 本机引擎没有 render check 子命令（实测：`render check index <项目>` 报用法错）——
+     * 按 mac 自己的降级先例（GraphChrome.swift:185-187 注释：探测失败按「未生成」处理）：
+     * 不探测、不做「打开/生成」两态按钮，点按统一 busy 态跑 render——
+     *   · 产物已在：引擎侧复用判定毫秒级返回（回执说「复用」），render 完即开页 = 秒开；
+     *   · 产物不在：这一发就是首次生成（分钟级，busy 态如实等待）。
+     * 成功后先把产物路径记进进程内缓存再开页：页 init 即命中缓存先出图，
+     * 页内后台核验跑 render 得「复用」不重载（画面不闪）。
+     * 另一差异：CMP 生成直接跑确定性 render 命令（无 agent 播种回调，不造假按钮）。
+     */
+    private val _graphRendering = MutableStateFlow<String?>(null) // "<kind>:<project>"；null = 空闲
+    val graphRendering: StateFlow<String?> = _graphRendering.asStateFlow()
+
+    fun renderGraphArtifact(project: String, kind: GraphKind) {
+        if (_graphRendering.value != null) return
+        scope.launch {
+            _graphRendering.value = "${kind.name}:$project"
+            try {
+                val text = engine.renderGraph(kind.cliKind, project, withConfidence = kind == GraphKind.INDEX)
+                val path = extractHtmlPath(text)
+                if (path == null) {
+                    _lastResult.value =
+                        "渲染${kind.titleWord} $project ✗ render 未给出产物路径：${receiptLine(text) ?: "无输出"}"
+                } else {
+                    rememberGraphArtifact(kind, project, path)
+                    when (kind) {
+                        GraphKind.INDEX -> openGraph(project)
+                        GraphKind.ARCH -> openArch(project)
+                    }
+                }
+            } catch (e: Exception) {
+                _lastResult.value = "渲染${kind.titleWord} $project ✗ ${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                _graphRendering.value = null
+            }
+        }
+    }
+
     private val _detail = MutableStateFlow<StatusEnvelope?>(null) // status <name> 单项目信封
     val detail: StateFlow<StatusEnvelope?> = _detail.asStateFlow()
     private val _detailState = MutableStateFlow<LoadState>(LoadState.Loading)
@@ -176,16 +219,49 @@ class AppModel(private val engineBin: String) {
     }
 
     // ── 项目群管理：扫描 / 添加（空态 CTA 与引擎 scan/add 的接线；结果如实披露）──
+
+    /**
+     * 扫描单（mac ScanSheet + PanelView.swift:92-94 sheet 挂点对位）：
+     * 逐项目结论 = 客户端对照「扫描前在册路径集」推导（引擎 payload 只有聚合数
+     * added/existing——candidates 不带归属标记，真机实测锚定，不发明）；聚合行
+     * 仍以引擎口径为准，两处计数若分叉以聚合行兜底披露。
+     */
+    data class ScanOutcome(
+        val root: String,
+        val depth: Int,
+        /** 逐项目行（新增 / 已在册）；引擎没跑成时为空。 */
+        val rows: List<ScanRow>,
+        /** 引擎口径聚合行（含覆盖度披露与「没有 git 仓库」的成立判定）。 */
+        val aggregate: String,
+        /** 表单级失败（引擎没跑成 / 输出不可解析）：有值时 rows/aggregate 不可信。 */
+        val error: String? = null,
+    )
+
+    private val _scanOutcome = MutableStateFlow<ScanOutcome?>(null)
+    val scanOutcome: StateFlow<ScanOutcome?> = _scanOutcome.asStateFlow()
+
     fun scanProjects(root: String, depth: Int) {
         scope.launch {
-            withAction("扫描 $root") {
+            if (_busyAction.value) return@launch
+            _busyAction.value = true
+            try {
+                // 在册集快照必须在引擎跑之前取——scan 边跑边注册，跑完再取就全是「已在册」
+                val before = _status.value?.projects?.map { it.path.trimEnd('/') }?.toSet() ?: emptySet()
                 val r = engine.scan(root, depth)
-                buildString {
-                    append("扫描 $root（深度 $depth）：发现 ${r.found} · 新增 ${r.added} · 已在册 ${r.existing} · 访问目录 ${r.dirsVisited}")
-                    if (r.truncated == true) append("（结果被截断）")
-                    if (r.depthCapped == true) append("（深度被封顶）")
-                    if (r.unreadable > 0) append(" · ${r.unreadable} 个目录读不出来")
-                }
+                val outcome = ScanOutcome(
+                    root = root,
+                    depth = depth,
+                    rows = scanRows(r.candidates, before),
+                    aggregate = scanAggregateLine(r),
+                )
+                _scanOutcome.value = outcome
+                _lastResult.value = outcome.aggregate
+                refreshAll()
+            } catch (e: Exception) {
+                _scanOutcome.value = ScanOutcome(root, depth, emptyList(), "", e.message ?: "扫描失败")
+                _lastResult.value = "扫描 $root ✗ ${e.message ?: "扫描失败"}"
+            } finally {
+                _busyAction.value = false
             }
         }
     }
@@ -199,12 +275,44 @@ class AppModel(private val engineBin: String) {
         }
     }
 
+    // ── 扫描单开合（mac .sheet(showScan) 对位；值 = 初始模式：true 单个添加 / false 批量扫描）──
+    private val _scanSheet = MutableStateFlow<Boolean?>(null)
+    val scanSheet: StateFlow<Boolean?> = _scanSheet.asStateFlow()
+
+    fun openScanSheet(single: Boolean) {
+        _scanSheet.value = single
+    }
+
+    fun closeScanSheet() {
+        _scanSheet.value = null
+    }
+
     // ── C8 git 白名单六操作 ──
+    //
+    // 【本批修正】原实现把「git $op $project ✓」写进 lastResult 就完了——引擎回执里的
+    // ok=false（如 commit 撞上干净工作区、push 撞上远端拒绝）也被标成 ✓，output 一字不出。
+    // 对位 mac CommitSheetView 的结果反馈口径：成败与原因留在用户正盯着的提交区，
+    // 失败不弹走。feedback 流给 GitCard 就地渲染；lastResult 仍留一行页头摘要。
+    data class GitFeedback(val op: String, val project: String, val ok: Boolean, val text: String)
+
+    private val _gitFeedback = MutableStateFlow<GitFeedback?>(null)
+    val gitFeedback: StateFlow<GitFeedback?> = _gitFeedback.asStateFlow()
+
     fun gitOp(op: String, project: String, message: String? = null) {
         scope.launch {
-            withAction("git $op $project") {
+            if (_busyAction.value) return@launch
+            _busyAction.value = true
+            _gitFeedback.value = null
+            try {
                 val r = engine.gitOp(op, project, message)
-                "git $op $project：${r.output.take(160)}"
+                _gitFeedback.value = GitFeedback(op, project, r.ok, r.output)
+                _lastResult.value = "git $op $project " + if (r.ok) "✓" else "✗（引擎回执 ok=false）"
+                refreshAll()
+            } catch (e: Exception) {
+                _gitFeedback.value = GitFeedback(op, project, false, e.message ?: "引擎调用失败")
+                _lastResult.value = "git $op $project ✗ ${e.message}"
+            } finally {
+                _busyAction.value = false
             }
         }
     }

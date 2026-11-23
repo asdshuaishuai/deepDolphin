@@ -274,7 +274,7 @@ private fun AboutPane() {
         Text("deepDolphin", style = Type.section)
         Text("0.1.0 · moonGit 引擎的跨平台桌面客户端（Compose Multiplatform）", style = Type.body.copy(color = Palette.TextSecondary))
         Spacer(Modifier.height(Space.sm))
-        Text("引擎判据 61 条，判据只增不减；能力口径以 client/PLAN.md 为准。", style = Type.micro, color = Palette.TextTertiary)
+        Text("引擎判据 80 条，判据只增不减；能力口径以 client/PLAN.md 为准。", style = Type.micro, color = Palette.TextTertiary)
     }
 }
 

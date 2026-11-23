@@ -1,0 +1,32 @@
+{
+  "candidates": [
+    {
+      "name": "repo-third",
+      "path": "/tmp/dd-scanarea/repo-third",
+      "kind": "git",
+      "remote": ""
+    },
+    {
+      "name": "repo-second",
+      "path": "/tmp/dd-scanarea/repo-second",
+      "kind": "git",
+      "remote": ""
+    },
+    {
+      "name": "repo-new",
+      "path": "/tmp/dd-scanarea/repo-new",
+      "kind": "git",
+      "remote": ""
+    }
+  ],
+  "found": 3,
+  "added": 1,
+  "existing": 2,
+  "dirsVisited": 5,
+  "truncated": false,
+  "depthCapped": false,
+  "unreadable": [
+    "/tmp/dd-scanarea/blocked"
+  ],
+  "depth": 2
+}

@@ -170,6 +170,10 @@ fun SidebarShell(model: AppModel) {
     val agentOpen by model.agentOpen.collectAsState()
     if (agentOpen) AgentSheet(model)
 
+    // 扫描单（对位 mac .sheet(showScan)，PanelView.swift:92-94）：仪表盘 hero「添加/扫描」打开
+    val scanSheet by model.scanSheet.collectAsState()
+    scanSheet?.let { deepdolphin.ui.ScanSheet(model, initialSingle = it) }
+
     // 图谱两页（对位 mac GraphWindows.open 独立最大化窗口）：开合流驱动，本批无入口（下一批接线）
     val graphPage by model.graphPage.collectAsState()
     graphPage?.let { CodeGraphPage(model, it) }

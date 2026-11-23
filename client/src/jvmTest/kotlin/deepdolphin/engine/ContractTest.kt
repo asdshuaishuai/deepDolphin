@@ -151,4 +151,32 @@ class ContractTest {
             decodeOrThrow(StatusEnvelope.serializer(), """{"projects":"not-an-array","summary":{}}""")
         }
     }
+
+    // ── scan：真机输出（fixtures/scan.json，2026-11 真跑锚定：混合新增/已在册 + 1 个不可读目录）──
+
+    @Test
+    fun scanPayloadParsesRealShapeWithCandidateArray() {
+        // 此前镜像把 candidates/unreadable 镜成 Long（无 fixture 凭空镜像）——真机 scan
+        // 一跑解码即失败。此判据锚死真实形状：candidates=对象数组、unreadable=路径数组。
+        val r = decodeOrThrow(ScanPayload.serializer(), fixture("scan"))
+        assertEquals(3, r.candidates.size, "真机 fixture：3 个候选（1 新增 + 2 已在册）")
+        assertEquals(3, r.found)
+        assertEquals(1, r.added)
+        assertEquals(2, r.existing)
+        assertTrue(r.candidates.all { it.path.startsWith("/") && it.kind == "git" }, "候选必带绝对路径与 kind")
+        assertEquals(listOf("/tmp/dd-scanarea/blocked"), r.unreadable, "unreadable 是路径数组（不是计数）")
+        assertEquals(false, r.truncated, "真机 fixture 恒发布尔（此处 false）")
+        assertEquals(false, r.depthCapped)
+        assertEquals(2, r.depth)
+    }
+
+    @Test
+    fun scanPayloadMissingKeysFallBackToDefaults() {
+        // 缺键 → default（候选空 + unreadable 空 + 截断旗 null ≠ false），调用方必须自己披露
+        val r = decodeOrThrow(ScanPayload.serializer(), """{"found":0,"added":0,"existing":0}""")
+        assertEquals(0, r.candidates.size)
+        assertEquals(0, r.unreadable.size)
+        assertEquals(null, r.truncated)
+        assertEquals(null, r.depthCapped)
+    }
 }

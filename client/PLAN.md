@@ -73,6 +73,7 @@ scripts/run.sh              # 真窗口（DISPLAY=:0）
 | AI 助手 Markdown 渲染：最新一条助手消息走 KCEF/JCEF WebView 排版，缺席/失败回退纯文本并如实标注；markdown→html 纯函数（MarkdownHtml.kt / MarkdownWebView.kt） | `748dde9` | +8（MarkdownHtmlTest） | 36 绿 |
 | 仪表盘与详情页精修：aurora 渐变斑块层（对位 design.rs）+ 项目总数 0 空态扫描/添加 CTA（接引擎 scan/add）+ 磁贴描边/hover + 详情页 SectionCard 节奏（色值上收 Design.kt） | `0cb2a46` | +9（DesignRefinementTest） | 45 绿 |
 | 图谱两页：HtmlWebView 通用件（JCEF 单浏览器复用/reloadToken/看门狗/降级槽；MarkdownWebView 改为复用）+ CodeGraphPage/ArchPage 接 `render index --confidence`/`render arch` 文本回执（receiptLine/extractHtmlPath/renderReused 纯函数，fixture 真机落盘；产物缓存秒开旧图、复用不重载）+ Dialog 近全屏形态 + AppModel 开合流挂载；JCEF 缺席整页降级「WebView 不可用 + 产物路径」 | `72376da` | +10（GraphParseTest） | 61 绿 |
+| 详情页接图谱两页 + 扫描单 + 提交单：动作条「代码图谱/架构图」busy 生成→成功即开页（本机引擎无 render check，按 mac 降级先例不做两态按钮；复用=毫秒级秒开）；仪表盘 hero「添加/扫描」开扫描单（mac ScanSheet 对位：路径三态判定 + 逐项目新增/已在册——归属由扫描前在册集对照推导，聚合行以引擎口径为准 + ScanCoverage 三种「没扫完」分开说）；ScanPayload 镜像按真机修正（candidates/unreadable 原为凭空 Long，真跑必炸）+ fixture 真机落盘；git 提交区补类型前缀选择（引擎 COMMIT_TYPE_ORDER 词表）+ 引擎 ok/output 结果反馈（失败信息留住） | 本批 | +17（ScanSheetLogicTest 10 + CommitFormTest 5 + ContractTest 2） | 80 绿 |
 
 **终验（2026-11-23）**：
 - 判据门禁绿：`scripts/build.sh --test` → `CMPTEST_SUMMARY passed=45 skipped=0 failed=0`。
@@ -91,11 +92,27 @@ scripts/run.sh              # 真窗口（DISPLAY=:0）
   （口径取自 macos 基准 StatusColor），引擎新口径由「口径未知」列兜底。
 - Markdown 渲染边界：下划线强调、图片、Setext 标题不支持（宁缺勿错，MarkdownHtml.kt
   头注释有边界声明）；KCEF 每进程只尝试装载一次，彻底重试需重启应用。
-- 图谱两页（`72376da`）：**详情页入口下一批接线**（AppModel.openGraph/openArch 已就绪）；
+- 图谱两页（`72376da`）：详情页入口**已接线**（本批）——动作条「代码图谱/架构图」→
+  AppModel.renderGraphArtifact：本机引擎没有 `render check`（实测报用法错），按 mac 降级
+  先例（GraphChrome.swift:185-187 探测失败=未生成）不做「打开/生成」两态按钮，点按统一
+  busy 态跑 render；产物已在时引擎复用判定毫秒级返回即秒开，不在时这一发就是首次生成。
   mac 头部的「AI 生成」（GraphAgentTask 播种 agent、关窗回读产物）与「外部打开」
   （xdg-open）如实缺位——AgentSheet 尚无关窗回调，不造假按钮。渲染通道用文本回执
   （mac 同形态），路径提取对真机「黏全角冒号」形状适配为正则 token（mac 空格分词会漏提）。
   Dialog 近全屏为 92% 宽高的近似（Compose 无独立 NSWindow 最大化）。
+- 扫描单（本批，对位 mac ScanSheet + PanelView.swift:92-94 挂 sheet）：逐项目「新增/已在册」
+  是客户端拿 candidates 对照**扫描前**在册集推导的（引擎 payload 只有聚合数，candidates
+  不带归属标记，真机 fixture 锚定）；推导数与引擎聚合分叉时以引擎为准并披露。mac 的
+  「选择…」目录面板与拖放回填不做（Compose Desktop 目录选择走 AWT FileDialog，本批收在
+  纯表单口径）。
+- 提交单（本批，对位 mac CommitSheetView）：**stage 级（逐文件）勾选不做**——本机引擎
+  `git commit` 是 add -A 全量（kernel/git.cj:1848-1850 实测，无 --paths），子集提交没有
+  引擎语义。类型选择对位到**提交信息前缀**（引擎 COMMIT_TYPE_ORDER 词表去 other，别名
+  同认不双前缀）——有真实效果：新提交被引擎归入「提交构成」对应类型桶（真机实测
+  `docs:` 前缀落 commit subject）。改动构成行只报 dirty 四类计数（已暂存/修改/未跟踪/
+  冲突）；mac 类型集的 added/deleted/renamed 是 per-file XY 归一词，本机引擎没有
+  `git status` 子命令（实测白名单 pull/push/commit/stash/unstash/fetch）、dirty.files
+  不带 kind——如实不造。
 - ~Main.kt 侧栏底部「判据 11 条」陈旧文案~ 已修（AiViews 关于 tab 11→61，随图谱批 `72376da`）。
 - MilestonesView.kt:32 模态遮罩 `Color(0x88000000)` 是遗留内联色值（此前里程碑批产物，未动）。
 

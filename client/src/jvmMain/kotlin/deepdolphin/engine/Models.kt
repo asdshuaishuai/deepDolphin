@@ -441,16 +441,29 @@ data class MultiResults(
 
 // ── scan / add / remove ──
 
+/** scan 回执的候选项目（真机实测：found 个对象的数组；引擎不在此区分新增/已在册，
+ *  聚合数 added/existing 另发——逐项目归属由客户端对照扫描前在册集推导，见 ui/ScanSheet.kt）。 */
+@Serializable
+data class ScanCandidate(
+    val name: String = "",
+    val path: String = "",
+    val kind: String = "",
+    val remote: String = "",
+)
+
+/** 真机实测形状（fixtures/scan.json，2026-11 真跑锚定）：
+ *  candidates = 对象数组；unreadable = 读不出来的目录**路径数组**（不是计数——计数取 .size）。
+ *  此前镜像成两个 Long（无 fixture 凭空镜像），真机 scan 一跑解码即失败——按教训修回真实形状。 */
 @Serializable
 data class ScanPayload(
-    val candidates: Long = 0,
+    val candidates: List<ScanCandidate> = emptyList(),
     val found: Long = 0,
     val added: Long = 0,
     val existing: Long = 0,
     val dirsVisited: Long = 0,
     val truncated: Boolean? = null,
     val depthCapped: Boolean? = null,
-    val unreadable: Long = 0,
+    val unreadable: List<String> = emptyList(),
     val depth: Long = 0,
 )
 

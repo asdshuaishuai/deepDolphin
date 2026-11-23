@@ -14,9 +14,9 @@
 //
 // 【打开形态】对位 mac 2026-10-27「独立窗口最大化」：Compose 下用
 // Dialog(usePlatformDefaultWidth=false) + 92% 宽高近似全屏，标题「代码图谱/架构图 · 项目名」，带关闭。
-// 【本批边界】详情页入口下一批接线；本页以可从代码调用的 Composable + AppModel 开合流存在。
-// mac 头部的「AI 生成」按钮（GraphAgentTask 播种 agent）与「外部打开」不在本批——
-// CMP 的 AgentSheet 尚无「关窗后回读产物」回调，先如实缺位，不造假按钮。
+// 【入口接线】详情页动作条「代码图谱/架构图」→ AppModel.renderGraphArtifact（busy 生成→成功即开页，
+// 与 mac 探测逻辑的差异见其注释）。mac 头部的「AI 生成」按钮（GraphAgentTask 播种 agent）与
+// 「外部打开」仍缺位——CMP 的 AgentSheet 尚无「关窗后回读产物」回调，不造假按钮。
 
 package deepdolphin.ui
 
@@ -96,6 +96,18 @@ data class GraphReceipt(val ok: Boolean, val text: String)
 /** 图谱两页的进程内产物缓存（mac static lastGoodPath 对位）：重开窗口先秒开旧图。 */
 private val lastGoodPath = mutableMapOf<String, String>()
 
+/** 缓存键的唯一口径（页内 init 与外部记账共用，防两处拼串漂移）。 */
+private fun graphCacheKey(kind: GraphKind, project: String): String = "${kind.name}:$project"
+
+/**
+ * 进程内缓存记一笔产物路径——详情页入口 render 成功后调用（本批接线）：
+ * 随后 openGraph/openArch 打开的页 init 即命中缓存先秒开旧图，
+ * 页内后台核验再跑一遍 render，引擎复用判定毫秒级返回且不触发 WebView 重载（不闪）。
+ */
+fun rememberGraphArtifact(kind: GraphKind, project: String, path: String) {
+    lastGoodPath[graphCacheKey(kind, project)] = path
+}
+
 @Stable
 class GraphPageModel(
     val projectName: String,
@@ -115,7 +127,7 @@ class GraphPageModel(
     /** 引擎回执（末行）：版本/复用/装载问题给用户看（底部状态条）。 */
     var status by mutableStateOf<GraphReceipt?>(null)
 
-    private val cacheKey: String get() = "${kind.name}:${projectName}"
+    private val cacheKey: String get() = graphCacheKey(kind, projectName)
 
     init {
         htmlPath = lastGoodPath[cacheKey]
