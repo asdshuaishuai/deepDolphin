@@ -6,7 +6,11 @@
 package deepdolphin.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -14,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,16 +33,36 @@ import deepdolphin.ui.Palette
 import deepdolphin.ui.Space
 import deepdolphin.ui.Type
 
+/** 玻璃磁贴（对位 .card：底 + 描边；.card.hoverable：hover 换底色/描边并上移 2px）。 */
 @Composable
 fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
     Column(
         modifier
+            .hoverable(interaction)
+            .offset(y = if (hovered) (-2).dp else 0.dp) // translateY(-2px)，不动其余几何
             .clip(RoundedCornerShape(Space.tileRadius))
-            .background(Palette.Card)
+            .border(1.dp, if (hovered) Palette.StrokeHover else Palette.Stroke, RoundedCornerShape(Space.tileRadius))
+            .background(if (hovered) Palette.CardHover else Palette.Card)
             .padding(Space.lg),
         content = content,
     )
 }
+
+/** 分区卡：标题 + 固定节奏（仪表盘与详情页共用的分区标题纪律）。 */
+@Composable
+fun SectionCard(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    GlassCard(modifier) {
+        Text(title, style = Type.section)
+        Spacer(Modifier.height(Space.sm))
+        content()
+    }
+}
+
+/** 空态判定（对位 mac 基准「三种没有分开说」）：只有「引擎成功读过且在册列表为空」才是真空。
+ *  信封未到（加载中）或读取失败 ≠ 空态 —— 绝不拿 CTA 冒充；纯函数可单测。 */
+fun registryEmpty(envelope: StatusEnvelope?): Boolean = envelope != null && envelope.projects.isEmpty()
 
 /** KPI 磁贴：数字 + 标题 + 次级说明行。 */
 @Composable
@@ -113,6 +138,9 @@ fun DashboardPage(model: AppModel) {
             Text("时间窗→项目卡+构成 · 类型→仅构成 · KPI 全量", style = Type.micro)
         }
 
+        // ── 空态 CTA（真的没有项目才出现；加载中/读不出来不冒充空态）──
+        if (registryEmpty(status)) EmptyRegistryCta(model)
+
         when (dashState) {
             is LoadState.Failed -> GlassCard(Modifier.fillMaxWidth()) {
                 Text("仪表盘读不出来", style = Type.section.copy(color = Palette.Amber))
@@ -156,9 +184,7 @@ fun DashboardPage(model: AppModel) {
                 }
 
                 // ── 语言分布 ──
-                GlassCard(Modifier.fillMaxWidth()) {
-                    Text("语言分布（跟踪文件数）", style = Type.section)
-                    Spacer(Modifier.height(Space.sm))
+                SectionCard("语言分布（跟踪文件数）", Modifier.fillMaxWidth()) {
                     val langs = dash?.languages.orEmpty()
                     if (langs.isEmpty()) {
                         Text("暂无语言数据", style = Type.body.copy(color = Palette.TextSecondary))
@@ -169,7 +195,7 @@ fun DashboardPage(model: AppModel) {
                                 val max = langs.maxOf { it.count }.coerceAtLeast(1)
                                 Box(
                                     Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp))
-                                        .background(Color(0x1AFFFFFF))
+                                        .background(Palette.BarTrack)
                                 ) {
                                     Box(
                                         Modifier.fillMaxWidth(lang.count.toFloat() / max).height(8.dp)
@@ -194,9 +220,7 @@ fun DashboardPage(model: AppModel) {
                 }
 
                 // ── 里程碑 ──
-                GlassCard(Modifier.fillMaxWidth()) {
-                    Text("里程碑（dashboard 口径）", style = Type.section)
-                    Spacer(Modifier.height(Space.sm))
+                SectionCard("里程碑（dashboard 口径）", Modifier.fillMaxWidth()) {
                     val ms = dash?.milestones
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         Pill("开放 ${ms?.counts?.open ?: 0}", Palette.Accent)
@@ -212,9 +236,7 @@ fun DashboardPage(model: AppModel) {
                 }
 
                 // ── 活跃项目 ──
-                GlassCard(Modifier.fillMaxWidth()) {
-                    Text("近 7 天活跃", style = Type.section)
-                    Spacer(Modifier.height(Space.sm))
+                SectionCard("近 7 天活跃", Modifier.fillMaxWidth()) {
                     val act = dash?.activeProjects.orEmpty()
                     if (act.isEmpty()) Text("近 7 天没有项目有提交", style = Type.body.copy(color = Palette.TextSecondary))
                     else act.forEach { ap ->
@@ -232,13 +254,91 @@ fun DashboardPage(model: AppModel) {
     }
 }
 
+/** 空态 CTA 磁贴（对位 mac/bui `.empty`「还没有注册项目」+ 扫描/添加入口）：
+ *  扫描根目录 / 添加项目路径两行表单，接引擎 scan/add；结果与失败原因一行如实披露。 */
+@Composable
+private fun EmptyRegistryCta(model: AppModel) {
+    val busy by model.busyAction.collectAsState()
+    val lastResult by model.lastResult.collectAsState()
+    var scanRoot by remember { mutableStateOf(System.getProperty("user.home") ?: "") }
+    var scanDepth by remember { mutableStateOf("2") }
+    var addPath by remember { mutableStateOf("") }
+    var addName by remember { mutableStateOf("") }
+
+    GlassCard(Modifier.fillMaxWidth()) {
+        Text("还没有项目在册", style = Type.section)
+        Spacer(Modifier.height(Space.xs))
+        Text(
+            "注册表是空的（引擎读成功才算数）—— 扫描一个仓库根目录，或直接添加单个项目路径",
+            style = Type.body.copy(color = Palette.TextSecondary),
+        )
+        Spacer(Modifier.height(Space.sm))
+        // ── 扫描行 ──
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            OutlinedTextField(
+                value = scanRoot,
+                onValueChange = { scanRoot = it },
+                placeholder = { Text("扫描根目录（如 ~/code）", style = Type.micro) },
+                singleLine = true,
+                textStyle = Type.body,
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedTextField(
+                value = scanDepth,
+                onValueChange = { scanDepth = it },
+                placeholder = { Text("深度", style = Type.micro) },
+                singleLine = true,
+                textStyle = Type.body,
+                modifier = Modifier.width(72.dp),
+            )
+            Button(
+                onClick = { model.scanProjects(scanRoot.trim(), scanDepth.trim().toIntOrNull() ?: 2) },
+                enabled = !busy && scanRoot.isNotBlank(),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+            ) { Text("扫描") }
+        }
+        Spacer(Modifier.height(Space.sm))
+        // ── 添加行 ──
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            OutlinedTextField(
+                value = addPath,
+                onValueChange = { addPath = it },
+                placeholder = { Text("添加项目路径（git 仓库目录）", style = Type.micro) },
+                singleLine = true,
+                textStyle = Type.body,
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedTextField(
+                value = addName,
+                onValueChange = { addName = it },
+                placeholder = { Text("名称（可空）", style = Type.micro) },
+                singleLine = true,
+                textStyle = Type.body,
+                modifier = Modifier.width(120.dp),
+            )
+            Button(
+                onClick = { model.addProjectPath(addPath.trim(), addName.trim().takeIf { it.isNotBlank() }) },
+                enabled = !busy && addPath.isNotBlank(),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+            ) { Text("添加") }
+        }
+        // 操作结果/失败原因就在按钮下方如实披露（写操作必须留结果）
+        lastResult?.let {
+            Spacer(Modifier.height(Space.sm))
+            Text(it, style = Type.body.copy(color = Palette.TextSecondary))
+        }
+    }
+}
+
 /** 胶囊 pill（语义色底 + 深色文字 = WCAG 对比度纪律）。 */
 @Composable
 fun Pill(text: String, color: Color) {
     Text(
         text,
         style = Type.micro.copy(fontWeight = FontWeight.SemiBold),
-        color = Color(0xFF0A0F1A),
+        color = Palette.BgBase,
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
             .background(color.copy(alpha = 0.9f))

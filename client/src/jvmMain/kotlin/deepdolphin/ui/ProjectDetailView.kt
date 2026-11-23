@@ -16,7 +16,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import deepdolphin.engine.Project
@@ -110,9 +109,7 @@ private fun UnreadableCard(p: Project) {
 /** 工程脉搏：当前/默认分支、脏度、提交数、进度时间戳。 */
 @Composable
 private fun PulseCard(p: Project) {
-    GlassCard(Modifier.fillMaxWidth()) {
-        Text("工程脉搏", style = Type.section)
-        Spacer(Modifier.height(Space.sm))
+    SectionCard("工程脉搏", Modifier.fillMaxWidth()) {
         // 分支一行（同分支合并披露）
         val branchLine = if (p.currentBranch == p.defaultBranch) {
             "当前分支 ${p.currentBranch ?: "?"}（即默认分支）"
@@ -151,18 +148,12 @@ private fun PulseCard(p: Project) {
 /** 提交构成 12 色（对位 logic/CommitTypeComposition：12 类不取模）。 */
 @Composable
 private fun CommitTypesCard(p: Project) {
-    GlassCard(Modifier.fillMaxWidth()) {
-        Text("提交构成", style = Type.section)
-        Spacer(Modifier.height(Space.sm))
+    SectionCard("提交构成", Modifier.fillMaxWidth()) {
         val types = p.commitTypes
         if (types.isEmpty()) {
             Text("没有可用的类型计数（样本内没有提交或引擎读不出来）", style = Type.body.copy(color = Palette.TextSecondary))
         } else {
-            val colors = listOf(
-                Color(0xFF4C8DFF), Color(0xFF3FCF8E), Color(0xFFB08CFF), Color(0xFFF0883E),
-                Color(0xFFF26D6D), Color(0xFFE3B341), Color(0xFF38BDF8), Color(0xFF9AE6B4),
-                Color(0xFFF6AD55), Color(0xFFFC8181), Color(0xFF76E4F7), Color(0xFFB794F4),
-            )
+            val colors = Composition12
             Row(Modifier.fillMaxWidth().height(10.dp)) {
                 val total = types.sumOf { it.count }.coerceAtLeast(1)
                 types.forEachIndexed { i, t ->
@@ -189,9 +180,7 @@ private fun CommitTypesCard(p: Project) {
 
 @Composable
 private fun BranchCard(p: Project) {
-    GlassCard(Modifier.fillMaxWidth()) {
-        Text("分支", style = Type.section)
-        Spacer(Modifier.height(Space.sm))
+    SectionCard("分支", Modifier.fillMaxWidth()) {
         val branches = p.branches
         if (branches.isEmpty()) {
             Text("分支数读不出来 · 引擎没返回分支明细", style = Type.body.copy(color = Palette.TextSecondary))
@@ -221,9 +210,7 @@ private fun BranchCard(p: Project) {
 @Composable
 private fun GitCard(model: AppModel, p: Project, busy: Boolean) {
     var message by remember { mutableStateOf("") }
-    GlassCard(Modifier.fillMaxWidth()) {
-        Text("git 操作", style = Type.section)
-        Spacer(Modifier.height(Space.sm))
+    SectionCard("git 操作", Modifier.fillMaxWidth()) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             listOf("pull", "push", "stash", "unstash", "fetch").forEach { op ->
                 ActionText(op, Palette.TextSecondary, enabled = !busy) { model.gitOp(op, p.name) }
@@ -249,9 +236,7 @@ private fun GitCard(model: AppModel, p: Project, busy: Boolean) {
 
 @Composable
 private fun JournalCard(entries: List<deepdolphin.engine.JournalEntry>, unparsable: Long?, windowExhausted: Boolean?) {
-    GlassCard(Modifier.fillMaxWidth()) {
-        Text("提交日志", style = Type.section)
-        Spacer(Modifier.height(Space.sm))
+    SectionCard("提交日志", Modifier.fillMaxWidth()) {
         if (entries.isEmpty()) {
             Text("日志没有条目（窗口内没有提交或读不出来）", style = Type.body.copy(color = Palette.TextSecondary))
         } else {
@@ -278,9 +263,7 @@ private fun JournalCard(entries: List<deepdolphin.engine.JournalEntry>, unparsab
 /** 托管文档四态：存在可读 / 存在但读不出 / 不存在 / 未披露。 */
 @Composable
 private fun DocsCard(docs: List<deepdolphin.engine.DocContent>, unreadable: List<String>) {
-    GlassCard(Modifier.fillMaxWidth()) {
-        Text("托管文档", style = Type.section)
-        Spacer(Modifier.height(Space.sm))
+    SectionCard("托管文档", Modifier.fillMaxWidth()) {
         if (docs.isEmpty() && unreadable.isEmpty()) {
             Text("引擎没有返回文档内容", style = Type.body.copy(color = Palette.TextSecondary))
         } else {

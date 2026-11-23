@@ -121,6 +121,30 @@ class AppModel(private val engineBin: String) {
         }
     }
 
+    // ── 项目群管理：扫描 / 添加（空态 CTA 与引擎 scan/add 的接线；结果如实披露）──
+    fun scanProjects(root: String, depth: Int) {
+        scope.launch {
+            withAction("扫描 $root") {
+                val r = engine.scan(root, depth)
+                buildString {
+                    append("扫描 $root（深度 $depth）：发现 ${r.found} · 新增 ${r.added} · 已在册 ${r.existing} · 访问目录 ${r.dirsVisited}")
+                    if (r.truncated == true) append("（结果被截断）")
+                    if (r.depthCapped == true) append("（深度被封顶）")
+                    if (r.unreadable > 0) append(" · ${r.unreadable} 个目录读不出来")
+                }
+            }
+        }
+    }
+
+    fun addProjectPath(path: String, name: String?) {
+        scope.launch {
+            withAction("添加项目 $path") {
+                val r = engine.addProject(path, name)
+                "添加项目成功：${r.name.ifBlank { path }}"
+            }
+        }
+    }
+
     // ── C8 git 白名单六操作 ──
     fun gitOp(op: String, project: String, message: String? = null) {
         scope.launch {

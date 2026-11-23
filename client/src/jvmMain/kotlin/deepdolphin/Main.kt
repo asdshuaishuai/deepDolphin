@@ -24,6 +24,7 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import deepdolphin.engine.EngineLocator
 import deepdolphin.engine.EngineProbe
+import deepdolphin.ui.AuroraBackdrop
 import deepdolphin.ui.AppModel
 import deepdolphin.ui.AppModel.Route
 import deepdolphin.ui.AiChatPage
@@ -156,6 +157,7 @@ fun SidebarShell(model: AppModel) {
         }
         // ── 主区 ──
         Box(Modifier.weight(1f).fillMaxHeight()) {
+            AuroraBackdrop(Modifier.matchParentSize()) // aurora 渐变斑块层（对位 .app-bg；低透明度不抢内容）
             when (route) {
                 Route.DASHBOARD -> DashboardPage(model)
                 Route.BOARD -> BoardPage(model)
