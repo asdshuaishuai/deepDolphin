@@ -48,8 +48,10 @@ import deepdolphin.ui.ArchPage
 import deepdolphin.ui.CodeGraphPage
 import deepdolphin.ui.ProjectDetailView
 import deepdolphin.ui.Radius
+import deepdolphin.ui.SidebarStatusStrip
 import deepdolphin.ui.Space
 import deepdolphin.ui.Type
+import deepdolphin.ui.WorkBar
 import kotlinx.coroutines.launch
 
 @Composable
@@ -274,29 +276,32 @@ fun SidebarShell(model: AppModel) {
             Spacer(Modifier.weight(1f))
             // 设置收在侧栏最底部（mac 原生 Settings scene 的 Linux 对位）
             NavItem("设置", Route.SETTINGS == route) { model.goRoute(Route.SETTINGS) }
+            // ── 侧栏底部状态条（mac WorkBar.swift SidebarStatusStrip 对位，PanelView.swift:228
+            //    挂点同位：设置项之下、侧栏最底）──
+            // 原来这里是静态的「引擎在线」绿点——探活成功≠一直在采集，那是把常量画成状态。
+            // 换成动态两行：有没有东西在跑（busy 聚合）+ 上次刷新时间（lastRefreshed）。
             Spacer(Modifier.height(Space.sm))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(6.dp).background(
-                        Palette.Green, androidx.compose.foundation.shape.CircleShape,
-                    )
-                )
-                Spacer(Modifier.width(6.dp))
-                Text("引擎在线", style = Type.micro, color = Palette.TextSecondary)
-                Spacer(Modifier.weight(1f))
-                Text("moongit", style = Type.micro, color = Palette.TextTertiary)
-            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Stroke))
+            SidebarStatusStrip(model)
         }
         // ── 主区 ──
         Box(Modifier.weight(1f).fillMaxHeight().background(Palette.BgBase)) {
-            when (route) {
-                Route.DASHBOARD -> DashboardPage(model)
-                Route.BOARD -> BoardPage(model)
-                Route.MILESTONES -> MilestonesPage(model)
-                Route.CONFIDENCE -> ConfidencePage(model)
-                Route.PATCHCHECK -> PatchCheckPage(model)
-                Route.PROJECT -> ProjectDetailView(model)
-                Route.SETTINGS -> SettingsPage(model)
+            Column(Modifier.fillMaxSize()) {
+                // 内容区顶部工作条（mac WorkBar；PanelView.swift:465-469 挂点对位）：
+                // ⚠️ 只在**有项目**时出现——没项目时范围选择器没有第二个选项，
+                // 它就是一根装饰条（mac 原话）。范围选择器 + 双轨链都在这条上。
+                if (projects.isNotEmpty()) WorkBar(model)
+                Box(Modifier.weight(1f)) {
+                    when (route) {
+                        Route.DASHBOARD -> DashboardPage(model)
+                        Route.BOARD -> BoardPage(model)
+                        Route.MILESTONES -> MilestonesPage(model)
+                        Route.CONFIDENCE -> ConfidencePage(model)
+                        Route.PATCHCHECK -> PatchCheckPage(model)
+                        Route.PROJECT -> ProjectDetailView(model)
+                        Route.SETTINGS -> SettingsPage(model)
+                    }
+                }
             }
         }
     }

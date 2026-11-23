@@ -41,6 +41,13 @@ class AppModel(private val engineBin: String) {
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
+    /**
+     * 上次刷新成功时间（mac Model.swift:160 @Published lastRefreshed 对位；
+     * 侧栏状态条右侧读它）。null = 还没成功刷新过——「尚未刷新」而非编一个 0 点。
+     */
+    private val _lastRefreshed = MutableStateFlow<java.time.LocalDateTime?>(null)
+    val lastRefreshed: StateFlow<java.time.LocalDateTime?> = _lastRefreshed.asStateFlow()
+
     // ── 批 2：路由 + 详情 + 写操作反馈 ──
     // 对位 mac：侧栏没有 AI 入口——AI 以 agent sheet 形态从详情页（深浅更新旁）触发，
     // 设置（含 AI tab）收在侧栏最底部「设置」（mac 原生 Settings scene 的 Linux 对位）。
@@ -407,6 +414,9 @@ class AppModel(private val engineBin: String) {
                 try {
                     _status.value = engine.status()
                     _statusState.value = LoadState.Loaded
+                    // 刷新时间戳只在 status 成功时记（mac Model.swift:485-492：status 失败
+                    // 提前 return、不更新 lastRefreshed——「读不出来」不算「刷新过」）
+                    _lastRefreshed.value = java.time.LocalDateTime.now()
                 } catch (e: Exception) {
                     _statusState.value = LoadState.Failed(e.message ?: "status 读取失败")
                     _lastError.value = e.message

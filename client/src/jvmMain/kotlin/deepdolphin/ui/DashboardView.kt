@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -110,12 +111,6 @@ fun DashboardPage(model: AppModel) {
     val dashState by model.dashState.collectAsState()
     val refreshing by model.refreshing.collectAsState()
     val busyAction by model.busyAction.collectAsState()
-    // 双轨按钮的作用域跟随侧栏选中（mac DualTrackButtons 读 model.updateScope 对位）：
-    // 路由不在项目详情 = 没有选中 = 全部项目；在 = 该项目。
-    val route by model.route.collectAsState()
-    val selected by model.selectedProject.collectAsState()
-    val scoped: String? = selected?.takeIf { route == AppModel.Route.PROJECT }
-    val pending = pendingCommitsOf(status?.projects.orEmpty(), scoped)
     var window by remember { mutableStateOf("all") } // all / 30d / 7d（C3 筛选，批 1 先做时间窗胶囊）
 
     Column(
@@ -152,45 +147,11 @@ fun DashboardPage(model: AppModel) {
             // hero 就地带固定问题预填打开 agent sheet（作用域=项目群），不做独立 AI 入口；
             // 「添加/扫描」开扫描单（mac 侧栏添加/扫描动作 + PanelView.swift:92-94 sheet 挂点对位，
             // 单是两种模式：单个添加 / 批量扫描——注册表非空时也要能再进项目）
+            //
+            // ⚠️ 双轨更新（浅/深）已按 mac 布局归位到内容区顶部 WorkBar 工作条
+            // （mac WorkBar.swift：主链路与工具类动作分家——hero 只留工具类动作
+            // 与「刷新」）。刷新是工具类（对读流的操作），留在 hero 右侧。
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                // 双轨更新（mac 工具栏 DualTrackButtons 对位：最常做的动作放最左）。
-                // 按钮文案必须带范围——不带的话用户按下之前无从知道会动谁（mac ScopeRules 原话）。
-                Button(
-                    onClick = {
-                        if (scoped != null) model.updateProject(scoped, deep = false) else model.updateAll(deep = false)
-                    },
-                    enabled = !busyAction && !refreshing,
-                    shape = RoundedCornerShape(Radius.control),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White.copy(alpha = 0.18f),
-                        contentColor = Color.White,
-                    ),
-                ) {
-                    Text(shallowUpdateLabel(scoped))
-                    // 待记录徽章只在真有东西时出现（恒显 0 会被无视；mac 同纪律）
-                    if (pending > 0) {
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            "$pending",
-                            style = Type.micro.copy(fontWeight = FontWeight.Bold, color = Color.White),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(Palette.Shallow)
-                                .padding(horizontal = 5.dp, vertical = 1.dp),
-                        )
-                    }
-                }
-                Button(
-                    onClick = {
-                        if (scoped != null) model.updateProject(scoped, deep = true) else model.updateAll(deep = true)
-                    },
-                    enabled = !busyAction && !refreshing,
-                    shape = RoundedCornerShape(Radius.control),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White.copy(alpha = 0.18f),
-                        contentColor = Color.White,
-                    ),
-                ) { Text(deepUpdateLabel(scoped)) }
                 Button(
                     onClick = { model.openScanSheet(single = true) },
                     shape = RoundedCornerShape(Radius.control),
@@ -227,7 +188,7 @@ fun DashboardPage(model: AppModel) {
             }
         }
 
-        // ── 筛选行（时间窗胶囊）──
+        // ── 筛选行（时间窗胶囊 + 重新索引；mac DashboardFilterBar 三件套对位）──
         Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
             listOf("all" to "全量", "30d" to "30 天", "7d" to "7 天").forEach { (k, label) ->
                 val selected = window == k
@@ -243,7 +204,38 @@ fun DashboardPage(model: AppModel) {
                 )
             }
             Spacer(Modifier.weight(1f))
-            Text("时间窗→项目卡+构成 · 类型→仅构成 · KPI 全量", style = Type.micro)
+            // 重新索引（mac DashboardParts.swift:74-84 对位）：**真跑一次全局浅更新 + 重拉仪表盘**，
+            // 不是装饰按钮。busy 态如实（转圈 + 禁用，busy 时不叠加）。
+            //
+            // 【引擎命令调查，真跑 `moongit --help` 锚定】引擎确有索引/重建子命令
+            // `index <gen|overview|update|query>`——但那是**符号级持久化代码索引**
+            // （graph 系的 db + index.json），与仪表盘数据无关。mac 基准的「重新索引」
+            // 语义是浅更新：L10n zh help「重新采集一次浅更新」+ DetailViews.swift:1085-1093
+            // reindex() = runUpdate(deep: false) + fetchDashboard()。对位 mac 走 updateAll(false)
+            // （withAction 内已含 refreshAll，等价 mac「跑完必须重新拉仪表盘」）。
+            val reindexBusy = busyAction || refreshing
+            Button(
+                onClick = { model.updateAll(deep = false) },
+                enabled = !reindexBusy,
+                shape = RoundedCornerShape(Radius.control),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Palette.Card,
+                    contentColor = Palette.TextPrimary,
+                ),
+            ) {
+                if (reindexBusy) {
+                    CircularProgressIndicator(
+                        Modifier.size(12.dp),
+                        color = Palette.Accent,
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("重新索引中…", style = Type.body)
+                } else {
+                    Text("⟳ 重新索引", style = Type.body)
+                }
+            }
+            Text("时间窗→项目卡+构成 · 类型→仅构成 · KPI 全量 · 重新索引=再跑一次浅更新", style = Type.micro)
         }
 
         // ── 空态 CTA（真的没有项目才出现；加载中/读不出来不冒充空态）──
@@ -497,27 +489,8 @@ fun milestoneRatioOf(milestones: List<Milestone>): MilestoneRatio {
     return MilestoneRatio(done, open, unknown)
 }
 
-// ── 双轨按钮的范围文案与待记录数（mac Scope.swift ScopeRules 对位；纯函数可单测）──
-
-/**
- * 浅更新按钮标题（mac ScopeRules.shallowLabel 逐字对位）。**必须带范围**：
- * 同一个按钮在两种范围下动作完全不同，不写清楚用户按下前无从知道会动谁。
- * null = 未选项目 = 全部（引擎 updateAll 只管注册表里那些，「全部项目」的「项目」在按钮上省作「全部」）。
- */
-fun shallowUpdateLabel(project: String?): String = "浅更新 · ${project ?: "全部"}"
-
-/** 深更新同理（mac deepLabel 对位）。 */
-fun deepUpdateLabel(project: String?): String = "深更新 · ${project ?: "全部"}"
-
-/**
- * 范围内待记录提交数（浅更新按钮徽章，mac ScopeRules.pending 对位）：
- * 当前分支 pendingCommits 求和（引擎 status 实时计算；读不出的项目 branches 空 = 0）。
- * project = null ⇒ 全部项目之和。
- */
-fun pendingCommitsOf(projects: List<Project>, project: String?): Long =
-    projects
-        .filter { project == null || it.name == project }
-        .sumOf { p -> p.branches.filter { it.isCurrent }.sumOf { it.pendingCommits } }
+// ── 双轨按钮的范围文案与待记录数（shallowUpdateLabel / deepUpdateLabel / pendingCommitsOf）
+//    已随双轨按钮归位迁至 WorkBar.kt（判据 HeroUpdateScopeTest 引用不变，同包）──
 
 /** 逐项目进度卡（mac ProjectProgressCard 对位）：标识 → 状态 → 里程碑/分支 → 最近提交 → 入口。 */
 @Composable
