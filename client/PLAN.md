@@ -181,3 +181,10 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
 3. 失败诚实：给原因与下一步，不静默、不假装成功。
 4. 判据只增不减；每批一个 commit（`feat(cmp): …`），编译+判据+真窗口截图同 commit。
 5. 参考实现只抄能力语义，UI 按 Compose 地道写法（别把 Rust/Swift 的模式硬搬）。
+
+## 收官批：Fluent 美学 + 性能（2026-11-24）
+
+- Fluent 视觉：Design.kt 全量换 Fluent 暗色令牌（Mica 底 #1F1F1F/白 alpha 分层/白三级文字/accent #60CDFF 配近黑文字/圆角 4-8/字阶 12-28/动效 150-300ms）；导航选中 accent pill 指示条 + 150ms 渐变；GlassCard hover reveal（去 mac 抬升）；hero 安静头（分层微渐变 + accent 顶 hairline，去多色渐变）；七个浮层加 elevation + hairline；accent 按钮近黑文字。DesignRefinementTest 判据重锚 Fluent 纪律。
+- 性能：设置页静态说明与四文档改纯 Text（不再拉起 JCEF——启动全程零 CEF）；引擎 DTO 全量 @Immutable；STARTUP_MS 启动打点（真机实测 755ms 冷启动到首帧）。
+- 边界（如实）：页面级 LazyColumn 化未做——长列表都在页面级 verticalScroll 内，嵌套滚动需整页重构，收益/风险比不划算，留专项批；MarkdownHtmlTest 令牌断言改动态取值（单点真相源语义不变）。
+- 终验：204 判据 0 failed；真机逐页实拍 fluent-final-* 五张入库。

@@ -6,6 +6,7 @@
 
 package deepdolphin.ai
 
+import deepdolphin.ui.Palette
 import deepdolphin.ui.Type
 import deepdolphin.ui.markdownDocument
 import kotlin.test.Test
@@ -106,18 +107,25 @@ class MarkdownHtmlTest {
     @Test
     fun documentDerivesDesignTokensFromDesignKt() {
         val doc = markdownDocument("# 标题\n正文")
-        // Palette.TextPrimary = 0xFFE6EDF3
-        assertTrue(doc.contains("#E6EDF3"), "正文色必须取自 Palette.TextPrimary：${doc.take(400)}")
-        // Type.body = 13sp 作为基准字号；代码字号取 Type.label = 12sp
-        assertTrue(doc.contains("font-size:13px"), "基准字号必须取自 Type.body：${doc.take(400)}")
-        assertTrue(doc.contains("font-size:12px"), "代码字号必须取自 Type.label：${doc.take(400)}")
-        // 背景透明（叠 GlassCard 玻璃底）
+        // 断言动态取 Design.kt 令牌（单点真相源：令牌变断言跟着变，不锁死具体值）
+        val primaryHex = "#%02X%02X%02X".format(
+            (Palette.TextPrimary.red * 255).toInt(),
+            (Palette.TextPrimary.green * 255).toInt(),
+            (Palette.TextPrimary.blue * 255).toInt(),
+        )
+        assertTrue(doc.contains(primaryHex), "正文色必须取自 Palette.TextPrimary（$primaryHex）：${doc.take(400)}")
+        // 基准字号取 Type.body、代码字号取 Type.label（动态）
+        val bodyPx = Type.body.fontSize.value.toInt()
+        val labelPx = Type.label.fontSize.value.toInt()
+        assertTrue(doc.contains("font-size:${bodyPx}px"), "基准字号必须取自 Type.body（$bodyPx）：${doc.take(400)}")
+        assertTrue(doc.contains("font-size:${labelPx}px"), "代码字号必须取自 Type.label（$labelPx）：${doc.take(400)}")
+        // 背景透明（叠 Fluent 分层卡底）
         assertTrue(doc.contains("background:transparent"), "WebView 背景须透明")
         assertTrue(doc.contains("<h1>标题</h1>") && doc.contains("<p>正文</p>"), "文档须装下转换结果")
-        // 传入 style=Type.micro（11sp）时基准字号跟着变
+        // 传入 style=Type.micro 时基准字号跟着变（动态档位）
         assertTrue(
-            markdownDocument("x", Type.micro).contains("font-size:10px"),
-            "字号必须跟随传入的 Design.kt style（Type.micro=10，mac caption2 档）",
+            markdownDocument("x", Type.micro).contains("font-size:${Type.micro.fontSize.value.toInt()}px"),
+            "字号必须跟随传入的 Design.kt style（Type.micro=${Type.micro.fontSize.value.toInt()}）",
         )
     }
 

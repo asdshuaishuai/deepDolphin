@@ -1,10 +1,11 @@
-// DesignRefinementTest.kt —— mac 纯粹设计系统的判据（对位 DesignSystem.swift/DesignTokens.swift）：
-// hero 渐变端点纪律、语义渐变「深→亮同语义」纪律、圆角三档、表面三级、文字三级。
+// DesignRefinementTest.kt —— Fluent 设计系统判据（用户定稿：完全的 Fluent 美学；WinUI 3 暗色域）：
+// 安静 hero（无多色渐变）、白 alpha 分层表面、白三级文字、圆角三档、accent 亮蓝配近黑文字。
 
 package deepdolphin.ui
 
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -18,57 +19,72 @@ class DesignRefinementTest {
         L10n.applyLanguage(AppLanguage.ZH_CN)
     }
 
-    // ── hero 渐变（靛→紫→青；产品的「封面」）──
+    // ── hero：安静分层（两端同族近灰，禁多色）──
 
     @Test
-    fun heroStopsAreIndigoVioletCyanInOrder() {
-        assertEquals(
-            listOf(Palette.HeroIndigo, Palette.HeroViolet, Palette.HeroCyan),
-            heroStops(),
-        )
+    fun heroStopsStayQuietLayered() {
+        val stops = heroStops()
+        assertEquals(listOf(Palette.HeroTop, Palette.HeroBottom), stops)
+        val dr = kotlin.math.abs(stops[0].red - stops[1].red)
+        val dg = kotlin.math.abs(stops[0].green - stops[1].green)
+        val db = kotlin.math.abs(stops[0].blue - stops[1].blue)
+        assertTrue(dr + dg + db < 0.3f, "hero 两端必须是同族近灰（Fluent 安静头），不许多色渐变")
     }
 
     @Test
-    fun heroBrushIsLinearGradientType() {
+    fun heroBrushIsGradientType() {
         val brush = heroBrushDiagonal()
-        assertTrue(brush.toString().startsWith("LinearGradient("), "hero 必须是线性渐变：${brush::class.simpleName}")
+        assertTrue(brush.toString().contains("Gradient("), "hero 必须是渐变：${brush::class.simpleName}")
     }
 
-    // ── 语义渐变纪律：深→亮必须同语义 ──
+    // ── 表面：Mica 底 + 白 alpha 分层 ──
 
     @Test
-    fun semanticGradientsStayWithinTheirSemantics() {
-        // 语义渐变的端点由 heroStops 同源的纯数据断言（Brush colors 不经公开 API）
-        assertEquals(listOf(Palette.Shallow, Palette.ShallowAlt), listOf(Palette.Shallow, Palette.ShallowAlt))
-        // 每个语义渐变的两端必须同语义（head 与 alt 成对）：由 shallowBrush/deepBrush 等实现直接保证
-        assertTrue(true)
-    }
-
-    // ── 表面三级（mac DSLevel：card / nested / inset）──
-
-    @Test
-    fun surfacesFollowSlateThreeLevels() {
-        assertEquals(Color(0xFF1E293B), Palette.Card)   // cardDark
-        assertEquals(Color(0xFF0F172A), Palette.BgBase) // bgDark
-        assertEquals(Color(0xFF0B0F19), Palette.Sidebar) // sidebarDark
-        assertEquals(Color(0xFF334155), Palette.Stroke) // borderDark
+    fun surfacesFollowFluentLayering() {
+        assertEquals(Color(0xFF1F1F1F), Palette.BgBase)   // SolidBackgroundFillColorBase 暗色
+        assertEquals(Color(0xFF292929), Palette.Card)     // Layer ~4% 白
+        assertEquals(Color(0xFF191919), Palette.Sidebar)  // NavigationView pane
+        assertEquals(Color(0x14FFFFFF), Palette.Stroke)   // 白 8% hairline
     }
 
     @Test
     fun sidebarIsDarkerThanBase() {
-        // 侧栏必须比页面底更暗（mac 分层的视觉锚点）
+        // 侧栏必须比页面底更暗（分层的视觉锚点）
         val lum = { c: Color -> c.red + c.green + c.blue }
         assertTrue(lum(Palette.Sidebar) < lum(Palette.BgBase))
     }
 
-    // ── 双轨/强调四语义色对位 DSPalette ──
+    @Test
+    fun textFollowsWhiteThreeLevels() {
+        assertEquals(Color(0xFFFFFFFF), Palette.TextPrimary)   // 100%
+        assertEquals(Color(0xA8FFFFFF), Palette.TextSecondary) // 66%
+        assertEquals(Color(0x73FFFFFF), Palette.TextTertiary)  // 45%
+    }
+
+    // ── accent：Fluent 暗色亮蓝 + 近黑文字（对比度纪律）──
 
     @Test
-    fun semanticColorsMatchMacPalette() {
-        assertEquals(Color(0xFF3B82F6), Palette.Accent)
-        assertEquals(Color(0xFF10B981), Palette.Shallow)
-        assertEquals(Color(0xFF8B5CF6), Palette.Deep)
-        assertEquals(Color(0xFF06B6D4), Palette.Ai)
+    fun accentIsFluentDarkBlueWithDarkOnColor() {
+        assertEquals(Color(0xFF60CDFF), Palette.Accent)
+        assertEquals(Color(0xFF1B1B1B), Palette.OnAccent)
+        // 亮 accent 上必须配深文字（WCAG 方向性校验）
+        val lum = { c: Color -> 0.2126f * c.red + 0.7152f * c.green + 0.0722f * c.blue }
+        assertTrue(lum(Palette.Accent) - lum(Palette.OnAccent) > 0.4f, "accent 与其上文字的明度差必须够大")
+    }
+
+    // ── 圆角与动效档 ──
+
+    @Test
+    fun radiusFollowsFluentTiers() {
+        assertEquals(4.dp, Radius.chip)
+        assertEquals(4.dp, Radius.control)
+        assertEquals(8.dp, Radius.card)
+    }
+
+    @Test
+    fun motionTiersAre150And300() {
+        assertEquals(150, Motion.normal)
+        assertEquals(300, Motion.slow)
     }
 
     @Test

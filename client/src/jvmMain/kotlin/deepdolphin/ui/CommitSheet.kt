@@ -19,6 +19,7 @@
 package deepdolphin.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -40,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -121,7 +123,9 @@ fun CommitSheet(model: AppModel, project: String) {
                 .fillMaxWidth(0.5f)
                 .fillMaxHeight(0.66f)
                 .clip(RoundedCornerShape(Radius.card))
+                .shadow(12.dp, RoundedCornerShape(Radius.card))
                 .background(Palette.Card)
+                .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
                 .padding(Space.lg),
             verticalArrangement = Arrangement.spacedBy(Space.md),
         ) {
@@ -272,7 +276,7 @@ fun CommitSheet(model: AppModel, project: String) {
                             shape = RoundedCornerShape(Radius.control),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Palette.Accent,
-                                contentColor = Color.White,
+                                contentColor = Palette.OnAccent,
                             ),
                         ) { Text(if (busy) L10n.t("cmp.commit.busy") else L10n.t("gitop.commit")) }
                     }

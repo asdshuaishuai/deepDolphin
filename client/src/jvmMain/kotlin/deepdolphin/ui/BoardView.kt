@@ -298,7 +298,7 @@ fun BoardPage(model: AppModel) {
                 onClick = { model.refreshAll() },
                 enabled = !refreshing,
                 shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
             ) { Text(if (refreshing) L10n.t("cmp.common.refreshing") else L10n.t("toolbar.refresh")) }
         }
 

@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import deepdolphin.engine.*
 import deepdolphin.ui.Palette
 import deepdolphin.ui.Radius
+import androidx.compose.ui.draw.drawBehind
 import deepdolphin.ui.heroBrushDiagonal
 import deepdolphin.ui.Space
 import deepdolphin.ui.Type
@@ -39,15 +40,23 @@ import deepdolphin.ui.Type
 /** 玻璃磁贴（对位 .card：底 + 描边；.card.hoverable：hover 换底色/描边并上移 2px）。 */
 @Composable
 fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    // Fluent reveal：hover 分层 4%→6% 白渐变（150ms），描边同步提亮；不抬升几何
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    val bg by androidx.compose.animation.animateColorAsState(
+        if (hovered) Palette.CardHover else Palette.Card,
+        androidx.compose.animation.core.tween(Motion.normal), label = "cardBg",
+    )
+    val stroke by androidx.compose.animation.animateColorAsState(
+        if (hovered) Palette.StrokeHover else Palette.Stroke,
+        androidx.compose.animation.core.tween(Motion.normal), label = "cardStroke",
+    )
     Column(
         modifier
             .hoverable(interaction)
-            .offset(y = if (hovered) (-2).dp else 0.dp) // translateY(-2px)，不动其余几何
             .clip(RoundedCornerShape(Radius.card))
-            .border(1.dp, if (hovered) Palette.StrokeHover else Palette.Stroke, RoundedCornerShape(Radius.card))
-            .background(if (hovered) Palette.CardHover else Palette.Card)
+            .border(1.dp, stroke, RoundedCornerShape(Radius.card))
+            .background(bg)
             .padding(Space.lg),
         content = content,
     )
@@ -120,13 +129,20 @@ fun DashboardPage(model: AppModel) {
             .padding(horizontal = Space.xl, vertical = Space.lg),
         verticalArrangement = Arrangement.spacedBy(Space.lg),
     ) {
-        // ── hero 页头（DSGradient.hero：靛→紫→青；产品的「封面」，两处共用一张底的纪律在此继承）──
+        // ── hero 页头（Fluent 安静头：分层底纵向微渐变 + accent 顶 hairline，无多色渐变）──
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(Radius.control))
+                .clip(RoundedCornerShape(Radius.card))
                 .background(heroBrushDiagonal())
+                .drawBehind {
+                    // accent 顶 hairline（Fluent 头部点缀）
+                    drawRect(
+                        color = Palette.Accent.copy(alpha = 0.55f),
+                        size = size.copy(height = 1.dp.toPx()),
+                    )
+                }
                 .padding(horizontal = Space.xl, vertical = Space.lg),
         ) {
             Column(Modifier.weight(1f)) {
@@ -426,7 +442,7 @@ private fun EmptyRegistryCta(model: AppModel) {
                 onClick = { model.scanProjects(scanRoot.trim(), scanDepth.trim().toIntOrNull() ?: 2) },
                 enabled = !busy && scanRoot.isNotBlank(),
                 shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
             ) { Text(L10n.t("scan.run")) }
         }
         Spacer(Modifier.height(Space.sm))
@@ -452,7 +468,7 @@ private fun EmptyRegistryCta(model: AppModel) {
                 onClick = { model.addProjectPath(addPath.trim(), addName.trim().takeIf { it.isNotBlank() }) },
                 enabled = !busy && addPath.isNotBlank(),
                 shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
             ) { Text(L10n.t("scan.add")) }
         }
         // 操作结果/失败原因就在按钮下方如实披露（写操作必须留结果）

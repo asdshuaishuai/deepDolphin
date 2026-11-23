@@ -28,6 +28,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -126,6 +127,7 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                 .fillMaxWidth(0.46f)
                 .fillMaxHeight(0.7f)
                 .clip(RoundedCornerShape(Radius.card))
+.shadow(12.dp, RoundedCornerShape(Radius.card))
                 .background(Palette.Card)
                 .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
                 .padding(Space.lg),
@@ -255,7 +257,7 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                     shape = RoundedCornerShape(Radius.control),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Palette.Accent,
-                        contentColor = Color.White,
+                        contentColor = Palette.OnAccent,
                     ),
                 ) { Text(if (busy) L10n.t("cmp.scan.busy") else if (single) L10n.t("scan.add") else L10n.t("cmp.scan.runBtn")) }
             }

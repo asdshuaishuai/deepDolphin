@@ -15,6 +15,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -51,6 +53,7 @@ import deepdolphin.ui.Palette
 import deepdolphin.ui.ArchPage
 import deepdolphin.ui.CodeGraphPage
 import deepdolphin.ui.ProjectDetailView
+import deepdolphin.ui.Motion
 import deepdolphin.ui.Radius
 import deepdolphin.ui.SidebarStatusStrip
 import deepdolphin.ui.Space
@@ -137,7 +140,7 @@ fun App(
                 Button(
                     onClick = { reprobe() },
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(Radius.control),
-                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
                 ) { Text(L10n.t("setup.recheck")) }
             }
         }
@@ -158,7 +161,10 @@ fun App(
     }
 }
 
-fun main(vararg args: String) = application {
+fun main(vararg args: String) {
+    // 启动打点（T0=main 进入；窗口首组合打 STARTUP_MS——性能判据）
+    StartupMark.t0 = System.currentTimeMillis()
+    application {
     // C10 深链：--section dashboard|board|milestones / --project <名>
     val link = deepdolphin.sysint.SysInt.parseDeepLink(args.toList())
     // 托盘速览（mac BarView MenuBarExtra 对位；AWT SystemTray/X11）：
@@ -176,12 +182,26 @@ fun main(vararg args: String) = application {
         state = WindowState(width = 1280.dp, height = 860.dp),
         title = "deepDolphin",
     ) {
+        LaunchedEffect(Unit) { StartupMark.report() }
         App(
             initialSection = link.section,
             initialProject = link.project,
             onTraySummary = tray?.let { t -> { line: String -> t.updateSummary(line) } },
             onQuit = { exitApplication() },
         )
+    }
+    }
+}
+
+/** 启动耗时上报（T0 由 main 记；窗口首组合时打 STARTUP_MS）。 */
+internal object StartupMark {
+    @Volatile var t0 = 0L
+    @Volatile private var reported = false
+    fun report() {
+        if (t0 > 0 && !reported) {
+            reported = true
+            println("STARTUP_MS=" + (System.currentTimeMillis() - t0))
+        }
     }
 }
 
@@ -368,28 +388,32 @@ fun NavGroupLabel(label: String) {
 
 @Composable
 fun NavItem(label: String, selected: Boolean, onClick: () -> Unit) {
-    // 左对齐导航项：选中态 = 左指示条 + accent 淡底；hover 由 compose 可点击态涟漪自然呈现
-    val bg = if (selected) Palette.Accent.copy(alpha = 0.85f) else Color.Transparent
+    // Fluent NavigationView 形态：选中 = 左 accent pill 指示条 + accent 10% 分层底（150ms 渐变），
+    // 文字保持 primary（Fluent 选中不改文字色为白）
+    val bg by animateColorAsState(
+        if (selected) Palette.Accent.copy(alpha = 0.10f) else Color.Transparent,
+        animationSpec = tween(Motion.normal), label = "navBg",
+    )
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(Radius.control))
             .background(bg)
             .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 9.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
-        // 选中左指示条
+        // Fluent 选中 pill 指示条（3dp 宽 16dp 高圆条，accent）
         Box(
             Modifier.width(3.dp).height(16.dp)
-                .background(if (selected) Color.White else Color.Transparent,
+                .background(if (selected) Palette.Accent else Color.Transparent,
                     androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
         )
         Spacer(Modifier.width(10.dp))
         Text(
             label,
-            style = Type.body.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal),
-            color = if (selected) Color.White else Palette.TextPrimary,
+            style = Type.body.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal),
+            color = Palette.TextPrimary,
         )
     }
 }
@@ -397,15 +421,19 @@ fun NavItem(label: String, selected: Boolean, onClick: () -> Unit) {
 /** 仓库行（小字号版导航项；读不出来的项目用暗红名 + 问号 badge）。 */
 @Composable
 fun RepoItem(label: String, unreadable: Boolean, selected: Boolean, onClick: () -> Unit) {
-    val bg = if (selected) Palette.Accent.copy(alpha = 0.25f) else Color.Transparent
+    // Fluent：选中 = accent 8% 分层底（150ms 渐变），pill 指示条交给 NavItem 一级导航
+    val bg by animateColorAsState(
+        if (selected) Palette.Accent.copy(alpha = 0.08f) else Color.Transparent,
+        animationSpec = tween(Motion.normal), label = "repoBg",
+    )
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(Radius.control))
             .background(bg)
             .clickable(enabled = !unreadable) { onClick() }
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
         Box(
             Modifier.size(8.dp).background(

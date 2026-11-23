@@ -7,6 +7,8 @@
 
 package deepdolphin.engine
 
+import androidx.compose.runtime.Immutable
+
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -27,6 +29,7 @@ fun <T> decodeOrThrow(deserializer: kotlinx.serialization.KSerializer<T>, text: 
 // ── status --json ──
 
 @Serializable
+@Immutable
 data class StatusEnvelope(
     val projects: List<Project> = emptyList(),
     val summary: Summary = Summary(),
@@ -35,6 +38,7 @@ data class StatusEnvelope(
 )
 
 @Serializable
+@Immutable
 data class Summary(
     val projectCount: Long = 0,
     val degradedStores: Long = 0,
@@ -51,6 +55,7 @@ data class Summary(
 )
 
 @Serializable
+@Immutable
 data class Project(
     // ── 身份 ──
     val storeHealth: String = "",
@@ -116,6 +121,7 @@ data class Project(
 }
 
 @Serializable
+@Immutable
 data class Dirty(
     val ok: Boolean = false,
     val clean: Boolean = false,
@@ -129,12 +135,14 @@ data class Dirty(
 )
 
 @Serializable
+@Immutable
 data class Overall(
     val summary: String = "",
     val notes: List<String> = emptyList(),
 )
 
 @Serializable
+@Immutable
 data class MergeHint(
     val kind: String = "",
     val ahead: Long = 0,
@@ -145,6 +153,7 @@ data class MergeHint(
 )
 
 @Serializable
+@Immutable
 data class Progress(
     val updatedAt: String = "",
     val lastUpdateAt: String = "",
@@ -157,12 +166,14 @@ data class Progress(
 )
 
 @Serializable
+@Immutable
 data class DocEntry(
     val file: String = "",
     val exists: Boolean = false,
 )
 
 @Serializable
+@Immutable
 data class Branch(
     val name: String = "",
     val status: String = "",
@@ -198,6 +209,7 @@ data class Branch(
 }
 
 @Serializable
+@Immutable
 data class JournalEntry(
     val hash: String = "",
     val hashShort: String = "",
@@ -208,6 +220,7 @@ data class JournalEntry(
 )
 
 @Serializable
+@Immutable
 data class CommitTypeCount(
     val kind: String = "",
     val count: Long = 0,
@@ -216,6 +229,7 @@ data class CommitTypeCount(
 // ── dashboard --json ──
 
 @Serializable
+@Immutable
 data class DashboardData(
     val projects: DashProjects = DashProjects(),
     val work: DashWork = DashWork(),
@@ -230,6 +244,7 @@ data class DashboardData(
 )
 
 @Serializable
+@Immutable
 data class DashProjects(
     val total: Long = 0,
     val readable: Long = 0,
@@ -238,6 +253,7 @@ data class DashProjects(
 )
 
 @Serializable
+@Immutable
 data class DashWork(
     val dirty: Long = 0,
     val untracked: Long = 0,
@@ -247,18 +263,21 @@ data class DashWork(
 )
 
 @Serializable
+@Immutable
 data class LangCount(
     val language: String = "",
     val count: Long = 0,
 )
 
 @Serializable
+@Immutable
 data class DashMilestones(
     val counts: MilestoneCounts = MilestoneCounts(),
     val storeHealth: String = "",
 )
 
 @Serializable
+@Immutable
 data class MilestoneCounts(
     val open: Long = 0,
     val done: Long = 0,
@@ -268,6 +287,7 @@ data class MilestoneCounts(
 )
 
 @Serializable
+@Immutable
 data class ActiveProject(
     val id: String = "",
     val name: String = "",
@@ -277,6 +297,7 @@ data class ActiveProject(
 // ── milestone list --json ──
 
 @Serializable
+@Immutable
 data class MilestoneList(
     val milestones: List<Milestone> = emptyList(),
     val storeHealth: String = "",
@@ -286,6 +307,7 @@ data class MilestoneList(
 )
 
 @Serializable
+@Immutable
 data class Milestone(
     val projectId: String = "",
     /** 引擎恒发（fixtures/milestones.json + 2026-11 真机 `milestone list --json` 实测）：
@@ -307,6 +329,7 @@ data class Milestone(
 )
 
 @Serializable
+@Immutable
 data class OrphanedMilestone(
     val projectId: String = "",
     val name: String = "",
@@ -316,6 +339,7 @@ data class OrphanedMilestone(
 // ── milestone add / action / remove 回执 ──
 
 @Serializable
+@Immutable
 data class MilestoneAddReceipt(
     val project: String = "",
     val milestone: String = "",
@@ -323,6 +347,7 @@ data class MilestoneAddReceipt(
 )
 
 @Serializable
+@Immutable
 data class MilestoneActionReceipt(
     val project: String = "",
     val milestone: String = "",
@@ -332,6 +357,7 @@ data class MilestoneActionReceipt(
 )
 
 @Serializable
+@Immutable
 data class MilestoneRemoveReceipt(
     val project: String = "",
     val milestone: String = "",
@@ -341,6 +367,7 @@ data class MilestoneRemoveReceipt(
 // ── docs <name> --json ──
 
 @Serializable
+@Immutable
 data class DocsPayload(
     val project: String = "",
     val docs: List<DocContent> = emptyList(),
@@ -348,6 +375,7 @@ data class DocsPayload(
 )
 
 @Serializable
+@Immutable
 data class DocContent(
     val project: String = "",
     val file: String = "",
@@ -360,6 +388,7 @@ typealias UnreadableDocs = String
 // ── journal <name> --json ──
 
 @Serializable
+@Immutable
 data class JournalPayload(
     val entries: List<JournalEntry> = emptyList(),
     val limit: Long = 0,
@@ -374,6 +403,7 @@ data class JournalPayload(
 // ── git <op> <name> --json ──
 
 @Serializable
+@Immutable
 data class GitOpResponse(
     val op: String = "",
     val ok: Boolean = false,
@@ -382,6 +412,7 @@ data class GitOpResponse(
 )
 
 @Serializable
+@Immutable
 data class GitStatusPayload(
     val op: String = "",
     val ok: Boolean = false,
@@ -390,6 +421,7 @@ data class GitStatusPayload(
 )
 
 @Serializable
+@Immutable
 data class GitEntry(
     val xy: String = "",
     val file: String = "",
@@ -399,6 +431,7 @@ data class GitEntry(
 // ── update / deep <name> --json --quiet ──
 
 @Serializable
+@Immutable
 data class UpdateReceipt(
     val ok: Boolean = false,
     val mode: String = "",
@@ -420,6 +453,7 @@ data class UpdateReceipt(
 )
 
 @Serializable
+@Immutable
 data class DocChange(
     val file: String = "",
     val changed: Boolean = false,
@@ -432,6 +466,7 @@ data class DocChange(
  *  （此前 fixtures 缺 update 回执，本字段曾无基准凭空镜像成 Boolean——教训：镜像必须有 fixture 锚）。
  *  【缺键纪律】全部字段可缺席；-1 哨兵照传不吞（null = 引擎没发这个键）。 */
 @Serializable
+@Immutable
 data class JournalEntryRecord(
     val id: String = "",
     val at: String = "",
@@ -472,6 +507,7 @@ data class JournalEntryRecord(
  * 顶层另有引擎自己记的账：count/failed/succeeded（客户端逐条计数与它分叉时必须披露）。
  */
 @Serializable
+@Immutable
 data class MultiResults(
     val results: List<JsonElement> = emptyList(),
     val count: Long = 0,
@@ -481,6 +517,7 @@ data class MultiResults(
 
 /** results[] 的失败条目（真机实测形状：只有 code + message，两个键都可缺席防御）。 */
 @Serializable
+@Immutable
 data class UpdateFailure(
     val code: String = "",
     val message: String = "",
@@ -512,6 +549,7 @@ fun decodeUpdateOutcome(el: JsonElement): UpdateOutcome {
 /** scan 回执的候选项目（真机实测：found 个对象的数组；引擎不在此区分新增/已在册，
  *  聚合数 added/existing 另发——逐项目归属由客户端对照扫描前在册集推导，见 ui/ScanSheet.kt）。 */
 @Serializable
+@Immutable
 data class ScanCandidate(
     val name: String = "",
     val path: String = "",
@@ -523,6 +561,7 @@ data class ScanCandidate(
  *  candidates = 对象数组；unreadable = 读不出来的目录**路径数组**（不是计数——计数取 .size）。
  *  此前镜像成两个 Long（无 fixture 凭空镜像），真机 scan 一跑解码即失败——按教训修回真实形状。 */
 @Serializable
+@Immutable
 data class ScanPayload(
     val candidates: List<ScanCandidate> = emptyList(),
     val found: Long = 0,
@@ -536,6 +575,7 @@ data class ScanPayload(
 )
 
 @Serializable
+@Immutable
 data class RegistryEntry(
     val id: String = "",
     val name: String = "",
@@ -555,6 +595,7 @@ data class RegistryEntry(
 // 本机引擎不发 detail，发的是 penalty（罚分）+ findings（条数）；以实测为准展示后者。
 
 @Serializable
+@Immutable
 data class ConfidenceReport(
     val root: String = "",
     /** 0..100（100 = 未发现结构性疑点；结构性汇总，非正确性证明——semantics 恒发）。 */
@@ -576,6 +617,7 @@ data class ConfidenceReport(
 )
 
 @Serializable
+@Immutable
 data class ConfDimensionScore(
     /** variable / function / type / pointer / concurrency / structure。 */
     val id: String = "",
@@ -586,12 +628,14 @@ data class ConfDimensionScore(
 )
 
 @Serializable
+@Immutable
 data class ConfPenaltyFile(
     val file: String = "",
     val penalty: Long = 0,
 )
 
 @Serializable
+@Immutable
 data class ConfFinding(
     val kind: String = "",
     val file: String = "",
@@ -602,6 +646,7 @@ data class ConfFinding(
 )
 
 @Serializable
+@Immutable
 data class ConfKindCount(
     val kind: String = "",
     val label: String = "",
@@ -614,6 +659,7 @@ data class ConfKindCount(
 // 形状锚定：fixtures/confidence/patchconf_algorithm.json（真机真跑）。
 
 @Serializable
+@Immutable
 data class PatchConfidence(
     val schema: String = "",
     /** 0..1（实体置信度均值；null 信号不计入）。 */
@@ -626,6 +672,7 @@ data class PatchConfidence(
 )
 
 @Serializable
+@Immutable
 data class PatchEntity(
     val id: String = "",
     val kind: String = "",
@@ -636,6 +683,7 @@ data class PatchEntity(
 )
 
 @Serializable
+@Immutable
 data class PatchRelation(
     val type: String = "",
     val target: String = "",
@@ -643,6 +691,7 @@ data class PatchRelation(
 )
 
 @Serializable
+@Immutable
 data class PatchUncertain(
     val id: String = "",
     val issue: String = "",
@@ -653,12 +702,14 @@ data class PatchUncertain(
 )
 
 @Serializable
+@Immutable
 data class PatchContextRef(
     val file: String = "",
     val line: Long = 0,
 )
 
 @Serializable
+@Immutable
 data class PatchDiagnostics(
     @SerialName("total_entities")
     val totalEntities: Long = 0,
@@ -684,6 +735,7 @@ data class PatchDiagnostics(
 // {level, type, detail}（无 issue）。以实测为准，issue 键仍容（缺席回退 type）。
 
 @Serializable
+@Immutable
 data class MergedConfidence(
     val schema: String = "",
     val overall: Double = 0.0,
@@ -697,6 +749,7 @@ data class MergedConfidence(
 
 /** 合并实体的键并集（algorithm 分支与 agent 分支字段不同，一律 nullable）。 */
 @Serializable
+@Immutable
 data class MergedEntity(
     val id: String = "",
     val kind: String? = null,
@@ -713,6 +766,7 @@ data class MergedEntity(
 )
 
 @Serializable
+@Immutable
 data class MergedAlert(
     /** high / medium / low。 */
     val level: String = "",
@@ -723,12 +777,14 @@ data class MergedAlert(
 )
 
 @Serializable
+@Immutable
 data class MergedSources(
     val algorithm: Boolean = false,
     val agent: Boolean = false,
 )
 
 @Serializable
+@Immutable
 data class MergedDiagnostics(
     @SerialName("certain_from_algorithm")
     val certainFromAlgorithm: Long = 0,
@@ -740,6 +796,7 @@ data class MergedDiagnostics(
 
 /** Layer 2 人工裁决载荷（--merge 的 agent 侧输入；mac verdicts 映射的对位）。 */
 @Serializable
+@Immutable
 data class AgentVerdict(
     val id: String,
     /** resolved / unresolved / ambiguous。 */
@@ -749,6 +806,7 @@ data class AgentVerdict(
 )
 
 @Serializable
+@Immutable
 data class AgentPayload(
     val items: List<AgentVerdict> = emptyList(),
 )

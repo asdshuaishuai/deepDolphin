@@ -21,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -313,11 +314,8 @@ fun AiSettingsPane() {
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.md)) {
-        // 说明走 Markdown 渲染通道（WebView；JCEF 不可用自动回退纯文本并如实标注）
-        MarkdownWebView(
-            L10n.t("cmp.ai.keyNote"),
-            Modifier.fillMaxWidth(), style = Type.micro, minHeight = 28.dp,
-        )
+        // 静态一行说明用纯 Text（性能：不为此拉起 JCEF；Markdown 渲染留给 AI 回答）
+        Text(L10n.t("cmp.ai.keyNote"), style = Type.micro, color = Palette.TextSecondary)
 
         GlassCard(Modifier.fillMaxWidth()) {
             Text(L10n.t("cmp.ai.provider"), style = Type.section)
@@ -358,7 +356,7 @@ fun AiSettingsPane() {
                         }
                     },
                     shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
                 ) { Text(L10n.t("common.save")) }
                 Button(
                     onClick = {
@@ -411,8 +409,12 @@ private fun AboutPane() {
             ChoicePill(L10n.t(kind.titleKey), selected = docTab == kind) { docTab = kind }
         }
     }
-    // 只渲染当前子 tab：MarkdownWebView（JCEF 缺席自动回退纯 Text，回退口径见该文件）
-    MarkdownWebView(L10n.doc(docTab), Modifier.fillMaxWidth().heightIn(min = 320.dp))
+    // 静态文档用纯 Text（性能：不为此拉起 JCEF）；文档为纯文本形态，无富排版需求
+    Text(
+        L10n.doc(docTab),
+        style = Type.body.copy(color = Palette.TextSecondary, lineHeight = Type.body.fontSize * 1.5),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp),
+    )
 }
 
 @Composable
@@ -451,6 +453,7 @@ fun AgentSheet(model: AppModel) {
         Box(
             Modifier.fillMaxWidth(0.62f).fillMaxHeight(0.8f)
                 .clip(RoundedCornerShape(Radius.card))
+.shadow(12.dp, RoundedCornerShape(Radius.card))
                 .background(Palette.Card)
                 .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
                 .padding(Space.lg),
@@ -579,7 +582,7 @@ private fun AgentConversation(model: AppModel, scopeLabel: String, initialTask: 
                 },
                 enabled = !busy && draft.isNotBlank(),
                 shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
             ) { Text(if (busy) L10n.t("cmp.agent.thinkingShort") else L10n.t("agent.send")) }
         }
     }

@@ -22,6 +22,7 @@
 package deepdolphin.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -36,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -233,7 +235,9 @@ private fun QuickViewShell(content: @Composable ColumnScope.() -> Unit) {
         Modifier
             .width(380.dp)
             .clip(RoundedCornerShape(Radius.card))
+.shadow(12.dp, RoundedCornerShape(Radius.card))
             .background(Palette.Card)
+            .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
             .padding(vertical = Space.sm),
         content = content,
     )
@@ -249,7 +253,7 @@ private fun QuickViewFooter(onOpenPanel: () -> Unit, onQuit: () -> Unit) {
         Button(
             onClick = onOpenPanel,
             shape = RoundedCornerShape(Radius.control),
-            colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+            colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
         ) { Text(L10n.t("bar.openPanel")) }
         Spacer(Modifier.weight(1f))
         Text(

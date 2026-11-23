@@ -273,7 +273,7 @@ fun ConfidencePage(model: AppModel) {
                 onClick = { scope.launch { vm.load(null) } },
                 enabled = !vm.loading && vm.projectName.isNotBlank(),
                 shape = RoundedCornerShape(Radius.control),
-                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
             ) { Text(L10n.t("confidence.run")) }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                 Switch(checked = vm.highWeightOnly, onCheckedChange = { vm.highWeightOnly = it })
@@ -514,7 +514,7 @@ fun PatchCheckPage(model: AppModel) {
                 onClick = { scope.launch { vm.run(null) } },
                 enabled = !vm.running && vm.projectName.isNotBlank(),
                 shape = RoundedCornerShape(Radius.control),
-                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
             ) { Text(L10n.t("cmp.conf.runBtn")) }
             Button(
                 onClick = { scope.launch { vm.merge() } },
