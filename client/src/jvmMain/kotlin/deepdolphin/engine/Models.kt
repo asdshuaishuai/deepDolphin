@@ -105,6 +105,13 @@ data class Project(
     val isReadable: Boolean get() = error == null
     /** 结构化脏度是否已知（dirty.ok=true 且 total 在场）。 */
     val dirtyKnown: Boolean get() = dirty?.ok == true && dirty.total >= 0
+    /**
+     * 「这条项目该显示哪个分支」——标记为当前的那个，没有就退回第一个。
+     * mac 基准 Models.swift:436-438（primaryBranch）同款：领域规则属于模型层，
+     * 视图各自内联会抄出几份不同步的判定（mac 曾三份）。branches 是**追踪数组**
+     * （无远端基线的仓库恒空），返回 null = 没有分支记录，不是「没有分支」。
+     */
+    val primaryBranch: Branch? get() = branches.firstOrNull { it.isCurrent } ?: branches.firstOrNull()
 }
 
 @Serializable
@@ -175,7 +182,19 @@ data class Branch(
     val isCurrent: Boolean = false,
     /** fixtures 实测恒发（beacon/main 实测 true）。领先默认分支数只对非默认分支有意义。 */
     val isDefault: Boolean = false,
-)
+) {
+    /**
+     * 这条分支是不是「可以合进默认分支」。判据**逐字对齐引擎**
+     * `flow/dashboard.cj:206-209`：`ahead > 0 && !isDefault && !merged`，三条缺一不可：
+     *   · `aheadOfDefault > 0` —— 相对默认分支的领先数（**不是** pendingCommits：
+     *     那是「引擎还没记录的提交数」，刚跑过 update 恒为 0，与能不能合无关——
+     *     引擎专门写回归测试把 mergeCandidates 从 pendingCommits 改成 aheadOfDefault）；
+     *   · `!isDefault` —— 默认分支不需要合进自己；
+     *   · `!merged` —— 已经合过的分支不再提示。
+     * mac 基准 Models.swift:229-231 同款派生属性（提成有名字的属性防三处抄三份漂移）。
+     */
+    val isMergeCandidate: Boolean get() = aheadOfDefault > 0 && !isDefault && !merged
+}
 
 @Serializable
 data class JournalEntry(
@@ -268,6 +287,10 @@ data class MilestoneList(
 @Serializable
 data class Milestone(
     val projectId: String = "",
+    /** 引擎恒发（fixtures/milestones.json + 2026-11 真机 `milestone list --json` 实测）：
+     *  里程碑页按项目分组/筛选的展示名直接用它，不必再拿 status 的注册表反查。
+     *  孤儿条目（项目已不在册）引擎也给这个名字——不丢。 */
+    val projectName: String = "",
     val name: String = "",
     /** null = 缺键（旧引擎或该路径不写）；空串与缺键 UI 上都渲染成「无描述」。 */
     val description: String? = null,
@@ -276,7 +299,10 @@ data class Milestone(
     /** open / done / dropped / unknown；null = 缺键（无法核验）。 */
     val status: String? = null,
     val createdAt: String = "",
-    val doneAt: String? = null,
+    /** 达成时间。⚠️ 引擎键名是 completedAt（真机 + fixture 实测；mac Models.swift:766 同款）——
+     *  原镜像误写成 doneAt，ignoreUnknownKeys 把真键吞掉、本字段恒 null，
+     *  「达成于 …」一行从来没显示过。空串 = 未达成。 */
+    val completedAt: String = "",
 )
 
 @Serializable
