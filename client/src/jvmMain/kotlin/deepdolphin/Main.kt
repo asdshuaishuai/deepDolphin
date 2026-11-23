@@ -140,10 +140,12 @@ fun SidebarShell(model: AppModel) {
             NavItem("AI 设置", Route.SETTINGS == route) { model.goRoute(Route.SETTINGS) }
             Spacer(Modifier.height(Space.md))
             Text("仓库", style = Type.micro.copy(fontWeight = FontWeight.Bold), color = Palette.TextSecondary)
+            Spacer(Modifier.height(Space.xs))
             status?.projects.orEmpty().forEach { p ->
-                NavItem(
+                RepoItem(
                     p.name + (if (p.isReadable) "" else "（读不出）"),
-                    Route.PROJECT == route && selected == p.name,
+                    unreadable = !p.isReadable,
+                    selected = Route.PROJECT == route && selected == p.name,
                 ) { if (p.isReadable) model.goRoute(Route.PROJECT, p.name) }
             }
             Spacer(Modifier.weight(1f))
@@ -168,21 +170,56 @@ fun SidebarShell(model: AppModel) {
 
 @Composable
 fun NavItem(label: String, selected: Boolean, onClick: () -> Unit) {
-    // Material3 Surface(onClick=…) 的 selectable API 在 1.7.3 + 本宿主下曾静默丢点击——
-    // 改用最底层的 Button 组件契约（onClick 由 Material 保证，不依赖 selectable 状态）。
-    androidx.compose.material3.Button(
-        onClick = onClick,
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-            containerColor = if (selected) Palette.Accent else androidx.compose.ui.graphics.Color.Transparent,
-            contentColor = if (selected) Color.White else Palette.TextPrimary,
-        ),
-        elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
-        modifier = Modifier.fillMaxWidth(),
+    // 左对齐导航项：选中态 = 左指示条 + accent 淡底；hover 由 compose 可点击态涟漪自然呈现
+    val bg = if (selected) Palette.Accent.copy(alpha = 0.85f) else Color.Transparent
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            .background(bg)
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 9.dp),
     ) {
+        // 选中左指示条
+        Box(
+            Modifier.width(3.dp).height(16.dp)
+                .background(if (selected) Color.White else Color.Transparent,
+                    androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
+        )
+        Spacer(Modifier.width(10.dp))
         Text(
             label,
             style = Type.body.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal),
+            color = if (selected) Color.White else Palette.TextPrimary,
+        )
+    }
+}
+
+/** 仓库行（小字号版导航项；读不出来的项目用暗红名 + 问号 badge）。 */
+@Composable
+fun RepoItem(label: String, unreadable: Boolean, selected: Boolean, onClick: () -> Unit) {
+    val bg = if (selected) Palette.Accent.copy(alpha = 0.25f) else Color.Transparent
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+            .background(bg)
+            .clickable(enabled = !unreadable) { onClick() }
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Box(
+            Modifier.size(8.dp).background(
+                if (unreadable) Palette.Red.copy(alpha = 0.7f) else Palette.Green.copy(alpha = 0.7f),
+                androidx.compose.foundation.shape.CircleShape)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            label,
+            style = Type.micro.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal),
+            color = if (unreadable) Palette.TextSecondary else Palette.TextPrimary,
+            maxLines = 1,
         )
     }
 }
