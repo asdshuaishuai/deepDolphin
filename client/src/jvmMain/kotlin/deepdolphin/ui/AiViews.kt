@@ -6,6 +6,7 @@
 package deepdolphin.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -14,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,9 +24,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import deepdolphin.ai.*
 import deepdolphin.engine.EngineLocator
+import deepdolphin.sysint.SysInt
 import deepdolphin.ui.Palette
+import deepdolphin.ui.Radius
 import deepdolphin.ui.Space
 import deepdolphin.ui.Type
 import kotlinx.coroutines.Dispatchers
@@ -83,8 +89,96 @@ object ConfStore {
     fun readAi(): AiSettings = AiSettings.fromConf(read())
 }
 
+/**
+ * 设置页（mac 原生 Settings scene 的 Linux 对位；侧栏最底部「设置」进入）。
+ * 对位 AppSettingsView 的 TabView：通用 / AI / 关于（自动化随后续批收编）。
+ */
 @Composable
-fun AiSettingsPage(model: AppModel) {
+fun SettingsPage(model: AppModel) {
+    var tab by remember { mutableStateOf(0) }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(horizontal = Space.xl, vertical = Space.lg),
+        verticalArrangement = Arrangement.spacedBy(Space.md),
+    ) {
+        Text("设置", style = Type.title)
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            listOf("通用", "AI", "关于").forEachIndexed { i, label ->
+                val selected = tab == i
+                Text(
+                    label, style = Type.body,
+                    color = if (selected) Color.White else Palette.TextSecondary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(if (selected) Palette.Accent else Palette.Card)
+                        .clickable { tab = i }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            }
+        }
+        when (tab) {
+            0 -> GeneralPane()
+            1 -> AiSettingsPane()
+            else -> AboutPane()
+        }
+    }
+}
+
+/** 通用 tab：自启动（XDG autostart；仅打包安装态可开——gradle run 无客户端入口）。 */
+@Composable
+private fun GeneralPane() {
+    val entry = remember { autostartEntry() }
+    val dir = remember { SysInt.autostartDir() }
+    var enabled by remember { mutableStateOf(File(dir, "deepdolphin.desktop").isFile) }
+    var message by remember { mutableStateOf<String?>(null) }
+    GlassCard(Modifier.fillMaxWidth()) {
+        Text("自启动", style = Type.section)
+        Spacer(Modifier.height(Space.sm))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("登录时自动启动 deepDolphin", style = Type.body)
+                Text(
+                    entry?.let { "入口：$it" }
+                        ?: "开发模式（gradle run）没有客户端入口，安装 deb/AppImage 后可用",
+                    style = Type.micro, color = Palette.TextSecondary,
+                )
+            }
+            Switch(
+                checked = enabled && entry != null,
+                onCheckedChange = { on ->
+                    val e = entry
+                    if (e == null) {
+                        message = "没有可执行入口（开发模式）；安装后重试"
+                        return@Switch
+                    }
+                    val err = SysInt.setAutostart(dir, e, on)
+                    if (err == null) {
+                        enabled = on
+                        message = if (on) "已写入 ${dir.absolutePath}/deepdolphin.desktop" else "已移除自启条目"
+                    } else message = err
+                },
+                enabled = entry != null,
+            )
+        }
+        message?.let {
+            Spacer(Modifier.height(Space.sm))
+            Text(it, style = Type.micro, color = Palette.TextSecondary)
+        }
+    }
+}
+
+/** 自启入口探测：打包态 cmdline[0] = launcher（deepdolphin）；gradle run = java → 不可用。 */
+private fun autostartEntry(): String? {
+    val first = runCatching {
+        File("/proc/self/cmdline").readBytes().toString(Charsets.UTF_8)
+            .split('\u0000').firstOrNull { it.isNotBlank() }
+    }.getOrNull() ?: return null
+    return SysInt.autostartClientEntry(first)?.takeIf { File(it).name == "deepdolphin" }
+}
+
+/** AI tab（原「AI 设置」页收编；key 纪律与连通性测试不变）。 */
+@Composable
+fun AiSettingsPane() {
     val saved = remember { ConfStore.readAi() }
     var provider by remember { mutableStateOf(saved.providerID) }
     var model_ by remember { mutableStateOf(saved.model) }
@@ -94,12 +188,7 @@ fun AiSettingsPage(model: AppModel) {
     var busyTest by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(horizontal = Space.xl, vertical = Space.lg),
-        verticalArrangement = Arrangement.spacedBy(Space.md),
-    ) {
-        Text("AI 设置", style = Type.title)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.md)) {
         // 说明走 Markdown 渲染通道（WebView；JCEF 不可用自动回退纯文本并如实标注）
         MarkdownWebView(
             "**key 只进系统安全存储（libsecret）**，不写配置文件、不进日志",
@@ -178,6 +267,17 @@ fun AiSettingsPage(model: AppModel) {
     }
 }
 
+/** 关于 tab（诚实边界：版本与判据口径，不编功能清单）。 */
+@Composable
+private fun AboutPane() {
+    GlassCard(Modifier.fillMaxWidth()) {
+        Text("deepDolphin", style = Type.section)
+        Text("0.1.0 · moonGit 引擎的跨平台桌面客户端（Compose Multiplatform）", style = Type.body.copy(color = Palette.TextSecondary))
+        Spacer(Modifier.height(Space.sm))
+        Text("引擎判据 11 条，判据只增不减；能力口径以 client/PLAN.md 为准。", style = Type.micro, color = Palette.TextTertiary)
+    }
+}
+
 @Composable
 private fun FieldRow(label: String, value: String, password: Boolean = false, onChange: (String) -> Unit) {
     Column {
@@ -194,16 +294,35 @@ private fun FieldRow(label: String, value: String, password: Boolean = false, on
 }
 
 /**
- * C6 AI 助手对话页（工具循环事件可见）。
- * Markdown 渲染（C6 收尾批）：只有【最新一条】助手消息走 WebView 排版
- * （代码块等宽/表格/列表；JCEF 缺席/装载失败自动回退纯文本并如实标注），
- * 历史助手消息保持纯文本 Text——webview 是重量组件（独立渲染进程），
- * 每条消息一个会把 Compose verticalScroll 列表压垮；最新回答是排版收益最高的
- * 那条，单 WebView 内部由 markdown 变化驱动同一 browser 重载。
- * 用户消息保持气泡纯文本（本批边界）。
+ * AI 报告 sheet（对位 mac AIResultSheet/AgentView：没有独立入口、没有「AI 助手」按钮——
+ * AI 融进操作：深/浅更新完成后就地「AI 解读」带着预填任务打开（GraphChrome initialTask 同语义）。
+ * 作用域跟随侧栏选中；最新一条回答走 Markdown 排版（AIResultSheet 的报告形态），
+ * 底部输入行可就地追问（多轮）。
  */
 @Composable
-fun AiChatPage(model: AppModel) {
+fun AgentSheet(model: AppModel) {
+    val selected by model.selectedProject.collectAsState()
+    val task by model.agentTask.collectAsState()
+    val projectCount = model.status.value?.projects?.size ?: 0
+    val scopeLabel = selected ?: "项目群（全部 $projectCount 个项目）"
+    Dialog(
+        onDismissRequest = { model.closeAgent() },
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            Modifier.fillMaxWidth(0.62f).fillMaxHeight(0.8f)
+                .clip(RoundedCornerShape(Radius.card))
+                .background(Palette.Card)
+                .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
+                .padding(Space.lg),
+        ) {
+            AgentConversation(model, scopeLabel, task)
+        }
+    }
+}
+
+@Composable
+private fun AgentConversation(model: AppModel, scopeLabel: String, initialTask: String?) {
     var draft by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var busy by remember { mutableStateOf(false) }
@@ -212,16 +331,57 @@ fun AiChatPage(model: AppModel) {
     val scope = rememberCoroutineScope()
     val cancelFlag = remember { java.util.concurrent.atomic.AtomicInteger(0) }
 
+    // 预填任务自动发送（AIResultSheet 的「打开即跑」对位）；只发一次（messages 空时）
+    fun send(q: String) {
+        if (q.isBlank() || busy) return
+        draft = ""
+        busy = true
+        errorBanner = null
+        cancelFlag.set(0)
+        events = emptyList()
+        val history = messages
+        messages = history + ChatMessage.makeUser(q)
+        scope.launch(Dispatchers.Default) {
+            val engine = model.engine
+            val saved = ConfStore.readAi()
+            val key = withContext(Dispatchers.IO) { SecretStore.loadKey() } ?: ""
+            val cfg = AIConfig(saved.providerID, saved.model, saved.baseURL, key)
+            val core = AgentCore(model.engine.bin.ifBlank { engineBinPath() })
+            val (convo, err) = core.run(
+                engine, q, history, scopeLabel, cfg, cancelFlag,
+            ) { ev ->
+                events = events + ev
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                busy = false
+                if (err.isNotEmpty()) {
+                    errorBanner = err
+                } else {
+                    messages = convo
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(initialTask) {
+        initialTask?.takeIf { messages.isEmpty() }?.let { send(it) }
+    }
+
     Column(Modifier.fillMaxSize().padding(Space.lg)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("AI 助手", style = Type.title)
-                Text("作用域 · 项目群（全部 ${model.status.value?.projects?.size ?: 0} 个项目）", style = Type.micro)
+                Text(
+                    if (initialTask != null) "更新解读 · $scopeLabel" else "AI · $scopeLabel",
+                    style = Type.title,
+                )
+                Text("它只根据引擎返回的事实回答——工具没给的数据，它会说「不知道」。", style = Type.micro)
             }
             ActionText("停止", Palette.Amber, enabled = busy) {
                 cancelFlag.set(1)
                 busy = false
             }
+            Spacer(Modifier.width(Space.sm))
+            ActionText("关闭", Palette.TextSecondary, enabled = true) { model.closeAgent() }
         }
         Spacer(Modifier.height(Space.md))
         // 消息区
@@ -277,33 +437,7 @@ fun AiChatPage(model: AppModel) {
                 onClick = {
                     val q = draft.trim()
                     if (q.isBlank() || busy) return@Button
-                    draft = ""
-                    busy = true
-                    errorBanner = null
-                    cancelFlag.set(0)
-                    events = emptyList()
-                    val history = messages
-                    messages = history + ChatMessage.makeUser(q)
-                    scope.launch(Dispatchers.Default) {
-                        val engine = model.engine
-                        val saved = ConfStore.readAi()
-                        val key = withContext(Dispatchers.IO) { SecretStore.loadKey() } ?: ""
-                        val cfg = AIConfig(saved.providerID, saved.model, saved.baseURL, key)
-                        val core = AgentCore(model.engine.bin.ifBlank { engineBinPath() })
-                        val (convo, err) = core.run(
-                            engine, q, history, "项目群（全部）", cfg, cancelFlag,
-                        ) { ev ->
-                            events = events + ev
-                        }
-                        kotlinx.coroutines.withContext(Dispatchers.Main) {
-                            busy = false
-                            if (err.isNotEmpty()) {
-                                errorBanner = err
-                            } else {
-                                messages = convo
-                            }
-                        }
-                    }
+                    send(q)
                 },
                 enabled = !busy && draft.isNotBlank(),
                 shape = RoundedCornerShape(8.dp),

@@ -26,13 +26,14 @@ import deepdolphin.engine.EngineLocator
 import deepdolphin.engine.EngineProbe
 import deepdolphin.ui.AppModel
 import deepdolphin.ui.AppModel.Route
-import deepdolphin.ui.AiChatPage
-import deepdolphin.ui.AiSettingsPage
+import deepdolphin.ui.AgentSheet
+import deepdolphin.ui.SettingsPage
 import deepdolphin.ui.BoardPage
 import deepdolphin.ui.DashboardPage
 import deepdolphin.ui.MilestonesPage
 import deepdolphin.ui.Palette
 import deepdolphin.ui.ProjectDetailView
+import deepdolphin.ui.Radius
 import deepdolphin.ui.Space
 import deepdolphin.ui.Type
 import kotlinx.coroutines.launch
@@ -66,42 +67,27 @@ fun App(initialSection: String? = null, initialProject: String? = null) {
     }
     DisposableEffect(Unit) { onDispose { model?.stop() } }
 
-    Column(Modifier.fillMaxSize().background(Palette.BgBase)) {
-        // ── 页头（唯一 chrome；双轨更新只在 WorkBar 一处的纪律随批 2 落地）──
-        Row(
-            Modifier.fillMaxWidth().background(Palette.BgDeep).padding(horizontal = 20.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column {
-                Text("deepDolphin", style = Type.section.copy(fontWeight = FontWeight.Bold))
-                Text("moonGit · 项目群进度引擎（Compose Multiplatform）", style = Type.micro)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (busy) {
-                    CircularProgressIndicator(Modifier.size(18.dp), color = Palette.Accent, strokeWidth = 2.dp)
-                    Text("正在定位引擎…", style = Type.label)
-                }
-                Button(
-                    onClick = { reprobe() },
-                    enabled = !busy,
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
-                ) { Text("重新检测引擎") }
-            }
-        }
-
-        when {
-            busy -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    // mac NavigationSplitView 对位：无常驻顶栏——品牌入侧栏，引擎态全屏居中呈现
+    when {
+        busy -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(Modifier.size(18.dp), color = Palette.Accent, strokeWidth = 2.dp)
+                Spacer(Modifier.height(Space.md))
                 Text("正在定位引擎…", style = Type.body.copy(color = Palette.TextSecondary))
             }
-            probe != null && probe!!.found && model != null -> SidebarShell(model!!)
-            else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("未找到 moonGit 引擎", style = Type.title.copy(color = Palette.Amber))
-                    Spacer(Modifier.height(8.dp))
-                    Text("MOONGIT_BIN / DEEPGIT_BIN 或安装到 PATH 后，点「重新检测引擎」", style = Type.body.copy(color = Palette.TextSecondary))
-                }
+        }
+        probe != null && probe!!.found && model != null -> SidebarShell(model!!)
+        else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("未找到 moonGit 引擎", style = Type.title.copy(color = Palette.Amber))
+                Spacer(Modifier.height(Space.sm))
+                Text("MOONGIT_BIN / DEEPGIT_BIN 或安装到 PATH 后重试", style = Type.body.copy(color = Palette.TextSecondary))
+                Spacer(Modifier.height(Space.lg))
+                Button(
+                    onClick = { reprobe() },
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(Radius.control),
+                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+                ) { Text("重新检测引擎") }
             }
         }
     }
@@ -119,29 +105,32 @@ fun main(vararg args: String) = application {
     }
 }
 
-/** 侧栏外壳（C3 四页路由；项目行点击进详情）。 */
+/** 侧栏外壳（C3 四页路由；项目行点击进详情；布局对位 mac NavigationSplitView 侧栏）。 */
 @Composable
 fun SidebarShell(model: AppModel) {
     val route by model.route.collectAsState()
     val status by model.status.collectAsState()
     val selected by model.selectedProject.collectAsState()
+    val projects = status?.projects.orEmpty()
+    val readable = projects.count { it.isReadable }
 
     Row(Modifier.fillMaxSize()) {
         // ── 侧栏 ──
         Column(
-            Modifier.width(230.dp).fillMaxHeight().background(Palette.Sidebar).padding(Space.md),
+            Modifier.width(230.dp).fillMaxHeight().background(Palette.Sidebar)
+                .padding(horizontal = Space.md, vertical = Space.lg),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Spacer(Modifier.height(Space.sm))
+            // 品牌区（mac 侧栏顶部 app 名对位）
+            Text("deepDolphin", style = Type.title, color = Palette.TextPrimary)
+            Text("moonGit · 项目群进度引擎", style = Type.micro, color = Palette.TextTertiary)
+            Spacer(Modifier.height(Space.lg))
+            NavGroupLabel("视图")
             NavItem("仪表盘", Route.DASHBOARD == route) { model.goRoute(Route.DASHBOARD) }
             NavItem("看板", Route.BOARD == route) { model.goRoute(Route.BOARD) }
             NavItem("里程碑", Route.MILESTONES == route) { model.goRoute(Route.MILESTONES) }
-            NavItem("AI 助手", Route.AI_CHAT == route) { model.goRoute(Route.AI_CHAT) }
-            NavItem("AI 设置", Route.SETTINGS == route) { model.goRoute(Route.SETTINGS) }
-            Spacer(Modifier.height(Space.md))
-            Text("仓库", style = Type.micro.copy(fontWeight = FontWeight.Bold), color = Palette.TextSecondary)
-            Spacer(Modifier.height(Space.xs))
-            status?.projects.orEmpty().forEach { p ->
+            NavGroupLabel("仓库 · $readable/${projects.size}")
+            projects.forEach { p ->
                 RepoItem(
                     p.name + (if (p.isReadable) "" else "（读不出）"),
                     unreadable = !p.isReadable,
@@ -149,10 +138,20 @@ fun SidebarShell(model: AppModel) {
                 ) { if (p.isReadable) model.goRoute(Route.PROJECT, p.name) }
             }
             Spacer(Modifier.weight(1f))
-            Text(
-                "引擎 moongit · 判据 11 条",
-                style = Type.micro, color = Palette.TextSecondary,
-            )
+            // 设置收在侧栏最底部（mac 原生 Settings scene 的 Linux 对位）
+            NavItem("设置", Route.SETTINGS == route) { model.goRoute(Route.SETTINGS) }
+            Spacer(Modifier.height(Space.sm))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(6.dp).background(
+                        Palette.Green, androidx.compose.foundation.shape.CircleShape,
+                    )
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("引擎在线", style = Type.micro, color = Palette.TextSecondary)
+                Spacer(Modifier.weight(1f))
+                Text("moongit", style = Type.micro, color = Palette.TextTertiary)
+            }
         }
         // ── 主区 ──
         Box(Modifier.weight(1f).fillMaxHeight().background(Palette.BgBase)) {
@@ -161,11 +160,24 @@ fun SidebarShell(model: AppModel) {
                 Route.BOARD -> BoardPage(model)
                 Route.MILESTONES -> MilestonesPage(model)
                 Route.PROJECT -> ProjectDetailView(model)
-                Route.AI_CHAT -> AiChatPage(model)
-                Route.SETTINGS -> AiSettingsPage(model)
+                Route.SETTINGS -> SettingsPage(model)
             }
         }
     }
+    // agent sheet（对位 mac .sheet(showAgent)：作用域跟随侧栏选中）
+    val agentOpen by model.agentOpen.collectAsState()
+    if (agentOpen) AgentSheet(model)
+}
+
+/** 分组小标题（mac List Section header 对位：大写微字号 + tertiary 色）。 */
+@Composable
+fun NavGroupLabel(label: String) {
+    Text(
+        label.uppercase(),
+        style = Type.micro.copy(fontWeight = FontWeight.Bold),
+        color = Palette.TextTertiary,
+        modifier = Modifier.padding(top = Space.md, bottom = Space.xs),
+    )
 }
 
 @Composable

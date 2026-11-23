@@ -139,6 +139,7 @@ fun DashboardPage(model: AppModel) {
                     style = Type.label.copy(color = Color.White.copy(alpha = 0.85f)),
                 )
             }
+            // 没有 AI 按钮：AI 融进操作（深/浅更新完成后就地「AI 解读」），不做独立入口
             Button(
                 onClick = { model.refreshAll() },
                 enabled = !refreshing,

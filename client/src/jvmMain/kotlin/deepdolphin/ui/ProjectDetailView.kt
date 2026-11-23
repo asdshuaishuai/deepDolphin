@@ -60,13 +60,23 @@ fun ProjectDetailView(model: AppModel) {
                 ActionText("刷新", Palette.TextSecondary, enabled = !refreshing) {
                     name?.let { model.loadDetail(it) }
                 }
+                // 没有 AI 按钮：AI 融进操作——更新完成后结果行就地给「AI 解读」
             }
         }
 
-        // 写操作结果一行（actionStripOf 的 PageHeader 落点）
+        // 写操作结果一行（actionStripOf 的 PageHeader 落点）；
+        // 深浅更新的结果就地给「AI 解读」——AI 融进操作，不做独立入口（mac UpdateActionMenu AI 变体对位）
         lastResult?.let {
             GlassCard(Modifier.fillMaxWidth()) {
-                Text(it, style = Type.body, maxLines = 3)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(it, style = Type.body, maxLines = 3, modifier = Modifier.weight(1f))
+                    if (it.startsWith("浅更新") || it.startsWith("深更新")) {
+                        Spacer(Modifier.width(Space.sm))
+                        ActionText("AI 解读", Palette.Ai, enabled = true) {
+                            model.openAgent("解读这次更新的结果「$it」：发生了什么、有什么值得注意的？只根据引擎返回的事实回答。")
+                        }
+                    }
+                }
             }
         }
 

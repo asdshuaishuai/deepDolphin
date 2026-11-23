@@ -42,11 +42,24 @@ class AppModel(private val engineBin: String) {
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
     // ── 批 2：路由 + 详情 + 写操作反馈 ──
-    enum class Route { DASHBOARD, BOARD, MILESTONES, PROJECT, SETTINGS, AI_CHAT }
+    // 对位 mac：侧栏没有 AI 入口——AI 以 agent sheet 形态从详情页（深浅更新旁）触发，
+    // 设置（含 AI tab）收在侧栏最底部「设置」（mac 原生 Settings scene 的 Linux 对位）。
+    enum class Route { DASHBOARD, BOARD, MILESTONES, PROJECT, SETTINGS }
     private val _route = MutableStateFlow(Route.DASHBOARD)
     val route: StateFlow<Route> = _route.asStateFlow()
     private val _selectedProject = MutableStateFlow<String?>(null)
     val selectedProject: StateFlow<String?> = _selectedProject.asStateFlow()
+
+    /**
+     * agent sheet 开合（对位 mac GraphChrome 的 AgentView(initialTask:) 语义）。
+     * 没有独立入口——AI 融进操作：深/浅更新完成后就地「AI 解读」带着预填任务打开。
+     */
+    private val _agentOpen = MutableStateFlow(false)
+    val agentOpen: StateFlow<Boolean> = _agentOpen.asStateFlow()
+    private val _agentTask = MutableStateFlow<String?>(null)
+    val agentTask: StateFlow<String?> = _agentTask.asStateFlow()
+    fun openAgent(task: String? = null) { _agentTask.value = task; _agentOpen.value = true }
+    fun closeAgent() { _agentOpen.value = false; _agentTask.value = null }
 
     private val _detail = MutableStateFlow<StatusEnvelope?>(null) // status <name> 单项目信封
     val detail: StateFlow<StatusEnvelope?> = _detail.asStateFlow()
