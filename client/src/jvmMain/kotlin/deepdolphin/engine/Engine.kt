@@ -5,6 +5,7 @@
 
 package deepdolphin.engine
 
+import deepdolphin.ui.L10n
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
@@ -44,10 +45,11 @@ open class Engine(val bin: String) {
             decodeOrThrow(serializer, out)
         } catch (e: Exception) {
             if (rc == 0) {
-                throw EngineException("引擎输出不是合法契约（可能契约过旧）：${e.message}", e)
+                throw EngineException(L10n.t("cmp.err.contract", e.message ?: ""), e)
             }
             throw EngineException(
-                "引擎退出码 $rc：${out.trim().lineSequence().firstOrNull()?.take(120) ?: "无输出"}",
+                L10n.t("err.exitCode", rc) + "：" + (out.trim().lineSequence().firstOrNull()?.take(120)
+                    ?: L10n.t("cmp.err.noOutput")),
                 e,
             )
         }
@@ -56,7 +58,7 @@ open class Engine(val bin: String) {
     private suspend fun callRaw(args: List<String>, timeoutSec: Long = 300): String =
         withContext(Dispatchers.IO) {
             val (rc, out) = EngineLocator.run(bin, args + json, timeoutSec)
-            if (rc != 0) throw EngineException("引擎退出码 $rc：${out.trim().lineSequence().firstOrNull() ?: "无输出"}")
+            if (rc != 0) throw EngineException(L10n.t("err.exitCode", rc) + "：" + (out.trim().lineSequence().firstOrNull() ?: L10n.t("cmp.err.noOutput")))
             out
         }
 
@@ -140,13 +142,14 @@ open class Engine(val bin: String) {
     /** render index/arch：成功返回 stdout 全文；失败抛 EngineException（stderr 原因已在消息里）。 */
     suspend fun renderGraph(kind: String, project: String, withConfidence: Boolean = false): String =
         withContext(Dispatchers.IO) {
-            require(kind == "index" || kind == "arch") { "render kind 只认 index/arch（收到 $kind）" }
+            require(kind == "index" || kind == "arch") { L10n.t("cmp.err.renderKind", kind) }
             val args = mutableListOf("render", kind, project)
             if (withConfidence) args += "--confidence"
             // 600s 对位 mac render 超时预算：整库重绘是分钟级，宁可等也不要半截
             val (rc, out) = EngineLocator.runMerged(bin, args, 600)
             if (rc != 0) throw EngineException(
-                "render $kind $project 失败（退出码 $rc）：${out.trim().lineSequence().firstOrNull() ?: "无输出"}",
+                L10n.t("cmp.err.renderFail", kind, project, rc,
+                    out.trim().lineSequence().firstOrNull() ?: L10n.t("cmp.err.noOutput")),
             )
             out
         }
@@ -167,9 +170,9 @@ open class Engine(val bin: String) {
         withContext(Dispatchers.IO) {
             val (rc, out, err) = EngineLocator.runSplit(bin, listOf("graph", "confidence", project, "--llm"), 300)
             if (rc != 0) throw EngineException(
-                "graph confidence --llm $project 失败（退出码 $rc）：" +
-                    (err.trim().lineSequence().firstOrNull { it.isNotBlank() }
-                        ?: out.trim().lineSequence().firstOrNull() ?: "无输出"),
+                L10n.t("cmp.err.renderConfFail", project, rc,
+                    err.trim().lineSequence().firstOrNull { it.isNotBlank() }
+                        ?: out.trim().lineSequence().firstOrNull() ?: L10n.t("cmp.err.noOutput")),
             )
             out
         }

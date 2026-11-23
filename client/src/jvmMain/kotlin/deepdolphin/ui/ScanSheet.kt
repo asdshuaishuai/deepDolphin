@@ -42,9 +42,9 @@ enum class PathKind { MISSING, FILE, DIRECTORY }
 
 /** 路径的问题一句话；没有问题 = null（不返回空串——空串会拼出残缺的话，mac 同款纪律）。 */
 fun scanRootProblem(raw: String, kind: PathKind): String? = when {
-    raw.isBlank() -> "路径还没填"
-    kind == PathKind.MISSING -> "路径不存在（先确认拼对了没有）"
-    kind == PathKind.FILE -> "这是文件，不是目录（这里要目录）"
+    raw.isBlank() -> L10n.t("cmp.scan.pathEmpty")
+    kind == PathKind.MISSING -> L10n.t("cmp.scan.pathMissing")
+    kind == PathKind.FILE -> L10n.t("cmp.scan.pathIsFile")
     else -> null
 }
 
@@ -67,24 +67,26 @@ fun scanRows(candidates: List<ScanCandidate>, registeredPaths: Set<String>): Lis
 //    不许替引擎断言「这棵树里没有」——引擎只验证过已访问的那部分）──
 
 fun scanCoverageNote(found: Long, truncated: Boolean?, depthCapped: Boolean?, unreadableCount: Int): String? {
+    // 事实层分隔符随语言（zh 系全角逗号、en/ja 半角——usesEnglishFacts 同口径）
+    val sep = if (L10n.language.usesEnglishFacts) ", " else "，"
     val why = buildList {
-        if (depthCapped == true) add("撞到扫描深度上限，下面还有目录没看")
-        if (truncated == true) add("撞到目录数量上限")
-        if (unreadableCount > 0) add("$unreadableCount 个目录读不出来（无权限或 I/O 错误）")
+        if (depthCapped == true) add(L10n.t("cmp.scan.depthCapped"))
+        if (truncated == true) add(L10n.t("cmp.scan.dirCapped"))
+        if (unreadableCount > 0) add(L10n.t("cmp.scan.unreadableDirs", unreadableCount))
     }
     if (why.isEmpty()) return null
     return if (found == 0L) {
-        "本次未扫完（${why.joinToString("，")}）——「共发现 0 个」只代表已访问的那部分里没有，不是这棵树里没有"
+        L10n.t("cmp.scan.incompleteNoRepos", why.joinToString(sep))
     } else {
-        "本次未扫完（${why.joinToString("，")}）——上面列出的不是全部"
+        L10n.t("cmp.scan.incompletePartial", why.joinToString(sep))
     }
 }
 
 /** 引擎口径聚合行（含覆盖度披露与「没有 git 仓库」的成立判定——只在真的扫完时才许说）。 */
 fun scanAggregateLine(r: ScanPayload): String = buildString {
-    append("发现 ${r.found} · 新增 ${r.added} · 已在册 ${r.existing} · 访问目录 ${r.dirsVisited}")
+    append(L10n.t("cmp.scan.aggregateLine", r.found, r.added, r.existing, r.dirsVisited))
     val note = scanCoverageNote(r.found, r.truncated, r.depthCapped, r.unreadable.size)
-    if (r.found == 0L && note == null) append(" —— 该目录树里没有 git 仓库")
+    if (r.found == 0L && note == null) append(L10n.t("scan.none.found"))
     note?.let {
         append("\n")
         append(it)
@@ -112,7 +114,7 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
     val preparedPath = prepareScanRoot(path) { classify(it) }
     val pathProblem = scanRootProblem(path, classify(path.trim()))
     val depthInt = depth.trim().toIntOrNull()
-    val depthProblem = if (single) null else if (depthInt == null || depthInt !in 1..6) "深度要 1–6 的整数" else null
+    val depthProblem = if (single) null else if (depthInt == null || depthInt !in 1..6) L10n.t("cmp.scan.depthRange") else null
     val canRun = !busy && preparedPath != null && depthProblem == null
 
     Dialog(
@@ -132,15 +134,15 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
             // ── 标题 + 模式切换（mac segmented Picker 对位：scan.tab.single / scan.tab.batch）──
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(if (single) "添加项目" else "批量扫描", style = Type.title)
+                    Text(if (single) L10n.t("scan.tab.single") else L10n.t("scan.tab.batch"), style = Type.title)
                     Text(
-                        if (single) "注册单个项目路径（名称可空）" else "扫一个根目录，把发现的仓库注册进来",
+                        if (single) L10n.t("cmp.scan.singleSubtitle") else L10n.t("cmp.scan.batchSubtitle"),
                         style = Type.label,
                     )
                 }
-                ScanModeTab("单个添加", selected = single) { single = true }
+                ScanModeTab(L10n.t("cmp.scan.singleTab"), selected = single) { single = true }
                 Spacer(Modifier.width(Space.xs))
-                ScanModeTab("批量扫描", selected = !single) { single = false }
+                ScanModeTab(L10n.t("scan.tab.batch"), selected = !single) { single = false }
             }
 
             Column(
@@ -152,7 +154,7 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                     value = path,
                     onValueChange = { path = it },
                     placeholder = {
-                        Text(if (single) "项目路径（git 仓库目录）" else "扫描根目录（如 ~/code）", style = Type.micro)
+                        Text(if (single) L10n.t("cmp.scan.pathLabel") else L10n.t("cmp.scan.rootLabel"), style = Type.micro)
                     },
                     singleLine = true,
                     textStyle = Type.body,
@@ -162,7 +164,7 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        placeholder = { Text("名称（可空，默认取目录名）", style = Type.micro) },
+                        placeholder = { Text(L10n.t("cmp.scan.nameOptional"), style = Type.micro) },
                         singleLine = true,
                         textStyle = Type.body,
                         modifier = Modifier.fillMaxWidth(),
@@ -172,12 +174,12 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                         OutlinedTextField(
                             value = depth,
                             onValueChange = { depth = it },
-                            placeholder = { Text("深度", style = Type.micro) },
+                            placeholder = { Text(L10n.t("bulk.deepWord"), style = Type.micro) },
                             singleLine = true,
                             textStyle = Type.body,
                             modifier = Modifier.width(90.dp),
                         )
-                        Text("扫描深度 1–6（默认 2）", style = Type.micro)
+                        Text(L10n.t("cmp.scan.depthLabel"), style = Type.micro)
                     }
                 }
                 pathProblem?.let { Text("⚠ $it", style = Type.micro.copy(color = Palette.Amber)) }
@@ -187,17 +189,17 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                 if (!single) {
                     val oc = outcome
                     if (oc == null) {
-                        Text("还没跑过扫描", style = Type.body.copy(color = Palette.TextSecondary))
+                        Text(L10n.t("cmp.scan.notRun"), style = Type.body.copy(color = Palette.TextSecondary))
                     } else if (oc.error != null) {
-                        Text("扫描失败：${oc.error}", style = Type.body.copy(color = Palette.Red))
+                        Text(L10n.t("cmp.scan.failedWith", oc.error ?: ""), style = Type.body.copy(color = Palette.Red))
                     } else {
-                        Text("上次扫描 ${oc.root}（深度 ${oc.depth}）：", style = Type.label)
+                        Text(L10n.t("cmp.scan.lastRun", oc.root, oc.depth), style = Type.label)
                         if (oc.rows.isEmpty()) {
-                            Text("引擎没有发现任何仓库", style = Type.body.copy(color = Palette.TextSecondary))
+                            Text(L10n.t("cmp.scan.noneFound"), style = Type.body.copy(color = Palette.TextSecondary))
                         } else {
                             oc.rows.forEach { row ->
                                 Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Pill(if (row.existing) "已在册" else "新增", if (row.existing) Palette.TextSecondary else Palette.Green)
+                                    Pill(if (row.existing) L10n.t("cmp.scan.existing") else L10n.t("gitop.kind.added"), if (row.existing) Palette.TextSecondary else Palette.Green)
                                     Spacer(Modifier.width(Space.sm))
                                     Text(row.name, style = Type.body, modifier = Modifier.width(130.dp), maxLines = 1)
                                     Text(row.path, style = Type.micro, maxLines = 1, modifier = Modifier.weight(1f))
@@ -215,11 +217,11 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                         // 推导与引擎聚合分叉时兜底披露（以引擎为准）
                         val derivedNew = oc.rows.count { !it.existing }
                         val derivedExisting = oc.rows.count { it.existing }
-                        if (derivedNew.toLong() != extractCount(oc.aggregate, "新增") ||
-                            derivedExisting.toLong() != extractCount(oc.aggregate, "已在册")
+                        if (derivedNew.toLong() != extractCount(oc.aggregate, L10n.t("cmp.scan.addedLabel")) ||
+                            derivedExisting.toLong() != extractCount(oc.aggregate, L10n.t("cmp.scan.existing"))
                         ) {
                             Text(
-                                "逐项目判定（新增 $derivedNew · 已在册 $derivedExisting）与引擎聚合数不一致，以引擎聚合为准（扫描期间注册表可能被并发改动）",
+                                L10n.t("cmp.scan.tallyMismatch", derivedNew, derivedExisting),
                                 style = Type.micro.copy(color = Palette.Amber),
                             )
                         }
@@ -239,7 +241,7 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                         containerColor = Palette.CardHover,
                         contentColor = Palette.TextPrimary,
                     ),
-                ) { Text("关闭") }
+                ) { Text(L10n.t("common.close")) }
                 Button(
                     onClick = {
                         val p = preparedPath ?: return@Button
@@ -255,7 +257,7 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                         containerColor = Palette.Accent,
                         contentColor = Color.White,
                     ),
-                ) { Text(if (busy) "进行中…" else if (single) "添加" else "开始扫描") }
+                ) { Text(if (busy) L10n.t("cmp.scan.busy") else if (single) L10n.t("scan.add") else L10n.t("cmp.scan.runBtn")) }
             }
         }
     }

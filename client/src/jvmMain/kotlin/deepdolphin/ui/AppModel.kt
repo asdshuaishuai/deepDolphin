@@ -139,7 +139,7 @@ class AppModel(private val engineBin: String) {
                 val path = extractHtmlPath(text)
                 if (path == null) {
                     _lastResult.value =
-                        "渲染${kind.titleWord} $project ✗ render 未给出产物路径：${receiptLine(text) ?: "无输出"}"
+                        L10n.t("cmp.update.renderFailNoPath", kind.titleWord(), project, receiptLine(text) ?: L10n.t("cmp.err.noOutput"))
                 } else {
                     rememberGraphArtifact(kind, project, path)
                     when (kind) {
@@ -148,7 +148,7 @@ class AppModel(private val engineBin: String) {
                     }
                 }
             } catch (e: Exception) {
-                _lastResult.value = "渲染${kind.titleWord} $project ✗ ${e.message ?: e.javaClass.simpleName}"
+                _lastResult.value = L10n.t("cmp.update.renderFail", kind.titleWord(), project, e.message ?: e.javaClass.simpleName)
             } finally {
                 _graphRendering.value = null
             }
@@ -186,7 +186,7 @@ class AppModel(private val engineBin: String) {
                 _detail.value = engine.status(name)
                 _detailState.value = LoadState.Loaded
             } catch (e: Exception) {
-                _detailState.value = LoadState.Failed(e.message ?: "详情读取失败")
+                _detailState.value = LoadState.Failed(e.message ?: L10n.t("cmp.err.detailRead"))
             }
             try { _docs.value = engine.docs(name) } catch (_: Exception) { _docs.value = null }
             try { _journal.value = engine.journal(name) } catch (_: Exception) { _journal.value = null }
@@ -212,19 +212,19 @@ class AppModel(private val engineBin: String) {
     // ── C9 里程碑 CRUD ──
     fun milestoneAdd(project: String, name: String, tag: String?, date: String?, desc: String?) {
         scope.launch {
-            withAction("新建里程碑 $name") { engine.milestoneAdd(project, name, tag, date, desc) }
+            withAction(L10n.t("cmp.action.msAdd", name)) { engine.milestoneAdd(project, name, tag, date, desc) }
         }
     }
 
     fun milestoneAction(project: String, name: String, action: String) {
         scope.launch {
-            withAction("里程碑 $name ${action}ed") { engine.milestoneAction(project, name, action) }
+            withAction(L10n.t("cmp.action.msAction", name, action)) { engine.milestoneAction(project, name, action) }
         }
     }
 
     fun milestoneRemove(project: String, name: String) {
         scope.launch {
-            withAction("删除里程碑 $name") { engine.milestoneRemove(project, name) }
+            withAction(L10n.t("cmp.action.msRemove", name)) { engine.milestoneRemove(project, name) }
         }
     }
 
@@ -268,8 +268,8 @@ class AppModel(private val engineBin: String) {
                 _lastResult.value = outcome.aggregate
                 refreshAll()
             } catch (e: Exception) {
-                _scanOutcome.value = ScanOutcome(root, depth, emptyList(), "", e.message ?: "扫描失败")
-                _lastResult.value = "扫描 $root ✗ ${e.message ?: "扫描失败"}"
+                _scanOutcome.value = ScanOutcome(root, depth, emptyList(), "", e.message ?: L10n.t("cmp.action.scanFail"))
+                _lastResult.value = L10n.t("cmp.action.scanFailWith", root, e.message ?: L10n.t("cmp.action.scanFail"))
             } finally {
                 _busyAction.value = false
             }
@@ -278,9 +278,9 @@ class AppModel(private val engineBin: String) {
 
     fun addProjectPath(path: String, name: String?) {
         scope.launch {
-            withAction("添加项目 $path") {
+            withAction(L10n.t("cmp.action.addProject", path)) {
                 val r = engine.addProject(path, name)
-                "添加项目成功：${r.name.ifBlank { path }}"
+                L10n.t("cmp.action.addProjectDone", r.name.ifBlank { path })
             }
         }
     }
@@ -316,10 +316,10 @@ class AppModel(private val engineBin: String) {
             try {
                 val r = engine.gitOp(op, project, message)
                 _gitFeedback.value = GitFeedback(op, project, r.ok, r.output)
-                _lastResult.value = "git $op $project " + if (r.ok) "✓" else "✗（引擎回执 ok=false）"
+                _lastResult.value = "git $op $project " + if (r.ok) "✓" else L10n.t("cmp.action.gitOkFalse")
                 refreshAll()
             } catch (e: Exception) {
-                _gitFeedback.value = GitFeedback(op, project, false, e.message ?: "引擎调用失败")
+                _gitFeedback.value = GitFeedback(op, project, false, e.message ?: L10n.t("cmp.err.engineCall"))
                 _lastResult.value = "git $op $project ✗ ${e.message}"
             } finally {
                 _busyAction.value = false
@@ -330,19 +330,21 @@ class AppModel(private val engineBin: String) {
     // ── C4 更新（浅/深；单项目/全项目）──
     fun updateProject(name: String, deep: Boolean) {
         scope.launch {
-            withAction("${if (deep) "深更新" else "浅更新"} $name") {
+            val word = L10n.t(if (deep) "update.deepWord" else "update.shallowWord")
+            withAction("$word $name") {
                 val r = engine.update(name, deep)
-                "${if (deep) "深更新" else "浅更新"} $name：文档 ${r.docs.count { it.changed || it.created }} 处变更"
+                L10n.t("cmp.update.doneDocs", word, name, r.docs.count { it.changed || it.created })
             }
         }
     }
 
     fun updateAll(deep: Boolean) {
         scope.launch {
-            withAction("全部${if (deep) "深更新" else "浅更新"}") {
+            val word = L10n.t(if (deep) "update.deepWord" else "update.shallowWord")
+            withAction(L10n.t("cmp.update.allLabel", word)) {
                 val r = engine.updateAll(deep)
                 val ok = decodeUpdateOutcomes(r).count { it is UpdateOutcome.Success }
-                "全部${if (deep) "深更新" else "浅更新"}：${ok}/${r.results.size} 成功"
+                L10n.t("cmp.update.allDone", word, ok, r.results.size)
             }
         }
     }
@@ -407,7 +409,7 @@ class AppModel(private val engineBin: String) {
             } catch (e: Exception) {
                 // 整发失败：引擎一个仓库的回执都没给，结果面板无从摊起——
                 // 不开空面板，失败原因留页头反馈行（如实：什么都没跑成）
-                _lastResult.value = "全部${if (deep) "深更新" else "浅更新"} ✗ ${e.message ?: "引擎调用失败"}"
+                _lastResult.value = L10n.t("cmp.update.allFailed", L10n.t(if (deep) "update.deepWord" else "update.shallowWord"), e.message ?: L10n.t("cmp.err.engineCall"))
             } finally {
                 _busyAction.value = false
             }
@@ -462,13 +464,13 @@ class AppModel(private val engineBin: String) {
     /** 周期到点的那次更新（对位 mac runScheduledUpdate：busy 时不叠加，失败不静默）。 */
     private suspend fun runScheduledUpdate(deep: Boolean) {
         if (_busyAction.value || _refreshing.value) return
-        val track = if (deep) "深" else "浅"
+        val track = L10n.t(if (deep) "bulk.deepWord" else "bulk.shallowWord")
         try {
             val r = engine.updateAll(deep)
             val ok = decodeUpdateOutcomes(r).count { it is UpdateOutcome.Success }
-            _lastResult.value = "定时${track}更新：${ok}/${r.results.size} 成功"
+            _lastResult.value = L10n.t("cmp.update.schedDone", track, ok, r.results.size)
         } catch (e: Exception) {
-            _lastResult.value = "定时${track}更新 ✗ ${e.message}"
+            _lastResult.value = L10n.t("cmp.update.schedFailed", track, e.message)
         }
         refreshAll()
     }
@@ -488,20 +490,20 @@ class AppModel(private val engineBin: String) {
                     // 提前 return、不更新 lastRefreshed——「读不出来」不算「刷新过」）
                     _lastRefreshed.value = java.time.LocalDateTime.now()
                 } catch (e: Exception) {
-                    _statusState.value = LoadState.Failed(e.message ?: "status 读取失败")
+                    _statusState.value = LoadState.Failed(e.message ?: L10n.t("cmp.err.statusRead"))
                     _lastError.value = e.message
                 }
                 try {
                     _dashboard.value = engine.dashboard()
                     _dashState.value = LoadState.Loaded
                 } catch (e: Exception) {
-                    _dashState.value = LoadState.Failed(e.message ?: "dashboard 读取失败")
+                    _dashState.value = LoadState.Failed(e.message ?: L10n.t("cmp.err.dashRead"))
                 }
                 try {
                     _milestones.value = engine.milestoneList()
                     _msState.value = LoadState.Loaded
                 } catch (e: Exception) {
-                    _msState.value = LoadState.Failed(e.message ?: "milestones 读取失败")
+                    _msState.value = LoadState.Failed(e.message ?: L10n.t("cmp.err.msRead"))
                 }
             } finally {
                 _refreshing.value = false

@@ -13,7 +13,7 @@ data class AutoUpdateSettings(
     val deep: Boolean = false,
 ) {
     /** 间隔档位的展示名（对位 mac ScheduleMenu 的 tag 文案）。 */
-    fun hourLabel(): String = if (hours <= 0) "关闭" else "每 $hours 小时"
+    fun hourLabel(): String = if (hours <= 0) L10n.t("schedule.off") else L10n.t("cmp.schedule.everyHours", hours)
 
     companion object {
         /** 档位与 mac ScheduleCard 逐项一致：关闭 / 1 / 3 / 6 / 12 / 24 小时。 */

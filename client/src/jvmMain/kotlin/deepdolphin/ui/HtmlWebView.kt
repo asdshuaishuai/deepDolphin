@@ -89,12 +89,12 @@ object WebRuntime {
                     },
                     onError = { e ->
                         if (state.value is State.Init) {
-                            state.value = State.Failed(e?.message ?: "未知错误（onError）")
+                            state.value = State.Failed(e?.message ?: L10n.t("cmp.webview.unknownError"))
                         }
                     },
                     onRestartRequired = {
                         if (state.value is State.Init) {
-                            state.value = State.Failed("JCEF 装载需重启应用后继续")
+                            state.value = State.Failed(L10n.t("cmp.webview.needRestart"))
                         }
                     },
                 )
@@ -109,8 +109,8 @@ object WebRuntime {
         val deadline = System.currentTimeMillis() + 20_000
         while (state.value is State.Init && System.currentTimeMillis() < deadline) delay(200)
         if (state.value is State.Init) {
-            val pct = downloadPct?.let { "，下载 ${(it * 100).roundToInt()}%" } ?: ""
-            state.value = State.Failed("装载超时（>20s$pct）——后台继续装载，完成后自动切换")
+            val pct = downloadPct?.let { "，" + L10n.t("cmp.webview.downloading", (it * 100).roundToInt()) } ?: ""
+            state.value = State.Failed(L10n.t("cmp.webview.timeout", pct))
         }
     }
 }
@@ -138,7 +138,7 @@ fun HtmlWebView(
     when (val s = WebRuntime.state) {
         is WebRuntime.State.Init ->
             fallback?.invoke(
-                "JCEF 装载中${WebRuntime.downloadPct?.let { "（${(it * 100).roundToInt()}%）" } ?: ""}——就绪后自动切换",
+                L10n.t("cmp.webview.loading", WebRuntime.downloadPct?.let { "（${(it * 100).roundToInt()}%）" } ?: ""),
             )
         is WebRuntime.State.Failed -> fallback?.invoke(s.why)
         is WebRuntime.State.Ready -> WebViewBody(source, modifier, reloadToken, transparent, onEvent)
@@ -187,7 +187,7 @@ private fun WebViewBody(
             if (ls is LoadingState.Finished) {
                 val mainErr = webViewState.errorsForCurrentRequest.firstOrNull { it.isFromMainFrame }
                 if (mainErr != null) {
-                    onEvent?.invoke(HtmlWebEvent.Failed("装载失败：${mainErr.description}（code ${mainErr.code}）"))
+                    onEvent?.invoke(HtmlWebEvent.Failed(L10n.t("cmp.webview.loadFailed", mainErr.description, mainErr.code)))
                 } else {
                     onEvent?.invoke(
                         HtmlWebEvent.Loaded { script, onResult -> navigator.evaluateJavaScript(script, onResult) },
@@ -202,7 +202,7 @@ private fun WebViewBody(
         if (source == null) return@LaunchedEffect
         delay(15_000)
         if (webViewState.loadingState !is LoadingState.Finished) {
-            onEvent?.invoke(HtmlWebEvent.Failed("WebView 装载超时（15s 未完成）"))
+            onEvent?.invoke(HtmlWebEvent.Failed(L10n.t("cmp.webview.webviewTimeout")))
         }
     }
 

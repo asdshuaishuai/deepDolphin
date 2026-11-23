@@ -4,10 +4,19 @@
 
 package deepdolphin.sysint
 
+import deepdolphin.ui.AppLanguage
+import deepdolphin.ui.L10n
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class TrayQuickViewTest {
+
+    @BeforeTest
+    fun pinZh() {
+        // 断言锚定 zh 文案：钉住语言，防宿主 locale / settings.conf 漂移翻红
+        L10n.applyLanguage(AppLanguage.ZH_CN)
+    }
 
     @Test
     fun emptyRegistrySaysSo() {

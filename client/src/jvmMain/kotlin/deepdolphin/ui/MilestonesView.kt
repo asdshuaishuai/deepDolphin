@@ -116,7 +116,7 @@ fun ConfirmDialog(title: String, body: String, confirmLabel: String, onConfirm: 
             Spacer(Modifier.height(Space.lg))
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), modifier = Modifier.align(Alignment.End)) {
                 Text(
-                    "取消", style = Type.body,
+                    L10n.t("common.cancel"), style = Type.body,
                     color = Palette.TextSecondary,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onDismiss() }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -196,15 +196,15 @@ fun MilestonesPage(model: AppModel) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("里程碑", style = Type.title)
+                Text(L10n.t("ms.page.title"), style = Type.title)
                 Spacer(Modifier.height(4.dp))
-                Text("${ms?.readCount ?: 0} 条 · 存储健康度 ${ms?.storeHealth ?: "?"}", style = Type.label)
+                Text(L10n.t("cmp.ms.healthLine", ms?.readCount ?: 0, ms?.storeHealth ?: "?"), style = Type.label)
             }
             Button(
                 onClick = { showForm = !showForm },
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
-            ) { Text(if (showForm) "收起表单" else "新建里程碑") }
+            ) { Text(if (showForm) L10n.t("cmp.ms.collapseForm") else L10n.t("ms.new")) }
         }
 
         // ── 筛选条（常驻内容区顶部，对位 mac milestoneFilterBar：仓库下拉 + 搜索 + 筛出计数）──
@@ -221,15 +221,15 @@ fun MilestonesPage(model: AppModel) {
         // ── 新建表单（卡片化 + 收起 + 项目下拉）──
         if (showForm) {
             GlassCard(Modifier.fillMaxWidth()) {
-                Text("新建里程碑", style = Type.section)
+                Text(L10n.t("ms.new"), style = Type.section)
                 Spacer(Modifier.height(Space.md))
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     Column {
-                        Text("项目", style = Type.micro)
+                        Text(L10n.t("ms.form.project"), style = Type.micro)
                         var open by remember { mutableStateOf(false) }
                         Box {
                             Text(
-                                fProject.ifBlank { "选择项目" },
+                                fProject.ifBlank { L10n.t("cmp.form.selectProject") },
                                 style = Type.body,
                                 color = if (fProject.isBlank()) Palette.TextSecondary else Palette.TextPrimary,
                                 modifier = Modifier
@@ -254,12 +254,12 @@ fun MilestonesPage(model: AppModel) {
                             }
                         }
                     }
-                    LabeledField("名称", fName) { fName = it }
-                    LabeledField("tag（可空，存在即自动达成）", fTag) { fTag = it }
-                    LabeledField("目标日期 yyyy-MM-dd（可空）", fDate) { fDate = it }
+                    LabeledField(L10n.t("ms.name"), fName) { fName = it }
+                    LabeledField(L10n.t("cmp.ms.tagOptional"), fTag) { fTag = it }
+                    LabeledField(L10n.t("cmp.ms.dateOptional"), fDate) { fDate = it }
                 }
                 Spacer(Modifier.height(Space.sm))
-                LabeledField("描述（可空）", fDesc, singleLine = false) { fDesc = it }
+                LabeledField(L10n.t("cmp.ms.descOptional"), fDesc, singleLine = false) { fDesc = it }
                 formError?.let {
                     Spacer(Modifier.height(Space.xs))
                     Text(it, style = Type.body.copy(color = Palette.Red))
@@ -268,8 +268,8 @@ fun MilestonesPage(model: AppModel) {
                 Button(
                     onClick = {
                         when {
-                            fProject.isBlank() -> formError = "项目不能为空"
-                            fName.isBlank() -> formError = "名称不能为空"
+                            fProject.isBlank() -> formError = L10n.t("cmp.ms.errProject")
+                            fName.isBlank() -> formError = L10n.t("cmp.ms.errName")
                             else -> {
                                 formError = null
                                 model.milestoneAdd(fProject, fName, fTag.ifBlank { null }, fDate.ifBlank { null }, fDesc.ifBlank { null })
@@ -281,7 +281,7 @@ fun MilestonesPage(model: AppModel) {
                     enabled = !busyAction,
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
-                ) { Text("创建") }
+                ) { Text(L10n.t("ms.form.create")) }
             }
         }
 
@@ -290,19 +290,19 @@ fun MilestonesPage(model: AppModel) {
         //   是两句话，混成一句用户会以为自己还没建。
         when (val st = msState) {
             is LoadState.Failed -> GlassCard(Modifier.fillMaxWidth()) {
-                Text("里程碑读不出来", style = Type.section.copy(color = Palette.Amber))
+                Text(L10n.t("ms.page.unreadable"), style = Type.section.copy(color = Palette.Amber))
                 Spacer(Modifier.height(Space.xs))
                 Text(st.reason, style = Type.body.copy(color = Palette.TextSecondary))
-                Text("下面没有列表——这是读取失败，不是「没有里程碑」", style = Type.micro)
+                Text(L10n.t("cmp.ms.loadFailed"), style = Type.micro)
             }
             LoadState.Loading -> if (all.isEmpty()) {
-                Text("读取里程碑…", style = Type.body.copy(color = Palette.TextSecondary))
+                Text(L10n.t("ms.page.loading"), style = Type.body.copy(color = Palette.TextSecondary))
             }
             else -> {
                 val empty = SearchFilter.emptyReason(allCount = scoped.size, shownCount = shown.size, query = query)
                 if (empty != null) {
                     GlassCard(Modifier.fillMaxWidth()) {
-                        Text(SearchFilter.emptyText(empty, noun = "里程碑"), style = Type.section)
+                        Text(SearchFilter.emptyText(empty, noun = L10n.t("ms.page.title")), style = Type.section)
                         Spacer(Modifier.height(Space.xs))
                         // 空态副说明：收窄到单仓库后「没有」有两种完全不同的原因
                         //（对位 mac emptySubtitle：这个仓库真的没有 vs 有但全被搜索滤掉了）。
@@ -310,9 +310,9 @@ fun MilestonesPage(model: AppModel) {
                         Text(
                             when {
                                 empty is SearchEmpty.NoData && projectFilter != null && filterName != null ->
-                                    "「$filterName」还没有里程碑。切回「全部」可以看其它仓库的。"
-                                empty is SearchEmpty.NoData -> "里程碑绑定 git tag 后，tag 出现即自动判定达成"
-                                else -> "换个关键词，或清空搜索框看全部"
+                                    L10n.t("cmp.ms.emptyProjectHint", filterName)
+                                empty is SearchEmpty.NoData -> L10n.t("ms.empty.hint")
+                                else -> L10n.t("ms.empty.search")
                             },
                             style = Type.body.copy(color = Palette.TextSecondary),
                         )
@@ -329,13 +329,13 @@ fun MilestonesPage(model: AppModel) {
                                 )
                                 Spacer(Modifier.width(Space.sm))
                                 SearchFilter.resultSummary(
-                                    allCount = scoped.size, shownCount = shown.size, noun = "里程碑",
+                                    allCount = scoped.size, shownCount = shown.size, noun = L10n.t("ms.page.title"),
                                 )?.let { Text(it, style = Type.micro) }
                                 Spacer(Modifier.weight(1f))
                                 // 「只看这个项目」切换：点击即把 projectFilter 收窄到该组
                                 //（对位 mac projectFilter 状态的本页快捷入口；已收窄到本组时收起）。
                                 if (projectFilter != g.projectId) {
-                                    ActionText("只看这个项目", Palette.Accent) { projectFilter = g.projectId }
+                                    ActionText(L10n.t("cmp.ms.onlyThisProject"), Palette.Accent) { projectFilter = g.projectId }
                                 }
                             }
                             Spacer(Modifier.height(Space.sm))
@@ -357,27 +357,27 @@ fun MilestonesPage(model: AppModel) {
                     GlassCard(Modifier.fillMaxWidth()) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                             Text(
-                                if (projectFilter == null) "全部项目" else
-                                    "${knownProjects.firstOrNull { it.projectId == projectFilter }?.projectName ?: projectFilter} 的里程碑",
+                                if (projectFilter == null) L10n.t("ms.scope.all") else
+                                    L10n.t("ms.scope.project", knownProjects.firstOrNull { it.projectId == projectFilter }?.projectName ?: projectFilter),
                                 style = Type.label,
                             )
                             Spacer(Modifier.weight(1f))
                             Text("${tally.open}", style = Type.body.copy(color = Palette.Accent))
-                            Text("进行中", style = Type.label)
+                            Text(L10n.t("ms.filter.open"), style = Type.label)
                             Text("${tally.done}", style = Type.body.copy(color = Palette.Green))
-                            Text("已达成", style = Type.label)
+                            Text(L10n.t("ms.filter.done"), style = Type.label)
                             Text("${tally.dropped}", style = Type.body.copy(color = Palette.TextSecondary))
-                            Text("已放弃", style = Type.label)
+                            Text(L10n.t("ms.filter.dropped"), style = Type.label)
                             if (tally.unknown > 0) {
                                 Text("${tally.unknown}", style = Type.body.copy(color = Palette.Amber))
-                                Text("读不出来", style = Type.label)
+                                Text(L10n.t("ms.filter.unreadable"), style = Type.label)
                             }
                         }
                         if (!DashMilestoneScope.isComplete(all, ms?.readCount)) {
                             Spacer(Modifier.height(Space.xs))
                             // 明细被窗口截过 ⇒ 上面的数只是**下界**，必须说出来。
                             Text(
-                                "明细只给了 ${all.size} 条，引擎读到 ${ms?.readCount ?: "?"} 条——上面按明细统计，不是全量",
+                                L10n.t("cmp.ms.detailPartial", all.size, ms?.readCount ?: "?"),
                                 style = Type.micro.copy(color = Palette.Amber),
                             )
                         }
@@ -387,7 +387,7 @@ fun MilestonesPage(model: AppModel) {
                 // 孤儿披露
                 ms?.orphaned.orEmpty().takeIf { it.isNotEmpty() }?.let { orphans ->
                     GlassCard(Modifier.fillMaxWidth()) {
-                        Text("孤儿里程碑 ${orphans.size} 条（引用的项目不在注册表）", style = Type.micro.copy(color = Palette.Amber))
+                        Text(L10n.t("cmp.ms.orphans", orphans.size), style = Type.micro.copy(color = Palette.Amber))
                     }
                 }
             }
@@ -397,18 +397,18 @@ fun MilestonesPage(model: AppModel) {
     // 确认弹窗（破坏动作唯一红门）
     confirm?.let { (proj, name) ->
         ConfirmDialog(
-            title = "删除里程碑",
-            body = "「$name」（$proj）将被删除。引擎不留备份、没有回收站、无法恢复。",
-            confirmLabel = "删除",
+            title = L10n.t("cmp.ms.confirmDelete"),
+            body = L10n.t("cmp.ms.confirmDeleteBody", name, proj),
+            confirmLabel = L10n.t("ms.row.delete"),
             onConfirm = { model.milestoneRemove(proj, name); confirm = null },
             onDismiss = { confirm = null },
         )
     }
     confirmDrop?.let { (proj, name) ->
         ConfirmDialog(
-            title = "放弃里程碑",
-            body = "「$name」（$proj）将标记为放弃。此操作不删数据，但会改变统计口径。",
-            confirmLabel = "放弃",
+            title = L10n.t("cmp.ms.confirmDrop"),
+            body = L10n.t("cmp.ms.confirmDropBody", name, proj),
+            confirmLabel = L10n.t("ms.action.drop"),
             onConfirm = { model.milestoneAction(proj, name, "drop"); confirmDrop = null },
             onDismiss = { confirmDrop = null },
         )
@@ -431,12 +431,12 @@ private fun MilestoneFilterBar(
     shownCount: Int,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-        Text("仓库", style = Type.label)
+        Text(L10n.t("ms.scope.repo"), style = Type.label)
         var open by remember { mutableStateOf(false) }
         val filterName = knownProjects.firstOrNull { it.projectId == projectFilter }?.projectName
         Box {
             Text(
-                filterName ?: "全部",
+                filterName ?: L10n.t("cmp.ms.allShort"),
                 style = Type.body,
                 color = if (projectFilter == null) Palette.TextSecondary else Palette.TextPrimary,
                 modifier = Modifier
@@ -450,7 +450,7 @@ private fun MilestoneFilterBar(
                         .background(Palette.BgDeep).padding(Space.xs)
                 ) {
                     Text(
-                        "全部（${knownProjects.sumOf { it.items.size }}）",
+                        L10n.t("cmp.ms.allWithCount", knownProjects.sumOf { it.items.size }),
                         style = Type.body,
                         modifier = Modifier.fillMaxWidth()
                             .clickable { onSelect(null); open = false }
@@ -472,13 +472,13 @@ private fun MilestoneFilterBar(
         OutlinedTextField(
             value = query,
             onValueChange = onQuery,
-            placeholder = { Text("搜索里程碑名称", style = Type.micro) },
+            placeholder = { Text(L10n.t("ms.search.placeholder"), style = Type.micro) },
             singleLine = true,
             textStyle = Type.body,
             modifier = Modifier.width(220.dp),
         )
         if (projectFilter != null || query.isNotBlank()) {
-            Text("筛出 $shownCount / $scopedCount 条", style = Type.label)
+            Text(L10n.t("ms.filtered", shownCount, scopedCount), style = Type.label)
         }
     }
 }
@@ -495,11 +495,11 @@ private fun MilestoneRow(
                     Text(m.name, style = Type.card.copy(fontWeight = FontWeight.Bold))
                     Spacer(Modifier.width(Space.sm))
                     when (m.status) {
-                        "open" -> Pill("进行中", Palette.Accent)
-                        "done" -> Pill("已达成", Palette.Green)
-                        "dropped" -> Pill("已放弃", Palette.TextSecondary)
+                        "open" -> Pill(L10n.t("ms.filter.open"), Palette.Accent)
+                        "done" -> Pill(L10n.t("ms.filter.done"), Palette.Green)
+                        "dropped" -> Pill(L10n.t("ms.filter.dropped"), Palette.TextSecondary)
                         // unknown 单列：仓库读不出来 ≠ 没达成，不许渲染成「进行中」。
-                        else -> Pill("无法核验", Palette.Amber)
+                        else -> Pill(L10n.t("cmp.ms.unverifiable"), Palette.Amber)
                     }
                     Spacer(Modifier.width(Space.sm))
                     Text(m.projectName.ifBlank { m.projectId }, style = Type.micro)
@@ -507,8 +507,8 @@ private fun MilestoneRow(
                 Spacer(Modifier.height(2.dp))
                 val meta = buildList {
                     if (m.tag.isNotBlank()) add("tag ${m.tag}")
-                    if (m.targetDate.isNotBlank()) add("目标 ${m.targetDate}")
-                    if (m.completedAt.isNotBlank()) add("达成于 ${m.completedAt}")
+                    if (m.targetDate.isNotBlank()) add(L10n.t("ms.row.dueOnly", m.targetDate))
+                    if (m.completedAt.isNotBlank()) add(L10n.t("cmp.ms.completedAt", m.completedAt))
                 }
                 if (meta.isNotEmpty()) Text(meta.joinToString(" · "), style = Type.micro)
                 m.description?.takeIf { it.isNotBlank() }?.let {
@@ -518,12 +518,12 @@ private fun MilestoneRow(
             // 前动作紧邻信息列；破坏对靠右成组（UI 精修纪律）
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 when (m.status) {
-                    "open", null, "unknown" -> ActionText("达成", Palette.Green, enabled = !busy, onClick = onDone)
-                    "done" -> ActionText("重开", Palette.Accent, enabled = !busy, onClick = onReopen)
+                    "open", null, "unknown" -> ActionText(L10n.t("ms.row.done"), Palette.Green, enabled = !busy, onClick = onDone)
+                    "done" -> ActionText(L10n.t("ms.row.reopen"), Palette.Accent, enabled = !busy, onClick = onReopen)
                 }
                 Spacer(Modifier.width(Space.sm))
-                ActionText("放弃", Palette.TextSecondary, enabled = !busy, onClick = onDrop)
-                ActionText("删除", Palette.Red, enabled = !busy, onClick = onRemove)
+                ActionText(L10n.t("ms.action.drop"), Palette.TextSecondary, enabled = !busy, onClick = onDrop)
+                ActionText(L10n.t("ms.row.delete"), Palette.Red, enabled = !busy, onClick = onRemove)
             }
         }
     }

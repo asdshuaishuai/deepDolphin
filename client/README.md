@@ -41,7 +41,7 @@ KCEF/JCEF 在 JDK17+ 完成反射初始化所需的两条 `--add-opens` 已进 j
 | **代码置信度** | `graph confidence --json`：六维度总分 + 权重降序疑点清单（默认只给位置、≥8 红档、点击展开引擎证据 + 实码读不出如实说）+ 只看高权重（≥8）开关 + 复制 LLM 复核提示词（--llm 纯文本 → 剪贴板，stdout/stderr 分流防引擎杂音混入） |
 | **补丁体检** | diff 多行粘贴 → Layer1 算法层（S1..S10 信号 chip，null=分母 0 降档披露）→ uncertain 三态人工裁决（确认/未解决/不确定）→ Layer3 合并终稿（复核计数 + 警示行） |
 | **项目详情** | 单项目三源（`status <名>` / docs / journal，失败不短路、逐源披露）+ git 白名单六操作（commit 带类型前缀选择 + ok/output 结果反馈，失败信息留住）+ 浅/深更新；动作条「代码图谱/架构图」busy 生成→成功即开图谱浮层 |
-| **设置** | 四 tab：通用（自启动，仅安装态）/ AI（渠道+key）/ **自动化**（定时更新：间隔档 0/1/3/6/12/24 小时 + 浅/深轨道，写 settings.conf `update.*` 独立节、改完立即生效）/ 关于 |
+| **设置** | 四 tab：**通用（语言选择器 + 自启动）**/ AI（渠道+key）/ **自动化**（定时更新：间隔档 0/1/3/6/12/24 小时 + 浅/深轨道，写 settings.conf `update.*` 独立节、改完立即生效）/ **关于（四文档子 tab：关于/帮助/开源感谢/更新日志，四语言内容对位 mac DocsPages）** |
 
 浮层：**代码图谱 / 架构图**（Dialog 近全屏）——引擎 `render index --confidence` / `render arch`
 的交互 HTML 产物经 JCEF WebView 直载（客户端不原生绘制），底部回执条给版本/复用判定；
@@ -56,6 +56,12 @@ KCEF/JCEF 在 JDK17+ 完成反射初始化所需的两条 `--add-opens` 已进 j
 - 写操作纪律：每次写都留一行结果（✓/✗ 带原因），引擎调用全在协程 IO。
 - 深链启动参数（C10 已接线）：`--section dashboard|board|milestones`、`--project <名称>`；
   非法 section 宽容落 dashboard，不崩。
+- **多语言（L10n）**：四语言 zh-CN / en / zh-TW / ja，键值表从 mac `L10n.swift` 脚本搬运
+  （`client/scripts/gen_l10n.py`，504 键照搬不改写）+ CMP 特有键以 zh 为源补齐四语言
+  （`ui/L10nCmpKeys.kt`，`cmp.` 前缀）；全部视图文案走 `L10n.t(key)`（语言是 Compose 状态，
+  设置-通用切语言即时全界面生效）；语言存 settings.conf `app.language` 独立节，未配置时跟随
+  系统语言、认不出缺省 zh-CN。已知边界如实：AI 层错误/提示词不本地化（mac AIClient 同口径，
+  中文为诊断语言）；托盘 AWT 菜单标签在启动时定格（换语言重启后生效）。
 
 ## AI 层（客户端 AI，引擎 AI 无关）
 
@@ -119,7 +125,10 @@ src/jvmMain/kotlin/deepdolphin/
   ui/Automation.kt        定时更新配置（settings.conf update.* 独立节读写）
   ui/SearchFilter.kt      侧栏搜索纯函数（过滤/两态空因/resultSummary）
   ui/ShortcutMap.kt       窗口级快捷键单点声明（Ctrl+1/2/3/,/R/F）
-  ui/AiViews.kt           AI 设置页 + 对话页 + 设置四 tab（通用/AI/自动化/关于）
+  ui/AiViews.kt           AI 设置页 + 对话页 + 设置四 tab（通用含语言选择器/关于含四文档）
+  ui/L10n.kt              多语言单例（t(key)/语言状态/回退链 当前→en→key/settings.conf 读写）
+  ui/L10nTables.kt        四语言表 + 四文档（GENERATED：gen_l10n.py 从 mac 基准生成，勿手改）
+  ui/L10nCmpKeys.kt       CMP 特有键四语言（cmp. 前缀；以 zh 为源补 en/zh-TW/ja）
   ui/MarkdownWebView.kt   KCEF/JCEF 单 WebView Markdown 组件（复用 HtmlWebView）
 src/jvmTest/kotlin/
   engine/ContractTest.kt        fixtures 契约回归（真实引擎输出，缺必知键=契约过旧）
@@ -132,6 +141,7 @@ src/jvmTest/kotlin/
   ui/AutoUpdateSettingsTest.kt  自动化配置判据（9 条）
   ui/HeroUpdateScopeTest.kt     hero 双轨范围判据（6 条）
   sysint/TrayQuickViewTest.kt   托盘摘要行判据（4 条）
+  ui/L10nTest.kt          多语言判据（13 条：键集四语言对齐缺键即红/占位符一致/回退链/切换读写/四文档分发）
   ui/BoardContractTest.kt       看板列分配与披露判据（6 条）
   ai/MarkdownHtmlTest.kt        markdown→html 判据（8 条）
   ui/DesignRefinementTest.kt    aurora/空态判定判据（9 条）

@@ -7,12 +7,19 @@ package deepdolphin.ui
 
 import deepdolphin.engine.ScanCandidate
 import deepdolphin.engine.ScanPayload
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ScanSheetLogicTest {
+
+    @BeforeTest
+    fun pinZh() {
+        // 断言锚定 zh 文案：钉住语言，防宿主 locale / settings.conf 漂移翻红
+        L10n.applyLanguage(AppLanguage.ZH_CN)
+    }
 
     // ── scanRootProblem：磁盘三态不压成 Bool（「不存在」和「是文件」是两句不同的话）──
 

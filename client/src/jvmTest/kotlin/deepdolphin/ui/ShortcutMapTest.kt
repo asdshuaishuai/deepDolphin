@@ -4,11 +4,18 @@
 package deepdolphin.ui
 
 import androidx.compose.ui.input.key.Key
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ShortcutMapTest {
+
+    @BeforeTest
+    fun pinZh() {
+        // 断言锚定 zh 文案：钉住语言，防宿主 locale / settings.conf 漂移翻红
+        L10n.applyLanguage(AppLanguage.ZH_CN)
+    }
 
     // ── 映射本体（任务口径：Ctrl+1/2/3 视图、Ctrl+, 设置、Ctrl+R 刷新、Ctrl+F 聚焦搜索）──
 

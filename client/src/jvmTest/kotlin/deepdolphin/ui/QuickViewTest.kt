@@ -5,11 +5,18 @@ package deepdolphin.ui
 
 import deepdolphin.engine.Branch
 import deepdolphin.engine.Project
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class QuickViewTest {
+
+    @BeforeTest
+    fun pinZh() {
+        // 断言锚定 zh 文案：钉住语言，防宿主 locale / settings.conf 漂移翻红
+        L10n.applyLanguage(AppLanguage.ZH_CN)
+    }
 
     private fun project(
         error: String? = null,

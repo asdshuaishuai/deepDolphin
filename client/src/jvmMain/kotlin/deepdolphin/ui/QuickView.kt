@@ -58,8 +58,8 @@ fun quickRowSubtitle(p: Project): String {
         return "${b.headAgo} · ${b.statusLabel.ifBlank { b.status }}"
     }
     if (!p.lastCommitAgo.isNullOrBlank()) return p.lastCommitAgo
-    if (!p.isGit) return "非 git 项目"
-    return "最后提交时间读不出来"
+    if (!p.isGit) return L10n.t("bar.notGit")
+    return L10n.t("cmp.quick.lastCommitNA")
 }
 
 /**
@@ -79,7 +79,7 @@ const val QUICK_VIEW_ROW_CAP = 12
 
 /** 超出部分的引导行（mac bar.moreProjects「还有 %d 个项目，打开面板查看…」对位）。 */
 fun quickViewMoreLine(total: Int): String? =
-    if (total > QUICK_VIEW_ROW_CAP) "还有 ${total - QUICK_VIEW_ROW_CAP} 个项目，打开面板查看…" else null
+    if (total > QUICK_VIEW_ROW_CAP) L10n.t("bar.moreProjects", total - QUICK_VIEW_ROW_CAP) else null
 
 // ── 速览窗 ──
 
@@ -101,9 +101,9 @@ fun QuickViewDialog(
         // 摘要行如实说引擎缺席（不挂「还没有项目」——那是另一句事实）
         Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
             QuickViewShell {
-                Text("⚠ 未找到 moonGit 引擎", style = Type.section, modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm))
+                Text("⚠ " + L10n.t("bar.noEngine"), style = Type.section, modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm))
                 Text(
-                    "运行 moonGit 的 scripts/install.sh 安装，或设 MOONGIT_BIN / DEEPGIT_BIN",
+                    L10n.t("cmp.quick.noEngineHint"),
                     style = Type.label,
                     color = Palette.TextSecondary,
                     modifier = Modifier.padding(horizontal = Space.md),
@@ -113,7 +113,7 @@ fun QuickViewDialog(
                     shape = RoundedCornerShape(Radius.control),
                     colors = ButtonDefaults.buttonColors(containerColor = Palette.CardHover, contentColor = Palette.TextPrimary),
                     modifier = Modifier.padding(horizontal = Space.md, vertical = Space.xs),
-                ) { Text("重新检测") }
+                ) { Text(L10n.t("bar.redetect")) }
                 QuickViewFooter(onOpenPanel = onOpenPanel, onQuit = onQuit)
             }
         }
@@ -136,7 +136,7 @@ fun QuickViewDialog(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md),
             ) {
-                Text("项目群进度", style = Type.title, modifier = Modifier.weight(1f, fill = false))
+                Text(L10n.t("bar.title"), style = Type.title, modifier = Modifier.weight(1f, fill = false))
                 summary?.let {
                     Spacer(Modifier.width(Space.sm))
                     Text(it, style = Type.label, color = Palette.TextSecondary, maxLines = 1)
@@ -163,24 +163,24 @@ fun QuickViewDialog(
             if (projects.isEmpty() && statusState !is LoadState.Loading && lastError == null && status != null) {
                 // 空态（引擎到了、读完、真的没有项目）
                 Column(Modifier.padding(horizontal = Space.md, vertical = Space.sm), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    Text("暂无已注册项目", style = Type.body.copy(color = Palette.TextSecondary))
-                    Text("运行 moongit scan <目录> 注册项目群", style = Type.micro)
+                    Text(L10n.t("panel.empty.projects"), style = Type.body.copy(color = Palette.TextSecondary))
+                    Text(L10n.t("panel.empty.scanHint"), style = Type.micro)
                 }
             } else if (projects.isEmpty() && lastError != null) {
                 // 错误态（读失败 ≠ 空）
                 Column(Modifier.padding(horizontal = Space.md, vertical = Space.sm), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    Text("⚠ 引擎错误", style = Type.section.copy(color = Palette.Red))
+                    Text("⚠ " + L10n.t("bar.engineError"), style = Type.section.copy(color = Palette.Red))
                     Text(lastError!!, style = Type.label, color = Palette.TextSecondary, maxLines = 3)
                     Button(
                         onClick = { model.refreshAll() },
                         shape = RoundedCornerShape(Radius.control),
                         colors = ButtonDefaults.buttonColors(containerColor = Palette.CardHover, contentColor = Palette.TextPrimary),
-                    ) { Text("重试") }
+                    ) { Text(L10n.t("common.retry")) }
                 }
             } else if (projects.isEmpty()) {
                 // 读取中（引擎在跑第一次 status）
                 Text(
-                    "读取中…",
+                    L10n.t("bar.loading"),
                     style = Type.body.copy(color = Palette.TextSecondary),
                     modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm),
                 )
@@ -250,7 +250,7 @@ private fun QuickViewFooter(onOpenPanel: () -> Unit, onQuit: () -> Unit) {
             onClick = onOpenPanel,
             shape = RoundedCornerShape(Radius.control),
             colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
-        ) { Text("打开面板") }
+        ) { Text(L10n.t("bar.openPanel")) }
         Spacer(Modifier.weight(1f))
         Text(
             "⏻",

@@ -8,6 +8,7 @@
 package deepdolphin.ui
 
 import deepdolphin.ui.AppModel.Route
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -15,6 +16,12 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class WorkBarScopeTest {
+
+    @BeforeTest
+    fun pinZh() {
+        // 断言锚定 zh 文案：钉住语言，防宿主 locale / settings.conf 漂移翻红
+        L10n.applyLanguage(AppLanguage.ZH_CN)
+    }
 
     // ── selection → 范围选择器取值：只有项目详情收敛到单仓库，其余全是全局 ──
 

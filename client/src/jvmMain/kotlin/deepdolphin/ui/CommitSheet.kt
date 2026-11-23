@@ -61,8 +61,7 @@ fun defaultCommitSelection(files: List<String>): Set<String> = files.toSet()
  */
 fun partialCommitNote(files: List<String>, selected: Set<String>): String? =
     if (files.isNotEmpty() && selected.size < files.size) {
-        "已选 ${selected.size}/${files.size}：本机引擎 git commit 不支持 --paths（实测被拒），" +
-            "无法只提交勾选的子集。请全选后整单提交，或先在仓库里整理工作区再回来。"
+        L10n.t("cmp.commit.noPathsNote", selected.size, files.size)
     } else {
         null
     }
@@ -129,7 +128,7 @@ fun CommitSheet(model: AppModel, project: String) {
             // ── 标题行（mac：标题 + 项目名副行 + 关闭）──
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("提交改动", style = Type.title)
+                    Text(L10n.t("detail.commitChanges"), style = Type.title)
                     Text(project, style = Type.label)
                 }
                 Text(
@@ -150,33 +149,33 @@ fun CommitSheet(model: AppModel, project: String) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(Modifier.size(16.dp), color = Palette.Accent, strokeWidth = 2.dp)
                         Spacer(Modifier.height(Space.sm))
-                        Text("正在读取改动…", style = Type.label)
+                        Text(L10n.t("gitop.commitSheet.loading"), style = Type.label)
                     }
                 }
                 detailState is LoadState.Failed -> Box(Modifier.weight(1f).fillMaxWidth()) {
                     Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("⚠ 改动清单读不出来", style = Type.section.copy(color = Palette.Amber))
+                        Text("⚠ " + L10n.t("gitop.commitSheet.readFailed"), style = Type.section.copy(color = Palette.Amber))
                         Spacer(Modifier.height(Space.xs))
                         Text((detailState as LoadState.Failed).reason, style = Type.label, maxLines = 3)
                     }
                 }
                 dirty == null -> Box(Modifier.weight(1f).fillMaxWidth()) {
                     Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("⚠ 改动清单读不出来", style = Type.section.copy(color = Palette.Amber))
+                        Text("⚠ " + L10n.t("gitop.commitSheet.readFailed"), style = Type.section.copy(color = Palette.Amber))
                         Spacer(Modifier.height(Space.xs))
-                        Text("引擎没发 dirty（缺键）", style = Type.label)
+                        Text(L10n.t("cmp.err.noDirty"), style = Type.label)
                     }
                 }
                 !dirty.ok -> Box(Modifier.weight(1f).fillMaxWidth()) {
                     Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("⚠ 改动清单读不出来", style = Type.section.copy(color = Palette.Amber))
+                        Text("⚠ " + L10n.t("gitop.commitSheet.readFailed"), style = Type.section.copy(color = Palette.Amber))
                         Spacer(Modifier.height(Space.xs))
-                        Text(dirty.err ?: "引擎未给出原因", style = Type.label, maxLines = 3)
+                        Text(dirty.err ?: L10n.t("cmp.err.noReason"), style = Type.label, maxLines = 3)
                     }
                 }
                 dirty.clean || files.isEmpty() -> Box(Modifier.weight(1f).fillMaxWidth()) {
                     Text(
-                        "工作区干净，没有可提交的改动",
+                        L10n.t("gitop.commitSheet.clean"),
                         style = Type.body.copy(color = Palette.TextSecondary),
                         modifier = Modifier.align(Alignment.Center),
                     )
@@ -220,9 +219,9 @@ fun CommitSheet(model: AppModel, project: String) {
                 Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                     Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Stroke))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        Text("已选 ${selected.size} / 共 ${files.size}", style = Type.label)
+                        Text(L10n.t("gitop.commitSheet.selectedCount", selected.size, files.size), style = Type.label)
                         Text(
-                            if (selected.size == files.size) "全不选" else "全选",
+                            if (selected.size == files.size) L10n.t("gitop.commitSheet.deselectAll") else L10n.t("gitop.commitSheet.selectAll"),
                             style = Type.label.copy(color = Palette.Accent, fontWeight = FontWeight.SemiBold),
                             modifier = Modifier.clickable {
                                 selected = if (selected.size == files.size) emptySet() else defaultCommitSelection(files)
@@ -230,7 +229,7 @@ fun CommitSheet(model: AppModel, project: String) {
                         )
                         Spacer(Modifier.weight(1f))
                         Text(
-                            "提交将包含全部改动（引擎无 --paths，见下）",
+                            L10n.t("cmp.commit.allNote"),
                             style = Type.micro,
                         )
                     }
@@ -240,12 +239,12 @@ fun CommitSheet(model: AppModel, project: String) {
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.horizontalScroll(rememberScrollState()),
                     ) {
-                        Text("类型", style = Type.label)
+                        Text(L10n.t("cgraph.dim.type"), style = Type.label)
                         Spacer(Modifier.width(Space.xs))
                         listOf(null).plus(COMMIT_TYPE_WORDS).forEach { t ->
                             val sel = commitType == t
                             Text(
-                                t ?: "无类型",
+                                t ?: L10n.t("cmp.commit.noKind"),
                                 style = Type.micro.copy(fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal),
                                 color = if (sel) Palette.BgBase else Palette.TextSecondary,
                                 modifier = Modifier
@@ -262,7 +261,7 @@ fun CommitSheet(model: AppModel, project: String) {
                         OutlinedTextField(
                             value = message,
                             onValueChange = { message = it },
-                            placeholder = { Text("提交信息", style = Type.micro) },
+                            placeholder = { Text(L10n.t("gitop.commitSheet.messagePlaceholder"), style = Type.micro) },
                             singleLine = true,
                             modifier = Modifier.weight(1f),
                             textStyle = Type.body,
@@ -275,7 +274,7 @@ fun CommitSheet(model: AppModel, project: String) {
                                 containerColor = Palette.Accent,
                                 contentColor = Color.White,
                             ),
-                        ) { Text(if (busy) "提交中…" else "提交") }
+                        ) { Text(if (busy) L10n.t("cmp.commit.busy") else L10n.t("gitop.commit")) }
                     }
                     // 部分勾选 = 引擎做不了，如实说（判据 partialCommitNote）
                     partial?.let { Text("⚠ $it", style = Type.micro.copy(color = Palette.Amber)) }

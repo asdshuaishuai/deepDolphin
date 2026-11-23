@@ -69,7 +69,7 @@ object WorkBarScope {
     }
 
     /** 全局项标题（mac L10n zh workbar.global 逐字对位）。 */
-    fun globalLabel(projectCount: Int): String = "全局看板（全部 $projectCount 个项目）"
+    fun globalLabel(projectCount: Int): String = L10n.t("workbar.global", projectCount)
 
     /** selection → 双轨动作范围（mac ScopeRules.scope / UpdateScope 对位）。
      *  与 [choice] 是两个不同的东西：这个管「更新动作打在谁身上」，那个管「主区显示谁」。
@@ -96,10 +96,10 @@ object WorkBarScope {
  * 同一个按钮在两种范围下动作完全不同，不写清楚用户按下前无从知道会动谁。
  * null = 未选项目 = 全部（引擎 updateAll 只管注册表里那些，「全部项目」的「项目」在按钮上省作「全部」）。
  */
-fun shallowUpdateLabel(project: String?): String = "浅更新 · ${project ?: "全部"}"
+fun shallowUpdateLabel(project: String?): String = L10n.t("cmp.workbar.shallowScope", project ?: L10n.t("cmp.ms.allShort"))
 
 /** 深更新同理（mac deepLabel 对位）。 */
-fun deepUpdateLabel(project: String?): String = "深更新 · ${project ?: "全部"}"
+fun deepUpdateLabel(project: String?): String = L10n.t("cmp.workbar.deepScope", project ?: L10n.t("cmp.ms.allShort"))
 
 /**
  * 范围内待记录提交数（浅更新按钮徽章，mac ScopeRules.pending 对位）：
@@ -178,7 +178,7 @@ private fun ScopePicker(model: AppModel, projects: List<Project>, current: Scope
             )
             projects.forEach { p ->
                 DropdownMenuItem(
-                    text = { Text(p.name + (if (p.isReadable) "" else "（读不出）")) },
+                    text = { Text(p.name + (if (p.isReadable) "" else L10n.t("cmp.repos.unreadableSuffix"))) },
                     onClick = {
                         open = false
                         val (r, proj) = WorkBarScope.routeOf(ScopeChoice.Project(p.name))
@@ -280,7 +280,7 @@ fun SidebarStatusStrip(model: AppModel) {
             )
             Spacer(Modifier.width(Space.xs))
             Text(
-                if (busy) "正在采集…" else "空闲",
+                if (busy) L10n.t("workbar.collecting") else L10n.t("workbar.idle"),
                 style = Type.micro,
                 color = Palette.TextSecondary,
             )
@@ -292,13 +292,13 @@ fun SidebarStatusStrip(model: AppModel) {
         // 第二行两态分开说（mac 同款）：读不出来 ≠ 还没刷新过
         if (lastError != null && status?.projects?.isEmpty() != false) {
             Text(
-                "引擎读取失败：${lastError!!.lineSequence().first().take(80)}",
+                L10n.t("cmp.err.engineRead", lastError!!.lineSequence().first().take(80)),
                 style = Type.micro,
                 color = Palette.Amber,
                 maxLines = 1,
             )
         } else if (lastRefreshed == null) {
-            Text("尚未刷新", style = Type.micro, color = Palette.TextTertiary)
+            Text(L10n.t("workbar.neverRefreshed"), style = Type.micro, color = Palette.TextTertiary)
         }
     }
 }

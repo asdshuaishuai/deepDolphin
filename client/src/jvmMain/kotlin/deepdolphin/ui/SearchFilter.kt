@@ -40,16 +40,30 @@ object SearchFilter {
         return if (q.isEmpty()) SearchEmpty.NoData else SearchEmpty.NoMatch(q)
     }
 
-    /** 空结果文案。两态必须给出不同的话，且把查询原样回显（用户才知道自己搜了什么）。 */
-    fun emptyText(reason: SearchEmpty, noun: String = "项目"): String = when (reason) {
-        SearchEmpty.NoData -> "暂无$noun"
-        is SearchEmpty.NoMatch -> "没有${noun}匹配「${reason.query}」"
+    /**
+     * 空结果文案。两态必须给出不同的话，且把查询原样回显（用户才知道自己搜了什么）。
+     * 事实层文本只有 zh/en 两套（mac AppLanguage.usesEnglishFacts 同口径）：
+     * 调用方传 noun 与 en（侧栏传 panel.noun.project + 当前语言是否回落英文事实）。
+     */
+    fun emptyText(
+        reason: SearchEmpty,
+        noun: String = L10n.t("panel.noun.project"),
+        en: Boolean = L10n.language.usesEnglishFacts,
+    ): String = when (reason) {
+        SearchEmpty.NoData -> if (en) "No $noun yet" else "暂无$noun"
+        is SearchEmpty.NoMatch ->
+            if (en) "No $noun matching \"${reason.query}\"" else "没有${noun}匹配「${reason.query}」"
     }
 
     /** 命中数量摘要（搜到 0 条与没搜索过，文案不同；没过滤时不需要说明）。 */
-    fun resultSummary(allCount: Int, shownCount: Int, noun: String = "项目"): String? {
+    fun resultSummary(
+        allCount: Int,
+        shownCount: Int,
+        noun: String = L10n.t("panel.noun.project"),
+        en: Boolean = L10n.language.usesEnglishFacts,
+    ): String? {
         if (allCount == 0) return null
         if (shownCount == allCount) return null
-        return "匹配 $shownCount / $allCount 个$noun"
+        return if (en) "Matched $shownCount / $allCount $noun" else "匹配 $shownCount / $allCount 个$noun"
     }
 }

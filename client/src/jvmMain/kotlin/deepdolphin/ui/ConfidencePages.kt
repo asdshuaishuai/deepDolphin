@@ -89,7 +89,7 @@ fun verdictConfidence(verdict: String): Double = when (verdict) {
 
 /** 裁决表 → Layer3 合并的 agent 输入（mac merge 的 items 构造对位）。 */
 fun agentVerdictItems(verdicts: Map<String, String>): AgentPayload = AgentPayload(
-    verdicts.map { (id, v) -> AgentVerdict(id, v, verdictConfidence(v), "deepDolphin 人工裁决") },
+    verdicts.map { (id, v) -> AgentVerdict(id, v, verdictConfidence(v), L10n.t("cmp.conf.humanVerdict")) },
 )
 
 /** 信号 chip 文案：有值 = 百分比整数；null = 「—」（分母为 0，契约要求如实披露）。 */
@@ -158,7 +158,7 @@ fun GraphProjectPicker(names: List<String>, selected: String, onSelect: (String)
                 .width(180.dp),
         ) {
             Text(
-                selected.ifBlank { "选择项目" },
+                selected.ifBlank { L10n.t("cmp.form.selectProject") },
                 style = Type.body,
                 color = if (selected.isBlank()) Palette.TextSecondary else Palette.TextPrimary,
                 maxLines = 1,
@@ -206,7 +206,7 @@ class ConfidencePageModel(private val engine: Engine) {
     suspend fun load(fallbackProject: String?) {
         if (projectName.isBlank()) projectName = fallbackProject ?: ""
         if (projectName.isBlank()) {
-            error = "没有在册的可读项目"
+            error = L10n.t("cmp.conf.noReadable")
             return
         }
         loading = true; error = null
@@ -254,9 +254,9 @@ fun ConfidencePage(model: AppModel) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("代码置信度", style = Type.title)
+                Text(L10n.t("nav.confidence"), style = Type.title)
                 Text(
-                    "引擎六维度体检 · 权重降序疑点清单（结构性事实，不是正确性证明）",
+                    L10n.t("cmp.conf.headerLine"),
                     style = Type.label,
                 )
             }
@@ -274,17 +274,17 @@ fun ConfidencePage(model: AppModel) {
                 enabled = !vm.loading && vm.projectName.isNotBlank(),
                 shape = RoundedCornerShape(Radius.control),
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
-            ) { Text("分析") }
+            ) { Text(L10n.t("confidence.run")) }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                 Switch(checked = vm.highWeightOnly, onCheckedChange = { vm.highWeightOnly = it })
-                Text("只看高权重（≥8）", style = Type.label)
+                Text(L10n.t("confidence.highOnly"), style = Type.label)
             }
             Button(
                 onClick = { scope.launch { vm.copyPrompt() } },
                 enabled = vm.report != null && vm.projectName.isNotBlank(),
                 shape = RoundedCornerShape(Radius.control),
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.CardHover, contentColor = Palette.TextPrimary),
-            ) { Text(if (vm.promptCopied) "已复制 ✓" else "复制 LLM 复核提示词") }
+            ) { Text(if (vm.promptCopied) L10n.t("confidence.copied") + " ✓" else L10n.t("confidence.copyPrompt")) }
         }
         vm.error?.let {
             Text(
@@ -300,7 +300,7 @@ fun ConfidencePage(model: AppModel) {
             val r = vm.report
             if (r == null) {
                 Text(
-                    "选项目后点「分析」：引擎输出六维度总分与按权重降序的疑点清单",
+                    L10n.t("cmp.conf.hint"),
                     style = Type.body.copy(color = Palette.TextSecondary),
                     modifier = Modifier.padding(top = Space.xl),
                 )
@@ -317,28 +317,28 @@ private fun ConfidenceReportBody(r: ConfidenceReport, highWeightOnly: Boolean, p
     Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("${r.score}", style = Type.display, color = confidenceScoreColor(r.score))
-            Text("总分 / 100", style = Type.micro)
+            Text(L10n.t("cmp.conf.scoreOf"), style = Type.micro)
         }
         Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
             if (r.dimensions.isEmpty()) {
-                Text("引擎未报任何维度的疑点（分数 = 无结构性疑点）", style = Type.label)
+                Text(L10n.t("cmp.conf.noFindings"), style = Type.label)
             }
             r.dimensions.forEach { d -> DimensionRow(d.label, d.score, d.penalty, d.findings) }
         }
     }
     // 降级/限流披露必须原样展示（契约：不许静默）
     if (r.astNote.isNotBlank()) DisclosureBox(r.astNote)
-    if (r.cappedTotal) DisclosureBox("⚠ 疑点已达全量上限——清单是子集，不是全部")
-    else if (r.cappedKind) DisclosureBox("⚠ 部分类别达到每文件上限——超出该类的疑点已按类汇总")
+    if (r.cappedTotal) DisclosureBox(L10n.t("cmp.conf.cappedTotal"))
+    else if (r.cappedKind) DisclosureBox(L10n.t("cmp.conf.cappedKind"))
     if (r.semantics.isNotBlank()) Text(r.semantics, style = Type.micro, color = Palette.TextTertiary)
 
     // findings：披露式行（收起 = 位置告知，点击 = 展开证据与实码）
-    Text("疑点 ${r.findings.size} 条" + if (highWeightOnly) " · 高权重筛选后 ${highWeightFindings(r.findings, true).size} 条" else "", style = Type.section)
-    Text("默认只告知位置；点击行展开引擎证据与实码。权重越高越不可信（≥8 = 红）。", style = Type.micro)
+    Text(L10n.t("cmp.conf.findingsN", r.findings.size) + if (highWeightOnly) L10n.t("cmp.conf.findingsHighN", highWeightFindings(r.findings, true).size) else "", style = Type.section)
+    Text(L10n.t("cmp.conf.findingsHint"), style = Type.micro)
     val shown = highWeightFindings(r.findings, highWeightOnly)
     if (shown.isEmpty()) {
         Text(
-            if (r.findings.isEmpty()) "快照里没有疑点" else "高权重筛选后没有匹配的疑点",
+            if (r.findings.isEmpty()) L10n.t("cmp.conf.emptyNoFindings") else L10n.t("cmp.conf.emptyFiltered"),
             style = Type.body.copy(color = Palette.TextSecondary),
         )
     }
@@ -359,7 +359,7 @@ private fun DimensionRow(label: String, score: Long, penalty: Long, findings: Lo
             )
         }
         Text("$score", style = Type.label.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.width(28.dp))
-        Text("罚分 $penalty · $findings 条", style = Type.micro)
+        Text(L10n.t("cmp.conf.dimPenalty", penalty, findings), style = Type.micro)
     }
 }
 
@@ -406,7 +406,7 @@ private fun FindingDisclosureRow(f: ConfFinding, projectPath: String) {
         }
         if (expanded) {
             Spacer(Modifier.height(Space.xs))
-            Text("证据：${f.evidence}", style = Type.body.copy(color = Palette.TextSecondary))
+            Text(L10n.t("cmp.conf.evidence", f.evidence), style = Type.body.copy(color = Palette.TextSecondary))
             val src = sourceLineAt(projectPath, f.file, f.line)
             if (src != null) {
                 Text(
@@ -417,7 +417,7 @@ private fun FindingDisclosureRow(f: ConfFinding, projectPath: String) {
                 )
             } else {
                 Text(
-                    "实码读不出（文件不在或行超界；上面是引擎证据原文）",
+                    L10n.t("cmp.conf.srcNA"),
                     style = Type.micro, color = Palette.TextTertiary,
                     modifier = Modifier.padding(top = Space.xs),
                 )
@@ -447,11 +447,11 @@ class PatchCheckPageModel(private val engine: Engine) {
     suspend fun run(fallbackProject: String?) {
         if (projectName.isBlank()) projectName = fallbackProject ?: ""
         if (projectName.isBlank()) {
-            error = "没有在册的可读项目"
+            error = L10n.t("cmp.conf.noReadable")
             return
         }
         if (diffText.isBlank()) {
-            error = "先在下面粘贴 diff 文本（git diff 的输出）"
+            error = L10n.t("cmp.conf.diffFirst")
             return
         }
         running = true; error = null; layer1 = null; finalReport = null
@@ -497,8 +497,8 @@ fun PatchCheckPage(model: AppModel) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("补丁体检", style = Type.title)
-                Text("三层体检：Layer1 算法 → 人工裁决 → Layer3 合并终稿", style = Type.label)
+                Text(L10n.t("nav.patchcheck"), style = Type.title)
+                Text(L10n.t("cmp.conf.threeLayers"), style = Type.label)
             }
             if (vm.running) CircularProgressIndicator(Modifier.size(14.dp), color = Palette.Accent, strokeWidth = 2.dp)
         }
@@ -515,13 +515,13 @@ fun PatchCheckPage(model: AppModel) {
                 enabled = !vm.running && vm.projectName.isNotBlank(),
                 shape = RoundedCornerShape(Radius.control),
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
-            ) { Text("体检") }
+            ) { Text(L10n.t("cmp.conf.runBtn")) }
             Button(
                 onClick = { scope.launch { vm.merge() } },
                 enabled = !vm.running && vm.layer1 != null,
                 shape = RoundedCornerShape(Radius.control),
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.Deep, contentColor = Color.White),
-            ) { Text("合并出最终分") }
+            ) { Text(L10n.t("patch.merge")) }
         }
         vm.error?.let {
             Text(
@@ -536,9 +536,9 @@ fun PatchCheckPage(model: AppModel) {
         ) {
             // diff 输入区（多行；临时文件由引擎封装层写删，页面不落盘）
             GlassCard(Modifier.fillMaxWidth()) {
-                Text("diff 输入", style = Type.section)
+                Text(L10n.t("cmp.conf.diffInput"), style = Type.section)
                 Spacer(Modifier.height(Space.xs))
-                Text("粘贴 git diff 的输出。引擎跑 Layer1 时写临时文件、用完即删。", style = Type.micro)
+                Text(L10n.t("cmp.conf.diffHint"), style = Type.micro)
                 Spacer(Modifier.height(Space.sm))
                 OutlinedTextField(
                     value = vm.diffText,
@@ -555,7 +555,7 @@ fun PatchCheckPage(model: AppModel) {
             }
             if (vm.layer1 == null && vm.error == null) {
                 Text(
-                    "粘贴 diff 后点「体检」：引擎先跑 Layer1 算法层，不确定的条目由你裁决，再合并终稿",
+                    L10n.t("cmp.conf.patchHint"),
                     style = Type.body.copy(color = Palette.TextSecondary),
                     modifier = Modifier.padding(top = Space.xl),
                 )
@@ -569,7 +569,7 @@ fun PatchCheckPage(model: AppModel) {
 private fun FinalCard(f: MergedConfidence) {
     GlassCard(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-            Text("Layer3 · 合并终稿", style = Type.section)
+            Text(L10n.t("cmp.conf.layer3"), style = Type.section)
             Text(
                 "${(f.overall * 100).toInt()}",
                 style = Type.display,
@@ -577,8 +577,7 @@ private fun FinalCard(f: MergedConfidence) {
             )
             Column(Modifier.padding(bottom = Space.xs)) {
                 Text(
-                    "已复核 ${f.diagnostics.reviewedByAgent} 条 · 未处理 ${f.diagnostics.deferred} 条" +
-                        " · 算法层确定 ${f.diagnostics.certainFromAlgorithm} 条",
+                    L10n.t("cmp.conf.reviewed", f.diagnostics.reviewedByAgent, f.diagnostics.deferred, f.diagnostics.certainFromAlgorithm),
                     style = Type.micro,
                 )
             }
@@ -590,7 +589,7 @@ private fun FinalCard(f: MergedConfidence) {
             }
         } else {
             Spacer(Modifier.height(Space.sm))
-            Text("无警示行", style = Type.micro)
+            Text(L10n.t("cmp.conf.noWarnings"), style = Type.micro)
         }
     }
 }
@@ -600,12 +599,11 @@ private fun FinalCard(f: MergedConfidence) {
 private fun Layer1Card(l1: PatchConfidence, verdicts: Map<String, String>, onVerdict: (String, String) -> Unit) {
     GlassCard(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-            Text("Layer1 · 算法层", style = Type.section)
+            Text(L10n.t("cmp.conf.layer1"), style = Type.section)
             Text("${(l1.overall * 100).toInt()}", style = Type.display, color = patchOverallColor(l1.overall))
             Column(Modifier.padding(bottom = Space.xs)) {
                 Text(
-                    "不确定 ${l1.uncertain.size} 条 · 实体 ${l1.entities.size} · " +
-                        "解析失败 ${l1.diagnostics.parseErrors} · 补丁文件 ${l1.diagnostics.patchFiles} · 新增行 ${l1.diagnostics.addedLines}",
+                    L10n.t("cmp.conf.l1stats", l1.uncertain.size, l1.entities.size, l1.diagnostics.parseErrors, l1.diagnostics.patchFiles, l1.diagnostics.addedLines),
                     style = Type.micro,
                 )
             }
@@ -629,7 +627,7 @@ private fun Layer1Card(l1: PatchConfidence, verdicts: Map<String, String>, onVer
         }
         if (l1.uncertain.isNotEmpty()) {
             Spacer(Modifier.height(Space.md))
-            Text("不确定条目 · 人工裁决（Layer2）", style = Type.card)
+            Text(L10n.t("cmp.conf.layer2"), style = Type.card)
             Spacer(Modifier.height(Space.xs))
             l1.uncertain.forEach { u ->
                 UncertainRow(u, verdicts[u.id] ?: "ambiguous") { v -> onVerdict(u.id, v) }
@@ -667,9 +665,9 @@ private fun UncertainRow(u: PatchUncertain, current: String, onVerdict: (String)
 private fun VerdictPills(current: String, onVerdict: (String) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
         listOf(
-            "resolved" to "确认",
-            "unresolved" to "未解决",
-            "ambiguous" to "不确定",
+            "resolved" to L10n.t("common.confirm"),
+            "unresolved" to L10n.t("cmp.conf.verdictUnresolved"),
+            "ambiguous" to L10n.t("cmp.conf.verdictAmbiguous"),
         ).forEach { (v, label) ->
             val selected = current == v
             Text(
@@ -689,12 +687,12 @@ private fun VerdictPills(current: String, onVerdict: (String) -> Unit) {
 private fun LowConfidenceSection(entities: List<PatchEntity>, diffText: String) {
     val lows = lowConfidencePatchEntities(entities)
     GlassCard(Modifier.fillMaxWidth()) {
-        Text("低置信度实体 ${lows.size} 个", style = Type.section)
+        Text(L10n.t("cmp.conf.lowEntities", lows.size), style = Type.section)
         Spacer(Modifier.height(Space.xs))
         if (lows.isEmpty()) {
-            Text("没有低于 0.75 的实体——补丁涉及的位置算法都看得懂", style = Type.label)
+            Text(L10n.t("cmp.conf.lowEmpty"), style = Type.label)
         } else {
-            Text("最不可信的排最前；点击行展开该位置的 diff 块。", style = Type.micro)
+            Text(L10n.t("cmp.conf.lowHint"), style = Type.micro)
             Spacer(Modifier.height(Space.xs))
             lows.forEach { e -> PatchEntityRow(e, diffText) }
         }
@@ -739,7 +737,7 @@ private fun PatchEntityRow(e: PatchEntity, diffText: String) {
                     color = Palette.TextPrimary,
                 )
             } else {
-                Text("补丁未覆盖该位置（hunk 匹配不到 file:line）", style = Type.micro, color = Palette.TextTertiary)
+                Text(L10n.t("cmp.conf.notCovered"), style = Type.micro, color = Palette.TextTertiary)
             }
         }
     }

@@ -5,11 +5,18 @@
 
 package deepdolphin.ui
 
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class CommitFormTest {
+
+    @BeforeTest
+    fun pinZh() {
+        // 断言锚定 zh 文案：钉住语言，防宿主 locale / settings.conf 漂移翻红
+        L10n.applyLanguage(AppLanguage.ZH_CN)
+    }
 
     // ── 空白信息 → null（按钮可用性挂在这里；引擎对空 message 直接拒）──
 

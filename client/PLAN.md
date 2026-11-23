@@ -76,6 +76,7 @@ scripts/run.sh              # 真窗口（DISPLAY=:0）
 | 详情页接图谱两页 + 扫描单 + 提交单：动作条「代码图谱/架构图」busy 生成→成功即开页（本机引擎无 render check，按 mac 降级先例不做两态按钮；复用=毫秒级秒开）；仪表盘 hero「添加/扫描」开扫描单（mac ScanSheet 对位：路径三态判定 + 逐项目新增/已在册——归属由扫描前在册集对照推导，聚合行以引擎口径为准 + ScanCoverage 三种「没扫完」分开说）；ScanPayload 镜像按真机修正（candidates/unreadable 原为凭空 Long，真跑必炸）+ fixture 真机落盘；git 提交区补类型前缀选择（引擎 COMMIT_TYPE_ORDER 词表）+ 引擎 ok/output 结果反馈（失败信息留住） | `f75c255` | +17（ScanSheetLogicTest 10 + CommitFormTest 5 + ContractTest 2） | 80 绿 |
 | 置信度 + 补丁体检两页：侧栏「视图」组里程碑后两入口（mac PanelView.swift:143-145 对位）；置信度页 `graph confidence --json` 六维度总分 + 权重降序 findings 披露式行（默认只给位置、≥8 红档、点击展开引擎证据+实码）+ 只看高权重开关 + 复制 LLM 复核提示词（--llm 纯文本 → AWT 剪贴板，stdout/stderr 分流防迁移提示混入）；补丁体检页 diff 粘贴 → Layer1 S1..S10 信号 chip（null=分母0 降档披露）→ uncertain 三态人工裁决 → --merge 终稿；契约三份镜像以真机实测锚定 | `1d5dae0` | +15（ContractTest +5 / ConfidencePagesTest +10） | 95 绿 |
 | 交互层补齐：侧栏搜索（SearchFilter 纯函数：项目名+分支名大小写不敏感、emptyReason 两态、resultSummary、Ctrl+F 聚焦）；ShortcutMap 纯对象键位（Ctrl+1/2/3 视图、Ctrl+, 设置、Ctrl+R 刷新、Ctrl+F 搜索）挂窗口根 onPreviewKeyEvent 隧道相位；设置第四 tab「自动化」（间隔档 0/1/3/6/12/24 + 轨道浅/深，update.* 独立节，改完立即生效）+ AppModel 定时器；托盘速览（SystemTray 圆点 + 摘要行/打开/退出，X11 简版，isSupported false 静默降级）；hero 双轨按钮（浅/深更新带范围、待记录徽章 >0 才现、深更新动哪些文档写进副行） | `023f675` | +38（SearchFilterTest 11 / ShortcutMapTest 8 / AutoUpdateSettingsTest 9 / HeroUpdateScopeTest 6 / TrayQuickViewTest 4） | 133 绿 |
+| L10n 四语言 + 四文档（对位 mac L10n.swift / DocsPages.swift / GeneralTab 语言 Picker）：`scripts/gen_l10n.py` 从 mac 基准生成 L10nTables.kt（504 键 × zh-CN/en/zh-TW/ja 照搬不改写 + 16 份文档，--check 守门）；L10n 单例（t(key) 回退链 当前→en→key、%@/%d/%1$d 占位、语言=Compose 状态换语言即时全界面、app.language conf 独立节、未配置跟随系统语言认不出缺省 zh）；全部视图/engine 错误/AppModel 反馈/托盘文案收编 L10n.t（147 处脚本自动 + 逐文件手工；CMP 特有键 300 个以 zh 为源补四语言收进 L10nCmpKeys.kt，cmp. 前缀不与 mac 键撞名）；设置-通用加语言选择器（即时生效）；关于 tab 挂四文档子 tab（MarkdownWebView 单实例渲染，性能取舍） | 本批 | +13（L10nTest） | 202 绿 |
 
 **终验（2026-11-24，真机 DISPLAY=:0 全项过）**：
 - 判据门禁：随本批后由门禁脚本复跑（PLAN 记账口径 133 绿，`023f675` 时点）。
@@ -137,6 +138,23 @@ scripts/run.sh              # 真窗口（DISPLAY=:0）
   不带 kind——如实不造。
 - ~Main.kt 侧栏底部「判据 11 条」陈旧文案~ 已修（AiViews 关于 tab 11→61，随图谱批 `72376da`）。
 - MilestonesView.kt:32 模态遮罩 `Color(0x88000000)` 是遗留内联色值（此前里程碑批产物，未动）。
+
+## 多语言边界（L10n 批，2026-11-24）
+
+- **AI 层不本地化**（mac AIClient.swift 0 处 L10n 同口径）：ai/Engines.kt、ai/AgentCore.kt、
+  ai/AiModels.kt 的错误与提示词、briefTask 任务串、连通性测试提示保持中文——它们是对话内
+  诊断/AI 指令，不是界面 chrome。
+- **引擎输出匹配词不本地化**：GraphPages `renderReused` 匹配引擎回执里的「复用/reused」
+  （引擎契约词）；ScanSheet 聚合计数匹配用 `cmp.scan.addedLabel/existing`（与聚合行同键
+  生成/同键解析，语言自洽）。
+- **托盘 AWT 菜单标签启动时定格**：SystemTray 菜单在 install 时构建，换语言不重建
+  （摘要行走 updateSummary 随语言实时）——重启后生效，如实不装作即时。
+- **.desktop GenericName 不本地化**：系统文件元数据（freedesktop 有自己的 l10n 机制，
+  不在本批范围）。
+- **CMP 特有键**（mac 没有的文案，以 zh 为源补 en/zh-TW/ja）：`cmp.*` 共 300 键，全部在
+  ui/L10nCmpKeys.kt，四语言键集一致性由 L10nTest 守（缺键即红）。
+- **事实层双语**（mac usesEnglishFacts 同口径）：SearchFilter 空态/匹配行只有 zh/en 两套，
+  繁中共用简中、日文回落英文。
 
 ## 引擎子命令能力清单（诊断批 `moongit --help` 实测 rc=0；只记录，不实现页面）
 

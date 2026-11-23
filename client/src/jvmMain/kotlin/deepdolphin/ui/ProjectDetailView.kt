@@ -43,23 +43,23 @@ fun ProjectDetailView(model: AppModel) {
         // ── 页头 + 写动作条（唯一 chrome 落点：PageHeader 纪律）──
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(name ?: "项目详情", style = Type.title)
+                Text(name ?: L10n.t("nav.projectDetail"), style = Type.title)
                 p?.headline?.let {
                     Spacer(Modifier.height(4.dp))
                     Text(it, style = Type.label)
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ActionText("浅更新", Palette.Accent, enabled = !busyAction && refreshing.not()) {
+                ActionText(L10n.t("workbar.shallow"), Palette.Accent, enabled = !busyAction && refreshing.not()) {
                     name?.let { model.updateProject(it, deep = false) }
                 }
-                ActionText("深更新", Palette.Accent, enabled = !busyAction) {
+                ActionText(L10n.t("workbar.deep"), Palette.Accent, enabled = !busyAction) {
                     name?.let { model.updateProject(it, deep = true) }
                 }
                 // 一键项目说明（mac ProjectBriefButton 对位，L10n "detail.projectBrief"）：AI 融进操作——
                 // 动作条就地带固定问题预填打开 agent sheet（作用域=本详情项目），不做独立 AI 入口
-                ActionText("项目说明", Palette.Ai, enabled = name != null) {
-                    name?.let { model.openAgent(briefTask(it), title = "项目说明") }
+                ActionText(L10n.t("detail.brief"), Palette.Ai, enabled = name != null) {
+                    name?.let { model.openAgent(briefTask(it), title = L10n.t("detail.brief")) }
                 }
                 // 图谱两页入口（mac DetailViews.swift:229-307 按钮形态对位；用户定稿：两图只能从
                 // 具体仓库面板触发）。⚠️ 与 mac 探测逻辑的差异（如实标注）：mac 先探产物
@@ -70,16 +70,16 @@ fun ProjectDetailView(model: AppModel) {
                 // 不在时这一发就是首次生成（分钟级）。详见 AppModel.renderGraphArtifact。
                 val graphRendering by model.graphRendering.collectAsState()
                 ActionText(
-                    if (name != null && graphRendering == "INDEX:$name") "图谱生成中…" else "代码图谱",
+                    if (name != null && graphRendering == "INDEX:$name") L10n.t("cmp.detail.graphRendering") else L10n.t("nav.graph"),
                     Palette.Accent,
                     enabled = name != null && graphRendering == null,
                 ) { name?.let { model.renderGraphArtifact(it, GraphKind.INDEX) } }
                 ActionText(
-                    if (name != null && graphRendering == "ARCH:$name") "架构生成中…" else "架构图",
+                    if (name != null && graphRendering == "ARCH:$name") L10n.t("cmp.detail.archRendering") else L10n.t("nav.arch"),
                     Palette.Deep,
                     enabled = name != null && graphRendering == null,
                 ) { name?.let { model.renderGraphArtifact(it, GraphKind.ARCH) } }
-                ActionText("刷新", Palette.TextSecondary, enabled = !refreshing) {
+                ActionText(L10n.t("toolbar.refresh"), Palette.TextSecondary, enabled = !refreshing) {
                     name?.let { model.loadDetail(it) }
                 }
             }
@@ -91,9 +91,9 @@ fun ProjectDetailView(model: AppModel) {
             GlassCard(Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(it, style = Type.body, maxLines = 3, modifier = Modifier.weight(1f))
-                    if (it.startsWith("浅更新") || it.startsWith("深更新")) {
+                    if (it.startsWith(L10n.t("workbar.shallow")) || it.startsWith(L10n.t("workbar.deep"))) {
                         Spacer(Modifier.width(Space.sm))
-                        ActionText("AI 解读", Palette.Ai, enabled = true) {
+                        ActionText(L10n.t("cmp.detail.aiBrief"), Palette.Ai, enabled = true) {
                             model.openAgent("解读这次更新的结果「$it」：发生了什么、有什么值得注意的？只根据引擎返回的事实回答。")
                         }
                     }
@@ -103,15 +103,15 @@ fun ProjectDetailView(model: AppModel) {
 
         when (val st = detailState) {
             is LoadState.Failed -> GlassCard(Modifier.fillMaxWidth()) {
-                Text("详情读不出来", style = Type.section.copy(color = Palette.Amber))
+                Text(L10n.t("cmp.err.detailRead"), style = Type.section.copy(color = Palette.Amber))
                 Text(st.reason, style = Type.body.copy(color = Palette.TextSecondary))
             }
             is LoadState.Loading -> GlassCard(Modifier.fillMaxWidth()) {
-                Text("读取中…", style = Type.body.copy(color = Palette.TextSecondary))
+                Text(L10n.t("bar.loading"), style = Type.body.copy(color = Palette.TextSecondary))
             }
             else -> {
                 if (p == null) {
-                    GlassCard(Modifier.fillMaxWidth()) { Text("项目没有数据", style = Type.body) }
+                    GlassCard(Modifier.fillMaxWidth()) { Text(L10n.t("cmp.detail.noData"), style = Type.body) }
                 } else {
                     if (!p.isReadable) UnreadableCard(p) else {
                         PulseCard(p)
@@ -133,45 +133,45 @@ fun ProjectDetailView(model: AppModel) {
 @Composable
 private fun UnreadableCard(p: Project) {
     GlassCard(Modifier.fillMaxWidth()) {
-        Pill("读不出来", Palette.Red)
+        Pill(L10n.t("ms.filter.unreadable"), Palette.Red)
         Spacer(Modifier.height(Space.sm))
-        Text(p.error ?: "引擎未给出原因", style = Type.body.copy(color = Palette.TextSecondary))
-        Text("路径：${p.path}", style = Type.micro)
+        Text(p.error ?: L10n.t("cmp.err.noReason"), style = Type.body.copy(color = Palette.TextSecondary))
+        Text(L10n.t("cmp.detail.path", p.path), style = Type.micro)
     }
 }
 
 /** 工程脉搏：当前/默认分支、脏度、提交数、进度时间戳。 */
 @Composable
 private fun PulseCard(p: Project) {
-    SectionCard("工程脉搏", Modifier.fillMaxWidth()) {
+    SectionCard(L10n.t("detail.pulse"), Modifier.fillMaxWidth()) {
         // 分支一行（同分支合并披露）
         val branchLine = if (p.currentBranch == p.defaultBranch) {
-            "当前分支 ${p.currentBranch ?: "?"}（即默认分支）"
+            L10n.t("cmp.detail.currentIsDefault", p.currentBranch ?: "?")
         } else {
-            "当前分支 ${p.currentBranch ?: "?"} · 默认分支 ${p.defaultBranch ?: "?"}"
+            L10n.t("cmp.detail.branchLine", p.currentBranch ?: "?", p.defaultBranch ?: "?")
         }
         Text(branchLine, style = Type.body)
         Spacer(Modifier.height(Space.sm))
         val dirty = p.dirty
         val dirtyText = when {
-            dirty == null -> "脏度读不出来"
-            dirty.ok && dirty.clean -> "工作区干净"
-            dirty.ok -> "未提交 ${dirty.total}（暂存 ${dirty.staged} · 修改 ${dirty.modified} · 未跟踪 ${dirty.untracked}）"
-            else -> "脏度读取失败：${dirty.err ?: "未给出原因"}"
+            dirty == null -> L10n.t("cmp.detail.dirtyNA")
+            dirty.ok && dirty.clean -> L10n.t("cmp.detail.dirtyClean")
+            dirty.ok -> L10n.t("cmp.detail.dirtyCounts", dirty.total, dirty.staged, dirty.modified, dirty.untracked)
+            else -> L10n.t("cmp.detail.dirtyFailed", dirty.err ?: L10n.t("cmp.err.noReasonAlt"))
         }
         Text(dirtyText, style = Type.body)
         Spacer(Modifier.height(2.dp))
         Text(
             buildString {
-                append("提交数 ${if ((p.commitCount ?: -1) < 0) "读不出来" else p.commitCount}")
-                p.lastCommitAgo?.let { append(" · 最近提交 $it") }
+                append(L10n.t("cmp.detail.commitCount", if ((p.commitCount ?: -1) < 0) L10n.t("cmp.detail.commitCountNA") else p.commitCount.toString()))
+                p.lastCommitAgo?.let { append(L10n.t("cmp.detail.lastCommitAt", it)) }
             },
             style = Type.body,
         )
         // 合并建议（缺键 = 就在默认分支，不是「没有」）
         p.mergeHint?.let { hint ->
             Spacer(Modifier.height(Space.sm))
-            Text("合并建议：${hint.description}（领先 ${hint.ahead} / 落后 ${hint.behind}）", style = Type.body.copy(color = Palette.Accent))
+            Text(L10n.t("cmp.detail.mergeHint", hint.description, hint.ahead, hint.behind), style = Type.body.copy(color = Palette.Accent))
         }
         p.warnings?.takeIf { it.isNotEmpty() }?.forEach { w ->
             Text("⚠ $w", style = Type.micro.copy(color = Palette.Amber))
@@ -182,10 +182,10 @@ private fun PulseCard(p: Project) {
 /** 提交构成 12 色（对位 logic/CommitTypeComposition：12 类不取模）。 */
 @Composable
 private fun CommitTypesCard(p: Project) {
-    SectionCard("提交构成", Modifier.fillMaxWidth()) {
+    SectionCard(L10n.t("cmp.detail.commitMixShort"), Modifier.fillMaxWidth()) {
         val types = p.commitTypes
         if (types.isEmpty()) {
-            Text("没有可用的类型计数（样本内没有提交或引擎读不出来）", style = Type.body.copy(color = Palette.TextSecondary))
+            Text(L10n.t("cmp.detail.noTypeCounts"), style = Type.body.copy(color = Palette.TextSecondary))
         } else {
             val colors = Composition12
             Row(Modifier.fillMaxWidth().height(10.dp)) {
@@ -207,21 +207,21 @@ private fun CommitTypesCard(p: Project) {
                     }
                 }
             }
-            if (p.commitTypesTruncated == true) Text("类型列表被截断", style = Type.micro)
+            if (p.commitTypesTruncated == true) Text(L10n.t("cmp.detail.typesTruncated"), style = Type.micro)
         }
     }
 }
 
 @Composable
 private fun BranchCard(p: Project) {
-    SectionCard("分支", Modifier.fillMaxWidth()) {
+    SectionCard(L10n.t("dash.card.branch"), Modifier.fillMaxWidth()) {
         val branches = p.branches
         if (branches.isEmpty()) {
-            Text("分支数读不出来 · 引擎没返回分支明细", style = Type.body.copy(color = Palette.TextSecondary))
+            Text(L10n.t("cmp.detail.branchesNA"), style = Type.body.copy(color = Palette.TextSecondary))
         } else {
             branches.forEach { b ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (b.isCurrent) Pill("当前", Palette.Accent)
+                    if (b.isCurrent) Pill(L10n.t("detail.branch.current"), Palette.Accent)
                     Spacer(Modifier.width(Space.xs))
                     Text(b.name, style = Type.body.copy(fontWeight = FontWeight.Medium), modifier = Modifier.width(160.dp))
                     Text(b.statusLabel.ifBlank { b.status }, style = Type.micro, modifier = Modifier.width(90.dp))
@@ -235,7 +235,7 @@ private fun BranchCard(p: Project) {
                     }
                 }
             }
-            p.repoBranchCount?.let { if (branches.size < it) Text("分支明细被截断：仓库共 $it 条", style = Type.micro) }
+            p.repoBranchCount?.let { if (branches.size < it) Text(L10n.t("cmp.detail.branchesTruncated", it), style = Type.micro) }
         }
     }
 }
@@ -255,11 +255,11 @@ private fun BranchCard(p: Project) {
 private fun GitCard(model: AppModel, p: Project, busy: Boolean) {
     val feedback by model.gitFeedback.collectAsState()
 
-    SectionCard("git 操作", Modifier.fillMaxWidth()) {
+    SectionCard(L10n.t("detail.gitOps"), Modifier.fillMaxWidth()) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             // 提交（mac 用户定稿：放推送旁边的本地提交入口——点开选文件提交单）
-            ActionText("提交", Palette.Accent, enabled = !busy && p.isGit) { model.openCommitSheet(p.name) }
-            listOf("pull", "push", "stash", "unstash", "fetch").forEach { op ->
+            ActionText(L10n.t("gitop.commit"), Palette.Accent, enabled = !busy && p.isGit) { model.openCommitSheet(p.name) }
+            listOf("pull", "push", L10n.t("dash.stash"), "unstash", "fetch").forEach { op ->
                 ActionText(op, Palette.TextSecondary, enabled = !busy) { model.gitOp(op, p.name) }
             }
         }
@@ -268,10 +268,10 @@ private fun GitCard(model: AppModel, p: Project, busy: Boolean) {
         val dirty = p.dirty
         Text(
             when {
-                dirty == null -> "改动构成：引擎没发 dirty（缺键）"
-                !dirty.ok -> "改动构成读不出来：${dirty.err ?: "未给出原因"}"
-                dirty.clean -> "工作区干净（引擎会拒绝没有可提交内容的提交）"
-                else -> "本次提交将包含：已暂存 ${dirty.staged} · 修改 ${dirty.modified} · 未跟踪 ${dirty.untracked} · 冲突 ${dirty.conflicts}"
+                dirty == null -> L10n.t("cmp.detail.dirtyCardNA")
+                !dirty.ok -> L10n.t("cmp.detail.dirtyCardFailed", dirty.err ?: L10n.t("cmp.err.noReasonAlt"))
+                dirty.clean -> L10n.t("cmp.detail.dirtyCardClean")
+                else -> L10n.t("cmp.detail.dirtyCardWill", dirty.staged, dirty.modified, dirty.untracked, dirty.conflicts)
             },
             style = Type.body.copy(color = Palette.TextSecondary),
         )
@@ -295,9 +295,9 @@ private fun GitCard(model: AppModel, p: Project, busy: Boolean) {
 
 @Composable
 private fun JournalCard(entries: List<deepdolphin.engine.JournalEntry>, unparsable: Long?, windowExhausted: Boolean?) {
-    SectionCard("提交日志", Modifier.fillMaxWidth()) {
+    SectionCard(L10n.t("cmp.detail.journalShort"), Modifier.fillMaxWidth()) {
         if (entries.isEmpty()) {
-            Text("日志没有条目（窗口内没有提交或读不出来）", style = Type.body.copy(color = Palette.TextSecondary))
+            Text(L10n.t("cmp.detail.journalEmpty"), style = Type.body.copy(color = Palette.TextSecondary))
         } else {
             entries.forEach { e ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
@@ -309,8 +309,8 @@ private fun JournalCard(entries: List<deepdolphin.engine.JournalEntry>, unparsab
         }
         // 披露（缺键 = null 不当「没耗尽」）
         val notes = buildList {
-            unparsable?.takeIf { it > 0 }?.let { add("$it 行解析不了（已如实跳过）") }
-            if (windowExhausted == true) add("日志窗口已耗尽（更早的提交不在窗口内）")
+            unparsable?.takeIf { it > 0 }?.let { add(L10n.t("cmp.detail.journalUnparsable", it)) }
+            if (windowExhausted == true) add(L10n.t("cmp.detail.journalWindowEnd"))
         }
         notes.forEach {
             Spacer(Modifier.height(Space.xs))
@@ -322,26 +322,26 @@ private fun JournalCard(entries: List<deepdolphin.engine.JournalEntry>, unparsab
 /** 托管文档四态：存在可读 / 存在但读不出 / 不存在 / 未披露。 */
 @Composable
 private fun DocsCard(docs: List<deepdolphin.engine.DocContent>, unreadable: List<String>) {
-    SectionCard("托管文档", Modifier.fillMaxWidth()) {
+    SectionCard(L10n.t("detail.managedDocs"), Modifier.fillMaxWidth()) {
         if (docs.isEmpty() && unreadable.isEmpty()) {
-            Text("引擎没有返回文档内容", style = Type.body.copy(color = Palette.TextSecondary))
+            Text(L10n.t("cmp.detail.docsNoContent"), style = Type.body.copy(color = Palette.TextSecondary))
         } else {
             docs.forEach { d ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Text(d.file, style = Type.body.copy(fontWeight = FontWeight.Medium), modifier = Modifier.width(140.dp))
                     Text(
-                        "${d.content.length} 字节",
+                        L10n.t("cmp.detail.bytes", d.content.length),
                         style = Type.micro,
                         modifier = Modifier.width(90.dp),
                     )
                     Text(
-                        d.content.lineSequence().firstOrNull()?.take(80) ?: "（空文件）",
+                        d.content.lineSequence().firstOrNull()?.take(80) ?: L10n.t("cmp.detail.emptyFile"),
                         style = Type.micro, maxLines = 1, modifier = Modifier.weight(1f),
                     )
                 }
             }
             if (unreadable.isNotEmpty()) {
-                Text("存在但读取失败：${unreadable.joinToString("、")}", style = Type.micro.copy(color = Palette.Amber))
+                Text(L10n.t("cmp.detail.docsUnreadable", unreadable.joinToString("、")), style = Type.micro.copy(color = Palette.Amber))
             }
         }
     }

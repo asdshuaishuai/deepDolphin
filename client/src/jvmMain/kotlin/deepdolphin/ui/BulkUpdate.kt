@@ -44,10 +44,10 @@ import kotlin.math.min
 // ── 纯函数层（判据见 BulkUpdateTest；mac DestructiveGuard / updateOutcomeSummary 对位）──
 
 /** 轨道词（mac DSSyncTrack.label 对位：浅更新 / 深更新）。 */
-fun bulkTrackWord(deep: Boolean): String = if (deep) "深更新" else "浅更新"
+fun bulkTrackWord(deep: Boolean): String = if (deep) L10n.t("workbar.deep") else L10n.t("workbar.shallow")
 
 /** 确认框标题（mac bar.bulkConfirm「全部%@？」对位）。 */
-fun bulkConfirmTitle(deep: Boolean): String = "全部${if (deep) "深" else "浅"}更新？"
+fun bulkConfirmTitle(deep: Boolean): String = L10n.t("cmp.bulk.confirmTitle", L10n.t(if (deep) "cmp.bulk.deepChar" else "cmp.bulk.shallowChar"))
 
 /**
  * 确认框正文（mac DestructiveGuard.bulkUpdateMessage 逐字对位）：
@@ -56,14 +56,14 @@ fun bulkConfirmTitle(deep: Boolean): String = "全部${if (deep) "深" else "浅
  */
 fun bulkUpdateMessage(projectCount: Int, deep: Boolean): String {
     val n = max(projectCount, 0)
-    if (n == 0) return "当前没有已注册的项目，不会做任何事。"
-    val one = if (n == 1) "1 个项目" else "$n 个项目"
+    if (n == 0) return L10n.t("cmp.bulk.noProjectsNoop")
+    val one = if (n == 1) L10n.t("cmp.bulk.oneProject") else L10n.t("cmp.bulk.nProjects", n)
     val what = if (!deep) {
-        "读取 git 历史并改写托管区域（README / AGENTS.md 等）"
+        L10n.t("cmp.bulk.whatShallow")
     } else {
-        "除浅更新外还会调用 AI 重新生成内容"
+        L10n.t("cmp.bulk.whatDeepAI")
     }
-    return "将对 $one 执行${bulkTrackWord(deep)}：$what。每个被改写的文件都会先留备份，所以可以回滚。"
+    return L10n.t("cmp.bulk.confirmBody", one, bulkTrackWord(deep), what)
 }
 
 /**
@@ -74,17 +74,17 @@ fun bulkUpdateMessage(projectCount: Int, deep: Boolean): String {
  *   · 真的动了          —— 说改了哪些；有备份必须给路径，没有备份（新建）不许编。
  */
 fun updateOutcomeLine(r: UpdateReceipt, nameMax: Int = 2): String {
-    val project = r.project.ifBlank { "（引擎未给项目名）" }
-    if (r.docs.isEmpty()) return "$project：本次没有需要更新的文档"
+    val project = r.project.ifBlank { L10n.t("cmp.bulk.noProjectName") }
+    if (r.docs.isEmpty()) return L10n.t("cmp.bulk.noDocs", project)
     val touched = r.docs.filter { it.changed }
-    if (touched.isEmpty()) return "$project：文档没有变化（${r.docs.joinToString("、") { it.file }}）"
+    if (touched.isEmpty()) return L10n.t("cmp.bulk.noChanges", project, r.docs.joinToString("、") { it.file })
     val cap = max(1, nameMax)
-    val listed = touched.take(cap).joinToString("、") { if (it.created) "新建 ${it.file}" else "已更新 ${it.file}" }
+    val listed = touched.take(cap).joinToString("、") { if (it.created) L10n.t("cmp.bulk.fileNew", it.file) else L10n.t("cmp.bulk.fileUpdated", it.file) }
     var s = "$project：" + listed
-    if (touched.size > min(cap, touched.size)) s += " 等 ${touched.size} 个文档"
+    if (touched.size > min(cap, touched.size)) s += L10n.t("cmp.bulk.moreDocs", touched.size)
     // 备份只给第一个（一行放不下多条路径；「备份存在」这个事实比枚举更重要）
     touched.firstOrNull { it.backup.isNotBlank() }?.let { first ->
-        s += "（${first.file} 的旧版本已备份到 ${first.backup}）"
+        s += L10n.t("cmp.bulk.backupNote", first.file, first.backup)
     }
     return s
 }
@@ -107,19 +107,19 @@ data class BulkReport(
     val failed: Int get() = outcomes.size - succeeded
 
     /** 面板标题（mac L10n bulk.title「全量%@更新 · %d 个仓库」对位：浅/深度两词）。 */
-    fun title(): String = "全量${if (deep) "深度" else "浅"}更新 · ${max(attempted, outcomes.size)} 个仓库"
+    fun title(): String = L10n.t("cmp.bulk.title", L10n.t(if (deep) "bulk.deepWord" else "bulk.shallowWord"), max(attempted, outcomes.size))
 
     /** 页头反馈行（lastResult 的那一行；「成功」一个词贯穿，不换词造成两个答案）。 */
-    fun headLine(): String = "全部${bulkTrackWord(deep)}：成功 $succeeded / 共 ${outcomes.size} 个回执"
+    fun headLine(): String = L10n.t("cmp.bulk.headLine", bulkTrackWord(deep), succeeded, outcomes.size)
 
     /**
      * 逐仓库小节的 tally（mac outcomeMarkdown 的 tally 对位，措辞纪律照抄）：
      * 失败 0 时说「N 个仓库全部成功」不说「成功 N · 失败 0」（不必读者自己做减法）。
      */
     fun tally(): String = when {
-        outcomes.isEmpty() -> "引擎没有返回任何仓库结果"
-        failed == 0 -> "$succeeded 个仓库全部成功"
-        else -> "成功 $succeeded · 失败 $failed"
+        outcomes.isEmpty() -> L10n.t("cmp.bulk.noOutcomes")
+        failed == 0 -> L10n.t("cmp.bulk.allOk", succeeded)
+        else -> L10n.t("cmp.bulk.tallyLine", succeeded, failed)
     }
 
     /**
@@ -129,16 +129,16 @@ data class BulkReport(
      */
     fun coverageNote(): String? = when {
         attempted > 0 && outcomes.isEmpty() ->
-            "注册表里有 $attempted 个项目，但引擎没有返回任何结果条目——本次每个仓库的实际状态未知。"
+            L10n.t("cmp.bulk.coverageUnknown", attempted)
         outcomes.size < attempted ->
-            "引擎只返回 ${outcomes.size}/${attempted} 个仓库的结果，其余没有回执——不在上面编造它们的状态。"
+            L10n.t("cmp.bulk.coveragePartial", outcomes.size, attempted)
         else -> null
     }
 
     /** 引擎自记账与客户端逐条计数的分叉披露（两边数字对不上时以逐条为准，但必须说）。 */
     fun tallyMismatchNote(): String? =
         if (engineCount > 0 && engineCount != outcomes.size.toLong()) {
-            "引擎信封计数 count=$engineCount 与结果条数 ${outcomes.size} 不一致，以逐条结果为准。"
+            L10n.t("cmp.bulk.countMismatch", engineCount, outcomes.size)
         } else {
             null
         }
@@ -185,7 +185,7 @@ fun BulkUpdateConfirmDialog(model: AppModel) {
                         containerColor = Palette.CardHover,
                         contentColor = Palette.TextPrimary,
                     ),
-                ) { Text("取消") }
+                ) { Text(L10n.t("common.cancel")) }
                 // 确认钮不染红（对位 mac isDestructiveRole(bulkUpdate)=false：可逆操作）
                 Button(
                     onClick = { model.confirmBulkUpdate(deep) },
@@ -194,7 +194,7 @@ fun BulkUpdateConfirmDialog(model: AppModel) {
                         containerColor = Palette.Accent,
                         contentColor = Color.White,
                     ),
-                ) { Text("全部更新") }
+                ) { Text(L10n.t("cmp.bulk.confirmBtn")) }
             }
         }
     }
@@ -222,8 +222,7 @@ fun AgentBulkResultSheet(model: AppModel) {
             // ── 标题 + 总账（mac markdown 头对位：注册/执行/成功/失败四个数）──
             Text(r.title(), style = Type.title)
             Text(
-                "已注册项目 ${r.attempted} 个，本次实际执行 ${r.outcomes.size} 个，" +
-                    "成功 ${r.succeeded} 个，失败 ${r.failed} 个。",
+                L10n.t("cmp.bulk.summaryLine", r.attempted, r.outcomes.size, r.succeeded, r.failed),
                 style = Type.label,
             )
             // ── 逐仓库结果（永远生成、零 AI 成分——事实陈述不许让模型重写）──
@@ -231,9 +230,9 @@ fun AgentBulkResultSheet(model: AppModel) {
                 Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(Space.xs),
             ) {
-                Text("逐仓库结果（${r.tally()}）", style = Type.section)
+                Text(L10n.t("cmp.bulk.perRepoTitle", r.tally()), style = Type.section)
                 if (r.outcomes.isEmpty()) {
-                    Text("没有结果条目。", style = Type.body.copy(color = Palette.TextSecondary))
+                    Text(L10n.t("cmp.bulk.noRows"), style = Type.body.copy(color = Palette.TextSecondary))
                 } else {
                     r.outcomes.forEach { o ->
                         Row(Modifier.fillMaxWidth()) {
@@ -248,7 +247,7 @@ fun AgentBulkResultSheet(model: AppModel) {
                                 when (o) {
                                     is UpdateOutcome.Success -> updateOutcomeLine(o.receipt)
                                     is UpdateOutcome.Failure ->
-                                        "✗ ${o.failure.message.ifBlank { "更新失败（${o.failure.code.ifBlank { "引擎未给原因" }}）" }}"
+                                        L10n.t("cmp.bulk.failLine", o.failure.message.ifBlank { L10n.t("cmp.bulk.failWithCode", o.failure.code.ifBlank { L10n.t("cmp.err.noReason") }) })
                                 },
                                 style = Type.body.copy(fontFamily = FontFamily.Monospace, fontSize = Type.label.fontSize),
                                 color = if (o is UpdateOutcome.Success) Palette.TextSecondary else Palette.Red,
@@ -274,7 +273,7 @@ fun AgentBulkResultSheet(model: AppModel) {
                         containerColor = Palette.Accent,
                         contentColor = Color.White,
                     ),
-                ) { Text("关闭") }
+                ) { Text(L10n.t("common.close")) }
             }
         }
     }

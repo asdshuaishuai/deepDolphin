@@ -5,6 +5,7 @@
 
 package deepdolphin.sysint
 
+import deepdolphin.ui.L10n
 import java.io.File
 
 object SysInt {
@@ -58,7 +59,7 @@ object SysInt {
 
     /** 开启自启：写 XDG autostart。返回错误或 null。 */
     fun setAutostart(dir: File, clientEntry: String, enabled: Boolean): String? {
-        if (!clientEntry.startsWith("/")) return "客户端入口不是绝对路径：$clientEntry"
+        if (!clientEntry.startsWith("/")) return L10n.t("cmp.sysint.entryNotAbsolute", clientEntry)
         val target = File(dir, "deepdolphin.desktop")
         return if (enabled) {
             try {
@@ -66,10 +67,10 @@ object SysInt {
                 target.writeText(autostartDesktop(clientEntry))
                 null
             } catch (e: Exception) {
-                "写自启失败：${e.message}"
+                L10n.t("cmp.sysint.writeFailed", e.message ?: "")
             }
         } else {
-            if (target.isFile && !target.delete()) "移除自启失败" else null
+            if (target.isFile && !target.delete()) L10n.t("cmp.sysint.removeFailed") else null
         }
     }
 

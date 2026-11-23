@@ -130,15 +130,15 @@ fun DashboardPage(model: AppModel) {
                 .padding(horizontal = Space.xl, vertical = Space.lg),
         ) {
             Column(Modifier.weight(1f)) {
-                Text("项目群脉搏", style = Type.display.copy(color = Color.White))
+                Text(L10n.t("dash.title"), style = Type.display.copy(color = Color.White))
                 Spacer(Modifier.height(4.dp))
                 Text(
                     buildString {
-                        append("${dash?.projects?.total ?: status?.projects?.size ?: 0} 个项目在册")
-                        dash?.fetchedAt?.takeIf { it.isNotBlank() }?.let { append(" · 数据时间 $it") }
-                        append(" · 引擎 moongit")
+                        append(L10n.t("cmp.dash.registered", dash?.projects?.total ?: status?.projects?.size ?: 0))
+                        dash?.fetchedAt?.takeIf { it.isNotBlank() }?.let { append(L10n.t("cmp.dash.fetchedAt", it)) }
+                        append(L10n.t("cmp.dash.engineLine"))
                         // 深更新会动哪些托管文档写在按钮附近（mac 纪律：动手前必须看得见）
-                        append(" · 深更新动 README/AGENTS/CLAUDE")
+                        append(L10n.t("cmp.dash.deepDocs"))
                     },
                     style = Type.label.copy(color = Color.White.copy(alpha = 0.85f)),
                 )
@@ -159,7 +159,7 @@ fun DashboardPage(model: AppModel) {
                         containerColor = Color.White.copy(alpha = 0.18f),
                         contentColor = Color.White,
                     ),
-                ) { Text("添加") }
+                ) { Text(L10n.t("scan.add")) }
                 Button(
                     onClick = { model.openScanSheet(single = false) },
                     shape = RoundedCornerShape(Radius.control),
@@ -167,15 +167,15 @@ fun DashboardPage(model: AppModel) {
                         containerColor = Color.White.copy(alpha = 0.18f),
                         contentColor = Color.White,
                     ),
-                ) { Text("扫描") }
+                ) { Text(L10n.t("scan.run")) }
                 Button(
-                    onClick = { model.openAgent(briefTask(null), title = "项目群说明") },
+                    onClick = { model.openAgent(briefTask(null), title = L10n.t("brief.button")) },
                     shape = RoundedCornerShape(Radius.control),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.White.copy(alpha = 0.18f),
                         contentColor = Color.White,
                     ),
-                ) { Text("项目群说明") }
+                ) { Text(L10n.t("brief.button")) }
                 Button(
                     onClick = { model.refreshAll() },
                     enabled = !refreshing,
@@ -184,13 +184,13 @@ fun DashboardPage(model: AppModel) {
                         containerColor = Color.White.copy(alpha = 0.18f),
                         contentColor = Color.White,
                     ),
-                ) { Text(if (refreshing) "刷新中…" else "刷新") }
+                ) { Text(if (refreshing) L10n.t("cmp.common.refreshing") else L10n.t("toolbar.refresh")) }
             }
         }
 
         // ── 筛选行（时间窗胶囊 + 重新索引；mac DashboardFilterBar 三件套对位）──
         Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
-            listOf("all" to "全量", "30d" to "30 天", "7d" to "7 天").forEach { (k, label) ->
+            listOf("all" to L10n.t("cmp.dash.spanAll"), "30d" to L10n.t("cmp.dash.span30"), "7d" to L10n.t("cmp.dash.span7")).forEach { (k, label) ->
                 val selected = window == k
                 Text(
                     label,
@@ -230,12 +230,12 @@ fun DashboardPage(model: AppModel) {
                         strokeWidth = 2.dp,
                     )
                     Spacer(Modifier.width(6.dp))
-                    Text("重新索引中…", style = Type.body)
+                    Text(L10n.t("cmp.dash.reindexing"), style = Type.body)
                 } else {
-                    Text("⟳ 重新索引", style = Type.body)
+                    Text("⟳ " + L10n.t("dash.reindex"), style = Type.body)
                 }
             }
-            Text("时间窗→项目卡+构成 · 类型→仅构成 · KPI 全量 · 重新索引=再跑一次浅更新", style = Type.micro)
+            Text(L10n.t("cmp.dash.filterHint"), style = Type.micro)
         }
 
         // ── 空态 CTA（真的没有项目才出现；加载中/读不出来不冒充空态）──
@@ -243,7 +243,7 @@ fun DashboardPage(model: AppModel) {
 
         when (dashState) {
             is LoadState.Failed -> GlassCard(Modifier.fillMaxWidth()) {
-                Text("仪表盘读不出来", style = Type.section.copy(color = Palette.Amber))
+                Text(L10n.t("dash.failed.title"), style = Type.section.copy(color = Palette.Amber))
                 Spacer(Modifier.height(Space.xs))
                 Text((dashState as LoadState.Failed).reason, style = Type.body.copy(color = Palette.TextSecondary))
             }
@@ -252,16 +252,16 @@ fun DashboardPage(model: AppModel) {
                 val failed = status?.projects.orEmpty().filter { !it.isReadable }
                 if (failed.isNotEmpty()) GlassCard(Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Pill("采集失败 ${failed.size}", Palette.Amber)
+                        Pill(L10n.t("cmp.dash.failedN", failed.size), Palette.Amber)
                         Spacer(Modifier.width(Space.sm))
-                        Text("以下项目读取失败 —— 原因来自引擎，不是客户端推断", style = Type.card)
+                        Text(L10n.t("cmp.dash.failedTitle"), style = Type.card)
                     }
                     Spacer(Modifier.height(Space.sm))
                     failed.forEach { p ->
                         Row(Modifier.padding(vertical = 2.dp)) {
                             Pill(p.name, Palette.Red)
                             Spacer(Modifier.width(Space.sm))
-                            Text(p.error ?: "原因未给出", style = Type.body.copy(color = Palette.TextSecondary))
+                            Text(p.error ?: L10n.t("cmp.err.noReasonAlt"), style = Type.body.copy(color = Palette.TextSecondary))
                         }
                     }
                 }
@@ -269,34 +269,34 @@ fun DashboardPage(model: AppModel) {
                 // ── KPI 四磁贴 ──
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                     val d = dash
-                    KpiTile("项目总数", "${d?.projects?.total ?: 0}",
-                        "含采集失败、不含已停用 · 采集成功 ${d?.projects?.readable ?: 0} · 失败 ${d?.projects?.failed ?: 0}",
+                    KpiTile(L10n.t("dash.projectCount"), "${d?.projects?.total ?: 0}",
+                        L10n.t("cmp.dash.kpiScope", d?.projects?.readable ?: 0, d?.projects?.failed ?: 0),
                         Modifier.weight(1f))
-                    KpiTile("待你动手", "${status?.summary?.dirtyProjects ?: 0}",
-                        "有未提交改动的项目 · 未跟踪与 stash 不计入",
+                    KpiTile(L10n.t("dash.pendingCount"), "${status?.summary?.dirtyProjects ?: 0}",
+                        L10n.t("cmp.dash.pendingHint"),
                         Modifier.weight(1f), tone = Palette.Amber)
-                    KpiTile("活跃", "${d?.projects?.readable ?: 0}",
-                        "最近 7 天有新提交（采集成功口径）",
+                    KpiTile(L10n.t("cmp.dash.activeShort"), "${d?.projects?.readable ?: 0}",
+                        L10n.t("cmp.dash.activeHint"),
                         Modifier.weight(1f), tone = Palette.Green)
-                    KpiTile("停滞（逾期未动）", "${status?.summary?.staleProjects ?: 0}",
-                        "8–30 天无提交 · >30 天未更新",
+                    KpiTile(L10n.t("cmp.dash.stale"), "${status?.summary?.staleProjects ?: 0}",
+                        L10n.t("cmp.dash.staleHint"),
                         Modifier.weight(1f))
                 }
 
                 // ── 段 4：逐项目进度卡网格（mac DashboardParts 段 4 对位）──
-                Text("各项目演进进度与里程碑明细", style = Type.section)
+                Text(L10n.t("dash.grid.title"), style = Type.section)
                 Text(
                     buildString {
-                        append("共 ${status?.projects.orEmpty().size} 个项目")
-                        dash?.fetchedAt?.takeIf { it.isNotBlank() }?.let { append(" · 数据时间 $it") }
+                        append(L10n.t("cmp.dash.totalN", status?.projects.orEmpty().size))
+                        dash?.fetchedAt?.takeIf { it.isNotBlank() }?.let { append(L10n.t("cmp.dash.fetchedAt", it)) }
                     },
                     style = Type.micro,
                 )
                 val msAll = model.milestones.collectAsState().value?.milestones.orEmpty()
                 val readableProjects = status?.projects.orEmpty().filter { it.isReadable }
                 if (readableProjects.isEmpty()) {
-                    SectionCard("尚无在册项目", Modifier.fillMaxWidth()) {
-                        Text("注册项目后，这里会出现逐项目的进度卡", style = Type.body.copy(color = Palette.TextTertiary))
+                    SectionCard(L10n.t("cmp.dash.noProjects"), Modifier.fillMaxWidth()) {
+                        Text(L10n.t("cmp.dash.noProjectsHint"), style = Type.body.copy(color = Palette.TextTertiary))
                     }
                 } else {
                     readableProjects.chunked(2).forEach { rowProjects ->
@@ -315,10 +315,10 @@ fun DashboardPage(model: AppModel) {
                 }
 
                 // ── 语言分布 ──
-                SectionCard("语言分布（跟踪文件数）", Modifier.fillMaxWidth()) {
+                SectionCard(L10n.t("dash.langDist"), Modifier.fillMaxWidth()) {
                     val langs = dash?.languages.orEmpty()
                     if (langs.isEmpty()) {
-                        Text("暂无语言数据", style = Type.body.copy(color = Palette.TextSecondary))
+                        Text(L10n.t("cmp.dash.noLangs"), style = Type.body.copy(color = Palette.TextSecondary))
                     } else {
                         langs.take(6).forEach { lang ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -341,35 +341,35 @@ fun DashboardPage(model: AppModel) {
                         dash?.languagesFailed?.takeIf { it > 0 }?.let {
                             Spacer(Modifier.height(Space.xs))
                             Text(
-                                "另有 ${it} 个项目语言读不出来" +
+                                L10n.t("cmp.dash.langUnreadable", it) +
                                     (dash?.languagesFailedReasons?.takeIf { r -> r.isNotEmpty() }?.let { r -> "：${r.joinToString("；")}" } ?: ""),
                                 style = Type.micro,
                             )
                         }
-                        if (dash?.languagesTruncated == true) Text("语言列表被截断（只显示前几名）", style = Type.micro)
+                        if (dash?.languagesTruncated == true) Text(L10n.t("cmp.dash.langTruncated"), style = Type.micro)
                     }
                 }
 
                 // ── 里程碑 ──
-                SectionCard("里程碑（dashboard 口径）", Modifier.fillMaxWidth()) {
+                SectionCard(L10n.t("cmp.dash.msCard"), Modifier.fillMaxWidth()) {
                     val ms = dash?.milestones
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        Pill("开放 ${ms?.counts?.open ?: 0}", Palette.Accent)
-                        Pill("完成 ${ms?.counts?.done ?: 0}", Palette.Green)
-                        Pill("放弃 ${ms?.counts?.dropped ?: 0}", Palette.TextSecondary)
-                        Pill("无法核验 ${ms?.counts?.unverifiable ?: 0}", Palette.Amber)
-                        Pill("引擎读到 ${ms?.counts?.engineRead ?: 0} 条", Palette.TextSecondary)
+                        Pill(L10n.t("cmp.dash.msOpen", ms?.counts?.open ?: 0), Palette.Accent)
+                        Pill(L10n.t("cmp.dash.msDone", ms?.counts?.done ?: 0), Palette.Green)
+                        Pill(L10n.t("cmp.dash.msDropped", ms?.counts?.dropped ?: 0), Palette.TextSecondary)
+                        Pill(L10n.t("cmp.dash.msUnverifiable", ms?.counts?.unverifiable ?: 0), Palette.Amber)
+                        Pill(L10n.t("cmp.dash.msEngineRead", ms?.counts?.engineRead ?: 0), Palette.TextSecondary)
                     }
                     ms?.storeHealth?.takeIf { it.isNotBlank() && it != "ok" }?.let {
                         Spacer(Modifier.height(Space.xs))
-                        Text("存储健康度：$it（降级披露）", style = Type.micro.copy(color = Palette.Amber))
+                        Text(L10n.t("cmp.dash.storeHealth", it), style = Type.micro.copy(color = Palette.Amber))
                     }
                 }
 
                 // ── 活跃项目 ──
-                SectionCard("近 7 天活跃", Modifier.fillMaxWidth()) {
+                SectionCard(L10n.t("dash.activeCount"), Modifier.fillMaxWidth()) {
                     val act = dash?.activeProjects.orEmpty()
-                    if (act.isEmpty()) Text("近 7 天没有项目有提交", style = Type.body.copy(color = Palette.TextSecondary))
+                    if (act.isEmpty()) Text(L10n.t("cmp.dash.noActive"), style = Type.body.copy(color = Palette.TextSecondary))
                     else act.forEach { ap ->
                         Row(Modifier.padding(vertical = 3.dp)) {
                             Text(ap.name, style = Type.body.copy(fontWeight = FontWeight.Medium))
@@ -397,10 +397,10 @@ private fun EmptyRegistryCta(model: AppModel) {
     var addName by remember { mutableStateOf("") }
 
     GlassCard(Modifier.fillMaxWidth()) {
-        Text("还没有项目在册", style = Type.section)
+        Text(L10n.t("cmp.dash.heroEmpty"), style = Type.section)
         Spacer(Modifier.height(Space.xs))
         Text(
-            "注册表是空的（引擎读成功才算数）—— 扫描一个仓库根目录，或直接添加单个项目路径",
+            L10n.t("cmp.dash.heroEmptyBody"),
             style = Type.body.copy(color = Palette.TextSecondary),
         )
         Spacer(Modifier.height(Space.sm))
@@ -409,7 +409,7 @@ private fun EmptyRegistryCta(model: AppModel) {
             OutlinedTextField(
                 value = scanRoot,
                 onValueChange = { scanRoot = it },
-                placeholder = { Text("扫描根目录（如 ~/code）", style = Type.micro) },
+                placeholder = { Text(L10n.t("cmp.scan.rootLabel"), style = Type.micro) },
                 singleLine = true,
                 textStyle = Type.body,
                 modifier = Modifier.weight(1f),
@@ -417,7 +417,7 @@ private fun EmptyRegistryCta(model: AppModel) {
             OutlinedTextField(
                 value = scanDepth,
                 onValueChange = { scanDepth = it },
-                placeholder = { Text("深度", style = Type.micro) },
+                placeholder = { Text(L10n.t("cmp.scan.depthShort"), style = Type.micro) },
                 singleLine = true,
                 textStyle = Type.body,
                 modifier = Modifier.width(72.dp),
@@ -427,7 +427,7 @@ private fun EmptyRegistryCta(model: AppModel) {
                 enabled = !busy && scanRoot.isNotBlank(),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
-            ) { Text("扫描") }
+            ) { Text(L10n.t("scan.run")) }
         }
         Spacer(Modifier.height(Space.sm))
         // ── 添加行 ──
@@ -435,7 +435,7 @@ private fun EmptyRegistryCta(model: AppModel) {
             OutlinedTextField(
                 value = addPath,
                 onValueChange = { addPath = it },
-                placeholder = { Text("添加项目路径（git 仓库目录）", style = Type.micro) },
+                placeholder = { Text(L10n.t("cmp.scan.pathLabel"), style = Type.micro) },
                 singleLine = true,
                 textStyle = Type.body,
                 modifier = Modifier.weight(1f),
@@ -443,7 +443,7 @@ private fun EmptyRegistryCta(model: AppModel) {
             OutlinedTextField(
                 value = addName,
                 onValueChange = { addName = it },
-                placeholder = { Text("名称（可空）", style = Type.micro) },
+                placeholder = { Text(L10n.t("cmp.scan.nameOptional"), style = Type.micro) },
                 singleLine = true,
                 textStyle = Type.body,
                 modifier = Modifier.width(120.dp),
@@ -453,7 +453,7 @@ private fun EmptyRegistryCta(model: AppModel) {
                 enabled = !busy && addPath.isNotBlank(),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
-            ) { Text("添加") }
+            ) { Text(L10n.t("scan.add")) }
         }
         // 操作结果/失败原因就在按钮下方如实披露（写操作必须留结果）
         lastResult?.let {
@@ -511,7 +511,7 @@ fun ProjectProgressCard(
         Spacer(Modifier.height(Space.xs))
         // 行 2：状态（可读=进展摘要；读不出=原因）
         if (!p.isReadable) {
-            Text("读不出来：${p.error ?: "引擎未给出原因"}", style = Type.micro.copy(color = Palette.Red))
+            Text(L10n.t("cmp.dash.unreadableWith", p.error ?: L10n.t("cmp.err.noReason")), style = Type.micro.copy(color = Palette.Red))
         } else {
             p.headline?.takeIf { it.isNotBlank() }?.let {
                 Text(it, style = Type.body.copy(color = Palette.TextSecondary), maxLines = 2)
@@ -521,7 +521,7 @@ fun ProjectProgressCard(
         // 行 3：里程碑完成度 + 分支（只有「完成度」有进度语义才画条）
         val ratio = milestoneRatioOf(milestones)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("里程碑", style = Type.label)
+            Text(L10n.t("ms.page.title"), style = Type.label)
             Spacer(Modifier.width(Space.xs))
             Text("${ratio.done}/${ratio.done + ratio.open}", style = Type.body)
             ratio.ratio?.let { r ->
@@ -531,17 +531,17 @@ fun ProjectProgressCard(
                 }
             }
             Spacer(Modifier.width(Space.sm))
-            Text("分支: ${p.currentBranch ?: "?"}", style = Type.micro)
+            Text(L10n.t("cmp.dash.branchLine", p.currentBranch ?: "?"), style = Type.micro)
         }
         Spacer(Modifier.height(Space.xs))
         // 行 4：最近提交（分支明细的当前分支 headAgo/headShort；缺失如实）
         val current = p.branches.firstOrNull { it.isCurrent }
         val ago = current?.headAgo ?: p.lastCommitAgo
         if (!ago.isNullOrBlank()) {
-            Text("最近提交 $ago", style = Type.micro, maxLines = 1)
+            Text(L10n.t("cmp.dash.lastCommit", ago), style = Type.micro, maxLines = 1)
         }
         // 行 7：入口
         Spacer(Modifier.height(Space.xs))
-        ActionText("详情 →", Palette.Accent, onClick = onOpen)
+        ActionText(L10n.t("cmp.dash.detailLink"), Palette.Accent, onClick = onOpen)
     }
 }

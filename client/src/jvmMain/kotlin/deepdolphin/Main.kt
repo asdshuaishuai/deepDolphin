@@ -46,6 +46,7 @@ import deepdolphin.ui.ConfidencePage
 import deepdolphin.ui.DashboardPage
 import deepdolphin.ui.MilestonesPage
 import deepdolphin.ui.PatchCheckPage
+import deepdolphin.ui.L10n
 import deepdolphin.ui.Palette
 import deepdolphin.ui.ArchPage
 import deepdolphin.ui.CodeGraphPage
@@ -86,7 +87,7 @@ fun App(
             model?.refreshAll()
             model?.startPolling() // C2 周期轮询 5 分钟
             // 托盘摘要行随探活结果刷新（引擎缺席也要在托盘里说真话，不挂着初始化文案）
-            if (model == null) onTraySummary?.invoke("未找到 moonGit 引擎")
+            if (model == null) onTraySummary?.invoke(L10n.t("bar.noEngine"))
             busy = false
         }
     }
@@ -97,7 +98,7 @@ fun App(
         val m = model ?: return@LaunchedEffect
         m.status.collect { env ->
             onTraySummary?.invoke(
-                if (env == null) "正在读取项目群…"
+                if (env == null) L10n.t("cmp.tray.reading")
                 else TrayQuickView.summaryLine(
                     total = env.projects.size,
                     dirtyProjects = env.summary.dirtyProjects,
@@ -123,21 +124,21 @@ fun App(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator(Modifier.size(18.dp), color = Palette.Accent, strokeWidth = 2.dp)
                 Spacer(Modifier.height(Space.md))
-                Text("正在定位引擎…", style = Type.body.copy(color = Palette.TextSecondary))
+                Text(L10n.t("cmp.probe.locating"), style = Type.body.copy(color = Palette.TextSecondary))
             }
         }
         probe != null && probe!!.found && model != null -> SidebarShell(model!!)
         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("未找到 moonGit 引擎", style = Type.title.copy(color = Palette.Amber))
+                Text(L10n.t("bar.noEngine"), style = Type.title.copy(color = Palette.Amber))
                 Spacer(Modifier.height(Space.sm))
-                Text("MOONGIT_BIN / DEEPGIT_BIN 或安装到 PATH 后重试", style = Type.body.copy(color = Palette.TextSecondary))
+                Text(L10n.t("cmp.probe.binHint"), style = Type.body.copy(color = Palette.TextSecondary))
                 Spacer(Modifier.height(Space.lg))
                 Button(
                     onClick = { reprobe() },
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(Radius.control),
                     colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
-                ) { Text("重新检测引擎") }
+                ) { Text(L10n.t("setup.recheck")) }
             }
         }
     }
@@ -233,7 +234,7 @@ fun SidebarShell(model: AppModel) {
         ) {
             // 品牌区（mac 侧栏顶部 app 名对位）
             Text("deepDolphin", style = Type.title, color = Palette.TextPrimary)
-            Text("moonGit · 项目群进度引擎", style = Type.micro, color = Palette.TextTertiary)
+            Text(L10n.t("cmp.sidebar.subtitle"), style = Type.micro, color = Palette.TextTertiary)
             Spacer(Modifier.height(Space.md))
             // 侧栏搜索框（mac sidebarSearch：放大镜 + 素输入框 + 清除钮；
             // 搜索框在侧栏顶部、仓库组之上——过滤的是下面的「仓库」组）
@@ -256,7 +257,7 @@ fun SidebarShell(model: AppModel) {
                     decorationBox = { inner ->
                         Box {
                             if (projectQuery.isEmpty()) {
-                                Text("搜索项目 / 分支", style = Type.body, color = Palette.TextTertiary)
+                                Text(L10n.t("panel.search.placeholder"), style = Type.body, color = Palette.TextTertiary)
                             }
                             inner()
                         }
@@ -273,17 +274,17 @@ fun SidebarShell(model: AppModel) {
                 }
             }
             Spacer(Modifier.height(Space.sm))
-            NavGroupLabel("视图")
-            NavItem("仪表盘", Route.DASHBOARD == route) { model.goRoute(Route.DASHBOARD) }
-            NavItem("看板", Route.BOARD == route) { model.goRoute(Route.BOARD) }
-            NavItem("里程碑", Route.MILESTONES == route) { model.goRoute(Route.MILESTONES) }
+            NavGroupLabel(L10n.t("nav.views"))
+            NavItem(L10n.t("nav.dashboard"), Route.DASHBOARD == route) { model.goRoute(Route.DASHBOARD) }
+            NavItem(L10n.t("board.title"), Route.BOARD == route) { model.goRoute(Route.BOARD) }
+            NavItem(L10n.t("ms.page.title"), Route.MILESTONES == route) { model.goRoute(Route.MILESTONES) }
             // mac PanelView.swift:143-145 对位：两入口排在里程碑后（同属「视图」组）；
             // 文案对位 mac L10n zh：nav.confidence=代码置信度 / nav.patchcheck=补丁体检
-            NavItem("代码置信度", Route.CONFIDENCE == route) { model.goRoute(Route.CONFIDENCE) }
-            NavItem("补丁体检", Route.PATCHCHECK == route) { model.goRoute(Route.PATCHCHECK) }
+            NavItem(L10n.t("nav.confidence"), Route.CONFIDENCE == route) { model.goRoute(Route.CONFIDENCE) }
+            NavItem(L10n.t("nav.patchcheck"), Route.PATCHCHECK == route) { model.goRoute(Route.PATCHCHECK) }
             // 仓库组计数 = 过滤后口径（readable/总数 既有披露不变，只是数的是 shown 集）；
             // 搜出来一部分时给 resultSummary 一行（mac resultSummary 对位）
-            NavGroupLabel("仓库 · ${shownProjects.count { it.isReadable }}/${shownProjects.size}")
+            NavGroupLabel(L10n.t("nav.repos.count", shownProjects.count { it.isReadable }, shownProjects.size))
             SearchFilter.resultSummary(projects.size, shownProjects.size)?.let {
                 Text(it, style = Type.micro, color = Palette.TextSecondary)
             }
@@ -297,14 +298,14 @@ fun SidebarShell(model: AppModel) {
             }
             shownProjects.forEach { p ->
                 RepoItem(
-                    p.name + (if (p.isReadable) "" else "（读不出）"),
+                    p.name + (if (p.isReadable) "" else L10n.t("cmp.repos.unreadableSuffix")),
                     unreadable = !p.isReadable,
                     selected = Route.PROJECT == route && selected == p.name,
                 ) { if (p.isReadable) model.goRoute(Route.PROJECT, p.name) }
             }
             Spacer(Modifier.weight(1f))
             // 设置收在侧栏最底部（mac 原生 Settings scene 的 Linux 对位）
-            NavItem("设置", Route.SETTINGS == route) { model.goRoute(Route.SETTINGS) }
+            NavItem(L10n.t("toolbar.settings"), Route.SETTINGS == route) { model.goRoute(Route.SETTINGS) }
             // ── 侧栏底部状态条（mac WorkBar.swift SidebarStatusStrip 对位，PanelView.swift:228
             //    挂点同位：设置项之下、侧栏最底）──
             // 原来这里是静态的「引擎在线」绿点——探活成功≠一直在采集，那是把常量画成状态。

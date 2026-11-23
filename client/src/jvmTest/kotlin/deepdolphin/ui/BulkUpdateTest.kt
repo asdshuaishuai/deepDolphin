@@ -15,12 +15,19 @@ import deepdolphin.engine.UpdateFailure
 import deepdolphin.engine.UpdateOutcome
 import deepdolphin.engine.UpdateReceipt
 import deepdolphin.engine.decodeOrThrow
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class BulkUpdateTest {
+
+    @BeforeTest
+    fun pinZh() {
+        // 断言锚定 zh 文案：钉住语言，防宿主 locale / settings.conf 漂移翻红
+        L10n.applyLanguage(AppLanguage.ZH_CN)
+    }
 
     private fun fixture(name: String): String {
         val f = java.io.File("src/jvmTest/resources/fixtures/$name.json")

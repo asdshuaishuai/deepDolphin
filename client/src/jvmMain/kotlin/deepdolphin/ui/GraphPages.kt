@@ -153,7 +153,7 @@ class GraphPageModel(
                 lastGoodPath[cacheKey] = p
                 if (shouldReloadWebView(reused, pathChanged)) reloadToken++
             } else {
-                error = text.ifBlank { "render ${kind.cliKind} 未给出产物路径" }
+                error = text.ifBlank { L10n.t("cmp.err.renderNoPath", kind.cliKind) }
                 status = GraphReceipt(ok = false, text = receiptLine(text) ?: "render failed")
             }
         } catch (e: Exception) {
@@ -172,25 +172,29 @@ class GraphPageModel(
 /** 两页只差这些：CLI 子命令、标题词、副标题（mac L10n 口径）、图标瓦片色与字形。 */
 enum class GraphKind(
     val cliKind: String,
-    val titleWord: String,
-    val subtitle: String,
+    private val titleKey: String,
+    private val subtitleKey: String,
     val tileBrush: Brush,
     val tileGlyph: String,
 ) {
     INDEX(
         cliKind = "index",
-        titleWord = "代码图谱",
-        subtitle = "引擎渲染的交互图谱 · 列表/热力图双模式",
+        titleKey = "nav.graph",
+        subtitleKey = "cgraph.subtitle",
         tileBrush = accentBrush(), // mac tint .blue → Palette.Accent 同语义内部深→亮渐变
         tileGlyph = "◈",
     ),
     ARCH(
         cliKind = "arch",
-        titleWord = "架构图",
-        subtitle = "引擎渲染的交互架构图 · 本机文件直读",
+        titleKey = "nav.arch",
+        subtitleKey = "arch.subtitle",
         tileBrush = deepBrush(), // mac tint .purple → Palette.Deep 同语义内部深→亮渐变
         tileGlyph = "▦",
-    ),
+    );
+
+    /** 标题词随取随译（枚举只存键——L10n.t 在调用点求值，换语言即时生效）。 */
+    fun titleWord(): String = L10n.t(titleKey)
+    fun subtitle(): String = L10n.t(subtitleKey)
 }
 
 // ── 打开形态（对位 mac GraphWindows.open：独立窗口最大化）──
@@ -229,8 +233,8 @@ private fun GraphPageDialog(model: AppModel, projectName: String, kind: GraphKin
                 .background(Palette.Card),
         ) {
             GraphHeaderBar(
-                title = "${kind.titleWord} · $projectName",
-                subtitle = kind.subtitle,
+                title = "${kind.titleWord()} · $projectName",
+                subtitle = kind.subtitle(),
                 tileBrush = kind.tileBrush,
                 tileGlyph = kind.tileGlyph,
                 rendering = vm.rendering,
@@ -274,9 +278,9 @@ private fun GraphHeaderBar(
             CircularProgressIndicator(Modifier.size(14.dp), color = Palette.Accent, strokeWidth = 2.dp)
             Spacer(Modifier.width(Space.sm))
         }
-        ActionText("刷新", Palette.TextSecondary, enabled = !rendering, onClick = onRefresh)
+        ActionText(L10n.t("toolbar.refresh"), Palette.TextSecondary, enabled = !rendering, onClick = onRefresh)
         Spacer(Modifier.width(Space.sm))
-        ActionText("关闭", Palette.TextSecondary, enabled = true, onClick = onClose)
+        ActionText(L10n.t("common.close"), Palette.TextSecondary, enabled = true, onClick = onClose)
     }
 }
 
@@ -303,7 +307,7 @@ private fun GraphContentArea(modifier: Modifier, vm: GraphPageModel) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(Modifier.size(18.dp), color = Palette.Accent, strokeWidth = 2.dp)
                         Spacer(Modifier.height(Space.md))
-                        Text("正在渲染…", style = Type.body.copy(color = Palette.TextSecondary))
+                        Text(L10n.t("graph.rendering"), style = Type.body.copy(color = Palette.TextSecondary))
                     }
                 }
                 vm.error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -311,13 +315,13 @@ private fun GraphContentArea(modifier: Modifier, vm: GraphPageModel) {
                         Modifier.padding(Space.lg),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text("渲染失败", style = Type.section.copy(color = Palette.Amber))
+                        Text(L10n.t("cmp.graph.renderFailed"), style = Type.section.copy(color = Palette.Amber))
                         Spacer(Modifier.height(Space.sm))
                         Text(vm.error ?: "", style = Type.body.copy(color = Palette.TextSecondary), maxLines = 6)
                     }
                 }
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("打开即渲染；还没拿到产物", style = Type.body.copy(color = Palette.TextSecondary))
+                    Text(L10n.t("cmp.graph.renderFirstOpen"), style = Type.body.copy(color = Palette.TextSecondary))
                 }
             }
         }
@@ -332,11 +336,11 @@ private fun WebViewUnavailable(why: String, artifactPath: String) {
             Modifier.padding(Space.lg),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("WebView 不可用", style = Type.section.copy(color = Palette.Amber))
+            Text(L10n.t("cmp.graph.webviewNA"), style = Type.section.copy(color = Palette.Amber))
             Spacer(Modifier.height(Space.sm))
             Text(why, style = Type.body.copy(color = Palette.TextSecondary), maxLines = 4)
             Spacer(Modifier.height(Space.md))
-            Text("引擎产物（本机文件，可手动打开）：", style = Type.label)
+            Text(L10n.t("cmp.graph.artifactPath"), style = Type.label)
             Text(
                 artifactPath,
                 style = Type.micro.copy(fontFamily = FontFamily.Monospace),

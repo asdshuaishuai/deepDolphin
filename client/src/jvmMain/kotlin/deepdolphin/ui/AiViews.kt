@@ -55,7 +55,7 @@ object SecretStore {
         ).start()
         proc.outputStream.use { it.write(key.toByteArray()) }
         val rc = proc.waitFor()
-        if (rc == 0) null else "libsecret 返回 $rc（钥匙串未解锁？）"
+        if (rc == 0) null else L10n.t("cmp.err.libsecret", rc)
     } catch (e: Exception) {
         e.message
     }
@@ -97,6 +97,14 @@ object ConfStore {
     }
 
     fun readAuto(): AutoUpdateSettings = AutoUpdateSettings.fromConf(read())
+
+    /** 界面语言（app.language 独立键节，mac UserDefaults "app.language" 的 conf 对位）。 */
+    fun writeLanguage(lang: AppLanguage): String? = try {
+        confFile.writeText(L10n.mergeLanguageInto(read(), lang))
+        null
+    } catch (e: Exception) {
+        e.message
+    }
 }
 
 /**
@@ -112,9 +120,9 @@ fun SettingsPage(model: AppModel) {
             .padding(horizontal = Space.xl, vertical = Space.lg),
         verticalArrangement = Arrangement.spacedBy(Space.md),
     ) {
-        Text("设置", style = Type.title)
+        Text(L10n.t("toolbar.settings"), style = Type.title)
         Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            listOf("通用", "AI", "自动化", "关于").forEachIndexed { i, label ->
+            listOf(L10n.t("settings.general"), "AI", L10n.t("settings.automation"), L10n.t("settings.about")).forEachIndexed { i, label ->
                 val selected = tab == i
                 Text(
                     label, style = Type.body,
@@ -136,22 +144,58 @@ fun SettingsPage(model: AppModel) {
     }
 }
 
-/** 通用 tab：自启动（XDG autostart；仅打包安装态可开——gradle run 无客户端入口）。 */
+/**
+ * 通用 tab：语言选择器（mac GeneralTab Picker 对位：简体中文/English/繁體中文/日本語，
+ * 即时生效——L10n.language 是 Compose 状态，一翻全界面）+ 自启动
+ * （XDG autostart；仅打包安装态可开——gradle run 无客户端入口）。
+ */
 @Composable
 private fun GeneralPane() {
+    LanguageCard()
+    AutostartCard()
+}
+
+/** 语言卡（mac GeneralTab 第一 Section：Picker → CMP 用 ChoicePill 行，选中即写 settings.conf）。 */
+@Composable
+private fun LanguageCard() {
+    // 读 L10n.language（Compose 状态）：别处切了语言这里同步高亮
+    val current = L10n.language
+    var message by remember { mutableStateOf<String?>(null) }
+    GlassCard(Modifier.fillMaxWidth()) {
+        Text(L10n.t("settings.language"), style = Type.section)
+        Spacer(Modifier.height(Space.sm))
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            AppLanguage.entries.forEach { lang ->
+                // label 永远用本名显示（mac 同款——语言名不参与翻译）
+                ChoicePill(lang.label, selected = current == lang) {
+                    val err = L10n.setLanguage(lang)
+                    message = err?.let { L10n.t("cmp.settings.languageWriteFailed", it) }
+                }
+            }
+        }
+        message?.let {
+            Spacer(Modifier.height(Space.sm))
+            Text(it, style = Type.micro, color = Palette.Amber)
+        }
+    }
+}
+
+/** 自启动卡（mac GeneralTab 第二 Section 的 Linux XDG 对位）。 */
+@Composable
+private fun AutostartCard() {
     val entry = remember { autostartEntry() }
     val dir = remember { SysInt.autostartDir() }
     var enabled by remember { mutableStateOf(File(dir, "deepdolphin.desktop").isFile) }
     var message by remember { mutableStateOf<String?>(null) }
     GlassCard(Modifier.fillMaxWidth()) {
-        Text("自启动", style = Type.section)
+        Text(L10n.t("cmp.settings.autostartShort"), style = Type.section)
         Spacer(Modifier.height(Space.sm))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("登录时自动启动 deepDolphin", style = Type.body)
+                Text(L10n.t("settings.autostartToggle"), style = Type.body)
                 Text(
-                    entry?.let { "入口：$it" }
-                        ?: "开发模式（gradle run）没有客户端入口，安装 deb/AppImage 后可用",
+                    entry?.let { L10n.t("cmp.settings.entryPath", it) }
+                        ?: L10n.t("cmp.settings.autostartDevNote"),
                     style = Type.micro, color = Palette.TextSecondary,
                 )
             }
@@ -160,13 +204,14 @@ private fun GeneralPane() {
                 onCheckedChange = { on ->
                     val e = entry
                     if (e == null) {
-                        message = "没有可执行入口（开发模式）；安装后重试"
+                        message = L10n.t("cmp.settings.autostartNoEntry")
                         return@Switch
                     }
                     val err = SysInt.setAutostart(dir, e, on)
                     if (err == null) {
                         enabled = on
-                        message = if (on) "已写入 ${dir.absolutePath}/deepdolphin.desktop" else "已移除自启条目"
+                        message = if (on) L10n.t("cmp.settings.autostartWritten", dir.absolutePath)
+                        else L10n.t("cmp.settings.autostartRemoved")
                     } else message = err
                 },
                 enabled = entry != null,
@@ -203,36 +248,35 @@ private fun SchedulePane(model: AppModel) {
         cfg = next
         val err = model.setAutoUpdate(next)
         message = when {
-            err != null -> "写入 settings.conf 失败：$err（定时器未变）"
-            next.hours <= 0 -> "已关闭定时更新 ✓"
-            else -> "已开启：每 ${next.hours} 小时${if (next.deep) "深" else "浅"}更新全部项目（立即生效）✓"
+            err != null -> L10n.t("cmp.schedule.writeFailed", err)
+            next.hours <= 0 -> L10n.t("cmp.schedule.disabledOk")
+            else -> L10n.t("cmp.schedule.enabledOk", next.hours, L10n.t(if (next.deep) "bulk.deepWord" else "bulk.shallowWord"))
         }
     }
 
     GlassCard(Modifier.fillMaxWidth()) {
-        Text("定时更新", style = Type.section)
+        Text(L10n.t("schedule.label"), style = Type.section)
         Spacer(Modifier.height(Space.sm))
-        Text("间隔", style = Type.micro, color = Palette.TextSecondary)
+        Text(L10n.t("cmp.schedule.interval"), style = Type.micro, color = Palette.TextSecondary)
         Spacer(Modifier.height(Space.xs))
         Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             AutoUpdateSettings.HOUR_CHOICES.forEach { h ->
-                val label = if (h == 0) "关闭" else "每 $h 小时"
+                val label = L10n.t(when (h) { 0 -> "schedule.off"; 1 -> "schedule.h1"; 3 -> "schedule.h3"; 6 -> "schedule.h6"; 12 -> "schedule.h12"; 24 -> "schedule.h24"; else -> return@forEach })
                 ChoicePill(label, selected = cfg.hours == h) { apply(cfg.copy(hours = h)) }
             }
         }
         Spacer(Modifier.height(Space.md))
-        Text("轨道", style = Type.micro, color = Palette.TextSecondary)
+        Text(L10n.t("cmp.schedule.track"), style = Type.micro, color = Palette.TextSecondary)
         Spacer(Modifier.height(Space.xs))
         Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            ChoicePill("浅更新（记录进度）", selected = !cfg.deep) { apply(cfg.copy(deep = false)) }
-            ChoicePill("深更新（重写托管文档）", selected = cfg.deep) { apply(cfg.copy(deep = true)) }
+            ChoicePill(L10n.t("cmp.schedule.trackShallow"), selected = !cfg.deep) { apply(cfg.copy(deep = false)) }
+            ChoicePill(L10n.t("cmp.schedule.trackDeep"), selected = cfg.deep) { apply(cfg.copy(deep = true)) }
         }
         Spacer(Modifier.height(Space.md))
-        Text("开启后按间隔对全部项目执行所选轨道的更新。", style = Type.micro, color = Palette.TextSecondary)
-        Text("改完立即生效（此页没有保存按钮）。", style = Type.micro, color = Palette.TextSecondary)
+        Text(L10n.t("cmp.schedule.note1"), style = Type.micro, color = Palette.TextSecondary)
+        Text(L10n.t("cmp.schedule.note2"), style = Type.micro, color = Palette.TextSecondary)
         Text(
-            "与 mac 版差异：CMP 无常驻守护进程——定时器随本应用存活，退出即停，重启后按此配置恢复；" +
-                "mac 版的系统通知与 AI 简报推送 CMP 未接（结果写在页面操作反馈行）。",
+            L10n.t("cmp.schedule.macDiff"),
             style = Type.micro, color = Palette.TextTertiary,
         )
         message?.let {
@@ -271,19 +315,19 @@ fun AiSettingsPane() {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.md)) {
         // 说明走 Markdown 渲染通道（WebView；JCEF 不可用自动回退纯文本并如实标注）
         MarkdownWebView(
-            "**key 只进系统安全存储（libsecret）**，不写配置文件、不进日志",
+            L10n.t("cmp.ai.keyNote"),
             Modifier.fillMaxWidth(), style = Type.micro, minHeight = 28.dp,
         )
 
         GlassCard(Modifier.fillMaxWidth()) {
-            Text("渠道", style = Type.section)
+            Text(L10n.t("cmp.ai.provider"), style = Type.section)
             Spacer(Modifier.height(Space.sm))
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 listOf(
-                    "deepseek" to "DeepSeek（OpenAI 兼容）",
+                    "deepseek" to L10n.t("cmp.ai.providerDeepseek"),
                     "anthropic" to "Anthropic",
-                    "ollama" to "Ollama（本地）",
-                    "mock" to "mock（本地自测）",
+                    "ollama" to L10n.t("cmp.ai.providerOllama"),
+                    "mock" to L10n.t("cmp.ai.providerMock"),
                 ).forEach { (id, label) ->
                     val selected = provider == id
                     Text(
@@ -298,9 +342,9 @@ fun AiSettingsPane() {
                 }
             }
             Spacer(Modifier.height(Space.md))
-            FieldRow("模型", model_) { model_ = it }
+            FieldRow(L10n.t("cmp.ai.model"), model_) { model_ = it }
             FieldRow("Base URL", baseURL) { baseURL = it }
-            FieldRow("API Key（写入安全存储）", apiKey, password = true) { apiKey = it }
+            FieldRow(L10n.t("cmp.ai.apiKey"), apiKey, password = true) { apiKey = it }
             Spacer(Modifier.height(Space.md))
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Button(
@@ -308,14 +352,14 @@ fun AiSettingsPane() {
                         val err = ConfStore.writeAi(AiSettings(provider, model_, baseURL))
                         val keyErr = apiKey.takeIf { it.isNotBlank() }?.let { SecretStore.saveKey(it) }
                         message = when {
-                            err != null -> "保存失败：$err"
-                            keyErr != null -> "渠道已保存，但 key 写入安全存储失败：$keyErr"
-                            else -> "已保存（重启后生效）✓"
+                            err != null -> L10n.t("cmp.ai.saveFailed", err)
+                            keyErr != null -> L10n.t("cmp.ai.saveKeyFailed", keyErr)
+                            else -> L10n.t("cmp.ai.savedOk")
                         }
                     },
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
-                ) { Text("保存") }
+                ) { Text(L10n.t("common.save")) }
                 Button(
                     onClick = {
                         busyTest = true
@@ -327,35 +371,48 @@ fun AiSettingsPane() {
                             val ok = engine.isConfigured { why = it }
                             message = if (!ok) {
                                 busyTest = false
-                                "未配置：$why"
+                                L10n.t("cmp.ai.notConfigured", why)
                             } else {
                                 val r = engine.generate(GenerateRequest(system = "你是连通性探测器。", messages = listOf(ChatMessage.makeUser("回复「连通」两个字"))))
                                 busyTest = false
-                                if (r.ok) "连通：${r.text.take(60)}" else "连通失败：${r.error}"
+                                if (r.ok) L10n.t("cmp.ai.testOk", r.text.take(60)) else L10n.t("cmp.ai.testFailed", r.error)
                             }
                         }
                     },
                     enabled = !busyTest,
                     shape = RoundedCornerShape(8.dp),
-                ) { Text(if (busyTest) "测试中…" else "测试连接") }
+                ) { Text(if (busyTest) L10n.t("cmp.ai.testing") else L10n.t("cmp.ai.test")) }
             }
             message?.let {
                 Spacer(Modifier.height(Space.sm))
-                Text(it, style = Type.body.copy(color = if (it.contains("✓") || it.startsWith("连通：")) Palette.Green else Palette.Amber))
+                Text(it, style = Type.body.copy(color = if (it.contains("✓") || it.startsWith(L10n.t("cmp.ai.testOk", ""))) Palette.Green else Palette.Amber))
             }
         }
     }
 }
 
-/** 关于 tab（诚实边界：版本与判据口径，不编功能清单）。 */
+/**
+ * 关于 tab（mac AboutCombinedTab 对位）：版本与判据口径卡 + 四文档子 tab
+ * （关于/帮助/开源感谢/更新日志，对位 mac DocsPages 四语言内容——L10n.doc 随语言取）。
+ * 性能：一次只渲染当前子 tab 的文档（MarkdownWebView 是真 WebView，四份同开太重）；
+ * 内容是静态文本，切 tab 不重跑引擎。
+ */
 @Composable
 private fun AboutPane() {
+    var docTab by remember { mutableStateOf(DocKind.ABOUT) }
     GlassCard(Modifier.fillMaxWidth()) {
         Text("deepDolphin", style = Type.section)
-        Text("0.1.0 · moonGit 引擎的跨平台桌面客户端（Compose Multiplatform）", style = Type.body.copy(color = Palette.TextSecondary))
+        Text(L10n.t("cmp.about.versionLine"), style = Type.body.copy(color = Palette.TextSecondary))
         Spacer(Modifier.height(Space.sm))
-        Text("引擎判据 80 条，判据只增不减；能力口径以 client/PLAN.md 为准。", style = Type.micro, color = Palette.TextTertiary)
+        Text(L10n.t("cmp.about.criteriaNote"), style = Type.micro, color = Palette.TextTertiary)
     }
+    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        DocKind.entries.forEach { kind ->
+            ChoicePill(L10n.t(kind.titleKey), selected = docTab == kind) { docTab = kind }
+        }
+    }
+    // 只渲染当前子 tab：MarkdownWebView（JCEF 缺席自动回退纯 Text，回退口径见该文件）
+    MarkdownWebView(L10n.doc(docTab), Modifier.fillMaxWidth().heightIn(min = 320.dp))
 }
 
 @Composable
@@ -386,7 +443,7 @@ fun AgentSheet(model: AppModel) {
     val task by model.agentTask.collectAsState()
     val title by model.agentTitle.collectAsState()
     val projectCount = model.status.value?.projects?.size ?: 0
-    val scopeLabel = selected ?: "项目群（全部 $projectCount 个项目）"
+    val scopeLabel = selected ?: L10n.t("cmp.agent.scopeAll", projectCount)
     Dialog(
         onDismissRequest = { model.closeAgent() },
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -453,16 +510,16 @@ private fun AgentConversation(model: AppModel, scopeLabel: String, initialTask: 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 // 头部措辞按入口：说明入口给「项目群说明/项目说明」，更新解读与裸入口保持既有口径
-                val head = initialTitle ?: if (initialTask != null) "更新解读" else "AI"
+                val head = initialTitle ?: if (initialTask != null) L10n.t("cmp.agent.readback") else "AI"
                 Text("$head · $scopeLabel", style = Type.title)
-                Text("它只根据引擎返回的事实回答——工具没给的数据，它会说「不知道」。", style = Type.micro)
+                Text(L10n.t("cmp.agent.factNote"), style = Type.micro)
             }
-            ActionText("停止", Palette.Amber, enabled = busy) {
+            ActionText(L10n.t("agent.stop"), Palette.Amber, enabled = busy) {
                 cancelFlag.set(1)
                 busy = false
             }
             Spacer(Modifier.width(Space.sm))
-            ActionText("关闭", Palette.TextSecondary, enabled = true) { model.closeAgent() }
+            ActionText(L10n.t("common.close"), Palette.TextSecondary, enabled = true) { model.closeAgent() }
         }
         Spacer(Modifier.height(Space.md))
         // 消息区
@@ -471,8 +528,8 @@ private fun AgentConversation(model: AppModel, scopeLabel: String, initialTask: 
             verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             if (messages.isEmpty()) {
-                Text("还没聊过", style = Type.section.copy(color = Palette.TextSecondary))
-                Text("问项目群现状、问某个项目的分支。它只根据引擎返回的事实回答——工具没给的数据，它会说「不知道」。", style = Type.body.copy(color = Palette.TextSecondary))
+                Text(L10n.t("cmp.agent.noHistory"), style = Type.section.copy(color = Palette.TextSecondary))
+                Text(L10n.t("cmp.agent.noHistoryHint"), style = Type.body.copy(color = Palette.TextSecondary))
             }
             val lastAssistant = messages.indexOfLast { it.role == Role.assistant }
             messages.forEachIndexed { idx, m ->
@@ -508,7 +565,7 @@ private fun AgentConversation(model: AppModel, scopeLabel: String, initialTask: 
             OutlinedTextField(
                 value = draft,
                 onValueChange = { draft = it },
-                placeholder = { Text("问点什么…", style = Type.body.copy(color = Palette.TextSecondary)) },
+                placeholder = { Text(L10n.t("cmp.agent.askPlaceholder"), style = Type.body.copy(color = Palette.TextSecondary)) },
                 modifier = Modifier.weight(1f),
                 textStyle = Type.body,
                 enabled = !busy,
@@ -523,7 +580,7 @@ private fun AgentConversation(model: AppModel, scopeLabel: String, initialTask: 
                 enabled = !busy && draft.isNotBlank(),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
-            ) { Text(if (busy) "思考中…" else "发送") }
+            ) { Text(if (busy) L10n.t("cmp.agent.thinkingShort") else L10n.t("agent.send")) }
         }
     }
 }

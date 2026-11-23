@@ -1,5 +1,6 @@
 package deepdolphin.engine
 
+import deepdolphin.ui.L10n
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -54,7 +55,7 @@ object EngineLocator {
         val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
         if (!finished) {
             proc.destroyForcibly()
-            return Pair(-1, "超时（${timeoutSec}s）")
+            return Pair(-1, L10n.t("cmp.err.timeoutSec", timeoutSec))
         }
         return Pair(proc.exitValue(), out)
     }
@@ -73,7 +74,7 @@ object EngineLocator {
         val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
         if (!finished) {
             proc.destroyForcibly()
-            return Pair(-1, "超时（${timeoutSec}s）")
+            return Pair(-1, L10n.t("cmp.err.timeoutSec", timeoutSec))
         }
         return Pair(proc.exitValue(), out)
     }
@@ -93,7 +94,7 @@ object EngineLocator {
         val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
         if (!finished) {
             proc.destroyForcibly()
-            return Triple(-1, "", "超时（${timeoutSec}s）")
+            return Triple(-1, "", L10n.t("cmp.err.timeoutSec", timeoutSec))
         }
         return Triple(proc.exitValue(), out, err)
     }

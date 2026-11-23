@@ -97,7 +97,7 @@ fun MarkdownWebView(
     when (val s = WebRuntime.state) {
         is WebRuntime.State.Init -> FallbackText(
             markdown, modifier, style,
-            "JCEF 装载中${WebRuntime.downloadPct?.let { "（${(it * 100).roundToInt()}%）" } ?: ""}——就绪后自动切换",
+            L10n.t("cmp.webview.loading", WebRuntime.downloadPct?.let { "（${(it * 100).roundToInt()}%）" } ?: ""),
         )
         is WebRuntime.State.Failed -> FallbackText(markdown, modifier, style, s.why)
         is WebRuntime.State.Ready ->
@@ -140,6 +140,6 @@ private fun MarkdownWebBody(
 private fun FallbackText(markdown: String, modifier: Modifier, style: TextStyle, note: String) {
     Column(modifier) {
         Text(markdown, style = style)
-        Text("（Markdown 排版未启用：$note —— 暂以纯文本显示）", style = Type.micro.copy(color = Palette.Amber))
+        Text(L10n.t("cmp.md.disabledNote", note), style = Type.micro.copy(color = Palette.Amber))
     }
 }

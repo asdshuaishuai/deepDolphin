@@ -12,6 +12,7 @@
 
 package deepdolphin.sysint
 
+import deepdolphin.ui.L10n
 import deepdolphin.ui.Palette
 import androidx.compose.ui.graphics.toArgb
 import java.awt.Color
@@ -30,10 +31,10 @@ object TrayQuickView {
      * 不是 0——分开说。
      */
     fun summaryLine(total: Int, dirtyProjects: Long?): String = when {
-        total == 0 -> "还没有项目在册"
-        dirtyProjects == null -> "$total 个项目 · 待办数读不出来"
-        dirtyProjects <= 0L -> "$total 个项目 · 没有待你动手的"
-        else -> "$total 个项目 · $dirtyProjects 个待你动手"
+        total == 0 -> L10n.t("cmp.tray.summary.none")
+        dirtyProjects == null -> L10n.t("cmp.tray.summary.unreadable", total)
+        dirtyProjects <= 0L -> L10n.t("cmp.tray.summary.zero", total)
+        else -> L10n.t("cmp.tray.summary.dirty", total, dirtyProjects)
     }
 
     /**
@@ -50,9 +51,9 @@ object TrayQuickView {
             val summaryItem = MenuItem("deepDolphin").apply { isEnabled = false }
             menu.add(summaryItem)
             menu.addSeparator()
-            menu.add(MenuItem("速览").apply { addActionListener { onQuickView() } })
-            menu.add(MenuItem("打开面板").apply { addActionListener { onOpenPanel() } })
-            menu.add(MenuItem("退出").apply { addActionListener { onQuit() } })
+            menu.add(MenuItem(L10n.t("cmp.tray.quickView")).apply { addActionListener { onQuickView() } })
+            menu.add(MenuItem(L10n.t("bar.openPanel")).apply { addActionListener { onOpenPanel() } })
+            menu.add(MenuItem(L10n.t("bar.quit")).apply { addActionListener { onQuit() } })
 
             val icon = TrayIcon(trayImage(), "deepDolphin", menu).apply { isImageAutoSize = true }
             SystemTray.getSystemTray().add(icon)

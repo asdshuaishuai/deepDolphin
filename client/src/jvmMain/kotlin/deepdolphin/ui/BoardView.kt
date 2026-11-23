@@ -141,14 +141,14 @@ fun livenessOf(p: Project, nowMs: Long = System.currentTimeMillis()): Liveness {
 
 /** 状态词（项目卡用，对位 mac Models.swift:599-611 stateWord）：只从事实推，不写修辞。 */
 fun stateWordOf(l: Liveness, quietDays: Int? = null): String = when (l) {
-    Liveness.UNREADABLE -> "读不出来"
-    Liveness.NOT_GIT -> "非 git 目录"
-    Liveness.NEEDS_ACTION -> "有未提交改动"
-    Liveness.ENGINE_STALE -> "停滞"
+    Liveness.UNREADABLE -> L10n.t("ms.filter.unreadable")
+    Liveness.NOT_GIT -> L10n.t("cmp.board.notGitDir")
+    Liveness.NEEDS_ACTION -> L10n.t("dash.dirtyCount")
+    Liveness.ENGINE_STALE -> L10n.t("board.stale")
     // 措辞跟着依据走：用的是 30 天那条线，写「停滞」会让人以为是引擎的 14 天档位。
-    Liveness.QUIET -> "${quietDays ?: "?"} 天没更新"
-    Liveness.RECENT -> "正常"
-    Liveness.UNKNOWN -> "状态读不出来"
+    Liveness.QUIET -> L10n.t("cmp.board.quietDays", quietDays ?: "?")
+    Liveness.RECENT -> L10n.t("cmp.board.normal")
+    Liveness.UNKNOWN -> L10n.t("cmp.board.livenessUnknown")
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -161,10 +161,10 @@ fun stateWordOf(l: Liveness, quietDays: Int? = null): String = when (l) {
  * 「这列为什么空」；界面常驻展示（列判据写明纪律）。
  */
 enum class BoardColumnId(val title: String, val basis: String) {
-    ATTENTION("待处理", "有未提交、未跟踪、stash 或待合入的分支"),
-    ACTIVE("活跃中", "30 天内有过新提交"),
-    QUIET("久未更新", "超过 30 天没有新提交（引擎 active30d 那条线）"),
-    OTHER("其他", "采集失败、非 git，或提交时间读不出来"),
+    ATTENTION(L10n.t("board.col.attention"), L10n.t("board.basis.attention")),
+    ACTIVE(L10n.t("board.col.active"), L10n.t("board.basis.active")),
+    QUIET(L10n.t("board.col.quiet"), L10n.t("board.basis.quiet")),
+    OTHER(L10n.t("board.col.other"), L10n.t("board.basis.other")),
 }
 
 /** 这个项目该进哪一列（对位 mac BoardView.swift:81-88）。**只读 liveness，不自己判。 */
@@ -278,14 +278,18 @@ fun BoardPage(model: AppModel) {
         // ── 页头 ──
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("看板", style = Type.title)
+                Text(L10n.t("board.title"), style = Type.title)
                 Spacer(Modifier.height(Space.xs))
                 Text(
                     buildString {
                         val total = status?.projects?.size ?: 0
-                        append("$total 个项目按 liveness 分列 · 待处理 ${board.count(BoardColumnId.ATTENTION)}")
-                        append(" · 活跃中 ${board.count(BoardColumnId.ACTIVE)} · 久未更新 ${board.count(BoardColumnId.QUIET)}")
-                        append(" · 其他 ${board.count(BoardColumnId.OTHER)}")
+                        append(
+                            L10n.t(
+                                "cmp.board.summary", total,
+                                board.count(BoardColumnId.ATTENTION), board.count(BoardColumnId.ACTIVE),
+                                board.count(BoardColumnId.QUIET), board.count(BoardColumnId.OTHER),
+                            )
+                        )
                     },
                     style = Type.label,
                 )
@@ -295,15 +299,15 @@ fun BoardPage(model: AppModel) {
                 enabled = !refreshing,
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
-            ) { Text(if (refreshing) "刷新中…" else "刷新") }
+            ) { Text(if (refreshing) L10n.t("cmp.common.refreshing") else L10n.t("toolbar.refresh")) }
         }
 
         // ── 读取三态分开说（「还没读到」「读不出来」「读到 0 个」是三句话）──
         when (statusState) {
-            LoadState.Loading -> Banner("正在读取项目清单…", Palette.TextSecondary)
+            LoadState.Loading -> Banner(L10n.t("cmp.board.loading"), Palette.TextSecondary)
             is LoadState.Failed ->
                 Banner(
-                    "项目清单读不出来：${(statusState as LoadState.Failed).reason}——下面没有列，不是「没有项目」",
+                    L10n.t("cmp.board.loadFailed", (statusState as LoadState.Failed).reason),
                     Palette.Amber,
                 )
             LoadState.Loaded -> {}
@@ -354,7 +358,7 @@ private fun BoardColumnUi(id: BoardColumnId, board: BoardModel, model: AppModel,
         Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             if (cards.isEmpty()) {
                 // 空列如实披露：说「没有项目落在这列」，判据已在列头——不写「暂无数据」。
-                Text("没有项目落在这列", style = Type.body.copy(color = Palette.TextSecondary))
+                Text(L10n.t("cmp.board.colEmpty"), style = Type.body.copy(color = Palette.TextSecondary))
             } else {
                 cards.forEach { c -> ProjectCard(c, model, onOpenProject) }
             }
@@ -385,7 +389,7 @@ private fun ProjectCard(c: BoardCard, model: AppModel, onOpenProject: (String) -
         if (c.error != null) {
             // 采集失败：引擎原因原文（不推断、不翻译），红字——这是「读不出来」不是「状态差」。
             Spacer(Modifier.height(Space.xs))
-            Text(c.error.ifBlank { "引擎未给原因" }, style = Type.micro.copy(color = Palette.Red), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(c.error.ifBlank { L10n.t("cmp.err.noReason") }, style = Type.micro.copy(color = Palette.Red), maxLines = 2, overflow = TextOverflow.Ellipsis)
         } else {
             c.headline?.takeIf { it.isNotBlank() }?.let {
                 Spacer(Modifier.height(Space.xs))
@@ -403,18 +407,18 @@ private fun ProjectCard(c: BoardCard, model: AppModel, onOpenProject: (String) -
                 horizontalArrangement = Arrangement.spacedBy(Space.xs),
             ) {
                 if ((c.dirtyCount ?: 0) > 0) Pill("●${c.dirtyCount}", Palette.Amber)
-                if ((c.untrackedCount ?: 0) > 0) Pill("未跟踪 ${c.untrackedCount}", Palette.Amber)
+                if ((c.untrackedCount ?: 0) > 0) Pill(L10n.t("board.chip.untracked", c.untrackedCount), Palette.Amber)
                 if ((c.stashCount ?: 0) > 0) Pill("stash ${c.stashCount}", Palette.TextSecondary)
-                if ((c.pendingCommits ?: 0) > 0) Pill("${c.pendingCommits} 待记录", Palette.Accent)
+                if ((c.pendingCommits ?: 0) > 0) Pill(L10n.t("board.chip.pending", c.pendingCommits), Palette.Accent)
                 // 分支 chip：追踪数组拿不到时退回引擎声明的当前分支名。
-                c.branchChip?.let { Pill("分支 $it", Palette.TextSecondary) }
+                c.branchChip?.let { Pill(L10n.t("board.chip.branch", it), Palette.TextSecondary) }
             }
             // 分支列表不全披露（旧看板保留下来的引擎事实）：仓库分支多于引擎返回，
             // 上面的分支/待记录 chip 可能缺行——不把「没返回」当「不存在」。
             if ((c.repoBranchCount ?: -1L) > c.trackedBranchCount) {
                 Spacer(Modifier.height(Space.xs))
                 Text(
-                    "分支列表不全：已跟踪 ${c.trackedBranchCount} / 仓库共 ${c.repoBranchCount}",
+                    L10n.t("cmp.board.branchesPartial", c.trackedBranchCount, c.repoBranchCount),
                     style = Type.micro.copy(color = Palette.Amber),
                 )
             }
@@ -428,14 +432,14 @@ private fun ProjectCard(c: BoardCard, model: AppModel, onOpenProject: (String) -
         // 看板的价值就是「多久没人动它」，只写「暂无新变化」回答不了这个问题）。
         val busy by model.busyAction.collectAsState()
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            ActionText("浅更新", Palette.Shallow, enabled = !busy) { model.updateProject(c.name, deep = false) }
-            ActionText("说明", Palette.Ai, enabled = !busy) { model.openAgent(briefTask(c.name), title = "项目说明 · ${c.name}") }
+            ActionText(L10n.t("workbar.shallow"), Palette.Shallow, enabled = !busy) { model.updateProject(c.name, deep = false) }
+            ActionText(L10n.t("cmp.board.briefBtn"), Palette.Ai, enabled = !busy) { model.openAgent(briefTask(c.name), title = L10n.t("board.briefTitle", c.name)) }
             Spacer(Modifier.weight(1f))
             Text(
                 when (val d = c.daysSinceLastCommit) {
-                    null -> "提交时间读不出来"
-                    0 -> "今天提交过"
-                    else -> "$d 天前提交"
+                    null -> L10n.t("board.committedUnknown")
+                    0 -> L10n.t("board.committedToday")
+                    else -> L10n.t("board.committedDaysAgo", d)
                 },
                 style = Type.micro,
                 maxLines = 1,

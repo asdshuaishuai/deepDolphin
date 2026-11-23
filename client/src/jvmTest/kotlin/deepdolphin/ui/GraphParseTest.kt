@@ -7,6 +7,7 @@
 package deepdolphin.ui
 
 import java.io.File
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -14,6 +15,12 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class GraphParseTest {
+
+    @BeforeTest
+    fun pinZh() {
+        // 断言锚定 zh 文案：钉住语言，防宿主 locale / settings.conf 漂移翻红
+        L10n.applyLanguage(AppLanguage.ZH_CN)
+    }
 
     /** fixtures 与源码同仓：从仓库相对路径直读（ContractTest 同款做法，比 classpath 资源透明）。 */
     private fun fixture(name: String): String {
