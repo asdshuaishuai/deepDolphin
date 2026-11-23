@@ -32,6 +32,8 @@ import deepdolphin.ui.BoardPage
 import deepdolphin.ui.DashboardPage
 import deepdolphin.ui.MilestonesPage
 import deepdolphin.ui.Palette
+import deepdolphin.ui.ArchPage
+import deepdolphin.ui.CodeGraphPage
 import deepdolphin.ui.ProjectDetailView
 import deepdolphin.ui.Radius
 import deepdolphin.ui.Space
@@ -167,6 +169,12 @@ fun SidebarShell(model: AppModel) {
     // agent sheet（对位 mac .sheet(showAgent)：作用域跟随侧栏选中）
     val agentOpen by model.agentOpen.collectAsState()
     if (agentOpen) AgentSheet(model)
+
+    // 图谱两页（对位 mac GraphWindows.open 独立最大化窗口）：开合流驱动，本批无入口（下一批接线）
+    val graphPage by model.graphPage.collectAsState()
+    graphPage?.let { CodeGraphPage(model, it) }
+    val archPage by model.archPage.collectAsState()
+    archPage?.let { ArchPage(model, it) }
 }
 
 /** 分组小标题（mac List Section header 对位：大写微字号 + tertiary 色）。 */

@@ -70,6 +70,38 @@ class AppModel(private val engineBin: String) {
         _agentOpen.value = false; _agentTask.value = null; _agentTitle.value = null
     }
 
+    // ── 图谱两页开合流（mac GraphWindows.open 的对位；Dialog 接近全屏，标题带项目名）──
+    // 值 = 项目名（单仓库锁定：入口处定死，页面内无切换）；null = 关。
+    // 本批只挂状态流 + Main 挂载渲染，详情页入口下一批接线。
+    private val _graphPage = MutableStateFlow<String?>(null)
+    val graphPage: StateFlow<String?> = _graphPage.asStateFlow()
+    private val _archPage = MutableStateFlow<String?>(null)
+    val archPage: StateFlow<String?> = _archPage.asStateFlow()
+
+    fun openGraph(project: String) {
+        _graphPage.value = project
+    }
+
+    fun closeGraph() {
+        _graphPage.value = null
+    }
+
+    fun openArch(project: String) {
+        _archPage.value = project
+    }
+
+    fun closeArch() {
+        _archPage.value = null
+    }
+
+    /** GraphPageDialog 的统一关闭口（kind 路由到对应流）。 */
+    fun closeGraphPage(kind: GraphKind) {
+        when (kind) {
+            GraphKind.INDEX -> closeGraph()
+            GraphKind.ARCH -> closeArch()
+        }
+    }
+
     private val _detail = MutableStateFlow<StatusEnvelope?>(null) // status <name> 单项目信封
     val detail: StateFlow<StatusEnvelope?> = _detail.asStateFlow()
     private val _detailState = MutableStateFlow<LoadState>(LoadState.Loading)

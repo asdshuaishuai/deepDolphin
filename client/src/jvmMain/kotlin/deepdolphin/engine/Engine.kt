@@ -116,4 +116,24 @@ open class Engine(val bin: String) {
             val (rc, out) = EngineLocator.run(bin, listOf("render", "check", artifact, project) + json, 30)
             Pair(rc == 0, out)
         }
+
+    // ── 图谱渲染（render index/arch：文本回执 + 产物路径；mac EngineCLI.runData 原样 args 的对位）──
+    //
+    // 这族命令的 stdout 是人读回执（「已重绘/已复用（产物未变）：路径 · 版本」），不是 JSON——
+    // 不走 call()/callRaw()（它们会附加 --json，且失败时丢弃 stderr 原因）。
+    // 回执末行/产物路径/复用判定的提取是纯函数，判据在 ui/GraphPages.kt 的 GraphParseTest。
+
+    /** render index/arch：成功返回 stdout 全文；失败抛 EngineException（stderr 原因已在消息里）。 */
+    suspend fun renderGraph(kind: String, project: String, withConfidence: Boolean = false): String =
+        withContext(Dispatchers.IO) {
+            require(kind == "index" || kind == "arch") { "render kind 只认 index/arch（收到 $kind）" }
+            val args = mutableListOf("render", kind, project)
+            if (withConfidence) args += "--confidence"
+            // 600s 对位 mac render 超时预算：整库重绘是分钟级，宁可等也不要半截
+            val (rc, out) = EngineLocator.runMerged(bin, args, 600)
+            if (rc != 0) throw EngineException(
+                "render $kind $project 失败（退出码 $rc）：${out.trim().lineSequence().firstOrNull() ?: "无输出"}",
+            )
+            out
+        }
 }

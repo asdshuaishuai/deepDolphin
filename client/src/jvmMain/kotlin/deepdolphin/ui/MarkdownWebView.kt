@@ -1,13 +1,13 @@
-// MarkdownWebView.kt —— C6 收尾批：助手消息/AI 设置说明的 Markdown 排版渲染（WebView）。
+// MarkdownWebView.kt —— 助手消息/AI 设置说明的 Markdown 排版渲染（WebView）。
 //
-// 【通道】桌面走 io.github.kevinnzou:compose-webview-multiplatform 的 KCEF/JCEF；
-// 完整 HTML 文档在本文件装配，CSS 全部派生自 ui/Design.kt（Palette/Type/Space）——
-// 色值/字号单点真相源纪律不破；HTML 片段由 ai/MarkdownHtml.kt 纯函数转换（判据在那边）。
-// 【诚实回退】JCEF 缺席/装载失败/装载超时 → 回退纯文本并如实标注原因（MarkdownWeb.State.Failed.why）；
-// KCEF 每进程只尝试装载一次，超时后后台继续装载、完成即自动切排版（onInitialized 回调）。
+// 【通道】C6 收尾批起 WebView 通道抽成通用件 ui/HtmlWebView.kt（KCEF/JCEF 单浏览器复用、
+// 装载状态单例、看门狗），本文件只保留 Markdown 特有的两件事：
+//   ① 完整 HTML 文档装配（CSS 全部派生自 ui/Design.kt 的 Palette/Type/Space——色值/字号
+//      单点真相源纪律不破；HTML 片段由 ai/MarkdownHtml.kt 纯函数转换，判据在那边）；
+//   ② 内容高度自适应（加载完成后 JS 注入取 scrollHeight，超出上限交给外层滚动）。
+// 【诚实回退】JCEF 缺席/装载失败/装载超时 → 回退纯文本并如实标注原因；
 // 【取舍说明】webview 是重量组件（独立渲染进程），每条消息一个会把消息列表压垮；
-// 本组件内部只有一个 WebView，markdown 变化走 WebViewState.content → 同一 browser 重载，
-// 内容高度用 JS 注入（scrollHeight）回填。调用方（AiChatPage）也只在最新一条助手消息上启用。
+// 调用方（AiChatPage）也只在最新一条助手消息上启用（该处取舍说明不变）。
 
 package deepdolphin.ui
 
@@ -20,25 +20,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.multiplatform.webview.web.LoadingState
-import com.multiplatform.webview.web.WebContent
-import com.multiplatform.webview.web.WebView
-import com.multiplatform.webview.web.WebViewState
-import com.multiplatform.webview.web.rememberWebViewNavigator
 import deepdolphin.ai.markdownToBodyHtml
-import dev.datlag.kcef.KCEF
-import kotlinx.coroutines.delay
-import java.io.File
 import java.util.Locale
 import kotlin.math.roundToInt
-
 // ── 色值桥：Design.kt 的 Compose Color → CSS（仍以 Palette 为唯一来源；全部手工拼串，不走 %f/%X
 //    格式化，避免默认 Locale 在某些系统上输出逗号小数点毁掉 CSS）──
 
@@ -92,74 +82,7 @@ hr{border:0;border-top:1px solid ${Palette.Stroke.cssRgba()};margin:${Space.sm.v
 }
 
 /**
- * KCEF/JCEF 装载状态：每进程只尝试一次；失败/超时如实给原因，UI 回退纯文本。
- * 超时不杀后台线程——装载完成（onInitialized）仍会翻 Ready，重试请重启应用。
- */
-object MarkdownWeb {
-    sealed interface State {
-        data object Init : State // 装载中（先给纯文本兜底）
-        data object Ready : State // WebView 可用
-        data class Failed(val why: String) : State // 装载失败（给原因；本轮纯文本）
-    }
-
-    val state = mutableStateOf<State>(State.Init)
-
-    /** JCEF 二进制下载进度（0..1；null=未知）。仅用于诚实披露装载卡在哪。 */
-    var downloadPct by mutableStateOf<Float?>(null)
-        private set
-
-    @Volatile
-    private var attempted = false
-
-    suspend fun ensureReady() {
-        if (attempted) return
-        attempted = true
-        val cacheDir = File(
-            System.getenv("XDG_CACHE_HOME") ?: (System.getProperty("user.home") + "/.cache"),
-            "deepDolphin/kcef",
-        )
-        Thread {
-            try {
-                KCEF.initBlocking(
-                    builder = {
-                        installDir(cacheDir)
-                        download { github() } // JCEF 二进制来自 KCEF 的 GitHub release
-                        progress {
-                            onDownloading { downloadPct = it }
-                            onInitialized { state.value = State.Ready }
-                        }
-                        settings { cachePath = File(cacheDir, "cache").absolutePath }
-                    },
-                    onError = { e ->
-                        if (state.value is State.Init) {
-                            state.value = State.Failed(e?.message ?: "未知错误（onError）")
-                        }
-                    },
-                    onRestartRequired = {
-                        if (state.value is State.Init) {
-                            state.value = State.Failed("JCEF 装载需重启应用后继续")
-                        }
-                    },
-                )
-            } catch (t: Throwable) {
-                if (state.value is State.Init) {
-                    state.value = State.Failed(t.message ?: t.javaClass.simpleName)
-                }
-            }
-        }.apply { isDaemon = true; name = "kcef-init" }.start()
-
-        // 至多等 20s：没就绪先如实回退（后台装载继续，完成后自动切换）
-        val deadline = System.currentTimeMillis() + 20_000
-        while (state.value is State.Init && System.currentTimeMillis() < deadline) delay(200)
-        if (state.value is State.Init) {
-            val pct = downloadPct?.let { "，下载 ${(it * 100).roundToInt()}%" } ?: ""
-            state.value = State.Failed("装载超时（>20s$pct）——后台继续装载，完成后自动切换")
-        }
-    }
-}
-
-/**
- * Markdown 排版渲染：JCEF 就绪用 WebView；缺席/失败/超时回退纯文本并如实标注。
+ * Markdown 排版渲染：JCEF 就绪用 WebView（通道 = HtmlWebView）；缺席/失败/超时回退纯文本并如实标注。
  * 助手消息由 AiChatPage 只在最新一条上启用（见该处取舍说明）；AI 设置页说明同通道。
  */
 @Composable
@@ -169,23 +92,23 @@ fun MarkdownWebView(
     style: TextStyle = Type.body,
     minHeight: Dp = 64.dp,
 ) {
-    LaunchedEffect(Unit) { MarkdownWeb.ensureReady() }
+    LaunchedEffect(Unit) { WebRuntime.ensureReady() }
     var fallbackWhy by remember(markdown) { mutableStateOf<String?>(null) }
-    when (val s = MarkdownWeb.state) {
-        is MarkdownWeb.State.Init -> FallbackText(
+    when (val s = WebRuntime.state) {
+        is WebRuntime.State.Init -> FallbackText(
             markdown, modifier, style,
-            "JCEF 装载中${MarkdownWeb.downloadPct?.let { "（${(it * 100).roundToInt()}%）" } ?: ""}——就绪后自动切换",
+            "JCEF 装载中${WebRuntime.downloadPct?.let { "（${(it * 100).roundToInt()}%）" } ?: ""}——就绪后自动切换",
         )
-        is MarkdownWeb.State.Failed -> FallbackText(markdown, modifier, style, s.why)
-        is MarkdownWeb.State.Ready ->
+        is WebRuntime.State.Failed -> FallbackText(markdown, modifier, style, s.why)
+        is WebRuntime.State.Ready ->
             if (fallbackWhy != null) FallbackText(markdown, modifier, style, fallbackWhy!!)
-            else WebViewBody(markdown, modifier, style, minHeight) { fallbackWhy = it }
+            else MarkdownWebBody(markdown, modifier, style, minHeight) { fallbackWhy = it }
     }
 }
 
-/** WebView 实体：单实例；文档变化 → content 重载；加载完成 → JS 注入量高自适应。 */
+/** WebView 实体（HtmlWebView 通道）：文档变化重载；加载完成 JS 量高自适应。 */
 @Composable
-private fun WebViewBody(
+private fun MarkdownWebBody(
     markdown: String,
     modifier: Modifier,
     style: TextStyle,
@@ -193,45 +116,22 @@ private fun WebViewBody(
     onFallback: (String) -> Unit,
 ) {
     val doc = remember(markdown, style) { markdownDocument(markdown, style) }
-    val webViewState = remember {
-        WebViewState(WebContent.Data("", null, "utf-8", null, null)).apply {
-            // OSR：轻量绘制进 Compose（heavyweight 窗口在滚动列表里会画穿其他组件）；
-            // 透明：叠 GlassCard 玻璃底，不闪白。
-            webSettings.desktopWebSettings.offScreenRendering = true
-            webSettings.desktopWebSettings.transparent = true
-        }
-    }
-    val navigator = rememberWebViewNavigator()
+    // 高度跨文档保留（新文档量高回来前先沿旧高，不闪跳）
     var contentHeight by remember { mutableStateOf(minHeight) }
-
-    // 文档变化 → 同一 browser 重载（库内对 state.content 的 snapshotFlow 转 loadHtml）
-    LaunchedEffect(doc) { webViewState.content = WebContent.Data(doc, null, "utf-8", null, null) }
-
-    // 加载完成 → JS 注入取内容高，自适应高度（超出上限交给外层滚动/滚轮）
-    LaunchedEffect(webViewState, doc) {
-        snapshotFlow { webViewState.loadingState }.collect { ls ->
-            if (ls is LoadingState.Finished) {
-                navigator.evaluateJavaScript("document.documentElement.scrollHeight.toString()") { v ->
-                    v.toDoubleOrNull()?.let {
+    HtmlWebView(
+        source = HtmlSource.Content(doc),
+        modifier = modifier.height(contentHeight),
+        transparent = true,
+        onEvent = { ev ->
+            when (ev) {
+                is HtmlWebEvent.Loaded -> ev.evaluate("document.documentElement.scrollHeight.toString()") { v ->
+                    v?.toDoubleOrNull()?.let {
                         contentHeight = it.dp.coerceIn(minHeight, 420.dp)
                     }
                 }
+                is HtmlWebEvent.Failed -> onFallback(ev.why)
             }
-        }
-    }
-
-    // 看门狗：15s 没等到加载完成回调 → 如实回退（含 browser 静默缺席的情形）
-    LaunchedEffect(doc) {
-        delay(15_000)
-        if (webViewState.loadingState !is LoadingState.Finished) {
-            onFallback("WebView 装载超时（15s 未完成）")
-        }
-    }
-
-    WebView(
-        state = webViewState,
-        navigator = navigator,
-        modifier = modifier.height(contentHeight),
+        },
     )
 }
 

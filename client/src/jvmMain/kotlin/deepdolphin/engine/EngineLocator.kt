@@ -59,6 +59,25 @@ object EngineLocator {
         return Pair(proc.exitValue(), out)
     }
 
+    /**
+     * 文本回执命令的执行（render 系）：stderr 并入 stdout 返回——引擎把失败原因写 stderr
+     * （如「✗ 未找到项目：…」退出码 1、stdout 为空），不合并调用方就只剩「无输出」。
+     * NO_COLOR 对位 mac EngineCLI.run（管道下引擎本就无 ANSI，此为双保险）。
+     */
+    fun runMerged(bin: String, args: List<String>, timeoutSec: Long = 120): Pair<Int, String> {
+        val proc = ProcessBuilder(listOf(bin) + args)
+            .redirectErrorStream(true)
+            .apply { environment()["NO_COLOR"] = "1" }
+            .start()
+        val out = proc.inputStream.bufferedReader().readText()
+        val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
+        if (!finished) {
+            proc.destroyForcibly()
+            return Pair(-1, "超时（${timeoutSec}s）")
+        }
+        return Pair(proc.exitValue(), out)
+    }
+
     suspend fun probe(): EngineProbe = withContext(Dispatchers.IO) {
         for (bin in candidates()) {
             val resolved = resolve(bin) ?: continue

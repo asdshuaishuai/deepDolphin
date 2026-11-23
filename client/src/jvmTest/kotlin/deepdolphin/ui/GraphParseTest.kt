@@ -1,0 +1,126 @@
+// GraphParseTest.kt —— 图谱两页回执/产物路径提取的判据（fixture 取自真机引擎 moongit 真跑，
+// 零手造：fixtures/render/ 由 `moongit render <index|arch> vtest [--confidence] [--force]` 重定向落盘）。
+//
+// 判据只增不减：mac CodeGraphPageVM.receipt / extractHTMLPath / contains("复用") 的机制对位，
+// 输出形状差异（路径黏全角冒号、无空格）如实适配并在这里锚死。
+
+package deepdolphin.ui
+
+import java.io.File
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class GraphParseTest {
+
+    /** fixtures 与源码同仓：从仓库相对路径直读（ContractTest 同款做法，比 classpath 资源透明）。 */
+    private fun fixture(name: String): String {
+        val f = File("src/jvmTest/resources/fixtures/render/$name.txt")
+        check(f.isFile) { "fixture 缺失：${f.absolutePath}" }
+        return f.readText()
+    }
+
+    // ── receiptLine：末行（mac receipt 同逻辑：最后一个非空行）──
+
+    @Test
+    fun receiptLineIsLastNonEmptyLine() {
+        // index 带「图例注明」次行时，回执末行 = 图例行（版本信息在首行路径后面）
+        assertEquals(
+            "图例注明：无置信度数据（confidence.json 缺席）——本页只呈现结构",
+            receiptLine(fixture("index_reused")),
+        )
+    }
+
+    @Test
+    fun receiptLineOfSingleLineArchOutput() {
+        // arch 复用是单行输出：末行就是「已复用持久化渲染…」整行
+        assertEquals(
+            "已复用持久化渲染（首版（第 0 版））：/home/superShuai/.deepgit/store/p_f80de38f6095/render/arch.html",
+            receiptLine(fixture("arch_reused")),
+        )
+    }
+
+    @Test
+    fun receiptLineSkipsTrailingBlankLines() {
+        // 引擎输出以换行收尾时不算出「空回执」
+        assertEquals("已重绘：/a/render/arch.html · 首版（第 0 版）", receiptLine("已重绘：/a/render/arch.html · 首版（第 0 版）\n\n"))
+        assertNull(receiptLine("\n \n"))
+    }
+
+    // ── extractHtmlPath：产物绝对路径（mac extractHTMLPath 对位；适配黏全角冒号的真实形状）──
+
+    @Test
+    fun extractsPathGluedAfterFullWidthColon() {
+        // 真机形状：路径黏在「：」后无空格（mac 的空格分词会漏提；正则提取锚死此形状）
+        assertEquals(
+            "/home/superShuai/.deepgit/store/p_f80de38f6095/render/index.html",
+            extractHtmlPath(fixture("index_redrawn")),
+        )
+        assertEquals(
+            "/home/superShuai/.deepgit/store/p_f80de38f6095/render/index.html",
+            extractHtmlPath(fixture("index_reused")),
+        )
+        assertEquals(
+            "/home/superShuai/.deepgit/store/p_f80de38f6095/render/arch.html",
+            extractHtmlPath(fixture("arch_reused")),
+        )
+        assertEquals(
+            "/home/superShuai/.deepgit/store/p_f80de38f6095/render/arch.html",
+            extractHtmlPath(fixture("arch_redrawn")),
+        )
+    }
+
+    @Test
+    fun extractPathStopsAtWhitespace() {
+        // 路径后跟「 · 首版」不吞进路径
+        assertEquals("/a/b/index.html", extractHtmlPath("已重绘：/a/b/index.html · 首版（第 0 版）"))
+    }
+
+    @Test
+    fun extractPathRequiresAbsoluteHtmlToken() {
+        // 相对路径 / 非 .html / 没有 → null（绝对路径语义与 mac hasPrefix("/") 一致）
+        assertNull(extractHtmlPath("已重绘：render/index.html · 首版"))
+        assertNull(extractHtmlPath("产物在 /tmp/arch.json 已更新"))
+        assertNull(extractHtmlPath("没有任何产物字样"))
+    }
+
+    // ── renderReused：复用判定（mac text.contains("复用")）──
+
+    @Test
+    fun reusedWordingDetectedInAllRealVariants() {
+        assertTrue(renderReused(fixture("index_reused")), "「已复用（产物未变）」必须判复用")
+        assertTrue(renderReused(fixture("arch_reused")), "「已复用持久化渲染」必须判复用")
+        assertFalse(renderReused(fixture("index_redrawn")), "「已重绘」不是复用")
+        assertFalse(renderReused(fixture("arch_redrawn")), "「已重绘」不是复用")
+    }
+
+    @Test
+    fun reusedEnglishWordingAlsoDetected() {
+        // 引擎 T() 的 en 语言输出同语义（mac 只查中文；这里如实扩一档，不改变中文判定）
+        assertTrue(renderReused("Reused persisted render (v1): /tmp/a/arch.html"))
+        assertTrue(renderReused("reused (product unchanged): /tmp/a/index.html"))
+        assertFalse(renderReused("Redrawn: /tmp/a/index.html · v1"))
+    }
+
+    // ── 重载判定：复用且路径没变就不重载（不闪）──
+
+    @Test
+    fun reloadOnlyWhenRedrawnOrPathChanged() {
+        assertTrue(shouldReloadWebView(reused = false, pathChanged = false), "重绘了必须重载")
+        assertTrue(shouldReloadWebView(reused = true, pathChanged = true), "复用但路径变了要重载")
+        assertFalse(shouldReloadWebView(reused = true, pathChanged = false), "复用且路径没变不重载（画面没变就不闪）")
+    }
+
+    // ── 端到端解析链：真输出 → 末行 + 路径 + 复用三件套一起成立 ──
+
+    @Test
+    fun realOutputsDriveFullParseChain() {
+        listOf("index_redrawn", "index_reused", "arch_redrawn", "arch_reused").forEach { name ->
+            val text = fixture(name)
+            assertTrue(receiptLine(text)!!.isNotBlank(), "$name 必有回执行")
+            assertTrue(extractHtmlPath(text)!!.startsWith("/"), "$name 必提得到绝对产物路径")
+        }
+    }
+}
