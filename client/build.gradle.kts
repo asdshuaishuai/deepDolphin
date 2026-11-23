@@ -41,6 +41,10 @@ kotlin {
 // 桌面应用入口：gradle run 直接启动真窗口；nativeDistributions（jpackage 打包）在分发批次补。
 compose.desktop.application {
     mainClass = "deepdolphin.MainKt"
+    // KCEF/JCEF（C6 收尾批：Markdown WebView）在 JDK17+ 完成反射初始化需要这两个 add-opens。
+    // application.jvmArgs 落进 jpackage 的 --java-options（deb 分发同样生效）+ run 任务。
+    jvmArgs("--add-opens", "java.desktop/sun.awt=ALL-UNNAMED")
+    jvmArgs("--add-opens", "java.desktop/java.awt.peer=ALL-UNNAMED")
     nativeDistributions {
         modules("java.instrument", "java.management")
         targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb, org.jetbrains.compose.desktop.application.dsl.TargetFormat.AppImage)
@@ -81,4 +85,11 @@ tasks.matching { it.name == "jvmJar" }.configureEach {
         val dst = File(outDir, "deepdolphin-client-jvm-0.1.0.jar")
         src.copyTo(dst, overwrite = true)
     }
+}
+
+// KCEF/JCEF 的 add-opens 兜底：确保本地 gradle run（JavaExec）也带上（jvmTest 是 Test 任务，
+// 不属于 JavaExec，不受影响）。与上面 application.jvmArgs 双保险。
+tasks.withType(org.gradle.api.tasks.JavaExec::class.java).configureEach {
+    jvmArgs("--add-opens", "java.desktop/sun.awt=ALL-UNNAMED")
+    jvmArgs("--add-opens", "java.desktop/java.awt.peer=ALL-UNNAMED")
 }

@@ -100,7 +100,11 @@ fun AiSettingsPage(model: AppModel) {
         verticalArrangement = Arrangement.spacedBy(Space.md),
     ) {
         Text("AI 设置", style = Type.title)
-        Text("key 只进系统安全存储（libsecret），不写配置文件、不进日志", style = Type.micro)
+        // 说明走 Markdown 渲染通道（WebView；JCEF 不可用自动回退纯文本并如实标注）
+        MarkdownWebView(
+            "**key 只进系统安全存储（libsecret）**，不写配置文件、不进日志",
+            Modifier.fillMaxWidth(), style = Type.micro, minHeight = 28.dp,
+        )
 
         GlassCard(Modifier.fillMaxWidth()) {
             Text("渠道", style = Type.section)
@@ -189,7 +193,15 @@ private fun FieldRow(label: String, value: String, password: Boolean = false, on
     }
 }
 
-/** C6 AI 助手对话页（工具循环事件可见；Markdown 渲染批 4 接 webview，当前纯文本）。 */
+/**
+ * C6 AI 助手对话页（工具循环事件可见）。
+ * Markdown 渲染（C6 收尾批）：只有【最新一条】助手消息走 WebView 排版
+ * （代码块等宽/表格/列表；JCEF 缺席/装载失败自动回退纯文本并如实标注），
+ * 历史助手消息保持纯文本 Text——webview 是重量组件（独立渲染进程），
+ * 每条消息一个会把 Compose verticalScroll 列表压垮；最新回答是排版收益最高的
+ * 那条，单 WebView 内部由 markdown 变化驱动同一 browser 重载。
+ * 用户消息保持气泡纯文本（本批边界）。
+ */
 @Composable
 fun AiChatPage(model: AppModel) {
     var draft by remember { mutableStateOf("") }
@@ -221,7 +233,8 @@ fun AiChatPage(model: AppModel) {
                 Text("还没聊过", style = Type.section.copy(color = Palette.TextSecondary))
                 Text("问项目群现状、问某个项目的分支。它只根据引擎返回的事实回答——工具没给的数据，它会说「不知道」。", style = Type.body.copy(color = Palette.TextSecondary))
             }
-            messages.forEach { m ->
+            val lastAssistant = messages.indexOfLast { it.role == Role.assistant }
+            messages.forEachIndexed { idx, m ->
                 when (m.role) {
                     Role.user -> Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                         Box(
@@ -230,7 +243,11 @@ fun AiChatPage(model: AppModel) {
                         ) { Text(m.text, style = Type.body) }
                     }
                     Role.assistant -> GlassCard(Modifier.fillMaxWidth()) {
-                        Text(m.text, style = Type.body)
+                        if (idx == lastAssistant) {
+                            MarkdownWebView(m.text, Modifier.fillMaxWidth())
+                        } else {
+                            Text(m.text, style = Type.body)
+                        }
                     }
                     else -> if (m.isError) Text("⚠ ${m.text.take(120)}", style = Type.micro.copy(color = Palette.Amber))
                 }
