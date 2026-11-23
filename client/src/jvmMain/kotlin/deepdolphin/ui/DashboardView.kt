@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import deepdolphin.engine.*
 import deepdolphin.ui.Palette
+import deepdolphin.ui.Radius
+import deepdolphin.ui.heroBrushDiagonal
 import deepdolphin.ui.Space
 import deepdolphin.ui.Type
 
@@ -42,8 +44,8 @@ fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.()
         modifier
             .hoverable(interaction)
             .offset(y = if (hovered) (-2).dp else 0.dp) // translateY(-2px)，不动其余几何
-            .clip(RoundedCornerShape(Space.tileRadius))
-            .border(1.dp, if (hovered) Palette.StrokeHover else Palette.Stroke, RoundedCornerShape(Space.tileRadius))
+            .clip(RoundedCornerShape(Radius.card))
+            .border(1.dp, if (hovered) Palette.StrokeHover else Palette.Stroke, RoundedCornerShape(Radius.card))
             .background(if (hovered) Palette.CardHover else Palette.Card)
             .padding(Space.lg),
         content = content,
@@ -97,10 +99,17 @@ fun DashboardPage(model: AppModel) {
             .padding(horizontal = Space.xl, vertical = Space.lg),
         verticalArrangement = Arrangement.spacedBy(Space.lg),
     ) {
-        // ── 页头 ──
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // ── hero 页头（DSGradient.hero：靛→紫→青；产品的「封面」，两处共用一张底的纪律在此继承）──
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Radius.control))
+                .background(heroBrushDiagonal())
+                .padding(horizontal = Space.xl, vertical = Space.lg),
+        ) {
             Column(Modifier.weight(1f)) {
-                Text("项目群脉搏", style = Type.title)
+                Text("项目群脉搏", style = Type.display.copy(color = Color.White))
                 Spacer(Modifier.height(4.dp))
                 Text(
                     buildString {
@@ -108,14 +117,17 @@ fun DashboardPage(model: AppModel) {
                         dash?.fetchedAt?.takeIf { it.isNotBlank() }?.let { append(" · 数据时间 $it") }
                         append(" · 引擎 moongit")
                     },
-                    style = Type.label,
+                    style = Type.label.copy(color = Color.White.copy(alpha = 0.85f)),
                 )
             }
             Button(
                 onClick = { model.refreshAll() },
                 enabled = !refreshing,
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+                shape = RoundedCornerShape(Radius.control),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White.copy(alpha = 0.18f),
+                    contentColor = Color.White,
+                ),
             ) { Text(if (refreshing) "刷新中…" else "刷新") }
         }
 

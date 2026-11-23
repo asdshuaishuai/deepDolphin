@@ -78,7 +78,7 @@ a{color:${Palette.Accent.cssHex()};text-decoration:none;}
 a:hover{text-decoration:underline;}
 strong{font-weight:700;}
 code{font-family:"JetBrains Mono","Noto Sans Mono CJK SC",monospace;font-size:${code.px()};background:${Palette.Card.cssRgba()};border-radius:4px;padding:1px 4px;}
-pre{background:${Palette.Card.cssRgba()};border:1px solid ${Palette.Stroke.cssRgba()};border-radius:${(Space.tileRadius.value / 2).px()};padding:${Space.sm.value.px()};margin:${Space.sm.value.px()} 0;overflow-x:auto;}
+pre{background:${Palette.Card.cssRgba()};border:1px solid ${Palette.Stroke.cssRgba()};border-radius:${(Radius.card.value / 2).px()};padding:${Space.sm.value.px()};margin:${Space.sm.value.px()} 0;overflow-x:auto;}
 pre code{background:transparent;padding:0;display:block;white-space:pre;}
 table{border-collapse:collapse;margin:${Space.sm.value.px()} 0;width:100%;}
 th,td{border:1px solid ${Palette.Stroke.cssRgba()};padding:${Space.xs.value + 2}px ${Space.sm.value}px;text-align:left;}

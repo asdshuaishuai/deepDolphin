@@ -116,8 +116,8 @@ class MarkdownHtmlTest {
         assertTrue(doc.contains("<h1>标题</h1>") && doc.contains("<p>正文</p>"), "文档须装下转换结果")
         // 传入 style=Type.micro（11sp）时基准字号跟着变
         assertTrue(
-            markdownDocument("x", Type.micro).contains("font-size:11px"),
-            "字号必须跟随传入的 Design.kt style",
+            markdownDocument("x", Type.micro).contains("font-size:10px"),
+            "字号必须跟随传入的 Design.kt style（Type.micro=10，mac caption2 档）",
         )
     }
 

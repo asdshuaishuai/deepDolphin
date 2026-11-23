@@ -243,9 +243,9 @@ private fun BoardColumnUi(id: BoardColumnId, board: BoardModel, onOpenProject: (
         Modifier
             .width(300.dp)
             .fillMaxHeight()
-            .clip(RoundedCornerShape(Space.tileRadius))
+            .clip(RoundedCornerShape(Radius.card))
             .background(Palette.Card)
-            .border(1.dp, Palette.Stroke, RoundedCornerShape(Space.tileRadius))
+            .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
             .padding(Space.md),
     ) {
         // 列头计数与 rows 同源（同一个 List.size），不存在两套口径。

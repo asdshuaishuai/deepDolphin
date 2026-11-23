@@ -1,123 +1,131 @@
-// Design.kt —— Fluent 深色设计系统（对位 archive/bui design.rs 与 mac 基准）。
+// Design.kt —— macOS 纯粹设计系统（对位 macos/Sources/deepDolphin/DesignTokens.swift +
+// DesignSystem.swift 的 Kotlin 镜像；语义名与取值逐项对位，UI 组件不得内联色值）。
 //
-// 【单点真相源】颜色/字号/间距全在此处；UI 组件不得内联色值。
-// 【对比度】次级文字 ≥4.5:1（亮底深变体纪律）。
+// 【渐变纪律】渐变只做两件事：hero 页头底、同一语义色内部深→亮过渡。
+//   拿别的语义色来拼渐变 = 发明第四种双轨色（mac 基准原话）。
+// 【圆角三档】chip 3 / control 6 / card 10。淘汰散值。
+// 【文字】跟随系统文本样式档位：metric=title2 semibold、sectionTitle=headline、
+//   cardTitle=subheadline semibold、body、label=caption、badge=caption2。
 
 package deepdolphin.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.Modifier
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.roundToInt
 
+// ── 表面三级 + 侧栏 + 描边（DSPalette 暗色系；亮色跟随系统属后续批）──
 object Palette {
-    val BgBase = Color(0xFF0A0F1A)      // 页面底
-    val BgDeep = Color(0xFF0C1424)      // 渐变底
-    val Card = Color(0x14FFFFFF)        // 玻璃磁贴底（白 8%）
-    val CardHover = Color(0x1FFFFFFF)   // 磁贴 hover（白 12%）
-    val Stroke = Color(0x22FFFFFF)      // 描边
-    val StrokeHover = Color(0x4D7CA6FF) // 磁贴 hover 描边（对位 .card.hoverable:hover rgba(124,166,255,.30)）
-    val BarTrack = Color(0x1AFFFFFF)    // 语言分布条底轨（白 10%）
-    val TextPrimary = Color(0xFFE6EDF3)
-    val TextSecondary = Color(0xFF9AA8B8) // 对 #0A0F1A ≥ 4.5:1
-    val Accent = Color(0xFF4C8DFF)
-    val Green = Color(0xFF3FCF8E)
-    val GreenTextDark = Color(0xFF0E9F6E)  // 亮底深变体（WCAG）
-    val Amber = Color(0xFFF0883E)
-    val AmberTextDark = Color(0xFFB45309)
-    val Red = Color(0xFFF26D6D)
-    val RedTextDark = Color(0xFFB91C1C)
-    val Purple = Color(0xFFB08CFF)
+    /** 页面底（bgDark 0x0F172A）。 */
+    val BgBase = Color(0xFF0F172A)
+    /** 卡片表面（cardDark 0x1E293B）。实色，非玻璃。 */
+    val Card = Color(0xFF1E293B)
+    /** 卡片 hover 微亮（slate-750 近似，对位 .card.hoverable surface-2）。 */
+    val CardHover = Color(0xFF283A52)
+    /** 侧栏底（sidebarDark 0x0B0F19）。 */
+    val Sidebar = Color(0xFF0B0F19)
+    /** hairline 描边（borderDark 0x334155）。 */
+    val Stroke = Color(0xFF334155)
+    /** hover 描边（对位 .card.hoverable:hover rgba(124,166,255,.30) 的实色近似）。 */
+    val StrokeHover = Color(0xFF7CA6FF)
+    /** 语言分布条底轨。 */
+    val BarTrack = Color(0xFF334155)
+
+    // ── 文字三级 ──
+    val TextPrimary = Color(0xFFE6EDF3)     // slate-200（≈ Color.primary dark）
+    val TextSecondary = Color(0xFF94A3B8)   // slate-400
+    val TextTertiary = Color(0xFF94A3B8).copy(alpha = 0.65f)
+
+    // ── 双轨与强调（DSPalette 原值）──
+    val Accent = Color(0xFF3B82F6)   // 蓝 · 强调（0x3B82F6）
+    val Shallow = Color(0xFF10B981)  // 绿 · 浅更新（0x10B981）
+    val Deep = Color(0xFF8B5CF6)     // 紫 · 深更新（0x8B5CF6）
+    val Ai = Color(0xFF06B6D4)       // 青 · AI（0x06B6D4）
+
+    // ── 状态（DSColor.color(_:) 对位：active=shallow、idle=yellow、stale=orange、merged=deep、dirty=red）──
+    val Green = Shallow
+    val Yellow = Color(0xFFEAB308)
+    val Amber = Color(0xFFF97316)
+    val Red = Color(0xFFEF4444)
+
+    // ── hero 渐变端点（DSGradient.hero：靛 → 紫 → 青）──
+    val HeroIndigo = Color(0xFF4F46E5)
+    val HeroViolet = Color(0xFF7C3AED)
+    val HeroCyan = Color(0xFF06B6D4)
+    val ShallowAlt = Color(0xFF34D399)
+    val DeepAlt = Color(0xFFA78BFA)
+    val AccentAlt = Color(0xFF60A5FA)
+
+    // ── 旧引用兼容（批 1-4 视图用名 → mac 语义）──
+    val BgDeep = Sidebar
+    val GreenTextDark = Shallow
+    val AmberTextDark = Amber
+    val RedTextDark = Red
+    val Purple = Deep
 }
 
-/** 字号七档（对位 archive/bui fsDisplay..fsMicro，向框架 TITLE 靠拢，正文 ≥13）。 */
+/** 字号档位（对位 DSTypography：系统文本样式语义，档位值向 macOS 点数靠拢）。 */
 object Type {
-    val display = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
-    val title = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+    /** metric：KPI 大数（title2 semibold）。 */
+    val display = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary)
+    /** sectionTitle：headline。 */
+    val title = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.TextPrimary)
+    /** 与 title 同族（mac headline 唯一）；卡片小节标题用 card。 */
     val section = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary)
-    val card = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Palette.TextPrimary)
+    /** cardTitle：subheadline semibold。 */
+    val card = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary)
     val body = TextStyle(fontSize = 13.sp, color = Palette.TextPrimary)
+    /** label：caption，次级色。 */
     val label = TextStyle(fontSize = 12.sp, color = Palette.TextSecondary)
-    val micro = TextStyle(fontSize = 11.sp, color = Palette.TextSecondary)
+    /** badge：caption2，tertiary。 */
+    val micro = TextStyle(fontSize = 10.sp, color = Palette.TextTertiary)
 }
 
+/** 间距刻度 4/8/12/16/20/24（DSSpacing 原值；淘汰 18 这类散值）。 */
 object Space {
-    val xs = 4.dp; val sm = 8.dp; val md = 12.dp; val lg = 18.dp; val xl = 24.dp
-    val tileRadius = 12.dp
+    val xs = 4.dp; val sm = 8.dp; val md = 12.dp; val lg = 16.dp; val xl = 20.dp; val xxl = 24.dp
 }
 
-/** 提交构成 12 色（对位 logic CommitTypeComposition：12 类不取模，构成条与图例共用）。 */
+/** 圆角三档（DSRadius：chip 3 / control 6 / card 10）。 */
+object Radius {
+    val chip = 3.dp; val control = 6.dp; val card = 10.dp
+}
+
+/** 提交构成序列色（DSColor.sequence(_:): 12 类穷举、不取模——mac 基准原话）。 */
 val Composition12 = listOf(
-    Color(0xFF4C8DFF), Color(0xFF3FCF8E), Color(0xFFB08CFF), Color(0xFFF0883E),
-    Color(0xFFF26D6D), Color(0xFFE3B341), Color(0xFF38BDF8), Color(0xFF9AE6B4),
-    Color(0xFFF6AD55), Color(0xFFFC8181), Color(0xFF76E4F7), Color(0xFFB794F4),
+    Color(0xFF3B82F6), // blue
+    Color(0xFFEF4444), // red
+    Color(0xFFF97316), // orange
+    Color(0xFF8B5CF6), // purple
+    Color(0xFF14B8A6), // teal
+    Color(0xFF6366F1), // indigo
+    Color(0xFF34D399), // mint
+    Color(0xFFEC4899), // pink
+    Color(0xFFB45309), // brown
+    Color(0xFFEAB308), // yellow
+    Color(0xFF06B6D4), // cyan
+    Color(0xFF6B7280), // gray
 )
 
-// ── aurora 背景（对位 archive/bui design.rs .aurora-a/b/c：三个 720px 圆形斑块）──
-//    135deg 单层渐变：0% 实色 → 72% 全透明；整层透明度 .10，低透明度不抢内容。
+// ── 渐变（DSGradient 对位：渐变只做两件事——hero 页头底、同一语义色内部深→亮）──
 
-/** 斑块层整体透明度（CSS `.aurora { opacity: .10 }`）。 */
-const val AURORA_LAYER_ALPHA = 0.10f
+/** hero 渐变端点（靛 → 紫 → 青；start 左上 → end 右下）。 */
+fun heroStops(): List<Color> = listOf(Palette.HeroIndigo, Palette.HeroViolet, Palette.HeroCyan)
 
-/** 渐变淡出点（CSS `linear-gradient(135deg, C 0%, transparent 72%)`）。 */
-const val AURORA_FADE_STOP = 0.72f
-
-/** 斑块直径（CSS `width/height: 720px`）。 */
-const val AURORA_SIZE_PX = 720f
-
-/** 135deg 渐变档位（CSS `C 0% → transparent 72%`）：纯数据，可与 Brush 构造分开单测。 */
-fun auroraStops(color: Color): List<Pair<Float, Color>> = listOf(
-    0f to color,
-    AURORA_FADE_STOP to color.copy(alpha = 0f),
+/** hero 页头渐变（纯函数可单测；Brush 无公开字段，断言打在端点数据上）。 */
+fun heroBrushDiagonal(): Brush = Brush.linearGradient(
+    heroStops(),
+    start = Offset.Zero,
+    end = Offset.Infinite,
 )
 
-/** 135deg = 渐变轴指向右下（start=左上角，end=右下角）；纯函数可单测。 */
-fun auroraAxis(sizePx: Float): Pair<Offset, Offset> = Offset.Zero to Offset(sizePx, sizePx)
+/** 语义色内部深→亮（shallow/deep/ai 各自的亮端是同语义的 Alt，不是第二种语义）。 */
+fun semanticBrush(head: Color, alt: Color): Brush = Brush.linearGradient(listOf(head, alt), start = Offset.Zero, end = Offset.Infinite)
 
-/** aurora 斑块渐变：档位 + 轴的机械应用（Brush 无公开字段，断言打在纯数据上）。 */
-fun auroraBrush(color: Color, sizePx: Float = AURORA_SIZE_PX): Brush {
-    val (start, end) = auroraAxis(sizePx)
-    return Brush.linearGradient(*auroraStops(color).toTypedArray(), start = start, end = end)
-}
-
-/** 一个斑块的锚点（宿主内左上偏移，px）与颜色。 */
-data class AuroraPatch(val color: Color, val left: Float, val top: Float)
-
-/** 三斑块锚点（CSS 定位换算成宿主内绝对偏移；b 的 right/c 的 bottom/百分比全部显式换算）。 */
-fun auroraPatches(width: Float, height: Float): List<AuroraPatch> = listOf(
-    AuroraPatch(Palette.Accent, -220f, -280f),                                 // aurora-a #4C8DFF left -220 top -280
-    AuroraPatch(Palette.Purple, width - AURORA_SIZE_PX + 240f, 90f),           // aurora-b #B08CFF right -240 top 90
-    AuroraPatch(Palette.Green, width * 0.28f, height - AURORA_SIZE_PX + 360f), // aurora-c #3FCF8E left 28% bottom -360
-)
-
-/** aurora 背景层：铺满宿主、裁剪越界（负偏移斑块不得渗透邻居），叠在页面底色之上、内容之下。 */
-@Composable
-fun AuroraBackdrop(modifier: Modifier = Modifier) {
-    BoxWithConstraints(modifier.fillMaxSize().clipToBounds()) {
-        val patches = auroraPatches(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
-        patches.forEach { p ->
-            Box(
-                Modifier
-                    .offset { IntOffset(p.left.roundToInt(), p.top.roundToInt()) }
-                    .alpha(AURORA_LAYER_ALPHA)
-                    .size(AURORA_SIZE_PX.dp)
-                    .background(auroraBrush(p.color)),
-            )
-        }
-    }
-}
+fun shallowBrush(): Brush = semanticBrush(Palette.Shallow, Palette.ShallowAlt)
+fun deepBrush(): Brush = semanticBrush(Palette.Deep, Palette.DeepAlt)
+fun aiBrush(): Brush = semanticBrush(Palette.Ai, Palette.AccentAlt)
+fun accentBrush(): Brush = semanticBrush(Palette.Accent, Palette.AccentAlt)
