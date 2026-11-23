@@ -173,6 +173,8 @@ data class Branch(
     val baselineReset: Boolean = false,
     val provider: String = "",
     val isCurrent: Boolean = false,
+    /** fixtures 实测恒发（beacon/main 实测 true）。领先默认分支数只对非默认分支有意义。 */
+    val isDefault: Boolean = false,
 )
 
 @Serializable
