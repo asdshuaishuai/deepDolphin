@@ -118,6 +118,50 @@ class ContractTest {
         assertEquals(null, r.journalEntry)
     }
 
+    // ── update 全量聚合信封（2026-11 真机批量浅更新两发落盘：全成功批 + 混合失败批）──
+
+    @Test
+    fun multiResultsDecodesAllSuccessBatchWithEngineTally() {
+        // fixtures/update_all.json：vtest+vtest2 全成功；顶层 count/failed/succeeded 是引擎自己记的账
+        val r = decodeOrThrow(MultiResults.serializer(), fixture("update_all"))
+        assertEquals(2, r.results.size)
+        assertEquals(2L, r.count)
+        assertEquals(2L, r.succeeded)
+        assertEquals(0L, r.failed)
+        val outcomes = r.results.map(::decodeUpdateOutcome)
+        assertTrue(outcomes.all { it is UpdateOutcome.Success })
+        val first = (outcomes[0] as UpdateOutcome.Success).receipt
+        assertTrue(first.ok && first.project == "vtest")
+        // docs 条目带备份真实路径（结果面板「备份在哪」的数据源）
+        assertTrue(first.docs.any { it.changed && it.backup.isNotBlank() })
+    }
+
+    @Test
+    fun multiResultsDecodesHeterogeneousFailureEntry() {
+        // fixtures/update_all_failed.json：注册 vtestfail 后删其目录的真跑输出。
+        // 失败条目是 {code,message}——**没有 ok/project 键**；镜像成统一 UpdateReceipt
+        // 会把失败原因整个吞掉，此判据锁死二态异构形状。
+        val r = decodeOrThrow(MultiResults.serializer(), fixture("update_all_failed"))
+        assertEquals(3, r.results.size)
+        assertEquals(1L, r.failed)
+        val outcomes = r.results.map(::decodeUpdateOutcome)
+        assertEquals(2, outcomes.count { it is UpdateOutcome.Success })
+        val failure = outcomes.filterIsInstance<UpdateOutcome.Failure>().single()
+        assertEquals("VOLUME_BLOCKED", failure.failure.code)
+        assertEquals("vtestfail 更新失败：路径不存在或卷未挂载：/tmp/vtest_failprobe", failure.failure.message)
+    }
+
+    @Test
+    fun decodeUpdateOutcomeRejectsUnrecognizableShapesAsFailureNotSuccess() {
+        // 读不懂的条目归失败并说明形状（不编造成成功）；ok 键存在才算成功回执
+        val ok = decodeUpdateOutcome(contractJson.parseToJsonElement("""{"ok":true,"project":"p"}"""))
+        assertTrue(ok is UpdateOutcome.Success)
+        val fail = decodeUpdateOutcome(contractJson.parseToJsonElement("""{"code":"X","message":"m"}"""))
+        assertTrue(fail is UpdateOutcome.Failure)
+        val weird = decodeUpdateOutcome(contractJson.parseToJsonElement(""""just a string""""))
+        assertTrue(weird is UpdateOutcome.Failure && weird.failure.code == "UNPARSABLE")
+    }
+
     // ── 缺必知键 = 契约过旧（入口闸门）──
 
     @Test

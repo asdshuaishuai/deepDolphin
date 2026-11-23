@@ -34,6 +34,9 @@ import deepdolphin.sysint.TrayQuickView
 import deepdolphin.ui.AppModel
 import deepdolphin.ui.AppModel.Route
 import deepdolphin.ui.AgentSheet
+import deepdolphin.ui.AgentBulkResultSheet
+import deepdolphin.ui.BulkUpdateConfirmDialog
+import deepdolphin.ui.QuickViewDialog
 import deepdolphin.ui.SearchEmpty
 import deepdolphin.ui.SearchFilter
 import deepdolphin.ui.SettingsPage
@@ -54,16 +57,26 @@ import deepdolphin.ui.Type
 import deepdolphin.ui.WorkBar
 import kotlinx.coroutines.launch
 
+/** 托盘「速览」→ 速览窗开合的跨线程触发（AWT 菜单回调在 EDT，组合在 Compose 主线程；
+ *  StateFlow 线程安全，Compose 侧 collectAsState 消费）。 */
+object QuickViewTrigger {
+    val open = kotlinx.coroutines.flow.MutableStateFlow(false)
+}
+
 @Composable
 fun App(
     initialSection: String? = null,
     initialProject: String? = null,
     onTraySummary: ((String) -> Unit)? = null,
+    onQuit: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     var probe by remember { mutableStateOf<EngineProbe?>(null) }
     var busy by remember { mutableStateOf(true) }
     var model by remember { mutableStateOf<AppModel?>(null) }
+    // 托盘速览窗开合（mac MenuBarExtra 弹窗对位）：托盘菜单回调翻 QuickViewTrigger，
+    // 窗体是 QuickViewDialog（380px；引擎缺席时也开得出——missing-engine 三态在窗内）。
+    val quickViewOpen by QuickViewTrigger.open.collectAsState()
 
     fun reprobe() {
         busy = true
@@ -128,6 +141,20 @@ fun App(
             }
         }
     }
+
+    // 托盘速览窗（mac BarView 完整形态）：引擎缺席时也开得出（missing-engine 三态在窗内）
+    if (quickViewOpen) {
+        QuickViewDialog(
+            model = model,
+            onOpenPanel = { java.awt.Window.getWindows().filter { it.isVisible }.forEach { it.toFront() } },
+            onQuit = { onQuit?.invoke() },
+            onDismiss = { QuickViewTrigger.open.value = false },
+            onRedetect = {
+                QuickViewTrigger.open.value = false
+                reprobe()
+            },
+        )
+    }
 }
 
 fun main(vararg args: String) = application {
@@ -138,6 +165,7 @@ fun main(vararg args: String) = application {
     val tray = TrayQuickView.install(
         onOpenPanel = { java.awt.Window.getWindows().filter { it.isVisible }.forEach { it.toFront() } },
         onQuit = { exitApplication() },
+        onQuickView = { QuickViewTrigger.open.value = true },
     )
     Window(
         onCloseRequest = {
@@ -151,6 +179,7 @@ fun main(vararg args: String) = application {
             initialSection = link.section,
             initialProject = link.project,
             onTraySummary = tray?.let { t -> { line: String -> t.updateSummary(line) } },
+            onQuit = { exitApplication() },
         )
     }
 }
@@ -312,6 +341,11 @@ fun SidebarShell(model: AppModel) {
     // 扫描单（对位 mac .sheet(showScan)，PanelView.swift:92-94）：仪表盘 hero「添加/扫描」打开
     val scanSheet by model.scanSheet.collectAsState()
     scanSheet?.let { deepdolphin.ui.ScanSheet(model, initialSingle = it) }
+
+    // 全量更新两框（对位 mac DeepGitApp.swift:327-356：告知式确认框 + 全量结果面板
+    // 都挂在主面板上——双轨按钮「· 全部」是唯一发起入口）
+    if (model.pendingBulk.collectAsState().value != null) BulkUpdateConfirmDialog(model)
+    if (model.bulkReport.collectAsState().value != null) AgentBulkResultSheet(model)
 
     // 图谱两页（对位 mac GraphWindows.open 独立最大化窗口）：开合流驱动，本批无入口（下一批接线）
     val graphPage by model.graphPage.collectAsState()

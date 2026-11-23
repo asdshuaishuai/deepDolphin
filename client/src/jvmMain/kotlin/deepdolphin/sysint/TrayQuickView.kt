@@ -1,9 +1,10 @@
 // TrayQuickView.kt —— 托盘速览（mac BarView.swift MenuBarExtra 菜单栏速览的 Linux 对位）。
 //
-// 【形态差异，如实标注】mac 是 MenuBarExtra .window 弹窗（项目行 + 迷你进度条 +
-// 批量更新确认框，BarView.swift:17-39）；Linux X11 侧只有 AWT SystemTray 的
-// 右键菜单——本类做简版对位：摘要行（禁用菜单项）+ 打开面板 + 退出。
-// 项目行/迷你进度条/托盘内浅更新不做：PopupMenu 撑不起列表交互，硬塞是假形态。
+// 【形态差异，如实标注】mac 是 MenuBarExtra .window 弹窗（点托盘图标即弹）；
+// Linux X11 侧 AWT SystemTray 只有左键点击/右键菜单——托盘**点击直弹 Compose 窗**
+// 没有可靠通道（TrayIcon actionEvent 是双击且随平台变）。对位形态：菜单「速览」
+// 开 380px 速览窗（BarView 完整形态在 ui/QuickView.kt：头部/项目行三态/footer），
+// 菜单本身保留摘要行（禁用项）+ 打开面板 + 退出。
 //
 // 【降级纪律】SystemTray.isSupported() == false（Wayland 原生会话无 XEmbed 托盘、
 // 无系统托盘的 WM 等）→ install 返回 null，静默不装、不报错（任务口径）；
@@ -38,14 +39,18 @@ object TrayQuickView {
     /**
      * 装托盘图标 + 菜单。返回句柄（null = 本环境不支持，静默降级）。
      * 必须在 AWT EDT 上 add（Compose Desktop 的主线程即 EDT；main 里直接调）。
+     *
+     * 菜单入口两枚（mac MenuBarExtra 点击弹窗的菜单对位）：「速览」开 380px 速览窗
+     * （BarView 完整形态，ui/QuickView.kt）；「打开面板」置前主窗口。
      */
-    fun install(onOpenPanel: () -> Unit, onQuit: () -> Unit): Handle? {
+    fun install(onOpenPanel: () -> Unit, onQuit: () -> Unit, onQuickView: () -> Unit): Handle? {
         if (!SystemTray.isSupported()) return null
         return try {
             val menu = PopupMenu()
             val summaryItem = MenuItem("deepDolphin").apply { isEnabled = false }
             menu.add(summaryItem)
             menu.addSeparator()
+            menu.add(MenuItem("速览").apply { addActionListener { onQuickView() } })
             menu.add(MenuItem("打开面板").apply { addActionListener { onOpenPanel() } })
             menu.add(MenuItem("退出").apply { addActionListener { onQuit() } })
 

@@ -193,6 +193,10 @@ private fun ScopePicker(model: AppModel, projects: List<Project>, current: Scope
 /**
  * 双轨链「浅更新 → 深更新」（mac DualTrackButtons，AIIntegration.swift:306 对位）。
  * 浅前深后、语义色区分；**不画字面箭头**（见文件头）。busy 时链尾小转圈。
+ *
+ * 【范围=全部 先确认】对位 mac DestructiveGuard：批量更新会改写**多个仓库**的托管
+ * 区域——按下不直接跑，先弹告知式确认框（说清动几个仓库、留备份、可回滚，不染红）；
+ * 单项目范围照旧直接跑（用户正盯着那个仓库，按钮上的范围文案就是确认）。
  */
 @Composable
 private fun DualTrackPipeline(model: AppModel, scoped: String?, busy: Boolean, pending: Long) {
@@ -202,7 +206,7 @@ private fun DualTrackPipeline(model: AppModel, scoped: String?, busy: Boolean, p
     ) {
         Button(
             onClick = {
-                if (scoped != null) model.updateProject(scoped, deep = false) else model.updateAll(deep = false)
+                if (scoped != null) model.updateProject(scoped, deep = false) else model.requestBulkUpdate(deep = false)
             },
             enabled = !busy,
             shape = RoundedCornerShape(Radius.control),
@@ -228,7 +232,7 @@ private fun DualTrackPipeline(model: AppModel, scoped: String?, busy: Boolean, p
         }
         Button(
             onClick = {
-                if (scoped != null) model.updateProject(scoped, deep = true) else model.updateAll(deep = true)
+                if (scoped != null) model.updateProject(scoped, deep = true) else model.requestBulkUpdate(deep = true)
             },
             enabled = !busy,
             shape = RoundedCornerShape(Radius.control),

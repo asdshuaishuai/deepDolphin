@@ -1,0 +1,101 @@
+{
+  "results": [
+    {
+      "ok": true,
+      "mode": "shallow",
+      "projectId": "p_f80de38f6095",
+      "project": "vtest",
+      "provider": "rules",
+      "providerLabel": "规则引擎",
+      "branchCount": 2,
+      "repoBranchCount": 2,
+      "branchCountTruncated": false,
+      "commitCount": 1,
+      "docs": [
+        {
+          "file": "README.md",
+          "changed": true,
+          "created": false,
+          "backup": "/home/superShuai/.deepgit/store/p_f80de38f6095/backups/README.md/2026-11-24T01-02-12-README.md"
+        }
+      ],
+      "journalEntry": {
+        "id": "j_1795453332605_0",
+        "at": "2026-11-24T01:02:12.538195148+08:00",
+        "project": "vtest",
+        "projectId": "p_f80de38f6095",
+        "branch": "main",
+        "mode": "shallow",
+        "source": "cli",
+        "provider": "rules",
+        "commitCount": 1,
+        "commitCountScope": "new",
+        "commitCountTruncated": false,
+        "repoBranchCount": 2,
+        "branchCountTruncated": false,
+        "summary": "新增 1 个提交（文档×1），涉及 (根目录)（1 文件）；最近 2 个提交：新增×1、测试×1",
+        "highlights": [
+          "文档：“提交单对位实测”",
+          "新增：“支持导出”",
+          "测试：“init vtest”"
+        ],
+        "nextSteps": [
+          "推进该分支的收尾与验证，考虑合并回默认分支"
+        ],
+        "notes": [],
+        "docs": [
+          "README.md"
+        ]
+      },
+      "at": "2026-11-24T01:02:12.538195148+08:00"
+    },
+    {
+      "ok": true,
+      "mode": "shallow",
+      "projectId": "p_1f78ad5ba3fb",
+      "project": "vtest2",
+      "provider": "rules",
+      "providerLabel": "规则引擎",
+      "branchCount": 1,
+      "repoBranchCount": 1,
+      "branchCountTruncated": false,
+      "commitCount": 1,
+      "docs": [
+        {
+          "file": "README.md",
+          "changed": true,
+          "created": false,
+          "backup": "/home/superShuai/.deepgit/store/p_1f78ad5ba3fb/backups/README.md/2026-11-24T01-02-12-README.md"
+        }
+      ],
+      "journalEntry": {
+        "id": "j_1795453332659_1",
+        "at": "2026-11-24T01:02:12.60843067+08:00",
+        "project": "vtest2",
+        "projectId": "p_1f78ad5ba3fb",
+        "branch": "main",
+        "mode": "shallow",
+        "source": "cli",
+        "provider": "rules",
+        "commitCount": 1,
+        "commitCountScope": "new",
+        "commitCountTruncated": false,
+        "repoBranchCount": 1,
+        "branchCountTruncated": false,
+        "summary": "最近 1 个提交：测试×1",
+        "highlights": [
+          "测试：“init vtest2”"
+        ],
+        "nextSteps": [],
+        "notes": [],
+        "docs": [
+          "README.md"
+        ]
+      },
+      "at": "2026-11-24T01:02:12.60843067+08:00"
+    }
+  ],
+  "count": 2,
+  "failed": 0,
+  "succeeded": 2
+}

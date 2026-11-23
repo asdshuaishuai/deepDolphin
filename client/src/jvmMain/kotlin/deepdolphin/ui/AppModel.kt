@@ -16,6 +16,9 @@ sealed interface LoadState {
     data class Failed(val reason: String) : LoadState
 }
 
+/** MultiResults.results 二态解码的批包装（updateAll / runScheduledUpdate 共用一份口径）。 */
+internal fun decodeUpdateOutcomes(r: MultiResults): List<UpdateOutcome> = r.results.map(::decodeUpdateOutcome)
+
 class AppModel(private val engineBin: String) {
 
     val engine = Engine(engineBin)
@@ -338,8 +341,75 @@ class AppModel(private val engineBin: String) {
         scope.launch {
             withAction("全部${if (deep) "深更新" else "浅更新"}") {
                 val r = engine.updateAll(deep)
-                val ok = r.results.count { it.ok }
+                val ok = decodeUpdateOutcomes(r).count { it is UpdateOutcome.Success }
                 "全部${if (deep) "深更新" else "浅更新"}：${ok}/${r.results.size} 成功"
+            }
+        }
+    }
+
+    // ── 提交单开合（mac CommitSheetView 的 sheet 挂点对位；值 = 项目名）──
+    // 打开即重读详情（mac .task { await load() } 对位：sheet 里的清单不许用页面上的旧数据）。
+    private val _commitSheet = MutableStateFlow<String?>(null)
+    val commitSheet: StateFlow<String?> = _commitSheet.asStateFlow()
+
+    fun openCommitSheet(project: String) {
+        _commitSheet.value = project
+        loadDetail(project)
+    }
+
+    fun closeCommitSheet() {
+        _commitSheet.value = null
+    }
+
+    // ── 全量更新：告知式确认 + 结果面板（mac pendingBulkUpdate / agentBulkResult 对位）──
+    //
+    // 【与 mac 的差异，如实标注】mac 全量走 agent 工具通道逐仓库调 run_shallow_update /
+    // run_deep_update（AgentBulkUpdate.run），跑完另生成一份 AI 简报（aiText/aiNote）；
+    // CMP 数据源 = Engine.updateAll 单发批量命令的 MultiResults（引擎侧一次遍历注册表，
+    // 逐仓库成败在 results[]，失败原因在 {code,message} 条目——真机实测锚定）。
+    // AI 简报层 CMP 不做：面板只摊引擎事实，缺的层不伪造（mac 的 aiNote 恒有值的纪律
+    // 在 CMP 的对应物是 coverageNote/tallyMismatchNote 两行引擎口径核对披露）。
+    private val _pendingBulk = MutableStateFlow<Boolean?>(null) // true=深轨；null=没在等确认
+    val pendingBulk: StateFlow<Boolean?> = _pendingBulk.asStateFlow()
+
+    private val _bulkReport = MutableStateFlow<BulkReport?>(null)
+    val bulkReport: StateFlow<BulkReport?> = _bulkReport.asStateFlow()
+
+    /** 双轨按钮「· 全部」范围先弹告知式确认（不直接跑——批量更新会改写多个仓库的托管区域）。 */
+    fun requestBulkUpdate(deep: Boolean) {
+        if (_busyAction.value) return
+        _pendingBulk.value = deep
+    }
+
+    fun cancelBulkUpdate() {
+        _pendingBulk.value = null
+    }
+
+    fun closeBulkResult() {
+        _bulkReport.value = null
+    }
+
+    /** 确认框「全部更新」按下后的执行（mac DeepGitApp.swift:336-344 对位：跑完把 report 交给面板）。 */
+    fun confirmBulkUpdate(deep: Boolean) {
+        _pendingBulk.value = null
+        scope.launch {
+            if (_busyAction.value) return@launch
+            _busyAction.value = true
+            try {
+                // 名单在**发起时**取（mac updateAll 同款纪律：界面那份是上次加载的，
+                // 注册表可能被别的进程改过；attempted 用于结果面板的覆盖度核对）
+                val attempted = _status.value?.projects?.size ?: 0
+                val r = engine.updateAll(deep)
+                val report = BulkReport.of(deep, attempted, r)
+                _bulkReport.value = report
+                _lastResult.value = report.headLine()
+                refreshAll()
+            } catch (e: Exception) {
+                // 整发失败：引擎一个仓库的回执都没给，结果面板无从摊起——
+                // 不开空面板，失败原因留页头反馈行（如实：什么都没跑成）
+                _lastResult.value = "全部${if (deep) "深更新" else "浅更新"} ✗ ${e.message ?: "引擎调用失败"}"
+            } finally {
+                _busyAction.value = false
             }
         }
     }
@@ -395,7 +465,7 @@ class AppModel(private val engineBin: String) {
         val track = if (deep) "深" else "浅"
         try {
             val r = engine.updateAll(deep)
-            val ok = r.results.count { it.ok }
+            val ok = decodeUpdateOutcomes(r).count { it is UpdateOutcome.Success }
             _lastResult.value = "定时${track}更新：${ok}/${r.results.size} 成功"
         } catch (e: Exception) {
             _lastResult.value = "定时${track}更新 ✗ ${e.message}"

@@ -10,6 +10,7 @@ package deepdolphin.engine
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 /** 契约解析器：全大写共用。缺键 → default；未知键 → 忽略（引擎加键不破客户端）。 */
@@ -459,11 +460,52 @@ data class JournalEntryRecord(
     val docs: List<String>? = null,
 )
 
-/** update / deep 的全项目聚合信封：逐项目成败在 results[]（客户端曾读错键 projects 的教训）。 */
+/**
+ * update / deep 的全项目聚合信封：逐项目成败在 results[]（客户端曾读错键 projects 的教训）。
+ *
+ * ⚠️ results 是**二态异构数组**（2026-11 真机实测锚定，fixtures/update_all*.json 原样落盘）：
+ *   · 成功/单仓库回执：`{ok,mode,project,docs:[…],journalEntry:…}`（[UpdateReceipt]）；
+ *   · 失败记录：`{code,message}`——**没有 ok/project 键**（试验：注册 vtestfail 后删其目录，
+ *     引擎发 `{"code":"VOLUME_BLOCKED","message":"vtestfail 更新失败：路径不存在或卷未挂载：…"}`）。
+ *     镜像成统一的 UpdateReceipt 会把 message（失败原因）整个吞掉——那正是结果面板
+ *     唯一要给用户看的东西。这里用 JsonElement 容纳两种形状，[decodeUpdateOutcome] 二态分发。
+ * 顶层另有引擎自己记的账：count/failed/succeeded（客户端逐条计数与它分叉时必须披露）。
+ */
 @Serializable
 data class MultiResults(
-    val results: List<UpdateReceipt> = emptyList(),
+    val results: List<JsonElement> = emptyList(),
+    val count: Long = 0,
+    val failed: Long = 0,
+    val succeeded: Long = 0,
 )
+
+/** results[] 的失败条目（真机实测形状：只有 code + message，两个键都可缺席防御）。 */
+@Serializable
+data class UpdateFailure(
+    val code: String = "",
+    val message: String = "",
+)
+
+/** results[] 条目的解码终态：成功回执 / 失败记录（二态异构，见 [MultiResults] 注释）。 */
+sealed interface UpdateOutcome {
+    data class Success(val receipt: UpdateReceipt) : UpdateOutcome
+    data class Failure(val failure: UpdateFailure) : UpdateOutcome
+}
+
+/**
+ * 二态解码（纯函数）：有 `ok` 键 → 成功回执；否则按失败记录（code/message）。
+ * 两者都不成立（非对象 / 缺 ok 且无内容）→ 也归失败并如实说明形状不可识别——
+ * **不编造成成功**（把读不懂的东西标成 ok 比空着更糟）。
+ */
+fun decodeUpdateOutcome(el: JsonElement): UpdateOutcome {
+    val obj = el as? JsonObject
+        ?: return UpdateOutcome.Failure(UpdateFailure("UNPARSABLE", "results 条目不是对象：${el.toString().take(80)}"))
+    return if ("ok" in obj) {
+        UpdateOutcome.Success(contractJson.decodeFromJsonElement(UpdateReceipt.serializer(), el))
+    } else {
+        UpdateOutcome.Failure(contractJson.decodeFromJsonElement(UpdateFailure.serializer(), el))
+    }
+}
 
 // ── scan / add / remove ──
 

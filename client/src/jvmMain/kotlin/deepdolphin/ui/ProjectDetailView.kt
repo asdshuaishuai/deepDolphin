@@ -6,20 +6,14 @@
 package deepdolphin.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -131,6 +125,9 @@ fun ProjectDetailView(model: AppModel) {
             }
         }
     }
+    // 提交单（mac .sheet(commitSheetProject) 对位：页头「提交」按钮是唯一入口）
+    val commitSheet by model.commitSheet.collectAsState()
+    commitSheet?.let { CommitSheet(model, it) }
 }
 
 @Composable
@@ -244,32 +241,24 @@ private fun BranchCard(p: Project) {
 }
 
 /**
- * git 白名单六操作（C8）+ 提交单对位（mac CommitSheetView 核心字段：提交信息 / 类型 / 结果反馈）。
+ * git 白名单六操作（C8）+ 提交入口（mac DetailViews.swift:162-193 gitOpButtons 对位：
+ * **提交是唯一入口、点开提交单**——CommitSheetView 承载勾选/信息/类型；这张卡只留
+ * 其余五操作 + 改动构成披露 + 结果横幅）。
  *
- * 【边界，如实】mac 的逐文件勾选（stage 级）不做：本机引擎 `git commit` 是 add -A 全量
- * （kernel/git.cj:1848-1850 实测：先 add -A 再 commit -m，无 --paths），子集提交没有
- * 引擎语义——造假勾选框比没有勾选框更糟。类型选择落在**提交信息前缀**上（真实效果：
- * 新提交被引擎归入「提交构成」对应类型桶，词表=引擎 COMMIT_TYPE_ORDER 对位）。
- * 改动构成行只报引擎 status 契约 dirty 里的四类计数（已暂存/修改/未跟踪/冲突）；
+ * 【提交口径，如实】本机引擎 `git commit` 是 add -A 全量（真机实测 --paths RC=2 拒），
+ * 子集提交没有引擎语义——勾选集在提交单里作为核对清单、全选才能提交（见 CommitSheet.kt
+ * 文件头）。改动构成行只报引擎 status 契约 dirty 里的四类计数（已暂存/修改/未跟踪/冲突）；
  * mac 类型集的 added/deleted/renamed 是 per-file XY 归一词，本机引擎没有 git status
  * 子命令、dirty.files 不带 kind——如实不造。
  */
 @Composable
 private fun GitCard(model: AppModel, p: Project, busy: Boolean) {
-    var message by remember { mutableStateOf("") }
-    var commitType by remember { mutableStateOf<String?>(null) }
     val feedback by model.gitFeedback.collectAsState()
-
-    // 对位 mac「失败不关弹窗、提交信息留住」：只有**本项目的 commit 成功回执**才清空草稿；
-    // 失败（引擎 ok=false / 调用异常）信息原样留着改了再提。
-    LaunchedEffect(feedback) {
-        if (feedback != null && feedback!!.op == "commit" && feedback!!.project == p.name && feedback!!.ok) {
-            message = ""
-        }
-    }
 
     SectionCard("git 操作", Modifier.fillMaxWidth()) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            // 提交（mac 用户定稿：放推送旁边的本地提交入口——点开选文件提交单）
+            ActionText("提交", Palette.Accent, enabled = !busy && p.isGit) { model.openCommitSheet(p.name) }
             listOf("pull", "push", "stash", "unstash", "fetch").forEach { op ->
                 ActionText(op, Palette.TextSecondary, enabled = !busy) { model.gitOp(op, p.name) }
             }
@@ -282,55 +271,12 @@ private fun GitCard(model: AppModel, p: Project, busy: Boolean) {
                 dirty == null -> "改动构成：引擎没发 dirty（缺键）"
                 !dirty.ok -> "改动构成读不出来：${dirty.err ?: "未给出原因"}"
                 dirty.clean -> "工作区干净（引擎会拒绝没有可提交内容的提交）"
-                else -> "本次全量提交将包含：已暂存 ${dirty.staged} · 修改 ${dirty.modified} · 未跟踪 ${dirty.untracked} · 冲突 ${dirty.conflicts}"
+                else -> "本次提交将包含：已暂存 ${dirty.staged} · 修改 ${dirty.modified} · 未跟踪 ${dirty.untracked} · 冲突 ${dirty.conflicts}"
             },
             style = Type.body.copy(color = Palette.TextSecondary),
         )
-        Spacer(Modifier.height(Space.sm))
-        // ── 类型选择（提交信息前缀；词表=引擎 COMMIT_TYPE_ORDER 去 other，见文件尾纯函数）──
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-        ) {
-            Text("类型", style = Type.label)
-            Spacer(Modifier.width(Space.xs))
-            listOf(null).plus(COMMIT_TYPE_WORDS).forEach { t ->
-                val selected = commitType == t
-                Text(
-                    t ?: "无类型",
-                    style = Type.micro.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal),
-                    color = if (selected) Palette.BgBase else Palette.TextSecondary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(if (selected) Palette.Accent else Palette.Card)
-                        .clickable { commitType = t }
-                        .padding(horizontal = 8.dp, vertical = 3.dp),
-                )
-            }
-        }
-        Spacer(Modifier.height(Space.sm))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            OutlinedTextField(
-                value = message,
-                onValueChange = { message = it },
-                placeholder = { Text("提交信息（引擎提交全部改动，类型作为前缀）", style = Type.micro) },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-                textStyle = Type.body,
-            )
-            ActionText(
-                "提交",
-                Palette.Accent,
-                enabled = !busy
-                    && commitMessage(commitType, message) != null
-                    // 干净工作区引擎必拒（git.cj 判据：干净仓库 commit → ok=false），按钮先如实禁用
-                    && !(dirty?.ok == true && dirty.clean == true),
-            ) {
-                commitMessage(commitType, message)?.let { model.gitOp("commit", p.name, it) }
-            }
-        }
-        // ── 结果反馈（mac CommitSheetView「失败不弹走」对位；六操作的结果都落在这里）──
+        // ── 结果反馈（mac「失败不弹走」对位；六操作的结果都落在这里——提交单自己
+        //    也有一份就地反馈，这里是页面级横幅）──
         feedback?.let { fb ->
             Spacer(Modifier.height(Space.xs))
             Row(verticalAlignment = Alignment.CenterVertically) {
