@@ -66,19 +66,38 @@ fun SectionCard(title: String, modifier: Modifier = Modifier, content: @Composab
  *  信封未到（加载中）或读取失败 ≠ 空态 —— 绝不拿 CTA 冒充；纯函数可单测。 */
 fun registryEmpty(envelope: StatusEnvelope?): Boolean = envelope != null && envelope.projects.isEmpty()
 
-/** KPI 磁贴：数字 + 标题 + 次级说明行。 */
+/** KPI 宽卡（对位 mac KPIWideCard：label 顶 + 大数字 accent +（可选）进度条 + 副说明 tertiary）。
+ *  进度条只画「完成度」本身有进度语义的指标（里程碑完成率）；给「3 个待处理」画进度条是装饰不是信息。 */
 @Composable
-fun KpiTile(title: String, value: String, subtitle: String, modifier: Modifier = Modifier, tone: Color = Palette.TextPrimary) {
+fun KpiTile(
+    title: String,
+    value: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    tone: Color = Palette.Accent,
+    progress: Float? = null,
+) {
     GlassCard(modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(title, style = Type.card)
-            Spacer(Modifier.width(Space.sm))
+        Text(title, style = Type.label)
+        Spacer(Modifier.height(Space.xs))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                value, style = Type.display.copy(color = tone),
+                maxLines = 1,
+            )
         }
-        Spacer(Modifier.height(Space.sm))
-        Text(value, style = Type.display.copy(color = tone, fontSize = 34.sp))
+        progress?.let { p ->
+            Spacer(Modifier.height(Space.xs))
+            Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Palette.BarTrack)) {
+                Box(
+                    Modifier.fillMaxWidth(p.coerceIn(0f, 1f)).height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)).background(tone)
+                )
+            }
+        }
         subtitle.takeIf { it.isNotBlank() }?.let {
             Spacer(Modifier.height(Space.xs))
-            Text(it, style = Type.micro)
+            Text(it, style = Type.micro, maxLines = 2)
         }
     }
 }
@@ -193,6 +212,37 @@ fun DashboardPage(model: AppModel) {
                     KpiTile("停滞（逾期未动）", "${status?.summary?.staleProjects ?: 0}",
                         "8–30 天无提交 · >30 天未更新",
                         Modifier.weight(1f))
+                }
+
+                // ── 段 4：逐项目进度卡网格（mac DashboardParts 段 4 对位）──
+                Text("各项目演进进度与里程碑明细", style = Type.section)
+                Text(
+                    buildString {
+                        append("共 ${status?.projects.orEmpty().size} 个项目")
+                        dash?.fetchedAt?.takeIf { it.isNotBlank() }?.let { append(" · 数据时间 $it") }
+                    },
+                    style = Type.micro,
+                )
+                val msAll = model.milestones.collectAsState().value?.milestones.orEmpty()
+                val readableProjects = status?.projects.orEmpty().filter { it.isReadable }
+                if (readableProjects.isEmpty()) {
+                    SectionCard("尚无在册项目", Modifier.fillMaxWidth()) {
+                        Text("注册项目后，这里会出现逐项目的进度卡", style = Type.body.copy(color = Palette.TextTertiary))
+                    }
+                } else {
+                    readableProjects.chunked(2).forEach { rowProjects ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+                            rowProjects.forEach { proj ->
+                                ProjectProgressCard(
+                                    p = proj,
+                                    milestones = msAll.filter { it.projectId == proj.id },
+                                    onOpen = { },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            if (rowProjects.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
                 }
 
                 // ── 语言分布 ──
@@ -356,4 +406,70 @@ fun Pill(text: String, color: Color) {
             .background(color.copy(alpha = 0.9f))
             .padding(horizontal = 8.dp, vertical = 2.dp),
     )
+}
+
+/** 里程碑完成率（对位 mac ProjectProgressCard.milestoneRatio：达成 / (达成 + 进行中)，unknown 不计入）。 */
+data class MilestoneRatio(val done: Int, val open: Int, val unknown: Int) {
+    val ratio: Float? get() = if (done + open == 0) null else done.toFloat() / (done + open)
+}
+
+fun milestoneRatioOf(milestones: List<Milestone>): MilestoneRatio {
+    val done = milestones.count { it.status == "done" }
+    val open = milestones.count { it.status == "open" }
+    val unknown = milestones.count { it.status == "unknown" }
+    return MilestoneRatio(done, open, unknown)
+}
+
+/** 逐项目进度卡（mac ProjectProgressCard 对位）：标识 → 状态 → 里程碑/分支 → 最近提交 → 入口。 */
+@Composable
+fun ProjectProgressCard(
+    p: Project,
+    milestones: List<Milestone>,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    GlassCard(modifier.fillMaxWidth()) {
+        // 行 1：标识（mono 名 + 待处理 pill）
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(p.name, style = Type.card.copy(fontWeight = FontWeight.Bold))
+            Spacer(Modifier.width(Space.sm))
+            val dirty = p.userDirtyCount ?: 0
+            if (dirty > 0) Pill("●$dirty", Palette.Amber)
+        }
+        Spacer(Modifier.height(Space.xs))
+        // 行 2：状态（可读=进展摘要；读不出=原因）
+        if (!p.isReadable) {
+            Text("读不出来：${p.error ?: "引擎未给出原因"}", style = Type.micro.copy(color = Palette.Red))
+        } else {
+            p.headline?.takeIf { it.isNotBlank() }?.let {
+                Text(it, style = Type.body.copy(color = Palette.TextSecondary), maxLines = 2)
+            }
+        }
+        Spacer(Modifier.height(Space.xs))
+        // 行 3：里程碑完成度 + 分支（只有「完成度」有进度语义才画条）
+        val ratio = milestoneRatioOf(milestones)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("里程碑", style = Type.label)
+            Spacer(Modifier.width(Space.xs))
+            Text("${ratio.done}/${ratio.done + ratio.open}", style = Type.body)
+            ratio.ratio?.let { r ->
+                Spacer(Modifier.width(Space.sm))
+                Box(Modifier.width(64.dp).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Palette.BarTrack)) {
+                    Box(Modifier.fillMaxWidth(r).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Palette.Deep))
+                }
+            }
+            Spacer(Modifier.width(Space.sm))
+            Text("分支: ${p.currentBranch ?: "?"}", style = Type.micro)
+        }
+        Spacer(Modifier.height(Space.xs))
+        // 行 4：最近提交（分支明细的当前分支 headAgo/headShort；缺失如实）
+        val current = p.branches.firstOrNull { it.isCurrent }
+        val ago = current?.headAgo ?: p.lastCommitAgo
+        if (!ago.isNullOrBlank()) {
+            Text("最近提交 $ago", style = Type.micro, maxLines = 1)
+        }
+        // 行 7：入口
+        Spacer(Modifier.height(Space.xs))
+        ActionText("详情 →", Palette.Accent, onClick = onOpen)
+    }
 }
