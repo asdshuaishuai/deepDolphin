@@ -225,9 +225,11 @@ fun BoardPage(model: AppModel) {
 
         // ── 列区（status 读到了才渲染列；失败/读取中不渲染，避免「空看板」冒充真相）──
         if (statusState is LoadState.Loaded) {
-            Row(
-                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(Space.md),
+            // 【布局对位 mac BoardView】横向四列在内容区只占 1/3 且要横向滚动（mac 已否决）——
+            // 改为垂直分组：列头在上、卡片纵向排布，整页纵向滚动。
+            Column(
+                Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Space.lg),
             ) {
                 BoardColumnId.entries.forEach { id -> BoardColumnUi(id, board) { p -> model.goRoute(AppModel.Route.PROJECT, p) } }
             }
@@ -241,8 +243,7 @@ private fun BoardColumnUi(id: BoardColumnId, board: BoardModel, onOpenProject: (
     val rows = board.rowsIn(id)
     Column(
         Modifier
-            .width(300.dp)
-            .fillMaxHeight()
+            .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.card))
             .background(Palette.Card)
             .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
@@ -260,10 +261,7 @@ private fun BoardColumnUi(id: BoardColumnId, board: BoardModel, onOpenProject: (
         Text(id.criteria, style = Type.micro)
 
         Spacer(Modifier.height(Space.sm))
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             when {
                 // 分支列的空态：如实说没有分支落在这列，判据已在列头。
                 id != BoardColumnId.UNREADABLE && rows.isEmpty() ->
