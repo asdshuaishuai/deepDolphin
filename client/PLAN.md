@@ -72,6 +72,7 @@ scripts/run.sh              # 真窗口（DISPLAY=:0）
 | 看板页真实现：stub → 引擎分支状态分列（active/stale/idle/merged），读不出单列，分支不全/无分支如实披露 | `b1abfb7` | +6（BoardContractTest） | 28 绿 |
 | AI 助手 Markdown 渲染：最新一条助手消息走 KCEF/JCEF WebView 排版，缺席/失败回退纯文本并如实标注；markdown→html 纯函数（MarkdownHtml.kt / MarkdownWebView.kt） | `748dde9` | +8（MarkdownHtmlTest） | 36 绿 |
 | 仪表盘与详情页精修：aurora 渐变斑块层（对位 design.rs）+ 项目总数 0 空态扫描/添加 CTA（接引擎 scan/add）+ 磁贴描边/hover + 详情页 SectionCard 节奏（色值上收 Design.kt） | `0cb2a46` | +9（DesignRefinementTest） | 45 绿 |
+| 图谱两页：HtmlWebView 通用件（JCEF 单浏览器复用/reloadToken/看门狗/降级槽；MarkdownWebView 改为复用）+ CodeGraphPage/ArchPage 接 `render index --confidence`/`render arch` 文本回执（receiptLine/extractHtmlPath/renderReused 纯函数，fixture 真机落盘；产物缓存秒开旧图、复用不重载）+ Dialog 近全屏形态 + AppModel 开合流挂载；JCEF 缺席整页降级「WebView 不可用 + 产物路径」 | `72376da` | +10（GraphParseTest） | 61 绿 |
 
 **终验（2026-11-23）**：
 - 判据门禁绿：`scripts/build.sh --test` → `CMPTEST_SUMMARY passed=45 skipped=0 failed=0`。
@@ -90,7 +91,12 @@ scripts/run.sh              # 真窗口（DISPLAY=:0）
   （口径取自 macos 基准 StatusColor），引擎新口径由「口径未知」列兜底。
 - Markdown 渲染边界：下划线强调、图片、Setext 标题不支持（宁缺勿错，MarkdownHtml.kt
   头注释有边界声明）；KCEF 每进程只尝试装载一次，彻底重试需重启应用。
-- Main.kt 侧栏底部「判据 11 条」是批 1 遗留陈旧文案（现 45），属代码改动，随下次代码批一并修。
+- 图谱两页（`72376da`）：**详情页入口下一批接线**（AppModel.openGraph/openArch 已就绪）；
+  mac 头部的「AI 生成」（GraphAgentTask 播种 agent、关窗回读产物）与「外部打开」
+  （xdg-open）如实缺位——AgentSheet 尚无关窗回调，不造假按钮。渲染通道用文本回执
+  （mac 同形态），路径提取对真机「黏全角冒号」形状适配为正则 token（mac 空格分词会漏提）。
+  Dialog 近全屏为 92% 宽高的近似（Compose 无独立 NSWindow 最大化）。
+- ~Main.kt 侧栏底部「判据 11 条」陈旧文案~ 已修（AiViews 关于 tab 11→61，随图谱批 `72376da`）。
 - MilestonesView.kt:32 模态遮罩 `Color(0x88000000)` 是遗留内联色值（此前里程碑批产物，未动）。
 
 ## 引擎子命令能力清单（诊断批 `moongit --help` 实测 rc=0；只记录，不实现页面）
