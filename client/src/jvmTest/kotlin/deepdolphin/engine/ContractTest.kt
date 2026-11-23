@@ -91,6 +91,31 @@ class ContractTest {
         j.windowExhausted?.let { assertTrue(it || !it) }
     }
 
+    // ── update（真机回执：journalEntry 是对象，不是布尔）──
+
+    @Test
+    fun updateReceiptParsesJournalEntryObject() {
+        // 真机 vtest 浅更新输出（journalEntry 曾被误镜像成 Boolean，解析即炸——本用例锁死回归）
+        val r = decodeOrThrow(UpdateReceipt.serializer(), fixture("update"))
+        assertTrue(r.ok && r.mode == "shallow")
+        val j = checkNotNull(r.journalEntry) { "真机回执 journalEntry 必为对象（CONTRACT §2.4）" }
+        assertEquals("j_1795443424375_0", j.id)
+        assertEquals("main", j.branch)
+        assertEquals("new", j.commitCountScope)
+        assertEquals(0L, j.commitCount)
+        assertTrue(j.highlights.isNotEmpty())
+        // docs 键 nullable：契约称仅 deep 条目有，真机浅更新实测也带
+        assertEquals(listOf("README.md"), j.docs)
+    }
+
+    @Test
+    fun updateReceiptToleratesNullJournalEntry() {
+        // 聚合信封里的空形状：journalEntry 可为 null（对位 deepin SelfCheck 多项目样例）；
+        // 「本轮是否写了日志」= journalEntry != null，不是布尔
+        val r = decodeOrThrow(UpdateReceipt.serializer(), """{"ok":true,"mode":"shallow","journalEntry":null}""")
+        assertEquals(null, r.journalEntry)
+    }
+
     // ── 缺必知键 = 契约过旧（入口闸门）──
 
     @Test

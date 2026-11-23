@@ -385,7 +385,9 @@ data class UpdateReceipt(
     val commitCount: Long = 0,
     val commitCountTruncated: Boolean? = null,
     val docs: List<DocChange> = emptyList(),
-    val journalEntry: Boolean = false,
+    /** CONTRACT §2.4：journal 条目对象或 null（曾误镜像成 Boolean，真机 vtest 回现修正，2026-11）。
+     *  「本轮是否写了日志」= journalEntry != null，不得回退成布尔理解。 */
+    val journalEntry: JournalEntryRecord? = null,
     val highlights: List<String>? = null,
     val at: String = "",
 )
@@ -396,6 +398,39 @@ data class DocChange(
     val changed: Boolean = false,
     val created: Boolean = false,
     val backup: String = "",
+)
+
+/** update / deep 回执里的 journal 条目（CONTRACT §2.4：journalEntryJson 唯一形状，全部出口一致）。
+ *  基准：deepin/src/models/StatusTypes.h 的 JournalEntry + 真机浅更新实测 fixtures/update.json
+ *  （此前 fixtures 缺 update 回执，本字段曾无基准凭空镜像成 Boolean——教训：镜像必须有 fixture 锚）。
+ *  【缺键纪律】全部字段可缺席；-1 哨兵照传不吞（null = 引擎没发这个键）。 */
+@Serializable
+data class JournalEntryRecord(
+    val id: String = "",
+    val at: String = "",
+    val project: String = "",
+    val projectId: String = "",
+    val branch: String = "",
+    /** shallow / deep / track / manual（引擎侧枚举）。 */
+    val mode: String = "",
+    val source: String = "",
+    val provider: String = "",
+    val providerLabel: String = "",
+    /** -1 = 读不出来（引擎既定哨兵）。 */
+    val commitCount: Long? = null,
+    /** new = 本轮新增 | repoTotal = 仓库总数。 */
+    val commitCountScope: String = "",
+    /** 缺键 = null ≠ false（不许把「引擎没发」当成「没截断」）。 */
+    val commitCountTruncated: Boolean? = null,
+    /** -1 = 未知。 */
+    val repoBranchCount: Long? = null,
+    val branchCountTruncated: Boolean? = null,
+    val summary: String = "",
+    val highlights: List<String> = emptyList(),
+    val nextSteps: List<String> = emptyList(),
+    val notes: List<String> = emptyList(),
+    /** 契约称仅 deep 条目有；真机浅更新 fixture 实测也带——nullable 两种都容。 */
+    val docs: List<String>? = null,
 )
 
 /** update / deep 的全项目聚合信封：逐项目成败在 results[]（客户端曾读错键 projects 的教训）。 */

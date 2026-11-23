@@ -1,0 +1,50 @@
+{
+  "ok": true,
+  "mode": "shallow",
+  "projectId": "p_f80de38f6095",
+  "project": "vtest",
+  "provider": "rules",
+  "providerLabel": "规则引擎",
+  "branchCount": 2,
+  "repoBranchCount": 2,
+  "branchCountTruncated": false,
+  "commitCount": 0,
+  "docs": [
+    {
+      "file": "README.md",
+      "changed": true,
+      "created": false,
+      "backup": "/home/superShuai/.deepgit/store/p_f80de38f6095/backups/README.md/2026-11-23T22-17-04-README.md"
+    }
+  ],
+  "journalEntry": {
+    "id": "j_1795443424375_0",
+    "at": "2026-11-23T22:17:04.284512821+08:00",
+    "project": "vtest",
+    "projectId": "p_f80de38f6095",
+    "branch": "main",
+    "mode": "shallow",
+    "source": "cli",
+    "provider": "rules",
+    "commitCount": 0,
+    "commitCountScope": "new",
+    "commitCountTruncated": false,
+    "repoBranchCount": 2,
+    "branchCountTruncated": false,
+    "summary": "最近 2 个提交：新增×1、测试×1；最近 2 个提交：新增×1、测试×1",
+    "highlights": [
+      "新增：“支持导出”",
+      "测试：“init vtest”",
+      "新增：“支持导出”",
+      "测试：“init vtest”"
+    ],
+    "nextSteps": [
+      "推进该分支的收尾与验证，考虑合并回默认分支"
+    ],
+    "notes": [],
+    "docs": [
+      "README.md"
+    ]
+  },
+  "at": "2026-11-23T22:17:04.284512821+08:00"
+}
