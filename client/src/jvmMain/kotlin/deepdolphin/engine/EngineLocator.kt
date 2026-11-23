@@ -78,6 +78,26 @@ object EngineLocator {
         return Pair(proc.exitValue(), out)
     }
 
+    /**
+     * stdout/stderr 分流的文本命令执行（--llm 系）：stdout 是要交给用户的**纯净产物**
+     * （LLM 复核提示词，将进剪贴板），引擎的迁移提示等 stderr 杂音不得混入；
+     * 失败原因（stderr 首个非空行）单独返回给调用方拼错误消息。
+     */
+    fun runSplit(bin: String, args: List<String>, timeoutSec: Long = 120): Triple<Int, String, String> {
+        val proc = ProcessBuilder(listOf(bin) + args)
+            .redirectErrorStream(false)
+            .apply { environment()["NO_COLOR"] = "1" }
+            .start()
+        val out = proc.inputStream.bufferedReader().readText()
+        val err = proc.errorStream.bufferedReader().readText()
+        val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
+        if (!finished) {
+            proc.destroyForcibly()
+            return Triple(-1, "", "超时（${timeoutSec}s）")
+        }
+        return Triple(proc.exitValue(), out, err)
+    }
+
     suspend fun probe(): EngineProbe = withContext(Dispatchers.IO) {
         for (bin in candidates()) {
             val resolved = resolve(bin) ?: continue

@@ -1,0 +1,56 @@
+{
+  "schema": "moongit-patch-confidence/1",
+  "overall": 0.6875,
+  "signals": {
+    "S1": 0.5,
+    "S2": 0,
+    "S3": 0.5,
+    "S5": 1,
+    "S6": 1,
+    "S8": 1,
+    "S9": 1,
+    "S10": 0.5,
+    "S4": null,
+    "S7": null
+  },
+  "entities": [
+    {
+      "id": "new_risky_call@suspect.py:33",
+      "kind": "func",
+      "confidence": 1,
+      "file": "suspect.py",
+      "line": 33,
+      "relations": [
+        {
+          "type": "calls",
+          "target": "data_tmp@suspect.py",
+          "confidence": 1
+        }
+      ]
+    }
+  ],
+  "uncertain": [
+    {
+      "id": "suspect.py@34:risky",
+      "issue": "unresolved_call",
+      "detail": "call to risky(…) not found in repo or patch",
+      "candidates": [],
+      "context_ref": {
+        "file": "suspect.py",
+        "line": 34
+      }
+    }
+  ],
+  "diagnostics": {
+    "total_entities": 1,
+    "total_relations": 2,
+    "parse_errors": 0,
+    "patch_files": 1,
+    "added_lines": 6,
+    "null_signals": [
+      "S4",
+      "S7"
+    ],
+    "null_signals_note": "null 信号 = 词法层无法可靠计算（如 S7 契约一致率需接口实现对照）；不进 overall 均值"
+  }
+}

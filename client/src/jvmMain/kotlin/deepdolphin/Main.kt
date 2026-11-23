@@ -29,8 +29,10 @@ import deepdolphin.ui.AppModel.Route
 import deepdolphin.ui.AgentSheet
 import deepdolphin.ui.SettingsPage
 import deepdolphin.ui.BoardPage
+import deepdolphin.ui.ConfidencePage
 import deepdolphin.ui.DashboardPage
 import deepdolphin.ui.MilestonesPage
+import deepdolphin.ui.PatchCheckPage
 import deepdolphin.ui.Palette
 import deepdolphin.ui.ArchPage
 import deepdolphin.ui.CodeGraphPage
@@ -131,6 +133,10 @@ fun SidebarShell(model: AppModel) {
             NavItem("仪表盘", Route.DASHBOARD == route) { model.goRoute(Route.DASHBOARD) }
             NavItem("看板", Route.BOARD == route) { model.goRoute(Route.BOARD) }
             NavItem("里程碑", Route.MILESTONES == route) { model.goRoute(Route.MILESTONES) }
+            // mac PanelView.swift:143-145 对位：两入口排在里程碑后（同属「视图」组）；
+            // 文案对位 mac L10n zh：nav.confidence=代码置信度 / nav.patchcheck=补丁体检
+            NavItem("代码置信度", Route.CONFIDENCE == route) { model.goRoute(Route.CONFIDENCE) }
+            NavItem("补丁体检", Route.PATCHCHECK == route) { model.goRoute(Route.PATCHCHECK) }
             NavGroupLabel("仓库 · $readable/${projects.size}")
             projects.forEach { p ->
                 RepoItem(
@@ -161,6 +167,8 @@ fun SidebarShell(model: AppModel) {
                 Route.DASHBOARD -> DashboardPage(model)
                 Route.BOARD -> BoardPage(model)
                 Route.MILESTONES -> MilestonesPage(model)
+                Route.CONFIDENCE -> ConfidencePage(model)
+                Route.PATCHCHECK -> PatchCheckPage(model)
                 Route.PROJECT -> ProjectDetailView(model)
                 Route.SETTINGS -> SettingsPage(model)
             }

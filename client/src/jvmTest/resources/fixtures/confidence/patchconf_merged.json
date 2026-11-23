@@ -1,0 +1,56 @@
+{
+  "schema": "moongit-patch-confidence-merged/1",
+  "overall": 0.905,
+  "signals": {
+    "S1": 0.5,
+    "S2": 0,
+    "S3": 0.5,
+    "S5": 1,
+    "S6": 1,
+    "S8": 1,
+    "S9": 1,
+    "S10": 0.5,
+    "S4": null,
+    "S7": null
+  },
+  "entities": [
+    {
+      "id": "new_risky_call@suspect.py:33",
+      "kind": "func",
+      "confidence": 1,
+      "file": "suspect.py",
+      "line": 33,
+      "relations": [
+        {
+          "type": "calls",
+          "target": "data_tmp@suspect.py",
+          "confidence": 1
+        }
+      ],
+      "source": "algorithm"
+    },
+    {
+      "id": "suspect.py@34:risky",
+      "issue": "unresolved_call",
+      "context_ref": {
+        "file": "suspect.py",
+        "line": 34
+      },
+      "confidence": 0.81,
+      "source": "agent",
+      "verdict": "resolved",
+      "reason": "deepDolphin 人工裁决",
+      "evidence_refs": null
+    }
+  ],
+  "alerts": [],
+  "sources": {
+    "algorithm": true,
+    "agent": true
+  },
+  "diagnostics": {
+    "certain_from_algorithm": 1,
+    "reviewed_by_agent": 1,
+    "deferred": 0
+  }
+}

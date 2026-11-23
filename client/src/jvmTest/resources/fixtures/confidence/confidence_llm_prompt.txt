@@ -1,0 +1,47 @@
+# 代码置信度复核任务
+
+项目：vtest
+引擎预检：总分 51/100 · 4 条疑点（词法+语法树级）。
+
+## 预检维度分
+
+- Functions & objects：58/100（2 findings）
+- Variables：86/100（1 findings）
+- Structure：90/100（1 findings）
+
+## 你的任务
+
+按**维度分节**独立复核下面每一条预检疑点，逐条给出裁决：
+- `confirm`：确认为真问题。必须引用**代码原文**（≤3 行）作为依据。
+- `dismiss`：误报。说明为什么（协议实现/反射调用/公共 API/语言惯用法等）。
+- `unsure`：无法从静态信息判定。说明缺什么信息（运行时/业务语义）。
+
+**红线**：不许只复述预检结论；每条裁决必须基于你自己读到的代码。
+对并发维度额外要求：指出是否存在静态分析看不到的竞争窗口（如回调重入/异步序）。
+
+## 预检疑点（按维度）
+
+### 函数/对象级（2 条）
+
+1. [unresolved-call] suspect.py:36
+   证据：调用 risky(…)：全仓没有该名字的定义，也不是语言内建——可能是幻觉 API、拼错的名字，或缺失的依赖
+2. [parameter-abuse] suspect.py:13
+   证据：7 个参数（阈值 5）——God 签名，API 设计缺失
+
+### 变量级（1 条）
+
+1. [suspicious-name] suspect.py:30
+   证据：func placeholder：占位名
+
+### 结构级（1 条）
+
+1. [todo-residue] suspect.py:5
+   证据：1 处 TODO/FIXME/XXX/HACK（首处 L5：# TODO: 重构这一段）
+
+## 输出格式
+
+```json
+{"dimensions": {"variable": {"verdicts": [...], "score": 0-100}, "function": {...}, "type": {...}, "pointer": {...}, "concurrency": {...}, "structure": {...}}, "realScore": 0-100, "topRisks": ["...", "...", "..."]}
+```
+verdicts 元素：{"n": 序号, "verdict": "confirm|dismiss|unsure", "reason": "...", "quote": "代码原文"}
+

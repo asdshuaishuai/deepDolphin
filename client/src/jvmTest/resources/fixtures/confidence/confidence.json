@@ -1,0 +1,99 @@
+{
+  "root": "/tmp/vtest",
+  "score": 51,
+  "dimensions": [
+    {
+      "id": "function",
+      "label": "函数/对象级",
+      "penalty": 14,
+      "findings": 2,
+      "score": 58
+    },
+    {
+      "id": "variable",
+      "label": "变量级",
+      "penalty": 3,
+      "findings": 1,
+      "score": 86
+    },
+    {
+      "id": "structure",
+      "label": "结构级",
+      "penalty": 2,
+      "findings": 1,
+      "score": 90
+    }
+  ],
+  "penaltyByFile": [
+    {
+      "file": "suspect.py",
+      "penalty": 19
+    }
+  ],
+  "findings": [
+    {
+      "kind": "unresolved-call",
+      "file": "suspect.py",
+      "line": 36,
+      "symbol": "risky",
+      "evidence": "调用 risky(…)：全仓没有该名字的定义，也不是语言内建——可能是幻觉 API、拼错的名字，或缺失的依赖",
+      "weight": 8
+    },
+    {
+      "kind": "parameter-abuse",
+      "file": "suspect.py",
+      "line": 13,
+      "symbol": "very_long_function",
+      "evidence": "7 个参数（阈值 5）——God 签名，API 设计缺失",
+      "weight": 6
+    },
+    {
+      "kind": "suspicious-name",
+      "file": "suspect.py",
+      "line": 30,
+      "symbol": "placeholder",
+      "evidence": "func placeholder：占位名",
+      "weight": 3
+    },
+    {
+      "kind": "todo-residue",
+      "file": "suspect.py",
+      "line": 5,
+      "symbol": "",
+      "evidence": "1 处 TODO/FIXME/XXX/HACK（首处 L5：# TODO: 重构这一段）",
+      "weight": 2
+    }
+  ],
+  "byKind": [
+    {
+      "kind": "unresolved-call",
+      "label": "幻觉调用",
+      "count": 1,
+      "weight": 8
+    },
+    {
+      "kind": "parameter-abuse",
+      "label": "参数滥用",
+      "count": 1,
+      "weight": 6
+    },
+    {
+      "kind": "suspicious-name",
+      "label": "可疑命名",
+      "count": 1,
+      "weight": 3
+    },
+    {
+      "kind": "todo-residue",
+      "label": "TODO 残留",
+      "count": 1,
+      "weight": 2
+    }
+  ],
+  "astUsed": false,
+  "astNote": "语法树不可用：未安装 ast-grep（`brew install ast-grep` 可获得 tree-sitter 级覆盖）——已降级为词法级分析；函数粒度信号改由词法路径近似（长度/嵌套/魔法数/空体），吞错与重复体仍缺失",
+  "cappedKind": false,
+  "cappedTotal": false,
+  "filesAnalyzed": 1,
+  "semantics": "score = 100·S/(S+每文件疑点权重)（S=20，与仓库规模无关），是结构性疑点的汇总（0..100），不是正确性证明；信号为词法+语法树级事实，不包含运行时行为与业务语义"
+}

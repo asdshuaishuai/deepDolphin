@@ -478,3 +478,209 @@ data class RegistryEntry(
     val tags: List<String> = emptyList(),
     val disabled: Boolean = false,
 )
+
+// ── graph confidence <项目> --json ──
+//
+// 形状锚定：fixtures/confidence/confidence.json（2026-11 真机 moongit 真跑，
+// vtest 播种 suspect.py 后的输出）。
+// 【与 mac 注释的差异，如实标注】mac ConfidencePageVM 读 dimensions 的 "detail" 键——
+// 本机引擎不发 detail，发的是 penalty（罚分）+ findings（条数）；以实测为准展示后者。
+
+@Serializable
+data class ConfidenceReport(
+    val root: String = "",
+    /** 0..100（100 = 未发现结构性疑点；结构性汇总，非正确性证明——semantics 恒发）。 */
+    val score: Long = 0,
+    /** 引擎只发有疑点的维度（真机 fixture 3/6 个）；六维度全集见引擎 ConfDimension。 */
+    val dimensions: List<ConfDimensionScore> = emptyList(),
+    val penaltyByFile: List<ConfPenaltyFile> = emptyList(),
+    /** 引擎已按权重降序全序排列（sortFindings 契约）。 */
+    val findings: List<ConfFinding> = emptyList(),
+    val byKind: List<ConfKindCount> = emptyList(),
+    val astUsed: Boolean = false,
+    /** 降级/覆盖披露（非空必展示，不许静默）。 */
+    val astNote: String = "",
+    /** 限流披露恒发（真值来自丢弃判定点，不是结果集反推）。 */
+    val cappedKind: Boolean = false,
+    val cappedTotal: Boolean = false,
+    val filesAnalyzed: Long = 0,
+    val semantics: String = "",
+)
+
+@Serializable
+data class ConfDimensionScore(
+    /** variable / function / type / pointer / concurrency / structure。 */
+    val id: String = "",
+    val label: String = "",
+    val penalty: Long = 0,
+    val findings: Long = 0,
+    val score: Long = 0,
+)
+
+@Serializable
+data class ConfPenaltyFile(
+    val file: String = "",
+    val penalty: Long = 0,
+)
+
+@Serializable
+data class ConfFinding(
+    val kind: String = "",
+    val file: String = "",
+    val line: Long = 0,
+    val symbol: String = "",
+    val evidence: String = "",
+    val weight: Long = 0,
+)
+
+@Serializable
+data class ConfKindCount(
+    val kind: String = "",
+    val label: String = "",
+    val count: Long = 0,
+    val weight: Long = 0,
+)
+
+// ── graph patchconf <项目> --patch <diff> --json（Layer 1 算法层）──
+//
+// 形状锚定：fixtures/confidence/patchconf_algorithm.json（真机真跑）。
+
+@Serializable
+data class PatchConfidence(
+    val schema: String = "",
+    /** 0..1（实体置信度均值；null 信号不计入）。 */
+    val overall: Double = 0.0,
+    /** S1..S10；null = 词法层无法可靠计算（分母为 0），不进 overall——必须如实披露。 */
+    val signals: Map<String, Double?> = emptyMap(),
+    val entities: List<PatchEntity> = emptyList(),
+    val uncertain: List<PatchUncertain> = emptyList(),
+    val diagnostics: PatchDiagnostics = PatchDiagnostics(),
+)
+
+@Serializable
+data class PatchEntity(
+    val id: String = "",
+    val kind: String = "",
+    val confidence: Double = 0.0,
+    val file: String = "",
+    val line: Long = 0,
+    val relations: List<PatchRelation> = emptyList(),
+)
+
+@Serializable
+data class PatchRelation(
+    val type: String = "",
+    val target: String = "",
+    val confidence: Double = 0.0,
+)
+
+@Serializable
+data class PatchUncertain(
+    val id: String = "",
+    val issue: String = "",
+    val detail: String = "",
+    val candidates: List<String> = emptyList(),
+    @SerialName("context_ref")
+    val contextRef: PatchContextRef? = null,
+)
+
+@Serializable
+data class PatchContextRef(
+    val file: String = "",
+    val line: Long = 0,
+)
+
+@Serializable
+data class PatchDiagnostics(
+    @SerialName("total_entities")
+    val totalEntities: Long = 0,
+    @SerialName("total_relations")
+    val totalRelations: Long = 0,
+    @SerialName("parse_errors")
+    val parseErrors: Long = 0,
+    @SerialName("patch_files")
+    val patchFiles: Long = 0,
+    @SerialName("added_lines")
+    val addedLines: Long = 0,
+    @SerialName("null_signals")
+    val nullSignals: List<String> = emptyList(),
+    @SerialName("null_signals_note")
+    val nullSignalsNote: String = "",
+)
+
+// ── graph patchconf --merge <alg> <agent> --json（Layer 3 终稿）──
+//
+// 形状锚定：fixtures/confidence/patchconf_merged.json（真机真跑）。
+// 【与 mac 注释的差异，如实标注】mac finalCard 读顶层 "reviewed" 与 alerts 的 "issue" 键——
+// 本机引擎实测：复核计数在 diagnostics.reviewed_by_agent；alerts 键集是
+// {level, type, detail}（无 issue）。以实测为准，issue 键仍容（缺席回退 type）。
+
+@Serializable
+data class MergedConfidence(
+    val schema: String = "",
+    val overall: Double = 0.0,
+    val signals: Map<String, Double?> = emptyMap(),
+    /** 算法层实体（source=algorithm）+ 裁决过的 uncertain（source=agent/deferred）。 */
+    val entities: List<MergedEntity> = emptyList(),
+    val alerts: List<MergedAlert> = emptyList(),
+    val sources: MergedSources = MergedSources(),
+    val diagnostics: MergedDiagnostics = MergedDiagnostics(),
+)
+
+/** 合并实体的键并集（algorithm 分支与 agent 分支字段不同，一律 nullable）。 */
+@Serializable
+data class MergedEntity(
+    val id: String = "",
+    val kind: String? = null,
+    val confidence: Double = 0.0,
+    val file: String? = null,
+    val line: Long? = null,
+    /** uncertain 合并来的字段（algorithm 实体缺席）。 */
+    val issue: String? = null,
+    val source: String = "",
+    val verdict: String? = null,
+    val reason: String? = null,
+    @SerialName("context_ref")
+    val contextRef: PatchContextRef? = null,
+)
+
+@Serializable
+data class MergedAlert(
+    /** high / medium / low。 */
+    val level: String = "",
+    /** 引擎实测键是 type（mac 读的 issue 键缺席）；容两个键，展示时 issue 优先。 */
+    val type: String = "",
+    val issue: String? = null,
+    val detail: String = "",
+)
+
+@Serializable
+data class MergedSources(
+    val algorithm: Boolean = false,
+    val agent: Boolean = false,
+)
+
+@Serializable
+data class MergedDiagnostics(
+    @SerialName("certain_from_algorithm")
+    val certainFromAlgorithm: Long = 0,
+    @SerialName("reviewed_by_agent")
+    val reviewedByAgent: Long = 0,
+    @SerialName("deferred")
+    val deferred: Long = 0,
+)
+
+/** Layer 2 人工裁决载荷（--merge 的 agent 侧输入；mac verdicts 映射的对位）。 */
+@Serializable
+data class AgentVerdict(
+    val id: String,
+    /** resolved / unresolved / ambiguous。 */
+    val verdict: String,
+    val confidence: Double,
+    val reason: String,
+)
+
+@Serializable
+data class AgentPayload(
+    val items: List<AgentVerdict> = emptyList(),
+)

@@ -8,10 +8,24 @@ package deepdolphin.engine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 class EngineException(val userMessage: String, cause: Throwable? = null) : Exception(userMessage, cause)
 
 open class Engine(val bin: String) {
+
+    companion object {
+        /**
+         * merge 回传的 algorithm 载荷编码器（mergePatchConfidence 用）：
+         * 显式 null（contractJson 的 explicitNulls=false 会把 signals 里的
+         * null 键——S4/S7 = 分母 0 的披露事实——整个丢掉）+ 缺省值照发
+         * （投影不重写字段清单）。internal：判据直接测这一份，不复制配置。
+         */
+        internal val mergeRoundTripJson: Json =
+            Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    }
+
 
     private val quiet = listOf("--json", "--quiet")
     private val json = listOf("--json")
@@ -135,5 +149,69 @@ open class Engine(val bin: String) {
                 "render $kind $project 失败（退出码 $rc）：${out.trim().lineSequence().firstOrNull() ?: "无输出"}",
             )
             out
+        }
+
+    // ── 置信度体检 / 补丁体检（mac GraphScene.swift:32-68 同形态；形状以真机实测锚定，
+    //    fixtures/confidence/ 三份 JSON 即本机引擎真跑落盘）──
+
+    /** graph confidence <项目> --json：六维度 + findings（mac loadConfidence 对位，300s 预算同款）。 */
+    suspend fun graphConfidence(project: String): ConfidenceReport =
+        call(ConfidenceReport.serializer(), listOf("graph", "confidence", project), 300)
+
+    /**
+     * graph confidence <项目> --llm：出的是纯文本提示词（直接可喂模型），不是 JSON——
+     * 不走 call()（会附加 --json）。stdout/stderr 分流：提示词要进剪贴板，引擎写在
+     * stderr 的迁移提示等杂音不得混入；失败原因取 stderr 首个非空行。mac confidencePrompt 对位。
+     */
+    suspend fun graphConfidencePrompt(project: String): String =
+        withContext(Dispatchers.IO) {
+            val (rc, out, err) = EngineLocator.runSplit(bin, listOf("graph", "confidence", project, "--llm"), 300)
+            if (rc != 0) throw EngineException(
+                "graph confidence --llm $project 失败（退出码 $rc）：" +
+                    (err.trim().lineSequence().firstOrNull { it.isNotBlank() }
+                        ?: out.trim().lineSequence().firstOrNull() ?: "无输出"),
+            )
+            out
+        }
+
+    /**
+     * graph patchconf <项目> --patch <diff文件> --json（Layer 1）：diff 文本写临时文件、
+     * 跑完即删（mac GraphScene.swift:44-50 同形态）。
+     */
+    suspend fun patchConfidence(project: String, diffText: String): PatchConfidence =
+        withContext(Dispatchers.IO) {
+            val tmp = kotlin.io.path.createTempFile(prefix = "deepdolphin-patch-", suffix = ".diff").toFile()
+            try {
+                tmp.writeText(diffText)
+                call(PatchConfidence.serializer(), listOf("graph", "patchconf", project, "--patch", tmp.absolutePath), 300)
+            } finally {
+                tmp.delete()
+            }
+        }
+
+    /**
+     * graph patchconf --merge <alg> <agent> --json（Layer 3 终稿）：两份 JSON 写临时文件、
+     * 跑完即删（mac mergePatch 对位；algorithm = Layer1 原样回传，agent = 人工裁决条目）。
+     *
+     * 【编码器口径】回传的 algorithm 必须保留 signals 里的 null 键（S4/S7 = 分母 0 的
+     * 披露事实）——contractJson 的 explicitNulls=false 会把 Map 里的 null 值丢掉，
+     * 这里用 mergeRoundTripJson 忠实往返（缺省值也照发，投影不重写字段清单）。
+     */
+    suspend fun mergePatchConfidence(algorithm: PatchConfidence, agent: AgentPayload): MergedConfidence =
+        withContext(Dispatchers.IO) {
+            val algFile = kotlin.io.path.createTempFile(prefix = "dd-alg-", suffix = ".json").toFile()
+            val agentFile = kotlin.io.path.createTempFile(prefix = "dd-agent-", suffix = ".json").toFile()
+            try {
+                algFile.writeText(mergeRoundTripJson.encodeToString(PatchConfidence.serializer(), algorithm))
+                agentFile.writeText(mergeRoundTripJson.encodeToString(AgentPayload.serializer(), agent))
+                call(
+                    MergedConfidence.serializer(),
+                    listOf("graph", "patchconf", "--merge", algFile.absolutePath, agentFile.absolutePath),
+                    120,
+                )
+            } finally {
+                algFile.delete()
+                agentFile.delete()
+            }
         }
 }

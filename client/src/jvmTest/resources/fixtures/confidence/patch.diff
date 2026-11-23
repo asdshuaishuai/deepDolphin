@@ -1,0 +1,17 @@
+diff --git a/suspect.py b/suspect.py
+index 1111111..2222222 100644
+--- a/suspect.py
++++ b/suspect.py
+@@ -30,6 +30,12 @@ def placeholder():
+     pass
+ 
+ 
++def new_risky_call(x):
++    risky(x)
++    data_tmp(x)
++    return 0x1F
++
++
+ def swallow():
+     try:
+         risky()

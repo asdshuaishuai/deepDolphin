@@ -44,7 +44,7 @@ class AppModel(private val engineBin: String) {
     // ── 批 2：路由 + 详情 + 写操作反馈 ──
     // 对位 mac：侧栏没有 AI 入口——AI 以 agent sheet 形态从详情页（深浅更新旁）触发，
     // 设置（含 AI tab）收在侧栏最底部「设置」（mac 原生 Settings scene 的 Linux 对位）。
-    enum class Route { DASHBOARD, BOARD, MILESTONES, PROJECT, SETTINGS }
+    enum class Route { DASHBOARD, BOARD, MILESTONES, CONFIDENCE, PATCHCHECK, PROJECT, SETTINGS }
     private val _route = MutableStateFlow(Route.DASHBOARD)
     val route: StateFlow<Route> = _route.asStateFlow()
     private val _selectedProject = MutableStateFlow<String?>(null)

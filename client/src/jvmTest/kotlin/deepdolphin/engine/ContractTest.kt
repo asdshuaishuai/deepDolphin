@@ -8,7 +8,9 @@ package deepdolphin.engine
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.serialization.encodeToString
 
 class ContractTest {
 
@@ -178,5 +180,126 @@ class ContractTest {
         assertEquals(0, r.unreadable.size)
         assertEquals(null, r.truncated)
         assertEquals(null, r.depthCapped)
+    }
+
+    // ── graph confidence / patchconf（fixtures/confidence/，2026-11 本机 moongit 真跑落盘：
+    //    vtest 播种 suspect.py 后 graph confidence --json / patchconf 两发真命令的 stdout 原样）──
+
+    @Test
+    fun confidenceReportParsesRealShape() {
+        val r = decodeOrThrow(ConfidenceReport.serializer(), fixture("confidence/confidence"))
+        assertEquals(51, r.score)
+        assertEquals("/tmp/vtest", r.root)
+        assertEquals(1, r.filesAnalyzed)
+        // 降级披露恒发非空（ast-grep 缺席 → 词法级），限流披露恒发布尔
+        assertTrue(r.astNote.isNotBlank(), "降级披露必须带出来（不许静默）")
+        assertEquals(false, r.astUsed)
+        assertEquals(false, r.cappedTotal)
+        assertEquals(false, r.cappedKind)
+        // 维度形状以实测为准：{id,label,penalty,findings,score}（mac 注释的 detail 键引擎不发）
+        assertEquals(3, r.dimensions.size, "真机 fixture：只有有疑点的 3 个维度（六维度全集里的）")
+        val dim = r.dimensions.first { it.id == "function" }
+        assertEquals("函数/对象级", dim.label)
+        assertEquals(14, dim.penalty)
+        assertEquals(2, dim.findings)
+        assertEquals(58, dim.score)
+        // findings 按权重降序全序（引擎 sortFindings 契约）
+        val weights = r.findings.map { it.weight }
+        assertEquals(weights.sortedDescending(), weights, "findings 必须按权重降序")
+        assertEquals(4, r.findings.size)
+        val top = r.findings.first()
+        assertEquals("unresolved-call", top.kind)
+        assertEquals("suspect.py", top.file)
+        assertEquals(36, top.line)
+        assertEquals("risky", top.symbol)
+        assertTrue(top.evidence.isNotBlank())
+        // 罚分表与按类计数（引擎键 penaltyByFile / byKind，mac 未消费、镜像仍保留）
+        assertEquals(listOf(ConfPenaltyFile("suspect.py", 19)), r.penaltyByFile)
+        assertEquals(4, r.byKind.size)
+        assertTrue(r.semantics.isNotBlank(), "语义边界恒发")
+    }
+
+    @Test
+    fun patchConfidenceParsesRealShapeWithNullSignals() {
+        val p = decodeOrThrow(PatchConfidence.serializer(), fixture("confidence/patchconf_algorithm"))
+        assertEquals("moongit-patch-confidence/1", p.schema)
+        assertEquals(0.6875, p.overall)
+        // null 信号 = 分母 0（契约要求如实披露，不是 0 分）
+        assertNull(p.signals["S4"])
+        assertNull(p.signals["S7"])
+        assertEquals(0.5, p.signals["S1"])
+        assertEquals(1.0, p.signals["S5"])
+        assertEquals(0.0, p.signals["S2"])
+        assertEquals(listOf("S4", "S7"), p.diagnostics.nullSignals)
+        assertTrue(p.diagnostics.nullSignalsNote.isNotBlank())
+        // 实体与 uncertain 的定位形状
+        val e = p.entities.single()
+        assertEquals("new_risky_call@suspect.py:33", e.id)
+        assertEquals("func", e.kind)
+        assertEquals(1.0, e.confidence)
+        assertEquals("suspect.py", e.file)
+        assertEquals(33, e.line)
+        assertEquals(1, e.relations.size)
+        assertEquals("calls", e.relations.first().type)
+        val u = p.uncertain.single()
+        assertEquals("suspect.py@34:risky", u.id)
+        assertEquals("unresolved_call", u.issue)
+        assertEquals("suspect.py", u.contextRef?.file)
+        assertEquals(34, u.contextRef?.line)
+        assertEquals(0, p.diagnostics.parseErrors)
+        assertEquals(1, p.diagnostics.patchFiles)
+        assertEquals(6, p.diagnostics.addedLines)
+        assertEquals(1, p.diagnostics.totalEntities)
+        assertEquals(2, p.diagnostics.totalRelations)
+    }
+
+    @Test
+    fun mergedConfidenceParsesRealShape() {
+        val m = decodeOrThrow(MergedConfidence.serializer(), fixture("confidence/patchconf_merged"))
+        assertEquals("moongit-patch-confidence-merged/1", m.schema)
+        assertEquals(0.905, m.overall)
+        // 合并实体键并集：algorithm 分支（带 kind/file/line）与 agent 分支（带 verdict/reason）
+        assertEquals(2, m.entities.size)
+        val alg = m.entities.first { it.source == "algorithm" }
+        assertEquals("func", alg.kind)
+        assertEquals("suspect.py", alg.file)
+        assertEquals(33, alg.line)
+        val ag = m.entities.first { it.source == "agent" }
+        assertEquals("resolved", ag.verdict)
+        assertEquals("deepDolphin 人工裁决", ag.reason)
+        assertEquals("suspect.py", ag.contextRef?.file)
+        // 计数与来源（实测键位：diagnostics.reviewed_by_agent，mac 注释的顶层 reviewed 键引擎不发）
+        assertEquals(1, m.diagnostics.reviewedByAgent)
+        assertEquals(1, m.diagnostics.certainFromAlgorithm)
+        assertEquals(0, m.diagnostics.deferred)
+        assertTrue(m.sources.agent)
+        // 本机真跑 alerts 为空（resolved 无警示）；键集 {level,type,detail} 由镜像容错覆盖
+        assertEquals(0, m.alerts.size)
+        // signals 原样流过终稿（null 键不丢）
+        assertNull(m.signals["S4"])
+    }
+
+    @Test
+    fun mergedAlertToleratesEngineTypeKeyAndLegacyIssueKey() {
+        // 实测键集是 {level,type,detail}；issue 键缺席 → null（展示层回退 type，见 alertLineText）
+        val a = decodeOrThrow(
+            MergedAlert.serializer(),
+            """{"level":"high","type":"unresolved_call","detail":"call not found"}""",
+        )
+        assertEquals("high", a.level)
+        assertEquals("unresolved_call", a.type)
+        assertNull(a.issue)
+    }
+
+    @Test
+    fun patchConfidenceRoundTripKeepsNullSignalsForMerge() {
+        // merge 的 algorithm 回传必须保住 null 信号键——contractJson(explicitNulls=false)
+        // 编码会丢键，引擎侧终稿的 S4/S7 披露随之消失。mergeRoundTripJson 是唯一编码器，
+        // 这里判据直接测它（decode→encode→decode 三段不丢事实）。
+        val p = decodeOrThrow(PatchConfidence.serializer(), fixture("confidence/patchconf_algorithm"))
+        val text = Engine.mergeRoundTripJson.encodeToString(PatchConfidence.serializer(), p)
+        assertTrue("\"S4\":null" in text, "null 信号键必须在回传 JSON 里（compact 无空格形状）")
+        val back = decodeOrThrow(PatchConfidence.serializer(), text)
+        assertEquals(p, back, "decode→encode→decode 全等（忠实往返）")
     }
 }
