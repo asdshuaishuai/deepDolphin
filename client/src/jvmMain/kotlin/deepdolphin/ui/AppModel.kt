@@ -339,6 +339,63 @@ class AppModel(private val engineBin: String) {
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    // ── 定时更新（mac AIIntegration.swift:119-173 setAutoUpdate / restartAutoTimer /
+    //    runScheduledUpdate 对位）──
+    //
+    // 【与 mac 的差异，如实标注】mac 面板关了菜单栏进程还在，Timer 是常驻的；
+    // CMP 无守护进程——定时器是本进程协程，应用存活期生效、退出即停，
+    // 重启后 init 按配置重建（「重启后按配置恢复」）。mac 的系统通知 + AI 简报推送
+    // CMP 未接（无通知通道消费方）：结果写进页头操作反馈行（lastResult），如实降级。
+    private var autoTimerJob: Job? = null
+
+    init { restartAutoTimer() }
+
+    /** 当前配置（settings.conf 的 update.* 节；设置页「自动化」tab 读它）。 */
+    fun autoUpdateSettings(): AutoUpdateSettings = ConfStore.readAuto()
+
+    /**
+     * 改配置 = 写 conf + 立即重启定时器（对位 mac setAutoUpdate「改完立即生效」，
+     * 此设置不走草稿/保存流）。写失败如实回传给界面。
+     */
+    fun setAutoUpdate(cfg: AutoUpdateSettings): String? {
+        val err = ConfStore.writeAuto(cfg)
+        if (err == null) restartAutoTimer()
+        return err
+    }
+
+    /**
+     * （重）建定时器。必须先收掉旧的——否则每次调用都多挂一个周期协程
+     * （mac 原话：面板开关 N 次 ⇒ N 个幽灵 timer）。hours ≤ 0 = 关闭，不挂。
+     * 首轮延迟 10 分钟：避免「刚打开应用就全量更新」（mac firstRunTimer 600s 同款纪律）。
+     */
+    fun restartAutoTimer() {
+        autoTimerJob?.cancel()
+        autoTimerJob = null
+        val cfg = ConfStore.readAuto()
+        if (cfg.hours <= 0) return
+        autoTimerJob = scope.launch {
+            delay(600_000L)
+            while (isActive) {
+                runScheduledUpdate(cfg.deep)
+                delay(cfg.hours * 3_600_000L)
+            }
+        }
+    }
+
+    /** 周期到点的那次更新（对位 mac runScheduledUpdate：busy 时不叠加，失败不静默）。 */
+    private suspend fun runScheduledUpdate(deep: Boolean) {
+        if (_busyAction.value || _refreshing.value) return
+        val track = if (deep) "深" else "浅"
+        try {
+            val r = engine.updateAll(deep)
+            val ok = r.results.count { it.ok }
+            _lastResult.value = "定时${track}更新：${ok}/${r.results.size} 成功"
+        } catch (e: Exception) {
+            _lastResult.value = "定时${track}更新 ✗ ${e.message}"
+        }
+        refreshAll()
+    }
+
     private var pollJob: Job? = null
 
     /** refreshAll：status → dashboard → milestones（失败不短路后续——尽力而为，逐源披露）。 */
@@ -385,6 +442,7 @@ class AppModel(private val engineBin: String) {
 
     fun stop() {
         pollJob?.cancel()
+        autoTimerJob?.cancel()
         scope.cancel()
     }
 }

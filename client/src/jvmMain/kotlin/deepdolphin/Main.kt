@@ -7,6 +7,7 @@ package deepdolphin
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.Button
@@ -16,7 +17,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -24,10 +30,14 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import deepdolphin.engine.EngineLocator
 import deepdolphin.engine.EngineProbe
+import deepdolphin.sysint.TrayQuickView
 import deepdolphin.ui.AppModel
 import deepdolphin.ui.AppModel.Route
 import deepdolphin.ui.AgentSheet
+import deepdolphin.ui.SearchEmpty
+import deepdolphin.ui.SearchFilter
 import deepdolphin.ui.SettingsPage
+import deepdolphin.ui.ShortcutMap
 import deepdolphin.ui.BoardPage
 import deepdolphin.ui.ConfidencePage
 import deepdolphin.ui.DashboardPage
@@ -43,7 +53,11 @@ import deepdolphin.ui.Type
 import kotlinx.coroutines.launch
 
 @Composable
-fun App(initialSection: String? = null, initialProject: String? = null) {
+fun App(
+    initialSection: String? = null,
+    initialProject: String? = null,
+    onTraySummary: ((String) -> Unit)? = null,
+) {
     val scope = rememberCoroutineScope()
     var probe by remember { mutableStateOf<EngineProbe?>(null) }
     var busy by remember { mutableStateOf(true) }
@@ -56,7 +70,24 @@ fun App(initialSection: String? = null, initialProject: String? = null) {
             model = probe?.takeIf { it.found }?.let { AppModel(it.path) }
             model?.refreshAll()
             model?.startPolling() // C2 周期轮询 5 分钟
+            // 托盘摘要行随探活结果刷新（引擎缺席也要在托盘里说真话，不挂着初始化文案）
+            if (model == null) onTraySummary?.invoke("未找到 moonGit 引擎")
             busy = false
+        }
+    }
+
+    // 托盘摘要行（mac BarView header summaryLine 对位）：status 流每次到货推一行。
+    // env == null 是「还没读到」，不是「没有项目」——分开说（侧栏空态同纪律）。
+    LaunchedEffect(model) {
+        val m = model ?: return@LaunchedEffect
+        m.status.collect { env ->
+            onTraySummary?.invoke(
+                if (env == null) "正在读取项目群…"
+                else TrayQuickView.summaryLine(
+                    total = env.projects.size,
+                    dirtyProjects = env.summary.dirtyProjects,
+                )
+            )
         }
     }
 
@@ -100,12 +131,25 @@ fun App(initialSection: String? = null, initialProject: String? = null) {
 fun main(vararg args: String) = application {
     // C10 深链：--section dashboard|board|milestones / --project <名>
     val link = deepdolphin.sysint.SysInt.parseDeepLink(args.toList())
+    // 托盘速览（mac BarView MenuBarExtra 对位；AWT SystemTray/X11）：
+    // isSupported() == false（如 Wayland 原生会话）→ install 返回 null，静默降级不报错。
+    val tray = TrayQuickView.install(
+        onOpenPanel = { java.awt.Window.getWindows().filter { it.isVisible }.forEach { it.toFront() } },
+        onQuit = { exitApplication() },
+    )
     Window(
-        onCloseRequest = ::exitApplication,
+        onCloseRequest = {
+            tray?.remove()
+            exitApplication()
+        },
         state = WindowState(width = 1280.dp, height = 860.dp),
         title = "deepDolphin",
     ) {
-        App(initialSection = link.section, initialProject = link.project)
+        App(
+            initialSection = link.section,
+            initialProject = link.project,
+            onTraySummary = tray?.let { t -> { line: String -> t.updateSummary(line) } },
+        )
     }
 }
 
@@ -116,9 +160,40 @@ fun SidebarShell(model: AppModel) {
     val status by model.status.collectAsState()
     val selected by model.selectedProject.collectAsState()
     val projects = status?.projects.orEmpty()
-    val readable = projects.count { it.isReadable }
 
-    Row(Modifier.fillMaxSize()) {
+    // ── 侧栏搜索（mac PanelView.swift:19-36/238-262 sidebarSearch 对位）──
+    // 搜索词空 = 不过滤；匹配键 = 项目名 + 分支名（记得「那条 feat 分支」也能搜到）。
+    // 判定全在 SearchFilter 纯函数（可单测），这里只消费。
+    var projectQuery by remember { mutableStateOf("") }
+    val shownProjects = SearchFilter.filter(projects, projectQuery) { p ->
+        p.name + " " + p.branches.joinToString(" ") { it.name }
+    }
+    // Ctrl+F 要能把光标送进搜索框（mac 自建搜索框 + @FocusState 的 Compose 对位：
+    // FocusRequester 只吃自建输入框——这是不用封装件、用 BasicTextField 的原因）
+    val searchFocus = remember { FocusRequester() }
+
+    Row(
+        Modifier
+            .fillMaxSize()
+            // 窗口级快捷键（mac ShortcutMap + keyboardShortcut 对位）：onPreviewKeyEvent
+            // 挂窗口内容根——隧道相位先于任何聚焦子级（含输入框）拿到键事件。
+            // 键位唯一来源是 ShortcutMap 纯对象；这里只做动作接线。
+            .onPreviewKeyEvent { e ->
+                if (!e.isCtrlPressed) return@onPreviewKeyEvent false
+                when (ShortcutMap.actionOf(ctrlPressed = true, key = e.key)) {
+                    ShortcutMap.Action.DASHBOARD -> { model.goRoute(Route.DASHBOARD); true }
+                    ShortcutMap.Action.BOARD -> { model.goRoute(Route.BOARD); true }
+                    ShortcutMap.Action.MILESTONES -> { model.goRoute(Route.MILESTONES); true }
+                    ShortcutMap.Action.SETTINGS -> { model.goRoute(Route.SETTINGS); true }
+                    ShortcutMap.Action.REFRESH -> { model.refreshAll(); true }
+                    ShortcutMap.Action.FOCUS_SEARCH -> {
+                        runCatching { searchFocus.requestFocus() }
+                        true
+                    }
+                    null -> false
+                }
+            }
+    ) {
         // ── 侧栏 ──
         Column(
             Modifier.width(230.dp).fillMaxHeight().background(Palette.Sidebar)
@@ -128,7 +203,45 @@ fun SidebarShell(model: AppModel) {
             // 品牌区（mac 侧栏顶部 app 名对位）
             Text("deepDolphin", style = Type.title, color = Palette.TextPrimary)
             Text("moonGit · 项目群进度引擎", style = Type.micro, color = Palette.TextTertiary)
-            Spacer(Modifier.height(Space.lg))
+            Spacer(Modifier.height(Space.md))
+            // 侧栏搜索框（mac sidebarSearch：放大镜 + 素输入框 + 清除钮；
+            // 搜索框在侧栏顶部、仓库组之上——过滤的是下面的「仓库」组）
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(Radius.control))
+                    .background(Palette.Card)
+                    .padding(horizontal = Space.sm, vertical = 6.dp),
+            ) {
+                Text("⌕", style = Type.body, color = Palette.TextTertiary)
+                Spacer(Modifier.width(Space.xs))
+                BasicTextField(
+                    value = projectQuery,
+                    onValueChange = { projectQuery = it },
+                    singleLine = true,
+                    textStyle = Type.body.copy(color = Palette.TextPrimary),
+                    modifier = Modifier.weight(1f).focusRequester(searchFocus),
+                    decorationBox = { inner ->
+                        Box {
+                            if (projectQuery.isEmpty()) {
+                                Text("搜索项目 / 分支", style = Type.body, color = Palette.TextTertiary)
+                            }
+                            inner()
+                        }
+                    },
+                )
+                if (projectQuery.isNotEmpty()) {
+                    Spacer(Modifier.width(Space.xs))
+                    Text(
+                        "×",
+                        style = Type.body,
+                        color = Palette.TextTertiary,
+                        modifier = Modifier.clickable { projectQuery = "" }.padding(horizontal = 2.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(Space.sm))
             NavGroupLabel("视图")
             NavItem("仪表盘", Route.DASHBOARD == route) { model.goRoute(Route.DASHBOARD) }
             NavItem("看板", Route.BOARD == route) { model.goRoute(Route.BOARD) }
@@ -137,8 +250,21 @@ fun SidebarShell(model: AppModel) {
             // 文案对位 mac L10n zh：nav.confidence=代码置信度 / nav.patchcheck=补丁体检
             NavItem("代码置信度", Route.CONFIDENCE == route) { model.goRoute(Route.CONFIDENCE) }
             NavItem("补丁体检", Route.PATCHCHECK == route) { model.goRoute(Route.PATCHCHECK) }
-            NavGroupLabel("仓库 · $readable/${projects.size}")
-            projects.forEach { p ->
+            // 仓库组计数 = 过滤后口径（readable/总数 既有披露不变，只是数的是 shown 集）；
+            // 搜出来一部分时给 resultSummary 一行（mac resultSummary 对位）
+            NavGroupLabel("仓库 · ${shownProjects.count { it.isReadable }}/${shownProjects.size}")
+            SearchFilter.resultSummary(projects.size, shownProjects.size)?.let {
+                Text(it, style = Type.micro, color = Palette.TextSecondary)
+            }
+            // 空结果两态分开说（mac emptyReason/emptyText 对位）：「本来就没有」≠「没匹配上」
+            SearchFilter.emptyReason(projects.size, shownProjects.size, projectQuery)?.let { reason ->
+                Text(
+                    SearchFilter.emptyText(reason),
+                    style = Type.micro,
+                    color = if (reason == SearchEmpty.NoData) Palette.TextTertiary else Palette.TextSecondary,
+                )
+            }
+            shownProjects.forEach { p ->
                 RepoItem(
                     p.name + (if (p.isReadable) "" else "（读不出）"),
                     unreadable = !p.isReadable,

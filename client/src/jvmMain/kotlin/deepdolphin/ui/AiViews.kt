@@ -87,11 +87,22 @@ object ConfStore {
     }
 
     fun readAi(): AiSettings = AiSettings.fromConf(read())
+
+    /** 定时更新（update.* 独立节，mac "update.autoHours" UserDefaults 键的 conf 对位）。 */
+    fun writeAuto(cfg: AutoUpdateSettings): String? = try {
+        confFile.writeText(AutoUpdateSettings.mergeInto(read(), cfg))
+        null
+    } catch (e: Exception) {
+        e.message
+    }
+
+    fun readAuto(): AutoUpdateSettings = AutoUpdateSettings.fromConf(read())
 }
 
 /**
  * 设置页（mac 原生 Settings scene 的 Linux 对位；侧栏最底部「设置」进入）。
- * 对位 AppSettingsView 的 TabView：通用 / AI / 关于（自动化随后续批收编）。
+ * 对位 AppSettingsView 的 TabView：通用 / AI / 自动化 / 关于（ScheduleCard 收编为第四 tab 前的
+ * 「自动化随后续批收编」已于本批落地）。
  */
 @Composable
 fun SettingsPage(model: AppModel) {
@@ -103,7 +114,7 @@ fun SettingsPage(model: AppModel) {
     ) {
         Text("设置", style = Type.title)
         Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            listOf("通用", "AI", "关于").forEachIndexed { i, label ->
+            listOf("通用", "AI", "自动化", "关于").forEachIndexed { i, label ->
                 val selected = tab == i
                 Text(
                     label, style = Type.body,
@@ -119,6 +130,7 @@ fun SettingsPage(model: AppModel) {
         when (tab) {
             0 -> GeneralPane()
             1 -> AiSettingsPane()
+            2 -> SchedulePane(model)
             else -> AboutPane()
         }
     }
@@ -174,6 +186,74 @@ private fun autostartEntry(): String? {
             .split('\u0000').firstOrNull { it.isNotBlank() }
     }.getOrNull() ?: return null
     return SysInt.autostartClientEntry(first)?.takeIf { File(it).name == "deepdolphin" }
+}
+
+/**
+ * 自动化 tab（mac AppSettingsView 第四 tab 的 ScheduleCard 对位，AISettingsView.swift:257-284
+ * 原文形态：grouped 卡片 + 间隔选择器 + 两条说明，无保存按钮——立即生效）。
+ * 本版多一个轨道选择（浅/深，任务口径「定时浅/深更新」）；mac 版只有浅轨道
+ * （runScheduledUpdate 固定 deep: false）——差异如实写进卡片说明，不冒充同款。
+ */
+@Composable
+private fun SchedulePane(model: AppModel) {
+    var cfg by remember { mutableStateOf(model.autoUpdateSettings()) }
+    var message by remember { mutableStateOf<String?>(null) }
+
+    fun apply(next: AutoUpdateSettings) {
+        cfg = next
+        val err = model.setAutoUpdate(next)
+        message = when {
+            err != null -> "写入 settings.conf 失败：$err（定时器未变）"
+            next.hours <= 0 -> "已关闭定时更新 ✓"
+            else -> "已开启：每 ${next.hours} 小时${if (next.deep) "深" else "浅"}更新全部项目（立即生效）✓"
+        }
+    }
+
+    GlassCard(Modifier.fillMaxWidth()) {
+        Text("定时更新", style = Type.section)
+        Spacer(Modifier.height(Space.sm))
+        Text("间隔", style = Type.micro, color = Palette.TextSecondary)
+        Spacer(Modifier.height(Space.xs))
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            AutoUpdateSettings.HOUR_CHOICES.forEach { h ->
+                val label = if (h == 0) "关闭" else "每 $h 小时"
+                ChoicePill(label, selected = cfg.hours == h) { apply(cfg.copy(hours = h)) }
+            }
+        }
+        Spacer(Modifier.height(Space.md))
+        Text("轨道", style = Type.micro, color = Palette.TextSecondary)
+        Spacer(Modifier.height(Space.xs))
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            ChoicePill("浅更新（记录进度）", selected = !cfg.deep) { apply(cfg.copy(deep = false)) }
+            ChoicePill("深更新（重写托管文档）", selected = cfg.deep) { apply(cfg.copy(deep = true)) }
+        }
+        Spacer(Modifier.height(Space.md))
+        Text("开启后按间隔对全部项目执行所选轨道的更新。", style = Type.micro, color = Palette.TextSecondary)
+        Text("改完立即生效（此页没有保存按钮）。", style = Type.micro, color = Palette.TextSecondary)
+        Text(
+            "与 mac 版差异：CMP 无常驻守护进程——定时器随本应用存活，退出即停，重启后按此配置恢复；" +
+                "mac 版的系统通知与 AI 简报推送 CMP 未接（结果写在页面操作反馈行）。",
+            style = Type.micro, color = Palette.TextTertiary,
+        )
+        message?.let {
+            Spacer(Modifier.height(Space.sm))
+            Text(it, style = Type.body.copy(color = if (it.contains("✓")) Palette.Green else Palette.Amber))
+        }
+    }
+}
+
+/** 选择胶囊（设置页 tab / 间隔 / 轨道共用的形态：选中 accent 底白字）。 */
+@Composable
+private fun ChoicePill(label: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        label, style = Type.body,
+        color = if (selected) Color.White else Palette.TextSecondary,
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(if (selected) Palette.Accent else Palette.Card)
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
 }
 
 /** AI tab（原「AI 设置」页收编；key 纪律与连通性测试不变）。 */
