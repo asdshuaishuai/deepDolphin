@@ -7,6 +7,7 @@ package deepdolphin.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -35,12 +36,13 @@ fun ProjectDetailView(model: AppModel) {
 
     val p = detail?.projects?.firstOrNull()
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+    LazyColumn(
+        Modifier.fillMaxSize()
             .padding(horizontal = Space.xl, vertical = Space.lg),
         verticalArrangement = Arrangement.spacedBy(Space.lg),
     ) {
         // ── 页头 + 写动作条（唯一 chrome 落点：PageHeader 纪律）──
+        item(key = "header") {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(name ?: L10n.t("nav.projectDetail"), style = Type.title)
@@ -84,10 +86,12 @@ fun ProjectDetailView(model: AppModel) {
                 }
             }
         }
+        }
 
         // 写操作结果一行（actionStripOf 的 PageHeader 落点）；
         // 深浅更新的结果就地给「AI 解读」——AI 融进操作，不做独立入口（mac UpdateActionMenu AI 变体对位）
         lastResult?.let {
+            item(key = "lastResult") {
             GlassCard(Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(it, style = Type.body, maxLines = 3, modifier = Modifier.weight(1f))
@@ -99,27 +103,28 @@ fun ProjectDetailView(model: AppModel) {
                     }
                 }
             }
+            }
         }
 
         when (val st = detailState) {
-            is LoadState.Failed -> GlassCard(Modifier.fillMaxWidth()) {
+            is LoadState.Failed -> item(key = "failed") { GlassCard(Modifier.fillMaxWidth()) {
                 Text(L10n.t("cmp.err.detailRead"), style = Type.section.copy(color = Palette.Amber))
                 Text(st.reason, style = Type.body.copy(color = Palette.TextSecondary))
-            }
-            is LoadState.Loading -> GlassCard(Modifier.fillMaxWidth()) {
+            } }
+            is LoadState.Loading -> item(key = "loading") { GlassCard(Modifier.fillMaxWidth()) {
                 Text(L10n.t("bar.loading"), style = Type.body.copy(color = Palette.TextSecondary))
-            }
+            } }
             else -> {
                 if (p == null) {
-                    GlassCard(Modifier.fillMaxWidth()) { Text(L10n.t("cmp.detail.noData"), style = Type.body) }
+                    item(key = "nodata") { GlassCard(Modifier.fillMaxWidth()) { Text(L10n.t("cmp.detail.noData"), style = Type.body) } }
                 } else {
-                    if (!p.isReadable) UnreadableCard(p) else {
-                        PulseCard(p)
-                        CommitTypesCard(p)
-                        BranchCard(p)
-                        GitCard(model, p, busyAction)
-                        JournalCard(journal?.entries.orEmpty(), journal?.unparsableLines, journal?.windowExhausted)
-                        DocsCard(docs?.docs.orEmpty(), docs?.unreadable.orEmpty())
+                    if (!p.isReadable) item(key = "unreadable") { UnreadableCard(p) } else {
+                        item(key = "pulse") { PulseCard(p) }
+                        item(key = "committypes") { CommitTypesCard(p) }
+                        item(key = "branch") { BranchCard(p) }
+                        item(key = "git") { GitCard(model, p, busyAction) }
+                        item(key = "journal") { JournalCard(journal?.entries.orEmpty(), journal?.unparsableLines, journal?.windowExhausted) }
+                        item(key = "docs") { DocsCard(docs?.docs.orEmpty(), docs?.unreadable.orEmpty()) }
                     }
                 }
             }

@@ -26,6 +26,12 @@ internal val L10N_CMP_ZH_CN: Map<String, String> = mapOf(
     "cmp.repos.unreadableSuffix" to "（读不出）",
     // 通用
     "cmp.common.refreshing" to "刷新中…",
+    // 菜单条（mac 菜单栏命令的窗口内等价物）
+    "cmp.menu.operations" to "操作",
+    "cmp.menu.stopUpdate" to "停止更新",
+    "cmp.menu.stopKilled" to "已停止 %d 个引擎进程",
+    "cmp.menu.stopNone" to "没有在跑的更新",
+
     "cmp.form.selectProject" to "选择项目",
     // 引擎层错误（mac err.* 未覆盖的 CMP 诊断口径）
     "cmp.err.contract" to "引擎输出不是合法契约（可能契约过旧）：%s",
@@ -350,6 +356,12 @@ internal val L10N_CMP_EN: Map<String, String> = mapOf(
     "cmp.sidebar.subtitle" to "moonGit · Project group progress engine",
     "cmp.repos.unreadableSuffix" to " (unreadable)",
     "cmp.common.refreshing" to "Refreshing…",
+    // Menu bar (in-window equivalent of mac menu commands)
+    "cmp.menu.operations" to "Operations",
+    "cmp.menu.stopUpdate" to "Stop Update",
+    "cmp.menu.stopKilled" to "Stopped %d engine process(es)",
+    "cmp.menu.stopNone" to "No update is running",
+
     "cmp.form.selectProject" to "Select project",
     "cmp.err.contract" to "Engine output is not a valid contract (possibly too old): %s",
     "cmp.err.noOutput" to "no output",
@@ -654,6 +666,12 @@ internal val L10N_CMP_ZH_TW: Map<String, String> = mapOf(
     "cmp.sidebar.subtitle" to "moonGit · 專案群進度引擎",
     "cmp.repos.unreadableSuffix" to "（讀不出）",
     "cmp.common.refreshing" to "重新整理中…",
+    // 選單列（mac 選單列命令的視窗內等價物）
+    "cmp.menu.operations" to "操作",
+    "cmp.menu.stopUpdate" to "停止更新",
+    "cmp.menu.stopKilled" to "已停止 %d 個引擎程序",
+    "cmp.menu.stopNone" to "沒有在跑的更新",
+
     "cmp.form.selectProject" to "選擇專案",
     "cmp.err.contract" to "引擎輸出不是合法契約（可能契約過舊）：%s",
     "cmp.err.noOutput" to "無輸出",
@@ -958,6 +976,12 @@ internal val L10N_CMP_JA: Map<String, String> = mapOf(
     "cmp.sidebar.subtitle" to "moonGit · プロジェクト群進捗エンジン",
     "cmp.repos.unreadableSuffix" to "（読み取れず）",
     "cmp.common.refreshing" to "更新中…",
+    // メニューバー（mac メニューバーコマンドのウィンドウ内等価物）
+    "cmp.menu.operations" to "操作",
+    "cmp.menu.stopUpdate" to "更新を停止",
+    "cmp.menu.stopKilled" to "%d 個のエンジンプロセスを停止しました",
+    "cmp.menu.stopNone" to "実行中の更新はありません",
+
     "cmp.form.selectProject" to "プロジェクトを選択",
     "cmp.err.contract" to "エンジン出力が正当な契約ではありません（契約が古い可能性）：%s",
     "cmp.err.noOutput" to "出力なし",

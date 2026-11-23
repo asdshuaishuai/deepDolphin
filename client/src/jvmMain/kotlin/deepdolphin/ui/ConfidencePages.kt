@@ -17,6 +17,8 @@
 
 package deepdolphin.ui
 
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -342,7 +344,15 @@ private fun ConfidenceReportBody(r: ConfidenceReport, highWeightOnly: Boolean, p
             style = Type.body.copy(color = Palette.TextSecondary),
         )
     }
-    shown.forEach { f -> FindingDisclosureRow(f, projectPath) }
+    // findings 行级 Lazy（有界滚动容器内；稳定 key=位置+权重，去重保护）
+    androidx.compose.foundation.lazy.LazyColumn(
+        Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(Space.sm),
+    ) {
+        items(shown, key = { f -> f.kind + "#" + f.file + "#" + f.line + "#" + f.symbol }) { f ->
+            FindingDisclosureRow(f, projectPath)
+        }
+    }
 }
 
 @Composable

@@ -188,3 +188,11 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
 - 性能：设置页静态说明与四文档改纯 Text（不再拉起 JCEF——启动全程零 CEF）；引擎 DTO 全量 @Immutable；STARTUP_MS 启动打点（真机实测 755ms 冷启动到首帧）。
 - 边界（如实）：页面级 LazyColumn 化未做——长列表都在页面级 verticalScroll 内，嵌套滚动需整页重构，收益/风险比不划算，留专项批；MarkdownHtmlTest 令牌断言改动态取值（单点真相源语义不变）。
 - 终验：204 判据 0 failed；真机逐页实拍 fluent-final-* 五张入库。
+
+## 补差批：菜单条等价物 + Lazy 化收尾 + deb 冒烟（2026-11-24）
+
+- 窗口内菜单条（MenuBar.kt）：mac 原生菜单栏命令的 Linux 等价物——「操作」菜单（全部浅/深更新走 requestBulkUpdate 同一确认链、刷新、停止更新）+「帮助」菜单（帮助文档深开设置-关于-帮助子 tab、GitHub deepDolphin/moonGit 双链接）。停止更新=EngineLocator 进程登记表 destroyForcibly（mac stopUpdate 杀引擎子进程本体的对位；run/runMerged/runSplit 三入口全登记），结果如实回写操作行。
+- 页面级 Lazy 化收尾：详情页整页 LazyColumn（页头/结果行/六段卡片逐段 item+稳定 key）、看板列区列粒度 item、置信度 findings 行级 items（kind#file#line#symbol 键）。
+- deb 打包安装冒烟：packageDeb（fakeroot 用户态 wrapper）→ 69.5MB deb → dpkg-deb -x 提取校验（control/desktop/启动器齐全）→ 打包态真启动 STARTUP_MS=734ms、45s 存活、菜单条实拍（deb-live-menubar/menu-operations-open 两张入库）。
+- 门禁：204 passed / 0 failed。
+- 边界：desktop-file-validate 本机不可用（未装 desktop-file-utils），desktop 文件内容人工核对（Exec/Icon/Categories/MimeType 字段齐）；真 dpkg -i 安装需 root 未做（提取+启动器冒烟为无 root 等价物）。

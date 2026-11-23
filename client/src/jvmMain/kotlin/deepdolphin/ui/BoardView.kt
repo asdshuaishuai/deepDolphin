@@ -38,6 +38,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -316,13 +317,15 @@ fun BoardPage(model: AppModel) {
         // ── 列区（status 读到了才渲染列；失败/读取中不渲染，避免「空看板」冒充真相）──
         if (statusState is LoadState.Loaded) {
             // List + Section 分组形态（对位 mac：窄窗口一列纵排、原生分组标题，不横向滚动）。
-            Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            LazyColumn(
+                Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(Space.lg),
             ) {
                 BoardColumnId.entries.forEach { id ->
-                    BoardColumnUi(id, board, model) { p ->
-                        model.goRoute(AppModel.Route.PROJECT, p)
+                    item(key = "col-" + id.name) {
+                        BoardColumnUi(id, board, model) { p ->
+                            model.goRoute(AppModel.Route.PROJECT, p)
+                        }
                     }
                 }
             }

@@ -387,6 +387,22 @@ class AppModel(private val engineBin: String) {
         _pendingBulk.value = null
     }
 
+    /**
+     * 停止更新（mac 菜单栏「停止更新」对位）：终止的是引擎子进程本体
+     * （EngineLocator 登记表 destroyForcibly），不是只取消协程——后者对
+     * IO 阻塞调用无效。结果如实回写到操作结果行。
+     */
+    fun stopUpdate() {
+        scope.launch {
+            val n = deepdolphin.engine.EngineLocator.killAllRunning()
+            _lastResult.value = if (n > 0) {
+                L10n.t("cmp.menu.stopKilled", n)
+            } else {
+                L10n.t("cmp.menu.stopNone")
+            }
+        }
+    }
+
     fun closeBulkResult() {
         _bulkReport.value = null
     }

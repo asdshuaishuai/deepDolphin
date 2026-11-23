@@ -398,6 +398,10 @@ fun AiSettingsPane() {
 @Composable
 private fun AboutPane() {
     var docTab by remember { mutableStateOf(DocKind.ABOUT) }
+    // 帮助菜单深开：openHelp 自增即切到帮助子 tab（消费一次后不清零，幂等）
+    LaunchedEffect(Unit) {
+        DocsNav.openHelp.collect { docTab = DocKind.HELP }
+    }
     GlassCard(Modifier.fillMaxWidth()) {
         Text("deepDolphin", style = Type.section)
         Text(L10n.t("cmp.about.versionLine"), style = Type.body.copy(color = Palette.TextSecondary))

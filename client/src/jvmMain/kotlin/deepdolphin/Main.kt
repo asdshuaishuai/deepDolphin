@@ -36,6 +36,7 @@ import deepdolphin.sysint.TrayQuickView
 import deepdolphin.ui.AppModel
 import deepdolphin.ui.AppModel.Route
 import deepdolphin.ui.AgentSheet
+import deepdolphin.ui.AppMenuBar
 import deepdolphin.ui.AgentBulkResultSheet
 import deepdolphin.ui.BulkUpdateConfirmDialog
 import deepdolphin.ui.QuickViewDialog
@@ -130,7 +131,11 @@ fun App(
                 Text(L10n.t("cmp.probe.locating"), style = Type.body.copy(color = Palette.TextSecondary))
             }
         }
-        probe != null && probe!!.found && model != null -> SidebarShell(model!!)
+        probe != null && probe!!.found && model != null -> Column(Modifier.fillMaxSize()) {
+            // 窗口内菜单条（mac 原生菜单栏命令的等价物：操作/帮助）
+            AppMenuBar(model!!)
+            Box(Modifier.weight(1f)) { SidebarShell(model!!) }
+        }
         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(L10n.t("bar.noEngine"), style = Type.title.copy(color = Palette.Amber))

@@ -19,6 +19,25 @@ data class EngineProbe(
 
 object EngineLocator {
 
+    // ── 运行中进程登记（mac stopUpdate 等价物：停的是引擎子进程本体）──
+    private val running = java.util.concurrent.ConcurrentHashMap<Process, Boolean>()
+
+    /** 杀掉所有在跑的引擎子进程（菜单「停止更新」）。返回杀掉的进程数。 */
+    fun killAllRunning(): Int {
+        val procs = running.keys.toList()
+        procs.forEach { runCatching { it.destroyForcibly() } }
+        return procs.size
+    }
+
+    private inline fun <T> tracked(proc: Process, block: () -> T): T {
+        running[proc] = true
+        try {
+            return block()
+        } finally {
+            running.remove(proc)
+        }
+    }
+
     fun candidates(): List<String> = buildList {
         System.getenv("MOONGIT_BIN")?.takeIf { it.isNotBlank() }?.let(::add)
         System.getenv("DEEPGIT_BIN")?.takeIf { it.isNotBlank() }?.let(::add)
@@ -51,13 +70,15 @@ object EngineLocator {
         val proc = ProcessBuilder(listOf(bin) + args)
             .redirectErrorStream(false)
             .start()
-        val out = proc.inputStream.bufferedReader().readText()
-        val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
-        if (!finished) {
-            proc.destroyForcibly()
-            return Pair(-1, L10n.t("cmp.err.timeoutSec", timeoutSec))
+        return tracked(proc) {
+            val out = proc.inputStream.bufferedReader().readText()
+            val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
+            if (!finished) {
+                proc.destroyForcibly()
+                return@tracked Pair(-1, L10n.t("cmp.err.timeoutSec", timeoutSec))
+            }
+            Pair(proc.exitValue(), out)
         }
-        return Pair(proc.exitValue(), out)
     }
 
     /**
@@ -70,13 +91,15 @@ object EngineLocator {
             .redirectErrorStream(true)
             .apply { environment()["NO_COLOR"] = "1" }
             .start()
-        val out = proc.inputStream.bufferedReader().readText()
-        val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
-        if (!finished) {
-            proc.destroyForcibly()
-            return Pair(-1, L10n.t("cmp.err.timeoutSec", timeoutSec))
+        return tracked(proc) {
+            val out = proc.inputStream.bufferedReader().readText()
+            val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
+            if (!finished) {
+                proc.destroyForcibly()
+                return@tracked Pair(-1, L10n.t("cmp.err.timeoutSec", timeoutSec))
+            }
+            Pair(proc.exitValue(), out)
         }
-        return Pair(proc.exitValue(), out)
     }
 
     /**
@@ -89,14 +112,16 @@ object EngineLocator {
             .redirectErrorStream(false)
             .apply { environment()["NO_COLOR"] = "1" }
             .start()
-        val out = proc.inputStream.bufferedReader().readText()
-        val err = proc.errorStream.bufferedReader().readText()
-        val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
-        if (!finished) {
-            proc.destroyForcibly()
-            return Triple(-1, "", L10n.t("cmp.err.timeoutSec", timeoutSec))
+        return tracked(proc) {
+            val out = proc.inputStream.bufferedReader().readText()
+            val err = proc.errorStream.bufferedReader().readText()
+            val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
+            if (!finished) {
+                proc.destroyForcibly()
+                return@tracked Triple(-1, "", L10n.t("cmp.err.timeoutSec", timeoutSec))
+            }
+            Triple(proc.exitValue(), out, err)
         }
-        return Triple(proc.exitValue(), out, err)
     }
 
     suspend fun probe(): EngineProbe = withContext(Dispatchers.IO) {
