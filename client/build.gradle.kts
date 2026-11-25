@@ -28,8 +28,18 @@ kotlin {
                 implementation(compose.material3)
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.9.0")
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-                // WebView（Linux/macOS/Windows 走 JCEF/CEF；用于 Markdown / AI 对话渲染）
+                // WebView（JCEF/CEF）：只用于代码图谱 / 架构图两页的引擎 HTML 产物。
                 implementation("io.github.kevinnzou:compose-webview-multiplatform:1.9.40")
+                // WebView 的离屏渲染靠 JOGL；KCEF 只带主 jar，**各平台本地库必须显式声明**。
+                // 二次验证抓到：缺本地库时 WebView 一组合就抛 UnsatisfiedLinkError(gluegen_rt)——
+                // 此前被 WebRuntime 状态永不就绪的 bug 挡着，页面只显示空白，错误从未露出。
+                // 目前只声明并验证了 linux-amd64（本客户端的打包目标平台）；其它平台未验证、不声明。
+                runtimeOnly("org.jogamp.gluegen:gluegen-rt:2.5.0:natives-linux-amd64")
+                runtimeOnly("org.jogamp.jogl:jogl-all:2.5.0:natives-linux-amd64")
+                // 原生包钉版（见 JcefBundle.kt）：KCEF 的下载地址解析器要直接实现，它的两个参数类型来自 Ktor。
+                // 版本必须跟 KCEF 自带的保持一致（2024.04.20.3 → Ktor 3.0.0），否则同一类两个版本上类路径。
+                implementation("io.ktor:ktor-http:3.0.0")
+                implementation("io.ktor:ktor-client-core:3.0.0")
             }
         }
         jvmTest.dependencies {
@@ -55,6 +65,9 @@ compose.desktop.application {
         linux {
             menuGroup = "Development"
             shortcut = true
+            // ⚠ 这里不能写 startupWMClass：Compose Gradle 插件 1.7.3 的 Linux DSL 没有这个属性
+            //   （写了脚本编译就失败）。窗口的 WM_CLASS 实测是 deepdolphin-MainKt（AWT 按主类名生成），
+            //   与 desktop 文件名不一致——任务栏归组靠窗口管理器的模糊匹配，未验证。
         }
     }
 }

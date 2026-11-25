@@ -18,27 +18,27 @@
 
 package deepdolphin.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import deepdolphin.engine.Project
-import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.time.LocalDateTime
 
 // ── 纯函数层（mac Scope.swift ScopeRules 对位；零 Compose 依赖，判据直接测）──
 
@@ -51,11 +51,11 @@ sealed interface ScopeChoice {
 object WorkBarScope {
 
     /** selection → 范围选择器取值（mac ScopeRules.choice 对位）。
-     *  只有「正在看某个项目详情」才收敛到那个项目；其余（仪表盘/看板/里程碑/置信度/
-     *  补丁体检/设置/没有任何选中）都是全局——看板与里程碑同样是全局视图，
-     *  范围选择器只分「全局 / 单仓库」，不承载「看哪个视图」。 */
+     *  只有「正在看某个仓库的页面」才收敛到那个仓库——详情 + 跟仓库走的图谱两页；
+     *  其余（仪表盘/看板/里程碑/置信度/补丁体检/设置/没有任何选中）都是全局——看板与里程碑
+     *  同样是全局视图，范围选择器只分「全局 / 单仓库」，不承载「看哪个视图」。 */
     fun choice(route: AppModel.Route?, selectedProject: String?): ScopeChoice =
-        if (route == AppModel.Route.PROJECT && !selectedProject.isNullOrBlank()) {
+        if (route != null && route.isRepoScoped() && !selectedProject.isNullOrBlank()) {
             ScopeChoice.Project(selectedProject)
         } else {
             ScopeChoice.Group
@@ -127,12 +127,14 @@ fun WorkBar(model: AppModel) {
     val scoped = WorkBarScope.updateScope(route, selected)
     val pending = pendingCommitsOf(projects, scoped)
 
-    Column(Modifier.fillMaxWidth().background(Palette.Card)) {
+    // Fluent 命令条：不另起一层底色，直接坐在页面上，只用 hairline 与内容分界；
+    // 左右内边距与页面标题对齐（Space.xl），范围选择器的文字和页头标题在同一条竖线上
+    Column(Modifier.fillMaxWidth()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = Space.lg, vertical = Space.sm),
+                .padding(horizontal = Space.xl, vertical = 6.dp),
         ) {
             ScopePicker(model, projects, WorkBarScope.choice(route, selected))
             Spacer(Modifier.weight(1f))
@@ -143,19 +145,28 @@ fun WorkBar(model: AppModel) {
     }
 }
 
-/** 范围选择器：globe 图标感 + 当前范围 + 下拉（mac WorkBar.scopePicker 对位）。 */
+/** 范围选择器：范围图标 + 当前范围 + 下拉箭头（mac WorkBar.scopePicker 对位；全局 = 地球，单仓库 = 文件夹）。 */
 @Composable
 private fun ScopePicker(model: AppModel, projects: List<Project>, current: ScopeChoice) {
     var open by remember { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val bg by animateColorAsState(if (hovered) Palette.CardHover else Color.Transparent, tween(Motion.normal), label = "scopeBg")
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
+            .height(ControlHeight)
             .clip(RoundedCornerShape(Radius.control))
-            .clickable { open = true }
-            .padding(horizontal = Space.sm, vertical = 6.dp),
+            .background(bg)
+            .clickable(interactionSource = interaction, indication = null) { open = true }
+            .padding(horizontal = 8.dp),
     ) {
-        Text("◍", style = Type.body, color = Palette.TextTertiary)
-        Spacer(Modifier.width(Space.xs))
+        IconBox(
+            if (current is ScopeChoice.Project) FluentIcon.Folder else FluentIcon.Globe,
+            size = 16.dp,
+            tint = Palette.TextSecondary,
+        )
+        Spacer(Modifier.width(8.dp))
         Text(
             when (current) {
                 ScopeChoice.Group -> WorkBarScope.globalLabel(projects.size)
@@ -165,7 +176,8 @@ private fun ScopePicker(model: AppModel, projects: List<Project>, current: Scope
             color = Palette.TextPrimary,
             maxLines = 1,
         )
-        Text(" ▾", style = Type.label, color = Palette.TextTertiary)
+        Spacer(Modifier.width(4.dp))
+        IconBox(FluentIcon.ChevronDown, size = 12.dp, tint = Palette.TextSecondary)
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             // 只列真实存在的项目（mac 同款）：projects 为空时全局项也不会指向不存在的仓库
             DropdownMenuItem(
@@ -204,43 +216,19 @@ private fun DualTrackPipeline(model: AppModel, scoped: String?, busy: Boolean, p
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
-        Button(
-            onClick = {
-                if (scoped != null) model.updateProject(scoped, deep = false) else model.requestBulkUpdate(deep = false)
-            },
+        FluentButton(
+            text = shallowUpdateLabel(scoped),
+            onClick = { model.runUpdate(deep = false) },
             enabled = !busy,
-            shape = RoundedCornerShape(Radius.control),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Palette.Shallow,
-                contentColor = Color.White,
-            ),
-        ) {
-            Text(shallowUpdateLabel(scoped))
-            // 待记录徽章只在真有东西时出现（恒显 0 会被无视，且「0」容易被读成
-            // 「引擎说不用更新」——mac 原话）；白底深字保证在绿底上读得清
-            if (pending > 0) {
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "$pending",
-                    style = Type.micro.copy(fontWeight = FontWeight.Bold, color = Palette.BgBase),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(Color.White)
-                        .padding(horizontal = 5.dp, vertical = 1.dp),
-                )
-            }
-        }
-        Button(
-            onClick = {
-                if (scoped != null) model.updateProject(scoped, deep = true) else model.requestBulkUpdate(deep = true)
-            },
+            container = Palette.Shallow,
+            badge = pending.takeIf { it > 0 }?.toString(),
+        )
+        FluentButton(
+            text = deepUpdateLabel(scoped),
+            onClick = { model.runUpdate(deep = true) },
             enabled = !busy,
-            shape = RoundedCornerShape(Radius.control),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Palette.Deep,
-                contentColor = Color.White,
-            ),
-        ) { Text(deepUpdateLabel(scoped)) }
+            container = Palette.Deep,
+        )
         if (busy) {
             CircularProgressIndicator(
                 Modifier.size(14.dp),

@@ -1,0 +1,15 @@
+{
+  "project": "vtest2",
+  "milestone": {
+    "id": "m_f96fc1ccbe",
+    "projectId": "p_1f78ad5ba3fb",
+    "name": "zz-verify-receipt",
+    "description": "二次验证：回执形状采样，随即删除",
+    "targetDate": "",
+    "tag": "",
+    "status": "open",
+    "createdAt": "2026-11-24T22:04:06.706193276+08:00",
+    "completedAt": ""
+  },
+  "created": true
+}

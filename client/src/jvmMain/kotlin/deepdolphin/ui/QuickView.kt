@@ -27,8 +27,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -148,15 +146,7 @@ fun QuickViewDialog(
                     CircularProgressIndicator(Modifier.size(12.dp), color = Palette.Accent, strokeWidth = 2.dp)
                     Spacer(Modifier.width(Space.xs))
                 }
-                Text(
-                    "↻",
-                    style = Type.body,
-                    color = Palette.TextSecondary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(Radius.control))
-                        .clickable { model.refreshAll() }
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                )
+                IconButton(FluentIcon.ArrowSync, onClick = { model.refreshAll() })
             }
             Spacer(Modifier.height(Space.xs))
             Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Stroke))
@@ -256,15 +246,7 @@ private fun QuickViewFooter(onOpenPanel: () -> Unit, onQuit: () -> Unit) {
             colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
         ) { Text(L10n.t("bar.openPanel")) }
         Spacer(Modifier.weight(1f))
-        Text(
-            "⏻",
-            style = Type.body,
-            color = Palette.TextSecondary,
-            modifier = Modifier
-                .clip(RoundedCornerShape(Radius.control))
-                .clickable { onQuit() }
-                .padding(horizontal = 6.dp, vertical = 2.dp),
-        )
+        IconButton(FluentIcon.Power, onClick = onQuit)
     }
 }
 

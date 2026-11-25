@@ -9,54 +9,56 @@
 // 页面职责对位 mac 收敛为三件事：
 //   ① 触发引擎渲染（render index --confidence / render arch：复用或重绘，回执带版本）；
 //   ② 从输出提回执末行与产物路径（纯函数，判据见 GraphParseTest；fixture 取自真机引擎）；
-//   ③ 把产物装进 HtmlWebView；打开即渲染（复用判定生效时毫秒级），产物路径有进程内缓存
-//      ——重开窗口先秒开旧图，再后台核验刷新（复用就不重载，画面没变就不闪）。
+//   ③ 把产物装进 HtmlWebView；进页即渲染（复用判定生效时毫秒级），产物路径有进程内缓存
+//      ——再次进页先秒出旧图，再后台核验刷新（复用就不重载，画面没变就不闪）。
 //
-// 【打开形态】对位 mac 2026-10-27「独立窗口最大化」：Compose 下用
-// Dialog(usePlatformDefaultWidth=false) + 92% 宽高近似全屏，标题「代码图谱/架构图 · 项目名」，带关闭。
-// 【入口接线】详情页动作条「代码图谱/架构图」→ AppModel.renderGraphArtifact（busy 生成→成功即开页，
+// 【打开形态】用户定稿 2026-11-25：图谱两页**跟着仓库走**、是专门的页面、不弹窗——
+// 路由 Route.GRAPH / Route.ARCH + selectedProject（仓库），入口在各仓库的详情页里。
+// （mac 是独立最大化窗口 GraphWindows.open；此处以用户定稿为准，不追 mac。）
+// 换仓库即换页；侧栏高亮所属仓库，页头「返回仓库」回详情。
+// 【入口接线】详情页页头「代码图谱/架构图」入口 → AppModel.renderGraphArtifact（busy 生成→成功即进页，
 // 与 mac 探测逻辑的差异见其注释）。mac 头部的「AI 生成」按钮（GraphAgentTask 播种 agent）与
 // 「外部打开」仍缺位——CMP 的 AgentSheet 尚无「关窗后回读产物」回调，不造假按钮。
 
 package deepdolphin.ui
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.Stable
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import deepdolphin.engine.Engine
 import kotlinx.coroutines.launch
 
 // ── 回执/产物路径提取（纯函数；对位 mac CodeGraphPageVM.receipt / extractHTMLPath + 复用判定）──
@@ -95,7 +97,7 @@ fun shouldReloadWebView(reused: Boolean, pathChanged: Boolean): Boolean = !reuse
 /** 底部回执条状态（mac GraphStatusBar 的 (ok, text) 对位）；null = 不占高度。 */
 data class GraphReceipt(val ok: Boolean, val text: String)
 
-/** 图谱两页的进程内产物缓存（mac static lastGoodPath 对位）：重开窗口先秒开旧图。 */
+/** 图谱两页的进程内产物缓存（mac static lastGoodPath 对位）：再次进页先秒出旧图。 */
 private val lastGoodPath = mutableMapOf<String, String>()
 
 /** 缓存键的唯一口径（页内 init 与外部记账共用，防两处拼串漂移）。 */
@@ -114,7 +116,7 @@ fun rememberGraphArtifact(kind: GraphKind, project: String, path: String) {
 class GraphPageModel(
     val projectName: String,
     val kind: GraphKind,
-    private val engine: Engine,
+    private val model: AppModel,
 ) {
     var rendering by mutableStateOf(false)
         private set
@@ -137,7 +139,7 @@ class GraphPageModel(
 
     /**
      * render（index --confidence / arch）：复用判定在引擎侧（产物新鲜就只报复用，代价毫秒级）。
-     * `background` = 秒开缓存后的后台核验：产物仍是复用就不重载 WebView
+     * `background` = 先秒出缓存产物后的后台核验：产物仍是复用就不重载 WebView
      * （重载会闪一下，画面没变就不闪）。
      */
     suspend fun render(background: Boolean) {
@@ -145,7 +147,7 @@ class GraphPageModel(
             rendering = true; error = null
         }
         try {
-            val text = engine.renderGraph(kind.cliKind, projectName, withConfidence = kind == GraphKind.INDEX)
+            val text = model.renderGraph(kind, projectName, allowForce = !background)
             receiptLine(text)?.let { status = GraphReceipt(ok = true, text = it) }
             val p = extractHtmlPath(text)
             if (p != null) {
@@ -171,27 +173,33 @@ class GraphPageModel(
     }
 }
 
-/** 两页只差这些：CLI 子命令、标题词、副标题（mac L10n 口径）、图标瓦片色与字形。 */
+/** 回执条高度：固定值（见 GraphStatusBar 的说明）。 */
+private val StatusBarHeight = 28.dp
+
+/** 两页只差这些：CLI 子命令、路由、标题词、副标题（mac L10n 口径）、图标瓦片色与字形。 */
 enum class GraphKind(
     val cliKind: String,
+    val route: AppModel.Route,
     private val titleKey: String,
     private val subtitleKey: String,
     val tileBrush: Brush,
-    val tileGlyph: String,
+    val tileIcon: FluentIcon,
 ) {
     INDEX(
         cliKind = "index",
+        route = AppModel.Route.GRAPH,
         titleKey = "nav.graph",
         subtitleKey = "cgraph.subtitle",
         tileBrush = accentBrush(), // mac tint .blue → Palette.Accent 同语义内部深→亮渐变
-        tileGlyph = "◈",
+        tileIcon = FluentIcon.DataHistogram,
     ),
     ARCH(
         cliKind = "arch",
+        route = AppModel.Route.ARCH,
         titleKey = "nav.arch",
         subtitleKey = "arch.subtitle",
         tileBrush = deepBrush(), // mac tint .purple → Palette.Deep 同语义内部深→亮渐变
-        tileGlyph = "▦",
+        tileIcon = FluentIcon.Organization,
     );
 
     /** 标题词随取随译（枚举只存键——L10n.t 在调用点求值，换语言即时生效）。 */
@@ -199,92 +207,130 @@ enum class GraphKind(
     fun subtitle(): String = L10n.t(subtitleKey)
 }
 
-// ── 打开形态（对位 mac GraphWindows.open：独立窗口最大化）──
+// ── 页面形态（用户定稿：跟着仓库走的独立页面，不弹窗）──
 
 /**
- * 代码图谱页（对位 mac CodeGraphPage）：跑 `render index <项目> --confidence`，
- * 回执一行显示状态，HtmlWebView 装载引擎 HTML 产物；busy/error 三态诚实。
+ * 代码图谱页：跑 `render index <仓库> --confidence`，回执一行显示状态，HtmlWebView 装载引擎 HTML 产物。
+ * 仓库取自路由的 selectedProject——页面跟着仓库走，换仓库即换页；busy/error 三态诚实。
  */
 @Composable
-fun CodeGraphPage(model: AppModel, projectName: String) {
-    GraphPageDialog(model, projectName, GraphKind.INDEX)
+fun CodeGraphPage(model: AppModel) {
+    GraphPage(model, GraphKind.INDEX)
 }
 
-/** 架构图页（对位 mac ArchPage）：同机制跑 `render arch <项目>`。 */
+/** 架构图页：同机制跑 `render arch <仓库>`。 */
 @Composable
-fun ArchPage(model: AppModel, projectName: String) {
-    GraphPageDialog(model, projectName, GraphKind.ARCH)
+fun ArchPage(model: AppModel) {
+    GraphPage(model, GraphKind.ARCH)
 }
 
 @Composable
-private fun GraphPageDialog(model: AppModel, projectName: String, kind: GraphKind) {
-    val vm = remember(projectName, kind) { GraphPageModel(projectName, kind, model.engine) }
+private fun GraphPage(model: AppModel, kind: GraphKind) {
+    val project by model.selectedProject.collectAsState()
+    val name = project
+    // 路由守卫下进页必带仓库；真没有时如实说，不画一张没有主体的图
+    if (name == null) {
+        Box(Modifier.fillMaxSize().padding(Space.xl), contentAlignment = Alignment.Center) {
+            Text(L10n.t("cmp.graph.noProject"), style = Type.body.copy(color = Palette.TextSecondary))
+        }
+        return
+    }
+    val vm = remember(name, kind) { GraphPageModel(name, kind, model) }
     val scope = rememberCoroutineScope()
-    // 打开即渲染；有缓存路径时窗口已先秒开旧图，这里只是后台核验新鲜度（mac .task 对位）
+    // 进页即渲染；有缓存路径时已先秒出旧图，这里只是后台核验新鲜度（mac .task 对位）
     LaunchedEffect(vm) { vm.render(background = vm.htmlPath != null) }
 
-    Dialog(
-        onDismissRequest = { model.closeGraphPage(kind) },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
+    Column(Modifier.fillMaxSize()) {
+        GraphPageHeader(
+            kind = kind,
+            repo = name,
+            rendering = vm.rendering,
+            onRefresh = { scope.launch { vm.render(background = false) } },
+            onBack = { model.backToRepo() },
+        )
+        // 产物自带完整背景：装进一张与全站同语言的卡片里（圆角 + hairline 描边）
         Column(
             Modifier
-                .fillMaxWidth(0.92f)
-                .fillMaxHeight(0.92f)
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = Space.xl)
+                .padding(bottom = Space.lg)
                 .clip(RoundedCornerShape(Radius.card))
-.shadow(12.dp, RoundedCornerShape(Radius.card))
-                .background(Palette.Card)
+                .background(Palette.BgBase)
                 .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card)),
         ) {
-            GraphHeaderBar(
-                title = "${kind.titleWord()} · $projectName",
-                subtitle = kind.subtitle(),
-                tileBrush = kind.tileBrush,
-                tileGlyph = kind.tileGlyph,
-                rendering = vm.rendering,
-                onRefresh = { scope.launch { vm.render(background = false) } },
-                onClose = { model.closeGraphPage(kind) },
-            )
-            HorizontalDivider(color = Palette.Stroke)
             GraphContentArea(Modifier.weight(1f).fillMaxWidth(), vm)
-            HorizontalDivider(color = Palette.Stroke)
             GraphStatusBar(vm.status) { vm.clearStatus() }
         }
     }
 }
 
-/** 头部（mac GraphHeaderView 对位）：图标瓦片 + 标题 + 副标题 + 刷新/关闭动作区。 */
+/** 页头（与其它页头同一套间距与字级）：图标瓦片 + 标题 +「仓库 · 副标题」+ 刷新 / 返回仓库。 */
 @Composable
-private fun GraphHeaderBar(
-    title: String,
-    subtitle: String,
-    tileBrush: Brush,
-    tileGlyph: String,
+private fun GraphPageHeader(
+    kind: GraphKind,
+    repo: String,
     rendering: Boolean,
     onRefresh: () -> Unit,
-    onClose: () -> Unit,
+    onBack: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md),
+        Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.lg),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 图标瓦片：圆角方块 + 白色字形，同一产品两个页面的视觉锚（渐变 = 语义色内部深→亮）
+        // 图标瓦片：圆角方块 + 白色图标，同一产品两个页面的视觉锚（渐变 = 语义色内部深→亮）
         Box(
-            Modifier.size(30.dp).clip(RoundedCornerShape(Radius.control)).background(tileBrush),
+            Modifier.size(32.dp).clip(RoundedCornerShape(Radius.control)).background(kind.tileBrush),
             contentAlignment = Alignment.Center,
-        ) { Text(tileGlyph, style = Type.card.copy(color = Color.White)) }
+        ) { IconBox(kind.tileIcon, size = 20.dp, tint = Color.White) }
         Spacer(Modifier.width(Space.md))
         Column(Modifier.weight(1f)) {
-            Text(title, style = Type.title, maxLines = 1)
-            Text(subtitle, style = Type.label, maxLines = 1)
+            Text(kind.titleWord(), style = Type.title)
+            Text("$repo · ${kind.subtitle()}", style = Type.label, maxLines = 1)
         }
         if (rendering) {
             CircularProgressIndicator(Modifier.size(14.dp), color = Palette.Accent, strokeWidth = 2.dp)
             Spacer(Modifier.width(Space.sm))
+            Text(L10n.t("graph.rendering"), style = Type.label, color = Palette.TextSecondary)
+            Spacer(Modifier.width(Space.md))
         }
-        ActionText(L10n.t("toolbar.refresh"), Palette.TextSecondary, enabled = !rendering, onClick = onRefresh)
+        FluentButton(L10n.t("toolbar.refresh"), onClick = onRefresh, icon = FluentIcon.ArrowSync, enabled = !rendering)
         Spacer(Modifier.width(Space.sm))
-        ActionText(L10n.t("common.close"), Palette.TextSecondary, enabled = true, onClick = onClose)
+        FluentButton(L10n.t("cmp.graph.backToRepo"), onClick = onBack, icon = FluentIcon.ArrowLeft)
+    }
+}
+
+/**
+ * 仓库详情里进图谱两页的入口（用户定稿：入口在每个仓库里面）。
+ * 带图标的小按钮——和旁边一排文字动作区分开，一眼能看出这是「进另一页」而不是又一个原地动作。
+ */
+@Composable
+fun GraphEntryChip(label: String, icon: FluentIcon, tint: Color, enabled: Boolean, onClick: () -> Unit) {
+    // Fluent reveal：hover 分层提亮 + 描边同步（与 GlassCard 同一节奏）
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val bg by animateColorAsState(
+        if (hovered && enabled) Palette.CardHover else Palette.Card,
+        androidx.compose.animation.core.tween(Motion.normal),
+        label = "entryBg",
+    )
+    val stroke by animateColorAsState(
+        if (hovered && enabled) Palette.StrokeHover else Palette.Stroke,
+        androidx.compose.animation.core.tween(Motion.normal),
+        label = "entryStroke",
+    )
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(Radius.control))
+            .background(bg)
+            .border(1.dp, stroke, RoundedCornerShape(Radius.control))
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconBox(icon, size = 16.dp, tint = if (enabled) tint else Palette.TextTertiary)
+        Spacer(Modifier.width(6.dp))
+        Text(label, style = Type.body, color = if (enabled) Palette.TextPrimary else Palette.TextTertiary)
     }
 }
 
@@ -298,12 +344,14 @@ private fun GraphContentArea(modifier: Modifier, vm: GraphPageModel) {
                 source = HtmlSource.LocalFile(path),
                 modifier = Modifier.fillMaxSize(),
                 reloadToken = vm.reloadToken,
+                // 架构图产物跟随 prefers-color-scheme 选明暗：垫上客户端的暗色（热力图产物恒为暗色，不需要）
+                headScript = if (vm.kind == GraphKind.ARCH) DARK_SCHEME_SHIM else null,
                 onEvent = { ev ->
                     if (ev is HtmlWebEvent.Failed) {
                         vm.status = GraphReceipt(ok = false, text = "WebView ${ev.why}")
                     }
                 },
-                fallback = { why -> WebViewUnavailable(why, path) },
+                fallback = { pending -> WebViewFallback(pending, path) },
             )
         } else {
             when {
@@ -332,17 +380,38 @@ private fun GraphContentArea(modifier: Modifier, vm: GraphPageModel) {
     }
 }
 
-/** JCEF 缺席/失败时的整页降级（不空白）：如实给原因 + 引擎产物路径展示。 */
+/**
+ * JCEF 未就绪/失败时的整页降级（不空白）：装载中给阶段与下载进度，失败如实给原因；
+ * 两种情况都附引擎产物路径——WebView 没就位时文件也在，用户可以自己打开。
+ */
 @Composable
-private fun WebViewUnavailable(why: String, artifactPath: String) {
+private fun WebViewFallback(pending: WebRuntime.Pending, artifactPath: String) {
+    val loading = pending is WebRuntime.Pending.Loading
+    val detail = when (pending) {
+        is WebRuntime.Pending.Loading -> pending.text
+        is WebRuntime.Pending.Failed -> pending.why
+    }
+    val pct = (pending as? WebRuntime.Pending.Loading)?.pct
     Box(Modifier.fillMaxSize().background(Palette.BgBase), contentAlignment = Alignment.Center) {
         Column(
-            Modifier.padding(Space.lg),
+            Modifier.padding(Space.lg).width(420.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(L10n.t("cmp.graph.webviewNA"), style = Type.section.copy(color = Palette.Amber))
+            Text(
+                L10n.t(if (loading) "cmp.graph.webviewPreparing" else "cmp.graph.webviewNA"),
+                style = Type.section.copy(color = if (loading) Palette.TextPrimary else Palette.Amber),
+            )
             Spacer(Modifier.height(Space.sm))
-            Text(why, style = Type.body.copy(color = Palette.TextSecondary), maxLines = 4)
+            Text(detail, style = Type.body.copy(color = Palette.TextSecondary), maxLines = 4)
+            if (pct != null) {
+                Spacer(Modifier.height(Space.md))
+                LinearProgressIndicator(
+                    progress = { pct },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Palette.Accent,
+                    trackColor = Palette.Stroke,
+                )
+            }
             Spacer(Modifier.height(Space.md))
             Text(L10n.t("cmp.graph.artifactPath"), style = Type.label)
             Text(
@@ -355,18 +424,28 @@ private fun WebViewUnavailable(why: String, artifactPath: String) {
     }
 }
 
-/** 底部回执条（mac GraphStatusBar 对位）：一行回执（ok=绿✓ / 失败=橙⚠），可关闭。 */
+/**
+ * 底部回执条（mac GraphStatusBar 对位）：一行回执（ok=绿✓ / 失败=橙⚠），可关闭。
+ * ⚠️ 固定高度、没有回执也占位：WebView 一落位就不许被状态变化挤动尺寸。实测抓到过一次——
+ * 回执条出现把 WebView 压矮一截，离屏渲染的 GL 上下文在「销毁」与「设为当前」之间撞车，
+ * JOGL 在绘制线程上抛空指针，之后整页冻结（悬停、产物内的按钮都不再重绘）。
+ */
 @Composable
 private fun GraphStatusBar(receipt: GraphReceipt?, onDismiss: () -> Unit) {
-    if (receipt == null) return
     Row(
         Modifier
             .fillMaxWidth()
-            .background(if (receipt.ok) Color.Transparent else Palette.Amber.copy(alpha = 0.08f))
-            .padding(horizontal = Space.lg, vertical = Space.xs),
+            .height(StatusBarHeight)
+            .background(if (receipt != null && !receipt.ok) Palette.Amber.copy(alpha = 0.08f) else Color.Transparent)
+            .padding(horizontal = Space.lg),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(if (receipt.ok) "✓" else "⚠", style = Type.label.copy(color = if (receipt.ok) Palette.Green else Palette.Amber))
+        if (receipt == null) return@Row
+        IconBox(
+            if (receipt.ok) FluentIcon.CheckmarkCircle else FluentIcon.Warning,
+            size = 14.dp,
+            tint = if (receipt.ok) Palette.Green else Palette.Amber,
+        )
         Spacer(Modifier.width(Space.sm))
         Text(
             receipt.text,
@@ -375,6 +454,9 @@ private fun GraphStatusBar(receipt: GraphReceipt?, onDismiss: () -> Unit) {
             maxLines = 1,
         )
         Spacer(Modifier.weight(1f))
-        ActionText("×", Palette.TextSecondary, enabled = true, onClick = onDismiss)
+        IconBox(
+            FluentIcon.Dismiss, size = 12.dp, tint = Palette.TextSecondary,
+            modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp),
+        )
     }
 }

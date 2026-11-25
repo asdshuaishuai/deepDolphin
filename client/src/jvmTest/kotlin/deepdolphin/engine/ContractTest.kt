@@ -346,4 +346,63 @@ class ContractTest {
         val back = decodeOrThrow(PatchConfidence.serializer(), text)
         assertEquals(p, back, "decode→encode→decode 全等（忠实往返）")
     }
+
+    // ── 内容断言（二次验证立的规矩：「能解码」不够——镜像写错键名时照样能解码，字段全是默认值）──
+
+    @Test
+    fun commitTypesCarryTheirTypeNames() {
+        val env = decodeOrThrow(StatusEnvelope.serializer(), fixture("status"))
+        val all = env.projects.flatMap { it.commitTypes }
+        assertTrue(all.isNotEmpty(), "真实 status 必有提交构成")
+        assertTrue(all.all { it.kind.isNotBlank() }, "类型名不能为空：引擎键是 type，原镜像写成裸 kind，图例只剩色块和数字")
+    }
+
+    @Test
+    fun journalIsTheUpdateLogNotAGitCommitLog() {
+        // fixtures/journal.json 是 2026-11-24 真机 `journal vtest --limit 30 --json` 原样落盘
+        val j = decodeOrThrow(JournalPayload.serializer(), fixture("journal"))
+        assertTrue(j.entries.isNotEmpty())
+        j.entries.forEach {
+            assertTrue(it.id.isNotBlank() && it.at.isNotBlank() && it.summary.isNotBlank(), "条目必须解出 id/at/summary")
+            assertTrue(it.mode.isNotBlank(), "mode 是浅/深/快照的口径来源")
+        }
+        assertEquals("*", j.branches, "branches 是字符串（* = 全部分支），不是名单")
+        // projects 是数字而非名单（原镜像按 List<String> 解，真机必抛）。它的精确语义契约里没写明
+        // （真机 5 条条目都属 vtest，值为 1）——只断言它解得出来是数，不据此下更多结论。
+        assertTrue(j.projects >= 0)
+        assertTrue(j.limit > 0)
+    }
+
+    @Test
+    fun statusEmbedsJournalEntriesAndMilestoneExtrasDecode() {
+        val env = decodeOrThrow(StatusEnvelope.serializer(), fixture("status"))
+        val entries = env.projects.flatMap { it.journal }
+        assertTrue(entries.isNotEmpty(), "status 内嵌进度日志（mac ProjectStatus.journal 同源）")
+        assertTrue(entries.all { it.id.isNotBlank() && it.branch.isNotBlank() })
+        val ms = decodeOrThrow(MilestoneList.serializer(), fixture("milestones")).milestones
+        assertTrue(ms.isNotEmpty())
+        assertTrue(ms.all { it.tagName.isNotBlank() && it.createdAt.isNotBlank() }, "里程碑的真机恒发键要解得出来")
+        assertTrue(ms.any { it.daysToTarget != 0L || it.targetDate.isNotBlank() })
+    }
+
+    // ── 写回执（2026-11-24 在 vtest2 上「新建 → 删除」往返的真机落盘）──
+
+    @Test
+    fun milestoneAddReceiptCarriesTheMilestoneObject() {
+        // 契约 §3.8：add 回执里 milestone 是对象（带 id）。原镜像写成字符串，
+        // 解码必抛——新建里程碑每次都显示失败，而引擎其实已经建了。
+        val r = decodeOrThrow(MilestoneAddReceipt.serializer(), fixture("milestone_add"))
+        assertEquals("vtest2", r.project)
+        assertEquals("zz-verify-receipt", r.milestone.name)
+        assertTrue(r.created)
+        assertEquals("open", r.milestone.status)
+    }
+
+    @Test
+    fun milestoneRemoveReceipt() {
+        val r = decodeOrThrow(MilestoneRemoveReceipt.serializer(), fixture("milestone_remove"))
+        assertEquals("zz-verify-receipt", r.milestone)
+        assertTrue(r.removed)
+    }
 }
+

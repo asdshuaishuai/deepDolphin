@@ -92,12 +92,18 @@ object L10n {
             ?: AppLanguage.ZH_CN
 
     /** 当前语言完整表（mac 表 + CMP 特有键；internal 供单测做键集完整性校验）。 */
-    fun table(lang: AppLanguage): Map<String, String> = when (lang) {
-        AppLanguage.ZH_CN -> L10N_ZH_CN + L10N_CMP_ZH_CN
-        AppLanguage.EN -> L10N_EN + L10N_CMP_EN
-        AppLanguage.ZH_TW -> L10N_ZH_TW + L10N_CMP_ZH_TW
-        AppLanguage.JA -> L10N_JA + L10N_CMP_JA
+    // 合并表只算一次：原来每次 t() 都把两张表相加拷一遍（约 850 项），
+    // 每次重组里每个字符串都拷一遍——纯浪费。
+    private val mergedTables: Map<AppLanguage, Map<String, String>> = AppLanguage.entries.associateWith { lang ->
+        when (lang) {
+            AppLanguage.ZH_CN -> L10N_ZH_CN + L10N_CMP_ZH_CN
+            AppLanguage.EN -> L10N_EN + L10N_CMP_EN
+            AppLanguage.ZH_TW -> L10N_ZH_TW + L10N_CMP_ZH_TW
+            AppLanguage.JA -> L10N_JA + L10N_CMP_JA
+        }
     }
+
+    fun table(lang: AppLanguage): Map<String, String> = mergedTables.getValue(lang)
 
     /** 翻译入口：`L10n.t("nav.dashboard")`。miss 回退：当前表 → en → key（mac 同链）。 */
     fun t(key: String): String = table(language)[key] ?: table(AppLanguage.EN)[key] ?: key

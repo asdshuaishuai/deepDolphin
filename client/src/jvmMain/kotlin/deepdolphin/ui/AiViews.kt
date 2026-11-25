@@ -12,9 +12,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -38,36 +35,94 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import androidx.compose.foundation.layout.PaddingValues
 
 /** key 的安全存储读写（libsecret secret-tool；失败如实告知）。 */
 object SecretStore {
-    private fun secretTool(vararg args: String): Pair<Int, String> {
-        val proc = ProcessBuilder(listOf("secret-tool", *args)).start()
-        val out = proc.inputStream.bufferedReader().readText()
-        val rc = proc.waitFor()
-        return Pair(rc, out.trim())
+    /** 兜底文件：$XDG_CONFIG_HOME/deepDolphin/ai.key（仅本人可读）。 */
+    internal fun keyFile(): File = File(ConfStore.dir(), "ai.key")
+
+    /** 没装 secret-tool（IOException）返回 null；装了就返回 (退出码, 输出)。 */
+    private fun secretLookup(): Pair<Int, String>? = try {
+        val proc = ProcessBuilder(
+            listOf("secret-tool", "lookup", "application", "deepdolphin", "service", "deepdolphin-ai", "username", "api-key"),
+        ).start()
+        val out = proc.inputStream.bufferedReader(Charsets.UTF_8).readText()
+        proc.errorStream.bufferedReader(Charsets.UTF_8).readText()
+        Pair(proc.waitFor(), out.trim())
+    } catch (_: java.io.IOException) {
+        null
     }
 
-    /** 保存 key（喂 stdin 给 secret-tool store）。 */
-    fun saveKey(key: String): String? = try {
+    private fun secretStore(key: String): Boolean = try {
         val proc = ProcessBuilder(
             listOf("secret-tool", "store", "--label=deepDolphin AI Key",
-                "application", "deepdolphin", "service", "deepdolphin-ai", "username", "api-key")
+                "application", "deepdolphin", "service", "deepdolphin-ai", "username", "api-key"),
         ).start()
-        proc.outputStream.use { it.write(key.toByteArray()) }
-        val rc = proc.waitFor()
-        if (rc == 0) null else L10n.t("cmp.err.libsecret", rc)
-    } catch (e: Exception) {
-        e.message
+        proc.outputStream.use { it.write(key.toByteArray(Charsets.UTF_8)) }
+        proc.inputStream.bufferedReader(Charsets.UTF_8).readText()
+        proc.errorStream.bufferedReader(Charsets.UTF_8).readText()
+        proc.waitFor() == 0
+    } catch (_: Exception) {
+        false
     }
 
-    fun loadKey(): String? = try {
-        val (rc, out) = secretTool(
-            "lookup", "application", "deepdolphin", "service", "deepdolphin-ai", "username", "api-key",
+    private fun secretClear() {
+        try {
+            val proc = ProcessBuilder(
+                listOf("secret-tool", "clear", "application", "deepdolphin", "service", "deepdolphin-ai", "username", "api-key"),
+            ).start()
+            proc.waitFor()
+        } catch (_: Exception) {
+            /* 没有 secret-tool：兜底文件删掉即可 */
+        }
+    }
+
+    private fun writeKeyFile(key: String): String? = try {
+        val f = keyFile()
+        f.parentFile?.mkdirs()
+        val path = f.toPath()
+        java.nio.file.Files.writeString(path, key, Charsets.UTF_8)
+        java.nio.file.Files.setPosixFilePermissions(
+            path,
+            setOf(java.nio.file.attribute.PosixFilePermission.OWNER_READ, java.nio.file.attribute.PosixFilePermission.OWNER_WRITE),
         )
-        if (rc == 0 && out.isNotBlank()) out else null
-    } catch (_: Exception) {
         null
+    } catch (e: Exception) {
+        e.message ?: e.javaClass.simpleName
+    }
+
+    /** 保存 key。null = 成功；否则是失败原因。 */
+    fun saveKey(key: String): String? {
+        if (key.contains('\n')) return "key 不能包含换行"
+        if (secretStore(key)) {
+            // 钥匙串成功：别再留一份兜底文件
+            keyFile().delete()
+            return null
+        }
+        return writeKeyFile(key)
+    }
+
+    /** key 存在哪（给保存后的提示用）。 */
+    fun whereStored(): String =
+        if (keyFile().isFile) L10n.t("cmp.ai.storedFile") else L10n.t("cmp.ai.storedSecret")
+
+    fun loadKey(): String? {
+        // 1) libsecret；读不出来（没装 / 钥匙串锁着）不等于「没填」——继续看兜底文件
+        val hit = secretLookup()
+        if (hit != null && hit.first == 0 && hit.second.isNotBlank()) return hit.second
+        // 2) 兜底文件
+        return try {
+            keyFile().takeIf { it.isFile }?.readText(Charsets.UTF_8)?.trim()?.takeIf { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** 清除已存 key（钥匙串 + 兜底文件）。 */
+    fun clearKey() {
+        secretClear()
+        keyFile().delete()
     }
 }
 
@@ -80,6 +135,10 @@ object ConfStore {
         }
 
     fun read(): String = if (confFile.isFile) confFile.readText() else ""
+
+    /** 配置目录（~/.config/deepDolphin；XDG 可改）。 */
+    fun dir(): File = confFile.parentFile!!.also { it.mkdirs() }
+
     fun writeAi(cfg: AiSettings): String? = try {
         confFile.writeText(AiSettings.mergeInto(read(), cfg))
         null
@@ -116,31 +175,30 @@ object ConfStore {
 @Composable
 fun SettingsPage(model: AppModel) {
     var tab by remember { mutableStateOf(0) }
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(horizontal = Space.xl, vertical = Space.lg),
-        verticalArrangement = Arrangement.spacedBy(Space.md),
-    ) {
-        Text(L10n.t("toolbar.settings"), style = Type.title)
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            listOf(L10n.t("settings.general"), "AI", L10n.t("settings.automation"), L10n.t("settings.about")).forEachIndexed { i, label ->
-                val selected = tab == i
-                Text(
-                    label, style = Type.body,
-                    color = if (selected) Color.White else Palette.TextSecondary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(if (selected) Palette.Accent else Palette.Card)
-                        .clickable { tab = i }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                )
+    // 菜单「关于 / 帮助」先切到「关于」tab（索引 3），子 tab 由 AboutPane 按同一请求选定；
+    // 原来只有 AboutPane 订阅，而它要等「关于」tab 组合后才存在——帮助菜单因此落到「通用」
+    LaunchedEffect(Unit) {
+        DocsNav.request.collect { kind -> if (kind != null) tab = 3 }
+    }
+    // 版面：标题 → 贯通内容区宽度的页签条（Fluent Pivot）→ 可滚动的内容
+    Column(Modifier.fillMaxSize()) {
+        Text(L10n.t("toolbar.settings"), style = Type.title, modifier = Modifier.padding(horizontal = Space.xl, vertical = Space.lg))
+        Pivot(
+            listOf(L10n.t("settings.general"), L10n.t("settings.ai"), L10n.t("settings.automation"), L10n.t("settings.about")),
+            selected = tab,
+            onSelect = { tab = it },
+        )
+        ScrollColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = Space.xl, vertical = Space.lg),
+            verticalArrangement = Arrangement.spacedBy(Space.md),
+        ) {
+            when (tab) {
+                0 -> GeneralPane()
+                1 -> AiSettingsPane()
+                2 -> SchedulePane(model)
+                else -> AboutPane()
             }
-        }
-        when (tab) {
-            0 -> GeneralPane()
-            1 -> AiSettingsPane()
-            2 -> SchedulePane(model)
-            else -> AboutPane()
         }
     }
 }
@@ -201,6 +259,7 @@ private fun AutostartCard() {
                 )
             }
             Switch(
+                colors = fluentSwitchColors(),
                 checked = enabled && entry != null,
                 onCheckedChange = { on ->
                     val e = entry
@@ -287,14 +346,14 @@ private fun SchedulePane(model: AppModel) {
     }
 }
 
-/** 选择胶囊（设置页 tab / 间隔 / 轨道共用的形态：选中 accent 底白字）。 */
+/** 选择胶囊（间隔 / 轨道 / 语言 / 关于子页签共用）：选中 accent 底配近黑字——accent 是亮蓝，白字压上去只有 2:1。 */
 @Composable
 private fun ChoicePill(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         label, style = Type.body,
-        color = if (selected) Color.White else Palette.TextSecondary,
+        color = if (selected) Palette.OnAccent else Palette.TextSecondary,
         modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
+            .clip(RoundedCornerShape(Radius.control))
             .background(if (selected) Palette.Accent else Palette.Card)
             .clickable { onClick() }
             .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -311,11 +370,12 @@ fun AiSettingsPane() {
     var apiKey by remember { mutableStateOf("") } // 不回填明文（只在保存时写入）
     var message by remember { mutableStateOf<String?>(null) }
     var busyTest by remember { mutableStateOf(false) }
+    var busySave by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.md)) {
-        // 静态一行说明用纯 Text（性能：不为此拉起 JCEF；Markdown 渲染留给 AI 回答）
-        Text(L10n.t("cmp.ai.keyNote"), style = Type.micro, color = Palette.TextSecondary)
+        // 原生 Markdown（说明里带 **粗体**；纯 Text 会把星号显示出来）
+        MarkdownText(L10n.t("cmp.ai.keyNote"), style = Type.micro)
 
         GlassCard(Modifier.fillMaxWidth()) {
             Text(L10n.t("cmp.ai.provider"), style = Type.section)
@@ -341,20 +401,38 @@ fun AiSettingsPane() {
             }
             Spacer(Modifier.height(Space.md))
             FieldRow(L10n.t("cmp.ai.model"), model_) { model_ = it }
-            FieldRow("Base URL", baseURL) { baseURL = it }
+            FieldRow(L10n.t("cmp.ai.baseUrl"), baseURL) { baseURL = it }
             FieldRow(L10n.t("cmp.ai.apiKey"), apiKey, password = true) { apiKey = it }
+            // 输入框不回填明文，留空有歧义：给一个明确的「清除已存 key」
+            ActionText(L10n.t("cmp.ai.clearKey"), Palette.TextSecondary, enabled = !busySave) {
+                scope.launch {
+                    withContext(Dispatchers.IO) { SecretStore.clearKey() }
+                    message = L10n.t("cmp.ai.keyCleared")
+                }
+            }
             Spacer(Modifier.height(Space.md))
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Button(
                     onClick = {
-                        val err = ConfStore.writeAi(AiSettings(provider, model_, baseURL))
-                        val keyErr = apiKey.takeIf { it.isNotBlank() }?.let { SecretStore.saveKey(it) }
-                        message = when {
-                            err != null -> L10n.t("cmp.ai.saveFailed", err)
-                            keyErr != null -> L10n.t("cmp.ai.saveKeyFailed", keyErr)
-                            else -> L10n.t("cmp.ai.savedOk")
+                        busySave = true
+                        scope.launch {
+                            // secret-tool 是子进程：放 IO 线程，别卡界面
+                            val (err, keyErr, where) = withContext(Dispatchers.IO) {
+                                Triple(
+                                    ConfStore.writeAi(AiSettings(provider, model_, baseURL)),
+                                    apiKey.takeIf { it.isNotBlank() }?.let { SecretStore.saveKey(it) },
+                                    if (apiKey.isNotBlank()) SecretStore.whereStored() else null,
+                                )
+                            }
+                            message = when {
+                                err != null -> L10n.t("cmp.ai.saveFailed", err)
+                                keyErr != null -> L10n.t("cmp.ai.saveKeyFailed", keyErr)
+                                else -> L10n.t("cmp.ai.savedOk") + (where?.let { " " + it } ?: "")
+                            }
+                            busySave = false
                         }
                     },
+                    enabled = !busySave,
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
                 ) { Text(L10n.t("common.save")) }
@@ -362,7 +440,9 @@ fun AiSettingsPane() {
                     onClick = {
                         busyTest = true
                         scope.launch {
-                            val key = withContext(Dispatchers.IO) { SecretStore.loadKey() } ?: ""
+                            // 测的是**输入框里的** key（没填才用已存的）——
+                            // 原来只测已存的：新填的 key 没保存先测会报「API Key 为空」，或拿旧 key 得出错误结论
+                            val key = apiKey.trim().ifBlank { withContext(Dispatchers.IO) { SecretStore.loadKey() } ?: "" }
                             val cfg = AIConfig(provider, model_, baseURL, key)
                             val engine = AIEngineFactory.create(cfg)
                             var why = ""
@@ -392,33 +472,29 @@ fun AiSettingsPane() {
 /**
  * 关于 tab（mac AboutCombinedTab 对位）：版本与判据口径卡 + 四文档子 tab
  * （关于/帮助/开源感谢/更新日志，对位 mac DocsPages 四语言内容——L10n.doc 随语言取）。
- * 性能：一次只渲染当前子 tab 的文档（MarkdownWebView 是真 WebView，四份同开太重）；
- * 内容是静态文本，切 tab 不重跑引擎。
+ * 一次只渲染当前子 tab 的文档；内容是静态文本，切 tab 不重跑引擎。
+ * 渲染走原生 MarkdownText（不起 WebView）。
  */
 @Composable
 private fun AboutPane() {
     var docTab by remember { mutableStateOf(DocKind.ABOUT) }
-    // 帮助菜单深开：openHelp 自增即切到帮助子 tab（消费一次后不清零，幂等）
+    // 菜单深开的请求在这里消费：切到对应子 tab 后清空（否则下次进设置页会再跳一次）
     LaunchedEffect(Unit) {
-        DocsNav.openHelp.collect { docTab = DocKind.HELP }
+        DocsNav.request.collect { kind -> kind?.let { docTab = it; DocsNav.request.value = null } }
     }
     GlassCard(Modifier.fillMaxWidth()) {
         Text("deepDolphin", style = Type.section)
         Text(L10n.t("cmp.about.versionLine"), style = Type.body.copy(color = Palette.TextSecondary))
         Spacer(Modifier.height(Space.sm))
-        Text(L10n.t("cmp.about.criteriaNote"), style = Type.micro, color = Palette.TextTertiary)
+        MarkdownText(L10n.t("cmp.about.criteriaNote"), style = Type.micro.copy(color = Palette.TextTertiary))
     }
     Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
         DocKind.entries.forEach { kind ->
             ChoicePill(L10n.t(kind.titleKey), selected = docTab == kind) { docTab = kind }
         }
     }
-    // 静态文档用纯 Text（性能：不为此拉起 JCEF）；文档为纯文本形态，无富排版需求
-    Text(
-        L10n.doc(docTab),
-        style = Type.body.copy(color = Palette.TextSecondary, lineHeight = Type.body.fontSize * 1.5),
-        modifier = Modifier.fillMaxWidth().heightIn(min = 320.dp),
-    )
+    // 原生 Markdown 渲染（不起 WebView）；文档是 Markdown，原样显示会满屏 ## 和 **
+    MarkdownText(L10n.doc(docTab), Modifier.fillMaxWidth().heightIn(min = 320.dp))
 }
 
 @Composable
@@ -426,6 +502,7 @@ private fun FieldRow(label: String, value: String, password: Boolean = false, on
     Column {
         Text(label, style = Type.micro)
         OutlinedTextField(
+            colors = fluentTextFieldColors(),
             value = value,
             onValueChange = onChange,
             singleLine = true,
@@ -530,8 +607,8 @@ private fun AgentConversation(model: AppModel, scopeLabel: String, initialTask: 
         }
         Spacer(Modifier.height(Space.md))
         // 消息区
-        Column(
-            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+        ScrollColumn(
+            Modifier.weight(1f).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             if (messages.isEmpty()) {
@@ -547,14 +624,16 @@ private fun AgentConversation(model: AppModel, scopeLabel: String, initialTask: 
                                 .padding(10.dp)
                         ) { Text(m.text, style = Type.body) }
                     }
+                    // 助手回答全部原生 Markdown（不再只给最新一条走 WebView）：不起 JCEF，
+                    // 历史消息同样有代码块/列表/表格排版
                     Role.assistant -> GlassCard(Modifier.fillMaxWidth()) {
-                        if (idx == lastAssistant) {
-                            MarkdownWebView(m.text, Modifier.fillMaxWidth())
-                        } else {
-                            Text(m.text, style = Type.body)
-                        }
+                        MarkdownText(m.text, Modifier.fillMaxWidth())
                     }
-                    else -> if (m.isError) Text("⚠ ${m.text.take(120)}", style = Type.micro.copy(color = Palette.Amber))
+                    else -> if (m.isError) Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconBox(FluentIcon.Warning, size = 14.dp, tint = Palette.Amber)
+                        Spacer(Modifier.width(6.dp))
+                        Text(m.text.take(120), style = Type.micro.copy(color = Palette.Amber))
+                    }
                 }
             }
             if (events.isNotEmpty()) GlassCard(Modifier.fillMaxWidth()) {
@@ -570,6 +649,7 @@ private fun AgentConversation(model: AppModel, scopeLabel: String, initialTask: 
         // 输入行（脱窗缘呼吸）
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
             OutlinedTextField(
+                colors = fluentTextFieldColors(),
                 value = draft,
                 onValueChange = { draft = it },
                 placeholder = { Text(L10n.t("cmp.agent.askPlaceholder"), style = Type.body.copy(color = Palette.TextSecondary)) },

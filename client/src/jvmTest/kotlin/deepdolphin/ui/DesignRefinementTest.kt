@@ -58,7 +58,38 @@ class DesignRefinementTest {
     fun textFollowsWhiteThreeLevels() {
         assertEquals(Color(0xFFFFFFFF), Palette.TextPrimary)   // 100%
         assertEquals(Color(0xA8FFFFFF), Palette.TextSecondary) // 66%
-        assertEquals(Color(0x73FFFFFF), Palette.TextTertiary)  // 45%
+        assertEquals(Color(0x87FFFFFF), Palette.TextTertiary)  // 53%（由下面一条对比度判据定）
+    }
+
+    @Test
+    fun everyTextLevelStaysReadableOnEverySurface() {
+        // WCAG 正文底线 4.5:1：三级文字都是半透明白，合成到每一种底色上都要过线。
+        // 三级文字原来 45%，在卡片底（#292929）上只有 4.2:1——时间戳、文件名这类小字发灰。
+        fun blend(fg: Color, bg: Color): Color = Color(
+            red = fg.red * fg.alpha + bg.red * (1 - fg.alpha),
+            green = fg.green * fg.alpha + bg.green * (1 - fg.alpha),
+            blue = fg.blue * fg.alpha + bg.blue * (1 - fg.alpha),
+            alpha = 1f,
+        )
+
+        fun luminance(c: Color): Double {
+            fun channel(v: Float) = v.toDouble().let { if (it <= 0.03928) it / 12.92 else Math.pow((it + 0.055) / 1.055, 2.4) }
+            return 0.2126 * channel(c.red) + 0.7152 * channel(c.green) + 0.0722 * channel(c.blue)
+        }
+
+        fun contrast(a: Color, b: Color): Double {
+            val (hi, lo) = listOf(luminance(a), luminance(b)).sortedDescending()
+            return (hi + 0.05) / (lo + 0.05)
+        }
+
+        val surfaces = listOf("页面底" to Palette.BgBase, "卡片" to Palette.Card, "卡片 hover" to Palette.CardHover, "侧栏" to Palette.Sidebar)
+        val levels = listOf("一级" to Palette.TextPrimary, "二级" to Palette.TextSecondary, "三级" to Palette.TextTertiary)
+        levels.forEach { (levelName, text) ->
+            surfaces.forEach { (surfaceName, bg) ->
+                val ratio = contrast(blend(text, bg), bg)
+                assertTrue(ratio >= 4.5, "$levelName 文字在$surfaceName 上只有 ${"%.2f".format(ratio)}:1，不到正文 4.5:1 的底线")
+            }
+        }
     }
 
     // ── accent：Fluent 暗色亮蓝 + 近黑文字（对比度纪律）──

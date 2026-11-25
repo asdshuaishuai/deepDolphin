@@ -23,7 +23,7 @@ class WorkBarScopeTest {
         L10n.applyLanguage(AppLanguage.ZH_CN)
     }
 
-    // ── selection → 范围选择器取值：只有项目详情收敛到单仓库，其余全是全局 ──
+    // ── selection → 范围选择器取值：只有仓库级页面（详情 + 图谱两页）收敛到单仓库，其余全是全局 ──
 
     @Test
     fun projectRouteWithSelectionYieldsProjectChoice() {
@@ -39,6 +39,22 @@ class WorkBarScopeTest {
         for (r in listOf(Route.DASHBOARD, Route.BOARD, Route.MILESTONES, Route.CONFIDENCE, Route.PATCHCHECK, Route.SETTINGS)) {
             assertEquals(ScopeChoice.Group, WorkBarScope.choice(r, "vtest"), "$r 应显示全局")
         }
+    }
+
+    @Test
+    fun graphPagesFollowTheirRepository() {
+        // 图谱两页跟着仓库走（用户定稿 2026-11-25）：看 vtest 的代码图谱/架构图时，更新范围就是 vtest
+        assertEquals(ScopeChoice.Project("vtest"), WorkBarScope.choice(Route.GRAPH, "vtest"))
+        assertEquals(ScopeChoice.Project("vtest"), WorkBarScope.choice(Route.ARCH, "vtest"))
+        assertEquals(ScopeChoice.Group, WorkBarScope.choice(Route.GRAPH, null))
+        assertEquals("vtest", WorkBarScope.updateScope(Route.GRAPH, "vtest"))
+        assertEquals("vtest", WorkBarScope.updateScope(Route.ARCH, "vtest"))
+    }
+
+    @Test
+    fun scopePickerOnGraphPageGoesToRepositoryDetail() {
+        // 图谱页上在范围选择器里改选仓库 → 落到那个仓库的详情（图谱页只从详情的入口进）
+        assertEquals(Route.PROJECT to "vtest", WorkBarScope.routeOf(WorkBarScope.choice(Route.GRAPH, "vtest")))
     }
 
     @Test

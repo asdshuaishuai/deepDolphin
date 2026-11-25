@@ -5,6 +5,11 @@
 // 【缺键纪律】「缺键 ≠ 零」：可缺席字段一律 nullable，-1 = 读不出来（引擎既定哨兵）。
 // 失败项目仍是完整形状（error 有值、dirty/overall 是 {}），isReadable 判定。
 
+// 【镜像纪律（2026-11-24 二次验证立的规矩）】本文件的每个键都必须能在真引擎输出里找到
+// （EngineMirrorDriftTest 双向把关：引擎发了镜像没接 = 漂移；镜像声明引擎从不发 = 猜的）。
+// 首批镜像凭印象写的 DashWork/DashProjects/ActiveProject.id 与 JournalEntry（建成了 git 提交形状）
+// 让仪表盘 KPI 恒为 0、提交日志恒为空——「能解码」的判据对此完全失明。
+
 package deepdolphin.engine
 
 import androidx.compose.runtime.Immutable
@@ -89,7 +94,9 @@ data class Project(
     /** 合并建议。null = 当前就在默认分支，不是「没有」。 */
     val mergeHint: MergeHint? = null,
     // ── 日志 ──
-    val journal: List<JournalEntry> = emptyList(),
+    /** 更新日志条目（status 内嵌；mac ProjectStatus.journal 同源——详情页日志卡读这里，
+     *  不另调 journal 命令）。原镜像误用 git 提交形状的 JournalEntry，19 个真键全被吞。 */
+    val journal: List<JournalEntryRecord> = emptyList(),
     val journalTruncated: Boolean? = null,
     val journalLimit: Long = 0,
     val journalUnparsableLines: Long? = null,
@@ -194,6 +201,10 @@ data class Branch(
     val isCurrent: Boolean = false,
     /** fixtures 实测恒发（beacon/main 实测 true）。领先默认分支数只对非默认分支有意义。 */
     val isDefault: Boolean = false,
+    /** 距上次被引擎记录的天数；-1 = 读不出来（mac BranchStatus.staleDays 同款，真机恒发）。 */
+    val staleDays: Long? = null,
+    /** 最近更新时间（ISO 8601，真机恒发）。 */
+    val updatedAt: String = "",
 ) {
     /**
      * 这条分支是不是「可以合进默认分支」。判据**逐字对齐引擎**
@@ -210,19 +221,10 @@ data class Branch(
 
 @Serializable
 @Immutable
-data class JournalEntry(
-    val hash: String = "",
-    val hashShort: String = "",
-    val date: String = "",
-    val subject: String = "",
-    val body: String = "",
-    val files: List<String> = emptyList(),
-)
-
-@Serializable
-@Immutable
 data class CommitTypeCount(
-    val kind: String = "",
+    /** 引擎键名是 type（真机 + fixture 实测）。原镜像写成裸 kind：ignoreUnknownKeys 把真键吞掉、
+     *  本字段恒空串——提交构成图例只剩色块和数字，没有类型名。 */
+    @SerialName("type") val kind: String = "",
     val count: Long = 0,
 )
 
@@ -246,20 +248,27 @@ data class DashboardData(
 @Serializable
 @Immutable
 data class DashProjects(
+    /** ⚠️ total 只数采集成功的；注册表条数是 listed（mac DashKPIBuilder 注释：主数字必须是 listed）。 */
     val total: Long = 0,
-    val readable: Long = 0,
+    val listed: Long = 0,
+    val registered: Long = 0,
+    val excludedDisabled: Long = 0,
     val failed: Long = 0,
-    val degraded: Long = 0,
+    val dirty: Long = 0,
+    val active7d: Long = 0,
+    val active30d: Long = 0,
 )
 
 @Serializable
 @Immutable
 data class DashWork(
-    val dirty: Long = 0,
-    val untracked: Long = 0,
-    val conflicts: Long = 0,
-    val branchCount: Long = 0,
-    val branchCountTruncated: Boolean? = null,
+    /** 各项目 branches **追踪数组**长度之和——不是仓库真实分支数（无远端基线时恒 0）。 */
+    val branches: Long = 0,
+    val mergeCandidates: Long = 0,
+    val untrackedFiles: Long = 0,
+    val untrackedFailed: Long = 0,
+    val untrackedFailedReasons: List<String> = emptyList(),
+    val stashes: Long = 0,
 )
 
 @Serializable
@@ -273,7 +282,7 @@ data class LangCount(
 @Immutable
 data class DashMilestones(
     val counts: MilestoneCounts = MilestoneCounts(),
-    val storeHealth: String = "",
+    val items: List<Milestone> = emptyList(),
 )
 
 @Serializable
@@ -282,15 +291,21 @@ data class MilestoneCounts(
     val open: Long = 0,
     val done: Long = 0,
     val dropped: Long = 0,
-    val unverifiable: Long = 0,
-    val engineRead: Long = 0,
+    val unknown: Long = 0,
+    val other: Long = 0,
+    val storeHealth: String = "",
+    val degraded: Boolean = false,
+    /** 引擎真正读到的条数；与 items 条数不等 = 明细被窗口截过。 */
+    val readCount: Long = 0,
+    val excludedDisabled: Long = 0,
+    val orphaned: Long = 0,
 )
 
 @Serializable
 @Immutable
 data class ActiveProject(
-    val id: String = "",
     val name: String = "",
+    val lastCommitAgo: String = "",
     val headline: String? = null,
 )
 
@@ -326,14 +341,30 @@ data class Milestone(
      *  原镜像误写成 doneAt，ignoreUnknownKeys 把真键吞掉、本字段恒 null，
      *  「达成于 …」一行从来没显示过。空串 = 未达成。 */
     val completedAt: String = "",
-)
+    /** 以下 8 键真机恒发（2026-11-24 实测）；原镜像整个没接，里程碑行因此缺
+     *  「是否逾期 / 还剩几天 / 是否已打到标签 / 创建以来提交数 / 无法核验的原因」。 */
+    /** 距目标日期的天数；-1 = 读不出来。 */
+    val daysToTarget: Long = 0,
+    val overdue: Boolean = false,
+    /** 里程碑名对应的标签名。 */
+    val tagName: String = "",
+    val tagReached: Boolean = false,
+    /** 创建以来的提交数；-1 = 读不出来（不是 0）。 */
+    val commitsSince: Long = 0,
+    val commitsSinceReadable: Boolean = false,
+    val gitReadable: Boolean = true,
+    val unverifiedReason: String = "",
+) {
+    val id: String get() = "$projectId/$name"
+    /** 无法核验：状态读不出来，或仓库读不出来（mac MilestoneItem.isUnknown 同款）。 */
+    val isUnknown: Boolean get() = status == "unknown" || !gitReadable
+}
 
 @Serializable
 @Immutable
 data class OrphanedMilestone(
     val projectId: String = "",
     val name: String = "",
-    val reason: String = "",
 )
 
 // ── milestone add / action / remove 回执 ──
@@ -342,7 +373,9 @@ data class OrphanedMilestone(
 @Immutable
 data class MilestoneAddReceipt(
     val project: String = "",
-    val milestone: String = "",
+    /** 契约 §3.8：add 回执里的 milestone 是**对象**（只有这条路径带 id）。
+     *  原镜像写成字符串，解码必抛——新建里程碑每次都显示失败，而引擎其实已经建了。 */
+    val milestone: Milestone = Milestone(),
     val created: Boolean = false,
 )
 
@@ -390,10 +423,12 @@ typealias UnreadableDocs = String
 @Serializable
 @Immutable
 data class JournalPayload(
-    val entries: List<JournalEntry> = emptyList(),
+    val entries: List<JournalEntryRecord> = emptyList(),
     val limit: Long = 0,
-    val branches: List<String> = emptyList(),
-    val projects: List<String> = emptyList(),
+    /** 真机实测：branches 是字符串（"*" = 全部分支），projects 是数字（项目数）——
+     *  原 fixture 手写成名单，镜像跟着写成 List<String>，真机解码必抛。 */
+    val branches: String = "",
+    val projects: Long = 0,
     val unparsableLines: Long = 0,
     val windowExhausted: Boolean? = null,
     /** 实测形状：对象（分支维度的耗尽明细）；bool 是旧形状。用 JsonElement 容纳两种。 */

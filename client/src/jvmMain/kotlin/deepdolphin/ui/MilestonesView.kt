@@ -19,14 +19,17 @@
 package deepdolphin.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.onClick
+import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.foundation.PointerMatcher
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,6 +42,11 @@ import deepdolphin.engine.Milestone
 import deepdolphin.ui.Palette
 import deepdolphin.ui.Space
 import deepdolphin.ui.Type
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.PaddingValues
 
 // ══════════════════════════════════════════════════════════════════════
 // 取数口径（纯函数层，对位 mac DashboardScope.swift:125-186 DashMilestoneScope）
@@ -133,14 +141,41 @@ fun ConfirmDialog(title: String, body: String, confirmLabel: String, onConfirm: 
     }
 }
 
+/**
+ * 文字动作（Fluent「subtle」次按钮）：平时只有文字，hover 才出底色——页头动作条、行内操作用它。
+ * 与描边按钮（FluentButton Standard）的区别是「轻」：一排并列的次要动作不互相抢眼。
+ */
 @Composable
-fun ActionText(label: String, color: Color, enabled: Boolean = true, onClick: () -> Unit) {
-    Text(
-        label, style = Type.body.copy(fontWeight = FontWeight.Medium),
-        color = if (enabled) color else color.copy(alpha = 0.4f),
-        modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = enabled) { onClick() }
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+fun ActionText(
+    label: String,
+    color: Color,
+    enabled: Boolean = true,
+    icon: FluentIcon? = null,
+    onClick: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val bg by animateColorAsState(
+        if (hovered && enabled) Palette.CardHover else Color.Transparent,
+        tween(Motion.normal),
+        label = "actionBg",
     )
+    val content = if (enabled) color else color.copy(alpha = 0.4f)
+    Row(
+        Modifier
+            .height(ControlHeight)
+            .clip(RoundedCornerShape(Radius.control))
+            .background(bg)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        icon?.let {
+            IconBox(it, size = 16.dp, tint = content)
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(label, style = Type.body.copy(fontWeight = FontWeight.Medium), color = content, maxLines = 1)
+    }
 }
 
 @Composable
@@ -148,6 +183,7 @@ private fun LabeledField(label: String, value: String, singleLine: Boolean = tru
     Column {
         Text(label, style = Type.micro)
         OutlinedTextField(
+            colors = fluentTextFieldColors(),
             value = value,
             onValueChange = onChange,
             singleLine = singleLine,
@@ -189,9 +225,9 @@ fun MilestonesPage(model: AppModel) {
     val tally = DashMilestoneScope.tally(shown)
     val knownProjects = remember(all) { DashMilestoneScope.groups(all) } // 下拉用：首现顺序
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(horizontal = Space.xl, vertical = Space.lg),
+    ScrollColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = Space.xl, vertical = Space.lg),
         verticalArrangement = Arrangement.spacedBy(Space.lg),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -203,7 +239,7 @@ fun MilestonesPage(model: AppModel) {
             Button(
                 onClick = { showForm = !showForm },
                 shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
             ) { Text(if (showForm) L10n.t("cmp.ms.collapseForm") else L10n.t("ms.new")) }
         }
 
@@ -226,33 +262,13 @@ fun MilestonesPage(model: AppModel) {
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     Column {
                         Text(L10n.t("ms.form.project"), style = Type.micro)
-                        var open by remember { mutableStateOf(false) }
-                        Box {
-                            Text(
-                                fProject.ifBlank { L10n.t("cmp.form.selectProject") },
-                                style = Type.body,
-                                color = if (fProject.isBlank()) Palette.TextSecondary else Palette.TextPrimary,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp)).background(Palette.BgDeep)
-                                    .clickable { open = !open }
-                                    .padding(horizontal = 12.dp, vertical = 8.dp).width(160.dp),
-                            )
-                            if (open) {
-                                Column(
-                                    Modifier.width(220.dp).clip(RoundedCornerShape(8.dp))
-                                        .background(Palette.BgDeep).padding(Space.xs)
-                                ) {
-                                    projects.forEach { p ->
-                                        Text(
-                                            p.name, style = Type.body,
-                                            modifier = Modifier.fillMaxWidth()
-                                                .clickable { fProject = p.name; open = false }
-                                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        FluentDropdown(
+                            options = projects.map { it.name to it.name },
+                            selectedKey = fProject.ifBlank { null },
+                            placeholder = L10n.t("cmp.form.selectProject"),
+                            onSelect = { fProject = it },
+                            modifier = Modifier.width(180.dp),
+                        )
                     }
                     LabeledField(L10n.t("ms.name"), fName) { fName = it }
                     LabeledField(L10n.t("cmp.ms.tagOptional"), fTag) { fTag = it }
@@ -280,7 +296,7 @@ fun MilestonesPage(model: AppModel) {
                     },
                     enabled = !busyAction,
                     shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Color.White),
+                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
                 ) { Text(L10n.t("ms.form.create")) }
             }
         }
@@ -347,6 +363,7 @@ fun MilestonesPage(model: AppModel) {
                                     onReopen = { model.milestoneAction(m.projectId, m.name, "reopen") },
                                     onDrop = { confirmDrop = m.projectId to m.name },
                                     onRemove = { confirm = m.projectId to m.name },
+                                    onOpenProject = { model.goRoute(AppModel.Route.PROJECT, m.projectName) },
                                 )
                             }
                         }
@@ -432,44 +449,19 @@ private fun MilestoneFilterBar(
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
         Text(L10n.t("ms.scope.repo"), style = Type.label)
-        var open by remember { mutableStateOf(false) }
-        val filterName = knownProjects.firstOrNull { it.projectId == projectFilter }?.projectName
-        Box {
-            Text(
-                filterName ?: L10n.t("cmp.ms.allShort"),
-                style = Type.body,
-                color = if (projectFilter == null) Palette.TextSecondary else Palette.TextPrimary,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp)).background(Palette.BgDeep)
-                    .clickable(enabled = knownProjects.isNotEmpty()) { open = !open }
-                    .padding(horizontal = 12.dp, vertical = 8.dp).width(140.dp),
-            )
-            if (open && knownProjects.isNotEmpty()) {
-                Column(
-                    Modifier.width(200.dp).clip(RoundedCornerShape(8.dp))
-                        .background(Palette.BgDeep).padding(Space.xs)
-                ) {
-                    Text(
-                        L10n.t("cmp.ms.allWithCount", knownProjects.sumOf { it.items.size }),
-                        style = Type.body,
-                        modifier = Modifier.fillMaxWidth()
-                            .clickable { onSelect(null); open = false }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                    )
-                    knownProjects.forEach { g ->
-                        Text(
-                            "${g.projectName}（${g.items.size}）",
-                            style = Type.body,
-                            modifier = Modifier.fillMaxWidth()
-                                .clickable { onSelect(g.projectId); open = false }
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                        )
-                    }
-                }
-            }
-        }
+        // 「全部」用空串当键：下拉的键一律非空，空串翻译回「不过滤」
+        FluentDropdown(
+            options = listOf("" to L10n.t("cmp.ms.allWithCount", knownProjects.sumOf { it.items.size })) +
+                knownProjects.map { it.projectId to "${it.projectName}（${it.items.size}）" },
+            selectedKey = projectFilter ?: "",
+            placeholder = L10n.t("cmp.ms.allShort"),
+            onSelect = { key -> onSelect(key.ifBlank { null }) },
+            enabled = knownProjects.isNotEmpty(),
+            modifier = Modifier.width(200.dp),
+        )
         // 搜索框（复用 SearchFilter 纯函数；对位 mac .searchable 的 prompt）。
         OutlinedTextField(
+            colors = fluentTextFieldColors(),
             value = query,
             onValueChange = onQuery,
             placeholder = { Text(L10n.t("ms.search.placeholder"), style = Type.micro) },
@@ -483,48 +475,129 @@ private fun MilestoneFilterBar(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MilestoneRow(
+internal fun MilestoneRow(
     m: Milestone, busy: Boolean,
     onDone: () -> Unit, onReopen: () -> Unit, onDrop: () -> Unit, onRemove: () -> Unit,
+    onOpenProject: () -> Unit = {},
 ) {
-    GlassCard(Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(m.name, style = Type.card.copy(fontWeight = FontWeight.Bold))
-                    Spacer(Modifier.width(Space.sm))
-                    when (m.status) {
-                        "open" -> Pill(L10n.t("ms.filter.open"), Palette.Accent)
-                        "done" -> Pill(L10n.t("ms.filter.done"), Palette.Green)
-                        "dropped" -> Pill(L10n.t("ms.filter.dropped"), Palette.TextSecondary)
-                        // unknown 单列：仓库读不出来 ≠ 没达成，不许渲染成「进行中」。
-                        else -> Pill(L10n.t("cmp.ms.unverifiable"), Palette.Amber)
+    // 右键菜单（mac rowActions 对位）：达成 / 重新打开 / 放弃 / 打开项目 / 删除
+    var menuOpen by remember { mutableStateOf(false) }
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth()) {
+        GlassCard(
+            Modifier.fillMaxWidth()
+                // 点行 = 进该里程碑所属项目的详情（mac onTapGesture 对位）；右键 = 行操作菜单
+                .pointerInput(m.id) { detectTapGestures(onTap = { onOpenProject() }) }
+                .onClick(matcher = PointerMatcher.mouse(PointerButton.Secondary)) { menuOpen = true },
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+                // 状态图标：达成 ✓ / 放弃 ✕ / 无法核验 ? / 逾期 ! / 其余 ○
+                val iconTint = when {
+                    m.status == "done" -> Palette.Green
+                    m.status == "dropped" -> Palette.TextSecondary
+                    m.isUnknown -> Palette.Amber
+                    m.overdue -> Palette.Red
+                    else -> Palette.Accent
+                }
+                // 状态图标（mac StatusDot 同语义）：达成=带勾圆、放弃=带叉圆、未知=问号、逾期=警告、进行中=空心圆
+                val stateIcon = when {
+                    m.status == "done" -> FluentIcon.CheckmarkCircle
+                    m.status == "dropped" -> FluentIcon.DismissCircle
+                    m.isUnknown -> FluentIcon.QuestionCircle
+                    m.overdue -> FluentIcon.Warning
+                    else -> FluentIcon.Circle
+                }
+                Box(
+                    Modifier.size(20.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(iconTint.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center,
+                ) { IconBox(stateIcon, size = 12.dp, tint = iconTint) }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        Text(m.projectName, style = Type.label)
+                        Text(m.name, style = Type.card)
+                        if (m.tagReached) Pill("tag ✓", Palette.Green)
                     }
-                    Spacer(Modifier.width(Space.sm))
-                    Text(m.projectName.ifBlank { m.projectId }, style = Type.micro)
+                    m.description?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, style = Type.label, maxLines = 1)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        // 绑了 tag 但还没打到：把 tag 名亮出来（达成靠 tag 出现，用户得知道等哪个）
+                        if (m.tagName.isNotBlank() && !m.tagReached) Text("tag ${m.tagName}", style = Type.micro)
+                        if (m.commitsSinceReadable) {
+                            if (m.commitsSince > 0) Text(milestoneCommitsText(m), style = Type.micro)
+                        } else {
+                            Text(milestoneUnverifiedNote(m), style = Type.micro, color = Palette.Amber, maxLines = 2)
+                        }
+                    }
                 }
-                Spacer(Modifier.height(2.dp))
-                val meta = buildList {
-                    if (m.tag.isNotBlank()) add("tag ${m.tag}")
-                    if (m.targetDate.isNotBlank()) add(L10n.t("ms.row.dueOnly", m.targetDate))
-                    if (m.completedAt.isNotBlank()) add(L10n.t("cmp.ms.completedAt", m.completedAt))
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    val statusTint = when {
+                        m.status == "done" -> Palette.Green
+                        m.status == "dropped" -> Palette.TextSecondary
+                        m.isUnknown -> Palette.Amber
+                        m.overdue -> Palette.Red
+                        else -> Palette.TextPrimary
+                    }
+                    Text(milestoneStatusLabel(m), style = Type.body.copy(fontWeight = FontWeight.Medium), color = statusTint)
+                    val due = milestoneDueText(m)
+                    when {
+                        due.isNotBlank() -> Text(
+                            L10n.t("ms.row.due", m.targetDate, due), style = Type.micro,
+                            color = if (m.overdue) Palette.Red else Palette.TextSecondary,
+                        )
+                        m.targetDate.isNotBlank() -> Text(L10n.t("ms.row.dueOnly", m.targetDate), style = Type.micro)
+                    }
                 }
-                if (meta.isNotEmpty()) Text(meta.joinToString(" · "), style = Type.micro)
-                m.description?.takeIf { it.isNotBlank() }?.let {
-                    Text(it, style = Type.body.copy(color = Palette.TextSecondary), maxLines = 2)
+                // 行内动作（mac 同款三个）：达成（进行中才有）/ 重新打开（非进行中且可核验）/ 删除；放弃在右键菜单
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (m.status == "open") ActionText(L10n.t("ms.row.done"), Palette.Green, enabled = !busy, onClick = onDone)
+                    if (m.status != "open" && !m.isUnknown) ActionText(L10n.t("ms.row.reopen"), Palette.Accent, enabled = !busy, onClick = onReopen)
+                    ActionText(L10n.t("ms.row.delete"), Palette.Red, enabled = !busy, onClick = onRemove)
                 }
-            }
-            // 前动作紧邻信息列；破坏对靠右成组（UI 精修纪律）
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                when (m.status) {
-                    "open", null, "unknown" -> ActionText(L10n.t("ms.row.done"), Palette.Green, enabled = !busy, onClick = onDone)
-                    "done" -> ActionText(L10n.t("ms.row.reopen"), Palette.Accent, enabled = !busy, onClick = onReopen)
-                }
-                Spacer(Modifier.width(Space.sm))
-                ActionText(L10n.t("ms.action.drop"), Palette.TextSecondary, enabled = !busy, onClick = onDrop)
-                ActionText(L10n.t("ms.row.delete"), Palette.Red, enabled = !busy, onClick = onRemove)
             }
         }
+        androidx.compose.material3.DropdownMenu(
+            expanded = menuOpen, onDismissRequest = { menuOpen = false },
+            containerColor = Palette.Card,
+        ) {
+            val close = { menuOpen = false }
+            if (m.status != "done") DropdownMenuItem(text = { Text(L10n.t("ms.action.done"), style = Type.body) }, onClick = { close(); onDone() })
+            if (m.status != "open") DropdownMenuItem(text = { Text(L10n.t("ms.action.reopen"), style = Type.body) }, onClick = { close(); onReopen() })
+            if (m.status != "dropped") DropdownMenuItem(text = { Text(L10n.t("ms.action.drop"), style = Type.body) }, onClick = { close(); onDrop() })
+            androidx.compose.material3.HorizontalDivider(color = Palette.Stroke)
+            DropdownMenuItem(text = { Text(L10n.t("ms.action.openProject"), style = Type.body) }, onClick = { close(); onOpenProject() })
+            androidx.compose.material3.HorizontalDivider(color = Palette.Stroke)
+            DropdownMenuItem(text = { Text(L10n.t("ms.row.delete"), style = Type.body.copy(color = Palette.Red)) }, onClick = { close(); onRemove() })
+        }
+    }
+}
+
+/** 带破坏性操作守卫的里程碑行（详情页里程碑卡用；放弃/删除先确认，文案与里程碑页同一份）。 */
+@Composable
+internal fun GuardedMilestoneRow(model: AppModel, m: Milestone) {
+    val busy by model.busyAction.collectAsState()
+    var pending by remember { mutableStateOf<String?>(null) } // "drop" | "remove"
+    MilestoneRow(
+        m = m, busy = busy,
+        onDone = { model.milestoneAction(m.projectId, m.name, "done") },
+        onReopen = { model.milestoneAction(m.projectId, m.name, "reopen") },
+        onDrop = { pending = "drop" },
+        onRemove = { pending = "remove" },
+        onOpenProject = { model.goRoute(AppModel.Route.PROJECT, m.projectName) },
+    )
+    pending?.let { kind ->
+        val drop = kind == "drop"
+        ConfirmDialog(
+            title = if (drop) L10n.t("cmp.ms.confirmDrop") else L10n.t("cmp.ms.confirmDelete"),
+            body = if (drop) L10n.t("cmp.ms.confirmDropBody", m.name, m.projectName) else L10n.t("cmp.ms.confirmDeleteBody", m.name, m.projectName),
+            confirmLabel = if (drop) L10n.t("ms.action.drop") else L10n.t("ms.row.delete"),
+            onConfirm = {
+                pending = null
+                if (drop) model.milestoneAction(m.projectId, m.name, "drop") else model.milestoneRemove(m.projectId, m.name)
+            },
+            onDismiss = { pending = null },
+        )
     }
 }

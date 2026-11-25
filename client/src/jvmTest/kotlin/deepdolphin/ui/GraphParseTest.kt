@@ -130,4 +130,52 @@ class GraphParseTest {
             assertTrue(extractHtmlPath(text)!!.startsWith("/"), "$name 必提得到绝对产物路径")
         }
     }
+    // ── 页面形态（用户定稿 2026-11-25：跟仓库走的独立页面，不弹窗）──
+
+    @Test
+    fun graphKindsOwnTheirRoutes() {
+        assertEquals(AppModel.Route.GRAPH, GraphKind.INDEX.route)
+        assertEquals(AppModel.Route.ARCH, GraphKind.ARCH.route)
+        // 仓库级页面 = 详情 + 图谱两页：侧栏高亮所属仓库、更新范围收敛到它
+        listOf(AppModel.Route.PROJECT, AppModel.Route.GRAPH, AppModel.Route.ARCH).forEach {
+            assertTrue(it.isRepoScoped(), "$it 必须算仓库级页面")
+        }
+        listOf(
+            AppModel.Route.DASHBOARD, AppModel.Route.BOARD, AppModel.Route.MILESTONES,
+            AppModel.Route.CONFIDENCE, AppModel.Route.PATCHCHECK, AppModel.Route.SETTINGS,
+        ).forEach { assertFalse(it.isRepoScoped(), "$it 是全局视图") }
+    }
+
+    // ── 装载：原生包钉版 + 暗色垫片 ──
+
+    @Test
+    fun nativeBundleIsPinnedPerPlatform() {
+        val pinned = "https://cache-redirector.jetbrains.com/intellij-jbr/jbr_jcef-21.0.4-linux-x64-b631.2.tar.gz"
+        assertEquals(pinned, JcefBundle.urlFor("Linux", "amd64"))
+        assertEquals(pinned, JcefBundle.urlFor("Linux", "x86_64"))
+        // 未验证平台不钉（调用方退回 KCEF 默认下载）——不拿 linux-x64 的包去装别的平台
+        assertNull(JcefBundle.urlFor("Linux", "aarch64"))
+        assertNull(JcefBundle.urlFor("Mac OS X", "x86_64"))
+        assertNull(JcefBundle.urlFor("Windows 11", "amd64"))
+    }
+
+    @Test
+    fun headScriptLandsBeforeAnyArtifactScript() {
+        // 垫片必须早于产物自己的脚本：<head> 开头；标签大小写不敏感；没有 head 就放文档最前
+        val out = withHeadScript(
+            "<html><HEAD data-x=\"1\"><meta charset=\"utf-8\"><script>ART</script></HEAD><body></body></html>", "SHIM",
+        )
+        assertEquals(
+            "<html><HEAD data-x=\"1\"><script>SHIM</script><meta charset=\"utf-8\"><script>ART</script></HEAD><body></body></html>", out,
+        )
+        assertEquals("<script>SHIM</script><html><body></body></html>", withHeadScript("<html><body></body></html>", "SHIM"))
+    }
+
+    @Test
+    fun darkSchemeShimOverridesMediaQueryWithoutTouchingBase() {
+        assertTrue(DARK_SCHEME_SHIM.contains("matchMedia"), "垫片改写的是产物的明暗探测口")
+        assertTrue(DARK_SCHEME_SHIM.contains("prefers-color-scheme"))
+        // ⚠️ 不许加 <base>：架构图用 history.pushState 写 '#module=…'，基准 URL 一变就抛 SecurityError
+        assertFalse(withHeadScript("<head></head>", DARK_SCHEME_SHIM).contains("<base", ignoreCase = true))
+    }
 }

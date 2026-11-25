@@ -26,10 +26,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.layout.PaddingValues
 
 // ── 纯函数层（判据见 CommitSheetTest）──
 
@@ -72,6 +70,9 @@ fun partialCommitNote(files: List<String>, selected: Set<String>): String? =
  * 提交可用性：非 busy + 清单非空 + **全选**（引擎无子集提交，见文件头）+ 信息拼得出
  * （commitMessage != null：空白信息引擎直接拒）+ 工作区不干净（干净时引擎必拒）。
  */
+/** 引擎清单里没列出来的改动数（dirty.files 有上限，dirty.total 是真实数；只增不减，不为负）。 */
+fun unlistedDirtyCount(total: Long, listed: Int): Long = (total - listed).coerceAtLeast(0)
+
 fun canSubmitCommitSheet(
     files: List<String>,
     selected: Set<String>,
@@ -135,17 +136,21 @@ fun CommitSheet(model: AppModel, project: String) {
                     Text(L10n.t("detail.commitChanges"), style = Type.title)
                     Text(project, style = Type.label)
                 }
-                Text(
-                    "×",
-                    style = Type.title,
-                    color = Palette.TextSecondary,
-                    modifier = Modifier.clickable { model.closeCommitSheet() }.padding(horizontal = 6.dp),
-                )
+                IconButton(FluentIcon.Dismiss, onClick = { model.closeCommitSheet() })
             }
 
             // ── 主体四态（mac Phase 对位：loading / clean / failed / 清单）──
             //     「干净」与「读失败」必须分开：前者是事实，后者是降级。
             when {
+                // 失败态必须排在「加载中」前面：loadDetail 一进来就清空旧详情，
+                // 原来的顺序让读失败时永远转圈
+                detailState is LoadState.Failed -> Box(Modifier.weight(1f).fillMaxWidth()) {
+                    Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("⚠ " + L10n.t("gitop.commitSheet.readFailed"), style = Type.section.copy(color = Palette.Amber))
+                        Spacer(Modifier.height(Space.xs))
+                        Text((detailState as LoadState.Failed).reason, style = Type.label, maxLines = 3)
+                    }
+                }
                 detailState is LoadState.Loading || p == null -> Box(
                     Modifier.weight(1f).fillMaxWidth(),
                     contentAlignment = Alignment.Center,
@@ -154,13 +159,6 @@ fun CommitSheet(model: AppModel, project: String) {
                         CircularProgressIndicator(Modifier.size(16.dp), color = Palette.Accent, strokeWidth = 2.dp)
                         Spacer(Modifier.height(Space.sm))
                         Text(L10n.t("gitop.commitSheet.loading"), style = Type.label)
-                    }
-                }
-                detailState is LoadState.Failed -> Box(Modifier.weight(1f).fillMaxWidth()) {
-                    Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("⚠ " + L10n.t("gitop.commitSheet.readFailed"), style = Type.section.copy(color = Palette.Amber))
-                        Spacer(Modifier.height(Space.xs))
-                        Text((detailState as LoadState.Failed).reason, style = Type.label, maxLines = 3)
                     }
                 }
                 dirty == null -> Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -184,8 +182,8 @@ fun CommitSheet(model: AppModel, project: String) {
                         modifier = Modifier.align(Alignment.Center),
                     )
                 }
-                else -> Column(
-                    Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                else -> ScrollColumn(
+                    Modifier.weight(1f).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     files.forEach { f ->
@@ -201,10 +199,10 @@ fun CommitSheet(model: AppModel, project: String) {
                                 }
                                 .padding(horizontal = Space.sm, vertical = 5.dp),
                         ) {
-                            Text(
-                                if (checked) "☑" else "☐",
-                                style = Type.body,
-                                color = if (checked) Palette.Accent else Palette.TextSecondary,
+                            IconBox(
+                                if (checked) FluentIcon.CheckboxChecked else FluentIcon.CheckboxUnchecked,
+                                size = 18.dp,
+                                tint = if (checked) Palette.Accent else Palette.TextSecondary,
                             )
                             Spacer(Modifier.width(Space.sm))
                             // 引擎 dirty.files 只有路径（无 xy/kind，见文件头）——不造假徽标
@@ -214,6 +212,12 @@ fun CommitSheet(model: AppModel, project: String) {
                                 maxLines = 1,
                             )
                         }
+                    }
+                    // 引擎 dirty.files 最多只发前 30 个路径；改动更多时必须说出来——
+                    // 清单看着是「30/30 已选」，提交却是整仓，没列出的文件会一并进去
+                    val unlisted = unlistedDirtyCount(dirty.total, files.size)
+                    if (unlisted > 0) {
+                        Text(L10n.t("cmp.commit.unlisted", files.size, unlisted, dirty.total), style = Type.label, color = Palette.Amber)
                     }
                 }
             }
@@ -263,6 +267,7 @@ fun CommitSheet(model: AppModel, project: String) {
                     val partial = partialCommitNote(files, selected)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         OutlinedTextField(
+                            colors = fluentTextFieldColors(),
                             value = message,
                             onValueChange = { message = it },
                             placeholder = { Text(L10n.t("gitop.commitSheet.messagePlaceholder"), style = Type.micro) },
@@ -285,8 +290,10 @@ fun CommitSheet(model: AppModel, project: String) {
                     // 本弹窗发起的 commit 失败回执：留在原地（mac「失败不弹走」）
                     feedback?.let { fb ->
                         if (fb.op == "commit" && fb.project == project && !fb.ok) {
+                            IconBox(FluentIcon.ErrorCircle, size = 14.dp, tint = Palette.Amber)
+                            Spacer(Modifier.width(6.dp))
                             Text(
-                                "✗ ${fb.text.trim().take(200).ifEmpty { "（引擎未给出原因）" }}",
+                                fb.text.trim().take(200).ifEmpty { "（引擎未给出原因）" },
                                 style = Type.micro.copy(color = Palette.Amber),
                                 maxLines = 2,
                             )

@@ -1,65 +1,154 @@
 {
   "entries": [
     {
-      "id": "j_fx_0",
-      "at": "2026-10-01T00:05:35.417426+08:00",
-      "project": "atlas",
-      "projectId": "p_atlas",
+      "id": "j_1795453373989_0",
+      "at": "2026-11-24T01:02:53.922036305+08:00",
+      "project": "vtest",
+      "projectId": "p_f80de38f6095",
       "branch": "main",
       "mode": "shallow",
       "source": "cli",
       "provider": "rules",
-      "commitCount": 14,
-      "summary": "最近 14 个提交：新增×5、修复×4、文档×2",
-      "highlights": [],
-      "nextSteps": [],
+      "commitCount": 0,
+      "commitCountScope": "new",
+      "commitCountTruncated": false,
+      "repoBranchCount": 2,
+      "branchCountTruncated": false,
+      "summary": "最近 3 个提交：文档×1、新增×1、测试×1；最近 2 个提交：新增×1、测试×1",
+      "highlights": [
+        "文档：“提交单对位实测”",
+        "新增：“支持导出”",
+        "测试：“init vtest”",
+        "新增：“支持导出”",
+        "测试：“init vtest”"
+      ],
+      "nextSteps": [
+        "推进该分支的收尾与验证，考虑合并回默认分支"
+      ],
       "notes": [],
-      "providerLabel": "规则引擎"
-    },
-    {
-      "id": "j_fx_1",
-      "at": "2026-10-01T02:42:12.706803+08:00",
-      "project": "atlas",
-      "projectId": "p_atlas",
-      "branch": "dev",
-      "mode": "deep",
-      "source": "cli",
-      "provider": "rules",
-      "commitCount": 154,
-      "commitCountScope": "repoTotal",
-      "summary": "深度更新 README.md、AGENTS.md（基于 154 个提交）",
-      "highlights": [],
       "docs": [
-        "README.md",
-        "AGENTS.md"
+        "README.md"
       ],
       "providerLabel": "规则引擎"
     },
     {
-      "id": "j_fx_2",
-      "at": "2026-09-28T09:12:00+08:00",
-      "project": "atlas",
-      "projectId": "p_atlas",
+      "id": "j_1795453332605_0",
+      "at": "2026-11-24T01:02:12.538195148+08:00",
+      "project": "vtest",
+      "projectId": "p_f80de38f6095",
       "branch": "main",
       "mode": "shallow",
       "source": "cli",
       "provider": "rules",
-      "commitCount": -1,
-      "summary": "提交数读不出来",
-      "highlights": [],
+      "commitCount": 1,
+      "commitCountScope": "new",
+      "commitCountTruncated": false,
+      "repoBranchCount": 2,
+      "branchCountTruncated": false,
+      "summary": "新增 1 个提交（文档×1），涉及 (根目录)（1 文件）；最近 2 个提交：新增×1、测试×1",
+      "highlights": [
+        "文档：“提交单对位实测”",
+        "新增：“支持导出”",
+        "测试：“init vtest”"
+      ],
+      "nextSteps": [
+        "推进该分支的收尾与验证，考虑合并回默认分支"
+      ],
+      "notes": [],
+      "docs": [
+        "README.md"
+      ],
+      "providerLabel": "规则引擎"
+    },
+    {
+      "id": "j_1795443424375_0",
+      "at": "2026-11-23T22:17:04.284512821+08:00",
+      "project": "vtest",
+      "projectId": "p_f80de38f6095",
+      "branch": "main",
+      "mode": "shallow",
+      "source": "cli",
+      "provider": "rules",
+      "commitCount": 0,
+      "commitCountScope": "new",
+      "commitCountTruncated": false,
+      "repoBranchCount": 2,
+      "branchCountTruncated": false,
+      "summary": "最近 2 个提交：新增×1、测试×1；最近 2 个提交：新增×1、测试×1",
+      "highlights": [
+        "新增：“支持导出”",
+        "测试：“init vtest”",
+        "新增：“支持导出”",
+        "测试：“init vtest”"
+      ],
+      "nextSteps": [
+        "推进该分支的收尾与验证，考虑合并回默认分支"
+      ],
+      "notes": [],
+      "docs": [
+        "README.md"
+      ],
+      "providerLabel": "规则引擎"
+    },
+    {
+      "id": "j_1795442227431_0",
+      "at": "2026-11-23T21:57:07.333622519+08:00",
+      "project": "vtest",
+      "projectId": "p_f80de38f6095",
+      "branch": "main",
+      "mode": "shallow",
+      "source": "cli",
+      "provider": "rules",
+      "commitCount": 2,
+      "commitCountScope": "new",
+      "commitCountTruncated": false,
+      "repoBranchCount": 2,
+      "branchCountTruncated": false,
+      "summary": "最近 2 个提交：新增×1、测试×1，⚠ 检测到历史改写（rebase / force-push / 强制回退），基线已重建，原提交区间不再可计算；最近 2 个提交：新增×1、测试×1",
+      "highlights": [
+        "新增：“支持导出”",
+        "测试：“init vtest”",
+        "新增：“支持导出”",
+        "测试：“init vtest”"
+      ],
+      "nextSteps": [
+        "推进该分支的收尾与验证，考虑合并回默认分支"
+      ],
+      "notes": [],
+      "docs": [
+        "README.md"
+      ],
+      "providerLabel": "规则引擎"
+    },
+    {
+      "id": "j_1792453790449_0",
+      "at": "2026-10-20T07:49:50.408274925+08:00",
+      "project": "vtest",
+      "projectId": "p_f80de38f6095",
+      "branch": "main",
+      "mode": "shallow",
+      "source": "cli",
+      "provider": "rules",
+      "commitCount": 1,
+      "commitCountScope": "new",
+      "commitCountTruncated": false,
+      "repoBranchCount": 1,
+      "branchCountTruncated": false,
+      "summary": "最近 1 个提交：微调×1",
+      "highlights": [
+        "微调：“init”"
+      ],
       "nextSteps": [],
       "notes": [],
+      "docs": [
+        "README.md"
+      ],
       "providerLabel": "规则引擎"
     }
   ],
-  "limit": 20,
-  "branches": [
-    "main",
-    "dev"
-  ],
-  "projects": [
-    "atlas"
-  ],
+  "limit": 30,
+  "branches": "*",
+  "projects": 1,
   "unparsableLines": 0,
   "windowExhausted": false,
   "branchWindowExhausted": {}

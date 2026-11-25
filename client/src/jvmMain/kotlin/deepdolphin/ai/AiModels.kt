@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import kotlinx.serialization.json.add
 
 enum class Role { system, user, assistant, tool }
@@ -44,12 +45,14 @@ data class ToolDef(val name: String, val description: String, val requiredParams
     /** OpenAI functions 形状的 parameters JSON Schema（与 deepin AIEngine::parametersJSON 同构）。 */
     fun parametersJson(): JsonObject = buildJsonObject {
         put("type", "object")
-        putJsonArray("properties") {
+        // properties 必须是「以参数名为键的对象」（JSON Schema / mac 同款）。
+        // 原来发成了数组——模型拿不到参数名和类型，严格校验的渠道会整包拒收。
+        putJsonObject("properties") {
             requiredParams.forEach { p ->
-                add(buildJsonObject {
+                putJsonObject(p) {
                     put("type", "string")
                     put("description", p)
-                })
+                }
             }
         }
         putJsonArray("required") { requiredParams.forEach { add(it) } }
@@ -79,11 +82,24 @@ data class AIConfig(
     val baseURL: String = "",
     val apiKey: String = "",
 ) {
+    /** 实际使用的端点：填了用填的，没填用渠道默认（选了 DeepSeek 不必再手填 URL）。 */
+    fun effectiveBaseURL(): String = baseURL.trim().ifEmpty { DEFAULT_BASE_URLS[providerID] ?: "" }
+
     fun isConfigured(whyNot: (String) -> Unit = {}): Boolean = when {
-        baseURL.isBlank() -> { whyNot("Base URL 为空（请选择 provider 或填写覆盖）"); false }
-        providerID == "ollama" || providerID == "mock" -> true
-        apiKey.isBlank() -> { whyNot("API Key 为空（请填写；key 只存安全存储）"); false }
+        providerID == "mock" -> true
+        effectiveBaseURL().isBlank() -> { whyNot(deepdolphin.ui.L10n.t("cmp.ai.noBaseUrl", providerID)); false }
+        providerID == "ollama" -> true // 本地服务不需要 key
+        apiKey.isBlank() -> { whyNot(deepdolphin.ui.L10n.t("cmp.ai.noKey")); false }
         else -> true
+    }
+
+    companion object {
+        /** 各渠道默认端点（与仓内 deepin / linux / mac 各端一致）。 */
+        val DEFAULT_BASE_URLS: Map<String, String> = mapOf(
+            "deepseek" to "https://api.deepseek.com",
+            "anthropic" to "https://api.anthropic.com",
+            "ollama" to "http://localhost:11434",
+        )
     }
 }
 

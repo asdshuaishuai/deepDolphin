@@ -47,8 +47,8 @@ class OpenAiCompatEngine(private val cfg: AIConfig) : AIEngine {
     override fun isConfigured(whyNot: (String) -> Unit): Boolean = cfg.isConfigured(whyNot)
 
     override suspend fun generate(req: GenerateRequest): GenerateResult {
-        if (!urlAllowed(cfg.baseURL)) {
-            return GenerateResult(error = "Base URL 不被允许（只放行 https 与本地回环）：${cfg.baseURL}")
+        if (!urlAllowed(cfg.effectiveBaseURL())) {
+            return GenerateResult(error = "Base URL 不被允许（只放行 https 与本地回环）：${cfg.effectiveBaseURL()}")
         }
         val messages = buildJsonArray {
             add(buildJsonObject { put("role", "system"); put("content", req.system) })
@@ -100,7 +100,7 @@ class OpenAiCompatEngine(private val cfg: AIConfig) : AIEngine {
         }
         return withContext(Dispatchers.IO) {
             try {
-                val url = cfg.baseURL.trimEnd('/') + "/chat/completions"
+                val url = cfg.effectiveBaseURL().trimEnd('/') + "/chat/completions"
                 val (rc, text) = httpPostJson(url, cfg.apiKey, body.toString(), req.timeoutMs)
                 if (rc !in 200..299) {
                     return@withContext GenerateResult(
@@ -141,8 +141,8 @@ class AnthropicEngine(private val cfg: AIConfig) : AIEngine {
     override fun isConfigured(whyNot: (String) -> Unit): Boolean = cfg.isConfigured(whyNot)
 
     override suspend fun generate(req: GenerateRequest): GenerateResult {
-        if (!urlAllowed(cfg.baseURL)) {
-            return GenerateResult(error = "Base URL 不被允许（只放行 https 与本地回环）：${cfg.baseURL}")
+        if (!urlAllowed(cfg.effectiveBaseURL())) {
+            return GenerateResult(error = "Base URL 不被允许（只放行 https 与本地回环）：${cfg.effectiveBaseURL()}")
         }
         // system 独立字段；messages 不含 system
         val msgs = buildJsonArray {
@@ -198,7 +198,7 @@ class AnthropicEngine(private val cfg: AIConfig) : AIEngine {
         }
         return withContext(Dispatchers.IO) {
             try {
-                val url = cfg.baseURL.trimEnd('/') + "/v1/messages"
+                val url = cfg.effectiveBaseURL().trimEnd('/') + "/v1/messages"
                 val conn = URI.create(url).toURL().openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.connectTimeout = 10_000

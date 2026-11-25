@@ -22,8 +22,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -42,6 +40,7 @@ import deepdolphin.engine.UpdateOutcome
 import deepdolphin.engine.UpdateReceipt
 import kotlin.math.max
 import kotlin.math.min
+import androidx.compose.foundation.layout.PaddingValues
 
 // ── 纯函数层（判据见 BulkUpdateTest；mac DestructiveGuard / updateOutcomeSummary 对位）──
 
@@ -232,8 +231,8 @@ fun AgentBulkResultSheet(model: AppModel) {
                 style = Type.label,
             )
             // ── 逐仓库结果（永远生成、零 AI 成分——事实陈述不许让模型重写）──
-            Column(
-                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+            ScrollColumn(
+                Modifier.weight(1f).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(Space.xs),
             ) {
                 Text(L10n.t("cmp.bulk.perRepoTitle", r.tally()), style = Type.section)

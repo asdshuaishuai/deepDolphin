@@ -20,9 +20,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +33,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import deepdolphin.engine.ScanCandidate
 import deepdolphin.engine.ScanPayload
+import androidx.compose.foundation.layout.PaddingValues
 
 // ── 路径判定（mac PathInput 对位；三态不压成 Bool——「不存在」和「是文件」是两句不同的话）──
 
@@ -147,12 +145,13 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                 ScanModeTab(L10n.t("scan.tab.batch"), selected = !single) { single = false }
             }
 
-            Column(
-                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+            ScrollColumn(
+                Modifier.weight(1f).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(Space.sm),
             ) {
                 // ── 表单（单个：路径+名称；批量：根目录+深度）──
                 OutlinedTextField(
+                    colors = fluentTextFieldColors(),
                     value = path,
                     onValueChange = { path = it },
                     placeholder = {
@@ -164,6 +163,7 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                 )
                 if (single) {
                     OutlinedTextField(
+                        colors = fluentTextFieldColors(),
                         value = name,
                         onValueChange = { name = it },
                         placeholder = { Text(L10n.t("cmp.scan.nameOptional"), style = Type.micro) },
@@ -174,6 +174,7 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         OutlinedTextField(
+                            colors = fluentTextFieldColors(),
                             value = depth,
                             onValueChange = { depth = it },
                             placeholder = { Text(L10n.t("bulk.deepWord"), style = Type.micro) },

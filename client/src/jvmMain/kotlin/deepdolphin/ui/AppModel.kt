@@ -5,6 +5,9 @@
 
 package deepdolphin.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import deepdolphin.engine.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -54,7 +57,10 @@ class AppModel(private val engineBin: String) {
     // ── 批 2：路由 + 详情 + 写操作反馈 ──
     // 对位 mac：侧栏没有 AI 入口——AI 以 agent sheet 形态从详情页（深浅更新旁）触发，
     // 设置（含 AI tab）收在侧栏最底部「设置」（mac 原生 Settings scene 的 Linux 对位）。
-    enum class Route { DASHBOARD, BOARD, MILESTONES, CONFIDENCE, PATCHCHECK, PROJECT, SETTINGS }
+    // GRAPH / ARCH：代码图谱与架构图——跟着仓库走的独立页面（用户定稿 2026-11-25：不弹窗，
+    // 专门一页，入口在各仓库详情里）。与 mac 的「独立最大化窗口」不同，以用户定稿为准。
+    enum class Route { DASHBOARD, BOARD, MILESTONES, CONFIDENCE, PATCHCHECK, PROJECT, GRAPH, ARCH, SETTINGS }
+
     private val _route = MutableStateFlow(Route.DASHBOARD)
     val route: StateFlow<Route> = _route.asStateFlow()
     private val _selectedProject = MutableStateFlow<String?>(null)
@@ -80,36 +86,12 @@ class AppModel(private val engineBin: String) {
         _agentOpen.value = false; _agentTask.value = null; _agentTitle.value = null
     }
 
-    // ── 图谱两页开合流（mac GraphWindows.open 的对位；Dialog 接近全屏，标题带项目名）──
-    // 值 = 项目名（单仓库锁定：入口处定死，页面内无切换）；null = 关。
-    // 本批只挂状态流 + Main 挂载渲染，详情页入口下一批接线。
-    private val _graphPage = MutableStateFlow<String?>(null)
-    val graphPage: StateFlow<String?> = _graphPage.asStateFlow()
-    private val _archPage = MutableStateFlow<String?>(null)
-    val archPage: StateFlow<String?> = _archPage.asStateFlow()
+    // 图谱两页是路由（Route.GRAPH / Route.ARCH）+ selectedProject（仓库）——不再是开合流 + 弹窗。
+    // 单仓库锁定：入口处定死，页面内无切换；「返回仓库」回 Route.PROJECT。
 
-    fun openGraph(project: String) {
-        _graphPage.value = project
-    }
-
-    fun closeGraph() {
-        _graphPage.value = null
-    }
-
-    fun openArch(project: String) {
-        _archPage.value = project
-    }
-
-    fun closeArch() {
-        _archPage.value = null
-    }
-
-    /** GraphPageDialog 的统一关闭口（kind 路由到对应流）。 */
-    fun closeGraphPage(kind: GraphKind) {
-        when (kind) {
-            GraphKind.INDEX -> closeGraph()
-            GraphKind.ARCH -> closeArch()
-        }
+    /** 返回当前仓库的详情页（图谱两页的「返回仓库」）。 */
+    fun backToRepo() {
+        _selectedProject.value?.let { goRoute(Route.PROJECT, it) }
     }
 
     /**
@@ -123,7 +105,7 @@ class AppModel(private val engineBin: String) {
      * 不探测、不做「打开/生成」两态按钮，点按统一 busy 态跑 render——
      *   · 产物已在：引擎侧复用判定毫秒级返回（回执说「复用」），render 完即开页 = 秒开；
      *   · 产物不在：这一发就是首次生成（分钟级，busy 态如实等待）。
-     * 成功后先把产物路径记进进程内缓存再开页：页 init 即命中缓存先出图，
+     * 成功后先把产物路径记进进程内缓存再进页：页 init 即命中缓存先出图，
      * 页内后台核验跑 render 得「复用」不重载（画面不闪）。
      * 另一差异：CMP 生成直接跑确定性 render 命令（无 agent 播种回调，不造假按钮）。
      */
@@ -135,17 +117,14 @@ class AppModel(private val engineBin: String) {
         scope.launch {
             _graphRendering.value = "${kind.name}:$project"
             try {
-                val text = engine.renderGraph(kind.cliKind, project, withConfidence = kind == GraphKind.INDEX)
+                val text = renderGraph(kind, project, allowForce = true)
                 val path = extractHtmlPath(text)
                 if (path == null) {
                     _lastResult.value =
                         L10n.t("cmp.update.renderFailNoPath", kind.titleWord(), project, receiptLine(text) ?: L10n.t("cmp.err.noOutput"))
                 } else {
                     rememberGraphArtifact(kind, project, path)
-                    when (kind) {
-                        GraphKind.INDEX -> openGraph(project)
-                        GraphKind.ARCH -> openArch(project)
-                    }
+                    goRoute(kind.route, project)
                 }
             } catch (e: Exception) {
                 _lastResult.value = L10n.t("cmp.update.renderFail", kind.titleWord(), project, e.message ?: e.javaClass.simpleName)
@@ -155,6 +134,35 @@ class AppModel(private val engineBin: String) {
         }
     }
 
+    /**
+     * 图谱渲染的统一口径——详情页入口与图谱页自身（深链直达、页内刷新）共用，不各写一套。
+     * [allowForce] = 这次是「真的在出图」（首开/刷新）：代码图谱的热力图以置信度快照为数据源，
+     * 先出快照再渲染；每个仓库每会话首次强制重绘一次（旧的纯结构产物不 --force 会被一直复用）。
+     * false = 先秒出缓存产物后的后台核验，只问引擎「还新鲜吗」（复用就不重载，画面不闪）。
+     * 快照生成失败不堵路（仍出结构图），但写进结果行说出来——否则用户以为这个仓库没有热点。
+     * 返回引擎原始输出。
+     */
+    suspend fun renderGraph(kind: GraphKind, project: String, allowForce: Boolean): String {
+        var confNote: String? = null
+        val force = allowForce && kind == GraphKind.INDEX && graphForcedThisSession.add(project)
+        if (force) {
+            try {
+                engine.confidenceGen(project)
+            } catch (e: Exception) {
+                confNote = e.message ?: e.javaClass.simpleName
+            }
+        }
+        val text = engine.renderGraph(kind.cliKind, project, withConfidence = kind == GraphKind.INDEX, force = force)
+        // 后台核验不改写结果行（别把上一条写操作的结果冲掉）；真的出图时这条就是最新结果
+        if (allowForce || confNote != null) {
+            _lastResult.value = confNote?.let { L10n.t("cmp.graph.confSkipped", it) }
+        }
+        return text
+    }
+
+    /** 本次会话里已经强制重绘过图谱的仓库（见 [renderGraph] 的 force 说明）。 */
+    private val graphForcedThisSession = HashSet<String>()
+
     private val _detail = MutableStateFlow<StatusEnvelope?>(null) // status <name> 单项目信封
     val detail: StateFlow<StatusEnvelope?> = _detail.asStateFlow()
     private val _detailState = MutableStateFlow<LoadState>(LoadState.Loading)
@@ -163,9 +171,6 @@ class AppModel(private val engineBin: String) {
     private val _docs = MutableStateFlow<DocsPayload?>(null)
     val docs: StateFlow<DocsPayload?> = _docs.asStateFlow()
 
-    private val _journal = MutableStateFlow<JournalPayload?>(null)
-    val journal: StateFlow<JournalPayload?> = _journal.asStateFlow()
-
     /** 写操作结果一行（「写操作必须留结果」纪律）；null = 无。 */
     private val _lastResult = MutableStateFlow<String?>(null)
     val lastResult: StateFlow<String?> = _lastResult.asStateFlow()
@@ -173,34 +178,90 @@ class AppModel(private val engineBin: String) {
     val busyAction: StateFlow<Boolean> = _busyAction.asStateFlow()
 
     fun goRoute(r: Route, project: String? = null) {
+        // 图谱页没有仓库就没有主体：没点名时落列表里的第一个（深链 --section graph 不带 --project），
+        // 一个项目都没有时留给页面自己的空态如实说
+        var target = project
+        if ((r == Route.GRAPH || r == Route.ARCH) && target.isNullOrBlank()) {
+            target = _status.value?.projects?.firstOrNull { it.isReadable }?.name ?: _status.value?.projects?.firstOrNull()?.name
+        }
+        if (r.isRepoScoped() && target != null) {
+            // 项目列表已到且不含该名 = 真不存在（mac Router 守卫对位）；
+            // 列表还没到时不能判「不存在」——不知道 ≠ 没有，那会废掉深链
+            val env = _status.value
+            if (env != null && env.projects.none { it.name == target }) {
+                _lastError.value = L10n.t("cmp.route.noProject", target)
+                _route.value = Route.DASHBOARD
+                _selectedProject.value = null
+                return
+            }
+        }
         _route.value = r
-        _selectedProject.value = project
-        if (r == Route.PROJECT && project != null) loadDetail(project)
+        _selectedProject.value = target
+        if (r == Route.PROJECT && target != null) loadDetail(target)
     }
 
-    /** 单项目详情三源：status <n> → docs → journal（失败不短路，逐源披露）。 */
+    /** 详情请求序号：快速连点两个项目时，慢的后到不得覆盖先到的（否则标题是 B、内容是 A）。 */
+    private val detailRequest = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** 单项目详情：status <n>（含内嵌进度日志）→ docs（增强源，失败不短路）。 */
     fun loadDetail(name: String) {
+        val req = detailRequest.incrementAndGet()
+        // 先清掉上一个项目的内容，别让 A 的卡片挂在 B 的标题下
+        _detail.value = null
+        _docs.value = null
         scope.launch {
             _detailState.value = LoadState.Loading
             try {
-                _detail.value = engine.status(name)
-                _detailState.value = LoadState.Loaded
+                val got = engine.status(name)
+                if (req == detailRequest.get()) {
+                    _detail.value = got
+                    _detailState.value = LoadState.Loaded
+                }
             } catch (e: Exception) {
-                _detailState.value = LoadState.Failed(e.message ?: L10n.t("cmp.err.detailRead"))
+                if (req == detailRequest.get()) _detailState.value = LoadState.Failed(e.message ?: L10n.t("cmp.err.detailRead"))
             }
-            try { _docs.value = engine.docs(name) } catch (_: Exception) { _docs.value = null }
-            try { _journal.value = engine.journal(name) } catch (_: Exception) { _journal.value = null }
+            // docs 是增强源：失败不短路详情页（托管文档卡按「未披露」如实显示）
+            try {
+                val got = engine.docs(name)
+                if (req == detailRequest.get()) _docs.value = got
+            } catch (_: Exception) {
+                if (req == detailRequest.get()) _docs.value = null
+            }
         }
     }
 
-    private suspend fun <T> withAction(label: String, block: suspend () -> T): T? {
-        if (_busyAction.value) return null
+    /** 关掉页面顶部的反馈条（写操作结果 / 错误）。 */
+    fun dismissFeedback() {
+        _lastResult.value = null
+        _lastError.value = null
+    }
+
+    /** 有更新进程在跑才允许「停止更新」（mac canStopUpdate 对位）。 */
+    val canStopUpdate: Boolean get() = deepdolphin.engine.EngineLocator.runningUpdateCount() > 0
+
+    private suspend fun <T> withAction(
+        label: String,
+        successOf: (T) -> String? = { null },
+        block: suspend () -> T,
+    ): T? {
+        // busy 时不许静默吞掉（用户点了没反应 = 不知道为什么）
+        if (_busyAction.value) {
+            _lastResult.value = L10n.t("cmp.action.busySkipped", label)
+            return null
+        }
         _busyAction.value = true
         try {
             val r = block()
-            _lastResult.value = "$label ✓"
+            // 动作自己算好的结果行优先（「文档 N 处变更」原来被丢，只剩一个 ✓）
+            _lastResult.value = successOf(r) ?: "$label ✓"
             refreshAll()
+            // 正在看某个项目详情时，写操作之后要把详情重读一遍——否则脉搏/改动构成/日志
+            // 还是操作前的数字，用户看到的是「点了没效果」
+            if (_route.value == Route.PROJECT) _selectedProject.value?.let { loadDetail(it) }
             return r
+        } catch (e: EngineStoppedException) {
+            _lastResult.value = L10n.t("cmp.update.stopped", label)
+            return null
         } catch (e: Exception) {
             _lastResult.value = "$label ✗ ${e.message}"
             return null
@@ -209,22 +270,29 @@ class AppModel(private val engineBin: String) {
         }
     }
 
-    // ── C9 里程碑 CRUD ──
+    // ── C9 里程碑 CRUD（结果行按回执如实：建没建 / 生效没生效）──
+
     fun milestoneAdd(project: String, name: String, tag: String?, date: String?, desc: String?) {
         scope.launch {
-            withAction(L10n.t("cmp.action.msAdd", name)) { engine.milestoneAdd(project, name, tag, date, desc) }
+            withAction(L10n.t("cmp.action.msAdd", name), successOf = { r ->
+                if (r.created) L10n.t("cmp.ms.added", name) else L10n.t("cmp.ms.existed", name)
+            }) { engine.milestoneAdd(project, name, tag, date, desc) }
         }
     }
 
     fun milestoneAction(project: String, name: String, action: String) {
         scope.launch {
-            withAction(L10n.t("cmp.action.msAction", name, action)) { engine.milestoneAction(project, name, action) }
+            withAction(L10n.t("cmp.action.msActionLabel", name), successOf = { r -> msActionOutcome(r) }) {
+                engine.milestoneAction(project, name, action)
+            }
         }
     }
 
     fun milestoneRemove(project: String, name: String) {
         scope.launch {
-            withAction(L10n.t("cmp.action.msRemove", name)) { engine.milestoneRemove(project, name) }
+            withAction(L10n.t("cmp.action.msRemove", name), successOf = { r ->
+                if (r.removed) L10n.t("cmp.ms.removed", name) else L10n.t("cmp.ms.notRemoved", name)
+            }) { engine.milestoneRemove(project, name) }
         }
     }
 
@@ -331,7 +399,7 @@ class AppModel(private val engineBin: String) {
     fun updateProject(name: String, deep: Boolean) {
         scope.launch {
             val word = L10n.t(if (deep) "update.deepWord" else "update.shallowWord")
-            withAction("$word $name") {
+            withAction("$word $name", successOf = { it }) {
                 val r = engine.update(name, deep)
                 L10n.t("cmp.update.doneDocs", word, name, r.docs.count { it.changed || it.created })
             }
@@ -377,6 +445,20 @@ class AppModel(private val engineBin: String) {
     private val _bulkReport = MutableStateFlow<BulkReport?>(null)
     val bulkReport: StateFlow<BulkReport?> = _bulkReport.asStateFlow()
 
+    /** 仪表盘筛选（时间跨度 + 提交类型；mac model.dashFilter 对位）：切页不丢。 */
+    var dashFilter by mutableStateOf(DashFilter())
+
+    /**
+     * 双轨动作 / 重新索引的统一入口（mac Model.runUpdate 对位）：
+     * 范围 = 单项目 → 直接跑（用户正盯着那个仓库，按钮上的范围文案就是确认）；
+     * 范围 = 全部 → 先弹告知式确认。仪表盘「重新索引」原来直接调 updateAll，绕过了确认。
+     */
+    fun runUpdate(deep: Boolean) {
+        // 「更新动作打在谁身上」用 updateScope（mac 同款：与范围选择器的 choice 是两个公式）
+        val scoped = WorkBarScope.updateScope(_route.value, _selectedProject.value)
+        if (scoped != null) updateProject(scoped, deep) else requestBulkUpdate(deep)
+    }
+
     /** 双轨按钮「· 全部」范围先弹告知式确认（不直接跑——批量更新会改写多个仓库的托管区域）。 */
     fun requestBulkUpdate(deep: Boolean) {
         if (_busyAction.value) return
@@ -388,18 +470,18 @@ class AppModel(private val engineBin: String) {
     }
 
     /**
-     * 停止更新（mac 菜单栏「停止更新」对位）：终止的是引擎子进程本体
-     * （EngineLocator 登记表 destroyForcibly），不是只取消协程——后者对
-     * IO 阻塞调用无效。结果如实回写到操作结果行。
+     * 停止更新（mac 菜单栏「停止更新」+ StopDecision 对位）：只终止 update/deep 的引擎子进程本体，
+     * 不碰并行的读取/扫描/图谱渲染；先 SIGTERM 再强杀。被停的那次更新报「已停止」，不报失败。
      */
     fun stopUpdate() {
+        // terminateUpdates 最多阻塞 2 秒：放到协程里，别卡界面线程
         scope.launch {
-            val n = deepdolphin.engine.EngineLocator.killAllRunning()
-            _lastResult.value = if (n > 0) {
-                L10n.t("cmp.menu.stopKilled", n)
-            } else {
-                L10n.t("cmp.menu.stopNone")
-            }
+        val n = deepdolphin.engine.EngineLocator.terminateUpdates()
+        _lastResult.value = when {
+            n == 1 -> L10n.t("cmp.stop.one")
+            n > 1 -> L10n.t("cmp.stop.many", n)
+            else -> L10n.t("cmp.stop.already", _status.value?.projects?.size ?: 0)
+        }
         }
     }
 
@@ -425,7 +507,11 @@ class AppModel(private val engineBin: String) {
             } catch (e: Exception) {
                 // 整发失败：引擎一个仓库的回执都没给，结果面板无从摊起——
                 // 不开空面板，失败原因留页头反馈行（如实：什么都没跑成）
-                _lastResult.value = L10n.t("cmp.update.allFailed", L10n.t(if (deep) "update.deepWord" else "update.shallowWord"), e.message ?: L10n.t("cmp.err.engineCall"))
+                _lastResult.value = if (e is EngineStoppedException) {
+                    L10n.t("cmp.update.stoppedAll", L10n.t(if (deep) "update.deepWord" else "update.shallowWord"))
+                } else {
+                    L10n.t("cmp.update.allFailed", L10n.t(if (deep) "update.deepWord" else "update.shallowWord"), e.message ?: L10n.t("cmp.err.engineCall"))
+                }
             } finally {
                 _busyAction.value = false
             }
@@ -481,49 +567,67 @@ class AppModel(private val engineBin: String) {
     private suspend fun runScheduledUpdate(deep: Boolean) {
         if (_busyAction.value || _refreshing.value) return
         val track = L10n.t(if (deep) "bulk.deepWord" else "bulk.shallowWord")
+        // 必须过 busy 闸门：原来直接调引擎不置 busy，跑的十几分钟里界面显示「空闲」、
+        // 更新按钮可点，用户能再发起一次并写同一批托管文档
+        _busyAction.value = true
         try {
             val r = engine.updateAll(deep)
             val ok = decodeUpdateOutcomes(r).count { it is UpdateOutcome.Success }
             _lastResult.value = L10n.t("cmp.update.schedDone", track, ok, r.results.size)
+        } catch (e: EngineStoppedException) {
+            _lastResult.value = L10n.t("cmp.update.stoppedAll", track)
         } catch (e: Exception) {
             _lastResult.value = L10n.t("cmp.update.schedFailed", track, e.message)
+        } finally {
+            _busyAction.value = false
         }
         refreshAll()
     }
 
     private var pollJob: Job? = null
 
-    /** refreshAll：status → dashboard → milestones（失败不短路后续——尽力而为，逐源披露）。 */
+    private val refreshQueued = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * refreshAll：status → dashboard → milestones（失败不短路后续——尽力而为，逐源披露）。
+     * 刷新进行中又来一次（写操作之后的刷新撞上 5 分钟轮询）要**合并**而不是丢弃——
+     * 丢弃会让界面停在旧数据直到下次轮询。
+     */
     fun refreshAll() {
-        if (_refreshing.value) return
+        if (!refreshQueued.compareAndSet(false, true)) return // 已有刷新在排队/进行：合并
         scope.launch {
-            _refreshing.value = true
-            try {
+            do {
+                refreshQueued.set(false)
+                _refreshing.value = true
                 try {
-                    _status.value = engine.status()
-                    _statusState.value = LoadState.Loaded
-                    // 刷新时间戳只在 status 成功时记（mac Model.swift:485-492：status 失败
-                    // 提前 return、不更新 lastRefreshed——「读不出来」不算「刷新过」）
-                    _lastRefreshed.value = java.time.LocalDateTime.now()
-                } catch (e: Exception) {
-                    _statusState.value = LoadState.Failed(e.message ?: L10n.t("cmp.err.statusRead"))
-                    _lastError.value = e.message
+                    try {
+                        _status.value = engine.status()
+                        _statusState.value = LoadState.Loaded
+                        // 刷新时间戳只在 status 成功时记（mac Model.swift:485-492：status 失败
+                        // 提前 return、不更新 lastRefreshed——「读不出来」不算「刷新过」）
+                        _lastRefreshed.value = java.time.LocalDateTime.now()
+                        // 一次瞬时读取失败不该永远挂着（mac Model.swift:475：成功即清）
+                        _lastError.value = null
+                    } catch (e: Exception) {
+                        _statusState.value = LoadState.Failed(e.message ?: L10n.t("cmp.err.statusRead"))
+                        _lastError.value = e.message
+                    }
+                    try {
+                        _dashboard.value = engine.dashboard()
+                        _dashState.value = LoadState.Loaded
+                    } catch (e: Exception) {
+                        _dashState.value = LoadState.Failed(e.message ?: L10n.t("cmp.err.dashRead"))
+                    }
+                    try {
+                        _milestones.value = engine.milestoneList()
+                        _msState.value = LoadState.Loaded
+                    } catch (e: Exception) {
+                        _msState.value = LoadState.Failed(e.message ?: L10n.t("cmp.err.msRead"))
+                    }
+                } finally {
+                    _refreshing.value = false
                 }
-                try {
-                    _dashboard.value = engine.dashboard()
-                    _dashState.value = LoadState.Loaded
-                } catch (e: Exception) {
-                    _dashState.value = LoadState.Failed(e.message ?: L10n.t("cmp.err.dashRead"))
-                }
-                try {
-                    _milestones.value = engine.milestoneList()
-                    _msState.value = LoadState.Loaded
-                } catch (e: Exception) {
-                    _msState.value = LoadState.Failed(e.message ?: L10n.t("cmp.err.msRead"))
-                }
-            } finally {
-                _refreshing.value = false
-            }
+            } while (refreshQueued.getAndSet(false))
         }
     }
 
@@ -544,6 +648,11 @@ class AppModel(private val engineBin: String) {
         scope.cancel()
     }
 }
+
+/** 仓库级页面：详情 + 跟仓库走的图谱两页。页面主体就是选中的那个仓库——侧栏高亮它、
+ *  更新范围收敛到它、换仓库即换页。 */
+fun AppModel.Route.isRepoScoped(): Boolean =
+    this == AppModel.Route.PROJECT || this == AppModel.Route.GRAPH || this == AppModel.Route.ARCH
 
 /**
  * 一键说明任务串（纯函数，判据见 BriefTaskTest）。口径逐句对位 mac 基准，不发明问题：
@@ -567,3 +676,18 @@ fun briefTask(project: String?): String =
         要求：面向"第一次接触这个项目的人"，500 字以内，具体、可执行、不编造。
         """.trimIndent()
     }
+
+/**
+ * 里程碑状态操作的结果行（契约 §3.8）。报「实际生效状态」而不是请求的动作：
+ * applied=false = 写入被「同名 tag 已存在即自动 done」规则压回——那不是成功，必须说出来。
+ * 纯函数，判据直接测（原来拼成「doneed / droped」，且 applied=false 也显示 ✓）。
+ */
+internal fun msActionOutcome(r: deepdolphin.engine.MilestoneActionReceipt): String {
+    val verb = when (r.status) {
+        "done" -> L10n.t("cmp.ms.doneOk", r.milestone)
+        "dropped" -> L10n.t("cmp.ms.dropOk", r.milestone)
+        "open" -> L10n.t("cmp.ms.reopenOk", r.milestone)
+        else -> L10n.t("cmp.ms.nowStatus", r.milestone, r.status)
+    }
+    return if (r.applied) verb else verb + L10n.t("cmp.ms.notApplied", r.requested, r.status)
+}

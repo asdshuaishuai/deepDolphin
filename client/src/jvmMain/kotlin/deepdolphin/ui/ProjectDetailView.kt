@@ -1,19 +1,19 @@
 // ProjectDetailView.kt —— 项目详情页（C3）：脉搏/提交构成/分支/日志/文档四态 + git 操作（C8）+ 更新（C4）
 // + 图谱两页入口（busy 生成→成功即开页）+ 提交单对位（类型前缀选择 + 引擎结果反馈）。
 //
-// 【口径】全部来自 status <n> / docs / journal 的引擎事实；读不出来的字段如实披露（-1 / 缺键）。
+// 【口径】全部来自 status <n> / docs 的引擎事实（进度日志读 status 内嵌的 project.journal）；读不出来的字段如实披露（-1 / 缺键）。
 
 package deepdolphin.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -22,6 +22,8 @@ import deepdolphin.engine.Project
 import deepdolphin.ui.Palette
 import deepdolphin.ui.Space
 import deepdolphin.ui.Type
+import kotlin.math.roundToInt
+import androidx.compose.foundation.layout.PaddingValues
 
 @Composable
 fun ProjectDetailView(model: AppModel) {
@@ -29,16 +31,16 @@ fun ProjectDetailView(model: AppModel) {
     val detail by model.detail.collectAsState()
     val detailState by model.detailState.collectAsState()
     val docs by model.docs.collectAsState()
-    val journal by model.journal.collectAsState()
     val lastResult by model.lastResult.collectAsState()
     val busyAction by model.busyAction.collectAsState()
+    val milestones by model.milestones.collectAsState()
     val refreshing by model.refreshing.collectAsState()
 
     val p = detail?.projects?.firstOrNull()
 
-    LazyColumn(
-        Modifier.fillMaxSize()
-            .padding(horizontal = Space.xl, vertical = Space.lg),
+    ScrollLazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = Space.xl, vertical = Space.lg),
         verticalArrangement = Arrangement.spacedBy(Space.lg),
     ) {
         // ── 页头 + 写动作条（唯一 chrome 落点：PageHeader 纪律）──
@@ -70,15 +72,19 @@ fun ProjectDetailView(model: AppModel) {
                 // GraphChrome.swift:185-187）不做两态按钮：点按统一 busy 态跑 render，
                 // 产物已在时引擎复用判定毫秒级返回（回执说「复用」）即秒开，
                 // 不在时这一发就是首次生成（分钟级）。详见 AppModel.renderGraphArtifact。
+                // 两页跟着仓库走（用户定稿 2026-11-25：不弹窗、专门一页）——入口就在这里，
+                // 做成带字形的小按钮，和旁边的文字动作区分开
                 val graphRendering by model.graphRendering.collectAsState()
-                ActionText(
-                    if (name != null && graphRendering == "INDEX:$name") L10n.t("cmp.detail.graphRendering") else L10n.t("nav.graph"),
-                    Palette.Accent,
+                GraphEntryChip(
+                    label = if (name != null && graphRendering == "INDEX:$name") L10n.t("cmp.detail.graphRendering") else L10n.t("nav.graph"),
+                    icon = GraphKind.INDEX.tileIcon,
+                    tint = Palette.Accent,
                     enabled = name != null && graphRendering == null,
                 ) { name?.let { model.renderGraphArtifact(it, GraphKind.INDEX) } }
-                ActionText(
-                    if (name != null && graphRendering == "ARCH:$name") L10n.t("cmp.detail.archRendering") else L10n.t("nav.arch"),
-                    Palette.Deep,
+                GraphEntryChip(
+                    label = if (name != null && graphRendering == "ARCH:$name") L10n.t("cmp.detail.archRendering") else L10n.t("nav.arch"),
+                    icon = GraphKind.ARCH.tileIcon,
+                    tint = Palette.Deep,
                     enabled = name != null && graphRendering == null,
                 ) { name?.let { model.renderGraphArtifact(it, GraphKind.ARCH) } }
                 ActionText(L10n.t("toolbar.refresh"), Palette.TextSecondary, enabled = !refreshing) {
@@ -119,11 +125,21 @@ fun ProjectDetailView(model: AppModel) {
                     item(key = "nodata") { GlassCard(Modifier.fillMaxWidth()) { Text(L10n.t("cmp.detail.noData"), style = Type.body) } }
                 } else {
                     if (!p.isReadable) item(key = "unreadable") { UnreadableCard(p) } else {
-                        item(key = "pulse") { PulseCard(p) }
-                        item(key = "committypes") { CommitTypesCard(p) }
+                        // 脉搏 ‖ 提交构成 两列并排（mac DetailViews.swift:84-87 LazyVGrid 对位）
+                        item(key = "pulseRow") {
+                            Row(horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
+                                PulseCard(p, Modifier.weight(1f))
+                                CommitTypesCard(p, Modifier.weight(1f))
+                            }
+                        }
                         item(key = "branch") { BranchCard(p) }
+                        // 里程碑卡（mac milestoneCard：本项目的里程碑 + 达成率）
+                        milestones?.let { all -> if (all.milestones.any { it.projectName == p.name }) item(key = "milestones") {
+                            DetailMilestoneCard(model, all.milestones.filter { it.projectName == p.name })
+                        } }
                         item(key = "git") { GitCard(model, p, busyAction) }
-                        item(key = "journal") { JournalCard(journal?.entries.orEmpty(), journal?.unparsableLines, journal?.windowExhausted) }
+                        // 进度日志：只在有条目时出卡（mac DetailViews.swift:109 同款）
+                        if (p.journal.isNotEmpty()) item(key = "journal") { JournalCard(p) }
                         item(key = "docs") { DocsCard(docs?.docs.orEmpty(), docs?.unreadable.orEmpty()) }
                     }
                 }
@@ -147,8 +163,8 @@ private fun UnreadableCard(p: Project) {
 
 /** 工程脉搏：当前/默认分支、脏度、提交数、进度时间戳。 */
 @Composable
-private fun PulseCard(p: Project) {
-    SectionCard(L10n.t("detail.pulse"), Modifier.fillMaxWidth()) {
+private fun PulseCard(p: Project, modifier: Modifier = Modifier) {
+    SectionCard(L10n.t("detail.pulse"), modifier) {
         // 分支一行（同分支合并披露）
         val branchLine = if (p.currentBranch == p.defaultBranch) {
             L10n.t("cmp.detail.currentIsDefault", p.currentBranch ?: "?")
@@ -186,61 +202,116 @@ private fun PulseCard(p: Project) {
 
 /** 提交构成 12 色（对位 logic/CommitTypeComposition：12 类不取模）。 */
 @Composable
-private fun CommitTypesCard(p: Project) {
-    SectionCard(L10n.t("cmp.detail.commitMixShort"), Modifier.fillMaxWidth()) {
+private fun CommitTypesCard(p: Project, modifier: Modifier = Modifier) {
+    SectionCard(L10n.t("detail.composition"), modifier) {
         val types = p.commitTypes
         if (types.isEmpty()) {
-            Text(L10n.t("cmp.detail.noTypeCounts"), style = Type.body.copy(color = Palette.TextSecondary))
+            Text(L10n.t("detail.commit.none"), style = Type.body.copy(color = Palette.TextTertiary))
         } else {
-            val colors = Composition12
-            Row(Modifier.fillMaxWidth().height(10.dp)) {
-                val total = types.sumOf { it.count }.coerceAtLeast(1)
-                types.forEachIndexed { i, t ->
-                    Box(
-                        Modifier.weight(t.count.toFloat() / total).fillMaxHeight()
-                            .background(colors[i % colors.size])
-                    )
-                }
-            }
-            Spacer(Modifier.height(Space.sm))
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-                types.forEachIndexed { i, t ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(8.dp).background(colors[i % colors.size], RoundedCornerShape(2.dp)))
-                        Spacer(Modifier.width(4.dp))
-                        Text("${t.kind} ${t.count}", style = Type.micro)
-                    }
-                }
-            }
-            if (p.commitTypesTruncated == true) Text(L10n.t("cmp.detail.typesTruncated"), style = Type.micro)
+            // 堆叠条 + 图例（不取模；色板画不完的条数由切片说出来）
+            CommitCompositionBlock(types, sampleTruncated = false)
+            if (p.commitTypesTruncated == true) Text(L10n.t("dash.card.sample"), style = Type.micro, color = Palette.Amber)
         }
     }
 }
 
 @Composable
 private fun BranchCard(p: Project) {
-    SectionCard(L10n.t("dash.card.branch"), Modifier.fillMaxWidth()) {
-        val branches = p.branches
+    val branches = p.branches
+    SectionCard(L10n.t("detail.branchProgress", branchScopeLine(branches.size, p.repoBranchCount)), Modifier.fillMaxWidth()) {
         if (branches.isEmpty()) {
-            Text(L10n.t("cmp.detail.branchesNA"), style = Type.body.copy(color = Palette.TextSecondary))
+            // 「没有分支记录」与「这个项目没有分支」是两回事：空态给的是下一步（mac 同款）
+            Text(L10n.t("detail.branch.empty"), style = Type.body.copy(color = Palette.TextSecondary))
+            Text(L10n.t("detail.branch.empty.hint"), style = Type.micro)
         } else {
-            branches.forEach { b ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (b.isCurrent) Pill(L10n.t("detail.branch.current"), Palette.Accent)
-                    Spacer(Modifier.width(Space.xs))
-                    Text(b.name, style = Type.body.copy(fontWeight = FontWeight.Medium), modifier = Modifier.width(160.dp))
-                    Text(b.statusLabel.ifBlank { b.status }, style = Type.micro, modifier = Modifier.width(90.dp))
-                    Text(b.headAgo.ifBlank { b.headDate }, style = Type.micro, modifier = Modifier.width(110.dp))
-                    b.headSubject.takeIf { it.isNotBlank() }?.let {
-                        Text(it, style = Type.micro, maxLines = 1, modifier = Modifier.weight(1f))
+            branches.forEachIndexed { idx, b ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    Box(Modifier.size(8.dp).background(branchStatusTint(b.status), androidx.compose.foundation.shape.CircleShape))
+                    Text(b.name, style = Type.body.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace), maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+                    if (b.isCurrent) Spacer(Modifier.width(Space.xs)); if (b.isCurrent) Pill(L10n.t("detail.branch.current"), Palette.Accent)
+                    if (b.isDefault) Spacer(Modifier.width(Space.xs)); if (b.isDefault) Pill(L10n.t("detail.branch.default"), Palette.TextSecondary)
+                    Spacer(Modifier.weight(1f))
+                    Text(b.statusLabel.ifBlank { b.status }, style = Type.label, color = Palette.TextSecondary)
+                    // 非「规则」提供方的条目要标出来（AI 摘要与规则摘要的可信度不同）
+                    if (b.provider.isNotBlank() && b.provider != "rules") {
+                        Spacer(Modifier.width(Space.xs))
+                        Pill(b.provider, Palette.Ai)
                     }
                     if (b.pendingCommits > 0) {
-                        Spacer(Modifier.width(Space.xs))
-                        Pill("+${b.pendingCommits}", Palette.Accent)
+                        Spacer(Modifier.width(Space.sm))
+                        Text(L10n.t("detail.pending.invalid"), style = Type.label, color = Palette.Amber)
+                    } else if (b.baselineReset) {
+                        Spacer(Modifier.width(Space.sm))
+                        Text(L10n.t("detail.baseline.reset"), style = Type.label, color = Palette.TextTertiary)
                     }
                 }
+                Column(Modifier.padding(start = 18.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(b.summary, style = Type.label, color = Palette.TextSecondary, maxLines = 2)
+                    Text("${b.headShort} · ${b.headAgo}", style = Type.micro)
+                    b.highlights.forEach { h -> Text("· $h", style = Type.micro, maxLines = 1) }
+                    Row(Modifier.fillMaxWidth()) {
+                        // 领先默认分支数——基线重建过的分支，领先数已不可比，不报
+                        if (b.aheadOfDefault > 0 && !b.baselineReset) {
+                            Text(L10n.t("detail.branch.ahead", b.aheadOfDefault), style = Type.micro, color = Palette.Accent)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        // 「多久没更新」自己处理 -1（读不出来）
+                        Text(branchStaleText(b.staleDays), style = Type.micro, color = branchStatusTint(b.status))
+                    }
+                    b.nextSteps.forEach { n ->
+                        Row {
+                            IconBox(FluentIcon.ArrowRight, size = 12.dp, tint = Palette.Accent)
+                            Spacer(Modifier.width(6.dp))
+                            Text(n, style = Type.micro, color = Palette.Accent, maxLines = 2, modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+                if (idx != branches.lastIndex) {
+                    androidx.compose.material3.HorizontalDivider(
+                        color = Palette.Stroke, modifier = Modifier.padding(vertical = Space.sm),
+                    )
+                }
             }
-            p.repoBranchCount?.let { if (branches.size < it) Text(L10n.t("cmp.detail.branchesTruncated", it), style = Type.micro) }
+        }
+    }
+}
+
+/** 分支档位 → 颜色（mac StatusDot：active=绿 / idle=黄 / stale=橙 / merged=紫 / 其余中性灰）。 */
+private fun branchStatusTint(status: String): Color = when (status) {
+    "active" -> Palette.Green
+    "idle" -> Palette.Yellow
+    "stale" -> Palette.Amber
+    "merged" -> Palette.Deep
+    else -> Palette.TextTertiary
+}
+
+/** 详情页里程碑卡（mac milestoneCard 对位）：达成率 + 进度 + 本项目的里程碑行。 */
+@Composable
+private fun DetailMilestoneCard(model: AppModel, mine: List<deepdolphin.engine.Milestone>) {
+    SectionCard(L10n.t("detail.ms.count", mine.size), Modifier.fillMaxWidth()) {
+        if (mine.isEmpty()) {
+            Text(L10n.t("detail.ms.none"), style = Type.body.copy(color = Palette.TextSecondary))
+            Text(L10n.t("detail.ms.none.hint"), style = Type.micro)
+        } else {
+            val t = milestoneRatioOf(mine)
+            val decided = t.done + t.open
+            if (decided > 0) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    Text(L10n.t("detail.ms.rate"), style = Type.label, color = Palette.TextSecondary)
+                    val pct = (t.done.toDouble() * 100 / decided).roundToInt()
+                    Text("$pct%", style = Type.section)
+                    Text("${t.done}/$decided", style = Type.label, color = Palette.TextSecondary)
+                    if (t.unknown > 0) Text(L10n.t("detail.ms.unknownDenom", t.unknown), style = Type.label, color = Palette.Amber)
+                }
+                Spacer(Modifier.height(Space.sm))
+                Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(Radius.chip)).background(Palette.BarTrack)) {
+                    Box(Modifier.fillMaxWidth((t.done.toFloat() / decided).coerceIn(0f, 1f)).height(6.dp).background(Palette.Deep))
+                }
+            }
+            androidx.compose.material3.HorizontalDivider(color = Palette.Stroke, modifier = Modifier.padding(vertical = Space.sm))
+            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                mine.forEach { m -> GuardedMilestoneRow(model, m) }
+            }
         }
     }
 }
@@ -298,28 +369,57 @@ private fun GitCard(model: AppModel, p: Project, busy: Boolean) {
     }
 }
 
+/** 进度日志（mac journalCard 对位）：数据来自 status 内嵌的 project.journal。 */
 @Composable
-private fun JournalCard(entries: List<deepdolphin.engine.JournalEntry>, unparsable: Long?, windowExhausted: Boolean?) {
-    SectionCard(L10n.t("cmp.detail.journalShort"), Modifier.fillMaxWidth()) {
-        if (entries.isEmpty()) {
-            Text(L10n.t("cmp.detail.journalEmpty"), style = Type.body.copy(color = Palette.TextSecondary))
-        } else {
-            entries.forEach { e ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                    Text(e.hashShort, style = Type.micro, modifier = Modifier.width(70.dp))
-                    Text(e.date, style = Type.micro, modifier = Modifier.width(90.dp))
-                    Text(e.subject, style = Type.body, maxLines = 1, modifier = Modifier.weight(1f))
+private fun JournalCard(p: Project) {
+    SectionCard(
+        L10n.t(
+            "detail.journalCard",
+            entryCountLine(p.progress.entryCount, p.progress.entriesKept, p.progress.entryCountTruncated),
+        ),
+        Modifier.fillMaxWidth(),
+    ) {
+        p.journal.forEachIndexed { idx, e ->
+            // 口径与截断必须由纯函数判定：同一个 +N 在浅/深两条路径上含义不同
+            val badge = commitCountBadge(e.commitCount, e.commitCountScope, e.commitCountTruncated)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                Text(
+                    journalModeLabel(e.mode), style = Type.micro, color = Palette.TextSecondary,
+                    modifier = Modifier.clip(RoundedCornerShape(Radius.control)).background(Palette.Stroke)
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                )
+                Spacer(Modifier.width(Space.sm + 2.dp))
+                Text(
+                    e.branch, style = Type.label.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                    color = Palette.TextSecondary,
+                )
+                Spacer(Modifier.width(Space.sm))
+                Text(e.summary, style = Type.label, maxLines = 1, modifier = Modifier.weight(1f))
+                // 绿色只留给「本轮新增」：累计量用绿色等于说「这次变好了这么多」
+                badge.text?.let {
+                    Spacer(Modifier.width(Space.sm))
+                    Text(
+                        it, style = Type.micro.copy(fontWeight = FontWeight.SemiBold),
+                        color = if (badge.scope.isIncremental) Palette.Green else Palette.TextSecondary,
+                    )
                 }
             }
+            badge.note?.let {
+                Spacer(Modifier.height(2.dp))
+                Text(it, style = Type.micro, color = Palette.Amber)
+            }
+            if (idx != p.journal.lastIndex) {
+                androidx.compose.material3.HorizontalDivider(
+                    color = Palette.Stroke, modifier = Modifier.padding(vertical = Space.xs),
+                )
+            }
         }
-        // 披露（缺键 = null 不当「没耗尽」）
-        val notes = buildList {
-            unparsable?.takeIf { it > 0 }?.let { add(L10n.t("cmp.detail.journalUnparsable", it)) }
-            if (windowExhausted == true) add(L10n.t("cmp.detail.journalWindowEnd"))
+        // 窗口与全量必须能被区分开；journal.md 里有解析不了的行时也要说
+        if (p.journalTruncated == true) {
+            Text(L10n.t("detail.journal.truncated", p.journal.size, p.journalLimit), style = Type.micro, color = Palette.Amber)
         }
-        notes.forEach {
-            Spacer(Modifier.height(Space.xs))
-            Text(it, style = Type.micro.copy(color = Palette.Amber))
+        (p.journalUnparsableLines ?: 0).takeIf { it > 0 }?.let {
+            Text(L10n.t("detail.journal.unparsable", it), style = Type.micro, color = Palette.Amber)
         }
     }
 }
@@ -327,27 +427,30 @@ private fun JournalCard(entries: List<deepdolphin.engine.JournalEntry>, unparsab
 /** 托管文档四态：存在可读 / 存在但读不出 / 不存在 / 未披露。 */
 @Composable
 private fun DocsCard(docs: List<deepdolphin.engine.DocContent>, unreadable: List<String>) {
-    SectionCard(L10n.t("detail.managedDocs"), Modifier.fillMaxWidth()) {
-        if (docs.isEmpty() && unreadable.isEmpty()) {
-            Text(L10n.t("cmp.detail.docsNoContent"), style = Type.body.copy(color = Palette.TextSecondary))
-        } else {
-            docs.forEach { d ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Text(d.file, style = Type.body.copy(fontWeight = FontWeight.Medium), modifier = Modifier.width(140.dp))
-                    Text(
-                        L10n.t("cmp.detail.bytes", d.content.length),
-                        style = Type.micro,
-                        modifier = Modifier.width(90.dp),
-                    )
-                    Text(
-                        d.content.lineSequence().firstOrNull()?.take(80) ?: L10n.t("cmp.detail.emptyFile"),
-                        style = Type.micro, maxLines = 1, modifier = Modifier.weight(1f),
-                    )
-                }
+    if (docs.isEmpty()) {
+        SectionCard(L10n.t("detail.managedDocs"), Modifier.fillMaxWidth()) {
+            Text(
+                if (unreadable.isNotEmpty()) L10n.t("cmp.detail.docsUnreadable", unreadable.joinToString("、"))
+                else L10n.t("cmp.detail.docsNoContent"),
+                style = Type.body.copy(color = if (unreadable.isNotEmpty()) Palette.Amber else Palette.TextSecondary),
+            )
+        }
+        return
+    }
+    // 每份托管文档一张卡、渲染正文（mac DetailViews.swift:114-120 对位：原来只列文件名和首行，
+    // 用户在客户端里根本读不到文档）。正文走原生 Markdown，不起 WebView。
+    docs.forEach { d ->
+        SectionCard(d.file, Modifier.fillMaxWidth()) {
+            if (d.content.isBlank()) {
+                Text(L10n.t("cmp.detail.emptyFile"), style = Type.label, color = Palette.TextTertiary)
+            } else {
+                MarkdownText(d.content, Modifier.fillMaxWidth())
             }
-            if (unreadable.isNotEmpty()) {
-                Text(L10n.t("cmp.detail.docsUnreadable", unreadable.joinToString("、")), style = Type.micro.copy(color = Palette.Amber))
-            }
+        }
+    }
+    if (unreadable.isNotEmpty()) {
+        GlassCard(Modifier.fillMaxWidth()) {
+            Text(L10n.t("cmp.detail.docsUnreadable", unreadable.joinToString("、")), style = Type.label, color = Palette.Amber)
         }
     }
 }

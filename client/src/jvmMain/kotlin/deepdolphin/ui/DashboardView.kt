@@ -1,7 +1,11 @@
-// DashboardView.kt —— 仪表盘页（C3）：KPI 磁贴 / 语言分布 / 里程碑 / 活跃项目 + 筛选行。
+// DashboardView.kt —— 仪表盘页（mac DashboardView + DashboardParts.swift 的 Kotlin 对位）。
 //
-// 判定与披露全部来自 logic 层产物（DashboardData 字段），不内联口径；
-// 失败披露诚实（采集失败/语言读不出来的原因列出来，不静默）。
+// 【四段式】页头 → 筛选行 → 4 张精选 KPI → 逐项目卡网格 →（语言分布 ‖ 里程碑）→ 近 7 天活跃。
+// 判定（时间跨度怎么算、提交类型筛哪些段、KPI 怎么归并、切片披露）全在 DashScope.kt 纯函数层；
+// 本文件只负责把结果画出来——**这里不许出现任何算术**（mac 基准原话）。
+//
+// 【三条控件必须真的改变下面画什么】摆而不动的控件是最坏的一种控件：用户拨了「近 7 天」
+// 而卡片纹丝不动，整条筛选行就被当成装饰。二次验证抓到过：时间窗胶囊只换高亮、从不参与过滤。
 
 package deepdolphin.ui
 
@@ -16,16 +20,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,11 +35,16 @@ import deepdolphin.engine.*
 import deepdolphin.ui.Palette
 import deepdolphin.ui.Radius
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import deepdolphin.ui.heroBrushDiagonal
 import deepdolphin.ui.Space
 import deepdolphin.ui.Type
+import kotlin.math.roundToInt
+import androidx.compose.foundation.layout.PaddingValues
 
-/** 玻璃磁贴（对位 .card：底 + 描边；.card.hoverable：hover 换底色/描边并上移 2px）。 */
+private val Mono = FontFamily.Monospace
+
+/** 玻璃磁贴（Fluent reveal：hover 分层渐变 + 描边提亮；底 + hairline 描边）。 */
 @Composable
 fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     // Fluent reveal：hover 分层 4%→6% 白渐变（150ms），描边同步提亮；不抬升几何
@@ -76,39 +83,105 @@ fun SectionCard(title: String, modifier: Modifier = Modifier, content: @Composab
  *  信封未到（加载中）或读取失败 ≠ 空态 —— 绝不拿 CTA 冒充；纯函数可单测。 */
 fun registryEmpty(envelope: StatusEnvelope?): Boolean = envelope != null && envelope.projects.isEmpty()
 
-/** KPI 宽卡（对位 mac KPIWideCard：label 顶 + 大数字 accent +（可选）进度条 + 副说明 tertiary）。
- *  进度条只画「完成度」本身有进度语义的指标（里程碑完成率）；给「3 个待处理」画进度条是装饰不是信息。 */
+/** 胶囊 pill（语义色底 + 深色文字 = WCAG 对比度纪律）。 */
 @Composable
-fun KpiTile(
-    title: String,
-    value: String,
-    subtitle: String,
-    modifier: Modifier = Modifier,
-    tone: Color = Palette.Accent,
-    progress: Float? = null,
-) {
-    GlassCard(modifier) {
-        Text(title, style = Type.label)
-        Spacer(Modifier.height(Space.xs))
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                value, style = Type.display.copy(color = tone),
-                maxLines = 1,
-            )
+fun Pill(text: String, color: Color, dot: Boolean = false) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(color.copy(alpha = 0.9f))
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    ) {
+        // 圆点用画的不用「●」字：字形的圆在不同字体里大小不一，还挤着数字
+        if (dot) {
+            Box(Modifier.size(6.dp).background(Palette.BgBase, androidx.compose.foundation.shape.CircleShape))
+            Spacer(Modifier.width(4.dp))
         }
-        progress?.let { p ->
-            Spacer(Modifier.height(Space.xs))
-            Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Palette.BarTrack)) {
+        Text(text, style = Type.micro.copy(fontWeight = FontWeight.SemiBold), color = Palette.BgBase)
+    }
+}
+
+/** 分段堆叠条（提交构成 / 语言分布共用）：各段宽度 = 数值占比。 */
+@Composable
+fun SegmentedBar(values: List<Long>, colors: List<Color>, modifier: Modifier = Modifier) {
+    val total = values.sum().coerceAtLeast(1)
+    Row(
+        modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(Radius.chip)).background(Palette.BarTrack),
+    ) {
+        values.forEachIndexed { i, v ->
+            if (v > 0) {
                 Box(
-                    Modifier.fillMaxWidth(p.coerceIn(0f, 1f)).height(6.dp)
-                        .clip(RoundedCornerShape(3.dp)).background(tone)
+                    Modifier.weight(v.toFloat() / total).fillMaxHeight()
+                        .background(colors.getOrElse(i) { Color.Transparent }),
                 )
             }
         }
-        subtitle.takeIf { it.isNotBlank() }?.let {
-            Spacer(Modifier.height(Space.xs))
-            Text(it, style = Type.micro, maxLines = 2)
+    }
+}
+
+/**
+ * 提交构成块（堆叠条 + 图例，项目卡与详情页共用）。**不取模**：色板画不完的条数由
+ * commitTypeCardSlice 说出来——取模会让第 13 类拿到第 1 类的颜色，两段同色并成一段。
+ * sampleTruncated = 引擎只给了最近 N 条样本，样本披露必须在场。
+ */
+@Composable
+fun CommitCompositionBlock(entries: List<CommitTypeCount>, sampleTruncated: Boolean) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+        val slice = commitTypeCardSlice(entries)
+        SegmentedBar(slice.entries.map { it.count }, slice.entries.indices.map { Composition12[it] })
+        FlowLegend(slice.entries.mapIndexed { i, e -> Triple(e.kind, e.count.toString(), Composition12[i]) })
+        slice.note?.let { Text(it, style = Type.micro) }
+        if (sampleTruncated) Text(L10n.t("dash.card.sample"), style = Type.micro, color = Palette.Amber)
+    }
+}
+
+/** 自动换行图例（色块 + 名称 + 计数）。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun FlowLegend(items: List<Triple<String, String, Color>>) {
+    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.md), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+        items.forEach { (label, count, color) ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(8.dp).background(color, RoundedCornerShape(2.dp)))
+                Spacer(Modifier.width(4.dp))
+                Text(label, style = Type.micro)
+                Spacer(Modifier.width(4.dp))
+                Text(count, style = Type.micro.copy(fontWeight = FontWeight.Medium), color = Palette.TextSecondary)
+            }
         }
+    }
+}
+
+/** KPI 宽卡（mac KPIWideCard 对位：标题 + 大数字 +（仅里程碑）进度条 + 副说明）。 */
+@Composable
+fun KpiTile(kpi: DashKpi, modifier: Modifier = Modifier) {
+    val accent = when (kpi.kind) {
+        DashKpiKind.PROJECTS -> Palette.Accent
+        DashKpiKind.MILESTONES -> Palette.Deep
+        // attention：没事绿、有事橙，颜色随事实变
+        DashKpiKind.ATTENTION -> if (kpi.needsAttention) Palette.Amber else Palette.Green
+        DashKpiKind.REACH -> Palette.Green
+    }
+    GlassCard(modifier) {
+        Text(kpi.title, style = Type.label)
+        Spacer(Modifier.height(Space.xs))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(kpi.value.toString(), style = Type.display.copy(color = accent), maxLines = 1)
+            if (kpi.kind == DashKpiKind.MILESTONES) {
+                Spacer(Modifier.width(2.dp))
+                Text("%", style = Type.section.copy(color = Palette.TextSecondary))
+            }
+        }
+        // 里程碑完成度才画进度条：给「3 个待处理」画一根进度条是装饰，不是信息
+        kpi.progress?.let { p ->
+            Spacer(Modifier.height(Space.xs))
+            Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Palette.BarTrack)) {
+                Box(Modifier.fillMaxWidth(p.coerceIn(0f, 1f)).height(6.dp).background(accent))
+            }
+        }
+        Spacer(Modifier.height(Space.xs))
+        Text(kpi.caption, style = Type.micro, maxLines = 2)
     }
 }
 
@@ -120,289 +193,296 @@ fun DashboardPage(model: AppModel) {
     val dashState by model.dashState.collectAsState()
     val refreshing by model.refreshing.collectAsState()
     val busyAction by model.busyAction.collectAsState()
-    var window by remember { mutableStateOf("all") } // all / 30d / 7d（C3 筛选，批 1 先做时间窗胶囊）
+    val reindexBusy = busyAction || refreshing
+    val projects = status?.projects.orEmpty()
+    // 筛选态挂在 model 上（mac model.dashFilter 对位）：切到别的页再回来，筛选不丢
+    val filter = model.dashFilter
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = Space.xl, vertical = Space.lg),
+    ScrollColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = Space.xl, vertical = Space.lg),
         verticalArrangement = Arrangement.spacedBy(Space.lg),
     ) {
-        // ── hero 页头（Fluent 安静头：分层底纵向微渐变 + accent 顶 hairline，无多色渐变）──
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(Radius.card))
-                .background(heroBrushDiagonal())
-                .drawBehind {
-                    // accent 顶 hairline（Fluent 头部点缀）
-                    drawRect(
-                        color = Palette.Accent.copy(alpha = 0.55f),
-                        size = size.copy(height = 1.dp.toPx()),
-                    )
+        if (registryEmpty(status)) EmptyRegistryCta(model)
+
+        val d = dash
+        if (d != null) {
+            // ── 段 1：页头（标题 + KPI 汇总行；对位 mac dashboardContent 的 hero）──
+            val kpis = dashKpis(d, projects)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(Radius.card))
+                    .background(heroBrushDiagonal())
+                    .drawBehind {
+                        // accent 顶 hairline（Fluent 头部点缀）
+                        drawRect(color = Palette.Accent.copy(alpha = 0.55f), size = size.copy(height = 1.dp.toPx()))
+                    }
+                    .padding(horizontal = Space.xl, vertical = Space.lg),
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(L10n.t("dash.title"), style = Type.display)
+                    Spacer(Modifier.height(4.dp))
+                    Text(dashSummaryLine(kpis), style = Type.label)
                 }
-                .padding(horizontal = Space.xl, vertical = Space.lg),
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(L10n.t("dash.title"), style = Type.display.copy(color = Color.White))
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    buildString {
-                        append(L10n.t("cmp.dash.registered", dash?.projects?.total ?: status?.projects?.size ?: 0))
-                        dash?.fetchedAt?.takeIf { it.isNotBlank() }?.let { append(L10n.t("cmp.dash.fetchedAt", it)) }
-                        append(L10n.t("cmp.dash.engineLine"))
-                        // 深更新会动哪些托管文档写在按钮附近（mac 纪律：动手前必须看得见）
-                        append(L10n.t("cmp.dash.deepDocs"))
-                    },
-                    style = Type.label.copy(color = Color.White.copy(alpha = 0.85f)),
-                )
-            }
-            // 一键项目群说明（mac GroupBriefButton 对位，L10n "dash.projectBrief"）：AI 融进操作——
-            // hero 就地带固定问题预填打开 agent sheet（作用域=项目群），不做独立 AI 入口；
-            // 「添加/扫描」开扫描单（mac 侧栏添加/扫描动作 + PanelView.swift:92-94 sheet 挂点对位，
-            // 单是两种模式：单个添加 / 批量扫描——注册表非空时也要能再进项目）
-            //
-            // ⚠️ 双轨更新（浅/深）已按 mac 布局归位到内容区顶部 WorkBar 工作条
-            // （mac WorkBar.swift：主链路与工具类动作分家——hero 只留工具类动作
-            // 与「刷新」）。刷新是工具类（对读流的操作），留在 hero 右侧。
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Button(
-                    onClick = { model.openScanSheet(single = true) },
-                    shape = RoundedCornerShape(Radius.control),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White.copy(alpha = 0.18f),
-                        contentColor = Color.White,
-                    ),
-                ) { Text(L10n.t("scan.add")) }
-                Button(
-                    onClick = { model.openScanSheet(single = false) },
-                    shape = RoundedCornerShape(Radius.control),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White.copy(alpha = 0.18f),
-                        contentColor = Color.White,
-                    ),
-                ) { Text(L10n.t("scan.run")) }
+                // 一键项目群说明（mac GroupBriefButton 对位）：AI 融进操作——固定问题预填打开 agent sheet
                 Button(
                     onClick = { model.openAgent(briefTask(null), title = L10n.t("brief.button")) },
                     shape = RoundedCornerShape(Radius.control),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White.copy(alpha = 0.18f),
-                        contentColor = Color.White,
-                    ),
+                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Card, contentColor = Palette.TextPrimary),
                 ) { Text(L10n.t("brief.button")) }
+                Spacer(Modifier.width(Space.sm))
+                // 刷新：mac 在原生工具栏；CMP 无原生工具栏，这里与菜单条「操作 → 刷新」是同一动作
                 Button(
                     onClick = { model.refreshAll() },
                     enabled = !refreshing,
                     shape = RoundedCornerShape(Radius.control),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White.copy(alpha = 0.18f),
-                        contentColor = Color.White,
-                    ),
+                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Card, contentColor = Palette.TextPrimary),
                 ) { Text(if (refreshing) L10n.t("cmp.common.refreshing") else L10n.t("toolbar.refresh")) }
             }
-        }
 
-        // ── 筛选行（时间窗胶囊 + 重新索引；mac DashboardFilterBar 三件套对位）──
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
-            listOf("all" to L10n.t("cmp.dash.spanAll"), "30d" to L10n.t("cmp.dash.span30"), "7d" to L10n.t("cmp.dash.span7")).forEach { (k, label) ->
-                val selected = window == k
-                Text(
-                    label,
-                    style = Type.body.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal),
-                    color = if (selected) Color.White else Palette.TextSecondary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(if (selected) Palette.Accent else Palette.Card)
-                        .clickable { window = k }
-                        .padding(horizontal = 14.dp, vertical = 6.dp),
-                )
-            }
-            Spacer(Modifier.weight(1f))
-            // 重新索引（mac DashboardParts.swift:74-84 对位）：**真跑一次全局浅更新 + 重拉仪表盘**，
-            // 不是装饰按钮。busy 态如实（转圈 + 禁用，busy 时不叠加）。
-            //
-            // 【引擎命令调查，真跑 `moongit --help` 锚定】引擎确有索引/重建子命令
-            // `index <gen|overview|update|query>`——但那是**符号级持久化代码索引**
-            // （graph 系的 db + index.json），与仪表盘数据无关。mac 基准的「重新索引」
-            // 语义是浅更新：L10n zh help「重新采集一次浅更新」+ DetailViews.swift:1085-1093
-            // reindex() = runUpdate(deep: false) + fetchDashboard()。对位 mac 走 updateAll(false)
-            // （withAction 内已含 refreshAll，等价 mac「跑完必须重新拉仪表盘」）。
-            val reindexBusy = busyAction || refreshing
-            Button(
-                onClick = { model.updateAll(deep = false) },
-                enabled = !reindexBusy,
-                shape = RoundedCornerShape(Radius.control),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Palette.Card,
-                    contentColor = Palette.TextPrimary,
-                ),
-            ) {
-                if (reindexBusy) {
-                    CircularProgressIndicator(
-                        Modifier.size(12.dp),
-                        color = Palette.Accent,
-                        strokeWidth = 2.dp,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(L10n.t("cmp.dash.reindexing"), style = Type.body)
-                } else {
-                    Text("⟳ " + L10n.t("dash.reindex"), style = Type.body)
-                }
-            }
-            Text(L10n.t("cmp.dash.filterHint"), style = Type.micro)
-        }
-
-        // ── 空态 CTA（真的没有项目才出现；加载中/读不出来不冒充空态）──
-        if (registryEmpty(status)) EmptyRegistryCta(model)
-
-        when (dashState) {
-            is LoadState.Failed -> GlassCard(Modifier.fillMaxWidth()) {
-                Text(L10n.t("dash.failed.title"), style = Type.section.copy(color = Palette.Amber))
-                Spacer(Modifier.height(Space.xs))
-                Text((dashState as LoadState.Failed).reason, style = Type.body.copy(color = Palette.TextSecondary))
-            }
-            else -> {
-                // ── 采集失败披露（诚实：原因来自引擎，不推断）──
-                val failed = status?.projects.orEmpty().filter { !it.isReadable }
-                if (failed.isNotEmpty()) GlassCard(Modifier.fillMaxWidth()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Pill(L10n.t("cmp.dash.failedN", failed.size), Palette.Amber)
-                        Spacer(Modifier.width(Space.sm))
-                        Text(L10n.t("cmp.dash.failedTitle"), style = Type.card)
-                    }
-                    Spacer(Modifier.height(Space.sm))
-                    failed.forEach { p ->
-                        Row(Modifier.padding(vertical = 2.dp)) {
-                            Pill(p.name, Palette.Red)
-                            Spacer(Modifier.width(Space.sm))
-                            Text(p.error ?: L10n.t("cmp.err.noReasonAlt"), style = Type.body.copy(color = Palette.TextSecondary))
-                        }
-                    }
-                }
-
-                // ── KPI 四磁贴 ──
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-                    val d = dash
-                    KpiTile(L10n.t("dash.projectCount"), "${d?.projects?.total ?: 0}",
-                        L10n.t("cmp.dash.kpiScope", d?.projects?.readable ?: 0, d?.projects?.failed ?: 0),
-                        Modifier.weight(1f))
-                    KpiTile(L10n.t("dash.pendingCount"), "${status?.summary?.dirtyProjects ?: 0}",
-                        L10n.t("cmp.dash.pendingHint"),
-                        Modifier.weight(1f), tone = Palette.Amber)
-                    KpiTile(L10n.t("cmp.dash.activeShort"), "${d?.projects?.readable ?: 0}",
-                        L10n.t("cmp.dash.activeHint"),
-                        Modifier.weight(1f), tone = Palette.Green)
-                    KpiTile(L10n.t("cmp.dash.stale"), "${status?.summary?.staleProjects ?: 0}",
-                        L10n.t("cmp.dash.staleHint"),
-                        Modifier.weight(1f))
-                }
-
-                // ── 段 4：逐项目进度卡网格（mac DashboardParts 段 4 对位）──
-                Text(L10n.t("dash.grid.title"), style = Type.section)
-                Text(
-                    buildString {
-                        append(L10n.t("cmp.dash.totalN", status?.projects.orEmpty().size))
-                        dash?.fetchedAt?.takeIf { it.isNotBlank() }?.let { append(L10n.t("cmp.dash.fetchedAt", it)) }
-                    },
-                    style = Type.micro,
-                )
-                val msAll = model.milestones.collectAsState().value?.milestones.orEmpty()
-                val readableProjects = status?.projects.orEmpty().filter { it.isReadable }
-                if (readableProjects.isEmpty()) {
-                    SectionCard(L10n.t("cmp.dash.noProjects"), Modifier.fillMaxWidth()) {
-                        Text(L10n.t("cmp.dash.noProjectsHint"), style = Type.body.copy(color = Palette.TextTertiary))
-                    }
-                } else {
-                    readableProjects.chunked(2).forEach { rowProjects ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-                            rowProjects.forEach { proj ->
-                                ProjectProgressCard(
-                                    p = proj,
-                                    milestones = msAll.filter { it.projectId == proj.id },
-                                    onOpen = { },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                            if (rowProjects.size == 1) Spacer(Modifier.weight(1f))
-                        }
-                    }
-                }
-
-                // ── 语言分布 ──
-                SectionCard(L10n.t("dash.langDist"), Modifier.fillMaxWidth()) {
-                    val langs = dash?.languages.orEmpty()
-                    if (langs.isEmpty()) {
-                        Text(L10n.t("cmp.dash.noLangs"), style = Type.body.copy(color = Palette.TextSecondary))
-                    } else {
-                        langs.take(6).forEach { lang ->
-                            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(lang.language, style = Type.body, modifier = Modifier.width(120.dp))
-                                val max = langs.maxOf { it.count }.coerceAtLeast(1)
-                                Box(
-                                    Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp))
-                                        .background(Palette.BarTrack)
-                                ) {
-                                    Box(
-                                        Modifier.fillMaxWidth(lang.count.toFloat() / max).height(8.dp)
-                                            .clip(RoundedCornerShape(4.dp)).background(Palette.Accent)
+            // ── 段 2：筛选行（时间跨度 / 提交类型 / 重新索引——三个控件都真的改变下面画什么）──
+            GlassCard(Modifier.fillMaxWidth()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.md), verticalAlignment = Alignment.CenterVertically) {
+                    Text(L10n.t("dash.filter.span"), style = Type.label)
+                    // 口径写在控件旁：这是「最近更新」分档，不是「这段时间的提交量」
+                    L10n.t("dash.filter.span.help").let { hint ->
+                        HelpTooltip(hint) {
+                            Row(Modifier.clip(RoundedCornerShape(Radius.control)).background(Palette.BgBase).padding(2.dp)) {
+                                DashSpan.entries.forEach { s ->
+                                    val selected = filter.span == s
+                                    Text(
+                                        s.label, style = Type.label,
+                                        color = if (selected) Palette.TextPrimary else Palette.TextSecondary,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(Radius.chip))
+                                            .background(if (selected) Palette.CardHover else Color.Transparent)
+                                            .clickable { model.dashFilter = filter.copy(span = s) }
+                                            .padding(horizontal = 10.dp, vertical = 4.dp),
                                     )
                                 }
-                                Spacer(Modifier.width(Space.sm))
-                                Text("${lang.count}", style = Type.body, modifier = Modifier.width(48.dp))
                             }
                         }
-                        // 截断/失败披露
-                        dash?.languagesFailed?.takeIf { it > 0 }?.let {
-                            Spacer(Modifier.height(Space.xs))
+                    }
+                    // 提交类型下拉：只列真实出现过的类型；一个都没有时禁用并说明原因
+                    val commitTypes = availableCommitTypes(projects)
+                    var typesOpen by remember { mutableStateOf(false) }
+                    Box {
+                        HelpTooltip(
+                            if (commitTypes.isEmpty()) L10n.t("dash.filter.nocommits") else L10n.t("dash.filter.commits.help"),
+                        ) {
                             Text(
-                                L10n.t("cmp.dash.langUnreadable", it) +
-                                    (dash?.languagesFailedReasons?.takeIf { r -> r.isNotEmpty() }?.let { r -> "：${r.joinToString("；")}" } ?: ""),
-                                style = Type.micro,
+                                filter.commits.label, style = Type.label,
+                                color = if (commitTypes.isEmpty()) Palette.TextTertiary else Palette.TextPrimary,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(Radius.control))
+                                    .background(if (commitTypes.isEmpty()) Palette.BgBase else Palette.CardHover)
+                                    .let { m -> if (commitTypes.isEmpty()) m else m.clickable { typesOpen = !typesOpen } }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                                    .width(170.dp),
                             )
                         }
-                        if (dash?.languagesTruncated == true) Text(L10n.t("cmp.dash.langTruncated"), style = Type.micro)
+                        if (typesOpen) {
+                          // 弹层不参与父盒子的尺寸（matchParentSize），定位在控件正下方
+                          Box(Modifier.matchParentSize()) {
+                            Column(
+                                Modifier.offset(y = 30.dp).width(200.dp)
+                                    .shadow(8.dp, RoundedCornerShape(Radius.control))
+                                    .background(Palette.Card).border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.control))
+                                    .padding(Space.xs),
+                            ) {
+                                Text(
+                                    DashCommitFilter.All.label, style = Type.body,
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clickable { model.dashFilter = filter.copy(commits = DashCommitFilter.All); typesOpen = false }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                )
+                                commitTypes.forEach { t ->
+                                    Text(
+                                        t, style = Type.body,
+                                        modifier = Modifier.fillMaxWidth()
+                                            .clickable { model.dashFilter = filter.copy(commits = DashCommitFilter.Only(t)); typesOpen = false }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    )
+                                }
+                            }
+                          }
+                        }
+                    }
+                    Button(
+                        onClick = { model.runUpdate(deep = false) },
+                        enabled = !reindexBusy,
+                        shape = RoundedCornerShape(Radius.control),
+                        colors = ButtonDefaults.buttonColors(containerColor = Palette.Card, contentColor = Palette.TextPrimary),
+                    ) {
+                        if (reindexBusy) {
+                            CircularProgressIndicator(Modifier.size(12.dp), color = Palette.Accent, strokeWidth = 2.dp)
+                            Spacer(Modifier.width(6.dp))
+                            Text(L10n.t("cmp.dash.reindexing"), style = Type.body)
+                        } else {
+                            IconBox(FluentIcon.ArrowSync, size = 16.dp)
+                            Spacer(Modifier.width(6.dp))
+                            Text(L10n.t("dash.reindex"), style = Type.body)
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                }
+            }
+
+            // ── 段 3：4 张精选 KPI ──
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+                kpis.forEach { KpiTile(it, Modifier.weight(1f)) }
+            }
+
+            // ── 段 4：逐项目进度卡网格（受时间跨度筛选）──
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+                val shown = projects.filter { filter.keeps(it) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(L10n.t("dash.grid.title"), style = Type.section)
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        if (shown.size == projects.size) L10n.t("dash.grid.all", projects.size)
+                        else L10n.t("dash.grid.filtered", shown.size, projects.size, filter.span.label),
+                        style = Type.label,
+                    )
+                }
+                if (projects.isNotEmpty() && shown.isEmpty()) {
+                    GlassCard(Modifier.fillMaxWidth()) {
+                        Text(L10n.t("dash.grid.none.title"), style = Type.section)
+                        Text(L10n.t("dash.grid.none.body", projects.size, filter.span.label), style = Type.label)
                     }
                 }
-
-                // ── 里程碑 ──
-                SectionCard(L10n.t("cmp.dash.msCard"), Modifier.fillMaxWidth()) {
-                    val ms = dash?.milestones
-                    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        Pill(L10n.t("cmp.dash.msOpen", ms?.counts?.open ?: 0), Palette.Accent)
-                        Pill(L10n.t("cmp.dash.msDone", ms?.counts?.done ?: 0), Palette.Green)
-                        Pill(L10n.t("cmp.dash.msDropped", ms?.counts?.dropped ?: 0), Palette.TextSecondary)
-                        Pill(L10n.t("cmp.dash.msUnverifiable", ms?.counts?.unverifiable ?: 0), Palette.Amber)
-                        Pill(L10n.t("cmp.dash.msEngineRead", ms?.counts?.engineRead ?: 0), Palette.TextSecondary)
-                    }
-                    ms?.storeHealth?.takeIf { it.isNotBlank() && it != "ok" }?.let {
-                        Spacer(Modifier.height(Space.xs))
-                        Text(L10n.t("cmp.dash.storeHealth", it), style = Type.micro.copy(color = Palette.Amber))
+                shown.chunked(2).forEach { rowProjects ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+                        rowProjects.forEach { proj ->
+                            ProjectProgressCard(
+                                p = proj,
+                                milestones = d.milestones.items.filter { it.projectId == proj.id },
+                                filter = filter,
+                                onOpen = { model.goRoute(AppModel.Route.PROJECT, proj.name) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        if (rowProjects.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
+            }
 
-                // ── 活跃项目 ──
-                SectionCard(L10n.t("dash.activeCount"), Modifier.fillMaxWidth()) {
-                    val act = dash?.activeProjects.orEmpty()
-                    if (act.isEmpty()) Text(L10n.t("cmp.dash.noActive"), style = Type.body.copy(color = Palette.TextSecondary))
-                    else act.forEach { ap ->
-                        Row(Modifier.padding(vertical = 3.dp)) {
-                            Text(ap.name, style = Type.body.copy(fontWeight = FontWeight.Medium))
-                            ap.headline?.let {
+            // ── 语言分布 ‖ 里程碑 ──
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
+                SectionCard(L10n.t("dash.langDist"), Modifier.weight(1f)) {
+                    val langs = d.languages
+                    val coverage = languageCoverage(
+                        languageCount = langs.size,
+                        truncated = d.languagesTruncated == true,
+                        failed = d.languagesFailed,
+                        reasons = d.languagesFailedReasons,
+                        topCut = d.languagesTopCut == true,
+                        shownCount = minOf(langs.size, LANG_BAR_MAX),
+                    )
+                    if (langs.isEmpty()) {
+                        Text(coverage.emptyTitle, style = Type.body.copy(color = Palette.TextTertiary))
+                    } else {
+                        val shownLangs = langs.take(LANG_BAR_MAX)
+                        SegmentedBar(shownLangs.map { it.count }, shownLangs.indices.map { Composition12[it] })
+                        Spacer(Modifier.height(Space.sm))
+                        shownLangs.forEachIndexed { i, l ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(7.dp).background(Composition12[i], CircleShape))
                                 Spacer(Modifier.width(Space.sm))
-                                Text(it, style = Type.label, maxLines = 1)
+                                Text(l.language, style = Type.label, modifier = Modifier.weight(1f))
+                                Text("${l.count}", style = Type.label.copy(fontWeight = FontWeight.Medium), color = Palette.TextSecondary)
                             }
                         }
                     }
+                    coverage.note?.let {
+                        Spacer(Modifier.height(Space.xs))
+                        Text(it, style = Type.micro)
+                    }
+                }
+                SectionCard(milestoneCardTitle(d.milestones.counts), Modifier.weight(1f)) {
+                    val items = d.milestones.items
+                    if (items.isEmpty()) {
+                        val degraded = d.milestones.counts.degraded
+                        Text(
+                            if (degraded) L10n.t("dash.msCard.unreadable") else L10n.t("dash.msCard.none"),
+                            style = Type.body.copy(color = if (degraded) Palette.Amber else Palette.TextTertiary),
+                        )
+                        Text(
+                            if (degraded) L10n.t("dash.msCard.degradedetail", d.milestones.counts.storeHealth, d.milestones.counts.readCount)
+                            else L10n.t("dash.msCard.addHint"),
+                            style = Type.label,
+                        )
+                    } else {
+                        val slice = milestoneCardSlice(items.size)
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items.take(slice.shown).forEach { m ->
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    val done = m.status == "done"
+                                    Box(
+                                        Modifier.size(7.dp).background(
+                                            when {
+                                                done -> Palette.Green
+                                                m.overdue -> Palette.Red
+                                                else -> Palette.TextSecondary
+                                            },
+                                            CircleShape,
+                                        ),
+                                    )
+                                    Spacer(Modifier.width(Space.sm))
+                                    Text(m.projectName, style = Type.label)
+                                    Spacer(Modifier.width(Space.xs))
+                                    Text(m.name, style = Type.body.copy(fontWeight = FontWeight.Medium))
+                                    Spacer(Modifier.weight(1f))
+                                    milestoneDueText(m).takeIf { it.isNotBlank() }?.let {
+                                        Text(it, style = Type.label, color = if (m.overdue) Palette.Red else Palette.TextSecondary)
+                                    }
+                                }
+                            }
+                        }
+                        slice.note?.let {
+                            Spacer(Modifier.height(Space.xs))
+                            Text(it, style = Type.micro)
+                        }
+                    }
+                }
+            }
+
+            // ── 近 7 天活跃 ──
+            if (d.activeProjects.isNotEmpty()) {
+                SectionCard(L10n.t("dash.active.title", d.activeProjects.size), Modifier.fillMaxWidth()) {
+                    d.activeProjects.forEach { a ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(7.dp).background(Palette.Green, CircleShape))
+                            Spacer(Modifier.width(Space.sm))
+                            Text(a.name, style = Type.body)
+                            Spacer(Modifier.weight(1f))
+                            Text(a.lastCommitAgo, style = Type.label, color = Palette.TextSecondary)
+                            a.headline?.let {
+                                Spacer(Modifier.width(Space.md))
+                                Text(it, style = Type.label, color = Palette.TextTertiary, maxLines = 1, modifier = Modifier.widthIn(max = 280.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            when (val st = dashState) {
+                is LoadState.Failed -> GlassCard(Modifier.fillMaxWidth()) {
+                    Text(L10n.t("dash.failed.title"), style = Type.section.copy(color = Palette.Amber))
+                    Spacer(Modifier.height(Space.xs))
+                    Text(st.reason, style = Type.body.copy(color = Palette.TextSecondary))
+                }
+                else -> GlassCard(Modifier.fillMaxWidth()) {
+                    Text(L10n.t("dash.loading"), style = Type.body.copy(color = Palette.TextSecondary))
                 }
             }
         }
     }
 }
 
-/** 空态 CTA 磁贴（对位 mac/bui `.empty`「还没有注册项目」+ 扫描/添加入口）：
- *  扫描根目录 / 添加项目路径两行表单，接引擎 scan/add；结果与失败原因一行如实披露。 */
+/** 空态 CTA 磁贴（对位 mac/bui `.empty`「还没有注册项目」+ 扫描/添加入口）。 */
 @Composable
 private fun EmptyRegistryCta(model: AppModel) {
     val busy by model.busyAction.collectAsState()
@@ -415,14 +495,12 @@ private fun EmptyRegistryCta(model: AppModel) {
     GlassCard(Modifier.fillMaxWidth()) {
         Text(L10n.t("cmp.dash.heroEmpty"), style = Type.section)
         Spacer(Modifier.height(Space.xs))
-        Text(
-            L10n.t("cmp.dash.heroEmptyBody"),
-            style = Type.body.copy(color = Palette.TextSecondary),
-        )
+        Text(L10n.t("cmp.dash.heroEmptyBody"), style = Type.body.copy(color = Palette.TextSecondary))
         Spacer(Modifier.height(Space.sm))
         // ── 扫描行 ──
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             OutlinedTextField(
+                colors = fluentTextFieldColors(),
                 value = scanRoot,
                 onValueChange = { scanRoot = it },
                 placeholder = { Text(L10n.t("cmp.scan.rootLabel"), style = Type.micro) },
@@ -431,6 +509,7 @@ private fun EmptyRegistryCta(model: AppModel) {
                 modifier = Modifier.weight(1f),
             )
             OutlinedTextField(
+                colors = fluentTextFieldColors(),
                 value = scanDepth,
                 onValueChange = { scanDepth = it },
                 placeholder = { Text(L10n.t("cmp.scan.depthShort"), style = Type.micro) },
@@ -441,7 +520,7 @@ private fun EmptyRegistryCta(model: AppModel) {
             Button(
                 onClick = { model.scanProjects(scanRoot.trim(), scanDepth.trim().toIntOrNull() ?: 2) },
                 enabled = !busy && scanRoot.isNotBlank(),
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(Radius.control),
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
             ) { Text(L10n.t("scan.run")) }
         }
@@ -449,6 +528,7 @@ private fun EmptyRegistryCta(model: AppModel) {
         // ── 添加行 ──
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             OutlinedTextField(
+                colors = fluentTextFieldColors(),
                 value = addPath,
                 onValueChange = { addPath = it },
                 placeholder = { Text(L10n.t("cmp.scan.pathLabel"), style = Type.micro) },
@@ -457,6 +537,7 @@ private fun EmptyRegistryCta(model: AppModel) {
                 modifier = Modifier.weight(1f),
             )
             OutlinedTextField(
+                colors = fluentTextFieldColors(),
                 value = addName,
                 onValueChange = { addName = it },
                 placeholder = { Text(L10n.t("cmp.scan.nameOptional"), style = Type.micro) },
@@ -467,7 +548,7 @@ private fun EmptyRegistryCta(model: AppModel) {
             Button(
                 onClick = { model.addProjectPath(addPath.trim(), addName.trim().takeIf { it.isNotBlank() }) },
                 enabled = !busy && addPath.isNotBlank(),
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(Radius.control),
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
             ) { Text(L10n.t("scan.add")) }
         }
@@ -479,21 +560,7 @@ private fun EmptyRegistryCta(model: AppModel) {
     }
 }
 
-/** 胶囊 pill（语义色底 + 深色文字 = WCAG 对比度纪律）。 */
-@Composable
-fun Pill(text: String, color: Color) {
-    Text(
-        text,
-        style = Type.micro.copy(fontWeight = FontWeight.SemiBold),
-        color = Palette.BgBase,
-        modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(color.copy(alpha = 0.9f))
-            .padding(horizontal = 8.dp, vertical = 2.dp),
-    )
-}
-
-/** 里程碑完成率（对位 mac ProjectProgressCard.milestoneRatio：达成 / (达成 + 进行中)，unknown 不计入）。 */
+/** 里程碑完成率（mac ProjectProgressCard.milestoneRatio 对位：达成 / (达成 + 进行中)，unknown 不计入）。 */
 data class MilestoneRatio(val done: Int, val open: Int, val unknown: Int) {
     val ratio: Float? get() = if (done + open == 0) null else done.toFloat() / (done + open)
 }
@@ -505,59 +572,117 @@ fun milestoneRatioOf(milestones: List<Milestone>): MilestoneRatio {
     return MilestoneRatio(done, open, unknown)
 }
 
-// ── 双轨按钮的范围文案与待记录数（shallowUpdateLabel / deepUpdateLabel / pendingCommitsOf）
-//    已随双轨按钮归位迁至 WorkBar.kt（判据 HeroUpdateScopeTest 引用不变，同包）──
+/** 状态词颜色（mac ProjectProgressCard.stateWord 的 tone → color）。 */
+private fun livenessTone(l: Liveness): Color = when (l) {
+    Liveness.UNREADABLE, Liveness.UNKNOWN -> Palette.Red
+    Liveness.NOT_GIT -> Palette.TextSecondary
+    Liveness.NEEDS_ACTION -> Palette.Amber
+    Liveness.ENGINE_STALE, Liveness.QUIET -> Palette.TextSecondary
+    Liveness.RECENT -> Palette.Green
+}
 
-/** 逐项目进度卡（mac ProjectProgressCard 对位）：标识 → 状态 → 里程碑/分支 → 最近提交 → 入口。 */
+/**
+ * 逐项目进度卡（mac ProjectProgressCard 对位）：
+ * 标识 → 状态 → 描述 → 里程碑完成度 + 分支 → 提交结构（受类型筛选）→ 最近提交 + 入口。
+ */
 @Composable
 fun ProjectProgressCard(
     p: Project,
     milestones: List<Milestone>,
+    filter: DashFilter,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    GlassCard(modifier.fillMaxWidth()) {
-        // 行 1：标识（mono 名 + 待处理 pill）
+    GlassCard(modifier.fillMaxWidth().clickable { onOpen() }) {
+        // 行 1：项目名（等宽）+ 状态词
+        val l = livenessOf(p)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(p.name, style = Type.card.copy(fontWeight = FontWeight.Bold))
-            Spacer(Modifier.width(Space.sm))
-            val dirty = p.userDirtyCount ?: 0
-            if (dirty > 0) Pill("●$dirty", Palette.Amber)
-        }
-        Spacer(Modifier.height(Space.xs))
-        // 行 2：状态（可读=进展摘要；读不出=原因）
-        if (!p.isReadable) {
-            Text(L10n.t("cmp.dash.unreadableWith", p.error ?: L10n.t("cmp.err.noReason")), style = Type.micro.copy(color = Palette.Red))
-        } else {
-            p.headline?.takeIf { it.isNotBlank() }?.let {
-                Text(it, style = Type.body.copy(color = Palette.TextSecondary), maxLines = 2)
-            }
-        }
-        Spacer(Modifier.height(Space.xs))
-        // 行 3：里程碑完成度 + 分支（只有「完成度」有进度语义才画条）
-        val ratio = milestoneRatioOf(milestones)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(L10n.t("ms.page.title"), style = Type.label)
+            Text(p.name, style = Type.card.copy(fontFamily = Mono), maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+            Spacer(Modifier.weight(1f))
+            Box(Modifier.size(7.dp).background(livenessTone(l), CircleShape))
             Spacer(Modifier.width(Space.xs))
-            Text("${ratio.done}/${ratio.done + ratio.open}", style = Type.body)
-            ratio.ratio?.let { r ->
-                Spacer(Modifier.width(Space.sm))
-                Box(Modifier.width(64.dp).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Palette.BarTrack)) {
-                    Box(Modifier.fillMaxWidth(r).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Palette.Deep))
+            // 「久未更新」要说清是多少天（不传天数会显示成「? 天没更新」）
+            Text(stateWordOf(l, daysSinceLastCommit(p)), style = Type.label, color = livenessTone(l))
+        }
+        Spacer(Modifier.height(Space.xs))
+        // 行 2：一句描述。读不出来时不能编一句
+        Text(
+            if (!p.isReadable) p.error ?: L10n.t("dash.card.unreadable")
+            else p.headline?.takeIf { it.isNotBlank() } ?: L10n.t("dash.card.nosummary"),
+            style = Type.label,
+            color = if (!p.isReadable) Palette.Red else Palette.TextSecondary,
+            maxLines = 2,
+        )
+        Spacer(Modifier.height(Space.xs))
+        // 行 3：里程碑完成度 + 分支
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val m = milestoneRatioOf(milestones)
+            val decided = m.done + m.open
+            when {
+                decided == 0 && m.unknown > 0 -> Text(L10n.t("dash.ms.unreadableCount", m.unknown), style = Type.label, color = Palette.Amber)
+                decided == 0 -> Text(L10n.t("dash.ms.none"), style = Type.label, color = Palette.TextTertiary)
+                else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                    Text(L10n.t("dash.ms.label"), style = Type.label, color = Palette.TextTertiary)
+                    Text("${m.done}/$decided", style = Type.label.copy(fontWeight = FontWeight.Medium), color = Palette.TextSecondary)
+                    val pct = (m.done.toDouble() * 100 / decided).roundToInt()
+                    Text("$pct%", style = Type.label.copy(fontWeight = FontWeight.SemiBold), color = Palette.Deep)
+                    if (m.unknown > 0) Text(L10n.t("dash.ms.unknownNote", m.unknown), style = Type.label, color = Palette.Amber)
                 }
             }
+            Spacer(Modifier.weight(1f))
+            Text(L10n.t("dash.card.branch"), style = Type.label, color = Palette.TextTertiary)
+            Spacer(Modifier.width(Space.xs))
+            // 引擎恒发 currentBranch；追踪数组空时不能说「无分支记录」——那正是把「不知道」说成「没有」
+            val branchLabel = p.primaryBranch?.name ?: p.currentBranch?.takeIf { it.isNotBlank() } ?: L10n.t("detail.nobranch")
+            Text(branchLabel, style = Type.label.copy(fontFamily = Mono), color = Palette.TextSecondary, maxLines = 1)
+        }
+        // 行 4：提交结构（堆叠条 + 图例，受提交类型筛选控制）
+        if (p.isReadable) {
+            Spacer(Modifier.height(Space.sm))
+            val all = p.commitTypes
+            val kept = filter.keptStats(all)
+            when {
+                all.isEmpty() -> Text(L10n.t("dash.card.nohistory"), style = Type.label, color = Palette.TextTertiary)
+                // 筛到一个都不剩时必须说出来，不能画一根空条装作「没有提交」
+                kept.isEmpty() -> Text(L10n.t("dash.card.nomatch"), style = Type.label, color = Palette.TextTertiary)
+                else -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(L10n.t("dash.card.composition"), style = Type.label, color = Palette.TextTertiary)
+                        Spacer(Modifier.weight(1f))
+                        // 样本披露：commitTypes 是最近 N 条的样本，拿样本当全量是修过的缺陷
+                        if (p.commitTypesTruncated == true) Text(L10n.t("dash.card.sample"), style = Type.label, color = Palette.Amber)
+                    }
+                    Spacer(Modifier.height(Space.xs))
+                    CommitCompositionBlock(kept, sampleTruncated = false)
+                }
+            }
+        }
+        // 行 5：最近提交 + 进入独立管控页的入口
+        Spacer(Modifier.height(Space.sm))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val head = p.primaryBranch
+            val branchDetailMissing = p.primaryBranch == null && p.isReadable
+            when {
+                head != null -> {
+                    Text(head.headShort.ifBlank { head.name }, style = Type.label.copy(fontFamily = Mono), color = Palette.TextSecondary, maxLines = 1)
+                    Spacer(Modifier.width(Space.sm))
+                    Text(head.headSubject.ifBlank { head.summary }, style = Type.label, color = Palette.TextTertiary, maxLines = 1, modifier = Modifier.weight(1f))
+                }
+                // 明细读不到 ≠ 没有提交。这句话必须存在，否则「空着的一行」会被读成「什么都没干」
+                branchDetailMissing -> Text(L10n.t("detail.branch.untracked"), style = Type.label, color = Palette.TextTertiary, modifier = Modifier.weight(1f))
+                else -> Text(L10n.t("dash.card.unreadableShort"), style = Type.label, color = Palette.Red, modifier = Modifier.weight(1f))
+            }
             Spacer(Modifier.width(Space.sm))
-            Text(L10n.t("cmp.dash.branchLine", p.currentBranch ?: "?"), style = Type.micro)
+            Text(
+                L10n.t("detail.enter") + " →",
+                style = Type.label,
+                color = Palette.Accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(Palette.Accent.copy(alpha = 0.12f))
+                    .clickable { onOpen() }
+                    .padding(horizontal = Space.sm, vertical = 3.dp),
+            )
         }
-        Spacer(Modifier.height(Space.xs))
-        // 行 4：最近提交（分支明细的当前分支 headAgo/headShort；缺失如实）
-        val current = p.branches.firstOrNull { it.isCurrent }
-        val ago = current?.headAgo ?: p.lastCommitAgo
-        if (!ago.isNullOrBlank()) {
-            Text(L10n.t("cmp.dash.lastCommit", ago), style = Type.micro, maxLines = 1)
-        }
-        // 行 7：入口
-        Spacer(Modifier.height(Space.xs))
-        ActionText(L10n.t("cmp.dash.detailLink"), Palette.Accent, onClick = onOpen)
     }
 }

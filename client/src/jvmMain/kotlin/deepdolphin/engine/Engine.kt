@@ -12,7 +12,10 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-class EngineException(val userMessage: String, cause: Throwable? = null) : Exception(userMessage, cause)
+open class EngineException(val userMessage: String, cause: Throwable? = null) : Exception(userMessage, cause)
+
+/** 用户主动停止了这次引擎调用（mac StopDecision：stopped ≠ failed，不报成失败）。 */
+class EngineStoppedException : EngineException("stopped")
 
 open class Engine(val bin: String) {
 
@@ -31,40 +34,74 @@ open class Engine(val bin: String) {
     private val quiet = listOf("--json", "--quiet")
     private val json = listOf("--json")
 
+    /**
+     * 引擎 JSON 调用的唯一入口。失败判定两条（二次验证抓到：两条都曾缺失，失败被报成成功）：
+     *   1. exit≠0 = 这次调用失败，**即便 stdout 能解码**——引擎失败时打的是裸 {error,code,message}
+     *      或 {code,message}，按回执解码会得到全默认值，界面显示「文档 0 处变更 ✓」。
+     *      只有 status 享「exit≠0 但载荷完整」的待遇（全部项目采集失败也先打完整 JSON 再 exit 1）。
+     *   2. 原因优先级：stdout 里的 message → stderr 首个非空行 → stdout 首行 → 「无输出」。
+     */
     private suspend fun <T> call(
         serializer: KSerializer<T>,
         args: List<String>,
         timeoutSec: Long = 300,
+        tolerateNonZeroExit: Boolean = false,
     ): T = withContext(Dispatchers.IO) {
         val full = args + json
-        val (rc, out) = EngineLocator.run(bin, full, timeoutSec)
-        // 契约 §4.3：exit≠0 但 stdout 可解析 → failedWithPayload，载荷保留
-        //（引擎把失败原因写进 stdout：全部项目采集失败也先打印完整 JSON 再 exit 1）。
-        // 只有 stdout 不可解析才是真失败。
+        val (rc, out, err) = EngineLocator.runSplit(bin, full, timeoutSec)
+        if (rc == EngineLocator.STOPPED_RC) throw EngineStoppedException()
+        val stderrWhy = err.trim().lineSequence().firstOrNull { it.isNotBlank() }
+        fun fail(cause: Throwable? = null): Nothing = throw EngineException(
+            L10n.t("err.exitCode", rc) + "：" + (
+                engineMessageOf(out)
+                    ?: stderrWhy
+                    ?: out.trim().lineSequence().firstOrNull()?.take(120)
+                    ?: L10n.t("cmp.err.noOutput")
+                ),
+            cause,
+        )
+        if (rc != 0 && !tolerateNonZeroExit) fail()
         try {
             decodeOrThrow(serializer, out)
         } catch (e: Exception) {
-            if (rc == 0) {
-                throw EngineException(L10n.t("cmp.err.contract", e.message ?: ""), e)
-            }
+            if (rc != 0) fail(e)
             throw EngineException(
-                L10n.t("err.exitCode", rc) + "：" + (out.trim().lineSequence().firstOrNull()?.take(120)
-                    ?: L10n.t("cmp.err.noOutput")),
+                L10n.t("cmp.err.contract", e.message ?: "") + (stderrWhy?.let { "；$it" } ?: ""),
                 e,
             )
         }
     }
 
+    /** stdout 是错误信封时取出引擎给的 message；不是（或解析不了）返回 null。 */
+    internal fun engineMessageOf(out: String): String? = try {
+        Json.parseToJsonElement(out).let { it as? kotlinx.serialization.json.JsonObject }
+            ?.get("message")?.let { it as? kotlinx.serialization.json.JsonPrimitive }?.takeIf { v -> v.isString }?.content
+    } catch (_: Exception) {
+        null
+    }
+
     private suspend fun callRaw(args: List<String>, timeoutSec: Long = 300): String =
         withContext(Dispatchers.IO) {
-            val (rc, out) = EngineLocator.run(bin, args + json, timeoutSec)
-            if (rc != 0) throw EngineException(L10n.t("err.exitCode", rc) + "：" + (out.trim().lineSequence().firstOrNull() ?: L10n.t("cmp.err.noOutput")))
+            val (rc, out, err) = EngineLocator.runSplit(bin, args + json, timeoutSec)
+            if (rc == EngineLocator.STOPPED_RC) throw EngineStoppedException()
+            if (rc != 0) throw EngineException(
+                L10n.t("err.exitCode", rc) + "：" + (
+                    engineMessageOf(out)
+                        ?: err.trim().lineSequence().firstOrNull { it.isNotBlank() }
+                        ?: out.trim().lineSequence().firstOrNull() ?: L10n.t("cmp.err.noOutput")
+                ),
+            )
             out
         }
 
     // ── 读 ──
     suspend fun status(project: String? = null): StatusEnvelope =
-        call(StatusEnvelope.serializer(), listOf("status") + (project?.let { listOf(it) } ?: emptyList()), 60)
+        call(
+            StatusEnvelope.serializer(),
+            listOf("status") + (project?.let { listOf(it) } ?: emptyList()),
+            60,
+            tolerateNonZeroExit = true, // 有项目采集失败时引擎先打完整 JSON 再 exit 1：载荷要保留
+        )
 
     suspend fun dashboard(): DashboardData = call(DashboardData.serializer(), listOf("dashboard"), 180)
 
@@ -140,11 +177,14 @@ open class Engine(val bin: String) {
     // 回执末行/产物路径/复用判定的提取是纯函数，判据在 ui/GraphPages.kt 的 GraphParseTest。
 
     /** render index/arch：成功返回 stdout 全文；失败抛 EngineException（stderr 原因已在消息里）。 */
-    suspend fun renderGraph(kind: String, project: String, withConfidence: Boolean = false): String =
+    suspend fun renderGraph(kind: String, project: String, withConfidence: Boolean = false, force: Boolean = false): String =
         withContext(Dispatchers.IO) {
             require(kind == "index" || kind == "arch") { L10n.t("cmp.err.renderKind", kind) }
             val args = mutableListOf("render", kind, project)
             if (withConfidence) args += "--confidence"
+            // --force：引擎的「产物未变」复用不看置信度快照有没有新出现——纯结构旧产物
+            // 会被一直复用，热力图永远缺席；数据就绪后必须强制重绘一次
+            if (force) args += "--force"
             // 600s 对位 mac render 超时预算：整库重绘是分钟级，宁可等也不要半截
             val (rc, out) = EngineLocator.runMerged(bin, args, 600)
             if (rc != 0) throw EngineException(
@@ -153,6 +193,20 @@ open class Engine(val bin: String) {
             )
             out
         }
+
+    /**
+     * confidence gen <项目>：生成置信度快照（confidence.json）——代码图谱热力图的**数据源**。
+     * 二次验证抓到：全工程只跑 render index --confidence、从不生成快照；快照缺席时引擎只出
+     * 纯结构图（回执自己写明「无置信度数据——本页只呈现结构」）。
+     */
+    suspend fun confidenceGen(project: String): String = withContext(Dispatchers.IO) {
+        val (rc, out) = EngineLocator.runMerged(bin, listOf("confidence", "gen", project, "--format", "text"), 300)
+        if (rc == EngineLocator.STOPPED_RC) throw EngineStoppedException()
+        if (rc != 0) throw EngineException(
+            L10n.t("err.exitCode", rc) + "：" + (out.trim().lineSequence().firstOrNull { it.isNotBlank() } ?: L10n.t("cmp.err.noOutput")),
+        )
+        out
+    }
 
     // ── 置信度体检 / 补丁体检（mac GraphScene.swift:32-68 同形态；形状以真机实测锚定，
     //    fixtures/confidence/ 三份 JSON 即本机引擎真跑落盘）──

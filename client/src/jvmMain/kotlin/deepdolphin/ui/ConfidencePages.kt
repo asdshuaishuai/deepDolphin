@@ -18,6 +18,7 @@
 package deepdolphin.ui
 
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,10 +27,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -55,6 +53,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
+import androidx.compose.foundation.layout.PaddingValues
 
 // ── 纯函数（判据见 ConfidencePagesTest；阈值全部对位 mac 基准，不发明）──
 
@@ -72,7 +71,8 @@ fun patchEntityColor(confidence: Double): Color =
 
 /** finding 权重越高 = 越不可信：≥8 红（孤儿/占位/吞错/重复体档）/ ≥5 橙 / 其余次级。 */
 fun findingWeightColor(weight: Long): Color =
-    if (weight >= 8) Palette.Red else if (weight >= 5) Palette.Amber else Palette.TextSecondary
+    // 色阶对位 mac CodeSnippet.swift:201：≥10 红 / ≥6 橙（「只看高权重」的筛选线仍是 ≥8，两回事）
+    if (weight >= 10) Palette.Red else if (weight >= 6) Palette.Amber else Palette.TextSecondary
 
 /** 只看高权重疑点（mac highWeightOnly：weight ≥ 8 这一档；关着 = 引擎全序原样）。 */
 fun highWeightFindings(fs: List<ConfFinding>, enabled: Boolean): List<ConfFinding> =
@@ -141,51 +141,20 @@ private val DIFF_HUNK_HEAD = Regex("""^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @
 fun sourceLineAt(projectPath: String, file: String, line: Long): String? = runCatching {
     val f = File(projectPath, file)
     if (!f.isFile || line < 1) null
-    else f.useLines { seq -> seq.drop((line - 1).toInt()).firstOrNull() }
+    else f.useLines(Charsets.UTF_8) { seq -> seq.drop((line - 1).toInt()).firstOrNull() } // 显式 UTF-8：非 UTF-8 locale 下中文不乱码
 }.getOrNull()
 
 // ── 项目选择器（mac GraphProjectPicker 对位：两页共用）──
 
 @Composable
 fun GraphProjectPicker(names: List<String>, selected: String, onSelect: (String) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .clip(RoundedCornerShape(Radius.control))
-                .background(Palette.BgDeep)
-                .clickable { open = !open }
-                .padding(horizontal = Space.md, vertical = Space.sm)
-                .width(180.dp),
-        ) {
-            Text(
-                selected.ifBlank { L10n.t("cmp.form.selectProject") },
-                style = Type.body,
-                color = if (selected.isBlank()) Palette.TextSecondary else Palette.TextPrimary,
-                maxLines = 1,
-                modifier = Modifier.weight(1f),
-            )
-            Text("▾", style = Type.label, color = Palette.TextTertiary)
-        }
-        if (open) {
-            Column(
-                Modifier.width(196.dp).clip(RoundedCornerShape(Radius.control))
-                    .background(Palette.Sidebar).padding(Space.xs)
-            ) {
-                names.forEach { n ->
-                    Text(
-                        n, style = Type.body,
-                        color = if (n == selected) Palette.Accent else Palette.TextPrimary,
-                        modifier = Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(Radius.chip))
-                            .clickable { onSelect(n); open = false }
-                            .padding(horizontal = Space.md, vertical = 6.dp),
-                    )
-                }
-            }
-        }
-    }
+    FluentDropdown(
+        options = names.map { it to it },
+        selectedKey = selected.ifBlank { null },
+        placeholder = L10n.t("cmp.form.selectProject"),
+        onSelect = onSelect,
+        modifier = Modifier.width(180.dp),
+    )
 }
 
 // ── 置信度页（mac ConfidencePage：六维度总分 + 披露式 findings + LLM 提示词复制）──
@@ -294,64 +263,69 @@ fun ConfidencePage(model: AppModel) {
                 modifier = Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.sm),
             )
         }
-        Column(
-            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(horizontal = Space.xl, vertical = Space.lg),
+        // 页面级单层 LazyColumn：报告体直接往这里发条目。
+        // ⚠️ 不许再在滚动容器里嵌 LazyColumn——垂直滚动的 Column 给子级无限高约束，
+        //    嵌套的 LazyColumn 会在测量期抛异常（打开即崩，错误框点确定即退出）。
+        ScrollLazyColumn(
+            Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = Space.xl, vertical = Space.lg),
             verticalArrangement = Arrangement.spacedBy(Space.md),
         ) {
             val r = vm.report
             if (r == null) {
-                Text(
-                    L10n.t("cmp.conf.hint"),
-                    style = Type.body.copy(color = Palette.TextSecondary),
-                    modifier = Modifier.padding(top = Space.xl),
-                )
+                item(key = "hint") {
+                    Text(
+                        L10n.t("cmp.conf.hint"),
+                        style = Type.body.copy(color = Palette.TextSecondary),
+                        modifier = Modifier.padding(top = Space.xl),
+                    )
+                }
             } else {
-                ConfidenceReportBody(r, vm.highWeightOnly, projects.firstOrNull { it.name == vm.projectName }?.path ?: "")
+                confidenceReportItems(r, vm.highWeightOnly, projects.firstOrNull { it.name == vm.projectName }?.path ?: "")
             }
         }
     }
 }
 
-@Composable
-private fun ConfidenceReportBody(r: ConfidenceReport, highWeightOnly: Boolean, projectPath: String) {
-    // 总分 + 维度行（引擎只发有疑点的维度——有几个维度亮几个，不造假补齐）
-    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("${r.score}", style = Type.display, color = confidenceScoreColor(r.score))
-            Text(L10n.t("cmp.conf.scoreOf"), style = Type.micro)
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-            if (r.dimensions.isEmpty()) {
-                Text(L10n.t("cmp.conf.noFindings"), style = Type.label)
+/** 报告体：页面级 LazyColumn 的条目（行级懒加载；键稳定）。 */
+private fun LazyListScope.confidenceReportItems(r: ConfidenceReport, highWeightOnly: Boolean, projectPath: String) {
+    item(key = "score") {
+        // 总分 + 维度行（引擎只发有疑点的维度——有几个维度亮几个，不造假补齐）
+        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("${r.score}", style = Type.display, color = confidenceScoreColor(r.score))
+                Text(L10n.t("cmp.conf.scoreOf"), style = Type.micro)
             }
-            r.dimensions.forEach { d -> DimensionRow(d.label, d.score, d.penalty, d.findings) }
+            Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+                if (r.dimensions.isEmpty()) {
+                    Text(L10n.t("cmp.conf.noFindings"), style = Type.label)
+                }
+                r.dimensions.forEach { d -> DimensionRow(d.label, d.score, d.penalty, d.findings) }
+            }
         }
     }
     // 降级/限流披露必须原样展示（契约：不许静默）
-    if (r.astNote.isNotBlank()) DisclosureBox(r.astNote)
-    if (r.cappedTotal) DisclosureBox(L10n.t("cmp.conf.cappedTotal"))
-    else if (r.cappedKind) DisclosureBox(L10n.t("cmp.conf.cappedKind"))
-    if (r.semantics.isNotBlank()) Text(r.semantics, style = Type.micro, color = Palette.TextTertiary)
+    if (r.astNote.isNotBlank()) item(key = "astNote") { DisclosureBox(r.astNote) }
+    if (r.cappedTotal) item(key = "capped") { DisclosureBox(L10n.t("cmp.conf.cappedTotal")) }
+    else if (r.cappedKind) item(key = "capped") { DisclosureBox(L10n.t("cmp.conf.cappedKind")) }
+    if (r.semantics.isNotBlank()) item(key = "semantics") { Text(r.semantics, style = Type.micro, color = Palette.TextTertiary) }
 
     // findings：披露式行（收起 = 位置告知，点击 = 展开证据与实码）
-    Text(L10n.t("cmp.conf.findingsN", r.findings.size) + if (highWeightOnly) L10n.t("cmp.conf.findingsHighN", highWeightFindings(r.findings, true).size) else "", style = Type.section)
-    Text(L10n.t("cmp.conf.findingsHint"), style = Type.micro)
+    item(key = "findingsHead") {
+        Text(L10n.t("cmp.conf.findingsN", r.findings.size) + if (highWeightOnly) L10n.t("cmp.conf.findingsHighN", highWeightFindings(r.findings, true).size) else "", style = Type.section)
+        Text(L10n.t("cmp.conf.findingsHint"), style = Type.micro)
+    }
     val shown = highWeightFindings(r.findings, highWeightOnly)
     if (shown.isEmpty()) {
-        Text(
-            if (r.findings.isEmpty()) L10n.t("cmp.conf.emptyNoFindings") else L10n.t("cmp.conf.emptyFiltered"),
-            style = Type.body.copy(color = Palette.TextSecondary),
-        )
-    }
-    // findings 行级 Lazy（有界滚动容器内；稳定 key=位置+权重，去重保护）
-    androidx.compose.foundation.lazy.LazyColumn(
-        Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(Space.sm),
-    ) {
-        items(shown, key = { f -> f.kind + "#" + f.file + "#" + f.line + "#" + f.symbol }) { f ->
-            FindingDisclosureRow(f, projectPath)
+        item(key = "findingsEmpty") {
+            Text(
+                if (r.findings.isEmpty()) L10n.t("cmp.conf.emptyNoFindings") else L10n.t("cmp.conf.emptyFiltered"),
+                style = Type.body.copy(color = Palette.TextSecondary),
+            )
         }
+    }
+    items(shown, key = { f -> f.kind + "#" + f.file + "#" + f.line + "#" + f.symbol }) { f ->
+        FindingDisclosureRow(f, projectPath)
     }
 }
 
@@ -412,11 +386,12 @@ private fun FindingDisclosureRow(f: ConfFinding, projectPath: String) {
                 color = Palette.TextSecondary,
                 maxLines = 1,
             )
-            Text(if (expanded) "▾" else "▸", style = Type.micro, color = Palette.TextTertiary)
+            IconBox(if (expanded) FluentIcon.ChevronDown else FluentIcon.ChevronRight, size = 12.dp, tint = Palette.TextTertiary)
         }
         if (expanded) {
             Spacer(Modifier.height(Space.xs))
-            Text(L10n.t("cmp.conf.evidence", f.evidence), style = Type.body.copy(color = Palette.TextSecondary))
+            // 证据为空就不出这一行（原来会留一行光秃秃的「证据：」）
+            if (f.evidence.isNotBlank()) Text(L10n.t("cmp.conf.evidence", f.evidence), style = Type.body.copy(color = Palette.TextSecondary))
             val src = sourceLineAt(projectPath, f.file, f.line)
             if (src != null) {
                 Text(
@@ -530,7 +505,7 @@ fun PatchCheckPage(model: AppModel) {
                 onClick = { scope.launch { vm.merge() } },
                 enabled = !vm.running && vm.layer1 != null,
                 shape = RoundedCornerShape(Radius.control),
-                colors = ButtonDefaults.buttonColors(containerColor = Palette.Deep, contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = Palette.Deep, contentColor = Palette.BgBase),
             ) { Text(L10n.t("patch.merge")) }
         }
         vm.error?.let {
@@ -539,9 +514,9 @@ fun PatchCheckPage(model: AppModel) {
                 modifier = Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.sm),
             )
         }
-        Column(
-            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(horizontal = Space.xl, vertical = Space.lg),
+        ScrollColumn(
+            Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = Space.xl, vertical = Space.lg),
             verticalArrangement = Arrangement.spacedBy(Space.md),
         ) {
             // diff 输入区（多行；临时文件由引擎封装层写删，页面不落盘）
@@ -551,6 +526,7 @@ fun PatchCheckPage(model: AppModel) {
                 Text(L10n.t("cmp.conf.diffHint"), style = Type.micro)
                 Spacer(Modifier.height(Space.sm))
                 OutlinedTextField(
+                    colors = fluentTextFieldColors(),
                     value = vm.diffText,
                     onValueChange = { vm.diffText = it },
                     singleLine = false,
@@ -666,7 +642,7 @@ private fun UncertainRow(u: PatchUncertain, current: String, onVerdict: (String)
                 )
             }
         }
-        VerdictPills(u.id, onVerdict = onVerdict)
+        VerdictPills(current, onVerdict = onVerdict) // 选中态要看当前裁决，不是条目 id（原来永不高亮）
     }
 }
 
@@ -675,9 +651,10 @@ private fun UncertainRow(u: PatchUncertain, current: String, onVerdict: (String)
 private fun VerdictPills(current: String, onVerdict: (String) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
         listOf(
-            "resolved" to L10n.t("common.confirm"),
-            "unresolved" to L10n.t("cmp.conf.verdictUnresolved"),
-            "ambiguous" to L10n.t("cmp.conf.verdictAmbiguous"),
+            // 三态语义与 mac 一致：确认成立 / 判定误报 / 无法判定（原来自拟成「确认 / 未解决 / 不确定」）
+            "resolved" to L10n.t("patch.v.confirmed"),
+            "unresolved" to L10n.t("patch.v.unresolved"),
+            "ambiguous" to L10n.t("patch.v.unsure"),
         ).forEach { (v, label) ->
             val selected = current == v
             Text(
@@ -735,7 +712,7 @@ private fun PatchEntityRow(e: PatchEntity, diffText: String) {
                 color = Palette.TextSecondary,
                 maxLines = 1,
             )
-            Text(if (expanded) "▾" else "▸", style = Type.micro, color = Palette.TextTertiary)
+            IconBox(if (expanded) FluentIcon.ChevronDown else FluentIcon.ChevronRight, size = 12.dp, tint = Palette.TextTertiary)
         }
         if (expanded) {
             Spacer(Modifier.height(Space.xs))

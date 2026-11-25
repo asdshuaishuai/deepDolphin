@@ -39,12 +39,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -59,6 +55,7 @@ import deepdolphin.engine.StatusEnvelope
 import deepdolphin.ui.Palette
 import deepdolphin.ui.Space
 import deepdolphin.ui.Type
+import androidx.compose.foundation.layout.PaddingValues
 
 // ══════════════════════════════════════════════════════════════════════
 // 模型层判定（对位 mac Models.swift:503-614 的 Liveness / needsAction /
@@ -317,7 +314,7 @@ fun BoardPage(model: AppModel) {
         // ── 列区（status 读到了才渲染列；失败/读取中不渲染，避免「空看板」冒充真相）──
         if (statusState is LoadState.Loaded) {
             // List + Section 分组形态（对位 mac：窄窗口一列纵排、原生分组标题，不横向滚动）。
-            LazyColumn(
+            ScrollLazyColumn(
                 Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(Space.lg),
             ) {
@@ -337,14 +334,8 @@ fun BoardPage(model: AppModel) {
 @Composable
 private fun BoardColumnUi(id: BoardColumnId, board: BoardModel, model: AppModel, onOpenProject: (String) -> Unit) {
     val cards = board.cardsIn(id)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.card))
-            .background(Palette.Card)
-            .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
-            .padding(Space.md),
-    ) {
+    // 列本身不做卡片：列头只是标题，卡片留给里面的项目行——卡里再套卡是两层容器讲同一件事
+    Column(Modifier.fillMaxWidth()) {
         // 列头计数与 cards 同源（同一个 List.size），不存在两套口径。
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(8.dp).background(columnTone(id), CircleShape))
@@ -379,8 +370,9 @@ private fun ProjectCard(c: BoardCard, model: AppModel, onOpenProject: (String) -
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(Palette.CardHover)
+            .clip(RoundedCornerShape(Radius.card))
+            .background(Palette.Card)
+            .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
             .clickable { onOpenProject(c.name) }
             .padding(Space.md),
     ) {
@@ -400,7 +392,11 @@ private fun ProjectCard(c: BoardCard, model: AppModel, onOpenProject: (String) -
             }
             // warnings：引擎说「需要你知道、但不算失败」的话（如「0 个提交」最容易被当成事实）。
             c.warnings.forEach { w ->
-                Text("⚠ $w", style = Type.micro.copy(color = Palette.Amber), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.Top) {
+                    IconBox(FluentIcon.Warning, size = 14.dp, tint = Palette.Amber)
+                    Spacer(Modifier.width(6.dp))
+                    Text(w, style = Type.micro.copy(color = Palette.Amber), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
             }
             Spacer(Modifier.height(Space.xs))
             // 信号 chip 行（对位 mac chips）：脏/未跟踪/stash/待记录/分支名。
@@ -409,7 +405,7 @@ private fun ProjectCard(c: BoardCard, model: AppModel, onOpenProject: (String) -
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Space.xs),
             ) {
-                if ((c.dirtyCount ?: 0) > 0) Pill("●${c.dirtyCount}", Palette.Amber)
+                if ((c.dirtyCount ?: 0) > 0) Pill(c.dirtyCount.toString(), Palette.Amber, dot = true)
                 if ((c.untrackedCount ?: 0) > 0) Pill(L10n.t("board.chip.untracked", c.untrackedCount), Palette.Amber)
                 if ((c.stashCount ?: 0) > 0) Pill("stash ${c.stashCount}", Palette.TextSecondary)
                 if ((c.pendingCommits ?: 0) > 0) Pill(L10n.t("board.chip.pending", c.pendingCommits), Palette.Accent)

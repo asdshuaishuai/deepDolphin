@@ -196,3 +196,72 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
 - deb 打包安装冒烟：packageDeb（fakeroot 用户态 wrapper）→ 69.5MB deb → dpkg-deb -x 提取校验（control/desktop/启动器齐全）→ 打包态真启动 STARTUP_MS=734ms、45s 存活、菜单条实拍（deb-live-menubar/menu-operations-open 两张入库）。
 - 门禁：204 passed / 0 failed。
 - 边界：desktop-file-validate 本机不可用（未装 desktop-file-utils），desktop 文件内容人工核对（Exec/Icon/Categories/MimeType 字段齐）；真 dpkg -i 安装需 root 未做（提取+启动器冒烟为无 root 等价物）。
+
+## 二次验证修复 + 图谱落地 + 页面化 + Fluent 精修批（2026-11-25）
+
+起因：「已完成复刻」的结论经不起二次验证。四路只读审计结论一致——零差距不成立；
+按「找茬」姿态把 BUG 级问题逐个修掉，再由用户两轮追加定稿（图谱页不弹窗、UI 美化、引擎补强）。
+
+### 二次验证抓到并修掉的（BUG 级）
+
+- **图谱页一直空白，三层根因**（此前「验证通过」的截图本身是空白页，在本机从未显示过内容）：
+  ① `WebRuntime.state` 是没加 `by` 的 MutableState 对象，`when` 的三个分支永不匹配——既不就绪、
+  也不失败、连降级文案都不出；② 缺 JOGL 本地库（`natives-linux-amd64`），一组合就
+  `UnsatisfiedLinkError`；③ KCEF 默认下载追 JetBrainsRuntime「最新」release，与 Maven 上的定版
+  Java 绑定不配套（原生找 `CefRequestContextSettings`，旧绑定没有 → 加载真实 URL 必崩）。
+  → 状态委托；显式声明本地库；原生包钉版到与绑定同源的 `jbr-21.0.4+8-631.2`、从 JetBrains CDN 下（ui/JcefBundle.kt）。
+- **WebView 装载的三条硬教训**（真窗口诊断得出）：库只在创建 browser 时读一次初始内容，
+  之后给 `state.content` 赋值不触发任何装载，必须走 `navigator`；browser 在组合时就创建，
+  此时还没布局——产物初始化按视口取景（架构图 `fit()`），所以**量到真实尺寸再装载**；
+  `loadHtml` 走的内部映射在本机恒 `ERR_FILE_NOT_FOUND`，只有真实 `file://` 直载可靠。
+- **引擎镜像漂移**（`ignoreUnknownKeys=true` 会静默吞掉引擎发的键）：`commitTypes.type→kind`、
+  journal 条目、仪表盘、里程碑 8 个键、分支 2 个键、`milestone add` 回执的 milestone 是对象……
+  全部按真机/契约修正，并由 `EngineMirrorDriftTest` 三档（fixtures 正向 / 真机正向 / 真机反向）把关。
+- **失败被报成成功**：引擎 exit≠0 仍按回执解码 → `Engine.call` rc≠0 即失败（`EngineStoppedException`）；
+  stderr 全丢、超时失效 → EngineLocator 重写（双泵线程、超时强杀即返回、停止更新先 SIGTERM 后强杀且只动更新类）。
+- 其它：置信度页打开即崩（LazyColumn 嵌在滚动 Column 里）、深链不生效、快捷键触发两次、
+  侧栏不可滚动、定时更新绕过 busy、刷新被丢弃、帮助菜单落错 tab、Markdown 显示源码、L10n 四表键不一致。
+
+### 图谱两页页面化（用户定稿 2026-11-25）
+
+- 不弹窗、专门一页、跟着仓库走、入口在各仓库详情里：`Route.GRAPH / ARCH` + `selectedProject`；
+  侧栏高亮所属仓库、工作条范围收敛到它、页头「返回仓库」。mac 是独立最大化窗口，此处不追 mac。
+- 渲染口径统一在 `AppModel.renderGraph`（详情入口 / 深链 `--section graph --project X` / 页内刷新共用）。
+- 架构图产物按 `prefers-color-scheme` 选明暗，而 CEF 在 Linux 只认 GTK 的暗色开关、命令行开关实测无效
+  → 产物 + 垫片落成缓存目录里的副本再直载（`withHeadScript` / `DARK_SCHEME_SHIM`）；不加 `<base>`
+  （产物用 `history.pushState` 写 `#module=…`，基准 URL 一变即 SecurityError）。
+- 回执条固定占位：WebView 落位后不再被状态变化挤动尺寸（实测抓到过一次 JOGL 绘制线程在
+  「上下文销毁」与「设为当前」之间撞车后整页不再重绘；修后二十余次开关 + 12 次连续改窗口尺寸未复现）。
+
+### 外壳与精修
+
+- **快捷键在 AWT 层统一接管**（`ShortcutMap.AppShortcuts`）：原先挂在 Compose 焦点链上，
+  刚启动什么都没点、被点的控件随即消失（清空搜索框的 ×）、WebView 持有焦点时全哑。
+- **退出兜底**：浏览器状态异常时 CEF 的关闭钩子会一直等（实测进程收 SIGTERM 四分钟不退，窗口留在屏幕上）
+  → 关闭钩子 4s 不退就 `halt`；应用内退出与外部 SIGTERM 同一出口。
+- Fluent 组件体系：Fluent System Icons 真图标（字体随包，字形按像素渲染缓存）替代散落的 Unicode 字形；
+  Material3 `Button` / `OutlinedTextField` / `DropdownMenu(Item)` 的**同签名替身**（32 高控件、描边浮出菜单）；
+  三处自绘的「原地撑开」假下拉换成真正的下拉选择框；设置页改 Fluent Pivot；全应用可滚动区加滚动条；
+  看板去掉卡片套卡片。设计纪律：**三级文字合成到每一种底色上都 ≥ 4.5:1**（DesignRefinementTest 按对比度公式钉，不记魔数）。
+
+### 验证与判据
+
+- 门禁 **256 passed / 0 failed**（禁用缓存 `--rerun-tasks --no-build-cache`；门禁脚本读 XML 会读到陈旧结果）。
+- deb 打包冒烟（本机已有 fakeroot/dpkg-deb）：packageDeb → 71.3MB → `dpkg-deb -x` 提取校验
+  （启动器/运行时/应用 jar 含图标字体与许可/JOGL 本地库/Ktor/desktop 文件/--add-opens 齐全）→
+  打包态真启动 `STARTUP_MS=864ms`、图谱两页可渲染、SIGTERM 正常退出。真 `dpkg -i` 需 root 未做。
+- `docs/ui-cmp/` 换成打包态实拍 12 张 + 逐张说明；此前 48 张旧图退役（至少 9 张截到的是 IDE）。
+
+### 边界（如实）
+
+- 首跑要下 217MB 的 JCEF 原生包，这台机器走 IPv4 到 CloudFront 约 200KB/s（要十几分钟）；
+  原生包随 deb 内置可免掉下载但包体 +217MB——取舍待定。
+- desktop 文件没有 `StartupWMClass`：Compose Gradle 插件 1.7.3 的 Linux DSL 不暴露该属性，
+  窗口类名（`deepdolphin-MainKt`）与 desktop 文件名不一致，任务栏归组未验证。
+- 那次 JOGL 绘制线程空指针只出现过一次，修掉最可疑的触发点后未能再复现——不能证明绝迹。
+- 剩余差距（来自四路审计，未修）：系统通知零接线、引擎缺席时外壳消失、关窗即退出（托盘不常驻）、
+  「更多」菜单与扫描目录选择器缺、AI 设置关闭即保存未做、agent 工具只实现 10/28（图谱工具全缺）、
+  提交单无「只提交勾选文件」（本机引擎 `git commit` 是 add -A 全量）、看板不吃时间窗筛选、
+  补丁体检不能自动取 `git diff HEAD`、置信度实码只读一行（mac 为 ±3 行高亮）等。
+- 过程记录：一次点击序列写反，误触了 vtest 详情页的「深更新」，对测试仓库 `/tmp/vtest` 跑了一次
+  深度更新（README 被引擎重写进度区块）——已还原到提交状态。

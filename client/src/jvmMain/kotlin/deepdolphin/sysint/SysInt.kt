@@ -92,7 +92,9 @@ object SysInt {
             }
         }
         // 非法 section 落 dashboard（与 mac/BUI 一致：宽容，不崩）
-        if (section != null && section !in setOf("dashboard", "board", "milestones")) section = null
+        // section 必须是真实存在的路由名（与 mac RootSection 一一对应）；原来只认三个视图，
+        // confidence / patchcheck / settings / project 被静默丢弃
+        if (section != null && section !in setOf("dashboard", "board", "milestones", "confidence", "patchcheck", "project", "graph", "arch", "settings")) section = null
         return DeepLink(section, project)
     }
 }
