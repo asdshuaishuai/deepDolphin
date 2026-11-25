@@ -89,6 +89,21 @@ private val HTML_PATH_TOKEN = Regex("""(?<![\w/.-])/[^\s]+\.html""")
 fun renderReused(text: String): Boolean =
     text.contains("复用") || text.contains("reused", ignoreCase = true)
 
+/**
+ * 置信度快照过期判定：引擎校验过「快照依据的索引版本 ≠ 当前索引版本」就不把旧快照叠上去
+ * （旧行为是悄悄叠一张可能错位的热力图），回执里如实写明要先生成快照。
+ * 那一句由引擎 `confidenceStaleNote` 唯一构造、CLI 文本与页面图例同一句；中英各认一处稳定锚。
+ */
+fun renderStaleConfidence(text: String): Boolean =
+    text.contains("置信度快照过期") || text.contains("snapshot is stale", ignoreCase = true)
+
+/**
+ * 渲染完要不要补生成置信度快照再重绘：只有热力图（INDEX）会过期；架构图不叠加置信度。
+ * 过期时这一页没有热力图，而本会话已经强制重绘过、刷新按钮也不会再生成快照——必须自愈。
+ */
+fun needsConfidenceRefresh(kind: GraphKind, text: String): Boolean =
+    kind == GraphKind.INDEX && renderStaleConfidence(text)
+
 /** 同源产物要不要重载 WebView：非复用（文件真的重写了）或路径变了才重载，否则不闪。 */
 fun shouldReloadWebView(reused: Boolean, pathChanged: Boolean): Boolean = !reused || pathChanged
 

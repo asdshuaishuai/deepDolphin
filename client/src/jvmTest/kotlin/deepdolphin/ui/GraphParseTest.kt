@@ -111,6 +111,35 @@ class GraphParseTest {
         assertFalse(renderReused("Redrawn: /tmp/a/index.html · v1"))
     }
 
+    // ── 置信度快照过期：引擎不再把旧快照叠上去，回执如实说明——客户端据此补生成再重绘 ──
+
+    @Test
+    fun staleConfidenceWordingDetectedInRealReceipts() {
+        // fixture 取自 moongit 真跑：生成快照后改源码（索引被自动重建成第 1 版），再 render index --confidence
+        val zh = fixture("index_stale_confidence")
+        val en = fixture("index_stale_confidence_en")
+        assertTrue(renderStaleConfidence(zh), "「置信度快照过期……先 moongit confidence gen」必须判过期")
+        assertTrue(renderStaleConfidence(en), "en 回执「Confidence snapshot is stale …」必须判过期")
+        // 过期回执照样提得到产物路径（结构图照常可看）；末行就是过期说明
+        assertTrue(extractHtmlPath(zh)!!.endsWith("/render/index.html"))
+        assertTrue(receiptLine(zh)!!.contains("置信度快照过期"))
+    }
+
+    @Test
+    fun freshReceiptsAreNotStale() {
+        listOf("index_redrawn", "index_reused", "arch_redrawn", "arch_reused").forEach { name ->
+            assertFalse(renderStaleConfidence(fixture(name)), "$name 没有过期说明，不得判过期")
+        }
+    }
+
+    @Test
+    fun onlyHeatMapRefreshesConfidence() {
+        // 热力图过期要自愈；架构图不叠加置信度，回执里出现同样的话也不该去生成快照
+        assertTrue(needsConfidenceRefresh(GraphKind.INDEX, fixture("index_stale_confidence")))
+        assertFalse(needsConfidenceRefresh(GraphKind.INDEX, fixture("index_redrawn")))
+        assertFalse(needsConfidenceRefresh(GraphKind.ARCH, fixture("index_stale_confidence")))
+    }
+
     // ── 重载判定：复用且路径没变就不重载（不闪）──
 
     @Test

@@ -140,24 +140,39 @@ class AppModel(private val engineBin: String) {
      * 先出快照再渲染；每个仓库每会话首次强制重绘一次（旧的纯结构产物不 --force 会被一直复用）。
      * false = 先秒出缓存产物后的后台核验，只问引擎「还新鲜吗」（复用就不重载，画面不闪）。
      * 快照生成失败不堵路（仍出结构图），但写进结果行说出来——否则用户以为这个仓库没有热点。
+     * 渲染回执说「置信度快照过期」（源码变了、索引被重建，引擎不再把旧快照叠上去）时补生成一次再重绘：
+     * 否则这一页没有热力图，而本会话已经强制重绘过、刷新按钮也不会再生成快照。
      * 返回引擎原始输出。
      */
     suspend fun renderGraph(kind: GraphKind, project: String, allowForce: Boolean): String {
         var confNote: String? = null
         val force = allowForce && kind == GraphKind.INDEX && graphForcedThisSession.add(project)
         if (force) {
-            try {
-                engine.confidenceGen(project)
-            } catch (e: Exception) {
-                confNote = e.message ?: e.javaClass.simpleName
+            confNote = confidenceGenNote(project)
+        }
+        var text = engine.renderGraph(kind.cliKind, project, withConfidence = kind == GraphKind.INDEX, force = force)
+        // 补生成失败就留着过期回执（结构图照常可看），原因写进结果行——不吞
+        if (needsConfidenceRefresh(kind, text)) {
+            confNote = confidenceGenNote(project)
+            if (confNote == null) {
+                text = engine.renderGraph(kind.cliKind, project, withConfidence = true, force = true)
             }
         }
-        val text = engine.renderGraph(kind.cliKind, project, withConfidence = kind == GraphKind.INDEX, force = force)
         // 后台核验不改写结果行（别把上一条写操作的结果冲掉）；真的出图时这条就是最新结果
         if (allowForce || confNote != null) {
             _lastResult.value = confNote?.let { L10n.t("cmp.graph.confSkipped", it) }
         }
         return text
+    }
+
+    /** confidence gen：成功返回 null，失败返回原因；协程取消原样抛出（那不是失败，是调用方不要了）。 */
+    private suspend fun confidenceGenNote(project: String): String? = try {
+        engine.confidenceGen(project)
+        null
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        e.message ?: e.javaClass.simpleName
     }
 
     /** 本次会话里已经强制重绘过图谱的仓库（见 [renderGraph] 的 force 说明）。 */

@@ -1,0 +1,2 @@
+已重绘：/tmp/dg-probe-stale/store/p_5dda409cd2b1/render/index.html · 第 1 版（索引已过期——先自动重建）
+  置信度快照过期（依据首版（第 0 版）索引，当前第 1 版）——先 moongit confidence gen

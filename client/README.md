@@ -8,7 +8,7 @@
 
 ## 状态（2026-11-25）
 
-- 判据门禁绿：`scripts/build.sh --test` → **256 判据 0 failed**（禁用缓存复跑
+- 判据门禁绿：`scripts/build.sh --test` → **259 判据 0 failed**（禁用缓存复跑
   `gradle jvmTest --rerun-tasks --no-build-cache` 同数）。门禁脚本读的是 test-results XML，
   增量构建下会读到陈旧结果——当证据用的数字必须来自禁用缓存的那次。
 - **真窗口实拍（2026-11-25，DISPLAY=:0，打包后的 deb 提取运行）**：截图与逐张说明见
