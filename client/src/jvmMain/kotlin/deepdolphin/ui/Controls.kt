@@ -186,7 +186,7 @@ fun FluentDropdown(
                 .height(FieldHeight)
                 .clip(RoundedCornerShape(Radius.control))
                 .background(bg)
-                .border(1.dp, border, RoundedCornerShape(Radius.control))
+                .border(Material.borderWidth, border, RoundedCornerShape(Radius.control))
                 .clickable(interactionSource = interaction, indication = null, enabled = enabled) { open = true }
                 .padding(horizontal = 12.dp),
         ) {

@@ -17,6 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 
@@ -116,7 +119,7 @@ fun FluentButton(
     val bgHover: Color
     val fg: Color
     when {
-        container != null -> { bgIdle = container; bgHover = hoverOf(container); fg = onContainer ?: Palette.BgBase }
+        container != null -> { bgIdle = container; bgHover = hoverOf(container); fg = onContainer ?: readableOn(container) }
         emphasis == Emphasis.Primary -> { bgIdle = Palette.Accent; bgHover = Palette.AccentHover; fg = Palette.OnAccent }
         else -> { bgIdle = Palette.Card; bgHover = Palette.CardHover; fg = Palette.TextPrimary }
     }
@@ -171,7 +174,10 @@ fun IconButton(
     }
 }
 
-/** 按钮外壳：底色 hover 渐变、可选 hairline 描边、内容色与字重下发给内容。 */
+/**
+ * 按钮外壳：底色 hover 渐变、皮肤描边与阴影、按下位移（硬偏移阴影的皮肤按下时把按钮挪进阴影里，
+ * namethatui Neobrutalism 的标准姿态）、内容色与字重下发给内容。
+ */
 @Composable
 private fun ButtonChrome(
     onClick: () -> Unit,
@@ -185,21 +191,37 @@ private fun ButtonChrome(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    val pressed by interaction.collectIsPressedAsState()
     val active = hovered && enabled
-    val bg by animateColorAsState(if (active) bgHover else bgIdle, tween(Motion.normal), label = "btnBg")
+    val bg by animateColorAsState(
+        when {
+            pressed && enabled -> bgIdle.copy(alpha = bgIdle.alpha * 0.88f).let { if (outlined) Palette.CardPressed else it }
+            active -> bgHover
+            else -> bgIdle
+        },
+        tween(Motion.normal), label = "btnBg",
+    )
     val border by animateColorAsState(
-        if (outlined) (if (active) Palette.StrokeHover else Palette.Stroke) else Color.Transparent,
+        if (outlined) (if (active || pressed) Palette.StrokeHover else Palette.Stroke) else Color.Transparent,
         tween(Motion.normal),
         label = "btnBorder",
     )
     val contentColor = if (enabled) fg else fg.copy(alpha = 0.45f)
+    val hardShadow = Material.shadow == ShadowProfile.HARD_OFFSET
     CompositionLocalProvider(LocalContentColor provides contentColor) {
         Row(
             modifier
+                .skinShadow(Radius.control, pressedAt = pressed && hardShadow)
+                .graphicsLayer {
+                    if (pressed && hardShadow) {
+                        translationX = 3.dp.toPx(); translationY = 3.dp.toPx()
+                    }
+                }
                 .height(ControlHeight)
                 .clip(RoundedCornerShape(Radius.control))
                 .background(bg)
-                .border(1.dp, border, RoundedCornerShape(Radius.control))
+                .skinGloss(Radius.control)
+                .border(Material.borderWidth, border, RoundedCornerShape(Radius.control))
                 .hoverable(interaction)
                 .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
                 .padding(horizontal = 12.dp),

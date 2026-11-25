@@ -285,7 +285,7 @@ private fun GraphPage(model: AppModel, kind: GraphKind) {
         // 引擎产物直接铺满页头与回执条之间（不套卡片、不留左右边距）：它自己的外壳已按嵌入模式收拢、
         // 配色走客户端的设计令牌（见 GraphEmbed.kt）——产物就是这一页的主体，不是贴进来的一张网页。
         // 「卡片里再套卡片」是原样内嵌时最难看的根源：两层描边、两套圆角。
-        Column(Modifier.weight(1f).fillMaxWidth().background(Palette.BgBase)) {
+        Column(Modifier.weight(1f).fillMaxWidth().background(pageFill())) {
             GraphContentArea(Modifier.weight(1f).fillMaxWidth(), vm)
             GraphStatusBar(vm.status) { vm.clearStatus() }
         }
@@ -366,7 +366,7 @@ fun GraphEntryChip(label: String, icon: FluentIcon, tint: Color, enabled: Boolea
         Modifier
             .clip(RoundedCornerShape(Radius.control))
             .background(bg)
-            .border(1.dp, stroke, RoundedCornerShape(Radius.control))
+            .border(Material.borderWidth, stroke, RoundedCornerShape(Radius.control))
             .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -381,7 +381,7 @@ fun GraphEntryChip(label: String, icon: FluentIcon, tint: Color, enabled: Boolea
 @Composable
 private fun GraphContentArea(modifier: Modifier, vm: GraphPageModel) {
     val path = vm.htmlPath
-    Box(modifier.background(Palette.BgBase)) {
+    Box(modifier.background(pageFill())) {
         if (path != null) {
             HtmlWebView(
                 source = HtmlSource.LocalFile(path),
@@ -435,7 +435,7 @@ private fun WebViewFallback(pending: WebRuntime.Pending, artifactPath: String) {
         is WebRuntime.Pending.Failed -> pending.why
     }
     val pct = (pending as? WebRuntime.Pending.Loading)?.pct
-    Box(Modifier.fillMaxSize().background(Palette.BgBase), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(pageFill()), contentAlignment = Alignment.Center) {
         Column(
             Modifier.padding(Space.lg).width(420.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

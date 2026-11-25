@@ -276,8 +276,8 @@ fun MarkdownText(text: String, modifier: Modifier = Modifier, style: TextStyle =
                     }
                 }
                 is MarkdownBlock.Code -> Box(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.control)).background(Palette.BgBase)
-                        .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.control)).padding(Space.sm),
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.control)).background(pageFill())
+                        .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.control)).padding(Space.sm),
                 ) {
                     Text(b.code, style = body.copy(fontFamily = Mono, fontSize = body.fontSize * 0.92f), color = Palette.TextPrimary)
                 }

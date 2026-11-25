@@ -60,10 +60,12 @@ fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.()
     )
     Column(
         modifier
+            .skinShadow(Radius.card)
             .hoverable(interaction)
             .clip(RoundedCornerShape(Radius.card))
-            .border(1.dp, stroke, RoundedCornerShape(Radius.card))
             .background(bg)
+            .skinGloss(Radius.card)
+            .border(Material.borderWidth, stroke, RoundedCornerShape(Radius.card))
             .padding(Space.lg),
         content = content,
     )
@@ -249,7 +251,7 @@ fun DashboardPage(model: AppModel) {
                     // 口径写在控件旁：这是「最近更新」分档，不是「这段时间的提交量」
                     L10n.t("dash.filter.span.help").let { hint ->
                         HelpTooltip(hint) {
-                            Row(Modifier.clip(RoundedCornerShape(Radius.control)).background(Palette.BgBase).padding(2.dp)) {
+                            Row(Modifier.clip(RoundedCornerShape(Radius.control)).background(pageFill()).padding(2.dp)) {
                                 DashSpan.entries.forEach { s ->
                                     val selected = filter.span == s
                                     Text(
@@ -289,7 +291,7 @@ fun DashboardPage(model: AppModel) {
                             Column(
                                 Modifier.offset(y = 30.dp).width(200.dp)
                                     .shadow(8.dp, RoundedCornerShape(Radius.control))
-                                    .background(Palette.Card).border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.control))
+                                    .background(Palette.Card).border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.control))
                                     .padding(Space.xs),
                             ) {
                                 Text(

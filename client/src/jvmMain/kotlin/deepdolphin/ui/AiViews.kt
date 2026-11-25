@@ -126,6 +126,12 @@ object SecretStore {
     }
 }
 
+/** settings.conf 的单键合并（只替换/追加 [key]，其余行原样保留；与 mergeLanguageInto 同纪律）。 */
+fun mergeKeyInto(existing: String, key: String, value: String): String {
+    val out = existing.lines().filterNot { line -> line.substringBefore('=').trim() == key }
+    return (out + "$key=$value").joinToString("\n") + "\n"
+}
+
 /** settings.conf 读写（~/.config/deepDolphin/settings.conf；ai.* 合并纪律见 AiSettings）。 */
 object ConfStore {
     private val confFile: File
@@ -165,6 +171,19 @@ object ConfStore {
     } catch (e: Exception) {
         e.message
     }
+
+    /** 通用单键读写（app.skin 等独立键节；只动自己的键，其余行原样保留）。 */
+    fun writeKey(key: String, value: String): String? = try {
+        confFile.writeText(mergeKeyInto(read(), key, value))
+        null
+    } catch (e: Exception) {
+        e.message
+    }
+
+    fun readKey(key: String): String? = read().lines().mapNotNull { line ->
+        val i = line.indexOf('=')
+        if (i > 0) line.substringBefore('=').trim() to line.substringAfter('=', "").trim() else null
+    }.toMap()[key]
 }
 
 /**
@@ -210,8 +229,60 @@ fun SettingsPage(model: AppModel) {
  */
 @Composable
 private fun GeneralPane() {
+    AppearanceCard()
     LanguageCard()
     AutostartCard()
+}
+
+/**
+ * 外观卡（namethatui.com/styles 全风格主题；flat design 按用户要求除外）。
+ * ChoicePill 行 + 三色预览点（底 / 卡片 / 强调），即点即换——令牌是全局状态，一换全界面重组。
+ */
+@Composable
+private fun AppearanceCard() {
+    val current = Skins.current.id
+    var message by remember { mutableStateOf<String?>(null) }
+    GlassCard(Modifier.fillMaxWidth()) {
+        Text(L10n.t("cmp.settings.appearance"), style = Type.section)
+        Spacer(Modifier.height(Space.sm))
+        Skins.all.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), modifier = Modifier.padding(vertical = 3.dp)) {
+                row.forEach { skin ->
+                    val selected = skin.id == current
+                    Row(
+                        Modifier
+                            .clip(RoundedCornerShape(Radius.control))
+                            .background(if (selected) Palette.Accent else Palette.Card)
+                            .clickable { message = Skins.select(skin.id) }
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // 三色预览点：底 / 卡片 / 强调——一眼看出这套皮肤的成色
+                        listOf(skin.bgBase, skin.card, skin.accent).forEach { c ->
+                            androidx.compose.foundation.layout.Box(
+                                Modifier
+                                    .padding(end = 3.dp)
+                                    .size(9.dp)
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .border(Material.borderWidth.coerceAtMost(1.dp), Palette.StrokeHover, RoundedCornerShape(999.dp))
+                                    .background(c),
+                            )
+                        }
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            if (L10n.language == AppLanguage.EN) skin.titleEn else skin.titleZh,
+                            style = Type.label,
+                            color = if (selected) Palette.OnAccent else Palette.TextSecondary,
+                        )
+                    }
+                }
+            }
+        }
+        message?.let {
+            Spacer(Modifier.height(Space.sm))
+            Text(it, style = Type.micro, color = Palette.Amber)
+        }
+    }
 }
 
 /** 语言卡（mac GeneralTab 第一 Section：Picker → CMP 用 ChoicePill 行，选中即写 settings.conf）。 */
@@ -536,7 +607,7 @@ fun AgentSheet(model: AppModel) {
                 .clip(RoundedCornerShape(Radius.card))
 .shadow(12.dp, RoundedCornerShape(Radius.card))
                 .background(Palette.Card)
-                .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
+                .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.card))
                 .padding(Space.lg),
         ) {
             AgentConversation(model, scopeLabel, task, title)

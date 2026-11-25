@@ -8,12 +8,15 @@
 
 ## 状态（2026-11-25）
 
-- 判据门禁绿：`scripts/build.sh --test` → **263 判据 0 failed**（禁用缓存复跑
+- 判据门禁绿：`scripts/build.sh --test` → **266 判据 0 failed**（禁用缓存复跑
   `gradle jvmTest --rerun-tasks --no-build-cache` 同数）。门禁脚本读的是 test-results XML，
   增量构建下会读到陈旧结果——当证据用的数字必须来自禁用缓存的那次。
 - 本机引擎已换成 **0.3.0 的开发构建**（`~/.local/libexec/deepdolphin/moongit.bin`，取自引擎仓库
   `feat/embed-chrome`；旧版 0.2.0 备份为 `moongit.bin.bak-20261125-pre030`，不带嵌入模式的上一版开发构建
   备份为 `moongit.bin.bak-20261126-pre-embed`，回滚 = 把备份拷回 `moongit.bin`）。引擎尚未正式发版。
+- 界面外观：设置 · 通用 ·「外观」内置 **14 套皮肤**（namethatui.com/styles 全风格，flat design 除外）——
+  玻璃拟态 / 液态玻璃 / 新拟态 / 黏土拟态 / 新粗野主义 / Y2K / Frutiger Aero / 拟物皮革 / 远古网页 /
+  Aqua / Windows Aero / 极简主义等，即点即换、settings.conf 持久化（`app.skin`）。
 - 图谱两页依赖引擎产物的嵌入模式（0.3.0 开发构建）：引擎退回 0.2.x 时图谱照常出图，但是原样内嵌的样子。
 - **真窗口实拍（2026-11-25，DISPLAY=:0，打包后的 deb 提取运行）**：截图与逐张说明见
   [`docs/ui-cmp/README.md`](../docs/ui-cmp/README.md)。此前入库的 48 张旧图已退役——其中

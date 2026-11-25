@@ -224,10 +224,10 @@ private fun QuickViewShell(content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier
             .width(380.dp)
-            .clip(RoundedCornerShape(Radius.card))
+            .skinShadow(Radius.card).clip(RoundedCornerShape(Radius.card))
 .shadow(12.dp, RoundedCornerShape(Radius.card))
             .background(Palette.Card)
-            .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
+            .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.card))
             .padding(vertical = Space.sm),
         content = content,
     )

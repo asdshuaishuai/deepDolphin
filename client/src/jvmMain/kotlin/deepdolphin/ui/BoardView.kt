@@ -370,9 +370,9 @@ private fun ProjectCard(c: BoardCard, model: AppModel, onOpenProject: (String) -
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.card))
+            .skinShadow(Radius.card).clip(RoundedCornerShape(Radius.card))
             .background(Palette.Card)
-            .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
+            .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.card))
             .clickable { onOpenProject(c.name) }
             .padding(Space.md),
     ) {
@@ -457,7 +457,7 @@ private fun Banner(text: String, tone: Color) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(Palette.Card)
-            .border(1.dp, Palette.Stroke, RoundedCornerShape(8.dp))
+            .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(8.dp))
             .padding(horizontal = Space.md, vertical = Space.sm),
     )
 }

@@ -127,7 +127,7 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                 .clip(RoundedCornerShape(Radius.card))
 .shadow(12.dp, RoundedCornerShape(Radius.card))
                 .background(Palette.Card)
-                .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
+                .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.card))
                 .padding(Space.lg),
             verticalArrangement = Arrangement.spacedBy(Space.md),
         ) {
@@ -280,7 +280,7 @@ private fun ScanModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
             .background(if (selected) Palette.Accent else Color.Transparent)
-            .border(1.dp, if (selected) Palette.Accent else Palette.Stroke, RoundedCornerShape(999.dp))
+            .border(Material.borderWidth, if (selected) Palette.Accent else Palette.Stroke, RoundedCornerShape(999.dp))
             .clickable { onClick() }
             .padding(horizontal = 10.dp, vertical = 4.dp),
     )

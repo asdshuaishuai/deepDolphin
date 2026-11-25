@@ -36,6 +36,8 @@ import androidx.compose.ui.window.ApplicationScope
 import deepdolphin.engine.EngineLocator
 import deepdolphin.engine.EngineProbe
 import deepdolphin.sysint.TrayQuickView
+import deepdolphin.ui.SkinBackdrop
+import deepdolphin.ui.Skins
 import deepdolphin.ui.AgentBulkResultSheet
 import deepdolphin.ui.AgentSheet
 import deepdolphin.ui.AppMenuBar
@@ -223,6 +225,8 @@ private fun ApplicationScope.exitApp() {
 }
 
 fun main(vararg args: String) {
+    // 皮肤在界面组装前恢复（settings.conf 的 app.skin；令牌是全局状态）
+    Skins.restore()
     // 启动打点（T0=main 进入；窗口首组合打 STARTUP_MS——性能判据）
     StartupMark.t0 = System.currentTimeMillis()
     // 外部 SIGTERM（会话注销、关机）走同一个带兜底的出口：先照常跑关闭钩子，卡住就硬退。
@@ -303,7 +307,10 @@ fun SidebarShell(model: AppModel, onQuit: () -> Unit = {}) {
     // FocusRequester 只吃自建输入框——这是不用封装件、用 BasicTextField 的原因）
     val searchFocus = SidebarSearchFocus.requester
 
-    Row(Modifier.fillMaxSize()) {
+    // 窗口最底层的皮肤材质（玻璃壁纸 / 皮革 / 星星贴纸…）：外壳与页面在其上透明或半透明
+    Box(Modifier.fillMaxSize()) {
+        SkinBackdrop(Modifier.fillMaxSize())
+        Row(Modifier.fillMaxSize()) {
         // ── 侧栏 ──
         Column(
             Modifier.width(230.dp).fillMaxHeight().background(Palette.Sidebar)
@@ -460,6 +467,7 @@ fun SidebarShell(model: AppModel, onQuit: () -> Unit = {}) {
                     }
                 }
             }
+        }
         }
     }
     // agent sheet（对位 mac .sheet(showAgent)：作用域跟随侧栏选中）

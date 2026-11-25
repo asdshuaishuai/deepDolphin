@@ -117,6 +117,7 @@ internal val L10N_CMP_ZH_CN: Map<String, String> = mapOf(
     "cmp.webview.stalled" to "装载停滞（%d 秒无进度）——后台仍在继续，完成后自动切换",
     "cmp.graph.backToRepo" to "返回仓库",
     "cmp.graph.openExternal" to "在浏览器中打开",
+    "cmp.settings.appearance" to "外观",
     "cmp.graph.noProject" to "代码图谱和架构图跟着仓库走——先在左侧选一个仓库，或在仓库详情里点「代码图谱」/「架构图」。",
     "cmp.common.refreshing" to "刷新中…",
     // 菜单条（mac 菜单栏命令的窗口内等价物）
@@ -490,6 +491,7 @@ internal val L10N_CMP_EN: Map<String, String> = mapOf(
     "cmp.webview.stalled" to "Loading stalled (no progress for %d s) — it continues in the background and switches when done",
     "cmp.graph.backToRepo" to "Back to repository",
     "cmp.graph.openExternal" to "Open in Browser",
+    "cmp.settings.appearance" to "Appearance",
     "cmp.graph.noProject" to "The code graph and architecture diagram belong to a repository. Pick one on the left, or open it from the repository page.",
     "cmp.common.refreshing" to "Refreshing…",
     // Menu bar (in-window equivalent of mac menu commands)
@@ -843,6 +845,7 @@ internal val L10N_CMP_ZH_TW: Map<String, String> = mapOf(
     "cmp.webview.stalled" to "裝載停滯（%d 秒無進度）——背景仍在繼續，完成後自動切換",
     "cmp.graph.backToRepo" to "返回倉庫",
     "cmp.graph.openExternal" to "在瀏覽器中開啟",
+    "cmp.settings.appearance" to "外觀",
     "cmp.graph.noProject" to "程式碼圖譜與架構圖跟著倉庫走——先在左側選一個倉庫，或在倉庫詳情裡點「程式碼圖譜」/「架構圖」。",
     "cmp.common.refreshing" to "重新整理中…",
     // 選單列（mac 選單列命令的視窗內等價物）
@@ -1196,6 +1199,7 @@ internal val L10N_CMP_JA: Map<String, String> = mapOf(
     "cmp.webview.stalled" to "ロードが停滞しています（%d 秒間進捗なし）——バックグラウンドで継続し、完了後に自動切り替え",
     "cmp.graph.backToRepo" to "リポジトリに戻る",
     "cmp.graph.openExternal" to "ブラウザで開く",
+    "cmp.settings.appearance" to "外観",
     "cmp.graph.noProject" to "コードグラフとアーキテクチャ図はリポジトリに属します。左側でリポジトリを選ぶか、リポジトリページから開いてください。",
     "cmp.common.refreshing" to "更新中…",
     // メニューバー（mac メニューバーコマンドのウィンドウ内等価物）

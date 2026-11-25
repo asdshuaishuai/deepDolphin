@@ -329,3 +329,41 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
   客户端门禁 **263 / 0**；引擎 725 项、722 过（红的仍是那 3 条已知环境用例）。
 - 边界：产物里的画布卡片文字仍是等宽字体、独立版的字号偏小（画在 canvas 上，只换了颜色与圆角）；
   窗口窄于约 640px（WebView 宽）时图谱改成上下排。macOS 客户端没有同步这一批（它没有嵌入声明，仍是原样内嵌）。
+
+## 平台决定（用户 2026-11-26 定，勿再逐次询问）
+
+**全平台的客户端就是 CMP（Compose Desktop）这一份**——macOS / Linux / Windows 都跑它；
+**不再做任何平台的原生（专属）开发**。含义：macos/Sources 的 Swift 版功能冻结（不再作为
+功能对齐目标与移植参照），新能力只进 CMP；`/goal` 里「与 mac Swift 版零差距」的目标自本条起
+由「CMP 即唯一客户端」取代。仓库里 macos/ 目录暂不删除（历史参照），但不投入新工作。
+
+## 皮肤批：namethatui.com/styles 全风格主题（2026-11-26）
+
+用户指定两件事：① namethatui.com/styles 里的主题除 flat design 外全部实现一遍；② 组件与姿态
+按 namethatui.com 的元素目录优化。
+
+- **皮肤系统**（`ui/Skin.kt`）：`Skin` 数据（30+ 令牌槽：表面 / 文字三级 / 语义色 / 渐变端点 /
+  圆角三档 / 描边宽度 / 阴影形态 / 光泽 / 背景装饰），`Skins.apply` 写入全部全局令牌
+  （`Palette` / `Type` / `Radius` 已是 mutableStateOf 状态，一换全界面重组，与切语言同机制）；
+  组件形态差异走 `Material` 令牌（描边宽度、阴影形态枚举、光泽开关与强度、背景装饰种类），
+  绘制代码按令牌渲染，调用点不 if 皮肤。
+- **14 套皮肤**：Fluent 暗色（默认）+ 站上 13 个——玻璃拟态（深紫壁纸光斑 + 白 15% 磨砂卡 + 白描边）、
+  液态玻璃（深蓝壁纸 + 白玻璃卡 + 有色光晕 + 顶部高光）、新拟态（浅灰蓝同色凸起 + 双向软阴影）、
+  黏土拟态（淡紫 + 胖圆角 + 大模糊浮起）、新粗野主义（奶油底 + 2px 黑描边 + 硬偏移阴影 + 黄 accent）、
+  网页粗野主义（90 年代原始网页：白底灰表框蓝链接）、Y2K（深底霓虹粉描边光晕 + 铬银网格壁纸）、
+  Frutiger Aero（天空草地渐变 + 白玻璃卡 + 光泽 + 气泡）、拟物皮革（深棕皮革 + 缝线 + 黄铜 accent）、
+  远古网页（Geocities 深蓝 + 星星贴纸 + 绿/品红）、Aqua（银蓝灰 + 蓝色糖果按钮 + 强顶部高光 + 胶囊控件）、
+  Windows Aero（蓝极光壁纸 + 白 24% 透玻璃卡 + 光晕）、极简主义（纯白 + 黑 accent + 无阴影）。
+- **组件姿态**（namethatui 元素目录的 posture 纪律）：按钮有 hover / 按下 / 禁用三态
+  （硬偏移阴影的皮肤按下时按钮位移进阴影里——Neobrutalism 的标准姿态）；卡片走皮肤阴影与光泽；
+  容器给定的底色上前景色自适应深浅（`readableOn`）——浅色皮肤下不再硬编码深底假设。
+- **设置 · 外观**（`cmp.settings.appearance`）：14 个 chips（名称 + 底/卡片/强调三色预览点），
+  即点即换；`settings.conf` 的 `app.skin` 键持久化（启动恢复；只动自己的键，L10nTest 键前缀纪律照守）。
+- **守卫**（`SkinTest`）：14 套齐全（对照站点清单）；**所有颜色必须 8 位 ARGB**——Y2K / Aero 的
+  textSecondary 用了 6 位 hex（alpha 0）导致整页文字隐身，实拍抓到后钉死；app.skin 合并不串键。
+- **门禁 266 passed / 0 failed**（禁用缓存）；14 套皮肤全部在打包态真窗口逐个点击实拍
+  （`/tmp/ui/skin-*.png` 过程稿；定稿见 `docs/ui-cmp/15-appearance-themes.png`）。
+- 边界：flat design 按用户要求未做（站上的「In research」条目——Swiss / Bauhaus / Art Deco /
+  Art Nouveau / Memphis / Vaporwave / Internet Ugly——站点尚未正式发布，未列入）；画布类页面
+  （图谱两页的引擎产物）不受皮肤影响——它们的配色走自己的嵌入契约；浅色皮肤下个别页面内的
+  半透明白浮层（`Color.White.copy(alpha=…)`）对比度偏弱，后续按页微调。

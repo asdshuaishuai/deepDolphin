@@ -173,7 +173,7 @@ fun BulkUpdateConfirmDialog(model: AppModel) {
                 .clip(RoundedCornerShape(Radius.card))
                 .shadow(12.dp, RoundedCornerShape(Radius.card))
                 .background(Palette.Card)
-                .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
+                .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.card))
                 .padding(Space.lg),
             verticalArrangement = Arrangement.spacedBy(Space.md),
         ) {
@@ -220,7 +220,7 @@ fun AgentBulkResultSheet(model: AppModel) {
                 .clip(RoundedCornerShape(Radius.card))
                 .shadow(12.dp, RoundedCornerShape(Radius.card))
                 .background(Palette.Card)
-                .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card))
+                .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.card))
                 .padding(Space.lg),
             verticalArrangement = Arrangement.spacedBy(Space.md),
         ) {

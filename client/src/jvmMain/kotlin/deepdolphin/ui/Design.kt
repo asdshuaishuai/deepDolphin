@@ -35,82 +35,88 @@ import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 
 // ── Fluent 暗色表面（SolidBackgroundFillColorBase / LayerFillColorDefault / NavigationView pane）──
 object Palette {
     /** 页面底（Mica 质感不透明近似 #1F1F1F）。 */
-    val BgBase = Color(0xFF1F1F1F)
+    var BgBase by mutableStateOf(Color(0xFF1F1F1F))
     /** 卡片分层（LayerFillColorDefault 暗色近似：底上叠 ~4% 白）。 */
-    val Card = Color(0xFF292929)
+    var Card by mutableStateOf(Color(0xFF292929))
     /** 卡片 hover（~6% 白，Fluent reveal）。 */
-    val CardHover = Color(0xFF303030)
+    var CardHover by mutableStateOf(Color(0xFF303030))
     /** 按压缩暗（~3% 白）。 */
-    val CardPressed = Color(0xFF262626)
+    var CardPressed by mutableStateOf(Color(0xFF262626))
     /** 侧栏底（NavigationView pane：比底更暗一档）。 */
-    val Sidebar = Color(0xFF191919)
+    var Sidebar by mutableStateOf(Color(0xFF191919))
     /** hairline 描边（白 8%）。 */
-    val Stroke = Color(0x14FFFFFF)
+    var Stroke by mutableStateOf(Color(0x14FFFFFF))
     /** hover 描边（白 14%）。 */
-    val StrokeHover = Color(0x24FFFFFF)
+    var StrokeHover by mutableStateOf(Color(0x24FFFFFF))
     /** 语言分布条底轨。 */
-    val BarTrack = Color(0xFF303030)
+    var BarTrack by mutableStateOf(Color(0xFF303030))
 
     // ── 文字三级（白 100/66/53%）──
     // 三级文字按 53% 定：原来 45% 在卡片底（#292929）上只有 4.2:1，不到正文 4.5:1 的底线；
     // 提到 53% 后在底/卡片/侧栏三种底色上都 ≥ 5:1（次级 66% 约 7.9:1）。
-    val TextPrimary = Color(0xFFFFFFFF)
-    val TextSecondary = Color(0xA8FFFFFF)
-    val TextTertiary = Color(0x87FFFFFF)
+    var TextPrimary by mutableStateOf(Color(0xFFFFFFFF))
+    var TextSecondary by mutableStateOf(Color(0xA8FFFFFF))
+    var TextTertiary by mutableStateOf(Color(0x87FFFFFF))
 
     // ── 强调与双轨（Fluent 暗色 accent 亮蓝 + 语义轨道色按暗底提亮）──
     /** Fluent 暗色主题 accent（#60CDFF）。 */
-    val Accent = Color(0xFF60CDFF)
+    var Accent by mutableStateOf(Color(0xFF60CDFF))
     /** accent 上的文字（Fluent 暗色 accent 亮，配近黑文字）。 */
-    val OnAccent = Color(0xFF1B1B1B)
+    var OnAccent by mutableStateOf(Color(0xFF1B1B1B))
     /** accent 按钮 hover（比 accent 深一档）。 */
-    val AccentHover = Color(0xFF48BDF2)
-    val Shallow = Color(0xFF6CCB5F)  // 绿 · 浅更新（暗底提亮）
-    val Deep = Color(0xFFB5A6FF)     // 紫 · 深更新（暗底提亮）
-    val Ai = Color(0xFF4CD6E8)       // 青 · AI（暗底提亮）
+    var AccentHover by mutableStateOf(Color(0xFF48BDF2))
+    // 绿 · 浅更新（暗底提亮）
+    var Shallow by mutableStateOf(Color(0xFF6CCB5F))
+    // 紫 · 深更新（暗底提亮）
+    var Deep by mutableStateOf(Color(0xFFB5A6FF))
+    // 青 · AI（暗底提亮）
+    var Ai by mutableStateOf(Color(0xFF4CD6E8))
 
     // ── 状态 ──
-    val Green = Shallow
-    val Yellow = Color(0xFFFFD24A)
-    val Amber = Color(0xFFFFB35C)
-    val Red = Color(0xFFFF99A4)
+    val Green: Color get() = Shallow
+    var Yellow by mutableStateOf(Color(0xFFFFD24A))
+    var Amber by mutableStateOf(Color(0xFFFFB35C))
+    var Red by mutableStateOf(Color(0xFFFF99A4))
 
     // ── hero（安静 Fluent 头：分层底纵向微渐变，无多色）──
-    val HeroTop = Color(0xFF2E2E2E)
-    val HeroBottom = Color(0xFF262626)
-    val ShallowAlt = Color(0xFF9FE2A0)
-    val DeepAlt = Color(0xFFD0C8FF)
-    val AccentAlt = Color(0xFF9BDFFF)
+    var HeroTop by mutableStateOf(Color(0xFF2E2E2E))
+    var HeroBottom by mutableStateOf(Color(0xFF262626))
+    var ShallowAlt by mutableStateOf(Color(0xFF9FE2A0))
+    var DeepAlt by mutableStateOf(Color(0xFFD0C8FF))
+    var AccentAlt by mutableStateOf(Color(0xFF9BDFFF))
 
     // ── 旧引用兼容（视图用名 → Fluent 语义）──
-    val BgDeep = Sidebar
-    val GreenTextDark = Shallow
-    val AmberTextDark = Amber
-    val RedTextDark = Red
-    val Purple = Deep
-    val HeroIndigo = HeroTop
-    val HeroViolet = HeroTop
-    val HeroCyan = HeroBottom
-    val StrokeHoverLegacy = StrokeHover
+    val BgDeep: Color get() = Sidebar
+    val GreenTextDark: Color get() = Shallow
+    val AmberTextDark: Color get() = Amber
+    val RedTextDark: Color get() = Red
+    val Purple: Color get() = Deep
+    val HeroIndigo: Color get() = HeroTop
+    val HeroViolet: Color get() = HeroTop
+    val HeroCyan: Color get() = HeroBottom
+    val StrokeHoverLegacy: Color get() = StrokeHover
 }
 
 /** 字号档位（Fluent ramp：caption 12 / body 14 / subtitle 16 / title 20 / display 28）。 */
 object Type {
     // 行高按 Fluent 2 排版（Body 14/20、Caption 12/16、Subtitle 16/22、Title 20/28）：
     // 多行正文与说明文字靠它拉开行距；此前不带行高，密排的说明读起来糊成一片
-    val display = TextStyle(fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary)
-    val title = TextStyle(fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary)
-    val section = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary)
-    val card = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary)
-    val body = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, color = Palette.TextPrimary)
-    val label = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, color = Palette.TextSecondary)
-    val micro = TextStyle(fontSize = 11.sp, lineHeight = 14.sp, color = Palette.TextTertiary)
+    var display by mutableStateOf(TextStyle(fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary))
+    var title by mutableStateOf(TextStyle(fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary))
+    var section by mutableStateOf(TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary))
+    var card by mutableStateOf(TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary))
+    var body by mutableStateOf(TextStyle(fontSize = 14.sp, lineHeight = 20.sp, color = Palette.TextPrimary))
+    var label by mutableStateOf(TextStyle(fontSize = 12.sp, lineHeight = 16.sp, color = Palette.TextSecondary))
+    var micro by mutableStateOf(TextStyle(fontSize = 11.sp, lineHeight = 14.sp, color = Palette.TextTertiary))
 }
 
 /** 间距刻度 4/8/12/16/20/24（8 网格）。 */
@@ -120,7 +126,9 @@ object Space {
 
 /** 圆角三档（Fluent：control 4 / card 8 / overlay 8）。 */
 object Radius {
-    val chip = 4.dp; val control = 4.dp; val card = 8.dp
+    var chip by mutableStateOf(4.dp)
+    var control by mutableStateOf(4.dp)
+    var card by mutableStateOf(8.dp)
 }
 
 /** 动效时长（Fluent：常规 150ms / 浮层 300ms）。 */
@@ -128,6 +136,15 @@ object Motion {
     const val normal = 150
     const val slow = 300
 }
+
+// ── 皮肤/材质令牌（Skin.kt 定义 Skin 与 Skins；这里的取值辅助供页面与卡片统一走）──
+
+/** 页面底的填充：带背景装饰的皮肤返回透明（让窗口层的装饰露出来），其余实色 BgBase。 */
+fun pageFill(): Brush = if (Material.backdrop == BackdropKind.NONE) Brush.horizontalGradient(listOf(Palette.BgBase, Palette.BgBase)) else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
+
+/** 卡片表面：底 + 皮肤描边宽度（链上用于 .background(...) 之后的 .border(...)）。 */
+fun cardBorder(): androidx.compose.foundation.BorderStroke =
+    androidx.compose.foundation.BorderStroke(Material.borderWidth, Palette.Stroke)
 
 /** 提交构成序列色（12 类穷举、不取模；Fluent 暗底域）。 */
 val Composition12 = listOf(
