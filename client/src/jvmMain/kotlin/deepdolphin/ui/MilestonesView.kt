@@ -26,6 +26,7 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.foundation.PointerMatcher
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,6 +36,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -122,17 +125,23 @@ fun ConfirmDialog(title: String, body: String, confirmLabel: String, onConfirm: 
             Spacer(Modifier.height(Space.sm))
             Text(body, style = Type.body.copy(color = Palette.TextSecondary))
             Spacer(Modifier.height(Space.lg))
+            // 破坏动作红门的键盘可达性：两个裸文字键都挂焦点环（accent outline，画在键外不挤布局），
+            // 确认键初始持焦——键盘用户进弹窗就能 Enter 确认 / Tab 取消，不必摸鼠标。
+            val confirmFocus = remember { FocusRequester() }
+            LaunchedEffect(Unit) { confirmFocus.requestFocus() }
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), modifier = Modifier.align(Alignment.End)) {
                 Text(
                     L10n.t("common.cancel"), style = Type.body,
                     color = Palette.TextSecondary,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onDismiss() }
+                    modifier = Modifier.focusRing(radius = 8.dp)
+                        .clip(RoundedCornerShape(8.dp)).clickable { onDismiss() }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 )
                 Text(
                     confirmLabel, style = Type.body.copy(fontWeight = FontWeight.Bold),
                     color = Color.White,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Palette.Red)
+                    modifier = Modifier.focusRequester(confirmFocus).focusRing(radius = 8.dp)
+                        .clip(RoundedCornerShape(8.dp)).background(Palette.Red)
                         .clickable { onConfirm() }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 )
@@ -312,7 +321,12 @@ fun MilestonesPage(model: AppModel) {
                 Text(L10n.t("cmp.ms.loadFailed"), style = Type.micro)
             }
             LoadState.Loading -> if (all.isEmpty()) {
-                Text(L10n.t("ms.page.loading"), style = Type.body.copy(color = Palette.TextSecondary))
+                // 首读加载态：形状占位（组头一条线 + 3 张行卡骨架，微光扫过），替换一行「读取中」文字——
+                // 列表首次加载不转圈；行卡骨架与加载完成后的里程碑行节奏对得上
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    SkeletonLine(width = 180.dp, height = 16.dp)
+                    repeat(3) { SkeletonCard(Modifier.fillMaxWidth(), height = 72.dp) }
+                }
             }
             else -> {
                 val empty = SearchFilter.emptyReason(allCount = scoped.size, shownCount = shown.size, query = query)
@@ -332,6 +346,13 @@ fun MilestonesPage(model: AppModel) {
                             },
                             style = Type.body.copy(color = Palette.TextSecondary),
                         )
+                        Spacer(Modifier.height(Space.sm))
+                        // 空态要教下一步：一键清搜索 + 切回全部仓库（标签复用「全部」），
+                        // 别让用户回头找顶上的筛选条自己一项项还原
+                        ActionText(L10n.t("cmp.ms.allShort"), Palette.Accent) {
+                            query = ""
+                            projectFilter = null
+                        }
                     }
                 } else {
                     // ── 按项目分组的列表（对位 mac：里程碑绑在项目上，摊平就分不清谁是谁）──
@@ -487,9 +508,14 @@ internal fun MilestoneRow(
     androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth()) {
         GlassCard(
             Modifier.fillMaxWidth()
+                // 键盘焦点环：pointerInput 不产焦点节点，行自己挂 focusable 让 Tab 落得进来，
+                // 环画在卡外（focusRing 挂上游）；hover 上浮/提亮走 GlassCard 的 interactive=true
+                .focusRing(radius = Radius.card)
+                .focusable()
                 // 点行 = 进该里程碑所属项目的详情（mac onTapGesture 对位）；右键 = 行操作菜单
                 .pointerInput(m.id) { detectTapGestures(onTap = { onOpenProject() }) }
                 .onClick(matcher = PointerMatcher.mouse(PointerButton.Secondary)) { menuOpen = true },
+            interactive = true,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
                 // 状态图标：达成 ✓ / 放弃 ✕ / 无法核验 ? / 逾期 ! / 其余 ○
@@ -516,11 +542,15 @@ internal fun MilestoneRow(
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         Text(m.projectName, style = Type.label)
-                        Text(m.name, style = Type.card)
+                        // 长名：weight 吃掉剩余宽度 + ellipsis（真截到才出 tooltip 全文）——
+                        // 不加截断会把右侧状态/动作列挤出卡片
+                        Box(Modifier.weight(1f)) {
+                            TruncatedText(m.name, style = Type.card)
+                        }
                         if (m.tagReached) Pill("tag ✓", Palette.Green)
                     }
                     m.description?.takeIf { it.isNotBlank() }?.let {
-                        Text(it, style = Type.label, maxLines = 1)
+                        TruncatedText(it, style = Type.label)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         // 绑了 tag 但还没打到：把 tag 名亮出来（达成靠 tag 出现，用户得知道等哪个）

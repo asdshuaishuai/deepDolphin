@@ -156,6 +156,9 @@ private fun ScopePicker(model: AppModel, projects: List<Project>, current: Scope
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .height(ControlHeight)
+            // 工作条常驻全页，范围选择器是键盘路径最先摸到的裸点击点之一：
+            // Tab 落上出 accent 环（鼠标取焦不出现），环画在 clip 上游才不被裁掉。
+            .focusRing()
             .clip(RoundedCornerShape(Radius.control))
             .background(bg)
             .clickable(interactionSource = interaction, indication = null) { open = true }
@@ -167,14 +170,17 @@ private fun ScopePicker(model: AppModel, projects: List<Project>, current: Scope
             tint = Palette.TextSecondary,
         )
         Spacer(Modifier.width(8.dp))
-        Text(
-            when (current) {
-                ScopeChoice.Group -> WorkBarScope.globalLabel(projects.size)
-                is ScopeChoice.Project -> current.name
-            },
+        val label = when (current) {
+            ScopeChoice.Group -> WorkBarScope.globalLabel(projects.size)
+            is ScopeChoice.Project -> current.name
+        }
+        // 长项目名 220dp 封顶 + ellipsis + 悬停全名（TruncatedText 真截到才弹提示）：
+        // 不设上限会把右侧的双轨按钮挤出工作条。
+        TruncatedText(
+            label,
+            modifier = Modifier.widthIn(max = 220.dp),
             style = Type.body,
             color = Palette.TextPrimary,
-            maxLines = 1,
         )
         Spacer(Modifier.width(4.dp))
         IconBox(FluentIcon.ChevronDown, size = 12.dp, tint = Palette.TextSecondary)

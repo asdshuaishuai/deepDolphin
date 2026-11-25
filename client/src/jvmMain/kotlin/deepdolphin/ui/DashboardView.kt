@@ -44,24 +44,36 @@ import androidx.compose.foundation.layout.PaddingValues
 
 private val Mono = FontFamily.Monospace
 
-/** 玻璃磁贴（Fluent reveal：hover 分层渐变 + 描边提亮；底 + hairline 描边）。 */
+/**
+ * 玻璃磁贴（Fluent reveal：hover 分层渐变 + 描边提亮；底 + hairline 描边）。
+ * [interactive] = 卡片能不能按：分区卡 / 筛选行 / 空态这类摆着看的卡不给 hover 反应
+ * （hover 只属于能按的东西，全卡无差别提亮是最坏的一种噪音）；可点卡（项目进度卡、
+ * 里程碑行）interactive=true——提亮仍走自己的 Card→CardHover 底色动画（hoverLift 传
+ * brighten=false 免得叠亮），另挂 hoverLift 上浮 2dp、描边同步提亮。
+ */
 @Composable
-fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+fun GlassCard(
+    modifier: Modifier = Modifier,
+    interactive: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     // Fluent reveal：hover 分层 4%→6% 白渐变（150ms），描边同步提亮；不抬升几何
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val bg by androidx.compose.animation.animateColorAsState(
-        if (hovered) Palette.CardHover else Palette.Card,
+        if (interactive && hovered) Palette.CardHover else Palette.Card,
         androidx.compose.animation.core.tween(Motion.normal), label = "cardBg",
     )
     val stroke by androidx.compose.animation.animateColorAsState(
-        if (hovered) Palette.StrokeHover else Palette.Stroke,
+        if (interactive && hovered) Palette.StrokeHover else Palette.Stroke,
         androidx.compose.animation.core.tween(Motion.normal), label = "cardStroke",
     )
     Column(
         modifier
             .skinShadow(Radius.card)
-            .hoverable(interaction)
+            // 链序与 ButtonChrome 同构：skinShadow 下游、clip/background 上游（hoverLift 契约）
+            .hoverLift(interaction, enabled = interactive, radius = Radius.card, brighten = false)
+            .hoverable(interaction, enabled = interactive)
             .clip(RoundedCornerShape(Radius.card))
             .background(bg)
             .skinGloss(Radius.card)
@@ -85,15 +97,15 @@ fun SectionCard(title: String, modifier: Modifier = Modifier, content: @Composab
  *  信封未到（加载中）或读取失败 ≠ 空态 —— 绝不拿 CTA 冒充；纯函数可单测。 */
 fun registryEmpty(envelope: StatusEnvelope?): Boolean = envelope != null && envelope.projects.isEmpty()
 
-/** 胶囊 pill（语义色底 + 深色文字 = WCAG 对比度纪律）。 */
+/** 胶囊 pill（语义色底 + 深色文字 = WCAG 对比度纪律）。形状与内边距走 Badge 令牌（pill 档：全圆 + h8/v2）。 */
 @Composable
 fun Pill(text: String, color: Color, dot: Boolean = false) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
+            .clip(Badge.pillShape)
             .background(color.copy(alpha = 0.9f))
-            .padding(horizontal = 8.dp, vertical = 2.dp),
+            .padding(horizontal = Badge.pillPadH, vertical = Badge.pillPadV),
     ) {
         // 圆点用画的不用「●」字：字形的圆在不同字体里大小不一，还挤着数字
         if (dot) {
@@ -183,7 +195,8 @@ fun KpiTile(kpi: DashKpi, modifier: Modifier = Modifier) {
             }
         }
         Spacer(Modifier.height(Space.xs))
-        Text(kpi.caption, style = Type.micro, maxLines = 2)
+        // 副说明可能很长：两行截断（真截到才出 tooltip 全文），不许把四张卡的节奏撑破
+        TruncatedText(kpi.caption, style = Type.micro, maxLines = 2)
     }
 }
 
@@ -248,16 +261,25 @@ fun DashboardPage(model: AppModel) {
             GlassCard(Modifier.fillMaxWidth()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.md), verticalAlignment = Alignment.CenterVertically) {
                     Text(L10n.t("dash.filter.span"), style = Type.label)
-                    // 口径写在控件旁：这是「最近更新」分档，不是「这段时间的提交量」
+                    // 口径写在控件旁：这是「最近更新」分档，不是「这段时间的提交量」。
+                    // 芯片组容器用实底 Palette.Card + hairline 描边——pageFill() 在带装饰的皮肤下
+                    // 返回透明，芯片组会直接浮在装饰上没有容器（浅色/装饰皮肤对比度缺口）。
                     L10n.t("dash.filter.span.help").let { hint ->
                         HelpTooltip(hint) {
-                            Row(Modifier.clip(RoundedCornerShape(Radius.control)).background(pageFill()).padding(2.dp)) {
+                            Row(
+                                Modifier.clip(RoundedCornerShape(Radius.control))
+                                    .background(Palette.Card)
+                                    .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.control))
+                                    .padding(2.dp),
+                            ) {
                                 DashSpan.entries.forEach { s ->
                                     val selected = filter.span == s
                                     Text(
                                         s.label, style = Type.label,
                                         color = if (selected) Palette.TextPrimary else Palette.TextSecondary,
                                         modifier = Modifier
+                                            // 焦点环挂在 clickable 上游：键盘焦点画 accent 环，指针会话压环
+                                            .focusRing(radius = Radius.chip)
                                             .clip(RoundedCornerShape(Radius.chip))
                                             .background(if (selected) Palette.CardHover else Color.Transparent)
                                             .clickable { model.dashFilter = filter.copy(span = s) }
@@ -353,6 +375,12 @@ fun DashboardPage(model: AppModel) {
                     GlassCard(Modifier.fillMaxWidth()) {
                         Text(L10n.t("dash.grid.none.title"), style = Type.section)
                         Text(L10n.t("dash.grid.none.body", projects.size, filter.span.label), style = Type.label)
+                        Spacer(Modifier.height(Space.sm))
+                        // 空态要教下一步：一键恢复默认口径（全部时间跨度 + 全部提交类型），
+                        // 不让用户自己回想刚才拨了哪个开关
+                        ActionText(L10n.t("cmp.ms.allShort"), Palette.Accent) {
+                            model.dashFilter = DashFilter()
+                        }
                     }
                 }
                 shown.chunked(2).forEach { rowProjects ->
@@ -416,6 +444,12 @@ fun DashboardPage(model: AppModel) {
                             else L10n.t("dash.msCard.addHint"),
                             style = Type.label,
                         )
+                        // addHint 只教「去哪加」，不导——给它配一个直达入口（ms.new 现成键）。
+                        // 降级（读不出来）时入口不出现：现在该说的是存储健康，不是让人去新建
+                        if (!degraded) {
+                            Spacer(Modifier.height(Space.sm))
+                            ActionText(L10n.t("ms.new"), Palette.Accent) { model.goRoute(AppModel.Route.MILESTONES) }
+                        }
                     } else {
                         val slice = milestoneCardSlice(items.size)
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -463,7 +497,8 @@ fun DashboardPage(model: AppModel) {
                             Text(a.lastCommitAgo, style = Type.label, color = Palette.TextSecondary)
                             a.headline?.let {
                                 Spacer(Modifier.width(Space.md))
-                                Text(it, style = Type.label, color = Palette.TextTertiary, maxLines = 1, modifier = Modifier.widthIn(max = 280.dp))
+                                // 长标题：280dp 封顶 + ellipsis，真截到才悬停给全文
+                                TruncatedText(it, Modifier.widthIn(max = 280.dp), color = Palette.TextTertiary)
                             }
                         }
                     }
@@ -476,8 +511,15 @@ fun DashboardPage(model: AppModel) {
                     Spacer(Modifier.height(Space.xs))
                     Text(st.reason, style = Type.body.copy(color = Palette.TextSecondary))
                 }
-                else -> GlassCard(Modifier.fillMaxWidth()) {
-                    Text(L10n.t("dash.loading"), style = Type.body.copy(color = Palette.TextSecondary))
+                else -> {
+                    // 首读加载态：形状占位（微光扫过），不转圈——4 张 KPI 骨架 tile + 2 张项目卡骨架，
+                    // 版面节奏与加载完成后的「4 KPI → 项目卡网格」对得上，避免文字卡换骨架时的版面跳动
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+                            repeat(4) { SkeletonCard(Modifier.weight(1f)) }
+                        }
+                        repeat(2) { SkeletonCard(Modifier.fillMaxWidth(), height = 176.dp) }
+                    }
                 }
             }
         }
@@ -595,11 +637,19 @@ fun ProjectProgressCard(
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    GlassCard(modifier.fillMaxWidth().clickable { onOpen() }) {
+    GlassCard(
+        // 整卡可点：焦点环挂在 clickable 上游（键盘焦点画 accent 环，指针会话压环）；
+        // hover 上浮/提亮在 GlassCard（interactive=true）里挂，链序与 ButtonChrome 同构
+        modifier.fillMaxWidth().focusRing(radius = Radius.card).clickable { onOpen() },
+        interactive = true,
+    ) {
         // 行 1：项目名（等宽）+ 状态词
         val l = livenessOf(p)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(p.name, style = Type.card.copy(fontFamily = Mono), maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+            // 长项目名：ellipsis + 真截到才出 tooltip 全文（原来 maxLines=1 硬截，读不到全名）
+            Box(Modifier.weight(1f, fill = false)) {
+                TruncatedText(p.name, style = Type.card.copy(fontFamily = Mono))
+            }
             Spacer(Modifier.weight(1f))
             Box(Modifier.size(7.dp).background(livenessTone(l), CircleShape))
             Spacer(Modifier.width(Space.xs))
@@ -636,7 +686,7 @@ fun ProjectProgressCard(
             Spacer(Modifier.width(Space.xs))
             // 引擎恒发 currentBranch；追踪数组空时不能说「无分支记录」——那正是把「不知道」说成「没有」
             val branchLabel = p.primaryBranch?.name ?: p.currentBranch?.takeIf { it.isNotBlank() } ?: L10n.t("detail.nobranch")
-            Text(branchLabel, style = Type.label.copy(fontFamily = Mono), color = Palette.TextSecondary, maxLines = 1)
+            TruncatedText(branchLabel, style = Type.label.copy(fontFamily = Mono), color = Palette.TextSecondary)
         }
         // 行 4：提交结构（堆叠条 + 图例，受提交类型筛选控制）
         if (p.isReadable) {
@@ -666,24 +716,30 @@ fun ProjectProgressCard(
             val branchDetailMissing = p.primaryBranch == null && p.isReadable
             when {
                 head != null -> {
-                    Text(head.headShort.ifBlank { head.name }, style = Type.label.copy(fontFamily = Mono), color = Palette.TextSecondary, maxLines = 1)
+                    TruncatedText(head.headShort.ifBlank { head.name }, style = Type.label.copy(fontFamily = Mono), color = Palette.TextSecondary)
                     Spacer(Modifier.width(Space.sm))
-                    Text(head.headSubject.ifBlank { head.summary }, style = Type.label, color = Palette.TextTertiary, maxLines = 1, modifier = Modifier.weight(1f))
+                    // 长提交标题吃掉剩余宽度（weight 的 TruncatedText 外包一层 Box），动作 chip 不被挤走
+                    Box(Modifier.weight(1f)) {
+                        TruncatedText(head.headSubject.ifBlank { head.summary }, color = Palette.TextTertiary)
+                    }
                 }
                 // 明细读不到 ≠ 没有提交。这句话必须存在，否则「空着的一行」会被读成「什么都没干」
                 branchDetailMissing -> Text(L10n.t("detail.branch.untracked"), style = Type.label, color = Palette.TextTertiary, modifier = Modifier.weight(1f))
                 else -> Text(L10n.t("dash.card.unreadableShort"), style = Type.label, color = Palette.Red, modifier = Modifier.weight(1f))
             }
             Spacer(Modifier.width(Space.sm))
+            // 可点入口归 chip 语义：形状跟皮肤圆角（Badge.chipShape），内边距统一 chip 档（h12/v6）；
+            // 焦点环挂 clickable 上游——键盘用户 Tab 到这里也有可见落点
             Text(
                 L10n.t("detail.enter") + " →",
                 style = Type.label,
                 color = Palette.Accent,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(999.dp))
+                    .focusRing()
+                    .clip(Badge.chipShape)
                     .background(Palette.Accent.copy(alpha = 0.12f))
                     .clickable { onOpen() }
-                    .padding(horizontal = Space.sm, vertical = 3.dp),
+                    .padding(horizontal = Badge.chipPadH, vertical = Badge.chipPadV),
             )
         }
     }

@@ -130,16 +130,18 @@ fun FluentButton(
         }
         Text(text, style = Type.body.copy(fontWeight = FontWeight.Medium), maxLines = 1, overflow = TextOverflow.Clip)
         // 计数徽章：只在真有东西时出现（恒显 0 会被无视，「0」还容易被读成「引擎说不用更新」）；
-        // 实色按钮上用「白底深字胶囊」，保证读得清
+        // 底色跟主文字色走（深皮=白底、浅皮=深底，随皮肤极性反转，字仍是 BgBase）——
+        // 原来固定白底在浅色皮肤上贴浅绿/浅紫按钮对比不够；形状与内边距收敛到 pill 令牌（h8/v2），
+        // 与 DashboardView.Pill 同形同距
         if (badge != null) {
             Spacer(Modifier.width(6.dp))
             Text(
                 badge,
                 style = Type.micro.copy(fontWeight = FontWeight.Bold, color = Palette.BgBase),
                 modifier = Modifier
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(Color.White.copy(alpha = 0.92f))
-                    .padding(horizontal = 5.dp, vertical = 1.dp),
+                    .clip(Badge.pillShape)
+                    .background(Palette.TextPrimary.copy(alpha = 0.92f))
+                    .padding(horizontal = Badge.pillPadH, vertical = Badge.pillPadV),
             )
         }
     }
@@ -164,6 +166,8 @@ fun IconButton(
     Box(
         modifier
             .size(ControlHeight)
+            // 键盘 Tab 落上出 accent 环（鼠标取焦不出现）；环画在 clip 上游才不被裁掉（WorkBar 同款）
+            .focusRing(enabled = enabled)
             .clip(RoundedCornerShape(Radius.control))
             .background(bg)
             .hoverable(interaction)
@@ -217,6 +221,9 @@ private fun ButtonChrome(
                         translationX = 3.dp.toPx(); translationY = 3.dp.toPx()
                     }
                 }
+                // 键盘焦点环画在 clip/background 上游——环体在界外，下游的裁剪与底色盖不到它；
+                // 放 graphicsLayer 下游是让环跟着按下位移走（环与按钮始终同位）
+                .focusRing(enabled = enabled)
                 .height(ControlHeight)
                 .clip(RoundedCornerShape(Radius.control))
                 .background(bg)
@@ -259,6 +266,8 @@ fun Pivot(items: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier:
                 Box(
                     Modifier
                         .fillMaxHeight()
+                        // 页签是键盘导航的主路径：Tab 落上出 accent 环（环画在底色上游，界外不被盖）
+                        .focusRing()
                         .background(bg)
                         .clickable(interactionSource = interaction, indication = null) { onSelect(i) }
                         .padding(horizontal = 16.dp)

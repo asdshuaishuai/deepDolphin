@@ -37,6 +37,7 @@ package deepdolphin.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -47,7 +48,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import deepdolphin.engine.Project
@@ -302,7 +302,19 @@ fun BoardPage(model: AppModel) {
 
         // ── 读取三态分开说（「还没读到」「读不出来」「读到 0 个」是三句话）──
         when (statusState) {
-            LoadState.Loading -> Banner(L10n.t("cmp.board.loading"), Palette.TextSecondary)
+            // 还没读到：骨架占位（loading 姿态）——列头一行 + 两张卡的形先在，
+            // 与实列同容器同间距，内容到了原位落进，不闪一屏文字再跳版。
+            LoadState.Loading -> {
+                ScrollLazyColumn(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(Space.lg),
+                ) {
+                    BoardColumnId.entries.forEach { id ->
+                        item(key = "skel-" + id.name) { BoardSkeletonColumn() }
+                    }
+                }
+            }
+            // 读不出来：持久结果行，保留常驻横幅（转瞬即逝的 toast 回答不了「为什么失败」）。
             is LoadState.Failed ->
                 Banner(
                     L10n.t("cmp.board.loadFailed", (statusState as LoadState.Failed).reason),
@@ -342,7 +354,9 @@ private fun BoardColumnUi(id: BoardColumnId, board: BoardModel, model: AppModel,
             Spacer(Modifier.width(Space.sm))
             Text(id.title, style = Type.section)
             Spacer(Modifier.weight(1f))
-            Text("${cards.size}", style = Type.card.copy(color = columnTone(id), fontWeight = FontWeight.Bold))
+            // 计数收敛成 pill 胶囊（tone 色、全圆）：与卡内信号 chip 行同形同内边距，
+            // 列头不再是一个裸数字孤悬在行尾。
+            Pill(cards.size.toString(), columnTone(id))
         }
         Spacer(Modifier.height(Space.xs))
         // 列判据常驻（对位 mac「列判据写明」纪律；mac 空列时展示同一段文案）。
@@ -360,6 +374,16 @@ private fun BoardColumnUi(id: BoardColumnId, board: BoardModel, model: AppModel,
     }
 }
 
+/** 加载骨架列（loading 姿态）：列头一行 + 两张卡的「还没读到的看板」——形状占位不转圈。 */
+@Composable
+private fun BoardSkeletonColumn() {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        SkeletonLine(width = 96.dp, height = 14.dp)
+        SkeletonCard(Modifier.fillMaxWidth())
+        SkeletonCard(Modifier.fillMaxWidth())
+    }
+}
+
 /**
  * 项目卡（对位 mac BoardView.swift:139-294 BoardCard 的行内容）：
  * 名字 + 状态词 →（失败=原因红字 / 可读=headline + warnings + 信号 chip 行）→
@@ -367,19 +391,34 @@ private fun BoardColumnUi(id: BoardColumnId, board: BoardModel, model: AppModel,
  */
 @Composable
 private fun ProjectCard(c: BoardCard, model: AppModel, onOpenProject: (String) -> Unit) {
+    // hover / 焦点共用一个 interaction 源：clickable 往里写事件，hoverLift 读 hover、
+    // focusRing 读键盘焦点——整卡可点就该有 hover 提亮上浮，Tab 落上出 accent 环。
+    val interaction = remember { MutableInteractionSource() }
     Column(
         Modifier
             .fillMaxWidth()
-            .skinShadow(Radius.card).clip(RoundedCornerShape(Radius.card))
+            // 链序与 ButtonChrome 同构：skinShadow 下游 → hoverLift / focusRing → clip / background 上游
+            .skinShadow(Radius.card)
+            .hoverLift(interaction)
+            .focusRing(radius = Radius.card)
+            .clip(RoundedCornerShape(Radius.card))
             .background(Palette.Card)
             .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.card))
-            .clickable { onOpenProject(c.name) }
+            .clickable(interactionSource = interaction, indication = null) { onOpenProject(c.name) }
             .padding(Space.md),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(c.name, style = Type.card, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // 卡名是卡片的身份：包 HelpTooltip 挂全名，被截断了也能悬停读到完整项目名。
+            HelpTooltip(c.name) {
+                Text(c.name, style = Type.card, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             Spacer(Modifier.width(Space.sm))
-            Text(c.stateText, style = Type.label.copy(color = stateTone(c.liveness)), maxLines = 1)
+            Text(
+                c.stateText,
+                style = Type.label.copy(color = stateTone(c.liveness)),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         if (c.error != null) {
             // 采集失败：引擎原因原文（不推断、不翻译），红字——这是「读不出来」不是「状态差」。

@@ -5,9 +5,13 @@
 
 package deepdolphin.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,7 +23,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -249,11 +252,24 @@ private fun AppearanceCard() {
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), modifier = Modifier.padding(vertical = 3.dp)) {
                 row.forEach { skin ->
                     val selected = skin.id == current
+                    // 可点就该有 hover 反馈：chip 只原地提亮（Card→CardHover，Pivot/IconButton 同一笔
+                    // 令牌动画），不上浮——lift 是给可点卡片的
+                    val interaction = remember { MutableInteractionSource() }
+                    val hovered by interaction.collectIsHoveredAsState()
+                    val chipBg by animateColorAsState(
+                        when {
+                            selected -> Palette.Accent
+                            hovered -> Palette.CardHover
+                            else -> Palette.Card
+                        },
+                        tween(Motion.normal),
+                        label = "skinChipBg",
+                    )
                     Row(
                         Modifier
                             .clip(RoundedCornerShape(Radius.control))
-                            .background(if (selected) Palette.Accent else Palette.Card)
-                            .clickable { message = Skins.select(skin.id) }
+                            .background(chipBg)
+                            .clickable(interactionSource = interaction, indication = null) { message = Skins.select(skin.id) }
                             .padding(horizontal = 10.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -417,17 +433,34 @@ private fun SchedulePane(model: AppModel) {
     }
 }
 
-/** 选择胶囊（间隔 / 轨道 / 语言 / 关于子页签共用）：选中 accent 底配近黑字——accent 是亮蓝，白字压上去只有 2:1。 */
+/**
+ * 选择胶囊（间隔 / 轨道 / 语言 / 关于子页签 / AI provider 共用）：chip 档令牌（控制圆角 + h12/v6），
+ * 选中 accent 底配 OnAccent 字——accent 是亮蓝，白字压上去只有 2:1。
+ * hover 只原地提亮（未选中 Card→CardHover，选中 Accent→AccentHover，与 FluentButton 主按钮
+ * 同一笔令牌动画），不上浮——lift 是给可点卡片的。
+ */
 @Composable
 private fun ChoicePill(label: String, selected: Boolean, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val bg by animateColorAsState(
+        when {
+            selected && hovered -> Palette.AccentHover
+            selected -> Palette.Accent
+            hovered -> Palette.CardHover
+            else -> Palette.Card
+        },
+        tween(Motion.normal),
+        label = "choicePillBg",
+    )
     Text(
         label, style = Type.body,
         color = if (selected) Palette.OnAccent else Palette.TextSecondary,
         modifier = Modifier
-            .clip(RoundedCornerShape(Radius.control))
-            .background(if (selected) Palette.Accent else Palette.Card)
-            .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .clip(Badge.chipShape)
+            .background(bg)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = Badge.chipPadH, vertical = Badge.chipPadV),
     )
 }
 
@@ -458,16 +491,9 @@ fun AiSettingsPane() {
                     "ollama" to L10n.t("cmp.ai.providerOllama"),
                     "mock" to L10n.t("cmp.ai.providerMock"),
                 ).forEach { (id, label) ->
-                    val selected = provider == id
-                    Text(
-                        label, style = Type.body,
-                        color = if (selected) Color.White else Palette.TextSecondary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(if (selected) Palette.Accent else Palette.Card)
-                            .clickable { provider = id }
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
+                    // 与语言/轨道/文档页签同一颗 ChoicePill：chip 形 + OnAccent 字——
+                    // 原来的 999dp 全圆 + 硬编码白字自成一派，还压不住亮 accent
+                    ChoicePill(label, selected = provider == id) { provider = id }
                 }
             }
             Spacer(Modifier.height(Space.md))

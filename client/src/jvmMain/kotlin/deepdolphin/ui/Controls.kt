@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -184,6 +185,9 @@ fun FluentDropdown(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .height(FieldHeight)
+                // 键盘聚焦挂 accent 环（鼠标取焦不出现），与文本框聚焦 accent 描边同一语义——
+                // open 只是「菜单张着」的视觉，键盘用户 Tab 落上也得看得出焦点在这
+                .focusRing(enabled = enabled)
                 .clip(RoundedCornerShape(Radius.control))
                 .background(bg)
                 .border(Material.borderWidth, border, RoundedCornerShape(Radius.control))
@@ -200,6 +204,7 @@ fun FluentDropdown(
                     },
                 ),
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(6.dp))
@@ -223,6 +228,7 @@ fun FluentDropdown(
                                     color = if (key == selectedKey) Palette.Accent else Palette.TextPrimary,
                                 ),
                                 maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     },
