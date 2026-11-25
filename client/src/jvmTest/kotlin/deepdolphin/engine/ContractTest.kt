@@ -257,6 +257,16 @@ class ContractTest {
         assertEquals(36, top.line)
         assertEquals("risky", top.symbol)
         assertTrue(top.evidence.isNotBlank())
+        // 引擎 0.3.0 起每条疑点带符号键（键集恒定）：幻觉调用挂在**调用它的函数**上——
+        // symbol 是「谁有问题」、qual 是「问题发生在哪」；id 与代码索引（moongit index query）同一个键
+        assertEquals("f:suspect.py:34:swallow", top.id)
+        assertEquals("swallow", top.qual)
+        assertEquals("function", top.dim)
+        assertEquals("幻觉调用", top.label)
+        // 定位不到符号的疑点（文件级 TODO 残留）：键照样在、值为空串
+        val todo = r.findings.first { it.kind == "todo-residue" }
+        assertEquals("", todo.id)
+        assertEquals("", todo.qual)
         // 罚分表与按类计数（引擎键 penaltyByFile / byKind，mac 未消费、镜像仍保留）
         assertEquals(listOf(ConfPenaltyFile("suspect.py", 19)), r.penaltyByFile)
         assertEquals(4, r.byKind.size)

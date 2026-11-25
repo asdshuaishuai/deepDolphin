@@ -47,6 +47,26 @@ class ConfidencePagesTest {
         assertEquals(fs, highWeightFindings(fs, false), "关着 = 引擎全序原样（不重排）")
     }
 
+    // ── 疑点位置串（引擎 0.3.0 的 qual：问题发生在哪）──
+
+    @Test
+    fun findingLocationShowsEvidenceNameAndAttachedSymbol() {
+        val base = ConfFinding(kind = "unresolved-call", file = "suspect.py", line = 36)
+        assertEquals("suspect.py:36", findingLocationText(base), "没有证据名也没有限定名 = 只有位置")
+        assertEquals("suspect.py:36 · risky", findingLocationText(base.copy(symbol = "risky")))
+        assertEquals(
+            "suspect.py:36 · risky @ Suspect.swallow",
+            findingLocationText(base.copy(symbol = "risky", qual = "Suspect.swallow")),
+            "限定名与证据名不同才追加：谁有问题 @ 问题发生在哪",
+        )
+        assertEquals(
+            "suspect.py:36 · placeholder",
+            findingLocationText(base.copy(symbol = "placeholder", qual = "placeholder")),
+            "限定名与证据名相同不重复",
+        )
+        assertEquals("suspect.py:36 @ Util.run", findingLocationText(base.copy(qual = "Util.run")), "没有证据名也给出限定名")
+    }
+
     // ── 低置信度补丁实体（mac lowConfidenceEntities 对位：< 0.75 升序）──
 
     private fun entity(confidence: Double, file: String = "a.py") =

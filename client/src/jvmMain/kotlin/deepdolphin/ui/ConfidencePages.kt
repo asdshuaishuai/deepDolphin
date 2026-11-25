@@ -78,6 +78,18 @@ fun findingWeightColor(weight: Long): Color =
 fun highWeightFindings(fs: List<ConfFinding>, enabled: Boolean): List<ConfFinding> =
     if (!enabled) fs else fs.filter { it.weight >= 8 }
 
+/**
+ * 疑点行右侧的位置串：`file:line · 证据名 @ 挂靠符号的限定名`。
+ * 引擎 0.3.0 起疑点带 `qual`（幻觉调用挂在**调用它的函数**上：[ConfFinding.symbol] 是「谁有问题」、
+ * `qual` 是「问题发生在哪」）。后两段谁为空谁不出；限定名与证据名相同就不重复。
+ */
+fun findingLocationText(f: ConfFinding): String {
+    var t = "${f.file}:${f.line}"
+    if (f.symbol.isNotBlank()) t += " · ${f.symbol}"
+    if (f.qual.isNotBlank() && f.qual != f.symbol) t += " @ ${f.qual}"
+    return t
+}
+
 /** 低置信度补丁实体（< 0.75），升序——最不可信的排最前（mac lowConfidenceEntities 同语义）。 */
 fun lowConfidencePatchEntities(ents: List<PatchEntity>): List<PatchEntity> =
     ents.filter { it.confidence < 0.75 }.sortedBy { it.confidence }
@@ -381,7 +393,7 @@ private fun FindingDisclosureRow(f: ConfFinding, projectPath: String) {
             Text(f.kind, style = Type.label)
             Spacer(Modifier.weight(1f))
             Text(
-                "${f.file}:${f.line}" + if (f.symbol.isNotBlank()) " · ${f.symbol}" else "",
+                findingLocationText(f),
                 style = Type.micro.copy(fontFamily = FontFamily.Monospace),
                 color = Palette.TextSecondary,
                 maxLines = 1,

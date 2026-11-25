@@ -675,9 +675,20 @@ data class ConfFinding(
     val kind: String = "",
     val file: String = "",
     val line: Long = 0,
+    /** 疑点的证据名：幻觉调用的名字、孤儿符号名、魔法数所在函数……（引擎 evidence 的主语）。 */
     val symbol: String = "",
     val evidence: String = "",
     val weight: Long = 0,
+    /**
+     * 引擎 0.3.0 起每条疑点都发的四个键（键集恒定，定位不到 = 空串）：
+     * [id] = 疑点挂靠符号的稳定 id，与代码索引（`moongit index query <id>`）同一个键；
+     * [qual] = 挂靠符号的限定名（`Outer.method`）——幻觉调用挂在**调用它的函数**上，
+     * 所以 [symbol] 是「谁有问题」、[qual] 是「问题发生在哪」；[dim] / [label] = 所属维度。
+     */
+    val id: String = "",
+    val qual: String = "",
+    val dim: String = "",
+    val label: String = "",
 )
 
 @Serializable

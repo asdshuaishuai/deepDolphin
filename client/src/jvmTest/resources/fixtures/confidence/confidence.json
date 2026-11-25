@@ -32,36 +32,52 @@
   ],
   "findings": [
     {
-      "kind": "unresolved-call",
+      "id": "f:suspect.py:34:swallow",
+      "qual": "swallow",
       "file": "suspect.py",
       "line": 36,
+      "kind": "unresolved-call",
+      "weight": 8,
+      "dim": "function",
+      "label": "幻觉调用",
       "symbol": "risky",
-      "evidence": "调用 risky(…)：全仓没有该名字的定义，也不是语言内建——可能是幻觉 API、拼错的名字，或缺失的依赖",
-      "weight": 8
+      "evidence": "调用 risky(…)：全仓没有该名字的定义，也不是语言内建——可能是幻觉 API、拼错的名字，或缺失的依赖"
     },
     {
-      "kind": "parameter-abuse",
+      "id": "f:suspect.py:13:very_long_function",
+      "qual": "very_long_function",
       "file": "suspect.py",
       "line": 13,
+      "kind": "parameter-abuse",
+      "weight": 6,
+      "dim": "function",
+      "label": "参数滥用",
       "symbol": "very_long_function",
-      "evidence": "7 个参数（阈值 5）——God 签名，API 设计缺失",
-      "weight": 6
+      "evidence": "7 个参数（阈值 5）——God 签名，API 设计缺失"
     },
     {
-      "kind": "suspicious-name",
+      "id": "f:suspect.py:30:placeholder",
+      "qual": "placeholder",
       "file": "suspect.py",
       "line": 30,
+      "kind": "suspicious-name",
+      "weight": 3,
+      "dim": "variable",
+      "label": "可疑命名",
       "symbol": "placeholder",
-      "evidence": "func placeholder：占位名",
-      "weight": 3
+      "evidence": "func placeholder：占位名"
     },
     {
-      "kind": "todo-residue",
+      "id": "",
+      "qual": "",
       "file": "suspect.py",
       "line": 5,
+      "kind": "todo-residue",
+      "weight": 2,
+      "dim": "structure",
+      "label": "TODO 残留",
       "symbol": "",
-      "evidence": "1 处 TODO/FIXME/XXX/HACK（首处 L5：# TODO: 重构这一段）",
-      "weight": 2
+      "evidence": "1 处 TODO/FIXME/XXX/HACK（首处 L5：# TODO: 重构这一段）"
     }
   ],
   "byKind": [

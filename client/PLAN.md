@@ -278,6 +278,14 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
 - 判据：`renderStaleConfidence` / `needsConfidenceRefresh`（纯函数）；fixture 两份取自引擎真跑
   （`fixtures/render/index_stale_confidence{,_en}.txt`：生成快照后改源码，索引被自动重建成第 1 版）。
 - 门禁 **259 passed / 0 failed**（禁用缓存；比上一批多 3 条）。
+
+同一批的引擎协同（疑点挂符号键，引擎提交 4451c92）：每条疑点新增 `id` / `qual` / `dim` / `label`
+四个键。仓库里的镜像漂移判据会把它没接住的键判红——做法是补镜像而不是豁免：
+`ConfFinding` 增这四个字段；置信度页的疑点行右侧显示「证据名 @ 挂靠符号的限定名」
+（`findingLocationText`：幻觉调用挂在调用它的函数上，`symbol` 是「谁有问题」、`qual` 是「问题发生在哪」）；
+`fixtures/confidence/confidence.json` 用新引擎真跑重取（vtest 播种 suspect.py，分数 51 / 4 条疑点不变，
+每条多了四个键）；门禁对着新引擎构建跑（`MOONGIT_BIN` 指向它），真机两档都实跑通过：**260 / 0**。
+
 - 边界：过期判定认的是回执文字里的固定措辞（引擎 `confidenceStaleNote` 唯一构造，中英各认一处锚），
   不读 `--json`（文本回执同时供状态条显示，对位 mac 的做法）；真引擎联调与实拍在引擎分支合并后补。
   macOS 客户端没有同步这个自愈（它是否也有同样的缺口未核对）。
