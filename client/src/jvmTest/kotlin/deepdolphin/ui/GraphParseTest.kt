@@ -175,6 +175,63 @@ class GraphParseTest {
         ).forEach { assertFalse(it.isRepoScoped(), "$it 是全局视图") }
     }
 
+    // ── 嵌入配置：把客户端的设计令牌翻译成产物的嵌入模式声明（GraphEmbed.kt）──
+
+    @Test
+    fun embedHeadScriptDeclaresPageChromeWithClientTokens() {
+        val script = graphEmbedHeadScript(arch = false)
+        assertTrue(script.startsWith("(function(){window.MOONGIT_EMBED="), "声明必须在产物任何脚本之前由宿主给出")
+        assertTrue(script.contains("\"chrome\":\"page\""), "chrome=page：产物才会收拢外壳")
+        assertFalse(script.contains("</script"), "脚本里不许出现能截断 <script> 的串")
+        val vars = decodeEmbedVars(script)
+        // 底色、描边、文字、强调色都来自 Design.kt 的 Palette（改令牌 ⇒ 图谱跟着变，不手抄颜色）
+        assertEquals("#1f1f1f", vars["--bg"])
+        assertEquals("#292929", vars["--panel"])
+        assertEquals("rgba(255,255,255,0.078)", vars["--line2"])
+        assertEquals("rgba(255,255,255,0.141)", vars["--line"])
+        assertEquals("#ffffff", vars["--text"])
+        assertEquals("rgba(255,255,255,0.659)", vars["--muted"])
+        assertEquals("#60cdff", vars["--cyan"])
+        assertEquals("#60cdff", vars["--accent"])
+        assertEquals("#6ccb5f", vars["--green"])
+        assertEquals("#ffd24a", vars["--yellow"])
+        assertEquals("#ff99a4", vars["--red"])
+        assertEquals("8px", vars["--radius"])
+        assertEquals("#191919", vars["--e-surface"])
+        // 架构图产物：暗色垫片在前（不认识嵌入配置的老引擎产物跟随 prefers-color-scheme，仍要是暗色）
+        assertTrue(graphEmbedHeadScript(arch = true).startsWith(DARK_SCHEME_SHIM))
+    }
+
+    @Test
+    fun colorToCssKeepsLocaleAndTrimsAlpha() {
+        assertEquals("#1f1f1f", androidx.compose.ui.graphics.Color(0xFF1F1F1F).toCss())
+        assertEquals("rgba(255,255,255,0.659)", androidx.compose.ui.graphics.Color(0xA8FFFFFF).toCss())
+        // 透明度按 8 位量化（0.10 × 255 四舍五入成 26 ⇒ 26/255）
+        assertEquals("rgba(96,205,255,0.102)", androidx.compose.ui.graphics.Color(0xFF60CDFF).copy(alpha = 0.10f).toCss())
+        assertEquals("rgba(255,255,255,0)", androidx.compose.ui.graphics.Color(0x00FFFFFF).toCss())
+    }
+
+    // ── 回执条：去掉产物的内部路径，其余一字不改 ──
+
+    @Test
+    fun receiptSummaryDropsArtifactPathAndKeepsTheRest() {
+        assertEquals("已重绘 · 第 2 版", receiptSummary("已重绘：/home/superShuai/.deepgit/store/p_f80de38f6095/render/index.html · 第 2 版"))
+        assertEquals(
+            "已复用（产物未变） · 第 2 版",
+            receiptSummary("已复用（产物未变）：/tmp/dg-probe-ui/store/p_f80de38f6095/render/index.html · 第 2 版"),
+        )
+        assertEquals(
+            "已复用持久化渲染（首版（第 0 版））",
+            receiptSummary("已复用持久化渲染（首版（第 0 版））：/home/superShuai/.deepgit/store/p_f80de38f6095/render/arch.html"),
+        )
+        assertEquals("Redrawn · v1", receiptSummary("Redrawn: /tmp/a/index.html · v1"))
+        // 过期说明原样保留（它是用户要照着做的事）
+        val stale = "置信度快照过期（依据首版（第 0 版）索引，当前第 1 版）——先 moongit confidence gen"
+        assertEquals(stale, receiptSummary(stale))
+        // 网址里的 .html 不算产物路径
+        assertEquals("打开 http://example.com/a.html 失败", receiptSummary("打开 http://example.com/a.html 失败"))
+    }
+
     // ── 装载：原生包钉版 + 暗色垫片 ──
 
     @Test

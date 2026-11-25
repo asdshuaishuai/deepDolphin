@@ -107,6 +107,18 @@ fun needsConfidenceRefresh(kind: GraphKind, text: String): Boolean =
 /** 同源产物要不要重载 WebView：非复用（文件真的重写了）或路径变了才重载，否则不闪。 */
 fun shouldReloadWebView(reused: Boolean, pathChanged: Boolean): Boolean = !reused || pathChanged
 
+/** 回执里的产物绝对路径：全角或半角冒号后面的 `/…/x.html`（网址不算——它的冒号后面紧跟第二个斜杠）。 */
+private val ARTIFACT_PATH_IN_RECEIPT = Regex("""[：:]\s*/(?!/)[^\s]*\.html""")
+
+/**
+ * 回执条上给用户看的一行：去掉产物的本机绝对路径——
+ * 「已重绘：/home/…/store/p_x/render/index.html · 第 2 版」→「已重绘 · 第 2 版」。
+ * 路径是内部位置，摆在状态条上只是一长串挤占宽度的字符；要用它时有去处（页头的「在浏览器中打开」、
+ * WebView 没就位时的降级视图）。其余文字原样保留，一个字不改。
+ */
+fun receiptSummary(text: String): String =
+    ARTIFACT_PATH_IN_RECEIPT.replace(text, "").replace(Regex("""\s*·\s*"""), " · ").trim()
+
 // ── 页面模型（mac CodeGraphPageVM / ArchPageVM 的公共骨架；两页只差 kind 的命令与文案）──
 
 /** 底部回执条状态（mac GraphStatusBar 的 (ok, text) 对位）；null = 不占高度。 */
@@ -262,25 +274,36 @@ private fun GraphPage(model: AppModel, kind: GraphKind) {
             rendering = vm.rendering,
             onRefresh = { scope.launch { vm.render(background = false) } },
             onBack = { model.backToRepo() },
+            onOpenExternal = vm.htmlPath?.let { path ->
+                {
+                    openArtifactExternally(path)?.let { err ->
+                        vm.status = GraphReceipt(ok = false, text = err)
+                    }
+                }
+            },
         )
-        // 产物自带完整背景：装进一张与全站同语言的卡片里（圆角 + hairline 描边）
-        Column(
-            Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = Space.xl)
-                .padding(bottom = Space.lg)
-                .clip(RoundedCornerShape(Radius.card))
-                .background(Palette.BgBase)
-                .border(1.dp, Palette.Stroke, RoundedCornerShape(Radius.card)),
-        ) {
+        // 引擎产物直接铺满页头与回执条之间（不套卡片、不留左右边距）：它自己的外壳已按嵌入模式收拢、
+        // 配色走客户端的设计令牌（见 GraphEmbed.kt）——产物就是这一页的主体，不是贴进来的一张网页。
+        // 「卡片里再套卡片」是原样内嵌时最难看的根源：两层描边、两套圆角。
+        Column(Modifier.weight(1f).fillMaxWidth().background(Palette.BgBase)) {
             GraphContentArea(Modifier.weight(1f).fillMaxWidth(), vm)
             GraphStatusBar(vm.status) { vm.clearStatus() }
         }
     }
 }
 
-/** 页头（与其它页头同一套间距与字级）：图标瓦片 + 标题 +「仓库 · 副标题」+ 刷新 / 返回仓库。 */
+/**
+ * 用系统浏览器打开引擎产物（mac GraphHeaderView 的「在浏览器中打开」对位）：独立打开是完整版的图谱
+ * （自带页头、技术状态条）。失败时如实返回原因，不静默。
+ */
+internal fun openArtifactExternally(path: String): String? = try {
+    java.awt.Desktop.getDesktop().browse(java.io.File(path).toURI())
+    null
+} catch (e: Exception) {
+    "browser: " + (e.message ?: e.javaClass.simpleName)
+}
+
+/** 页头（与其它页头同一套间距与字级）：图标瓦片 + 标题 +「仓库 · 副标题」+ 在浏览器中打开 / 刷新 / 返回仓库。 */
 @Composable
 private fun GraphPageHeader(
     kind: GraphKind,
@@ -288,6 +311,7 @@ private fun GraphPageHeader(
     rendering: Boolean,
     onRefresh: () -> Unit,
     onBack: () -> Unit,
+    onOpenExternal: (() -> Unit)? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.lg),
@@ -308,6 +332,10 @@ private fun GraphPageHeader(
             Spacer(Modifier.width(Space.sm))
             Text(L10n.t("graph.rendering"), style = Type.label, color = Palette.TextSecondary)
             Spacer(Modifier.width(Space.md))
+        }
+        onOpenExternal?.let { open ->
+            IconButton(FluentIcon.Open, onClick = open)
+            Spacer(Modifier.width(Space.sm))
         }
         FluentButton(L10n.t("toolbar.refresh"), onClick = onRefresh, icon = FluentIcon.ArrowSync, enabled = !rendering)
         Spacer(Modifier.width(Space.sm))
@@ -359,8 +387,8 @@ private fun GraphContentArea(modifier: Modifier, vm: GraphPageModel) {
                 source = HtmlSource.LocalFile(path),
                 modifier = Modifier.fillMaxSize(),
                 reloadToken = vm.reloadToken,
-                // 架构图产物跟随 prefers-color-scheme 选明暗：垫上客户端的暗色（热力图产物恒为暗色，不需要）
-                headScript = if (vm.kind == GraphKind.ARCH) DARK_SCHEME_SHIM else null,
+                // 嵌入配置：收拢外壳 + 客户端的设计令牌（架构图另垫暗色，见 graphEmbedHeadScript）
+                headScript = graphEmbedHeadScript(arch = vm.kind == GraphKind.ARCH),
                 onEvent = { ev ->
                     if (ev is HtmlWebEvent.Failed) {
                         vm.status = GraphReceipt(ok = false, text = "WebView ${ev.why}")
@@ -463,8 +491,9 @@ private fun GraphStatusBar(receipt: GraphReceipt?, onDismiss: () -> Unit) {
         )
         Spacer(Modifier.width(Space.sm))
         Text(
-            receipt.text,
-            style = Type.label.copy(fontFamily = FontFamily.Monospace),
+            // 成功回执只留人读的部分；失败回执原文照录（原因里可能就有要去看的路径）
+            if (receipt.ok) receiptSummary(receipt.text) else receipt.text,
+            style = Type.label,
             color = if (receipt.ok) Palette.TextSecondary else Palette.Amber,
             maxLines = 1,
         )
