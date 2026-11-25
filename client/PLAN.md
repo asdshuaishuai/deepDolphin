@@ -286,6 +286,15 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
 `fixtures/confidence/confidence.json` 用新引擎真跑重取（vtest 播种 suspect.py，分数 51 / 4 条疑点不变，
 每条多了四个键）；门禁对着新引擎构建跑（`MOONGIT_BIN` 指向它），真机两档都实跑通过：**260 / 0**。
 
+- 真机联调（打包态 + 引擎 0.3.0 的构建，`DEEPGIT_HOME` 指向沙箱）：改了测试仓库的源码后点「刷新」，引擎调用
+  序列是 `render index --confidence` → `confidence gen` → `render index --confidence --force`，页面上的热力图是
+  新一版的（跑了两次）。
+- 同一轮实拍还抓到并修掉一个引擎侧的升级问题：旧构建留下的索引数据（函数节点没有列号 / 签名）被新引擎当成
+  「新鲜」复用，定位串没有列号。引擎的新鲜度判定补了「数据形状」这一条（store_meta 的 `payload_shape`），
+  装上新引擎后点一次刷新就自动重建——客户端的自愈正好把随后的快照过期也接住了。
+- 热力图定位区（引擎侧实现）：定位串 `suspect.py:34:5`、符号 ID、模块路径三次点击都从 X11 剪贴板原样读回
+  （`file://` 页面没有剪贴板权限，走隐藏 textarea 兜底）。实拍见 `docs/ui-cmp/13-heat-map-locator.png`。
+- 门禁对着**已安装**的引擎（`~/.local/bin/moongit`，0.3.0）跑：**260 / 0**，镜像漂移的真机两档实跑通过。
 - 边界：过期判定认的是回执文字里的固定措辞（引擎 `confidenceStaleNote` 唯一构造，中英各认一处锚），
-  不读 `--json`（文本回执同时供状态条显示，对位 mac 的做法）；真引擎联调与实拍在引擎分支合并后补。
-  macOS 客户端没有同步这个自愈（它是否也有同样的缺口未核对）。
+  不读 `--json`（文本回执同时供状态条显示，对位 mac 的做法）。
+  macOS 客户端没有同步这两批（它是否也有同样的缺口未核对）。

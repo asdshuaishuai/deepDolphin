@@ -11,6 +11,9 @@
 - 判据门禁绿：`scripts/build.sh --test` → **260 判据 0 failed**（禁用缓存复跑
   `gradle jvmTest --rerun-tasks --no-build-cache` 同数）。门禁脚本读的是 test-results XML，
   增量构建下会读到陈旧结果——当证据用的数字必须来自禁用缓存的那次。
+- 本机引擎已换成 **0.3.0 的开发构建**（`~/.local/libexec/deepdolphin/moongit.bin`，取自引擎仓库
+  `feat/skill-docs`；旧版 0.2.0 备份在同目录的 `moongit.bin.bak-20261125-pre030`，回滚 = 把备份拷回
+  `moongit.bin`）。引擎尚未正式发版。
 - **真窗口实拍（2026-11-25，DISPLAY=:0，打包后的 deb 提取运行）**：截图与逐张说明见
   [`docs/ui-cmp/README.md`](../docs/ui-cmp/README.md)。此前入库的 48 张旧图已退役——其中
   至少 9 张截到的是 IDE 而不是本应用，还有「图谱页验证通过」的图其实是空白页。
