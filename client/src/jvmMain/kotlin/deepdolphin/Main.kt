@@ -26,7 +26,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.delay
 import androidx.compose.ui.unit.dp
+import java.awt.Dimension
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowState
@@ -256,6 +260,10 @@ fun main(vararg args: String) {
         title = "deepDolphin",
     ) {
         LaunchedEffect(Unit) { StartupMark.report() }
+        // 窗口最小尺寸：再窄图谱两页的嵌入产物就要退化成上下排（它的断点按视口宽算，视口 = 窗口 − 侧栏 230），
+        // 画布只剩两百来像素高；其它页在这个宽度下也都还能正常用。
+        // Compose 的 Window 没有这个参数，落在 AWT 的窗口上（dp 按当前 density 换算成像素）
+        MinimumWindowSize(DpSize(960.dp, 640.dp))
 
         // 根主题：所有没显式配色的 Material 组件从这里取缺省（Fluent 暗色方案），
         // 不再回落到 M3 默认浅色——开关、输入框描边、菜单在暗色界面上曾经很突兀
@@ -618,4 +626,31 @@ private fun repoRowTint(status: String?, unreadable: Boolean): Color = when {
     status == "stale" -> Palette.Amber
     status == "merged" -> Palette.Deep
     else -> Palette.TextTertiary
+}
+
+/**
+ * 给主窗口设最小尺寸（客户区口径）。尺寸是 dp，按当前 density 换算——高倍屏上窗口的最小尺寸与界面一起放大。
+ * Compose 1.7 的 Window 没有这个参数，也不经组合局部暴露窗口对象：主窗口是进程里唯一一个 showing 的
+ * java.awt.Frame（对话框都是 Dialog，速览窗不是 Frame），从 AWT 的窗口清单里认。窗口在首帧之后才显示，
+ * 等它出现再设（最多 5 秒；等不到就不设，不影响启动）。
+ */
+@Composable
+private fun MinimumWindowSize(size: DpSize) {
+    val density = LocalDensity.current
+    val pxW = with(density) { size.width.roundToPx() }
+    val pxH = with(density) { size.height.roundToPx() }
+    LaunchedEffect(Unit) {
+        var frame: java.awt.Frame? = null
+        for (attempt in 0 until 50) {
+            frame = java.awt.Window.getWindows().filterIsInstance<java.awt.Frame>().firstOrNull { it.isShowing }
+            if (frame != null) break
+            delay(100)
+        }
+        // 最小尺寸是**客户区**口径（与页面的布局尺寸同一把尺）；AWT 的含窗框，把标题栏与边框加回去
+        // （Insets 的 width()/height() 会与 Compose 的 Modifier.width 撞名，这里直接加四个边）
+        val insets = frame?.insets
+        if (frame != null && insets != null) {
+            frame.minimumSize = Dimension(pxW + insets.left + insets.right, pxH + insets.top + insets.bottom)
+        }
+    }
 }

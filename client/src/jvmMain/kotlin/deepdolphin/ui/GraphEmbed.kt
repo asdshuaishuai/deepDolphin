@@ -5,13 +5,18 @@
 // 引擎侧因此给产物加了「嵌入模式」（契约见 moongit 的 treehtml.cj · embedBootstrapJs）：
 // 宿主在产物任何脚本之前声明
 //   window.MOONGIT_EMBED = { chrome: "page", vars: { …CSS 自定义属性… }, canvas: { …画在画布上的颜色… } }
-// 产物就收拢外壳（一条命令条 + 画布 + 一条面包屑条）、改走宿主的主题。
-// 这里只做一件事：把客户端的设计令牌（Design.kt 的 Palette）翻译成那份配置——令牌改了，图谱跟着变，
-// 不在产物里再手抄一份颜色。老版本的引擎产物不认识这份配置，照旧按独立版渲染（优雅降级，不会坏）。
+// 产物就收拢外壳（一条命令条 + 画布 + 一条通栏底条）、改走宿主的主题。
+// 这里只做一件事：把客户端的设计令牌（Design.kt 的 Palette / Radius / ControlHeight）翻译成那份配置——
+// 令牌改了，图谱跟着变，不在产物里再手抄一份。老版本的引擎产物不认识这份配置，照旧按独立版渲染（优雅降级，不会坏）。
+//
+// 【尺寸契约】vars 里的 --e-* 四个是尺寸而不是颜色：控件高、底条高、控件/卡片圆角。
+// 产物嵌入模式下的布局（按可用区域选列、泳道折行、取景）看的是它自己的视口，
+// 视口 = 页头以下整页；这里的四个值让它的控件与外壳的控件同高同圆角。
 
 package deepdolphin.ui
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -72,6 +77,19 @@ internal fun graphEmbedVars(): JsonObject = obj {
     put("--e-dot", Color(0x12FFFFFF).toCss())
     put("--e-field", Color(0xFF1B1B1B).toCss())
     put("--e-active", Palette.Accent.copy(alpha = 0.10f).toCss())
+    // 尺寸契约（产物嵌入样式里的 --e-* 变量）：控件高、底条高、控件圆角、卡片圆角——与外壳同值，
+    // 单位同 CSS px。换成圆角为 0 的皮肤，嵌入页的输入框、按钮也跟着变方角；不传则产物回退到自己的定稿值。
+    // 底条是页面最下面唯一的一条，高度取控件高：它和外壳的按钮是同一副尺寸。
+    put("--e-ctl-h", cssPx(ControlHeight))
+    put("--e-foot-h", cssPx(ControlHeight))
+    put("--e-r-ctl", cssPx(Radius.control))
+    put("--e-r-card", cssPx(Radius.card))
+}
+
+/** dp → CSS 长度：整数就写整数（"8px"），带小数保留一位（"2.5px"）；Dp.toString() 是 "8.0.dp"，不能直接拼。 */
+internal fun cssPx(dp: Dp): String {
+    val v = dp.value
+    return (if (v == v.toLong().toFloat()) v.toLong().toString() else String.format(Locale.ROOT, "%.1f", v)) + "px"
 }
 
 /** 画在 canvas 上的颜色与圆角——CSS 管不到像素，只能由产物的绘制代码读这一份。 */

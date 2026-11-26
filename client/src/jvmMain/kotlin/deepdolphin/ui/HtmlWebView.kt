@@ -21,6 +21,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import com.multiplatform.webview.web.LoadingState
 import com.multiplatform.webview.web.rememberWebViewNavigator
 import com.multiplatform.webview.web.WebContent
@@ -98,12 +99,25 @@ private suspend fun WebViewNavigator.load(source: HtmlSource, headScript: String
 
 private fun cacheRoot(): File = File(System.getenv("XDG_CACHE_HOME") ?: (System.getProperty("user.home") + "/.cache"))
 
-/** 页面事件：加载完成（携带就势注入 JS 的句柄）/ 装载失败（携带如实原因）。 */
+/** 页面事件：加载完成（携带就势注入 JS 的句柄）/ 缩放核对 / 装载失败（携带如实原因）。 */
 sealed interface HtmlWebEvent {
     /** 页面加载完成；evaluate = 在当前页面上执行 JS（量高、取标题等）。 */
     class Loaded internal constructor(
         val evaluate: (script: String, onResult: (String?) -> Unit) -> Unit,
     ) : HtmlWebEvent
+
+    /**
+     * 缩放核对：外壳的 density（1dp = 多少设备像素）对照页面的 devicePixelRatio（1 CSS px = 多少设备像素）。
+     * 两者相等，内嵌内容才与外壳是同一把尺子；不等 = 内嵌内容整体偏大或偏小（显示缩放在两边的取法不同）。
+     * 如实上报、不悄悄缩放任何一边——怎么对齐要在开了显示缩放的真机上定，这里保证不一致时看得见。
+     */
+    data class Scale(val hostScale: Float, val pageScale: Float) : HtmlWebEvent {
+        /**
+         * 偏差超过 8% 才算不一致：AWT 报的 dpi 是整数（150% 缩放 → 144dpi → density 1.44），
+         * Chromium 取 1.5——这一档取整差（4%）每台 Windows 高分屏都有，不值得打扰。
+         */
+        fun mismatched(): Boolean = kotlin.math.abs(hostScale - pageScale) > 0.08f * maxOf(hostScale, pageScale)
+    }
 
     /** 装载失败/超时（含主帧错误与 15s 看门狗触发）；why = 如实原因。 */
     data class Failed(val why: String) : HtmlWebEvent
@@ -306,6 +320,8 @@ private fun WebViewBody(
     }
     val navigator = rememberWebViewNavigator()
     var laidOut by remember(transparent) { mutableStateOf(false) }
+    // 外壳的比例尺（1dp = 多少设备像素）：装载完成后与页面的 devicePixelRatio 对账（见 HtmlWebEvent.Scale）
+    val density = LocalDensity.current
 
     // 装载调度（对位 mac GraphWebView.updateNSView 的 Coordinator 去重）：
     // 源变更 → navigator 装载；同源仅 token 变 → reload()（垫了脚本的页面要重读、重落副本）
@@ -337,6 +353,14 @@ private fun WebViewBody(
                     onEvent?.invoke(
                         HtmlWebEvent.Loaded { script, onResult -> navigator.evaluateJavaScript(script, onResult) },
                     )
+                    // 缩放核对：装载完成后读页面的 devicePixelRatio，与外壳的 density 对账（顺带记一行 stdout 便于排查）
+                    navigator.evaluateJavaScript("window.devicePixelRatio") { raw ->
+                        val pageScale = raw?.trim()?.trim('"')?.toFloatOrNull()
+                        println("WEBVIEW_SCALE density=${density.density} fontScale=${density.fontScale} pageDpr=$raw")
+                        if (pageScale != null && pageScale > 0f) {
+                            onEvent?.invoke(HtmlWebEvent.Scale(density.density, pageScale))
+                        }
+                    }
                 }
             }
         }

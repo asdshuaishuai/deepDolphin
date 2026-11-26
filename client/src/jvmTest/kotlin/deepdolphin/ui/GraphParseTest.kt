@@ -6,6 +6,7 @@
 
 package deepdolphin.ui
 
+import androidx.compose.ui.unit.dp
 import java.io.File
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -200,6 +201,49 @@ class GraphParseTest {
         assertEquals("#191919", vars["--e-surface"])
         // 架构图产物：暗色垫片在前（不认识嵌入配置的老引擎产物跟随 prefers-color-scheme，仍要是暗色）
         assertTrue(graphEmbedHeadScript(arch = true).startsWith(DARK_SCHEME_SHIM))
+    }
+
+    @Test
+    fun embedVarsCarrySizeTokensAndFollowSkinRadius() {
+        // 尺寸契约：控件高、底条高、控件圆角、卡片圆角——与外壳同值（Fluent 默认 32 / 32 / 4 / 8），
+        // 产物嵌入样式里不再写死 28/30px、4/6px
+        val fluent = decodeEmbedVars(graphEmbedHeadScript(arch = false))
+        assertEquals("32px", fluent["--e-ctl-h"])
+        assertEquals("32px", fluent["--e-foot-h"])
+        assertEquals("4px", fluent["--e-r-ctl"])
+        assertEquals("8px", fluent["--e-r-card"])
+        try {
+            // 换成直角皮肤：嵌入页的输入框、按钮、卡片跟着变方角（令牌改 ⇒ 图谱跟着变）
+            Skins.apply(Skins.byId.getValue("neobrutal"))
+            val neo = decodeEmbedVars(graphEmbedHeadScript(arch = false))
+            assertEquals("0px", neo["--e-r-ctl"])
+            assertEquals("0px", neo["--e-r-card"])
+            assertEquals("0px", neo["--radius"], "画在画布上的卡片圆角同源")
+            assertEquals("32px", neo["--e-ctl-h"], "控件高不随皮肤变")
+        } finally {
+            Skins.apply(Skins.byId.getValue(Skins.DEFAULT_ID))
+        }
+    }
+
+    @Test
+    fun cssPxWritesIntegersPlainAndKeepsOneDecimal() {
+        assertEquals("8px", cssPx(8.dp))
+        assertEquals("0px", cssPx(0.dp))
+        assertEquals("2.5px", cssPx(2.5.dp))
+    }
+
+    @Test
+    fun scaleCheckFlagsOnlyRealMismatches() {
+        // 同一把尺子、或 Windows 高分屏的取整差（AWT 144dpi → 1.44，Chromium 1.5）都不算；
+        // 显示缩放只被一边认出来（外壳 1×、内嵌 1.5×）才算
+        assertFalse(HtmlWebEvent.Scale(1f, 1f).mismatched())
+        assertFalse(HtmlWebEvent.Scale(1.44f, 1.5f).mismatched())
+        assertFalse(HtmlWebEvent.Scale(2f, 2f).mismatched())
+        assertTrue(HtmlWebEvent.Scale(1f, 1.5f).mismatched())
+        assertTrue(HtmlWebEvent.Scale(1f, 0.75f).mismatched())
+        assertEquals("1×", scaleText(1f))
+        assertEquals("1.25×", scaleText(1.25f))
+        assertEquals("1.5×", scaleText(1.5f))
     }
 
     @Test

@@ -12,6 +12,10 @@
 //   ③ 把产物装进 HtmlWebView；进页即渲染（复用判定生效时毫秒级），产物路径有进程内缓存
 //      ——再次进页先秒出旧图，再后台核验刷新（复用就不重载，画面没变就不闪）。
 //
+// 【页面框架】页头（标题 + 回执胶囊 + 三个按钮）之下整页都是产物：引擎产物在嵌入模式下自己收拢成
+// 「命令条 + 画布 + 通栏底条」，布局按它拿到的视口算（按可用区域选列、泳道折行、取景），所以外壳这边
+// 要做的只是——给它一个稳定、尽量大的视口（页头高度恒定、底下不压条）、把控件高/圆角/颜色令牌递过去。
+//
 // 【打开形态】用户定稿 2026-11-25：图谱两页**跟着仓库走**、是专门的页面、不弹窗——
 // 路由 Route.GRAPH / Route.ARCH + selectedProject（仓库），入口在各仓库的详情页里。
 // （mac 是独立最大化窗口 GraphWindows.open；此处以用户定稿为准，不追 mac。）
@@ -38,6 +42,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
@@ -58,6 +63,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
@@ -121,7 +127,7 @@ fun receiptSummary(text: String): String =
 
 // ── 页面模型（mac CodeGraphPageVM / ArchPageVM 的公共骨架；两页只差 kind 的命令与文案）──
 
-/** 底部回执条状态（mac GraphStatusBar 的 (ok, text) 对位）；null = 不占高度。 */
+/** 回执（mac GraphStatusBar 的 (ok, text) 对位）：渲染结果 / 装载问题 / 缩放核对；显示在页头的胶囊里，null = 不显示。 */
 data class GraphReceipt(val ok: Boolean, val text: String)
 
 /** 图谱两页的进程内产物缓存（mac static lastGoodPath 对位）：再次进页先秒出旧图。 */
@@ -155,7 +161,7 @@ class GraphPageModel(
     /** 重新渲染后路径不变也要刷新 WebView（对位 mac reloadToken）。 */
     var reloadToken by mutableIntStateOf(0)
         private set
-    /** 引擎回执（末行）：版本/复用/装载问题给用户看（底部状态条）。 */
+    /** 引擎回执（末行）：版本/复用/装载问题给用户看（页头的回执胶囊）。 */
     var status by mutableStateOf<GraphReceipt?>(null)
 
     private val cacheKey: String get() = graphCacheKey(kind, projectName)
@@ -199,9 +205,6 @@ class GraphPageModel(
         status = null
     }
 }
-
-/** 回执条高度：固定值（见 GraphStatusBar 的说明）。 */
-private val StatusBarHeight = 28.dp
 
 /** 两页只差这些：CLI 子命令、路由、标题词、副标题（mac L10n 口径）、图标瓦片色与字形。 */
 enum class GraphKind(
@@ -272,6 +275,8 @@ private fun GraphPage(model: AppModel, kind: GraphKind) {
             kind = kind,
             repo = name,
             rendering = vm.rendering,
+            status = vm.status,
+            onDismissStatus = { vm.clearStatus() },
             onRefresh = { scope.launch { vm.render(background = false) } },
             onBack = { model.backToRepo() },
             onOpenExternal = vm.htmlPath?.let { path ->
@@ -282,13 +287,13 @@ private fun GraphPage(model: AppModel, kind: GraphKind) {
                 }
             },
         )
-        // 引擎产物直接铺满页头与回执条之间（不套卡片、不留左右边距）：它自己的外壳已按嵌入模式收拢、
-        // 配色走客户端的设计令牌（见 GraphEmbed.kt）——产物就是这一页的主体，不是贴进来的一张网页。
-        // 「卡片里再套卡片」是原样内嵌时最难看的根源：两层描边、两套圆角。
-        Column(Modifier.weight(1f).fillMaxWidth().background(pageFill())) {
-            GraphContentArea(Modifier.weight(1f).fillMaxWidth(), vm)
-            GraphStatusBar(vm.status) { vm.clearStatus() }
-        }
+        // 引擎产物铺满页头以下的整页（不套卡片、不留边距、下面不再压回执条）：它自己的外壳已按嵌入模式
+        // 收拢成「命令条 + 画布 + 通栏底条」，配色、控件高、圆角走客户端的设计令牌（见 GraphEmbed.kt）——
+        // 产物就是这一页的主体，不是贴进来的一张网页。
+        // 「卡片里再套卡片」是原样内嵌时最难看的根源：两层描边、两套圆角；
+        // 「页头下面再压一条回执条」是第二难的：画布矮 28dp，底部与产物的底条叠成两条横杠（回执挪进页头了）。
+        // ⚠️ 页头高度不随回执有无而变（状态胶囊定高、单行）——WebView 一落位就不许被状态变化挤动尺寸。
+        GraphContentArea(Modifier.weight(1f).fillMaxWidth(), vm)
     }
 }
 
@@ -303,7 +308,11 @@ internal fun openArtifactExternally(path: String): String? = try {
     "browser: " + (e.message ?: e.javaClass.simpleName)
 }
 
-/** 页头（与其它页头同一套间距与字级）：图标瓦片 + 标题 +「仓库 · 副标题」+ 在浏览器中打开 / 刷新 / 返回仓库。 */
+/**
+ * 页头（与其它页头同一套间距与字级）：图标瓦片 + 标题 +「仓库 · 副标题」+ 回执胶囊 + 在浏览器中打开 / 刷新 / 返回仓库。
+ * 回执（渲染结果 / 装载问题 / 缩放核对）摆在页头里而不是页面底下压一条：画布多出一条的高度，
+ * 页面底部只剩产物自己的通栏底条。胶囊定高、单行——页头高度不随回执有无而变，WebView 不被挤动。
+ */
 @Composable
 private fun GraphPageHeader(
     kind: GraphKind,
@@ -312,6 +321,8 @@ private fun GraphPageHeader(
     onRefresh: () -> Unit,
     onBack: () -> Unit,
     onOpenExternal: (() -> Unit)? = null,
+    status: GraphReceipt? = null,
+    onDismissStatus: (() -> Unit)? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.lg),
@@ -333,6 +344,11 @@ private fun GraphPageHeader(
             Text(L10n.t("graph.rendering"), style = Type.label, color = Palette.TextSecondary)
             Spacer(Modifier.width(Space.md))
         }
+        status?.let { receipt ->
+            Spacer(Modifier.width(Space.md))
+            GraphReceiptChip(receipt, onDismissStatus)
+            Spacer(Modifier.width(Space.md))
+        }
         onOpenExternal?.let { open ->
             IconButton(FluentIcon.Open, onClick = open)
             Spacer(Modifier.width(Space.sm))
@@ -342,6 +358,47 @@ private fun GraphPageHeader(
         FluentButton(L10n.t("cmp.graph.backToRepo"), onClick = onBack, icon = FluentIcon.ArrowLeft)
     }
 }
+
+/** 页头里的回执胶囊（mac GraphStatusBar 的对位）：一行（ok = 绿✓ / 失败 = 橙⚠），可关闭；长文本截断。 */
+@Composable
+private fun GraphReceiptChip(receipt: GraphReceipt, onDismiss: (() -> Unit)?) {
+    Row(
+        Modifier
+            .height(ControlHeight)
+            .widthIn(max = ReceiptMaxWidth)
+            .clip(RoundedCornerShape(Radius.chip))
+            .background(if (receipt.ok) Palette.Card else Palette.Amber.copy(alpha = 0.10f))
+            .border(Material.borderWidth, if (receipt.ok) Palette.Stroke else Palette.Amber.copy(alpha = 0.45f), RoundedCornerShape(Radius.chip))
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconBox(
+            if (receipt.ok) FluentIcon.CheckmarkCircle else FluentIcon.Warning,
+            size = 14.dp,
+            tint = if (receipt.ok) Palette.Green else Palette.Amber,
+        )
+        Spacer(Modifier.width(Space.sm))
+        Text(
+            // 成功回执只留人读的部分；失败回执原文照录（原因里可能就有要去看的路径），放不下截断——
+            // 完整原因在内容区的失败态与全局反馈条上都有
+            if (receipt.ok) receiptSummary(receipt.text) else receipt.text,
+            style = Type.label,
+            color = if (receipt.ok) Palette.TextSecondary else Palette.Amber,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (onDismiss != null) {
+            Spacer(Modifier.width(Space.sm))
+            IconBox(
+                FluentIcon.Dismiss, size = 12.dp, tint = Palette.TextSecondary,
+                modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp),
+            )
+        }
+    }
+}
+
+/** 回执胶囊的最大宽度：再宽就截断——页头右侧还有三个按钮，窄窗口下先让标题。 */
+private val ReceiptMaxWidth = 360.dp
 
 /**
  * 仓库详情里进图谱两页的入口（用户定稿：入口在每个仓库里面）。
@@ -377,6 +434,10 @@ fun GraphEntryChip(label: String, icon: FluentIcon, tint: Color, enabled: Boolea
     }
 }
 
+/** 缩放倍率的写法：1× / 1.25×（Locale.ROOT——小数点恒为句点，回执文本不随区域设置变）。 */
+internal fun scaleText(scale: Float): String =
+    String.format(java.util.Locale.ROOT, "%.2f", scale).trimEnd('0').trimEnd('.') + "×"
+
 /** 内容区（mac ZStack 对位）：有产物装 WebView；没有则 busy / error / 引导三态诚实。 */
 @Composable
 private fun GraphContentArea(modifier: Modifier, vm: GraphPageModel) {
@@ -390,8 +451,16 @@ private fun GraphContentArea(modifier: Modifier, vm: GraphPageModel) {
                 // 嵌入配置：收拢外壳 + 客户端的设计令牌（架构图另垫暗色，见 graphEmbedHeadScript）
                 headScript = graphEmbedHeadScript(arch = vm.kind == GraphKind.ARCH),
                 onEvent = { ev ->
-                    if (ev is HtmlWebEvent.Failed) {
-                        vm.status = GraphReceipt(ok = false, text = "WebView ${ev.why}")
+                    when (ev) {
+                        is HtmlWebEvent.Failed -> vm.status = GraphReceipt(ok = false, text = "WebView ${ev.why}")
+                        // 外壳与内嵌内容的比例尺不是一把尺子：如实说，不悄悄缩放任何一边
+                        is HtmlWebEvent.Scale -> if (ev.mismatched()) {
+                            vm.status = GraphReceipt(
+                                ok = false,
+                                text = L10n.t("cmp.graph.scaleMismatch", scaleText(ev.hostScale), scaleText(ev.pageScale)),
+                            )
+                        }
+                        else -> {}
                     }
                 },
                 fallback = { pending -> WebViewFallback(pending, path) },
@@ -464,43 +533,5 @@ private fun WebViewFallback(pending: WebRuntime.Pending, artifactPath: String) {
                 maxLines = 2,
             )
         }
-    }
-}
-
-/**
- * 底部回执条（mac GraphStatusBar 对位）：一行回执（ok=绿✓ / 失败=橙⚠），可关闭。
- * ⚠️ 固定高度、没有回执也占位：WebView 一落位就不许被状态变化挤动尺寸。实测抓到过一次——
- * 回执条出现把 WebView 压矮一截，离屏渲染的 GL 上下文在「销毁」与「设为当前」之间撞车，
- * JOGL 在绘制线程上抛空指针，之后整页冻结（悬停、产物内的按钮都不再重绘）。
- */
-@Composable
-private fun GraphStatusBar(receipt: GraphReceipt?, onDismiss: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(StatusBarHeight)
-            .background(if (receipt != null && !receipt.ok) Palette.Amber.copy(alpha = 0.08f) else Color.Transparent)
-            .padding(horizontal = Space.lg),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (receipt == null) return@Row
-        IconBox(
-            if (receipt.ok) FluentIcon.CheckmarkCircle else FluentIcon.Warning,
-            size = 14.dp,
-            tint = if (receipt.ok) Palette.Green else Palette.Amber,
-        )
-        Spacer(Modifier.width(Space.sm))
-        Text(
-            // 成功回执只留人读的部分；失败回执原文照录（原因里可能就有要去看的路径）
-            if (receipt.ok) receiptSummary(receipt.text) else receipt.text,
-            style = Type.label,
-            color = if (receipt.ok) Palette.TextSecondary else Palette.Amber,
-            maxLines = 1,
-        )
-        Spacer(Modifier.weight(1f))
-        IconBox(
-            FluentIcon.Dismiss, size = 12.dp, tint = Palette.TextSecondary,
-            modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp),
-        )
     }
 }

@@ -6,14 +6,18 @@
 > 引擎访问唯一通路：`moongit <命令> --json` CLI 子进程，**没有 HTTP、没有 FFI**。
 > 分批执行手册（计划/红线/判据纪律）见 [PLAN.md](PLAN.md)。
 
-## 状态（2026-11-25）
+## 状态（2026-11-26）
 
-- 判据门禁绿：`scripts/build.sh --test` → **266 判据 0 failed**（禁用缓存复跑
+- 判据门禁绿：`scripts/build.sh --test` → **269 判据 0 failed**（禁用缓存复跑
   `gradle jvmTest --rerun-tasks --no-build-cache` 同数）。门禁脚本读的是 test-results XML，
   增量构建下会读到陈旧结果——当证据用的数字必须来自禁用缓存的那次。
 - 本机引擎已换成 **0.3.0 的开发构建**（`~/.local/libexec/deepdolphin/moongit.bin`，取自引擎仓库
-  `feat/embed-chrome`；旧版 0.2.0 备份为 `moongit.bin.bak-20261125-pre030`，不带嵌入模式的上一版开发构建
-  备份为 `moongit.bin.bak-20261126-pre-embed`，回滚 = 把备份拷回 `moongit.bin`）。引擎尚未正式发版。
+  `feat/embed-fit`；旧版 0.2.0 备份为 `moongit.bin.bak-20261125-pre030`，不带嵌入模式的上一版开发构建
+  备份为 `moongit.bin.bak-20261126-pre-embed`，带嵌入模式但不做尺寸融合的上一版备份为
+  `moongit.bin.bak-20261126-pre-fit`，回滚 = 把备份拷回 `moongit.bin`）。引擎尚未正式发版。
+- 图谱两页的**嵌入尺寸融合**（2026-11-26）：产物按拿到的视口排布（引擎侧：架构图泳道折行、热力图按区域选列），
+  外壳这边把回执挪进页头、底部不再压条、把控件高 / 圆角令牌递给产物、窗口最小 960×640。详见 PLAN.md。
+  客户端退回没有尺寸令牌的写法也不坏——产物那边每个变量都有回退值。
 - 界面外观：设置 · 通用 ·「外观」内置 **14 套皮肤**（namethatui.com/styles 全风格，flat design 除外）——
   玻璃拟态 / 液态玻璃 / 新拟态 / 黏土拟态 / 新粗野主义 / Y2K / Frutiger Aero / 拟物皮革 / 远古网页 /
   Aqua / Windows Aero / 极简主义等，即点即换、settings.conf 持久化（`app.skin`）。
