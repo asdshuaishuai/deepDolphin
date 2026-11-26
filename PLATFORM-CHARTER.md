@@ -1,7 +1,7 @@
-# deepGit 客户端跨平台能力章程
+# Canopy 客户端跨平台能力章程
 
 > **原则：四大平台交互 UI 不一致是自由，能力必须一致。**
-> 能力的唯一来源是 deepGit Engine（AI 无关内核）的两种契约：CLI `--json` 与 MCP 工具输出。
+> 能力的唯一来源是 Cambium Engine（AI 无关内核；Sylva 家族：Cambium 引擎 + Dendro 置信度 + Canopy 客户端）的两种契约：CLI `--json` 与 MCP 工具输出。
 > 本文档是各平台客户端（macOS / Windows / Linux / 鸿蒙 PC）的**能力对齐基准**——
 > 任何一个平台缺一项能力，就是违反本章程。
 
@@ -9,7 +9,7 @@
 
 | # | 能力 | 引擎依赖 | 说明 |
 |---|---|---|---|
-| C1 | 引擎发现与拉起 | — | DEEPGIT_BIN → 应用内嵌副本 → 常见安装路径 → 用户 shell PATH；按需拉起引擎子进程并在退出时回收 |
+| C1 | 引擎发现与拉起 | — | CAMBIUM_BIN → MOONGIT_BIN / DEEPGIT_BIN（旧名兜底）→ 应用内嵌副本 → 常见安装路径 → 用户 shell PATH（依次找 cambium / moongit / deepgit）；按需拉起引擎子进程并在退出时回收 |
 | C2 | 状态轮询 | `status --json`、`dashboard --json` | 启动 + 周期（默认 5 分钟）+ 手动刷新 |
 | C3 | 面板四页 | 同上 | 仪表盘（统计卡/语言分布/里程碑/活跃）、里程碑管理（CRUD+tag 自动达成）、项目详情（脉搏/提交构成/分支/日志）、文档平铺（README/AGENTS/CLAUDE） |
 | C4 | 更新动作 | `update --json`、`deep --json` | 单项目 + 全部；浅/深两档 |
@@ -48,7 +48,7 @@
 
 ## 3.5 平台 Canvas 分派（2026-10-10 修订）
 
-图谱/架构图的渲染遵循引擎契约 [graph-scene-schema.md]（moonGit 仓库 docs/）的**分派规则**：
+图谱/架构图的渲染遵循引擎契约 [graph-scene-schema.md]（Cambium 仓库 docs/）的**分派规则**：
 
 > **运行时渲染一律走平台 Canvas 实现，没有例外。**
 > 引擎的 `graph arch/tree --format html` 单文件导出**不是渲染路径**，而是引擎层交付物——
@@ -64,10 +64,10 @@
 三条不变量（与引擎契约文档一致）：数据单来源（scene 契约，渲染端换栈数据零改动）；
 平台渲染零外包（客户端存在的地方不允许打开浏览器看图）；平台 Canvas 以契约方法清单为
 移植验收清单。HTML 导出的定位是引擎层交付物：只有引擎层的环境与其他智能体驱动场景
-消费它（`graph tree` 默认即单文件交互图，`MoongitCodeGraph.renderTo`）。
+消费它（`graph tree` 默认即单文件交互图，`CambiumCodeGraph.renderTo`）。
 
 ## 4. 引擎侧为 agent 提供的能力（平台无关）
 
-- **MCP**：`moongit mcp`（stdio JSON-RPC，23 工具：进度管理 14 + 代码图谱 6 + 补丁置信度 3）——任何 MCP 宿主接入
-- **Skill**：`moongit skill print|install` —— 教学包（接入方式/任务配方/红线），供编码类 agent 学习使用
-- **CLI**：`moongit context|tools|status|dashboard --json` 与 `graph overview|tree|symbol|impact|arch|confidence|patchconf` —— 一次性问答与脚本（客户端主通道）
+- **MCP**：`cambium mcp`（stdio JSON-RPC，23 工具：进度管理 14 + 代码图谱 6 + 补丁置信度 3）——任何 MCP 宿主接入
+- **Skill**：`cambium skill print|install` —— 教学包（接入方式/任务配方/红线），供编码类 agent 学习使用
+- **CLI**：`cambium context|tools|status|dashboard --json` 与 `graph overview|tree|symbol|impact|arch|confidence|patchconf` —— 一次性问答与脚本（客户端主通道）

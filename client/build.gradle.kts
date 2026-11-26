@@ -1,10 +1,10 @@
 import java.io.File
 import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
 
-// deepDolphin — moonGit 引擎的跨平台桌面客户端（Compose Multiplatform / BUI 能力的承接者）。
+// Canopy — Cambium 引擎的跨平台桌面客户端（Compose Multiplatform / BUI 能力的承接者）。
 //
 // 能力基准：PLATFORM-CHARTER.md C1–C11；对位实现参考 archive/bui（Rust + blenderui）
-// 与 macos/（SwiftUI 基准）。引擎访问唯一通路：`moongit <命令> --json` 子进程。
+// 与 macos/（SwiftUI 基准）。引擎访问唯一通路：`cambium <命令> --json` 子进程。
 
 plugins {
     kotlin("multiplatform") version "2.0.21"
@@ -13,7 +13,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization") version "2.0.21"
 }
 
-group = "com.deepdolphin"
+group = "com.canopy"
 version = "0.1.0"
 
 kotlin {
@@ -50,7 +50,7 @@ kotlin {
 
 // 桌面应用入口：gradle run 直接启动真窗口；nativeDistributions（jpackage 打包）在分发批次补。
 compose.desktop.application {
-    mainClass = "deepdolphin.MainKt"
+    mainClass = "canopy.MainKt"
     // KCEF/JCEF（C6 收尾批：Markdown WebView）在 JDK17+ 完成反射初始化需要这两个 add-opens。
     // application.jvmArgs 落进 jpackage 的 --java-options（deb 分发同样生效）+ run 任务。
     jvmArgs("--add-opens", "java.desktop/sun.awt=ALL-UNNAMED")
@@ -58,15 +58,15 @@ compose.desktop.application {
     nativeDistributions {
         modules("java.instrument", "java.management")
         targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb, org.jetbrains.compose.desktop.application.dsl.TargetFormat.AppImage)
-        packageName = "deepdolphin"
+        packageName = "canopy"
         packageVersion = "0.1.0"
-        vendor = "deepDolphin"
-        description = "moonGit 引擎的跨平台桌面客户端（Compose Multiplatform）"
+        vendor = "Canopy"
+        description = "Cambium 引擎的跨平台桌面客户端（Compose Multiplatform）"
         linux {
             menuGroup = "Development"
             shortcut = true
             // ⚠ 这里不能写 startupWMClass：Compose Gradle 插件 1.7.3 的 Linux DSL 没有这个属性
-            //   （写了脚本编译就失败）。窗口的 WM_CLASS 实测是 deepdolphin-MainKt（AWT 按主类名生成），
+            //   （写了脚本编译就失败）。窗口的 WM_CLASS 实测是 canopy-MainKt（AWT 按主类名生成），
             //   与 desktop 文件名不一致——任务栏归组靠窗口管理器的模糊匹配，未验证。
         }
     }
@@ -85,8 +85,8 @@ tasks.matching { it.name.startsWith("proguard") }.configureEach {
     doLast {
         val outDir = File(layout.buildDirectory.get().asFile, "compose/tmp/main-release/proguard")
         outDir.mkdirs()
-        val src = File(layout.buildDirectory.get().asFile, "libs/deepdolphin-client-jvm-0.1.0.jar")
-        val dst = File(outDir, "deepdolphin-client-jvm-0.1.0.jar")
+        val src = File(layout.buildDirectory.get().asFile, "libs/canopy-client-jvm-0.1.0.jar")
+        val dst = File(outDir, "canopy-client-jvm-0.1.0.jar")
         src.copyTo(dst, overwrite = true)
     }
 }
@@ -94,8 +94,8 @@ tasks.matching { it.name == "jvmJar" }.configureEach {
     doLast {
         val outDir = File(layout.buildDirectory.get().asFile, "compose/tmp/main-release/proguard")
         outDir.mkdirs()
-        val src = File(layout.buildDirectory.get().asFile, "libs/deepdolphin-client-jvm-0.1.0.jar")
-        val dst = File(outDir, "deepdolphin-client-jvm-0.1.0.jar")
+        val src = File(layout.buildDirectory.get().asFile, "libs/canopy-client-jvm-0.1.0.jar")
+        val dst = File(outDir, "canopy-client-jvm-0.1.0.jar")
         src.copyTo(dst, overwrite = true)
     }
 }

@@ -1,7 +1,7 @@
-# deepDolphin — 客户端路线图（跟随引擎）
+# Canopy — 客户端路线图（跟随引擎）
 
-> **原则**：deepDolphin 本质上是 moonGit 引擎的上层实现——引擎每新增一个端点，
-> 客户端就新增一个 UI 入口。本路线图跟随 [moonGit ROADMAP](https://github.com/asdshuaishuai/moongit/blob/main/docs/ROADMAP.md) 的 Phase 划分。
+> **原则**：Canopy 本质上是 Cambium 引擎的上层实现——引擎每新增一个端点，
+> 客户端就新增一个 UI 入口。本路线图跟随 [Cambium ROADMAP](https://github.com/asdshuaishuai/moongit/blob/main/docs/ROADMAP.md) 的 Phase 划分。
 >
 > **四大平台能力必须一致**（PLATFORM-CHARTER.md C1–C11），交互 UI 允许差异。
 
@@ -26,7 +26,7 @@
 
 ## Phase 1 跟进（引擎 v0.2.x）
 
-| 引擎能力 | deepDolphin 需要做的 | 优先级 |
+| 引擎能力 | Canopy 需要做的 | 优先级 |
 |---|---|---|
 | 1.1 进度差分 | 详情页新增「变化」tab：展示两次快照之间的分支增减/提交增减/里程碑变化 | P0 |
 | 1.2 速度追踪 | 仪表盘新增速度曲线图（Sparkline / Charts framework） | P1 |
@@ -45,7 +45,7 @@
 
 ## Phase 2 跟进（引擎 v0.3.x–v0.4.x）
 
-| 引擎能力 | deepDolphin 需要做的 | 优先级 |
+| 引擎能力 | Canopy 需要做的 | 优先级 |
 |---|---|---|
 | 2.1 watch 模式 | 设置页「实时模式」开关；状态栏图标实时刷新 | P1 |
 | 2.2 分支生命周期 | 看板卡片 / 项目详情增加分支操作按钮 | P0 |
@@ -65,7 +65,7 @@
 
 ## Phase 3 跟进（引擎 v0.5.x）
 
-| 引擎能力 | deepDolphin 需要做的 | 优先级 |
+| 引擎能力 | Canopy 需要做的 | 优先级 |
 |---|---|---|
 | 3.1 远程同步 | 设置页同步配置；冲突 UI；同步状态指示器 | P0 |
 | 3.2 团队聚合 | 「团队」页：按 author 统计 / 项目贡献者列表 | P1 |
@@ -77,7 +77,7 @@
 
 ## Phase 4 跟进（引擎 v1.0+）
 
-| 引擎能力 | deepDolphin 需要做的 |
+| 引擎能力 | Canopy 需要做的 |
 |---|---|
 | 4.1 插件系统 | 插件管理 UI；第三方插件的沙箱执行环境 |
 | 4.3 AI agent 框架 | 客户端可作为 agent 的前端聊天界面 |

@@ -12,7 +12,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
-APP_ID="deepdolphin"
+APP_ID="canopy"
 
 fail=0
 ok()   { echo "  ✓ $1"; }
@@ -86,8 +86,8 @@ if [[ -f "$dt" ]]; then
 else
   bad "缺 out/linux/$APP_ID.desktop"
 fi
-if grep -q 'identifier: Some("deepdolphin")' "$REPO/linux/src/main.cj" 2>/dev/null; then
-  ok "main.cj 的 AppMetadata.identifier = deepdolphin"
+if grep -q 'identifier: Some("canopy")' "$REPO/linux/src/main.cj" 2>/dev/null; then
+  ok "main.cj 的 AppMetadata.identifier = canopy"
 else
   bad "main.cj 没有设 AppMetadata.identifier —— 窗口不会向桌面环境报 app_id，任务栏无图标"
 fi

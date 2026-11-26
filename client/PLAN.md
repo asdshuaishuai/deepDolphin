@@ -1,6 +1,6 @@
-# deepDolphin CMP 客户端 · 全量能力复刻计划（执行手册）
+# Canopy CMP 客户端 · 全量能力复刻计划（执行手册）
 
-> 分支：`next/cmp`（骨架已验证：Compose 真窗口 + 引擎探活 moonGit 0.2.0 实测通过）。
+> 分支：`next/cmp`（骨架已验证：Compose 真窗口 + 引擎探活 Cambium 0.2.0 实测通过）。
 > 基准：`archive/bui` 标签的 BUI 客户端（Rust 版 v1，含 tests/fixtures 真实引擎 JSON）
 > 与 `macos/`（SwiftUI 基准）；能力口径 = PLATFORM-CHARTER.md C1–C11，**能力必须一致、
 > 交互 UI 自由**。本端技术栈：Kotlin + Compose Multiplatform（桌面 JVM）+ webview
@@ -16,7 +16,7 @@ scripts/build.sh            # 编译；--test 跑全量判据
 scripts/run.sh              # 真窗口（DISPLAY=:0）
 ```
 
-- 引擎：`~/code/moonGit/target/release/bin/main` 已构建；PATH 上有 moongit 0.2.0。
+- 引擎：`~/code/Cambium/target/release/bin/main` 已构建；PATH 上有 cambium 0.2.0。
 - 依赖仓库：Maven Central + Google + JitPack + **jogamp.org**（kcef 的 gluegen/jogl 只在此）。
 - 已知坑：①KMP 的 JVM 源码目录是 `src/jvmMain/kotlin`（不是 src/main/kotlin）；②`cc` 指向
   dd-sysroot gcc-13 真 C 驱动（~/.local/bin/cc，g++ 驱动过不了 cmake ABI 探测）——C 部分构建用。
@@ -92,7 +92,7 @@ scripts/run.sh              # 真窗口（DISPLAY=:0）
   （定时更新卡：档位 关闭/1/3/6/12/24 小时 + 轨道浅/深）`interact-settings-auto.png`；
   h hero 双轨按钮（浅更新 · 全部 / 深更新 · 全部，副行「深更新动 README/AGENTS/CLAUDE」）
   `interact-hero-dualtrack.png`——**待记录徽章未现**：vtest 当前分支 pendingCommits=0（如实）。
-- JCEF 150.0.14 本机缓存装载成功（~/.cache/deepDolphin/kcef，547M 既有缓存，无首跑下载）。
+- JCEF 150.0.14 本机缓存装载成功（~/.cache/canopy/kcef，547M 既有缓存，无首跑下载）。
 
 **终验（2026-11-23）**：
 - 判据门禁绿：`scripts/build.sh --test` → `CMPTEST_SUMMARY passed=45 skipped=0 failed=0`。
@@ -156,7 +156,7 @@ scripts/run.sh              # 真窗口（DISPLAY=:0）
 - **事实层双语**（mac usesEnglishFacts 同口径）：SearchFilter 空态/匹配行只有 zh/en 两套，
   繁中共用简中、日文回落英文。
 
-## 引擎子命令能力清单（诊断批 `moongit --help` 实测 rc=0；只记录，不实现页面）
+## 引擎子命令能力清单（诊断批 `cambium --help` 实测 rc=0；只记录，不实现页面）
 
 通用：list/add/remove/scan/status/track/update（浅更新 `--docs --dry-run`）/deep（`--scope`）/
 journal（`--branch`）/git pull|push|commit|stash|unstash|fetch/hook/milestone add|list|done|drop|remove|reopen/
@@ -191,7 +191,7 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
 
 ## 补差批：菜单条等价物 + Lazy 化收尾 + deb 冒烟（2026-11-24）
 
-- 窗口内菜单条（MenuBar.kt）：mac 原生菜单栏命令的 Linux 等价物——「操作」菜单（全部浅/深更新走 requestBulkUpdate 同一确认链、刷新、停止更新）+「帮助」菜单（帮助文档深开设置-关于-帮助子 tab、GitHub deepDolphin/moonGit 双链接）。停止更新=EngineLocator 进程登记表 destroyForcibly（mac stopUpdate 杀引擎子进程本体的对位；run/runMerged/runSplit 三入口全登记），结果如实回写操作行。
+- 窗口内菜单条（MenuBar.kt）：mac 原生菜单栏命令的 Linux 等价物——「操作」菜单（全部浅/深更新走 requestBulkUpdate 同一确认链、刷新、停止更新）+「帮助」菜单（帮助文档深开设置-关于-帮助子 tab、GitHub Canopy/Cambium 双链接）。停止更新=EngineLocator 进程登记表 destroyForcibly（mac stopUpdate 杀引擎子进程本体的对位；run/runMerged/runSplit 三入口全登记），结果如实回写操作行。
 - 页面级 Lazy 化收尾：详情页整页 LazyColumn（页头/结果行/六段卡片逐段 item+稳定 key）、看板列区列粒度 item、置信度 findings 行级 items（kind#file#line#symbol 键）。
 - deb 打包安装冒烟：packageDeb（fakeroot 用户态 wrapper）→ 69.5MB deb → dpkg-deb -x 提取校验（control/desktop/启动器齐全）→ 打包态真启动 STARTUP_MS=734ms、45s 存活、菜单条实拍（deb-live-menubar/menu-operations-open 两张入库）。
 - 门禁：204 passed / 0 failed。
@@ -257,7 +257,7 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
 - 首跑要下 217MB 的 JCEF 原生包，这台机器走 IPv4 到 CloudFront 约 200KB/s（要十几分钟）；
   原生包随 deb 内置可免掉下载但包体 +217MB——取舍待定。
 - desktop 文件没有 `StartupWMClass`：Compose Gradle 插件 1.7.3 的 Linux DSL 不暴露该属性，
-  窗口类名（`deepdolphin-MainKt`）与 desktop 文件名不一致，任务栏归组未验证。
+  窗口类名（`canopy-MainKt`）与 desktop 文件名不一致，任务栏归组未验证。
 - 那次 JOGL 绘制线程空指针只出现过一次，修掉最可疑的触发点后未能再复现——不能证明绝迹。
 - 剩余差距（来自四路审计，未修）：系统通知零接线、引擎缺席时外壳消失、关窗即退出（托盘不常驻）、
   「更多」菜单与扫描目录选择器缺、AI 设置关闭即保存未做、agent 工具只实现 10/28（图谱工具全缺）、
@@ -268,7 +268,7 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
 
 ## 引擎协同补丁：热力图快照过期自愈（2026-11-25）
 
-引擎侧（moongit 0.3.0）加了渲染过期校验：置信度快照依据的索引版本与当前不一致时，不再把旧快照叠到
+引擎侧（cambium 0.3.0）加了渲染过期校验：置信度快照依据的索引版本与当前不一致时，不再把旧快照叠到
 新索引上（旧行为是悄悄叠一张可能错位的热力图），回执里如实写「置信度快照过期……先 moongit confidence gen」。
 连带问题落在客户端：每个仓库每会话只强制重绘一次，之后源码变了、索引被自动重建，图谱页就没有热力图，
 而「刷新」按钮救不回来（本会话已强制过，不会再生成快照）。
@@ -284,7 +284,7 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
 `ConfFinding` 增这四个字段；置信度页的疑点行右侧显示「证据名 @ 挂靠符号的限定名」
 （`findingLocationText`：幻觉调用挂在调用它的函数上，`symbol` 是「谁有问题」、`qual` 是「问题发生在哪」）；
 `fixtures/confidence/confidence.json` 用新引擎真跑重取（vtest 播种 suspect.py，分数 51 / 4 条疑点不变，
-每条多了四个键）；门禁对着新引擎构建跑（`MOONGIT_BIN` 指向它），真机两档都实跑通过：**260 / 0**。
+每条多了四个键）；门禁对着新引擎构建跑（`CAMBIUM_BIN` 指向它），真机两档都实跑通过：**260 / 0**。
 
 - 真机联调（打包态 + 引擎 0.3.0 的构建，`DEEPGIT_HOME` 指向沙箱）：改了测试仓库的源码后点「刷新」，引擎调用
   序列是 `render index --confidence` → `confidence gen` → `render index --confidence --force`，页面上的热力图是
@@ -294,7 +294,7 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
   装上新引擎后点一次刷新就自动重建——客户端的自愈正好把随后的快照过期也接住了。
 - 热力图定位区（引擎侧实现）：定位串 `suspect.py:34:5`、符号 ID、模块路径三次点击都从 X11 剪贴板原样读回
   （`file://` 页面没有剪贴板权限，走隐藏 textarea 兜底）。实拍见 `docs/ui-cmp/13-heat-map-locator.png`。
-- 门禁对着**已安装**的引擎（`~/.local/bin/moongit`，0.3.0）跑：**260 / 0**，镜像漂移的真机两档实跑通过。
+- 门禁对着**已安装**的引擎（`~/.local/bin/cambium`，0.3.0）跑：**260 / 0**，镜像漂移的真机两档实跑通过。
 - 边界：过期判定认的是回执文字里的固定措辞（引擎 `confidenceStaleNote` 唯一构造，中英各认一处锚），
   不读 `--json`（文本回执同时供状态条显示，对位 mac 的做法）。
   macOS 客户端没有同步这两批（它是否也有同样的缺口未核对）。
@@ -307,7 +307,7 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
 窗口里画布只剩约 330px。配色（深蓝底、星点光斑、13px 圆角）也和 Fluent 主题不是一套。
 
 - **适配放在引擎产物里，客户端只声明要什么**：引擎给两份产物加了「嵌入模式」——宿主在产物任何脚本之前
-  声明 `window.MOONGIT_EMBED = { chrome: "page", vars: {…CSS 变量…}, canvas: {…画布颜色…} }`，产物自己收拢外壳
+  声明 `window.CAMBIUM_EMBED = { chrome: "page", vars: {…CSS 变量…}, canvas: {…画布颜色…} }`，产物自己收拢外壳
   （一条命令条 + 画布 + 一条面包屑条）、改走宿主的主题；画在 canvas 上的颜色与圆角也跟宿主令牌走。
   不拿 CSS 去盖产物的类名：那等于客户端替引擎维护第二份样式，产物一改就静默失效。
 - **客户端这一侧**（`ui/GraphEmbed.kt`）：把 `Design.kt` 的 Palette 翻译成那份声明（底色、描边、文字、
@@ -416,3 +416,41 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
 - **门禁**：269 passed / 0 failed（禁用缓存；新增 3 条：尺寸令牌随皮肤圆角变、`cssPx`、缩放核对的判据）。
 - **边界（如实）**：HiDPI 下的缩放对齐未做（需真机）；大图（模块级 188 个节点）仍落在取景下限 0.22、
   整体铺开 + 小地图，是既有行为；逐皮肤打包态实拍仍未补。
+
+## 品牌升级批：Sylva · Cambium · Canopy · Dendro（2026-11-26）
+
+用户定的新品牌：引擎 moongit → **Cambium**，客户端 deepDolphin → **Canopy**，置信度模块 → **Dendro**
+（从 git 引擎里剥离成独立的小模块，不是独立仓库），整体 → **Sylva**；「相关命令同步更新，文档同步更新」；
+两个远端仓库继续分开。
+
+- **机械改名**（脚本，大小写分条）：显示名 `deepDolphin → Canopy`、包 / 路径 / 包名 `deepdolphin → canopy`、
+  显示名 `moonGit → Cambium`、命令 `moongit → cambium`、环境变量 `MOONGIT_BIN → CAMBIUM_BIN`、
+  嵌入声明 `MOONGIT_EMBED → CAMBIUM_EMBED`。71 个包声明、145 个 import、目录 `kotlin/deepdolphin → kotlin/canopy`、
+  图标资产 `deepdolphin.* → canopy.*`。`「」`里的原话、schema 串、仓库链接、兼容兜底的旧环境变量名不动。
+  冻结的兄弟端（`macos/`、`deepin/`、`linux/`、`windows/`、`harmonyos/`）不在范围内——它们还带旧名。
+- **引擎调用改教新写法**（Engine.kt 五处）：`confidence gen → dendro gen`、`graph confidence → dendro check`、
+  `graph patchconf → dendro patch|merge`；`--confidence` 旗标不动（功能词）。
+  ⚠️ 差点把 `graph confidence` 并进 `dendro query`：前者现算报告（`--llm` 出复核提示词、不落盘），
+  后者只读快照——写引擎对照表时才发现，正名定为 `dendro check`。
+- **引擎发现**（EngineLocator）：`CAMBIUM_BIN` → `MOONGIT_BIN` / `DEEPGIT_BIN`（旧名兜底，用户 shell 里
+  export 过的照样认）→ 仓内构建（同层目录名 `cambium` / `moongit` / `moonGit` 都试——克隆下来的目录可能还叫旧名）
+  → PATH（`cambium` / `moongit` / `deepgit`）。
+- **已装机器的迁移**（新文件 `sysint/LegacyPaths.kt`）：
+  - 目录：`migratedDir(parent, "canopy")`——新目录不存在、旧目录在 → 整目录改名；搬不动（跨分区 / 权限）→
+    继续用旧目录；两边都在 → 用新的、不删旧的。用在配置目录（`~/.config`）与缓存目录（`~/.cache`，WebView 原生包 400MB）。
+  - 钥匙串：先按新属性 `application=canopy service=canopy-ai` 找，找不到按旧属性 `deepdolphin` / `deepdolphin-ai` 兜底；清除时新旧两条都清。
+  - 自启：启动时 `migrateLegacyAutostart` 把 `deepdolphin.desktop` 换成指向当前客户端的 `canopy.desktop` 并删旧条目
+    （旧条目的 Exec 指向旧安装路径，留着要么坏掉、要么与新的重复自启）；开发态入口不可用时不动它；
+    设置里开关一动也会清旧条目。开关的初始状态把旧条目算作「开着」——它确实会在开机时拉起程序。
+  - 实测：本机 `~/.config/deepDolphin`、`~/.cache/deepDolphin`（440M）都整体迁移，应用首启没有重新下载原生包，
+    皮肤 / 语言设置原样生效。
+- **字符串表是生成物**：`L10nTables.kt` 由 `gen_l10n.py` 从冻结的 mac 目录生成——手改会被下次生成覆盖。
+  在生成器里加了品牌映射步骤（输入不变、输出用新名；`--check` 通过）。
+- **引擎侧按「改名字，不改身份」**：数据目录 `~/.deepgit`、`DEEPGIT_*`、托管标记、`deepgit://`、库的 generator 值、
+  schema 串都不动（上一轮改名定下的硬边界）。本仓第一版替换脚本把它们也改了（测试期望、根 README），
+  发现后逐处改回；合并 fixture 里「deepDolphin 人工裁决」是改名前采集的样本，期望值跟样本走。
+- **门禁**：277 passed / 0 failed（禁用缓存；新增 8 条迁移判据）。两份「置信度快照过期」回执 fixture 用新引擎重采。
+- **边界（如实）**：旧包 `deepdolphin` 不会自动卸载（需手动 `apt remove deepdolphin`）；GitHub 两个仓库的库名与
+  本地克隆目录名没改（仍是 `deepDolphin` / `moongit`，链接有效；改不改由维护者定）；macOS / Windows 上的
+  迁移与打包未实跑（本机只有 Linux）；钥匙串兜底只有代码路径，没有在真钥匙串上实拍。
+

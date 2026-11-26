@@ -1,4 +1,4 @@
-rootProject.name = "deepdolphin-client"
+rootProject.name = "canopy-client"
 
 pluginManagement {
     repositories {

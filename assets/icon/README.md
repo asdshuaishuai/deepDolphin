@@ -1,4 +1,4 @@
-# deepDolphin 应用图标 —— 全平台唯一一套
+# Canopy 应用图标 —— 全平台唯一一套
 
 ## 结构
 
@@ -11,8 +11,8 @@ assets/icon/
     png/{16..1024}.png          通用位图，文档/商店素材用
     macos/AppIcon.icns          macOS
     AppIcon.ico                 Windows
-    linux/hicolor/…/deepdolphin.png   Linux 主题图标
-    linux/deepdolphin.desktop   Linux 桌面条目模板
+    linux/hicolor/…/canopy.png   Linux 主题图标
+    linux/canopy.desktop   Linux 桌面条目模板
 ```
 
 **平台目录里不许再放第二份图标。** `macos/AppIcon.icns` 这类文件在
@@ -77,9 +77,9 @@ bash linux/scripts/install-icon.sh --uninstall  # 卸
 
 | 位置 | 值 | 谁定的 |
 |---|---|---|
-| `.desktop` 文件名 | `deepdolphin` | `make-icons.py` 的 `APP_ID` |
-| hicolor 图标名 | `deepdolphin.png` | 同上 |
-| SDL `AppMetadata.identifier` | `deepdolphin` | `linux/src/main.cj` |
+| `.desktop` 文件名 | `canopy` | `make-icons.py` 的 `APP_ID` |
+| hicolor 图标名 | `canopy.png` | 同上 |
+| SDL `AppMetadata.identifier` | `canopy` | `linux/src/main.cj` |
 
 `.desktop` 的 `Exec` 指向 `linux/scripts/run.sh` 而不是二进制本体：仓颉
 产物靠 rpath 找 `libstdcangjie-runtime`，直接在 `.desktop` 里写二进制

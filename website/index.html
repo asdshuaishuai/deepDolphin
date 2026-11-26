@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>deepDolphin — AI 驱动的本地项目群管理</title>
+<title>Canopy — Sylva 的跨平台客户端 · AI 驱动的本地项目群管理</title>
 <style>
 :root{--bg:#0d1117;--bg2:#161b22;--bg3:#1c2128;--border:#30363d;--fg:#e6edf3;--dim:#8b949e;--accent:#58a6ff;--green:#3fb950;--purple:#bc8cff;--orange:#d29922;--pink:#f778ba;--mono:'SF Mono',Consolas,monospace}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -13,7 +13,7 @@ a:hover{text-decoration:underline}
 .container{max-width:1000px;margin:0 auto;padding:0 24px}
 nav{display:flex;align-items:center;justify-content:space-between;padding:16px 0;border-bottom:1px solid var(--border)}
 nav .logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:18px}
-nav .logo .dolphin{color:var(--accent);font-size:20px}
+nav .logo .canopy-mark{color:var(--accent);font-size:20px}
 nav .links{display:flex;gap:24px;font-size:14px}
 /* hero */
 .hero{text-align:center;padding:90px 0 60px;position:relative;overflow:hidden}
@@ -103,7 +103,7 @@ footer a{color:var(--dim)}
 <body>
 <div class="container">
 <nav>
-  <div class="logo"><span class="dolphin">🐬</span> deepDolphin</div>
+  <div class="logo"><span class="canopy-mark">🌲</span> Canopy <small>Sylva</small></div>
   <div class="links">
     <a href="#features">功能</a>
     <a href="#platforms">平台</a>
@@ -116,7 +116,7 @@ footer a{color:var(--dim)}
 <div class="hero">
   <div class="badge"><span class="dot"></span> macOS 已发布 · Linux / Windows / 鸿蒙开发中</div>
   <h1>AI 驱动的<br><em>本地项目群管理</em></h1>
-  <p>基于 git 历史的进度引擎 deepGit 的原生客户端。<br>看板、里程碑、AI 助手——让你的项目群一目了然。</p>
+  <p>Sylva 家族的跨平台客户端——Cambium（基于 git 历史的进度与代码事实引擎）的界面层。<br>看板、里程碑、AI 助手——让你的项目群一目了然。</p>
   <div class="platforms">
     <div class="plat"><span class="icon">🖥️</span> macOS <span class="ok">✓</span></div>
     <div class="plat"><span class="icon">🪟</span> Windows <span class="soon">开发中</span></div>
@@ -133,7 +133,7 @@ footer a{color:var(--dim)}
 <div class="container">
 <!-- UI mockup -->
 <div class="mockup">
-  <div class="mockup-bar"><div class="dot d1"></div><div class="dot d2"></div><div class="dot d3"></div><span>deepDolphin — deepGit 面板</span></div>
+  <div class="mockup-bar"><div class="dot d1"></div><div class="dot d2"></div><div class="dot d3"></div><span>Canopy — 项目群面板</span></div>
   <div class="mockup-body">
     <div class="mockup-side">
       <div class="hd">总览</div>
@@ -144,7 +144,7 @@ footer a{color:var(--dim)}
       <div class="hd" style="margin-top:12px">项目</div>
       <div class="item">d2note <span class="dot-g"></span></div>
       <div class="item">deepDesign <span class="dot-o"></span></div>
-      <div class="item">deepGit <span class="dot-g"></span></div>
+      <div class="item">my-repo <span class="dot-g"></span></div>
       <div class="item">deepOffice <span class="dot-o"></span></div>
     </div>
     <div class="mockup-main">
@@ -162,7 +162,7 @@ footer a{color:var(--dim)}
         <div class="mcol">
           <div class="ch"><span class="cd" style="background:var(--green)"></span> 活跃中 · 8</div>
           <div class="mcard"><div class="n">deepDesign</div><div class="d">main: 活跃 · 2 处未提交</div></div>
-          <div class="mcard"><div class="n">deepGit</div><div class="d">main: 活跃 · 43 处</div></div>
+          <div class="mcard"><div class="n">my-repo</div><div class="d">main: 活跃 · 43 处</div></div>
         </div>
         <div class="mcol">
           <div class="ch"><span class="cd" style="background:var(--orange)"></span> 待处理 · 1</div>
@@ -232,11 +232,11 @@ footer a{color:var(--dim)}
   <p class="sub">AI 无关内核 + 上层 AI 实现（deepDesign 模式）</p>
   <div class="boundary">
     <div class="b-col ai">
-      <h4>🐬 deepDolphin（客户端 = AI 层）</h4>
+      <h4>🐬 Canopy（客户端 = AI 层）</h4>
       <p>models.dev 目录选型 · ai-sdk 风格通道（原生 tool_calls）· 提示词组装 · 工具调用循环 · 密钥存钥匙串 · 原生 UI 渲染</p>
     </div>
     <div class="b-col core">
-      <h4>⚙️ moongit（引擎 = 确定性内核）</h4>
+      <h4>⚙️ Cambium（引擎 = 确定性内核）+ Dendro（置信度）</h4>
       <p>git 采集 · 进度库 · 文档托管写入 · 规则引擎 · CLI --json · MCP 服务器 · HTTP API。AI 无关，零 LLM 调用，零密钥存储。</p>
     </div>
   </div>
@@ -245,7 +245,7 @@ footer a{color:var(--dim)}
 
 <footer>
 <div class="container">
-  <p>deepDolphin · deepGit 引擎的客户端层 · <a href="https://github.com/asdshuaishuai/deepDolphin">GitHub</a> · <a href="https://github.com/asdshuaishuai/moongit">moongit 引擎</a></p>
+  <p>Canopy · Cambium 引擎的客户端层 · Sylva 家族 · <a href="https://github.com/asdshuaishuai/deepDolphin">GitHub</a> · <a href="https://github.com/asdshuaishuai/moongit">cambium 引擎</a></p>
 </div>
 </footer>
 </body>

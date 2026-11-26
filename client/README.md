@@ -1,20 +1,34 @@
-# deepDolphin — Compose Multiplatform 客户端
+# Canopy — Compose Multiplatform 客户端
 
-> moonGit 引擎的桌面客户端（Kotlin + Compose Multiplatform，桌面 JVM），承接 `archive/bui`
+> Cambium 引擎的桌面客户端（Kotlin + Compose Multiplatform，桌面 JVM），承接 `archive/bui`
 > （Rust 版 BUI 客户端）的能力口径，交互基准对位 [macos/](../macos/README.md)。
 > 能力面按 [PLATFORM-CHARTER.md](../PLATFORM-CHARTER.md) C1–C11 对齐——能力必须一致、交互 UI 自由。
-> 引擎访问唯一通路：`moongit <命令> --json` CLI 子进程，**没有 HTTP、没有 FFI**。
+> 引擎访问唯一通路：`cambium <命令> --json` CLI 子进程，**没有 HTTP、没有 FFI**。
 > 分批执行手册（计划/红线/判据纪律）见 [PLAN.md](PLAN.md)。
 
 ## 状态（2026-11-26）
 
-- 判据门禁绿：`scripts/build.sh --test` → **269 判据 0 failed**（禁用缓存复跑
+- 判据门禁绿：`scripts/build.sh --test` → **277 判据 0 failed**（禁用缓存复跑
   `gradle jvmTest --rerun-tasks --no-build-cache` 同数）。门禁脚本读的是 test-results XML，
   增量构建下会读到陈旧结果——当证据用的数字必须来自禁用缓存的那次。
-- 本机引擎已换成 **0.3.0 的开发构建**（`~/.local/libexec/deepdolphin/moongit.bin`，取自引擎仓库
-  `feat/embed-fit`；旧版 0.2.0 备份为 `moongit.bin.bak-20261125-pre030`，不带嵌入模式的上一版开发构建
-  备份为 `moongit.bin.bak-20261126-pre-embed`，带嵌入模式但不做尺寸融合的上一版备份为
-  `moongit.bin.bak-20261126-pre-fit`，回滚 = 把备份拷回 `moongit.bin`）。引擎尚未正式发版。
+- 本机引擎是 **Cambium**（0.3.0 的开发构建，取自引擎仓库 `feat/sylva-brand`）：启动器 `~/.local/bin/cambium`，
+  真实二进制 `~/.local/libexec/cambium/cambium.bin`；`~/.local/bin/moongit`、`~/.local/bin/deepgit` 是指向
+  `cambium` 的兼容软链（已装进用户仓库的 git 钩子里写的是旧命令名）。
+  回滚：改名前的最后一版（嵌入尺寸融合）备份为 `~/.local/libexec/cambium/cambium.bin.bak-20261126-pre-brand`，
+  更早的备份仍在旧布局 `~/.local/libexec/deepdolphin/moongit.bin.bak-*`（pre-fit / pre-embed / pre030）。
+  回滚 = 把对应备份拷回 `cambium.bin`：启动器按绝对路径 exec，旧二进制照样能跑（它不认 `cambium` 这个
+  裸命令名，但经启动器调用不受影响）。引擎尚未正式发版。
+- **品牌升级（2026-11-26）**：整个项目 **Sylva**；客户端 **Canopy**（包名 `canopy`、deb `canopy_0.1.0_amd64.deb`、
+  安装路径 `/opt/canopy`）；引擎 **Cambium**；置信度 **Dendro**（引擎内的独立包）。客户端这边：
+  Kotlin 包 `canopy.*`、窗口标题 / 侧栏 / 托盘 / 菜单 / 通知身份、图标资产名 `canopy.*` 全部跟上；
+  引擎调用改教新写法（`cambium dendro gen|check|patch|merge`，旧写法引擎仍认）；引擎发现
+  `CAMBIUM_BIN` → `MOONGIT_BIN` / `DEEPGIT_BIN`（旧名兜底）→ 仓内构建 → PATH（`cambium` / `moongit` / `deepgit`）；
+  嵌入声明改注入 `window.CAMBIUM_EMBED`（产物两个名字都读）。
+  **已装机器的自动迁移**（`sysint/LegacyPaths.kt`，判据见 `LegacyPathsTest`）：`~/.config/deepDolphin →
+  ~/.config/canopy`、`~/.cache/deepDolphin → ~/.cache/canopy`（WebView 原生包 400MB 在里面，不搬就得重下）——
+  整目录改名、搬不动就继续用旧的；钥匙串的 key 先按新属性找、找不到按旧属性兜底；自启条目
+  `deepdolphin.desktop` 在启动时换成指向当前客户端的 `canopy.desktop`（开发态入口不可用时不动）。
+  ⚠️ 旧包 `deepdolphin` 不会自动卸载：装新包后请 `sudo apt remove deepdolphin`（或等价的包管理器操作）。
 - 图谱两页的**嵌入尺寸融合**（2026-11-26）：产物按拿到的视口排布（引擎侧：架构图泳道折行、热力图按区域选列），
   外壳这边把回执挪进页头、底部不再压条、把控件高 / 圆角令牌递给产物、窗口最小 960×640。详见 PLAN.md。
   客户端退回没有尺寸令牌的写法也不坏——产物那边每个变量都有回退值。
@@ -26,8 +40,8 @@
   [`docs/ui-cmp/README.md`](../docs/ui-cmp/README.md)。此前入库的 48 张旧图已退役——其中
   至少 9 张截到的是 IDE 而不是本应用，还有「图谱页验证通过」的图其实是空白页。
 - 图谱两页**首次真正显示**（2026-11-25 之前在本机从未渲染出内容，三层根因见 PLAN.md）。
-- 引擎发现顺序与各端一致（EngineLocator.kt）：`MOONGIT_BIN` → `DEEPGIT_BIN` →
-  仓内构建 `../moonGit/target/release/bin/main` → PATH（`moongit`/`deepgit`）。
+- 引擎发现顺序与各端一致（EngineLocator.kt）：`CAMBIUM_BIN` → `DEEPGIT_BIN` →
+  仓内构建 `../Cambium/target/release/bin/main` → PATH（`cambium`/`cambium`）。
 
 ## 构建与运行
 
@@ -45,7 +59,7 @@ gradle packageDeb           # jpackage 打 deb（或 packageAppImage）
 KCEF/JCEF 在 JDK17+ 完成反射初始化所需的两条 `--add-opens` 已进 jpackage `--java-options`
 与本地 `run` 任务（build.gradle.kts）。**门禁证据必须禁用缓存**（见上）。
 
-`MOONGIT_BIN` / `DEEPGIT_BIN` 指向别的引擎构建时注意：`~/.cache/deepDolphin/kcef/` 下的原生包
+`CAMBIUM_BIN` / `DEEPGIT_BIN` 指向别的引擎构建时注意：`~/.cache/canopy/kcef/` 下的原生包
 按引擎无关的固定版本安装（见 ui/JcefBundle.kt），与引擎版本无关。
 
 ## 功能面（侧栏导航 + 搜索框 + 仓库行；路由七页 + 跟仓库走的图谱两页）
@@ -94,7 +108,7 @@ KCEF/JCEF 在 JDK17+ 完成反射初始化所需的两条 `--add-opens` 已进 j
   URL 只放行 `https://` 与 `http://127.0.0.1`/`http://localhost`（防投毒端点骗取 apiKey）；
   网络失败给中文原因与下一步。
 - **key 纪律**：key 只进 libsecret（secret-tool 子进程，AiViews.kt SecretStore）；
-  `~/.config/deepDolphin/settings.conf` 只存 `ai.providerID/model/baseURL`，保存时只合并
+  `~/.config/canopy/settings.conf` 只存 `ai.providerID/model/baseURL`，保存时只合并
   `ai.*` 键、不动其他行；key 不回填明文。libsecret 缺席时的 0600 兜底文件未实现。
 - **agent 循环**（ai/AgentCore.kt）：引擎 `tools --json` 是工具清单唯一来源，必填参数只从
   「已发给模型的那份」定义取；≤4 轮；停止逐轮检查 + 工具执行中切片响应。
@@ -118,7 +132,7 @@ KCEF/JCEF 在 JDK17+ 完成反射初始化所需的两条 `--add-opens` 已进 j
 
 - jpackage：deb / AppImage（build.gradle.kts nativeDistributions；Linux 菜单项 + 快捷方式）。
 - JCEF 原生包**不随包分发**（约 217 MB）：首次打开代码图谱/架构图时下载到
-  `~/.cache/deepDolphin/kcef/jbr-21.0.4+8-631.2/`，只此一次；界面按阶段如实显示（定位/下载 xx%/
+  `~/.cache/canopy/kcef/jbr-21.0.4+8-631.2/`，只此一次；界面按阶段如实显示（定位/下载 xx%/
   解压/安装/启动），连续 30s（解压安装阶段 180s）无进度才判停滞，后台装完自动切上。
   不可用时页面如实给原因 + 引擎产物路径（可手动打开）。
 - **原生包钉死版本、从 JetBrains CDN 下载**（ui/JcefBundle.kt）：KCEF 的默认下载追
@@ -134,7 +148,7 @@ KCEF/JCEF 在 JDK17+ 完成反射初始化所需的两条 `--add-opens` 已进 j
 ## 代码结构（按磁盘）
 
 ```
-src/jvmMain/kotlin/deepdolphin/
+src/jvmMain/kotlin/canopy/
   Main.kt                 入口：窗口 + 引擎探活 + 侧栏外壳（七路由 + 图谱两路由 + 搜索框）+ 深链接线
                           + 退出兜底（关闭钩子 4s 不退就 halt——CEF 钩子在浏览器异常时会一直等）
   engine/Engine.kt        引擎命令封装：读（status/dashboard/milestone list/docs/journal/tools/

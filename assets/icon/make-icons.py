@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""从**一张母版**导出 deepDolphin 各平台的应用图标。
+"""从**一张母版**导出 Canopy 各平台的应用图标。
 
 ## 为什么要有这个脚本
 
@@ -79,8 +79,8 @@ ICONSET_NAMES = [
     ("icon_512x512@2x.png", 1024),
 ]
 
-APP_ID = "deepdolphin"
-APP_NAME = "deepDolphin"
+APP_ID = "canopy"
+APP_NAME = "Canopy"
 
 # deepin 客户端产物树（deepin/data/icons，M2-6）：与 out/ 同一个母版唯一原则 ——
 # 树下不许出现手写文件，一切由本脚本生成。与 out/linux 的差异只有两点：
@@ -93,8 +93,8 @@ DEEPIN_HICOLOR_SIZES = [16, 22, 24, 32, 48, 64, 128, 256]
 # 既有应用图标（深蓝圆角底 + 海豚意象，非染色件，允许写死色值）。
 # 原先是 data/icons 下的手写文件；原样收编进脚本，字节不变（--check 会校验）。
 DEEPIN_APP_SVG = """<?xml version="1.0" encoding="UTF-8"?>
-<!-- deepDolphin 应用图标（占位：深蓝圆角底 + 海豚意象曲线）。
-     Icon=deepdolphin 与 desktop 文件、IconLoader::app() 的主题查找名一致。 -->
+<!-- Canopy 应用图标（占位：深蓝圆角底 + 海豚意象曲线）。
+     Icon=canopy 与 desktop 文件、IconLoader::app() 的主题查找名一致。 -->
 <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
   <rect x="6" y="6" width="116" height="116" rx="26" fill="#1E6FEB"/>
   <path d="M30 84 C36 56, 58 38, 88 36 C96 35.4, 102 38, 102 44
@@ -110,9 +110,9 @@ DEEPIN_APP_SVG = """<?xml version="1.0" encoding="UTF-8"?>
 # 两色调 = 主调实底 currentColor + 次调同色但 fill-opacity/stroke-opacity 降档；
 # 出现任何写死的色值都会让亮/暗主题下的染色变成补丁色（check_outputs 会拦）。
 DEEPIN_SYMBOLIC_APP_SVG = """<?xml version="1.0" encoding="UTF-8"?>
-<!-- deepdolphin-symbolic：母版 mark.png 的单色符号化（鲸/海豚 = 主调实底，
+<!-- canopy-symbolic：母版 mark.png 的单色符号化（鲸/海豚 = 主调实底，
      e 环与圆角框 = 次调 40%）。装到 hicolor/symbolic/apps，主题查找名
-     deepdolphin-symbolic。 -->
+     canopy-symbolic。 -->
 <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
   <rect x="10" y="10" width="108" height="108" rx="24" fill="none"
         stroke="currentColor" stroke-width="7" stroke-opacity=".4"/>
@@ -196,7 +196,7 @@ Type=Application
 Version=1.0
 Name={name}
 GenericName=Git 项目面板
-Comment=通过 moongit 引擎查看与更新受管项目
+Comment=通过 cambium 引擎查看与更新受管项目
 Exec=__EXEC__
 Icon={app_id}
 Terminal=false
@@ -286,8 +286,8 @@ def build_deepin(mark) -> None:
             mark.resize((s, s), _lanczos()),
             deepin_path("hicolor/%dx%d/apps/%s.png" % (s, s, APP_ID)),
         )
-    write_text(deepin_path("deepdolphin.svg"), DEEPIN_APP_SVG)
-    write_text(deepin_path("symbolic/apps/deepdolphin-symbolic.svg"),
+    write_text(deepin_path("canopy.svg"), DEEPIN_APP_SVG)
+    write_text(deepin_path("symbolic/apps/canopy-symbolic.svg"),
                DEEPIN_SYMBOLIC_APP_SVG)
     for name, svg in DEEPIN_SYMBOL_SVGS.items():
         write_text(deepin_path("symbolic/apps/dd-%s.svg" % name), svg)
@@ -311,7 +311,7 @@ def check_deepin() -> int:
                   % (os.path.relpath(p, HERE), im.size, s, s))
             bad += 1
 
-    tinted = [("deepdolphin-symbolic.svg", DEEPIN_SYMBOLIC_APP_SVG)]
+    tinted = [("canopy-symbolic.svg", DEEPIN_SYMBOLIC_APP_SVG)]
     tinted += [("dd-%s.svg" % n, s) for n, s in DEEPIN_SYMBOL_SVGS.items()]
     for name, source in tinted:
         p = deepin_path("symbolic/apps/%s" % name)
@@ -343,12 +343,12 @@ def check_deepin() -> int:
             print("  ✗ %s 没有次调（opacity 或 evenodd 镂空），两色调名不副实" % name)
             bad += 1
 
-    p = deepin_path("deepdolphin.svg")
+    p = deepin_path("canopy.svg")
     if not os.path.exists(p):
         print("  ✗ 缺 %s" % os.path.relpath(p, HERE))
         bad += 1
     elif open(p, encoding="utf-8").read() != DEEPIN_APP_SVG:
-        print("  ✗ deepin/data/icons/deepdolphin.svg 与脚本内源不一致")
+        print("  ✗ deepin/data/icons/canopy.svg 与脚本内源不一致")
         bad += 1
     return bad
 
@@ -379,7 +379,7 @@ def build_icns(mark) -> bool:
         return False
     # iconutil 硬性要求目录名以 `.iconset` 结尾，不符合就只回一句
     # "Invalid Iconset" 且不说是哪个文件错了。
-    iconset = os.path.join(OUT, "deepDolphin.iconset")
+    iconset = os.path.join(OUT, "Canopy.iconset")
     os.makedirs(iconset, exist_ok=True)
     try:
         mac_canvas = build_macos_canvas(mark)
@@ -612,9 +612,9 @@ def main() -> int:
     build_deepin(mark)
     print("  · deepin/data/icons/hicolor/{%s}x…/apps/%s.png"
           % (",".join(str(s) for s in DEEPIN_HICOLOR_SIZES), APP_ID))
-    print("  · deepin/data/icons/symbolic/apps/{deepdolphin-symbolic,%s}.svg"
+    print("  · deepin/data/icons/symbolic/apps/{canopy-symbolic,%s}.svg"
           % ",".join("dd-%s" % n for n in DEEPIN_SYMBOL_SVGS))
-    print("  · deepin/data/icons/deepdolphin.svg（原样收编，字节不变）")
+    print("  · deepin/data/icons/canopy.svg（原样收编，字节不变）")
 
     build_ico(mark)
     if build_icns(mark):

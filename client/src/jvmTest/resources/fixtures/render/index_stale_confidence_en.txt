@@ -1,2 +1,2 @@
-rendered：/tmp/dg-probe-stale/store/p_5dda409cd2b1/render/index.html · version 1
-  Confidence snapshot is stale (based on index first version (v0), current version 1) — run moongit confidence gen first
+rendered：/tmp/dg-probe-stale2/store/p_7a9dfbc5cf88/render/index.html · version 1
+  Confidence snapshot is stale (based on index first version (v0), current version 1) — run cambium dendro gen first

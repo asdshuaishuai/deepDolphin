@@ -7,7 +7,7 @@
 #   python3 client/scripts/gen_l10n.py            # 生成并打印差异摘要
 #   python3 client/scripts/gen_l10n.py --check    # 只校验已生成文件是否与基准一致（CI 守门）
 #
-# 输出：client/src/jvmMain/kotlin/deepdolphin/ui/L10nTables.kt（勿手改；CMP 特有键
+# 输出：client/src/jvmMain/kotlin/canopy/ui/L10nTables.kt（勿手改；CMP 特有键
 # 追加在 L10nCmpKeys.kt，与生成文件分开——重跑本脚本不覆盖手写键）。
 
 import re
@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 L10N_SWIFT = ROOT / "macos/Sources/deepDolphin/L10n.swift"
 DOCS_SWIFT = ROOT / "macos/Sources/deepDolphin/DocsPages.swift"
-OUT = ROOT / "client/src/jvmMain/kotlin/deepdolphin/ui/L10nTables.kt"
+OUT = ROOT / "client/src/jvmMain/kotlin/canopy/ui/L10nTables.kt"
 
 TABLES = [
     ("L10n_zhCN", "L10N_ZH_CN", "简体中文"),
@@ -45,6 +45,39 @@ DOCS = [
     ("changelogZhTW", "CHANGELOG_ZH_TW", "CHANGELOG", "ZH_TW"),
     ("changelogJa", "CHANGELOG_JA", "CHANGELOG", "JA"),
 ]
+
+
+# 品牌升级（2026-11-26）：客户端 deepDolphin → Canopy、引擎 moongit/moonGit → Cambium/cambium。
+# mac 基准已冻结（不再做平台原生开发），品牌词在**生成时**映射——重跑脚本不会把旧名带回来。
+# 不动的：「」里的原话；schema 串、仓库链接、作为兼容兜底的旧环境变量名（它们不是显示名）。
+_BRAND_RULES = [
+    ("MOONGIT_BIN", "CAMBIUM_BIN"),
+    ("moongit-patch-confidence", "\x00SCHEMA\x00"),
+    ("github.com/asdshuaishuai/moongit", "\x00REPO_E\x00"),
+    ("github.com/asdshuaishuai/deepDolphin", "\x00REPO_C\x00"),
+    ("DEEPGIT_BIN", "\x00ENV\x00"),
+    ("moonGit", "Cambium"),
+    ("moongit", "cambium"),
+    ("deepDolphin", "Canopy"),
+    ("deepdolphin", "canopy"),
+    ("\x00SCHEMA\x00", "moongit-patch-confidence"),
+    ("\x00REPO_E\x00", "github.com/asdshuaishuai/moongit"),
+    ("\x00REPO_C\x00", "github.com/asdshuaishuai/deepDolphin"),
+    ("\x00ENV\x00", "DEEPGIT_BIN"),
+]
+
+
+def brand(text: str) -> str:
+    """品牌词映射；「」里的内容逐段原样保留。"""
+    out = []
+    for seg in re.split(r"(「[^」]*」)", text):
+        if seg.startswith("「"):
+            out.append(seg)
+            continue
+        for old, new in _BRAND_RULES:
+            seg = seg.replace(old, new)
+        out.append(seg)
+    return "".join(out)
 
 
 def kt_escape(s: str) -> str:
@@ -87,6 +120,8 @@ def parse_docs(swift: str):
 def main():
     tables = parse_tables(L10N_SWIFT.read_text())
     docs = parse_docs(DOCS_SWIFT.read_text())
+    tables = {name: [(k, brand(v)) for k, v in rows] for name, rows in tables.items()}
+    docs = {name: brand(text) for name, text in docs.items()}
 
     base = [k for k, _ in tables["L10n_zhCN"]]
     for swift_name, _, label in TABLES:
@@ -105,7 +140,7 @@ def main():
         "// CMP 特有键（mac 没有的）追加在 L10nCmpKeys.kt，不在本文件。",
         "@file:Suppress(\"unused\")",
         "",
-        "package deepdolphin.ui",
+        "package canopy.ui",
         "",
     ]
     for (swift_name, kt_name, label), _ in zip(TABLES, TABLES):
