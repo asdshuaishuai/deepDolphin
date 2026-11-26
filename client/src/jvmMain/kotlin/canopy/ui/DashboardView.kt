@@ -108,11 +108,13 @@ fun Pill(text: String, color: Color, dot: Boolean = false) {
             .padding(horizontal = Badge.pillPadH, vertical = Badge.pillPadV),
     ) {
         // 圆点用画的不用「●」字：字形的圆在不同字体里大小不一，还挤着数字
+        // 前景取容器上更读得清的那个：原来固定 BgBase——浅色皮肤下是浅字压在粉彩胶囊上（Aqua 2.7）
+        val on = readableOn(color)
         if (dot) {
-            Box(Modifier.size(6.dp).background(Palette.BgBase, androidx.compose.foundation.shape.CircleShape))
+            Box(Modifier.size(6.dp).background(on, androidx.compose.foundation.shape.CircleShape))
             Spacer(Modifier.width(4.dp))
         }
-        Text(text, style = Type.micro.copy(fontWeight = FontWeight.SemiBold), color = Palette.BgBase)
+        Text(text, style = Type.micro.copy(fontWeight = FontWeight.SemiBold), color = on)
     }
 }
 
@@ -146,7 +148,7 @@ fun CommitCompositionBlock(entries: List<CommitTypeCount>, sampleTruncated: Bool
         SegmentedBar(slice.entries.map { it.count }, slice.entries.indices.map { Composition12[it] })
         FlowLegend(slice.entries.mapIndexed { i, e -> Triple(e.kind, e.count.toString(), Composition12[i]) })
         slice.note?.let { Text(it, style = Type.micro) }
-        if (sampleTruncated) Text(L10n.t("dash.card.sample"), style = Type.micro, color = Palette.Amber)
+        if (sampleTruncated) Text(L10n.t("dash.card.sample"), style = Type.micro, color = Palette.AmberText)
     }
 }
 
@@ -181,7 +183,7 @@ fun KpiTile(kpi: DashKpi, modifier: Modifier = Modifier) {
         Text(kpi.title, style = Type.label)
         Spacer(Modifier.height(Space.xs))
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(kpi.value.toString(), style = Type.display.copy(color = accent), maxLines = 1)
+            Text(kpi.value.toString(), style = Type.display.copy(color = ink(accent)), maxLines = 1)
             if (kpi.kind == DashKpiKind.MILESTONES) {
                 Spacer(Modifier.width(2.dp))
                 Text("%", style = Type.section.copy(color = Palette.TextSecondary))
@@ -232,7 +234,7 @@ fun DashboardPage(model: AppModel) {
                     .background(heroBrushDiagonal())
                     .drawBehind {
                         // accent 顶 hairline（Fluent 头部点缀）
-                        drawRect(color = Palette.Accent.copy(alpha = 0.55f), size = size.copy(height = 1.dp.toPx()))
+                        drawRect(color = Palette.AccentText.copy(alpha = 0.55f), size = size.copy(height = 1.dp.toPx()))
                     }
                     .padding(horizontal = Space.xl, vertical = Space.lg),
             ) {
@@ -245,7 +247,7 @@ fun DashboardPage(model: AppModel) {
                 Button(
                     onClick = { model.openAgent(briefTask(null), title = L10n.t("brief.button")) },
                     shape = RoundedCornerShape(Radius.control),
-                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Card, contentColor = Palette.TextPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Inlay, contentColor = Palette.TextPrimary),
                 ) { Text(L10n.t("brief.button")) }
                 Spacer(Modifier.width(Space.sm))
                 // 刷新：mac 在原生工具栏；CMP 无原生工具栏，这里与菜单条「操作 → 刷新」是同一动作
@@ -253,7 +255,7 @@ fun DashboardPage(model: AppModel) {
                     onClick = { model.refreshAll() },
                     enabled = !refreshing,
                     shape = RoundedCornerShape(Radius.control),
-                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Card, contentColor = Palette.TextPrimary),
+                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Inlay, contentColor = Palette.TextPrimary),
                 ) { Text(if (refreshing) L10n.t("cmp.common.refreshing") else L10n.t("toolbar.refresh")) }
             }
 
@@ -268,7 +270,7 @@ fun DashboardPage(model: AppModel) {
                         HelpTooltip(hint) {
                             Row(
                                 Modifier.clip(RoundedCornerShape(Radius.control))
-                                    .background(Palette.Card)
+                                    .background(Palette.Inlay)
                                     .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.control))
                                     .padding(2.dp),
                             ) {
@@ -313,7 +315,7 @@ fun DashboardPage(model: AppModel) {
                             Column(
                                 Modifier.offset(y = 30.dp).width(200.dp)
                                     .shadow(8.dp, RoundedCornerShape(Radius.control))
-                                    .background(Palette.Card).border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.control))
+                                    .background(Palette.Popover).border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.control))
                                     .padding(Space.xs),
                             ) {
                                 Text(
@@ -338,10 +340,10 @@ fun DashboardPage(model: AppModel) {
                         onClick = { model.runUpdate(deep = false) },
                         enabled = !reindexBusy,
                         shape = RoundedCornerShape(Radius.control),
-                        colors = ButtonDefaults.buttonColors(containerColor = Palette.Card, contentColor = Palette.TextPrimary),
+                        colors = ButtonDefaults.buttonColors(containerColor = Palette.Inlay, contentColor = Palette.TextPrimary),
                     ) {
                         if (reindexBusy) {
-                            CircularProgressIndicator(Modifier.size(12.dp), color = Palette.Accent, strokeWidth = 2.dp)
+                            CircularProgressIndicator(Modifier.size(12.dp), color = Palette.AccentText, strokeWidth = 2.dp)
                             Spacer(Modifier.width(6.dp))
                             Text(L10n.t("cmp.dash.reindexing"), style = Type.body)
                         } else {
@@ -437,7 +439,7 @@ fun DashboardPage(model: AppModel) {
                         val degraded = d.milestones.counts.degraded
                         Text(
                             if (degraded) L10n.t("dash.msCard.unreadable") else L10n.t("dash.msCard.none"),
-                            style = Type.body.copy(color = if (degraded) Palette.Amber else Palette.TextTertiary),
+                            style = Type.body.copy(color = if (degraded) Palette.AmberText else Palette.TextTertiary),
                         )
                         Text(
                             if (degraded) L10n.t("dash.msCard.degradedetail", d.milestones.counts.storeHealth, d.milestones.counts.readCount)
@@ -459,8 +461,8 @@ fun DashboardPage(model: AppModel) {
                                     Box(
                                         Modifier.size(7.dp).background(
                                             when {
-                                                done -> Palette.Green
-                                                m.overdue -> Palette.Red
+                                                done -> Palette.GreenText
+                                                m.overdue -> Palette.RedText
                                                 else -> Palette.TextSecondary
                                             },
                                             CircleShape,
@@ -472,7 +474,7 @@ fun DashboardPage(model: AppModel) {
                                     Text(m.name, style = Type.body.copy(fontWeight = FontWeight.Medium))
                                     Spacer(Modifier.weight(1f))
                                     milestoneDueText(m).takeIf { it.isNotBlank() }?.let {
-                                        Text(it, style = Type.label, color = if (m.overdue) Palette.Red else Palette.TextSecondary)
+                                        Text(it, style = Type.label, color = if (m.overdue) Palette.RedText else Palette.TextSecondary)
                                     }
                                 }
                             }
@@ -490,7 +492,7 @@ fun DashboardPage(model: AppModel) {
                 SectionCard(L10n.t("dash.active.title", d.activeProjects.size), Modifier.fillMaxWidth()) {
                     d.activeProjects.forEach { a ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(7.dp).background(Palette.Green, CircleShape))
+                            Box(Modifier.size(7.dp).background(Palette.GreenText, CircleShape))
                             Spacer(Modifier.width(Space.sm))
                             Text(a.name, style = Type.body)
                             Spacer(Modifier.weight(1f))
@@ -507,7 +509,7 @@ fun DashboardPage(model: AppModel) {
         } else {
             when (val st = dashState) {
                 is LoadState.Failed -> GlassCard(Modifier.fillMaxWidth()) {
-                    Text(L10n.t("dash.failed.title"), style = Type.section.copy(color = Palette.Amber))
+                    Text(L10n.t("dash.failed.title"), style = Type.section.copy(color = Palette.AmberText))
                     Spacer(Modifier.height(Space.xs))
                     Text(st.reason, style = Type.body.copy(color = Palette.TextSecondary))
                 }
@@ -618,11 +620,11 @@ fun milestoneRatioOf(milestones: List<Milestone>): MilestoneRatio {
 
 /** 状态词颜色（mac ProjectProgressCard.stateWord 的 tone → color）。 */
 private fun livenessTone(l: Liveness): Color = when (l) {
-    Liveness.UNREADABLE, Liveness.UNKNOWN -> Palette.Red
+    Liveness.UNREADABLE, Liveness.UNKNOWN -> Palette.RedText
     Liveness.NOT_GIT -> Palette.TextSecondary
-    Liveness.NEEDS_ACTION -> Palette.Amber
+    Liveness.NEEDS_ACTION -> Palette.AmberText
     Liveness.ENGINE_STALE, Liveness.QUIET -> Palette.TextSecondary
-    Liveness.RECENT -> Palette.Green
+    Liveness.RECENT -> Palette.GreenText
 }
 
 /**
@@ -662,7 +664,7 @@ fun ProjectProgressCard(
             if (!p.isReadable) p.error ?: L10n.t("dash.card.unreadable")
             else p.headline?.takeIf { it.isNotBlank() } ?: L10n.t("dash.card.nosummary"),
             style = Type.label,
-            color = if (!p.isReadable) Palette.Red else Palette.TextSecondary,
+            color = if (!p.isReadable) Palette.RedText else Palette.TextSecondary,
             maxLines = 2,
         )
         Spacer(Modifier.height(Space.xs))
@@ -671,14 +673,14 @@ fun ProjectProgressCard(
             val m = milestoneRatioOf(milestones)
             val decided = m.done + m.open
             when {
-                decided == 0 && m.unknown > 0 -> Text(L10n.t("dash.ms.unreadableCount", m.unknown), style = Type.label, color = Palette.Amber)
+                decided == 0 && m.unknown > 0 -> Text(L10n.t("dash.ms.unreadableCount", m.unknown), style = Type.label, color = Palette.AmberText)
                 decided == 0 -> Text(L10n.t("dash.ms.none"), style = Type.label, color = Palette.TextTertiary)
                 else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                     Text(L10n.t("dash.ms.label"), style = Type.label, color = Palette.TextTertiary)
                     Text("${m.done}/$decided", style = Type.label.copy(fontWeight = FontWeight.Medium), color = Palette.TextSecondary)
                     val pct = (m.done.toDouble() * 100 / decided).roundToInt()
-                    Text("$pct%", style = Type.label.copy(fontWeight = FontWeight.SemiBold), color = Palette.Deep)
-                    if (m.unknown > 0) Text(L10n.t("dash.ms.unknownNote", m.unknown), style = Type.label, color = Palette.Amber)
+                    Text("$pct%", style = Type.label.copy(fontWeight = FontWeight.SemiBold), color = Palette.DeepText)
+                    if (m.unknown > 0) Text(L10n.t("dash.ms.unknownNote", m.unknown), style = Type.label, color = Palette.AmberText)
                 }
             }
             Spacer(Modifier.weight(1f))
@@ -702,7 +704,7 @@ fun ProjectProgressCard(
                         Text(L10n.t("dash.card.composition"), style = Type.label, color = Palette.TextTertiary)
                         Spacer(Modifier.weight(1f))
                         // 样本披露：commitTypes 是最近 N 条的样本，拿样本当全量是修过的缺陷
-                        if (p.commitTypesTruncated == true) Text(L10n.t("dash.card.sample"), style = Type.label, color = Palette.Amber)
+                        if (p.commitTypesTruncated == true) Text(L10n.t("dash.card.sample"), style = Type.label, color = Palette.AmberText)
                     }
                     Spacer(Modifier.height(Space.xs))
                     CommitCompositionBlock(kept, sampleTruncated = false)
@@ -725,7 +727,7 @@ fun ProjectProgressCard(
                 }
                 // 明细读不到 ≠ 没有提交。这句话必须存在，否则「空着的一行」会被读成「什么都没干」
                 branchDetailMissing -> Text(L10n.t("detail.branch.untracked"), style = Type.label, color = Palette.TextTertiary, modifier = Modifier.weight(1f))
-                else -> Text(L10n.t("dash.card.unreadableShort"), style = Type.label, color = Palette.Red, modifier = Modifier.weight(1f))
+                else -> Text(L10n.t("dash.card.unreadableShort"), style = Type.label, color = Palette.RedText, modifier = Modifier.weight(1f))
             }
             Spacer(Modifier.width(Space.sm))
             // 可点入口归 chip 语义：形状跟皮肤圆角（Badge.chipShape），内边距统一 chip 档（h12/v6）；
@@ -733,11 +735,11 @@ fun ProjectProgressCard(
             Text(
                 L10n.t("detail.enter") + " →",
                 style = Type.label,
-                color = Palette.Accent,
+                color = Palette.AccentText,
                 modifier = Modifier
                     .focusRing()
                     .clip(Badge.chipShape)
-                    .background(Palette.Accent.copy(alpha = 0.12f))
+                    .background(Palette.AccentText.copy(alpha = 0.12f))
                     .clickable { onOpen() }
                     .padding(horizontal = Badge.chipPadH, vertical = Badge.chipPadV),
             )

@@ -172,7 +172,7 @@ fun BulkUpdateConfirmDialog(model: AppModel) {
                 .width(420.dp)
                 .clip(RoundedCornerShape(Radius.card))
                 .shadow(12.dp, RoundedCornerShape(Radius.card))
-                .background(Palette.Card)
+                .background(Palette.Popover)
                 .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.card))
                 .padding(Space.lg),
             verticalArrangement = Arrangement.spacedBy(Space.md),
@@ -219,7 +219,7 @@ fun AgentBulkResultSheet(model: AppModel) {
                 .fillMaxHeight(0.72f)
                 .clip(RoundedCornerShape(Radius.card))
                 .shadow(12.dp, RoundedCornerShape(Radius.card))
-                .background(Palette.Card)
+                .background(Palette.Popover)
                 .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.card))
                 .padding(Space.lg),
             verticalArrangement = Arrangement.spacedBy(Space.md),
@@ -243,7 +243,7 @@ fun AgentBulkResultSheet(model: AppModel) {
                         Row(Modifier.fillMaxWidth()) {
                             Box(
                                 Modifier.size(8.dp).background(
-                                    if (o is UpdateOutcome.Success) Palette.Green else Palette.Red,
+                                    if (o is UpdateOutcome.Success) Palette.GreenText else Palette.RedText,
                                     CircleShape,
                                 ),
                             )
@@ -255,7 +255,7 @@ fun AgentBulkResultSheet(model: AppModel) {
                                         L10n.t("cmp.bulk.failLine", o.failure.message.ifBlank { L10n.t("cmp.bulk.failWithCode", o.failure.code.ifBlank { L10n.t("cmp.err.noReason") }) })
                                 },
                                 style = Type.body.copy(fontFamily = FontFamily.Monospace, fontSize = Type.label.fontSize),
-                                color = if (o is UpdateOutcome.Success) Palette.TextSecondary else Palette.Red,
+                                color = if (o is UpdateOutcome.Success) Palette.TextSecondary else Palette.RedText,
                             )
                         }
                     }
@@ -263,10 +263,10 @@ fun AgentBulkResultSheet(model: AppModel) {
                 // ── 覆盖度 / 账目分叉披露（引擎口径核对，amber 说实话）──
                 r.coverageNote()?.let {
                     Spacer(Modifier.height(Space.xs))
-                    Text("⚠ $it", style = Type.micro.copy(color = Palette.Amber))
+                    Text("⚠ $it", style = Type.micro.copy(color = Palette.AmberText))
                 }
                 r.tallyMismatchNote()?.let {
-                    Text("⚠ $it", style = Type.micro.copy(color = Palette.Amber))
+                    Text("⚠ $it", style = Type.micro.copy(color = Palette.AmberText))
                 }
             }
             Row {

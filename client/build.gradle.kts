@@ -42,8 +42,12 @@ kotlin {
                 implementation("io.ktor:ktor-client-core:3.0.0")
             }
         }
+        @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
         jvmTest.dependencies {
             implementation(kotlin("test"))
+            // Compose 自带的界面测试构件（离屏渲染 + 语义树，插件标了实验性）：只给「逐皮肤对比度体检」
+            // （SkinContrastAudit）用——不建窗口就能把每套皮肤画成位图、逐段文字量对比度。不进发行包。
+            implementation(compose.uiTestJUnit4)
         }
     }
 }

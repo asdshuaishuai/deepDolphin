@@ -332,14 +332,14 @@ private fun GraphPageHeader(
         Box(
             Modifier.size(32.dp).clip(RoundedCornerShape(Radius.control)).background(kind.tileBrush),
             contentAlignment = Alignment.Center,
-        ) { IconBox(kind.tileIcon, size = 20.dp, tint = Color.White) }
+        ) { IconBox(kind.tileIcon, size = 20.dp, tint = readableOn(Palette.Accent)) }
         Spacer(Modifier.width(Space.md))
         Column(Modifier.weight(1f)) {
             Text(kind.titleWord(), style = Type.title)
             Text("$repo · ${kind.subtitle()}", style = Type.label, maxLines = 1)
         }
         if (rendering) {
-            CircularProgressIndicator(Modifier.size(14.dp), color = Palette.Accent, strokeWidth = 2.dp)
+            CircularProgressIndicator(Modifier.size(14.dp), color = Palette.AccentText, strokeWidth = 2.dp)
             Spacer(Modifier.width(Space.sm))
             Text(L10n.t("graph.rendering"), style = Type.label, color = Palette.TextSecondary)
             Spacer(Modifier.width(Space.md))
@@ -375,7 +375,7 @@ private fun GraphReceiptChip(receipt: GraphReceipt, onDismiss: (() -> Unit)?) {
         IconBox(
             if (receipt.ok) FluentIcon.CheckmarkCircle else FluentIcon.Warning,
             size = 14.dp,
-            tint = if (receipt.ok) Palette.Green else Palette.Amber,
+            tint = if (receipt.ok) Palette.GreenText else Palette.AmberText,
         )
         Spacer(Modifier.width(Space.sm))
         Text(
@@ -383,7 +383,7 @@ private fun GraphReceiptChip(receipt: GraphReceipt, onDismiss: (() -> Unit)?) {
             // 完整原因在内容区的失败态与全局反馈条上都有
             if (receipt.ok) receiptSummary(receipt.text) else receipt.text,
             style = Type.label,
-            color = if (receipt.ok) Palette.TextSecondary else Palette.Amber,
+            color = if (receipt.ok) Palette.TextSecondary else Palette.AmberText,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -469,7 +469,7 @@ private fun GraphContentArea(modifier: Modifier, vm: GraphPageModel) {
             when {
                 vm.rendering -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(Modifier.size(18.dp), color = Palette.Accent, strokeWidth = 2.dp)
+                        CircularProgressIndicator(Modifier.size(18.dp), color = Palette.AccentText, strokeWidth = 2.dp)
                         Spacer(Modifier.height(Space.md))
                         Text(L10n.t("graph.rendering"), style = Type.body.copy(color = Palette.TextSecondary))
                     }
@@ -479,7 +479,7 @@ private fun GraphContentArea(modifier: Modifier, vm: GraphPageModel) {
                         Modifier.padding(Space.lg),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text(L10n.t("cmp.graph.renderFailed"), style = Type.section.copy(color = Palette.Amber))
+                        Text(L10n.t("cmp.graph.renderFailed"), style = Type.section.copy(color = Palette.AmberText))
                         Spacer(Modifier.height(Space.sm))
                         Text(vm.error ?: "", style = Type.body.copy(color = Palette.TextSecondary), maxLines = 6)
                     }
@@ -511,7 +511,7 @@ private fun WebViewFallback(pending: WebRuntime.Pending, artifactPath: String) {
         ) {
             Text(
                 L10n.t(if (loading) "cmp.graph.webviewPreparing" else "cmp.graph.webviewNA"),
-                style = Type.section.copy(color = if (loading) Palette.TextPrimary else Palette.Amber),
+                style = Type.section.copy(color = if (loading) Palette.TextPrimary else Palette.AmberText),
             )
             Spacer(Modifier.height(Space.sm))
             Text(detail, style = Type.body.copy(color = Palette.TextSecondary), maxLines = 4)
@@ -520,7 +520,7 @@ private fun WebViewFallback(pending: WebRuntime.Pending, artifactPath: String) {
                 LinearProgressIndicator(
                     progress = { pct },
                     modifier = Modifier.fillMaxWidth(),
-                    color = Palette.Accent,
+                    color = Palette.AccentText,
                     trackColor = Palette.Stroke,
                 )
             }

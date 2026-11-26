@@ -67,11 +67,11 @@ fun quickRowSubtitle(p: Project): String {
  * 全部取设计令牌，不内联色值）。
  */
 fun quickRowTint(l: Liveness): Color = when (l) {
-    Liveness.UNREADABLE -> Palette.Red
+    Liveness.UNREADABLE -> Palette.RedText
     Liveness.NOT_GIT, Liveness.UNKNOWN -> Palette.TextTertiary
-    Liveness.NEEDS_ACTION -> Palette.Amber
-    Liveness.ENGINE_STALE, Liveness.QUIET -> Palette.Yellow
-    Liveness.RECENT -> Palette.Green
+    Liveness.NEEDS_ACTION -> Palette.AmberText
+    Liveness.ENGINE_STALE, Liveness.QUIET -> Palette.YellowText
+    Liveness.RECENT -> Palette.GreenText
 }
 
 /** 行数上限（mac prefix(12) 对位）。 */
@@ -143,7 +143,7 @@ fun QuickViewDialog(
                 }
                 Spacer(Modifier.weight(1f))
                 if (refreshing) {
-                    CircularProgressIndicator(Modifier.size(12.dp), color = Palette.Accent, strokeWidth = 2.dp)
+                    CircularProgressIndicator(Modifier.size(12.dp), color = Palette.AccentText, strokeWidth = 2.dp)
                     Spacer(Modifier.width(Space.xs))
                 }
                 IconButton(FluentIcon.ArrowSync, onClick = { model.refreshAll() })
@@ -161,7 +161,7 @@ fun QuickViewDialog(
             } else if (projects.isEmpty() && lastError != null) {
                 // 错误态（读失败 ≠ 空）
                 Column(Modifier.padding(horizontal = Space.md, vertical = Space.sm), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    Text("⚠ " + L10n.t("bar.engineError"), style = Type.section.copy(color = Palette.Red))
+                    Text("⚠ " + L10n.t("bar.engineError"), style = Type.section.copy(color = Palette.RedText))
                     Text(lastError!!, style = Type.label, color = Palette.TextSecondary, maxLines = 3)
                     Button(
                         onClick = { model.refreshAll() },
@@ -226,7 +226,7 @@ private fun QuickViewShell(content: @Composable ColumnScope.() -> Unit) {
             .width(380.dp)
             .skinShadow(Radius.card).clip(RoundedCornerShape(Radius.card))
 .shadow(12.dp, RoundedCornerShape(Radius.card))
-            .background(Palette.Card)
+            .background(Palette.Popover)
             .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.card))
             .padding(vertical = Space.sm),
         content = content,
@@ -268,13 +268,13 @@ private fun QuickRow(p: Project, onClick: () -> Unit) {
                 Text(p.name, style = Type.body, fontWeight = FontWeight.Medium, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
                 if ((p.userDirtyCount ?: 0) > 0) {
                     Spacer(Modifier.width(Space.xs))
-                    Text("●${p.userDirtyCount}", style = Type.micro, color = Palette.Amber)
+                    Text("●${p.userDirtyCount}", style = Type.micro, color = Palette.AmberText)
                 }
             }
             Text(
                 quickRowSubtitle(p),
                 style = Type.micro,
-                color = if (p.error != null) Palette.Red else Palette.TextSecondary,
+                color = if (p.error != null) Palette.RedText else Palette.TextSecondary,
                 maxLines = 1,
             )
         }

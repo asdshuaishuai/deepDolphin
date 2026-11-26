@@ -8,7 +8,7 @@
 
 ## 状态（2026-11-26）
 
-- 判据门禁绿：`scripts/build.sh --test` → **277 判据 0 failed**（禁用缓存复跑
+- 判据门禁绿：`scripts/build.sh --test` → **282 判据 0 failed**（1 skipped = 只手动触发的皮肤对比度体检；禁用缓存复跑
   `gradle jvmTest --rerun-tasks --no-build-cache` 同数）。门禁脚本读的是 test-results XML，
   增量构建下会读到陈旧结果——当证据用的数字必须来自禁用缓存的那次。
 - 本机引擎是 **Cambium**（0.3.0 的开发构建，取自引擎仓库 `feat/sylva-brand`）：启动器 `~/.local/bin/cambium`，
@@ -35,6 +35,9 @@
 - 界面外观：设置 · 通用 ·「外观」内置 **14 套皮肤**（namethatui.com/styles 全风格，flat design 除外）——
   玻璃拟态 / 液态玻璃 / 新拟态 / 黏土拟态 / 新粗野主义 / Y2K / Frutiger Aero / 拟物皮革 / 远古网页 /
   Aqua / Windows Aero / 极简主义等，即点即换、settings.conf 持久化（`app.skin`）。
+  文字与表面的对比度在换肤时保底（`ui/Skin.kt`：文字级语义色、四层表面模型、光泽预算），`SkinTest`
+  逐套守卫；另有只手动触发的离屏体检——`CANOPY_SKIN_AUDIT=<目录> gradle jvmTest --rerun-tasks
+  --tests '*SkinContrastAudit*'`（需要显示器）——按语义树量每段文字的实际像素对比度，14 套 0 冲突。
 - 图谱两页依赖引擎产物的嵌入模式（0.3.0 开发构建）：引擎退回 0.2.x 时图谱照常出图，但是原样内嵌的样子。
 - **真窗口实拍（2026-11-25，DISPLAY=:0，打包后的 deb 提取运行）**：截图与逐张说明见
   [`docs/ui-cmp/README.md`](../docs/ui-cmp/README.md)。此前入库的 48 张旧图已退役——其中

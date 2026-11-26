@@ -78,13 +78,13 @@ fun ProjectDetailView(model: AppModel) {
                 GraphEntryChip(
                     label = if (name != null && graphRendering == "INDEX:$name") L10n.t("cmp.detail.graphRendering") else L10n.t("nav.graph"),
                     icon = GraphKind.INDEX.tileIcon,
-                    tint = Palette.Accent,
+                    tint = Palette.AccentText,
                     enabled = name != null && graphRendering == null,
                 ) { name?.let { model.renderGraphArtifact(it, GraphKind.INDEX) } }
                 GraphEntryChip(
                     label = if (name != null && graphRendering == "ARCH:$name") L10n.t("cmp.detail.archRendering") else L10n.t("nav.arch"),
                     icon = GraphKind.ARCH.tileIcon,
-                    tint = Palette.Deep,
+                    tint = Palette.DeepText,
                     enabled = name != null && graphRendering == null,
                 ) { name?.let { model.renderGraphArtifact(it, GraphKind.ARCH) } }
                 ActionText(L10n.t("toolbar.refresh"), Palette.TextSecondary, enabled = !refreshing) {
@@ -114,7 +114,7 @@ fun ProjectDetailView(model: AppModel) {
 
         when (val st = detailState) {
             is LoadState.Failed -> item(key = "failed") { GlassCard(Modifier.fillMaxWidth()) {
-                Text(L10n.t("cmp.err.detailRead"), style = Type.section.copy(color = Palette.Amber))
+                Text(L10n.t("cmp.err.detailRead"), style = Type.section.copy(color = Palette.AmberText))
                 Text(st.reason, style = Type.body.copy(color = Palette.TextSecondary))
             } }
             is LoadState.Loading -> item(key = "loading") { GlassCard(Modifier.fillMaxWidth()) {
@@ -192,10 +192,10 @@ private fun PulseCard(p: Project, modifier: Modifier = Modifier) {
         // 合并建议（缺键 = 就在默认分支，不是「没有」）
         p.mergeHint?.let { hint ->
             Spacer(Modifier.height(Space.sm))
-            Text(L10n.t("cmp.detail.mergeHint", hint.description, hint.ahead, hint.behind), style = Type.body.copy(color = Palette.Accent))
+            Text(L10n.t("cmp.detail.mergeHint", hint.description, hint.ahead, hint.behind), style = Type.body.copy(color = Palette.AccentText))
         }
         p.warnings?.takeIf { it.isNotEmpty() }?.forEach { w ->
-            Text("⚠ $w", style = Type.micro.copy(color = Palette.Amber))
+            Text("⚠ $w", style = Type.micro.copy(color = Palette.AmberText))
         }
     }
 }
@@ -210,7 +210,7 @@ private fun CommitTypesCard(p: Project, modifier: Modifier = Modifier) {
         } else {
             // 堆叠条 + 图例（不取模；色板画不完的条数由切片说出来）
             CommitCompositionBlock(types, sampleTruncated = false)
-            if (p.commitTypesTruncated == true) Text(L10n.t("dash.card.sample"), style = Type.micro, color = Palette.Amber)
+            if (p.commitTypesTruncated == true) Text(L10n.t("dash.card.sample"), style = Type.micro, color = Palette.AmberText)
         }
     }
 }
@@ -239,7 +239,7 @@ private fun BranchCard(p: Project) {
                     }
                     if (b.pendingCommits > 0) {
                         Spacer(Modifier.width(Space.sm))
-                        Text(L10n.t("detail.pending.invalid"), style = Type.label, color = Palette.Amber)
+                        Text(L10n.t("detail.pending.invalid"), style = Type.label, color = Palette.AmberText)
                     } else if (b.baselineReset) {
                         Spacer(Modifier.width(Space.sm))
                         Text(L10n.t("detail.baseline.reset"), style = Type.label, color = Palette.TextTertiary)
@@ -252,7 +252,7 @@ private fun BranchCard(p: Project) {
                     Row(Modifier.fillMaxWidth()) {
                         // 领先默认分支数——基线重建过的分支，领先数已不可比，不报
                         if (b.aheadOfDefault > 0 && !b.baselineReset) {
-                            Text(L10n.t("detail.branch.ahead", b.aheadOfDefault), style = Type.micro, color = Palette.Accent)
+                            Text(L10n.t("detail.branch.ahead", b.aheadOfDefault), style = Type.micro, color = Palette.AccentText)
                         }
                         Spacer(Modifier.weight(1f))
                         // 「多久没更新」自己处理 -1（读不出来）
@@ -260,9 +260,9 @@ private fun BranchCard(p: Project) {
                     }
                     b.nextSteps.forEach { n ->
                         Row {
-                            IconBox(FluentIcon.ArrowRight, size = 12.dp, tint = Palette.Accent)
+                            IconBox(FluentIcon.ArrowRight, size = 12.dp, tint = Palette.AccentText)
                             Spacer(Modifier.width(6.dp))
-                            Text(n, style = Type.micro, color = Palette.Accent, maxLines = 2, modifier = Modifier.weight(1f))
+                            Text(n, style = Type.micro, color = Palette.AccentText, maxLines = 2, modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -278,10 +278,10 @@ private fun BranchCard(p: Project) {
 
 /** 分支档位 → 颜色（mac StatusDot：active=绿 / idle=黄 / stale=橙 / merged=紫 / 其余中性灰）。 */
 private fun branchStatusTint(status: String): Color = when (status) {
-    "active" -> Palette.Green
-    "idle" -> Palette.Yellow
-    "stale" -> Palette.Amber
-    "merged" -> Palette.Deep
+    "active" -> Palette.GreenText
+    "idle" -> Palette.YellowText
+    "stale" -> Palette.AmberText
+    "merged" -> Palette.DeepText
     else -> Palette.TextTertiary
 }
 
@@ -301,7 +301,7 @@ private fun DetailMilestoneCard(model: AppModel, mine: List<canopy.engine.Milest
                     val pct = (t.done.toDouble() * 100 / decided).roundToInt()
                     Text("$pct%", style = Type.section)
                     Text("${t.done}/$decided", style = Type.label, color = Palette.TextSecondary)
-                    if (t.unknown > 0) Text(L10n.t("detail.ms.unknownDenom", t.unknown), style = Type.label, color = Palette.Amber)
+                    if (t.unknown > 0) Text(L10n.t("detail.ms.unknownDenom", t.unknown), style = Type.label, color = Palette.AmberText)
                 }
                 Spacer(Modifier.height(Space.sm))
                 Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(Radius.chip)).background(Palette.BarTrack)) {
@@ -356,12 +356,12 @@ private fun GitCard(model: AppModel, p: Project, busy: Boolean) {
         feedback?.let { fb ->
             Spacer(Modifier.height(Space.xs))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (fb.ok) "✓" else "⚠", style = Type.label.copy(color = if (fb.ok) Palette.Green else Palette.Amber))
+                Text(if (fb.ok) "✓" else "⚠", style = Type.label.copy(color = if (fb.ok) Palette.GreenText else Palette.AmberText))
                 Spacer(Modifier.width(Space.sm))
                 Text(
                     "git ${fb.op} ${fb.project}：${fb.text.trim().take(240).ifEmpty { if (fb.ok) "（引擎无输出）" else "（引擎未给出原因）" }}",
                     style = Type.micro.copy(fontFamily = FontFamily.Monospace),
-                    color = if (fb.ok) Palette.TextSecondary else Palette.Amber,
+                    color = if (fb.ok) Palette.TextSecondary else Palette.AmberText,
                     maxLines = 3,
                 )
             }
@@ -400,13 +400,13 @@ private fun JournalCard(p: Project) {
                     Spacer(Modifier.width(Space.sm))
                     Text(
                         it, style = Type.micro.copy(fontWeight = FontWeight.SemiBold),
-                        color = if (badge.scope.isIncremental) Palette.Green else Palette.TextSecondary,
+                        color = if (badge.scope.isIncremental) Palette.GreenText else Palette.TextSecondary,
                     )
                 }
             }
             badge.note?.let {
                 Spacer(Modifier.height(2.dp))
-                Text(it, style = Type.micro, color = Palette.Amber)
+                Text(it, style = Type.micro, color = Palette.AmberText)
             }
             if (idx != p.journal.lastIndex) {
                 androidx.compose.material3.HorizontalDivider(
@@ -416,10 +416,10 @@ private fun JournalCard(p: Project) {
         }
         // 窗口与全量必须能被区分开；journal.md 里有解析不了的行时也要说
         if (p.journalTruncated == true) {
-            Text(L10n.t("detail.journal.truncated", p.journal.size, p.journalLimit), style = Type.micro, color = Palette.Amber)
+            Text(L10n.t("detail.journal.truncated", p.journal.size, p.journalLimit), style = Type.micro, color = Palette.AmberText)
         }
         (p.journalUnparsableLines ?: 0).takeIf { it > 0 }?.let {
-            Text(L10n.t("detail.journal.unparsable", it), style = Type.micro, color = Palette.Amber)
+            Text(L10n.t("detail.journal.unparsable", it), style = Type.micro, color = Palette.AmberText)
         }
     }
 }
@@ -432,7 +432,7 @@ private fun DocsCard(docs: List<canopy.engine.DocContent>, unreadable: List<Stri
             Text(
                 if (unreadable.isNotEmpty()) L10n.t("cmp.detail.docsUnreadable", unreadable.joinToString("、"))
                 else L10n.t("cmp.detail.docsNoContent"),
-                style = Type.body.copy(color = if (unreadable.isNotEmpty()) Palette.Amber else Palette.TextSecondary),
+                style = Type.body.copy(color = if (unreadable.isNotEmpty()) Palette.AmberText else Palette.TextSecondary),
             )
         }
         return
@@ -450,7 +450,7 @@ private fun DocsCard(docs: List<canopy.engine.DocContent>, unreadable: List<Stri
     }
     if (unreadable.isNotEmpty()) {
         GlassCard(Modifier.fillMaxWidth()) {
-            Text(L10n.t("cmp.detail.docsUnreadable", unreadable.joinToString("、")), style = Type.label, color = Palette.Amber)
+            Text(L10n.t("cmp.detail.docsUnreadable", unreadable.joinToString("、")), style = Type.label, color = Palette.AmberText)
         }
     }
 }

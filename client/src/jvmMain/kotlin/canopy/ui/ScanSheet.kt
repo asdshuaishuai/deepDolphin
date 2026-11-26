@@ -126,7 +126,7 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                 .fillMaxHeight(0.7f)
                 .clip(RoundedCornerShape(Radius.card))
 .shadow(12.dp, RoundedCornerShape(Radius.card))
-                .background(Palette.Card)
+                .background(Palette.Popover)
                 .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.card))
                 .padding(Space.lg),
             verticalArrangement = Arrangement.spacedBy(Space.md),
@@ -185,8 +185,8 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                         Text(L10n.t("cmp.scan.depthLabel"), style = Type.micro)
                     }
                 }
-                pathProblem?.let { Text("⚠ $it", style = Type.micro.copy(color = Palette.Amber)) }
-                depthProblem?.let { Text("⚠ $it", style = Type.micro.copy(color = Palette.Amber)) }
+                pathProblem?.let { Text("⚠ $it", style = Type.micro.copy(color = Palette.AmberText)) }
+                depthProblem?.let { Text("⚠ $it", style = Type.micro.copy(color = Palette.AmberText)) }
 
                 // ── 结果：批量=逐项目行+聚合行；单个=操作结果一行 ──
                 if (!single) {
@@ -194,7 +194,7 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                     if (oc == null) {
                         Text(L10n.t("cmp.scan.notRun"), style = Type.body.copy(color = Palette.TextSecondary))
                     } else if (oc.error != null) {
-                        Text(L10n.t("cmp.scan.failedWith", oc.error ?: ""), style = Type.body.copy(color = Palette.Red))
+                        Text(L10n.t("cmp.scan.failedWith", oc.error ?: ""), style = Type.body.copy(color = Palette.RedText))
                     } else {
                         Text(L10n.t("cmp.scan.lastRun", oc.root, oc.depth), style = Type.label)
                         if (oc.rows.isEmpty()) {
@@ -225,7 +225,7 @@ fun ScanSheet(model: AppModel, initialSingle: Boolean) {
                         ) {
                             Text(
                                 L10n.t("cmp.scan.tallyMismatch", derivedNew, derivedExisting),
-                                style = Type.micro.copy(color = Palette.Amber),
+                                style = Type.micro.copy(color = Palette.AmberText),
                             )
                         }
                     }
@@ -276,7 +276,7 @@ private fun ScanModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         label,
         style = Type.micro.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal),
-        color = if (selected) Color.White else Palette.TextSecondary,
+        color = if (selected) Palette.OnAccent else Palette.TextSecondary,
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
             .background(if (selected) Palette.Accent else Color.Transparent)

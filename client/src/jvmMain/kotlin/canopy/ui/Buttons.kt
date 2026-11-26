@@ -70,16 +70,21 @@ data class ButtonColors(val container: Color, val content: Color)
 /** 与 Material3 的 ButtonDefaults.buttonColors 同形：调用点原样传颜色，不必改写。 */
 object ButtonDefaults {
     fun buttonColors(
-        containerColor: Color = Palette.Card,
+        containerColor: Color = Palette.Inlay,
         contentColor: Color = Palette.TextPrimary,
     ): ButtonColors = ButtonColors(containerColor, contentColor)
 }
 
-/** 语义色实心按钮的 hover：提亮一档。 */
-private fun hoverOf(container: Color): Color = lerp(container, Color.White, 0.10f)
+/**
+ * 语义色实心按钮的 hover：朝**远离文字**的方向推一档（10%）——文字是白的就压暗、是深的就提亮，悬停只会让字更清楚。
+ * 原先一律朝白推：深底白字的按钮一悬停对比度就掉（skeuo 的红 4.5 → 3.7）。
+ */
+internal fun hoverOf(container: Color, on: Color): Color =
+    lerp(container, if (on.luminance() < 0.5f) Color.White else Color.Black, 0.10f)
 
 /** 卡片底的按钮算「描边次按钮」：要描边，hover 走卡片 hover 色。 */
-private fun isStandardSurface(container: Color): Boolean = container == Palette.Card || container == Palette.CardHover
+private fun isStandardSurface(container: Color): Boolean =
+    container == Palette.Card || container == Palette.CardHover || container == Palette.Inlay
 
 /**
  * Material3 Button 的 Fluent 替身（见文件头）。[shape] 参数收下但不用——按钮圆角全应用统一；
@@ -96,9 +101,9 @@ fun Button(
 ) {
     val container = colors?.container?.takeIf { it != Color.Unspecified }
     val onContainer = colors?.content?.takeIf { it != Color.Unspecified }
-    val bgIdle = container ?: Palette.Card
-    val bgHover = if (container != null && !isStandardSurface(container)) hoverOf(container) else Palette.CardHover
+    val bgIdle = container ?: Palette.Inlay
     val fg = onContainer ?: Palette.TextPrimary
+    val bgHover = if (container != null && !isStandardSurface(container)) hoverOf(container, fg) else Palette.CardHover
     ButtonChrome(onClick, modifier, enabled, bgIdle, bgHover, fg, outlined = container == null || isStandardSurface(bgIdle), content = content)
 }
 
@@ -119,16 +124,21 @@ fun FluentButton(
     val bgHover: Color
     val fg: Color
     when {
-        container != null -> { bgIdle = container; bgHover = hoverOf(container); fg = onContainer ?: readableOn(container) }
+        container != null -> {
+            bgIdle = container
+            fg = onContainer ?: readableOn(container)
+            bgHover = hoverOf(container, fg)
+        }
         emphasis == Emphasis.Primary -> { bgIdle = Palette.Accent; bgHover = Palette.AccentHover; fg = Palette.OnAccent }
-        else -> { bgIdle = Palette.Card; bgHover = Palette.CardHover; fg = Palette.TextPrimary }
+        else -> { bgIdle = Palette.Inlay; bgHover = Palette.CardHover; fg = Palette.TextPrimary }
     }
     ButtonChrome(onClick, modifier, enabled, bgIdle, bgHover, fg, outlined = container == null && emphasis == Emphasis.Standard) {
         icon?.let {
             IconBox(it, size = 16.dp, tint = fg)
             Spacer(Modifier.width(6.dp))
         }
-        Text(text, style = Type.body.copy(fontWeight = FontWeight.Medium), maxLines = 1, overflow = TextOverflow.Clip)
+        // 标签不带颜色：跟 ButtonChrome 给的内容色走（Type.body 自带主文字色，会把它盖掉——实心按钮上就成了白字压粉彩）
+        Text(text, style = Type.body.copy(fontWeight = FontWeight.Medium, color = Color.Unspecified), maxLines = 1, overflow = TextOverflow.Clip)
         // 计数徽章：只在真有东西时出现（恒显 0 会被无视，「0」还容易被读成「引擎说不用更新」）；
         // 底色跟主文字色走（深皮=白底、浅皮=深底，随皮肤极性反转，字仍是 BgBase）——
         // 原来固定白底在浅色皮肤上贴浅绿/浅紫按钮对比不够；形状与内边距收敛到 pill 令牌（h8/v2），
@@ -137,7 +147,7 @@ fun FluentButton(
             Spacer(Modifier.width(6.dp))
             Text(
                 badge,
-                style = Type.micro.copy(fontWeight = FontWeight.Bold, color = Palette.BgBase),
+                style = Type.micro.copy(fontWeight = FontWeight.Bold, color = readableOn(Palette.TextPrimary)),
                 modifier = Modifier
                     .clip(Badge.pillShape)
                     .background(Palette.TextPrimary.copy(alpha = 0.92f))
@@ -273,7 +283,7 @@ fun Pivot(items: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier:
                         .padding(horizontal = 16.dp)
                         .drawBehind {
                             if (sel) {
-                                drawRect(Palette.Accent, topLeft = Offset(0f, size.height - 3.dp.toPx()), size = Size(size.width, 3.dp.toPx()))
+                                drawRect(Palette.AccentText, topLeft = Offset(0f, size.height - 3.dp.toPx()), size = Size(size.width, 3.dp.toPx()))
                             }
                         },
                     contentAlignment = Alignment.Center,

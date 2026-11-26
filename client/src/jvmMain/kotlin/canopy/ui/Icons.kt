@@ -179,6 +179,7 @@ fun IconBox(
         bitmap = bitmap,
         contentDescription = null,
         modifier = modifier.size(size),
-        colorFilter = ColorFilter.tint(tint.takeOrElse { Palette.TextSecondary }),
+        // 语义基色当图标着色 → 文字级（图标是画在表面上的墨，要读得清）；别的颜色原样
+        colorFilter = ColorFilter.tint(ink(tint).takeOrElse { Palette.TextSecondary }),
     )
 }

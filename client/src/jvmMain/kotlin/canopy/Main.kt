@@ -162,31 +162,37 @@ fun App(
     LaunchedEffect(Unit) { reprobe() }
     DisposableEffect(Unit) { onDispose { model?.stop() } }
 
-    // mac NavigationSplitView 对位：无常驻顶栏——品牌入侧栏，引擎态全屏居中呈现
-    when {
-        busy -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(Modifier.size(18.dp), color = Palette.Accent, strokeWidth = 2.dp)
-                Spacer(Modifier.height(Space.md))
-                Text(L10n.t("cmp.probe.locating"), style = Type.body.copy(color = Palette.TextSecondary))
+    // mac NavigationSplitView 对位：无常驻顶栏——品牌入侧栏，引擎态全屏居中呈现。
+    // 皮肤材质铺满**整个窗口**，三种态都画在它上面。菜单条的底是 Palette.Sidebar，玻璃 / Aero 的皮肤里它是
+    // 半透明的一层：身后若不是皮肤材质而是窗口默认的白底，整条就成了白的、白字压白底（glass / liquid 真窗口
+    // 实拍抓到；离屏体检原先把 App 包在背景里，看不到这个）。探测中 / 引擎缺席两态的文字同理。
+    Box(Modifier.fillMaxSize()) {
+        SkinBackdrop(Modifier.fillMaxSize())
+        when {
+            busy -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(Modifier.size(18.dp), color = Palette.AccentText, strokeWidth = 2.dp)
+                    Spacer(Modifier.height(Space.md))
+                    Text(L10n.t("cmp.probe.locating"), style = Type.body.copy(color = Palette.TextSecondary))
+                }
             }
-        }
-        probe != null && probe!!.found && model != null -> Column(Modifier.fillMaxSize()) {
-            // 窗口内菜单条（mac 原生菜单栏命令的等价物：操作/帮助）
-            AppMenuBar(model!!, onQuit = { onQuit?.invoke() })
-            Box(Modifier.weight(1f)) { SidebarShell(model!!) }
-        }
-        else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(L10n.t("bar.noEngine"), style = Type.title.copy(color = Palette.Amber))
-                Spacer(Modifier.height(Space.sm))
-                Text(L10n.t("cmp.probe.binHint"), style = Type.body.copy(color = Palette.TextSecondary))
-                Spacer(Modifier.height(Space.lg))
-                Button(
-                    onClick = { reprobe() },
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(Radius.control),
-                    colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
-                ) { Text(L10n.t("setup.recheck")) }
+            probe != null && probe!!.found && model != null -> Column(Modifier.fillMaxSize()) {
+                // 窗口内菜单条（mac 原生菜单栏命令的等价物：操作/帮助）
+                AppMenuBar(model!!, onQuit = { onQuit?.invoke() })
+                Box(Modifier.weight(1f)) { SidebarShell(model!!) }
+            }
+            else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(L10n.t("bar.noEngine"), style = Type.title.copy(color = Palette.AmberText))
+                    Spacer(Modifier.height(Space.sm))
+                    Text(L10n.t("cmp.probe.binHint"), style = Type.body.copy(color = Palette.TextSecondary))
+                    Spacer(Modifier.height(Space.lg))
+                    Button(
+                        onClick = { reprobe() },
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(Radius.control),
+                        colors = ButtonDefaults.buttonColors(containerColor = Palette.Accent, contentColor = Palette.OnAccent),
+                    ) { Text(L10n.t("setup.recheck")) }
+                }
             }
         }
     }
@@ -320,9 +326,8 @@ fun SidebarShell(model: AppModel, onQuit: () -> Unit = {}) {
     // FocusRequester 只吃自建输入框——这是不用封装件、用 BasicTextField 的原因）
     val searchFocus = SidebarSearchFocus.requester
 
-    // 窗口最底层的皮肤材质（玻璃壁纸 / 皮革 / 星星贴纸…）：外壳与页面在其上透明或半透明
+    // 皮肤材质（玻璃壁纸 / 皮革 / 星星贴纸…）由 App 根铺满整个窗口——菜单条也在它上面；外壳与页面在这里透明或半透明
     Box(Modifier.fillMaxSize()) {
-        SkinBackdrop(Modifier.fillMaxSize())
         Row(Modifier.fillMaxSize()) {
         // ── 侧栏 ──
         Column(
@@ -341,7 +346,7 @@ fun SidebarShell(model: AppModel, onQuit: () -> Unit = {}) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(androidx.compose.foundation.shape.RoundedCornerShape(Radius.control))
-                    .background(Palette.Card)
+                    .background(Palette.Inlay)
                     .padding(horizontal = Space.sm, vertical = 6.dp),
             ) {
                 IconBox(FluentIcon.Search, size = 16.dp, tint = Palette.TextSecondary)
@@ -528,13 +533,13 @@ fun NavItem(label: String, selected: Boolean, count: Long? = null, icon: FluentI
         // Fluent 选中 pill 指示条（3dp 宽 16dp 高圆条，accent）
         Box(
             Modifier.width(3.dp).height(16.dp)
-                .background(if (selected) Palette.Accent else Color.Transparent,
+                .background(if (selected) Palette.AccentText else Color.Transparent,
                     androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
         )
         Spacer(Modifier.width(10.dp))
         // 图标（Fluent NavigationView：选中项图标转 accent，未选中跟随次级文字）
         icon?.let {
-            IconBox(it, size = 18.dp, tint = if (selected) Palette.Accent else Palette.TextSecondary)
+            IconBox(it, size = 18.dp, tint = if (selected) Palette.AccentText else Palette.TextSecondary)
             Spacer(Modifier.width(10.dp))
         }
         Text(
@@ -558,7 +563,7 @@ private fun FeedbackStrip(model: AppModel) {
     val error by model.lastError.collectAsState()
     if (result == null && error == null) return
     Row(
-        Modifier.fillMaxWidth().background(Palette.Card)
+        Modifier.fillMaxWidth().background(Palette.Inlay)
             .drawBehind {
                 drawRect(color = Palette.Stroke, size = size.copy(height = 1.dp.toPx()))
             }
@@ -568,16 +573,16 @@ private fun FeedbackStrip(model: AppModel) {
         val shown = result
         val failed = shown != null && "✗" in shown
         val (mark, markTint) = when {
-            error != null -> FluentIcon.Warning to Palette.Amber
-            failed -> FluentIcon.ErrorCircle to Palette.Amber
-            else -> FluentIcon.CheckmarkCircle to Palette.Green
+            error != null -> FluentIcon.Warning to Palette.AmberText
+            failed -> FluentIcon.ErrorCircle to Palette.AmberText
+            else -> FluentIcon.CheckmarkCircle to Palette.GreenText
         }
         IconBox(mark, size = 16.dp, tint = markTint)
         Spacer(Modifier.width(Space.sm))
         Text(
             shown ?: error.orEmpty().removePrefix("⚠ "),
             style = Type.label,
-            color = if (error != null || failed) Palette.Amber else Palette.TextSecondary,
+            color = if (error != null || failed) Palette.AmberText else Palette.TextSecondary,
             maxLines = 3,
             modifier = Modifier.weight(1f),
         )
@@ -618,18 +623,18 @@ fun RepoItem(label: String, status: String?, dirtyCount: Long?, unreadable: Bool
             Spacer(Modifier.width(Space.xs))
             Box(Modifier.size(6.dp).background(Palette.Amber, androidx.compose.foundation.shape.CircleShape))
             Spacer(Modifier.width(3.dp))
-            Text(it.toString(), style = Type.micro, color = Palette.Amber)
+            Text(it.toString(), style = Type.micro, color = Palette.AmberText)
         }
     }
 }
 
 /** 档位 → 颜色（mac StatusDot：active=绿 / idle=黄 / stale=橙 / merged=紫）；没分支记录 = 中性灰。 */
 private fun repoRowTint(status: String?, unreadable: Boolean): Color = when {
-    unreadable -> Palette.Red
-    status == "active" -> Palette.Green
-    status == "idle" -> Palette.Yellow
-    status == "stale" -> Palette.Amber
-    status == "merged" -> Palette.Deep
+    unreadable -> Palette.RedText
+    status == "active" -> Palette.GreenText
+    status == "idle" -> Palette.YellowText
+    status == "stale" -> Palette.AmberText
+    status == "merged" -> Palette.DeepText
     else -> Palette.TextTertiary
 }
 

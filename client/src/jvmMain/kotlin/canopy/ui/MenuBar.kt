@@ -131,7 +131,7 @@ private fun MenuAnchor(
         DropdownMenu(
             expanded = open,
             onDismissRequest = { open = false },
-            containerColor = Palette.Card,
+            containerColor = Palette.Popover,
         ) {
             content { open = false }
         }

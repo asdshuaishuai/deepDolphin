@@ -74,7 +74,7 @@ fun OutlinedTextField(
         enabled = enabled,
         singleLine = singleLine,
         textStyle = textStyle.copy(color = if (enabled) Palette.TextPrimary else Palette.TextTertiary),
-        cursorBrush = SolidColor(Palette.Accent),
+        cursorBrush = SolidColor(Palette.AccentText),
         visualTransformation = visualTransformation,
         interactionSource = interaction,
         maxLines = if (singleLine) 1 else maxLines,
@@ -112,7 +112,7 @@ fun DropdownMenu(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     offset: DpOffset = DpOffset.Zero,
-    containerColor: Color = Palette.Card,
+    containerColor: Color = Palette.Popover,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     androidx.compose.material3.DropdownMenu(
@@ -167,7 +167,7 @@ fun FluentDropdown(
     val border by androidx.compose.animation.animateColorAsState(
         when {
             !enabled -> Palette.Stroke
-            focusedLook -> Palette.Accent
+            focusedLook -> Palette.AccentText
             hovered -> Palette.StrokeHover
             else -> Palette.StrokeHover
         },
@@ -218,14 +218,14 @@ fun FluentDropdown(
                             // 选中项打勾；未选项留同样的宽度，文字左缘对齐
                             Box(Modifier.width(16.dp)) {
                                 if (key == selectedKey) {
-                                    IconBox(FluentIcon.Checkmark, size = 14.dp, tint = Palette.Accent)
+                                    IconBox(FluentIcon.Checkmark, size = 14.dp, tint = Palette.AccentText)
                                 }
                             }
                             Spacer(Modifier.width(8.dp))
                             BasicText(
                                 text = label,
                                 style = Type.body.copy(
-                                    color = if (key == selectedKey) Palette.Accent else Palette.TextPrimary,
+                                    color = if (key == selectedKey) Palette.AccentText else Palette.TextPrimary,
                                 ),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,

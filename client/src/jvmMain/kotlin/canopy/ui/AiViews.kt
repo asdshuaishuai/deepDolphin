@@ -309,7 +309,7 @@ private fun AppearanceCard() {
         }
         message?.let {
             Spacer(Modifier.height(Space.sm))
-            Text(it, style = Type.micro, color = Palette.Amber)
+            Text(it, style = Type.micro, color = Palette.AmberText)
         }
     }
 }
@@ -334,7 +334,7 @@ private fun LanguageCard() {
         }
         message?.let {
             Spacer(Modifier.height(Space.sm))
-            Text(it, style = Type.micro, color = Palette.Amber)
+            Text(it, style = Type.micro, color = Palette.AmberText)
         }
     }
 }
@@ -444,7 +444,7 @@ private fun SchedulePane(model: AppModel) {
         )
         message?.let {
             Spacer(Modifier.height(Space.sm))
-            Text(it, style = Type.body.copy(color = if (it.contains("✓")) Palette.Green else Palette.Amber))
+            Text(it, style = Type.body.copy(color = if (it.contains("✓")) Palette.GreenText else Palette.AmberText))
         }
     }
 }
@@ -576,7 +576,7 @@ fun AiSettingsPane() {
             }
             message?.let {
                 Spacer(Modifier.height(Space.sm))
-                Text(it, style = Type.body.copy(color = if (it.contains("✓") || it.startsWith(L10n.t("cmp.ai.testOk", ""))) Palette.Green else Palette.Amber))
+                Text(it, style = Type.body.copy(color = if (it.contains("✓") || it.startsWith(L10n.t("cmp.ai.testOk", ""))) Palette.GreenText else Palette.AmberText))
             }
         }
     }
@@ -648,7 +648,7 @@ fun AgentSheet(model: AppModel) {
             Modifier.fillMaxWidth(0.62f).fillMaxHeight(0.8f)
                 .clip(RoundedCornerShape(Radius.card))
 .shadow(12.dp, RoundedCornerShape(Radius.card))
-                .background(Palette.Card)
+                .background(Palette.Popover)
                 .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.card))
                 .padding(Space.lg),
         ) {
@@ -743,9 +743,9 @@ private fun AgentConversation(model: AppModel, scopeLabel: String, initialTask: 
                         MarkdownText(m.text, Modifier.fillMaxWidth())
                     }
                     else -> if (m.isError) Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconBox(FluentIcon.Warning, size = 14.dp, tint = Palette.Amber)
+                        IconBox(FluentIcon.Warning, size = 14.dp, tint = Palette.AmberText)
                         Spacer(Modifier.width(6.dp))
-                        Text(m.text.take(120), style = Type.micro.copy(color = Palette.Amber))
+                        Text(m.text.take(120), style = Type.micro.copy(color = Palette.AmberText))
                     }
                 }
             }
@@ -754,7 +754,7 @@ private fun AgentConversation(model: AppModel, scopeLabel: String, initialTask: 
             }
             errorBanner?.let {
                 GlassCard(Modifier.fillMaxWidth()) {
-                    Text(it, style = Type.body.copy(color = Palette.Amber))
+                    Text(it, style = Type.body.copy(color = Palette.AmberText))
                 }
             }
         }

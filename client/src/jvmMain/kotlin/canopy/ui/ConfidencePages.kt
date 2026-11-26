@@ -59,20 +59,20 @@ import androidx.compose.foundation.layout.PaddingValues
 
 /** 总分色：≥80 绿 / ≥50 橙 / 其余红（mac reportBody 同阈值）。 */
 fun confidenceScoreColor(score: Long): Color =
-    if (score >= 80) Palette.Green else if (score >= 50) Palette.Amber else Palette.Red
+    if (score >= 80) Palette.GreenText else if (score >= 50) Palette.AmberText else Palette.RedText
 
 /** 补丁总体分色：≥0.8 绿 / ≥0.5 橙 / 其余红（mac finalCard/layer1Card 同阈值）。 */
 fun patchOverallColor(overall: Double): Color =
-    if (overall >= 0.8) Palette.Green else if (overall >= 0.5) Palette.Amber else Palette.Red
+    if (overall >= 0.8) Palette.GreenText else if (overall >= 0.5) Palette.AmberText else Palette.RedText
 
 /** 实体分色：<0.5 红 / <0.75 橙 / 其余次级色（mac PatchEntityRow 同阈值）。 */
 fun patchEntityColor(confidence: Double): Color =
-    if (confidence < 0.5) Palette.Red else if (confidence < 0.75) Palette.Amber else Palette.TextSecondary
+    if (confidence < 0.5) Palette.RedText else if (confidence < 0.75) Palette.AmberText else Palette.TextSecondary
 
 /** finding 权重越高 = 越不可信：≥8 红（孤儿/占位/吞错/重复体档）/ ≥5 橙 / 其余次级。 */
 fun findingWeightColor(weight: Long): Color =
     // 色阶对位 mac CodeSnippet.swift:201：≥10 红 / ≥6 橙（「只看高权重」的筛选线仍是 ≥8，两回事）
-    if (weight >= 10) Palette.Red else if (weight >= 6) Palette.Amber else Palette.TextSecondary
+    if (weight >= 10) Palette.RedText else if (weight >= 6) Palette.AmberText else Palette.TextSecondary
 
 /** 只看高权重疑点（mac highWeightOnly：weight ≥ 8 这一档；关着 = 引擎全序原样）。 */
 fun highWeightFindings(fs: List<ConfFinding>, enabled: Boolean): List<ConfFinding> =
@@ -243,7 +243,7 @@ fun ConfidencePage(model: AppModel) {
                     style = Type.label,
                 )
             }
-            if (vm.loading) CircularProgressIndicator(Modifier.size(14.dp), color = Palette.Accent, strokeWidth = 2.dp)
+            if (vm.loading) CircularProgressIndicator(Modifier.size(14.dp), color = Palette.AccentText, strokeWidth = 2.dp)
         }
         // 工具条（mac 页头对位：选择器 + 体检 + 高权重开关 + 复制提示词）
         Row(
@@ -271,7 +271,7 @@ fun ConfidencePage(model: AppModel) {
         }
         vm.error?.let {
             Text(
-                it, style = Type.body.copy(color = Palette.Amber),
+                it, style = Type.body.copy(color = Palette.AmberText),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.sm),
             )
         }
@@ -365,7 +365,7 @@ private fun DisclosureBox(text: String) {
     Text(
         text, style = Type.label.copy(color = Palette.TextSecondary),
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.control))
-            .background(Palette.Card.copy(alpha = 0.55f)).padding(Space.sm),
+            .background(Palette.Well).padding(Space.sm),
     )
 }
 
@@ -375,7 +375,7 @@ private fun FindingDisclosureRow(f: ConfFinding, projectPath: String) {
     var expanded by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.control))
-            .background(Palette.Card.copy(alpha = 0.55f)).padding(Space.sm),
+            .background(Palette.Well).padding(Space.sm),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -497,7 +497,7 @@ fun PatchCheckPage(model: AppModel) {
                 Text(L10n.t("nav.patchcheck"), style = Type.title)
                 Text(L10n.t("cmp.conf.threeLayers"), style = Type.label)
             }
-            if (vm.running) CircularProgressIndicator(Modifier.size(14.dp), color = Palette.Accent, strokeWidth = 2.dp)
+            if (vm.running) CircularProgressIndicator(Modifier.size(14.dp), color = Palette.AccentText, strokeWidth = 2.dp)
         }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = Space.xl),
@@ -517,12 +517,12 @@ fun PatchCheckPage(model: AppModel) {
                 onClick = { scope.launch { vm.merge() } },
                 enabled = !vm.running && vm.layer1 != null,
                 shape = RoundedCornerShape(Radius.control),
-                colors = ButtonDefaults.buttonColors(containerColor = Palette.Deep, contentColor = Palette.BgBase),
+                colors = ButtonDefaults.buttonColors(containerColor = Palette.Deep, contentColor = readableOn(Palette.Deep)),
             ) { Text(L10n.t("patch.merge")) }
         }
         vm.error?.let {
             Text(
-                it, style = Type.body.copy(color = Palette.Amber),
+                it, style = Type.body.copy(color = Palette.AmberText),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.sm),
             )
         }
@@ -615,7 +615,7 @@ private fun Layer1Card(l1: PatchConfidence, verdicts: Map<String, String>, onVer
                     style = Type.micro.copy(fontFamily = FontFamily.Monospace),
                     color = if (isNullSignal(v)) Palette.TextTertiary else Palette.TextSecondary,
                     modifier = Modifier.clip(RoundedCornerShape(Radius.chip))
-                        .background(Palette.Card.copy(alpha = if (isNullSignal(v)) 0.35f else 0.7f))
+                        .background(if (isNullSignal(v)) Palette.Well.copy(alpha = Palette.Well.alpha * 0.5f) else Palette.Well)
                         .padding(horizontal = Space.xs, vertical = 1.dp),
                 )
             }
@@ -641,7 +641,7 @@ private fun UncertainRow(u: PatchUncertain, current: String, onVerdict: (String)
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.control))
-            .background(Palette.Card.copy(alpha = 0.55f)).padding(Space.sm),
+            .background(Palette.Well).padding(Space.sm),
     ) {
         Column(Modifier.weight(1f)) {
             Text(u.issue, style = Type.label.copy(fontWeight = FontWeight.SemiBold))
@@ -671,7 +671,7 @@ private fun VerdictPills(current: String, onVerdict: (String) -> Unit) {
             val selected = current == v
             Text(
                 label, style = Type.micro,
-                color = if (selected) Color.White else Palette.TextSecondary,
+                color = if (selected) Palette.OnAccent else Palette.TextSecondary,
                 modifier = Modifier.clip(RoundedCornerShape(Radius.control))
                     .background(if (selected) Palette.Accent else Palette.Card)
                     .clickable { onVerdict(v) }
@@ -704,7 +704,7 @@ private fun PatchEntityRow(e: PatchEntity, diffText: String) {
     var expanded by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.control))
-            .background(Palette.Card.copy(alpha = 0.55f)).padding(Space.sm),
+            .background(Palette.Well).padding(Space.sm),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,

@@ -84,6 +84,21 @@ object Palette {
     var CardHover by mutableStateOf(Color(0xFF303030))
     /** 按压缩暗（~3% 白）。 */
     var CardPressed by mutableStateOf(Color(0xFF262626))
+    /** 卡内凹槽（披露条 / 疑点行 / 信号 chip 的底）：比卡再退一档。不在这里改 Card 的透明度——见 Skin.kt wellOf。 */
+    var Well by mutableStateOf(Color(0xFF232323))
+    /**
+     * 浮层底（菜单、弹窗、提示）：**必须不透明**——它盖在任意内容上。不透明皮肤的卡片本来就是实底（= 卡片色）；
+     * 半透明卡片的皮肤（玻璃 / Aero）取「卡片落在底色上的样子」，否则菜单里的字压在底下页面的内容上。
+     * [Popover] 给菜单与弹窗，[PopoverRaised] 给提示条（不透明皮肤里原先是卡片 hover 色，略亮一档）。
+     */
+    var Popover by mutableStateOf(Color(0xFF292929))
+    var PopoverRaised by mutableStateOf(Color(0xFF303030))
+    /**
+     * 卡内容器底（筛选芯片组、卡内次按钮的静置底）：不透明皮肤 = 卡片色；半透明卡片的皮肤 = 透明、只留 hairline 描边。
+     * 半透明卡片再叠一层卡片会一层比一层亮：aero 的筛选行是「卡 → 芯片组 Card → 选中片 CardHover」三层，
+     * 选中片上的白字实拍 3.8:1。换肤时由 Skins.apply 写入。
+     */
+    var Inlay by mutableStateOf(Color(0xFF292929))
     /** 侧栏底（NavigationView pane：比底更暗一档）。 */
     var Sidebar by mutableStateOf(Color(0xFF191919))
     /** hairline 描边（白 8%）。 */
@@ -119,6 +134,20 @@ object Palette {
     var Yellow by mutableStateOf(Color(0xFFFFD24A))
     var Amber by mutableStateOf(Color(0xFFFFB35C))
     var Red by mutableStateOf(Color(0xFFFF99A4))
+
+    // ── 文字级语义色（Skin.kt 在换皮肤时派生）──
+    // 语义色身兼两职：当容器填充（按钮、胶囊、进度条——任何颜色都行，前景另配）与当「墨」
+    // （画在页面/卡片表面上的文字、图标、徽标、细指示线——必须读得清）。为暗色皮肤挑的粉彩色
+    // 在浅色皮肤上当墨只有 1–3 的对比度（Aqua 上实拍：橙字 1.4、绿字 1.9）。
+    // 这组是同一色相的「文字级」：在本套皮肤的所有不透明表面上对比度 ≥ 4.5；暗色皮肤本来就达标，等于基色。
+    var AccentText by mutableStateOf(Color(0xFF60CDFF))
+    var ShallowText by mutableStateOf(Color(0xFF6CCB5F))
+    var DeepText by mutableStateOf(Color(0xFFB5A6FF))
+    var AiText by mutableStateOf(Color(0xFF4CD6E8))
+    var YellowText by mutableStateOf(Color(0xFFFFD24A))
+    var AmberText by mutableStateOf(Color(0xFFFFB35C))
+    var RedText by mutableStateOf(Color(0xFFFF99A4))
+    val GreenText: Color get() = ShallowText
 
     // ── hero（安静 Fluent 头：分层底纵向微渐变，无多色）──
     var HeroTop by mutableStateOf(Color(0xFF2E2E2E))
@@ -186,8 +215,12 @@ fun pageFill(): Brush = if (Material.backdrop == BackdropKind.NONE) Brush.horizo
 fun cardBorder(): androidx.compose.foundation.BorderStroke =
     androidx.compose.foundation.BorderStroke(Material.borderWidth, Palette.Stroke)
 
-/** 提交构成序列色（12 类穷举、不取模；Fluent 暗底域）。 */
-val Composition12 = listOf(
+/**
+ * 提交构成序列色（12 类穷举、不取模；Fluent 暗底域）的**原始值**。界面读 [Composition12]：换肤时按皮肤保底
+ * （Skins.apply）——这组粉彩是为暗底挑的，浅色皮肤上当归档与图例点几乎看不见；保底后对底与卡 ≥ 3:1
+ * （非文字图形的 WCAG 1.4.11），暗色皮肤本来就达标、等于原值。
+ */
+val Composition12Base = listOf(
     Color(0xFF60CDFF), // accent blue
     Color(0xFFFF99A4), // red
     Color(0xFFFFB35C), // orange
@@ -201,6 +234,9 @@ val Composition12 = listOf(
     Color(0xFF4CD6E8), // cyan
     Color(0xFF9E9E9E), // gray
 )
+
+/** 当前皮肤的提交构成序列色（Compose 状态，换肤时 Skins.apply 重算）。 */
+var Composition12 by mutableStateOf(Composition12Base)
 
 // ── 渐变：只做安静分层（hero 纵向微渐变）与同语义深→亮 ──
 
@@ -226,20 +262,20 @@ fun accentBrush(): Brush = semanticBrush(Palette.Accent, Palette.AccentAlt)
 fun fluentColorScheme(): androidx.compose.material3.ColorScheme =
     androidx.compose.material3.darkColorScheme(
         primary = Palette.Accent, onPrimary = Palette.OnAccent,
-        primaryContainer = Palette.Accent.copy(alpha = 0.16f), onPrimaryContainer = Palette.Accent,
+        primaryContainer = Palette.Accent.copy(alpha = 0.16f), onPrimaryContainer = Palette.AccentText,
         inversePrimary = Palette.AccentAlt,
-        secondary = Palette.Deep, onSecondary = Palette.BgBase,
-        secondaryContainer = Palette.Deep.copy(alpha = 0.16f), onSecondaryContainer = Palette.Deep,
-        tertiary = Palette.Ai, onTertiary = Palette.BgBase,
-        tertiaryContainer = Palette.Ai.copy(alpha = 0.16f), onTertiaryContainer = Palette.Ai,
+        secondary = Palette.Deep, onSecondary = readableOn(Palette.Deep),
+        secondaryContainer = Palette.Deep.copy(alpha = 0.16f), onSecondaryContainer = Palette.DeepText,
+        tertiary = Palette.Ai, onTertiary = readableOn(Palette.Ai),
+        tertiaryContainer = Palette.Ai.copy(alpha = 0.16f), onTertiaryContainer = Palette.AiText,
         background = Palette.BgBase, onBackground = Palette.TextPrimary,
         surface = Palette.Card, onSurface = Palette.TextPrimary,
         surfaceVariant = Palette.CardHover, onSurfaceVariant = Palette.TextSecondary,
         surfaceTint = Color.Transparent,
         inverseSurface = Palette.TextPrimary, inverseOnSurface = Palette.BgBase,
         outline = Palette.StrokeHover, outlineVariant = Palette.Stroke,
-        error = Palette.Red, onError = Palette.BgBase,
-        errorContainer = Palette.Red.copy(alpha = 0.16f), onErrorContainer = Palette.Red,
+        error = Palette.Red, onError = readableOn(Palette.Red),
+        errorContainer = Palette.Red.copy(alpha = 0.16f), onErrorContainer = Palette.RedText,
         surfaceBright = Palette.CardHover, surfaceDim = Palette.BgBase,
         surfaceContainerLowest = Palette.Sidebar, surfaceContainerLow = Palette.BgBase,
         surfaceContainer = Palette.Card, surfaceContainerHigh = Palette.CardHover,
@@ -255,16 +291,23 @@ val FluentShapes = androidx.compose.material3.Shapes(
     extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(Radius.card),
 )
 
-/** Fluent 字阶映射到 Material 字体档（与 Type 的字号一致）。 */
+/**
+ * Fluent 字阶映射到 Material 字体档（与 Type 的字号一致）。**不带颜色**——这是刻意的：
+ * 全应用用的是 Material3 的 `Text`，它的取色顺序是「显式参数 → 样式里的颜色 → 容器给的内容色」。
+ * 这里原先每档都写了 `color = Palette.TextPrimary`：实心按钮给的 contentColor 永远轮不到，主按钮上是
+ * 白字压亮蓝（Fluent 实拍 1.7:1）；而且这个对象是启动时建一次的常量，颜色冻在默认皮肤的白字上，
+ * 浅色皮肤里按钮的字也是白的（Aqua 实拍：白字压白底 1.1:1）。
+ * 文字颜色只从两处来：界面自己传的 `Type.*`（换肤时重算），或容器的 `LocalContentColor`。
+ */
 val FluentTypography = androidx.compose.material3.Typography(
-    labelSmall = androidx.compose.ui.text.TextStyle(fontSize = 11.sp, color = Palette.TextTertiary),
-    labelMedium = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Palette.TextSecondary),
-    labelLarge = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, color = Palette.TextPrimary),
-    bodySmall = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Palette.TextSecondary),
-    bodyMedium = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, color = Palette.TextPrimary),
-    bodyLarge = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, color = Palette.TextPrimary),
-    titleMedium = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary),
-    titleLarge = androidx.compose.ui.text.TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary),
+    labelSmall = androidx.compose.ui.text.TextStyle(fontSize = 11.sp),
+    labelMedium = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+    labelLarge = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
+    bodySmall = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+    bodyMedium = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
+    bodyLarge = androidx.compose.ui.text.TextStyle(fontSize = 16.sp),
+    titleMedium = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
+    titleLarge = androidx.compose.ui.text.TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold),
 )
 
 /** Fluent 开关配色（开 = accent 轨 + 近黑钮；关 = hairline 轨）。 */
@@ -281,12 +324,12 @@ fun fluentSwitchColors() = androidx.compose.material3.SwitchDefaults.colors(
 /** Fluent 文本框配色（hairline 描边，聚焦 accent）。 */
 @androidx.compose.runtime.Composable
 fun fluentTextFieldColors() = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = Palette.Accent,
+    focusedBorderColor = Palette.AccentText,
     unfocusedBorderColor = Palette.StrokeHover,
-    errorBorderColor = Palette.Red,
-    focusedLabelColor = Palette.Accent,
+    errorBorderColor = Palette.RedText,
+    focusedLabelColor = Palette.AccentText,
     unfocusedLabelColor = Palette.TextSecondary,
-    cursorColor = Palette.Accent,
+    cursorColor = Palette.AccentText,
     focusedTextColor = Palette.TextPrimary,
     unfocusedTextColor = Palette.TextPrimary,
     focusedPlaceholderColor = Palette.TextTertiary,
@@ -301,7 +344,7 @@ fun HelpTooltip(text: String, content: @androidx.compose.runtime.Composable () -
         positionProvider = androidx.compose.material3.TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip = {
             // PlainTooltip / RichTooltip 是 TooltipBoxScope 的成员（material3 1.3）
-            PlainTooltip(containerColor = Palette.CardHover, contentColor = Palette.TextPrimary) {
+            PlainTooltip(containerColor = Palette.PopoverRaised, contentColor = Palette.TextPrimary) {
                 androidx.compose.material3.Text(text, style = Type.label)
             }
         },
@@ -320,7 +363,6 @@ fun HelpTooltip(text: String, content: @androidx.compose.runtime.Composable () -
 private const val SkeletonSweepMillis = Motion.slow * 4
 
 /** 悬停整体提亮的强度上限（Plus 混合里 CardHover 的透明度）；不做到 1，给容器自己的底色动画留层次。 */
-private const val HoverBrightenAlpha = 0.35f
 
 /** 指针按下之后多久内落上的焦点算「鼠标取焦」（focus-visible 语义：按下与取焦同窗即指针会话）。 */
 private const val PointerFocusWindowMillis = 500L
@@ -399,7 +441,7 @@ fun SkeletonCard(
  */
 fun Modifier.focusRing(
     enabled: Boolean = true,
-    color: Color = Palette.Accent,
+    color: Color = Palette.AccentText,
     radius: Dp = Radius.control,
 ): Modifier = composed {
     var focused by remember { mutableStateOf(false) }
@@ -452,7 +494,8 @@ fun Modifier.focusRing(
  *     shadowElevation 档，与容器自己的 skinShadow 叠加即增强）；
  *     硬偏移档（HARD_OFFSET）hover 时再叠一遍 skinShadow——偏移块同形加深，正是粗野主义的 hover 语言。
  *  ② 上浮 [lift]（默认 2dp，graphicsLayer translationY 动画驱动，不动布局，与 skinShadow 各画各的）。
- *  ③ 整体提亮：内容画完后再叠一层 Palette.CardHover 的 Plus 混合——只加不减：暗底向 hover 表面靠、
+ *  ③ 整体提亮：内容画完后再叠一层 Material.hoverBrighten 的 Plus 混合（提亮量换肤时按皮肤算：半透明卡片的
+ *  皮肤只加「卡 → 悬停卡」多出来的那一点）——只加不减：暗底向 hover 表面靠、
  *     白字被钳制在纯白不受影响；浅色皮肤上近白底钳在原色、深色字微亮，两侧都不破。要做**精确**
  *     Card→CardHover 底色切换的容器（GlassCard 已是）在自己的 background 动画里做，
  *     挂本修饰符时传 brighten = false 免得叠亮。
@@ -490,7 +533,7 @@ fun Modifier.hoverLift(
         .drawWithContent {
             drawContent()
             if (brighten && k > 0.01f) {
-                drawRect(Palette.CardHover.copy(alpha = HoverBrightenAlpha * k), blendMode = BlendMode.Plus)
+                drawRect(Material.hoverBrighten.copy(alpha = Material.hoverBrighten.alpha * k), blendMode = BlendMode.Plus)
             }
         }
 }

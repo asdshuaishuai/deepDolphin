@@ -16,6 +16,7 @@
 package canopy.ui
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.Dp
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -43,7 +44,12 @@ internal fun Color.toCss(): String {
 
 private fun obj(build: JsonObjectBuilder.() -> Unit): JsonObject = buildJsonObject { build() }
 
-/** 产物换成客户端主题所需的 CSS 自定义属性。热力图与架构图两套变量名都给——多余的无害。 */
+/**
+ * 产物换成客户端主题所需的 CSS 自定义属性。热力图与架构图两套变量名都给——多余的无害。
+ * 全部由令牌派生：面取 Palette 的表面令牌，罩取 [veil]，语义色给**文字级**——产物里它们当文字与细线用
+ * （置信度数字、计数、关系线、状态点）。原先这里写死了一副暗色调色板（节点 #2e2e2e、25% 的白描边……），
+ * 浅色皮肤的深色文字压上去读不出来；Fluent 下派生值与原写死值只差 1–3 个色阶。
+ */
 internal fun graphEmbedVars(): JsonObject = obj {
     // 热力图产物的变量名（cambium treehtml.cj）
     put("--bg", Palette.BgBase.toCss())
@@ -54,28 +60,28 @@ internal fun graphEmbedVars(): JsonObject = obj {
     put("--text", Palette.TextPrimary.toCss())
     put("--muted", Palette.TextSecondary.toCss())
     put("--muted2", Palette.TextTertiary.toCss())
-    put("--green", Palette.Shallow.toCss())
-    put("--yellow", Palette.Yellow.toCss())
-    put("--red", Palette.Red.toCss())
-    put("--cyan", Palette.Accent.toCss())
-    put("--violet", Palette.Deep.toCss())
-    put("--blue", Palette.Accent.toCss())
+    put("--green", Palette.ShallowText.toCss())
+    put("--yellow", Palette.YellowText.toCss())
+    put("--red", Palette.RedText.toCss())
+    put("--cyan", Palette.AccentText.toCss())
+    put("--violet", Palette.DeepText.toCss())
+    put("--blue", Palette.AccentText.toCss())
     put("--radius", "${Radius.card.value.toInt()}px")   // Dp.toString() 是 "8.0.dp"，不能直接拼
     put("--sans", "\"system-ui\", \"Segoe UI\", \"Noto Sans\", \"Noto Sans CJK SC\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif")
     put("--mono", "ui-monospace, \"Cascadia Mono\", \"JetBrains Mono\", Menlo, Consolas, \"Noto Sans Mono CJK SC\", monospace")
     // 架构图产物的变量名（cambium archhtml.cj）
-    put("--grid", Color(0xFF2A2A2A).toCss())
+    put("--grid", Palette.Card.toCss())
     put("--border", Palette.Stroke.toCss())
-    put("--accent", Palette.Accent.toCss())
+    put("--accent", Palette.AccentText.toCss())
     put("--arrow", Palette.TextTertiary.toCss())
     put("--chip", Palette.Card.toCss())
     // 嵌入样式自己的变量（第二层中性面、卡片、悬停、轨道、画布点阵）
     put("--e-surface", Palette.Sidebar.toCss())
     put("--e-card", Palette.Card.toCss())
-    put("--e-hover", Color(0x0FFFFFFF).toCss())
+    put("--e-hover", veil(0.06f).toCss())
     put("--e-track", Palette.BarTrack.toCss())
-    put("--e-dot", Color(0x12FFFFFF).toCss())
-    put("--e-field", Color(0xFF1B1B1B).toCss())
+    put("--e-dot", veil(0.07f).toCss())
+    put("--e-field", Palette.Sidebar.toCss())
     put("--e-active", Palette.Accent.copy(alpha = 0.10f).toCss())
     // 尺寸契约（产物嵌入样式里的 --e-* 变量）：控件高、底条高、控件圆角、卡片圆角——与外壳同值，
     // 单位同 CSS px。换成圆角为 0 的皮肤，嵌入页的输入框、按钮也跟着变方角；不传则产物回退到自己的定稿值。
@@ -97,37 +103,37 @@ internal fun graphEmbedCanvas(): JsonObject = obj {
     // 热力图画布
     put("bg", Palette.BgBase.toCss())
     put("atmosphere", false)                       // 星点与光斑属于独立版的氛围，页面里不要
-    put("bandA", Color(0x07FFFFFF).toCss())
-    put("bandB", Color(0x03FFFFFF).toCss())
+    put("bandA", veil(0.03f).toCss())
+    put("bandB", veil(0.01f).toCss())
     put("bandLine", Palette.Stroke.toCss())
-    put("nodeBoundary", Color(0xFF1B1B1B).toCss())
-    put("nodeModule", Color(0xFF2A2A2A).toCss())
-    put("node", Color(0xFF2E2E2E).toCss())
+    put("nodeBoundary", Palette.Sidebar.toCss())
+    put("nodeModule", Palette.Card.toCss())
+    put("node", Palette.CardHover.toCss())
     put("text", Palette.TextPrimary.toCss())
-    put("text3", Color(0x8FFFFFFF).toCss())
-    put("chip", Color(0xFF333333).toCss())
-    put("red", Palette.Red.toCss())
-    put("yellow", Palette.Yellow.toCss())
-    put("green", Palette.Shallow.toCss())
-    put("accent", Palette.Accent.toCss())
+    put("text3", Palette.TextTertiary.toCss())
+    put("chip", veil(0.025f).compositeOver(Palette.CardHover).toCss())
+    put("red", Palette.RedText.toCss())
+    put("yellow", Palette.YellowText.toCss())
+    put("green", Palette.ShallowText.toCss())
+    put("accent", Palette.AccentText.toCss())
     put("radius", Radius.card.value.toInt())
     put("selectGlow", 8)                           // 选中卡片的外发光：独立版 16，页面里收一半
     put("track", Palette.BarTrack.toCss())
-    put("stroke", Color(0x40FFFFFF).toCss())
-    // 架构图调色板（键名同它的暗色调色板）
+    put("stroke", veil(0.25f).toCss())
+    // 架构图调色板（键名同产物的调色板；值全部取令牌）
     put("bg0", Palette.BgBase.toCss())
-    put("bg1", Color(0xFF1C1C1C).toCss())
-    put("grid", Color(0xFF2A2A2A).toCss())
+    put("bg1", Palette.Sidebar.toCss())
+    put("grid", Palette.Card.toCss())
     put("muted", Palette.TextSecondary.toCss())
     put("border", Palette.StrokeHover.toCss())
     put("arrow", Palette.TextTertiary.toCss())
-    put("card", Color(0xF52B2B2B).toCss())           // 模块卡片的底（独立版是深蓝）
-    put("mini", Color(0xEB292929).toCss())           // 小地图的底
-    put("cols", JsonArray(listOf(Palette.Accent, Palette.Deep, Palette.Shallow, Palette.Yellow, Color(0xFF9A9A9A)).map { JsonPrimitive(it.toCss()) }))
+    put("card", Palette.Card.toCss())                // 模块卡片的底
+    put("mini", Palette.Well.toCss())                // 小地图的底
+    put("cols", JsonArray(listOf(Palette.Accent, Palette.Deep, Palette.Shallow, Palette.Yellow, Palette.TextTertiary).map { JsonPrimitive(it.toCss()) }))
     put(
         "fills",
         JsonArray(
-            listOf(Palette.Accent, Palette.Deep, Palette.Shallow, Palette.Yellow, Color(0xFF9A9A9A)).map {
+            listOf(Palette.Accent, Palette.Deep, Palette.Shallow, Palette.Yellow, Palette.TextTertiary).map {
                 JsonPrimitive(it.copy(alpha = 0.10f).toCss())
             },
         ),

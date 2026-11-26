@@ -139,7 +139,7 @@ fun ConfirmDialog(title: String, body: String, confirmLabel: String, onConfirm: 
                 )
                 Text(
                     confirmLabel, style = Type.body.copy(fontWeight = FontWeight.Bold),
-                    color = Color.White,
+                    color = readableOn(Palette.Red),
                     modifier = Modifier.focusRequester(confirmFocus).focusRing(radius = 8.dp)
                         .clip(RoundedCornerShape(8.dp)).background(Palette.Red)
                         .clickable { onConfirm() }
@@ -169,7 +169,8 @@ fun ActionText(
         tween(Motion.normal),
         label = "actionBg",
     )
-    val content = if (enabled) color else color.copy(alpha = 0.4f)
+    // 文字画在透明 / 卡片悬停底上：语义基色换成文字级
+    val content = if (enabled) ink(color) else ink(color).copy(alpha = 0.4f)
     Row(
         Modifier
             .height(ControlHeight)
@@ -287,7 +288,7 @@ fun MilestonesPage(model: AppModel) {
                 LabeledField(L10n.t("cmp.ms.descOptional"), fDesc, singleLine = false) { fDesc = it }
                 formError?.let {
                     Spacer(Modifier.height(Space.xs))
-                    Text(it, style = Type.body.copy(color = Palette.Red))
+                    Text(it, style = Type.body.copy(color = Palette.RedText))
                 }
                 Spacer(Modifier.height(Space.md))
                 Button(
@@ -315,7 +316,7 @@ fun MilestonesPage(model: AppModel) {
         //   是两句话，混成一句用户会以为自己还没建。
         when (val st = msState) {
             is LoadState.Failed -> GlassCard(Modifier.fillMaxWidth()) {
-                Text(L10n.t("ms.page.unreadable"), style = Type.section.copy(color = Palette.Amber))
+                Text(L10n.t("ms.page.unreadable"), style = Type.section.copy(color = Palette.AmberText))
                 Spacer(Modifier.height(Space.xs))
                 Text(st.reason, style = Type.body.copy(color = Palette.TextSecondary))
                 Text(L10n.t("cmp.ms.loadFailed"), style = Type.micro)
@@ -400,14 +401,14 @@ fun MilestonesPage(model: AppModel) {
                                 style = Type.label,
                             )
                             Spacer(Modifier.weight(1f))
-                            Text("${tally.open}", style = Type.body.copy(color = Palette.Accent))
+                            Text("${tally.open}", style = Type.body.copy(color = Palette.AccentText))
                             Text(L10n.t("ms.filter.open"), style = Type.label)
-                            Text("${tally.done}", style = Type.body.copy(color = Palette.Green))
+                            Text("${tally.done}", style = Type.body.copy(color = Palette.GreenText))
                             Text(L10n.t("ms.filter.done"), style = Type.label)
                             Text("${tally.dropped}", style = Type.body.copy(color = Palette.TextSecondary))
                             Text(L10n.t("ms.filter.dropped"), style = Type.label)
                             if (tally.unknown > 0) {
-                                Text("${tally.unknown}", style = Type.body.copy(color = Palette.Amber))
+                                Text("${tally.unknown}", style = Type.body.copy(color = Palette.AmberText))
                                 Text(L10n.t("ms.filter.unreadable"), style = Type.label)
                             }
                         }
@@ -416,7 +417,7 @@ fun MilestonesPage(model: AppModel) {
                             // 明细被窗口截过 ⇒ 上面的数只是**下界**，必须说出来。
                             Text(
                                 L10n.t("cmp.ms.detailPartial", all.size, ms?.readCount ?: "?"),
-                                style = Type.micro.copy(color = Palette.Amber),
+                                style = Type.micro.copy(color = Palette.AmberText),
                             )
                         }
                     }
@@ -425,7 +426,7 @@ fun MilestonesPage(model: AppModel) {
                 // 孤儿披露
                 ms?.orphaned.orEmpty().takeIf { it.isNotEmpty() }?.let { orphans ->
                     GlassCard(Modifier.fillMaxWidth()) {
-                        Text(L10n.t("cmp.ms.orphans", orphans.size), style = Type.micro.copy(color = Palette.Amber))
+                        Text(L10n.t("cmp.ms.orphans", orphans.size), style = Type.micro.copy(color = Palette.AmberText))
                     }
                 }
             }
@@ -522,9 +523,9 @@ internal fun MilestoneRow(
                 val iconTint = when {
                     m.status == "done" -> Palette.Green
                     m.status == "dropped" -> Palette.TextSecondary
-                    m.isUnknown -> Palette.Amber
-                    m.overdue -> Palette.Red
-                    else -> Palette.Accent
+                    m.isUnknown -> Palette.AmberText
+                    m.overdue -> Palette.RedText
+                    else -> Palette.AccentText
                 }
                 // 状态图标（mac StatusDot 同语义）：达成=带勾圆、放弃=带叉圆、未知=问号、逾期=警告、进行中=空心圆
                 val stateIcon = when {
@@ -547,7 +548,7 @@ internal fun MilestoneRow(
                         Box(Modifier.weight(1f)) {
                             TruncatedText(m.name, style = Type.card)
                         }
-                        if (m.tagReached) Pill("tag ✓", Palette.Green)
+                        if (m.tagReached) Pill("tag ✓", Palette.GreenText)
                     }
                     m.description?.takeIf { it.isNotBlank() }?.let {
                         TruncatedText(it, style = Type.label)
@@ -558,16 +559,16 @@ internal fun MilestoneRow(
                         if (m.commitsSinceReadable) {
                             if (m.commitsSince > 0) Text(milestoneCommitsText(m), style = Type.micro)
                         } else {
-                            Text(milestoneUnverifiedNote(m), style = Type.micro, color = Palette.Amber, maxLines = 2)
+                            Text(milestoneUnverifiedNote(m), style = Type.micro, color = Palette.AmberText, maxLines = 2)
                         }
                     }
                 }
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     val statusTint = when {
-                        m.status == "done" -> Palette.Green
+                        m.status == "done" -> Palette.GreenText
                         m.status == "dropped" -> Palette.TextSecondary
-                        m.isUnknown -> Palette.Amber
-                        m.overdue -> Palette.Red
+                        m.isUnknown -> Palette.AmberText
+                        m.overdue -> Palette.RedText
                         else -> Palette.TextPrimary
                     }
                     Text(milestoneStatusLabel(m), style = Type.body.copy(fontWeight = FontWeight.Medium), color = statusTint)
@@ -575,22 +576,22 @@ internal fun MilestoneRow(
                     when {
                         due.isNotBlank() -> Text(
                             L10n.t("ms.row.due", m.targetDate, due), style = Type.micro,
-                            color = if (m.overdue) Palette.Red else Palette.TextSecondary,
+                            color = if (m.overdue) Palette.RedText else Palette.TextSecondary,
                         )
                         m.targetDate.isNotBlank() -> Text(L10n.t("ms.row.dueOnly", m.targetDate), style = Type.micro)
                     }
                 }
                 // 行内动作（mac 同款三个）：达成（进行中才有）/ 重新打开（非进行中且可核验）/ 删除；放弃在右键菜单
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    if (m.status == "open") ActionText(L10n.t("ms.row.done"), Palette.Green, enabled = !busy, onClick = onDone)
-                    if (m.status != "open" && !m.isUnknown) ActionText(L10n.t("ms.row.reopen"), Palette.Accent, enabled = !busy, onClick = onReopen)
-                    ActionText(L10n.t("ms.row.delete"), Palette.Red, enabled = !busy, onClick = onRemove)
+                    if (m.status == "open") ActionText(L10n.t("ms.row.done"), Palette.GreenText, enabled = !busy, onClick = onDone)
+                    if (m.status != "open" && !m.isUnknown) ActionText(L10n.t("ms.row.reopen"), Palette.AccentText, enabled = !busy, onClick = onReopen)
+                    ActionText(L10n.t("ms.row.delete"), Palette.RedText, enabled = !busy, onClick = onRemove)
                 }
             }
         }
         androidx.compose.material3.DropdownMenu(
             expanded = menuOpen, onDismissRequest = { menuOpen = false },
-            containerColor = Palette.Card,
+            containerColor = Palette.Popover,
         ) {
             val close = { menuOpen = false }
             if (m.status != "done") DropdownMenuItem(text = { Text(L10n.t("ms.action.done"), style = Type.body) }, onClick = { close(); onDone() })
@@ -599,7 +600,7 @@ internal fun MilestoneRow(
             androidx.compose.material3.HorizontalDivider(color = Palette.Stroke)
             DropdownMenuItem(text = { Text(L10n.t("ms.action.openProject"), style = Type.body) }, onClick = { close(); onOpenProject() })
             androidx.compose.material3.HorizontalDivider(color = Palette.Stroke)
-            DropdownMenuItem(text = { Text(L10n.t("ms.row.delete"), style = Type.body.copy(color = Palette.Red)) }, onClick = { close(); onRemove() })
+            DropdownMenuItem(text = { Text(L10n.t("ms.row.delete"), style = Type.body.copy(color = Palette.RedText)) }, onClick = { close(); onRemove() })
         }
     }
 }

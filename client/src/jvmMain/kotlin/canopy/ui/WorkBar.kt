@@ -238,7 +238,7 @@ private fun DualTrackPipeline(model: AppModel, scoped: String?, busy: Boolean, p
         if (busy) {
             CircularProgressIndicator(
                 Modifier.size(14.dp),
-                color = Palette.Accent,
+                color = Palette.AccentText,
                 strokeWidth = 2.dp,
             )
         }
@@ -268,7 +268,7 @@ fun SidebarStatusStrip(model: AppModel) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier.size(7.dp).background(
-                    if (busy) Palette.Accent else Palette.Shallow,
+                    if (busy) Palette.AccentText else Palette.ShallowText,
                     CircleShape,
                 )
             )
@@ -288,7 +288,7 @@ fun SidebarStatusStrip(model: AppModel) {
             Text(
                 L10n.t("cmp.err.engineRead", lastError!!.lineSequence().first().take(80)),
                 style = Type.micro,
-                color = Palette.Amber,
+                color = Palette.AmberText,
                 maxLines = 1,
             )
         } else if (lastRefreshed == null) {

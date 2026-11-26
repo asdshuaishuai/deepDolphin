@@ -245,19 +245,19 @@ fun boardModelOf(env: StatusEnvelope?, nowMs: Long = System.currentTimeMillis())
 
 /** 列的语义点色（只走 Palette；映射是展示层，不参与列分配）。对位 mac BoardColumn.color。 */
 private fun columnTone(id: BoardColumnId): Color = when (id) {
-    BoardColumnId.ATTENTION -> Palette.Amber
-    BoardColumnId.ACTIVE -> Palette.Green
+    BoardColumnId.ATTENTION -> Palette.AmberText
+    BoardColumnId.ACTIVE -> Palette.GreenText
     BoardColumnId.QUIET -> Palette.TextSecondary
     BoardColumnId.OTHER -> Palette.TextSecondary
 }
 
 /** 状态词颜色（对位 mac BoardCard.stateColor 的 tone 映射）。 */
 private fun stateTone(l: Liveness): Color = when (l) {
-    Liveness.UNREADABLE, Liveness.UNKNOWN -> Palette.Red
+    Liveness.UNREADABLE, Liveness.UNKNOWN -> Palette.RedText
     Liveness.NOT_GIT -> Palette.TextSecondary
-    Liveness.NEEDS_ACTION -> Palette.Amber
+    Liveness.NEEDS_ACTION -> Palette.AmberText
     Liveness.ENGINE_STALE, Liveness.QUIET -> Palette.TextSecondary
-    Liveness.RECENT -> Palette.Green
+    Liveness.RECENT -> Palette.GreenText
 }
 
 @Composable
@@ -423,7 +423,7 @@ private fun ProjectCard(c: BoardCard, model: AppModel, onOpenProject: (String) -
         if (c.error != null) {
             // 采集失败：引擎原因原文（不推断、不翻译），红字——这是「读不出来」不是「状态差」。
             Spacer(Modifier.height(Space.xs))
-            Text(c.error.ifBlank { L10n.t("cmp.err.noReason") }, style = Type.micro.copy(color = Palette.Red), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(c.error.ifBlank { L10n.t("cmp.err.noReason") }, style = Type.micro.copy(color = Palette.RedText), maxLines = 2, overflow = TextOverflow.Ellipsis)
         } else {
             c.headline?.takeIf { it.isNotBlank() }?.let {
                 Spacer(Modifier.height(Space.xs))
@@ -432,9 +432,9 @@ private fun ProjectCard(c: BoardCard, model: AppModel, onOpenProject: (String) -
             // warnings：引擎说「需要你知道、但不算失败」的话（如「0 个提交」最容易被当成事实）。
             c.warnings.forEach { w ->
                 Row(verticalAlignment = Alignment.Top) {
-                    IconBox(FluentIcon.Warning, size = 14.dp, tint = Palette.Amber)
+                    IconBox(FluentIcon.Warning, size = 14.dp, tint = Palette.AmberText)
                     Spacer(Modifier.width(6.dp))
-                    Text(w, style = Type.micro.copy(color = Palette.Amber), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(w, style = Type.micro.copy(color = Palette.AmberText), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
             Spacer(Modifier.height(Space.xs))
@@ -457,7 +457,7 @@ private fun ProjectCard(c: BoardCard, model: AppModel, onOpenProject: (String) -
                 Spacer(Modifier.height(Space.xs))
                 Text(
                     L10n.t("cmp.board.branchesPartial", c.trackedBranchCount, c.repoBranchCount),
-                    style = Type.micro.copy(color = Palette.Amber),
+                    style = Type.micro.copy(color = Palette.AmberText),
                 )
             }
         }

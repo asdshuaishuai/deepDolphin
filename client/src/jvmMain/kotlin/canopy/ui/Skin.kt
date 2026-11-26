@@ -22,14 +22,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.max
+import kotlin.math.min
 
 /** 阴影形态（namethatui 各风格的标志性立体感差异全在这里）。 */
 enum class ShadowProfile {
@@ -134,7 +142,9 @@ object Skins {
 
     private val glass = Skin(
         id = "glass", titleZh = "玻璃拟态", titleEn = "Glassmorphism",
-        bgBase = C(0xFF141225), sidebar = C(0x2EFFFFFF), card = C(0x26FFFFFF), cardHover = C(0x3DFFFFFF),
+        // 悬停只多 4% 的白（原 +9%）：玻璃卡片压在壁纸最亮的光斑上，悬停再亮一截次级文字就掉出 4.5，
+        // 保底只能把次级 / 三级推白——层级就塌了（SkinTest 层级守卫）
+        bgBase = C(0xFF141225), sidebar = C(0x2EFFFFFF), card = C(0x26FFFFFF), cardHover = C(0x2FFFFFFF),
         cardPressed = C(0x1FFFFFFF), stroke = C(0x3DFFFFFF), strokeHover = C(0x59FFFFFF), barTrack = C(0x2EFFFFFF),
         textPrimary = C(0xFFFFFFFF), textSecondary = C(0xCCFFFFFF), textTertiary = C(0x99FFFFFF),
         accent = C(0xFF8AD8FF), onAccent = C(0xFF101828), accentHover = C(0xFFA8E4FF),
@@ -148,7 +158,8 @@ object Skins {
 
     private val liquid = Skin(
         id = "liquid", titleZh = "液态玻璃", titleEn = "Liquid Glass",
-        bgBase = C(0xFF10131A), sidebar = C(0x24FFFFFF), card = C(0x1FFFFFFF), cardHover = C(0x38FFFFFF),
+        // 悬停只多 5% 的白（原 +10%），同 glass：悬停 + 光泽叠在光斑上时别把三级文字逼成白的
+        bgBase = C(0xFF10131A), sidebar = C(0x24FFFFFF), card = C(0x1FFFFFFF), cardHover = C(0x2CFFFFFF),
         cardPressed = C(0x17FFFFFF), stroke = C(0x4DFFFFFF), strokeHover = C(0x66FFFFFF), barTrack = C(0x24FFFFFF),
         textPrimary = C(0xFFFFFFFF), textSecondary = C(0xD6FFFFFF), textTertiary = C(0xA0FFFFFF),
         accent = C(0xFF4DA9FF), onAccent = C(0xFF071120), accentHover = C(0xFF73BDFF),
@@ -292,8 +303,9 @@ object Skins {
 
     private val aero = Skin(
         id = "aero", titleZh = "Windows Aero", titleEn = "Windows Aero",
-        bgBase = C(0xFF16273E), sidebar = C(0x593D6EA0), card = C(0x3DFFFFFF), cardHover = C(0x59FFFFFF),
-        cardPressed = C(0x2EFFFFFF), stroke = C(0x59FFFFFF), strokeHover = C(0x80FFFFFF), barTrack = C(0x40FFFFFF),
+        // 卡片是压在极光上的半透明白：太厚（原 24% / 悬停 35%）会把白字挤到 5.4 / 4.0——SkinTest 守卫定的上限
+        bgBase = C(0xFF16273E), sidebar = C(0x593D6EA0), card = C(0x22FFFFFF), cardHover = C(0x30FFFFFF),
+        cardPressed = C(0x1CFFFFFF), stroke = C(0x59FFFFFF), strokeHover = C(0x80FFFFFF), barTrack = C(0x40FFFFFF),
         textPrimary = C(0xFFFFFFFF), textSecondary = C(0xFFDCE9F7), textTertiary = C(0xFF9FB6CD),
         accent = C(0xFF5CB3F5), onAccent = C(0xFF0B2340), accentHover = C(0xFF7FC4FA),
         shallow = C(0xFF6BD68A), deep = C(0xFFB48CFF), ai = C(0xFF54C8E8),
@@ -345,28 +357,36 @@ object Skins {
         Palette.TextPrimary = skin.textPrimary
         Palette.TextSecondary = skin.textSecondary
         Palette.TextTertiary = skin.textTertiary
-        Palette.Accent = skin.accent
+        // 语义基色身兼容器填充：先过实心保底（见 solidReadable），后面的墨与前景都从保底后的值派生
+        Palette.Accent = solidReadable(skin.accent)
         Palette.OnAccent = skin.onAccent
         Palette.AccentHover = skin.accentHover
-        Palette.Shallow = skin.shallow
-        Palette.Deep = skin.deep
-        Palette.Ai = skin.ai
-        Palette.Shallow = skin.green
-        Palette.Yellow = skin.yellow
-        Palette.Amber = skin.amber
-        Palette.Red = skin.red
+        Palette.Shallow = solidReadable(skin.green)
+        Palette.Deep = solidReadable(skin.deep)
+        Palette.Ai = solidReadable(skin.ai)
+        Palette.Yellow = solidReadable(skin.yellow)
+        Palette.Amber = solidReadable(skin.amber)
+        Palette.Red = solidReadable(skin.red)
         Palette.HeroTop = skin.heroTop
         Palette.HeroBottom = skin.heroBottom
         Palette.AccentAlt = skin.accentAlt
         Palette.ShallowAlt = skin.shallowAlt
         Palette.DeepAlt = skin.deepAlt
-        Type.display = Type.display.copy(color = skin.textPrimary)
-        Type.title = Type.title.copy(color = skin.textPrimary)
-        Type.section = Type.section.copy(color = skin.textPrimary)
-        Type.card = Type.card.copy(color = skin.textPrimary)
-        Type.body = Type.body.copy(color = skin.textPrimary)
-        Type.label = Type.label.copy(color = skin.textSecondary)
-        Type.micro = Type.micro.copy(color = skin.textTertiary)
+        Palette.Well = wellOf(skin)
+        // 半透明卡片的皮肤：浮层取「落在底色上的样子」（不透明），卡内容器不再叠一层（透明）
+        val glassy = skin.card.alpha < 0.999f
+        Palette.Popover = if (glassy) skin.card.compositeOver(skin.bgBase) else skin.card
+        Palette.PopoverRaised = if (glassy) skin.cardHover.compositeOver(skin.bgBase) else skin.cardHover
+        Palette.Inlay = if (glassy) Color.Transparent else skin.card
+        normalizeContrast()
+        Composition12 = Composition12Base.map { ensureContrast(it, compositionSurfaces(skin), 3.0f) }
+        Type.display = Type.display.copy(color = Palette.TextPrimary)
+        Type.title = Type.title.copy(color = Palette.TextPrimary)
+        Type.section = Type.section.copy(color = Palette.TextPrimary)
+        Type.card = Type.card.copy(color = Palette.TextPrimary)
+        Type.body = Type.body.copy(color = Palette.TextPrimary)
+        Type.label = Type.label.copy(color = Palette.TextSecondary)
+        Type.micro = Type.micro.copy(color = Palette.TextTertiary)
         Radius.chip = skin.radiusChip
         Radius.control = skin.radiusControl
         Radius.card = skin.radiusCard
@@ -376,8 +396,95 @@ object Skins {
         Material.shadowLight = skin.shadowLight
         Material.glowColor = skin.glowColor
         Material.gloss = skin.gloss
-        Material.glossStrength = skin.glossStrength
         Material.backdrop = skin.backdrop
+        // 悬停提亮量：不透明皮肤沿用「hover 色的 35%」；半透明卡片的皮肤（玻璃 / Aero 的 hover 是一层白）
+        // 只许加「卡 → 悬停卡」多出来的那一点，否则一悬停整张卡被冲白
+        Material.hoverBrighten = if (skin.card.alpha >= 0.999f && skin.cardHover.alpha >= 0.999f) {
+            skin.cardHover.copy(alpha = 0.35f)
+        } else {
+            skin.cardHover.copy(alpha = (skin.cardHover.alpha - skin.card.alpha).coerceIn(0f, 0.35f))
+        }
+    }
+
+    /**
+     * 文字与墨的对比度保底（换皮肤后调用）：皮肤数据里写的是设计意图，这里保证它读得清。
+     * 表面分四层（[textSurfaces]），要求逐层放宽：
+     * · 静置面（底、侧栏、卡、凹槽、hero）：三级文字按 AAA 保底——主 ≥ 7、次级 ≥ 5.5、三级 ≥ 4.5
+     *   （三级也管占位符与提示，它们同样要读）；
+     * · 光泽顶部与悬停 / 按下：主 / 次级 ≥ 4.5（AA），三级与语义墨 ≥ 3.0（不进「冲突」档）；
+     * · 悬停 + 光泽叠加处：主 ≥ 4.5，其余 ≥ 3.0。
+     * · accent 上的前景：皮肤给的 onAccent 对比度不到 4.5 就换成可读色（浅色皮肤的粉彩 accent 配白字）。
+     * 暗色皮肤（Fluent 等）本来就达标，派生值等于原值。
+     * 光泽强度也在这里定（[glossBudget]）。
+     */
+    private fun normalizeContrast() {
+        val skin = current
+        val budget = glossBudget(skin)
+        Material.glossStrength = budget.strength
+        val surfaces = textSurfaces(skin)
+        /** 逐层够底：静置面 → [steadyFloor] 的范围 → 全部表面（同向再推只会更稳）。 */
+        fun level(base: Color, restingFloor: Float, steadyFloor: Float, liftedFloor: Float, extra: List<Color> = emptyList()): Color {
+            val onResting = ensureContrast(base, surfaces.resting + extra, restingFloor)
+            val onSteady = ensureContrast(onResting, surfaces.steady + extra, steadyFloor)
+            return ensureContrast(onSteady, surfaces.all + extra, liftedFloor)
+        }
+        Palette.OnAccent = budget.onAccent
+        // accent 按钮的悬停色：皮肤给的够读就用；不够（neo / clay / aqua 的 accent 配深字，悬停色却更深，
+        // 一悬停从 5.4 掉到 4.1）就朝远离文字的方向派生一档
+        Palette.AccentHover = skin.accentHover.takeIf { contrastOf(Palette.OnAccent, it) >= 4.5f }
+            ?: hoverOf(Palette.Accent, Palette.OnAccent)
+        Palette.TextPrimary = level(skin.textPrimary, 7.0f, 4.5f, 4.5f)
+        Palette.TextSecondary = level(skin.textSecondary, 5.5f, 4.5f, 3.0f)
+        Palette.TextTertiary = level(skin.textTertiary, 4.5f, 3.0f, 3.0f)
+        // 语义墨还会落在自己色的浅色底 chip 上：那一面也算进去
+        fun inkLevel(base: Color): Color {
+            // 铺底的不透明度取 M3 容器档 0.16（代码里 chip 底在 0.08–0.18 之间）
+            val tinted = surfaces.resting.map { base.copy(alpha = 0.16f).compositeOver(it) }
+            return level(base, 4.5f, 3.0f, 3.0f, tinted)
+        }
+        Palette.AccentText = inkLevel(Palette.Accent)
+        Palette.ShallowText = inkLevel(Palette.Shallow)
+        Palette.DeepText = inkLevel(Palette.Deep)
+        Palette.AiText = inkLevel(Palette.Ai)
+        Palette.YellowText = inkLevel(Palette.Yellow)
+        Palette.AmberText = inkLevel(Palette.Amber)
+        Palette.RedText = inkLevel(Palette.Red)
+    }
+
+    /**
+     * 光泽预算：0…皮肤给的光泽强度里最大的那个 g，使得——
+     * · 「静置面上达标的次级文字」在叠了 g 的白的卡 / 凹槽 / hero 顶部仍 ≥ 4.5，且
+     * · 每个语义容器（含 accent）上的可读前景，在容器本体与它的光泽顶部上都保住 ≥ 4.3（readableOn 的保证值）。
+     * 光泽是装饰——不许把正文级的字拉到 AA 以下、不许把容器上的前景拉出保证值；预算不够就削弱光泽，不动文字。
+     * 只按静置面算：悬停 + 光泽的叠加由抬升面的保底兜（次级文字最多被再提亮一点）。
+     * 返回预算与随之定下的 accent 前景：皮肤给的 onAccent 在光泽顶部上站不住就换成 [readableOn] 按光泽选的那个。
+     */
+    private class GlossBudget(val strength: Float, val onAccent: Color)
+
+    private fun glossBudget(skin: Skin): GlossBudget {
+        val plain = textSurfaces(skin, gloss = 0f)
+        val secondary = ensureContrast(skin.textSecondary, plain.resting, 5.5f)
+        val ownOnAccent = skin.onAccent.takeIf { contrastOf(it, Palette.Accent) >= 4.5f }
+        val fills = listOf(Palette.Accent, Palette.Shallow, Palette.Deep, Palette.Ai, Palette.Yellow, Palette.Amber, Palette.Red)
+        fun worstOn(fill: Color, on: Color, g: Float): Float =
+            if (g > 0f) minOf(contrastOf(on, fill), contrastOf(on, glossy(fill, g))) else contrastOf(on, fill)
+        fun accept(g: Float): Color? {
+            if (g > 0f && textSurfaces(skin, gloss = g).glossed.any { contrastOf(secondary.compositeOver(it), it) < 4.5f }) return null
+            var onAccent = Color.Transparent
+            fills.forEach { fill ->
+                val on = if (fill == Palette.Accent && ownOnAccent != null && worstOn(fill, ownOnAccent, g) >= 4.3f) ownOnAccent else readableOn(fill, g)
+                if (worstOn(fill, on, g) < 4.3f) return null
+                if (fill == Palette.Accent) onAccent = on
+            }
+            return onAccent
+        }
+        var g = if (skin.gloss) skin.glossStrength else 0f
+        while (g > 0.01f) {
+            accept(g)?.let { return GlossBudget(g, it) }
+            g -= 0.02f
+        }
+        // 没有光泽时 readableOn 必然达标（分界线处两种前景都有 4.3），兜底只是不让换肤因为一个色值崩掉
+        return GlossBudget(0f, accept(0f) ?: readableOn(Palette.Accent, 0f))
     }
 
     /** 应用并持久化；返回写 conf 的错误（null = 成功）。 */
@@ -407,13 +514,178 @@ object Material {
     var glowColor by mutableStateOf(Color.Transparent)
     var gloss by mutableStateOf(false)
     var glossStrength by mutableStateOf(0.16f)
+    /** 可点容器悬停时的加法提亮色（不透明度 = 提亮量）；换肤时按皮肤算，见 Skins.apply。 */
+    var hoverBrighten by mutableStateOf(Color(0x59303030))
     var backdrop by mutableStateOf(BackdropKind.NONE)
 }
 
 // ── 绘制辅助（Buttons.kt 与卡片容器共用；按 Material 令牌渲染，调用点不 if 皮肤）──
 
-/** 深浅底上都读得清的前景色：亮底给近黑、暗底给白（namethatui 的 token 思路：对比度优先）。 */
-fun readableOn(c: Color): Color = if (c.luminance() > 0.55f) Color(0xFF111111) else Color(0xFFFFFFFF)
+/**
+ * 容器上读得清的前景色：亮底给近黑、暗底给白，取两者中对比度更高的那个。
+ * 分界线是近黑（#111）与白两种前景对比度相等的亮度 ≈ 0.19——原先是 0.55，中等亮度的绿、紫、蓝
+ * 都被判成「配白字」，实际只有 2–3 的对比度（Aqua 的浅更新 / 深更新按钮实拍）。
+ * 带光泽的皮肤里容器顶部还叠着一层白（[glossy]）：两种前景各取「容器本体与光泽顶部里较差的那个」再比，
+ * 否则按钮上一半清楚一半糊。任何容器色经它取前景，对比度都 ≥ 4.3。
+ */
+fun readableOn(c: Color): Color = readableOn(c, if (Material.gloss) Material.glossStrength else 0f)
+
+fun readableOn(c: Color, gloss: Float): Color {
+    val dark = Color(0xFF111111)
+    val light = Color(0xFFFFFFFF)
+    val worst = { fg: Color -> if (gloss > 0f) minOf(contrastOf(fg, c), contrastOf(fg, glossy(c, gloss))) else contrastOf(fg, c) }
+    return if (worst(dark) >= worst(light)) dark else light
+}
+
+/**
+ * 半透明的「极性罩」：暗色皮肤给白、浅色皮肤给黑，[alpha] 是不透明度。写在表面上的悬停、点阵、分区带用它——
+ * 写死「x% 的白」在浅色皮肤上看不见。极性跟当前皮肤的主文字走。
+ */
+fun veil(alpha: Float): Color = (if (Palette.TextPrimary.luminance() < 0.5f) Color.Black else Color.White).copy(alpha = alpha)
+
+/**
+ * 提交构成 12 色（分段条与图例点，不是文字）会落上去的表面：底、卡、侧栏。换肤时对它们保底 ≥ 3:1
+ * （非文字图形的 WCAG 1.4.11）——[Composition12Base] 是为暗底挑的粉彩，浅色皮肤上几乎看不见。
+ */
+fun compositionSurfaces(skin: Skin): List<Color> {
+    val bases = backdropBases(skin.backdrop, skin.bgBase)
+    return bases + skin.card.compositeOver(bases.first()) + sidebarBases(skin.backdrop, skin.bgBase).map { skin.sidebar.compositeOver(it) }
+}
+
+/**
+ * 实心容器的基色保底：有一小段中等亮度的颜色，白字与近黑字**都**到不了 4.5（亮度约 0.183–0.200，
+ * 两种前景在 0.19 处相交、都是 4.35）。落在这一段里的语义色朝更近的一侧推到刚好够读——变化不到 0.02 的亮度，
+ * 看不出来；不推的话按钮上只能是 4.4（neo 的深更新：白字压 #7c5cf6，体检实拍偏弱）。
+ * 其余颜色原样返回。保底后任何语义色当容器，[readableOn] 在容器本体上都配得出 ≥ 4.5 的前景。
+ */
+fun solidReadable(c: Color): Color {
+    val dark = Color(0xFF111111)
+    val onDark = contrastOf(dark, c)
+    val onLight = contrastOf(Color.White, c)
+    if (max(onDark, onLight) >= 4.5f) return c
+    val toBlack = onLight >= onDark
+    val target = if (toBlack) Color.Black else Color.White
+    val on = if (toBlack) Color.White else dark
+    var t = 0.02f
+    while (t < 1f) {
+        val x = lerp(c, target, t)
+        if (contrastOf(on, x) >= 4.5f) return x
+        t += 0.02f
+    }
+    return c
+}
+
+/** WCAG 对比度（1:1 同色 … 21:1 黑白）。 */
+fun contrastOf(a: Color, b: Color): Float {
+    val la = a.luminance()
+    val lb = b.luminance()
+    return (max(la, lb) + 0.05f) / (min(la, lb) + 0.05f)
+}
+
+/**
+ * 一套皮肤里文字会落上去的表面（都合成成不透明——文字看到的是合成后的颜色）。
+ * · [resting] 静置面：底、侧栏、卡、卡内凹槽、hero 两端。文字大部分时间落在这里，三级文字按 AAA 保底；
+ * · [glossed] 静置面里会被光泽盖住的顶部（卡、凹槽、hero）：光泽预算按它算——装饰不许把次级文字拉到 AA 以下；
+ * · [lifted] 抬升面：卡的悬停 / 按下——瞬态，主 / 次级按 AA 保底；
+ * · [glossedLifted] 悬停 / 按下的光泽顶部——两层瞬态叠在一起，只保 3.0：这里要 4.5 的话次级文字得推成纯白，层级就塌了
+ *   （liquid 实测：主 13.2 / 次 13.2）。
+ * 底取 [backdropBases] / [sidebarBases]：带背景材质的皮肤，卡片和直接写在页面上的文字底下不一定是 BgBase。
+ * 轨道（进度条、分段条的底）不在表里：上面不画文字。
+ */
+class TextSurfaces(val resting: List<Color>, val glossed: List<Color>, val lifted: List<Color>, val glossedLifted: List<Color>) {
+    /** 次级文字要保 AA 的范围：静置面 + 它们的光泽顶部 + 悬停 / 按下。 */
+    val steady: List<Color> get() = resting + glossed + lifted
+    val all: List<Color> get() = steady + glossedLifted
+}
+
+/**
+ * 卡内凹槽（披露条、疑点行、信号 chip 的底）：比卡片再退一档的内嵌面——底色以 45% 盖在卡上。
+ * 不能写 `Palette.Card.copy(alpha = …)`：那会改写卡片自己的透明度，玻璃 / Aero 这类卡片本身半透明的皮肤
+ * 会被冲成一块亮板（glass 的披露条实拍 #a2a1a9 上放浅色字，2.1:1）。
+ */
+fun wellOf(skin: Skin): Color = skin.bgBase.copy(alpha = 0.45f)
+
+/** 光泽顶部：[c] 上叠 [g] 的白（skinGloss 在 0 处最强，到 55% 高度渐隐——这里取最强处，偏保守）。 */
+fun glossy(c: Color, g: Float): Color = Color.White.copy(alpha = g).compositeOver(c)
+
+fun textSurfaces(skin: Skin, gloss: Float = Material.glossStrength): TextSurfaces {
+    val resting = ArrayList<Color>()
+    val lifted = ArrayList<Color>()
+    val glossed = ArrayList<Color>()
+    val glossedLifted = ArrayList<Color>()
+    backdropBases(skin.backdrop, skin.bgBase).forEach { base ->
+        val card = skin.card.compositeOver(base)
+        val well = wellOf(skin).compositeOver(card)
+        val heroTop = skin.heroTop.compositeOver(base)
+        resting += listOf(base, card, well, heroTop, skin.heroBottom.compositeOver(base))
+        val hover = skin.cardHover.compositeOver(base)
+        val pressed = skin.cardPressed.compositeOver(base)
+        lifted += listOf(hover, pressed)
+        glossed += listOf(card, well, heroTop)
+        glossedLifted += listOf(hover, pressed)
+    }
+    sidebarBases(skin.backdrop, skin.bgBase).forEach { resting += skin.sidebar.compositeOver(it) }
+    // 浮层：菜单 / 弹窗的底是静置面（条目文字要按 AAA 读），提示条是瞬态（抬升面）
+    if (skin.card.alpha < 0.999f) {
+        resting += skin.card.compositeOver(skin.bgBase)
+        lifted += skin.cardHover.compositeOver(skin.bgBase)
+    }
+    return if (gloss > 0f) {
+        val g = { c: Color -> glossy(c, gloss) }
+        TextSurfaces(resting, glossed.map(g), lifted, glossedLifted.map(g))
+    } else {
+        TextSurfaces(resting, emptyList(), lifted, emptyList())
+    }
+}
+
+/**
+ * 把前景调到在 [surfaces] 的每一个上对比度都不低于 [min]。已经达标就原样返回（半透明的保持半透明）；
+ * 不达标时按极性向黑或向白线性推，取刚好达标的那一点——色相不变、改动最小。
+ * 这是皮肤数据的**保底**而不是重设计：粉彩色在浅底上当文字不够读，就把它压暗到够读为止。
+ */
+fun ensureContrast(fg: Color, surfaces: List<Color>, min: Float): Color {
+    fun worst(c: Color): Float = surfaces.minOf { contrastOf(c, it) }
+    if (fg.alpha >= 0.999f) {
+        if (worst(fg) >= min) return fg
+    } else if (surfaces.all { contrastOf(fg.compositeOver(it), it) >= min }) {
+        return fg
+    }
+    val base = if (fg.alpha >= 0.999f) fg else fg.compositeOver(surfaces.minBy { contrastOf(fg.compositeOver(it), it) })
+    fun pushTo(target: Color): Color {
+        var t = 0.02f
+        while (t < 1f) {
+            val c = lerp(base, target, t)
+            if (worst(c) >= min) return c
+            t += 0.02f
+        }
+        return target
+    }
+    val dark = pushTo(Color.Black)
+    val light = pushTo(Color.White)
+    return if (worst(dark) >= min && (worst(light) < min || dist2(base, dark) <= dist2(base, light))) dark else light
+}
+
+private fun dist2(a: Color, b: Color): Float {
+    val dr = a.red - b.red
+    val dg = a.green - b.green
+    val db = a.blue - b.blue
+    return dr * dr + dg * dg + db * db
+}
+
+/**
+ * 语义色 → 画在表面上当「墨」用的那一档。传入的正好是某个语义基色就换成它的文字级；别的颜色原样。
+ * 用在共享原语的绘制点（图标、动作文字、胶囊）：调用方照旧传基色，读得清由这里保证。
+ */
+fun ink(c: Color): Color = when (c) {
+    Palette.Accent -> Palette.AccentText
+    Palette.Shallow, Palette.Green -> Palette.ShallowText
+    Palette.Deep -> Palette.DeepText
+    Palette.Ai -> Palette.AiText
+    Palette.Yellow -> Palette.YellowText
+    Palette.Amber -> Palette.AmberText
+    Palette.Red -> Palette.RedText
+    else -> c
+}
 
 /**
  * 皮肤阴影：画在本元素后面（drawBehind 在链上放在 clip/background 之前）。
@@ -441,11 +713,19 @@ fun Modifier.skinShadow(radius: Dp, pressedAt: Boolean = false): Modifier =
                     size = Size(size.width + grow * 2, size.height + grow * 2),
                     cornerRadius = CornerRadius(r.x + grow, r.y + grow))
             }
-            ShadowProfile.GLOW -> for (i in 1..4) {
-                val grow = i * 2.5f.dp.toPx()
-                drawRoundRect(Material.glowColor.copy(alpha = Material.glowColor.alpha * (1f - i * 0.18f)),
-                    topLeft = Offset(-grow, -grow), size = Size(size.width + grow * 2, size.height + grow * 2),
-                    cornerRadius = CornerRadius(r.x + grow, r.y + grow))
+            ShadowProfile.GLOW -> {
+                // 只画卡片**之外**的那一圈：原先每层是一整块画在卡片底下，不透明皮肤看不出差别，
+                // 玻璃 / Aero 这类半透明卡片会把它从底下透上来——整张卡被冲亮（liquid 实拍：算出来亮度 0.08、
+                // 画出来 0.16，白字掉到 4 上下）。扣掉卡片自身的那块，光晕才是光晕。
+                val inner = Path().apply { addRoundRect(RoundRect(Rect(Offset.Zero, size), r.x, r.y)) }
+                for (i in 1..4) {
+                    val grow = i * 2.5f.dp.toPx()
+                    val halo = Path().apply {
+                        addRoundRect(RoundRect(Rect(Offset(-grow, -grow), Size(size.width + grow * 2, size.height + grow * 2)), r.x + grow, r.y + grow))
+                        op(this, inner, PathOperation.Difference)
+                    }
+                    drawPath(halo, Material.glowColor.copy(alpha = Material.glowColor.alpha * (1f - i * 0.18f)))
+                }
             }
         }
     }
@@ -459,6 +739,62 @@ fun Modifier.skinGloss(radius: Dp): Modifier = if (!Material.gloss) this else dr
     drawRoundRect(brush = g, topLeft = Offset.Zero, size = size, cornerRadius = CornerRadius(radius.toPx(), radius.toPx()))
 }
 
+/**
+ * 背景材质里「会被文字或卡片压在下面」的颜色。[SkinBackdrop] 照它画、[backdropBases] 照它算——
+ * 同一份数据，画出来的表面与算出来的表面才对得上（原先各写一份：算出来是 BgBase，画出来叠着光斑）。
+ */
+private object BackdropPaint {
+    /** 光斑叠在底色上的不透明度；半径 = 窗口长边的这一比例（从中心的全强度渐隐到圆周）。 */
+    const val BLOB_ALPHA = 0.26f
+    const val BLOB_RADIUS = 0.30f
+
+    /** 侧栏宽占窗口宽的比例（230dp / 最小窗宽 960dp，留了一点余量）。 */
+    const val SIDEBAR_FRACTION = 0.24f
+
+    /** 光斑：位置（宽、高的比例）与颜色。 */
+    val glassWallpaper = listOf(Triple(0.22f, 0.18f, Color(0xFF7C5CFF)), Triple(0.78f, 0.30f, Color(0xFF3AB6E8)), Triple(0.60f, 0.86f, Color(0xFFFF6BD6)))
+    val aeroGradient = listOf(Triple(0.30f, 0.16f, Color(0xFF3D7EBB)), Triple(0.74f, 0.42f, Color(0xFF1E4E8A)), Triple(0.52f, 0.88f, Color(0xFF14406B)))
+
+    /** 不透明渐变的端点（皮革 / 铬银 / 天空草地）。 */
+    val leatherStops = listOf(Color(0xFF442F26), Color(0xFF2A1B14))
+    val chromeStops = listOf(Color(0xFF2A2A44), Color(0xFF0E0E16))
+    val grassStops = listOf(Color(0xFF8ED0F5), Color(0xFFC8E9F8), Color(0xFFBFE8C8), Color(0xFF8FD08F))
+
+    /** Y2K 顶部铬银亮带、Frutiger 气泡：叠在各自渐变上的半透明层。 */
+    val chromeBand = Color(0x3DC0C6D4)
+    val bubble = Color(0x40FFFFFF)
+    val geoBase = Color(0xFF000066)
+}
+
+/**
+ * 背景材质下，页面里的文字或卡片底下**可能**是哪些底色（不透明）：
+ * 不透明渐变 → 各端点（中间色夹在端点之间）；光斑 → 底色与每个光斑叠底色后的颜色；无材质 → 底色。
+ */
+fun backdropBases(kind: BackdropKind, bg: Color): List<Color> = when (kind) {
+    BackdropKind.NONE -> listOf(bg)
+    BackdropKind.GLASS_WALLPAPER -> blobBases(BackdropPaint.glassWallpaper, bg) { true }
+    BackdropKind.AERO_GRADIENT -> blobBases(BackdropPaint.aeroGradient, bg) { true }
+    BackdropKind.LEATHER -> BackdropPaint.leatherStops
+    BackdropKind.CHROME_GRID ->
+        BackdropPaint.chromeStops + BackdropPaint.chromeBand.compositeOver(BackdropPaint.chromeStops.first())
+    BackdropKind.GRASS_BUBBLES -> BackdropPaint.grassStops + BackdropPaint.grassStops.map { BackdropPaint.bubble.compositeOver(it) }
+    BackdropKind.GEO_STARS -> listOf(BackdropPaint.geoBase)
+}
+
+/**
+ * 侧栏底下的底色：同上，但只算**够得着侧栏**的光斑（圆心离左边不超过「侧栏宽 + 光斑半径」）。
+ * 玻璃壁纸的青色光斑圆心在窗口 78% 处，永远压不到侧栏——把它算进去会白报一条「侧栏白字 6.6」。
+ * 按窗宽 ≥ 窗高算（最小窗口 960×640 起都是这样）；极窄的高窗不在其列。
+ */
+fun sidebarBases(kind: BackdropKind, bg: Color): List<Color> = when (kind) {
+    BackdropKind.GLASS_WALLPAPER -> blobBases(BackdropPaint.glassWallpaper, bg) { it.first - BackdropPaint.BLOB_RADIUS < BackdropPaint.SIDEBAR_FRACTION }
+    BackdropKind.AERO_GRADIENT -> blobBases(BackdropPaint.aeroGradient, bg) { it.first - BackdropPaint.BLOB_RADIUS < BackdropPaint.SIDEBAR_FRACTION }
+    else -> backdropBases(kind, bg)
+}
+
+private fun blobBases(blobs: List<Triple<Float, Float, Color>>, bg: Color, reach: (Triple<Float, Float, Color>) -> Boolean): List<Color> =
+    listOf(bg) + blobs.filter(reach).map { it.third.copy(alpha = BackdropPaint.BLOB_ALPHA).compositeOver(bg) }
+
 /** 窗口最底层的材质装饰（Main.kt 在外壳 Row 后面画）。 */
 @Composable
 fun SkinBackdrop(modifier: Modifier = Modifier) {
@@ -466,18 +802,14 @@ fun SkinBackdrop(modifier: Modifier = Modifier) {
         when (Material.backdrop) {
             BackdropKind.NONE -> {}
             BackdropKind.GLASS_WALLPAPER, BackdropKind.AERO_GRADIENT -> {
-                val blobs = if (Material.backdrop == BackdropKind.GLASS_WALLPAPER) {
-                    listOf(Triple(0.22f, 0.18f, Color(0xFF7C5CFF)), Triple(0.78f, 0.30f, Color(0xFF3AB6E8)), Triple(0.60f, 0.86f, Color(0xFFFF6BD6)))
-                } else {
-                    listOf(Triple(0.30f, 0.16f, Color(0xFF3D7EBB)), Triple(0.74f, 0.42f, Color(0xFF1E4E8A)), Triple(0.52f, 0.88f, Color(0xFF14406B)))
-                }
+                val blobs = if (Material.backdrop == BackdropKind.GLASS_WALLPAPER) BackdropPaint.glassWallpaper else BackdropPaint.aeroGradient
                 blobs.forEach { (fx, fy, c) ->
-                    drawCircle(Brush.radialGradient(listOf(c.copy(alpha = 0.26f), Color.Transparent)),
-                        radius = maxOf(size.width, size.height) * 0.30f, center = Offset(size.width * fx, size.height * fy))
+                    drawCircle(Brush.radialGradient(listOf(c.copy(alpha = BackdropPaint.BLOB_ALPHA), Color.Transparent)),
+                        radius = maxOf(size.width, size.height) * BackdropPaint.BLOB_RADIUS, center = Offset(size.width * fx, size.height * fy))
                 }
             }
             BackdropKind.LEATHER -> {
-                drawRect(Brush.verticalGradient(listOf(Color(0xFF442F26), Color(0xFF2A1B14))))
+                drawRect(Brush.verticalGradient(BackdropPaint.leatherStops))
                 // 缝线：内缩一圈的虚线圆角框
                 val inset = 14f.dp.toPx()
                 drawRoundRect(
@@ -488,25 +820,26 @@ fun SkinBackdrop(modifier: Modifier = Modifier) {
                 )
             }
             BackdropKind.CHROME_GRID -> {
-                drawRect(Brush.verticalGradient(listOf(Color(0xFF2A2A44), Color(0xFF0E0E16))))
+                drawRect(Brush.verticalGradient(BackdropPaint.chromeStops))
                 val step = 28f.dp.toPx()
                 var x = step; while (x < size.width) { drawLine(Color(0x14FFFFFF), Offset(x, 0f), Offset(x, size.height)); x += step }
                 var y = step; while (y < size.height) { drawLine(Color(0x14FFFFFF), Offset(0f, y), Offset(size.width, y)); y += step }
-                drawRect(Brush.verticalGradient(listOf(Color(0x3DC0C6D4), Color(0x00C0C6D4))),
+                drawRect(Brush.verticalGradient(listOf(BackdropPaint.chromeBand, BackdropPaint.chromeBand.copy(alpha = 0f))),
                     topLeft = Offset.Zero, size = Size(size.width, size.height * 0.12f))
             }
             BackdropKind.GRASS_BUBBLES -> {
-                drawRect(Brush.verticalGradient(0f to Color(0xFF8ED0F5), 0.62f to Color(0xFFC8E9F8), 0.78f to Color(0xFFBFE8C8), 1f to Color(0xFF8FD08F)))
+                val g = BackdropPaint.grassStops
+                drawRect(Brush.verticalGradient(0f to g[0], 0.62f to g[1], 0.78f to g[2], 1f to g[3]))
                 // 气泡：固定伪随机位置的一圈白圈
                 val stars = listOf(0.12f to 0.30f, 0.30f to 0.16f, 0.52f to 0.36f, 0.72f to 0.20f, 0.88f to 0.46f, 0.42f to 0.58f, 0.66f to 0.66f)
                 stars.forEachIndexed { i, (fx, fy) ->
                     val r = (6 + (i * 7) % 16) * 1f.dp.toPx()
-                    drawCircle(Color(0x40FFFFFF), radius = r, center = Offset(size.width * fx, size.height * fy))
+                    drawCircle(BackdropPaint.bubble, radius = r, center = Offset(size.width * fx, size.height * fy))
                     drawCircle(Color(0x66FFFFFF), radius = r, center = Offset(size.width * fx, size.height * fy), style = Stroke(1.2f.dp.toPx()))
                 }
             }
             BackdropKind.GEO_STARS -> {
-                drawRect(Color(0xFF000066))
+                drawRect(BackdropPaint.geoBase)
                 val colors = listOf(Color(0xFFFFFF66), Color(0xFF66FFFF), Color(0xFFFF66CC), Color(0xFF66FF66))
                 for (i in 0 until 64) {
                     val fx = ((i * 127) % 97) / 97f

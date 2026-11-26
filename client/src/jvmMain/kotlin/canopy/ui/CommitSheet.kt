@@ -125,7 +125,7 @@ fun CommitSheet(model: AppModel, project: String) {
                 .fillMaxHeight(0.66f)
                 .clip(RoundedCornerShape(Radius.card))
                 .shadow(12.dp, RoundedCornerShape(Radius.card))
-                .background(Palette.Card)
+                .background(Palette.Popover)
                 .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.card))
                 .padding(Space.lg),
             verticalArrangement = Arrangement.spacedBy(Space.md),
@@ -146,7 +146,7 @@ fun CommitSheet(model: AppModel, project: String) {
                 // 原来的顺序让读失败时永远转圈
                 detailState is LoadState.Failed -> Box(Modifier.weight(1f).fillMaxWidth()) {
                     Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("⚠ " + L10n.t("gitop.commitSheet.readFailed"), style = Type.section.copy(color = Palette.Amber))
+                        Text("⚠ " + L10n.t("gitop.commitSheet.readFailed"), style = Type.section.copy(color = Palette.AmberText))
                         Spacer(Modifier.height(Space.xs))
                         Text((detailState as LoadState.Failed).reason, style = Type.label, maxLines = 3)
                     }
@@ -156,21 +156,21 @@ fun CommitSheet(model: AppModel, project: String) {
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(Modifier.size(16.dp), color = Palette.Accent, strokeWidth = 2.dp)
+                        CircularProgressIndicator(Modifier.size(16.dp), color = Palette.AccentText, strokeWidth = 2.dp)
                         Spacer(Modifier.height(Space.sm))
                         Text(L10n.t("gitop.commitSheet.loading"), style = Type.label)
                     }
                 }
                 dirty == null -> Box(Modifier.weight(1f).fillMaxWidth()) {
                     Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("⚠ " + L10n.t("gitop.commitSheet.readFailed"), style = Type.section.copy(color = Palette.Amber))
+                        Text("⚠ " + L10n.t("gitop.commitSheet.readFailed"), style = Type.section.copy(color = Palette.AmberText))
                         Spacer(Modifier.height(Space.xs))
                         Text(L10n.t("cmp.err.noDirty"), style = Type.label)
                     }
                 }
                 !dirty.ok -> Box(Modifier.weight(1f).fillMaxWidth()) {
                     Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("⚠ " + L10n.t("gitop.commitSheet.readFailed"), style = Type.section.copy(color = Palette.Amber))
+                        Text("⚠ " + L10n.t("gitop.commitSheet.readFailed"), style = Type.section.copy(color = Palette.AmberText))
                         Spacer(Modifier.height(Space.xs))
                         Text(dirty.err ?: L10n.t("cmp.err.noReason"), style = Type.label, maxLines = 3)
                     }
@@ -202,7 +202,7 @@ fun CommitSheet(model: AppModel, project: String) {
                             IconBox(
                                 if (checked) FluentIcon.CheckboxChecked else FluentIcon.CheckboxUnchecked,
                                 size = 18.dp,
-                                tint = if (checked) Palette.Accent else Palette.TextSecondary,
+                                tint = if (checked) Palette.AccentText else Palette.TextSecondary,
                             )
                             Spacer(Modifier.width(Space.sm))
                             // 引擎 dirty.files 只有路径（无 xy/kind，见文件头）——不造假徽标
@@ -217,7 +217,7 @@ fun CommitSheet(model: AppModel, project: String) {
                     // 清单看着是「30/30 已选」，提交却是整仓，没列出的文件会一并进去
                     val unlisted = unlistedDirtyCount(dirty.total, files.size)
                     if (unlisted > 0) {
-                        Text(L10n.t("cmp.commit.unlisted", files.size, unlisted, dirty.total), style = Type.label, color = Palette.Amber)
+                        Text(L10n.t("cmp.commit.unlisted", files.size, unlisted, dirty.total), style = Type.label, color = Palette.AmberText)
                     }
                 }
             }
@@ -230,7 +230,7 @@ fun CommitSheet(model: AppModel, project: String) {
                         Text(L10n.t("gitop.commitSheet.selectedCount", selected.size, files.size), style = Type.label)
                         Text(
                             if (selected.size == files.size) L10n.t("gitop.commitSheet.deselectAll") else L10n.t("gitop.commitSheet.selectAll"),
-                            style = Type.label.copy(color = Palette.Accent, fontWeight = FontWeight.SemiBold),
+                            style = Type.label.copy(color = Palette.AccentText, fontWeight = FontWeight.SemiBold),
                             modifier = Modifier.clickable {
                                 selected = if (selected.size == files.size) emptySet() else defaultCommitSelection(files)
                             },
@@ -254,7 +254,7 @@ fun CommitSheet(model: AppModel, project: String) {
                             Text(
                                 t ?: L10n.t("cmp.commit.noKind"),
                                 style = Type.micro.copy(fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal),
-                                color = if (sel) Palette.BgBase else Palette.TextSecondary,
+                                color = if (sel) Palette.OnAccent else Palette.TextSecondary,
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(999.dp))
                                     .background(if (sel) Palette.Accent else Palette.CardHover)
@@ -286,15 +286,15 @@ fun CommitSheet(model: AppModel, project: String) {
                         ) { Text(if (busy) L10n.t("cmp.commit.busy") else L10n.t("gitop.commit")) }
                     }
                     // 部分勾选 = 引擎做不了，如实说（判据 partialCommitNote）
-                    partial?.let { Text("⚠ $it", style = Type.micro.copy(color = Palette.Amber)) }
+                    partial?.let { Text("⚠ $it", style = Type.micro.copy(color = Palette.AmberText)) }
                     // 本弹窗发起的 commit 失败回执：留在原地（mac「失败不弹走」）
                     feedback?.let { fb ->
                         if (fb.op == "commit" && fb.project == project && !fb.ok) {
-                            IconBox(FluentIcon.ErrorCircle, size = 14.dp, tint = Palette.Amber)
+                            IconBox(FluentIcon.ErrorCircle, size = 14.dp, tint = Palette.AmberText)
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 fb.text.trim().take(200).ifEmpty { "（引擎未给出原因）" },
-                                style = Type.micro.copy(color = Palette.Amber),
+                                style = Type.micro.copy(color = Palette.AmberText),
                                 maxLines = 2,
                             )
                         }
