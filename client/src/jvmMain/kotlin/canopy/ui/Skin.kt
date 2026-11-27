@@ -397,20 +397,14 @@ object Skins {
         Material.glowColor = skin.glowColor
         Material.gloss = skin.gloss
         Material.backdrop = skin.backdrop
-        // 悬停提亮量：不透明皮肤沿用「hover 色的 35%」；半透明卡片的皮肤（玻璃 / Aero 的 hover 是一层白）
-        // 只许加「卡 → 悬停卡」多出来的那一点，否则一悬停整张卡被冲白
-        Material.hoverBrighten = if (skin.card.alpha >= 0.999f && skin.cardHover.alpha >= 0.999f) {
-            skin.cardHover.copy(alpha = 0.35f)
-        } else {
-            skin.cardHover.copy(alpha = (skin.cardHover.alpha - skin.card.alpha).coerceIn(0f, 0.35f))
-        }
     }
 
     /**
      * 文字与墨的对比度保底（换皮肤后调用）：皮肤数据里写的是设计意图，这里保证它读得清。
      * 表面分四层（[textSurfaces]），要求逐层放宽：
-     * · 静置面（底、侧栏、卡、凹槽、hero）：三级文字按 AAA 保底——主 ≥ 7、次级 ≥ 5.5、三级 ≥ 4.5
-     *   （三级也管占位符与提示，它们同样要读）；
+     * · 静置面（底、侧栏、卡、凹槽、hero、菜单）：三级文字按 AAA 保底——主 ≥ 7、次级 ≥ 6、三级 ≥ 5
+     *   （三级也管占位符、图例、时间戳，它们同样要读。5 取的是项目原本的口径——Design.kt 最早那版就写着
+     *   「三级文字在底 / 卡片 / 侧栏三种底色上都 ≥ 5:1」；下限放在 4.5 时三级小字整片贴着线，体检读出来一片偏弱）；
      * · 光泽顶部与悬停 / 按下：主 / 次级 ≥ 4.5（AA），三级与语义墨 ≥ 3.0（不进「冲突」档）；
      * · 悬停 + 光泽叠加处：主 ≥ 4.5，其余 ≥ 3.0。
      * · accent 上的前景：皮肤给的 onAccent 对比度不到 4.5 就换成可读色（浅色皮肤的粉彩 accent 配白字）。
@@ -434,8 +428,8 @@ object Skins {
         Palette.AccentHover = skin.accentHover.takeIf { contrastOf(Palette.OnAccent, it) >= 4.5f }
             ?: hoverOf(Palette.Accent, Palette.OnAccent)
         Palette.TextPrimary = level(skin.textPrimary, 7.0f, 4.5f, 4.5f)
-        Palette.TextSecondary = level(skin.textSecondary, 5.5f, 4.5f, 3.0f)
-        Palette.TextTertiary = level(skin.textTertiary, 4.5f, 3.0f, 3.0f)
+        Palette.TextSecondary = level(skin.textSecondary, 6.0f, 4.5f, 3.0f)
+        Palette.TextTertiary = level(skin.textTertiary, 5.0f, 3.0f, 3.0f)
         // 语义墨还会落在自己色的浅色底 chip 上：那一面也算进去
         fun inkLevel(base: Color): Color {
             // 铺底的不透明度取 M3 容器档 0.16（代码里 chip 底在 0.08–0.18 之间）
@@ -463,7 +457,7 @@ object Skins {
 
     private fun glossBudget(skin: Skin): GlossBudget {
         val plain = textSurfaces(skin, gloss = 0f)
-        val secondary = ensureContrast(skin.textSecondary, plain.resting, 5.5f)
+        val secondary = ensureContrast(skin.textSecondary, plain.resting, 6.0f)
         val ownOnAccent = skin.onAccent.takeIf { contrastOf(it, Palette.Accent) >= 4.5f }
         val fills = listOf(Palette.Accent, Palette.Shallow, Palette.Deep, Palette.Ai, Palette.Yellow, Palette.Amber, Palette.Red)
         fun worstOn(fill: Color, on: Color, g: Float): Float =
@@ -514,8 +508,6 @@ object Material {
     var glowColor by mutableStateOf(Color.Transparent)
     var gloss by mutableStateOf(false)
     var glossStrength by mutableStateOf(0.16f)
-    /** 可点容器悬停时的加法提亮色（不透明度 = 提亮量）；换肤时按皮肤算，见 Skins.apply。 */
-    var hoverBrighten by mutableStateOf(Color(0x59303030))
     var backdrop by mutableStateOf(BackdropKind.NONE)
 }
 
@@ -639,22 +631,19 @@ fun textSurfaces(skin: Skin, gloss: Float = Material.glossStrength): TextSurface
 }
 
 /**
- * 把前景调到在 [surfaces] 的每一个上对比度都不低于 [min]。已经达标就原样返回（半透明的保持半透明）；
- * 不达标时按极性向黑或向白线性推，取刚好达标的那一点——色相不变、改动最小。
+ * 把前景调到在 [surfaces] 的每一个上对比度都不低于 [min]。已经达标就原样返回；不达标时按极性向黑或向白
+ * 线性推，取刚好达标的那一点——色相不变、改动最小。半透明的前景推的时候**保持半透明**（只把不透明度往上带）：
+ * Fluent 的三级文字是 53% 的白，差一点点就够时，改的是一个百分点的透明度，而不是把它换成一块实色。
  * 这是皮肤数据的**保底**而不是重设计：粉彩色在浅底上当文字不够读，就把它压暗到够读为止。
  */
 fun ensureContrast(fg: Color, surfaces: List<Color>, min: Float): Color {
-    fun worst(c: Color): Float = surfaces.minOf { contrastOf(c, it) }
-    if (fg.alpha >= 0.999f) {
-        if (worst(fg) >= min) return fg
-    } else if (surfaces.all { contrastOf(fg.compositeOver(it), it) >= min }) {
-        return fg
-    }
-    val base = if (fg.alpha >= 0.999f) fg else fg.compositeOver(surfaces.minBy { contrastOf(fg.compositeOver(it), it) })
+    fun on(c: Color, surface: Color): Color = if (c.alpha >= 0.999f) c else c.compositeOver(surface)
+    fun worst(c: Color): Float = surfaces.minOf { contrastOf(on(c, it), it) }
+    if (worst(fg) >= min) return fg
     fun pushTo(target: Color): Color {
         var t = 0.02f
         while (t < 1f) {
-            val c = lerp(base, target, t)
+            val c = lerp(fg, target, t)
             if (worst(c) >= min) return c
             t += 0.02f
         }
@@ -662,7 +651,7 @@ fun ensureContrast(fg: Color, surfaces: List<Color>, min: Float): Color {
     }
     val dark = pushTo(Color.Black)
     val light = pushTo(Color.White)
-    return if (worst(dark) >= min && (worst(light) < min || dist2(base, dark) <= dist2(base, light))) dark else light
+    return if (worst(dark) >= min && (worst(light) < min || dist2(fg, dark) <= dist2(fg, light))) dark else light
 }
 
 private fun dist2(a: Color, b: Color): Float {

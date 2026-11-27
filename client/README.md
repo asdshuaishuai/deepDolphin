@@ -29,15 +29,21 @@
   整目录改名、搬不动就继续用旧的；钥匙串的 key 先按新属性找、找不到按旧属性兜底；自启条目
   `deepdolphin.desktop` 在启动时换成指向当前客户端的 `canopy.desktop`（开发态入口不可用时不动）。
   ⚠️ 旧包 `deepdolphin` 不会自动卸载：装新包后请 `sudo apt remove deepdolphin`（或等价的包管理器操作）。
+  （本机从没装过 deb——`dpkg` 里没有 `canopy` 也没有 `deepdolphin`；本机的客户端是免 root 的用户级安装，
+  见「构建与运行 · 免 root 安装」。）
 - 图谱两页的**嵌入尺寸融合**（2026-11-26）：产物按拿到的视口排布（引擎侧：架构图泳道折行、热力图按区域选列），
   外壳这边把回执挪进页头、底部不再压条、把控件高 / 圆角令牌递给产物、窗口最小 960×640。详见 PLAN.md。
   客户端退回没有尺寸令牌的写法也不坏——产物那边每个变量都有回退值。
 - 界面外观：设置 · 通用 ·「外观」内置 **14 套皮肤**（namethatui.com/styles 全风格，flat design 除外）——
   玻璃拟态 / 液态玻璃 / 新拟态 / 黏土拟态 / 新粗野主义 / Y2K / Frutiger Aero / 拟物皮革 / 远古网页 /
   Aqua / Windows Aero / 极简主义等，即点即换、settings.conf 持久化（`app.skin`）。
-  文字与表面的对比度在换肤时保底（`ui/Skin.kt`：文字级语义色、四层表面模型、光泽预算），`SkinTest`
-  逐套守卫；另有只手动触发的离屏体检——`CANOPY_SKIN_AUDIT=<目录> gradle jvmTest --rerun-tasks
-  --tests '*SkinContrastAudit*'`（需要显示器）——按语义树量每段文字的实际像素对比度，14 套 0 冲突。
+  文字与表面的对比度在换肤时保底（`ui/Skin.kt`：文字级语义色、四层表面模型、光泽预算；静置面三级文字
+  7 / 6 / 5），`SkinTest` 逐套守卫；另有只手动触发的离屏体检——`CANOPY_SKIN_AUDIT=<目录> gradle jvmTest
+  --rerun-tasks --tests '*SkinContrastAudit*'`（需要显示器；再加 `CANOPY_SKIN_AUDIT_HOVER=1`、
+  `CANOPY_SKIN_AUDIT_PRESSED=1` 会把每个可点节点的悬停 / 按下态也量一遍）——按语义树量每段文字的实际像素
+  对比度：14 套 0 冲突，悬停 / 按下与提示条也是 0 冲突。
+  **仓库与本地目录不改名**（2026-11-27 定）：两个仓库都开着 GitHub Pages，改名后 Pages 地址不跳转；
+  `~/.deepgit` 也不动（用户定）。
 - 图谱两页依赖引擎产物的嵌入模式（0.3.0 开发构建）：引擎退回 0.2.x 时图谱照常出图，但是原样内嵌的样子。
 - **真窗口实拍（2026-11-25，DISPLAY=:0，打包后的 deb 提取运行）**：截图与逐张说明见
   [`docs/ui-cmp/README.md`](../docs/ui-cmp/README.md)。此前入库的 48 张旧图已退役——其中
@@ -56,11 +62,18 @@ scripts/build.sh --run      # 编译后真窗口启动（需 DISPLAY）
 scripts/run.sh              # 同上（gradle run）
 
 gradle packageDeb           # jpackage 打 deb（或 packageAppImage）
+scripts/install-user.sh     # 免 root 装到用户目录（见下）；--uninstall 卸掉
 ```
 
 依赖：JDK 21 + Gradle（本机装在 `~/.local/jdk`、`~/.local/gradle`，build.sh 自动定位）。
 KCEF/JCEF 在 JDK17+ 完成反射初始化所需的两条 `--add-opens` 已进 jpackage `--java-options`
 与本地 `run` 任务（build.gradle.kts）。**门禁证据必须禁用缓存**（见上）。
+
+**免 root 安装**（`scripts/install-user.sh`，不需要 sudo）：系统级安装是 deb（`/opt/canopy`）；没有 root
+或不想动系统的机器，用这个把打好的 deb 装进用户目录——应用镜像 `~/.local/opt/canopy`、启动器
+`~/.local/bin/canopy`、应用菜单项 `~/.local/share/applications/canopy.desktop`（只对当前用户）。
+配置、缓存、引擎发现与系统级安装完全一样；以后装了 deb，启动器自动改走 `/opt/canopy`；
+`--uninstall` 只卸这三样，不碰配置和缓存。
 
 `CAMBIUM_BIN` / `DEEPGIT_BIN` 指向别的引擎构建时注意：`~/.cache/canopy/kcef/` 下的原生包
 按引擎无关的固定版本安装（见 ui/JcefBundle.kt），与引擎版本无关。

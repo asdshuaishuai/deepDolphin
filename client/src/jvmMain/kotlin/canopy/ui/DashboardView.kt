@@ -72,7 +72,7 @@ fun GlassCard(
         modifier
             .skinShadow(Radius.card)
             // 链序与 ButtonChrome 同构：skinShadow 下游、clip/background 上游（hoverLift 契约）
-            .hoverLift(interaction, enabled = interactive, radius = Radius.card, brighten = false)
+            .hoverLift(interaction, enabled = interactive, radius = Radius.card)
             .hoverable(interaction, enabled = interactive)
             .clip(RoundedCornerShape(Radius.card))
             .background(bg)

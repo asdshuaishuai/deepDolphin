@@ -84,7 +84,7 @@ class SkinTest {
     private fun cardOf(skin: Skin): Color = skin.card.compositeOver(backdropBases(skin.backdrop, skin.bgBase).first())
 
     /**
-     * 静置面（底 / 侧栏 / 卡 / 凹槽 / hero）上三级文字按 AAA：主 7、次级 5.5、三级 4.5；
+     * 静置面（底 / 侧栏 / 卡 / 凹槽 / hero / 菜单）上三级文字按 AAA：主 7、次级 6、三级 5；
      * 光泽顶部与悬停 / 按下上主 / 次级按 AA 4.5，三级与语义墨不跌破 3.0；悬停 + 光泽叠加处主 ≥ 4.5；
      * 语义墨在静置面上 ≥ 4.5；每个语义容器本体上配得出 ≥ 4.5 的前景，它的光泽顶部与悬停色上 ≥ 4.3；
      * accent 的本体 / 光泽顶部 / 悬停色上 ≥ 4.3；提交构成 12 色对底、侧栏、卡 ≥ 3:1。
@@ -100,8 +100,8 @@ class SkinTest {
                 val s = textSurfaces(skin)
                 val card = cardOf(skin)
                 check(worst(Palette.TextPrimary, s.resting), 6.9f, "${skin.id} 主文字在静置面上不到 7:1")?.let(failures::add)
-                check(worst(Palette.TextSecondary, s.resting), 5.4f, "${skin.id} 次级文字在静置面上不到 5.5:1")?.let(failures::add)
-                check(worst(Palette.TextTertiary, s.resting), 4.4f, "${skin.id} 三级文字在静置面上不到 4.5:1")?.let(failures::add)
+                check(worst(Palette.TextSecondary, s.resting), 5.9f, "${skin.id} 次级文字在静置面上不到 6:1")?.let(failures::add)
+                check(worst(Palette.TextTertiary, s.resting), 4.9f, "${skin.id} 三级文字在静置面上不到 5:1")?.let(failures::add)
                 check(worst(Palette.TextPrimary, s.all), 4.4f, "${skin.id} 主文字在抬升面上不到 4.5:1")?.let(failures::add)
                 check(worst(Palette.TextSecondary, s.steady), 4.4f, "${skin.id} 次级文字在抬升面上不到 4.5:1")?.let(failures::add)
                 check(worst(Palette.TextSecondary, s.all), 2.9f, "${skin.id} 次级文字在悬停 + 光泽处不到 3:1")?.let(failures::add)
@@ -115,6 +115,10 @@ class SkinTest {
                     if (sec > p * 0.9f) failures.add("${skin.id} 卡 ${on.toCss()} 上次级文字与主文字分不开：次 ${"%.1f".format(sec)} / 主 ${"%.1f".format(p)}")
                     if (ter > sec * 0.9f) failures.add("${skin.id} 卡 ${on.toCss()} 上三级文字与次级文字分不开：三 ${"%.1f".format(ter)} / 次 ${"%.1f".format(sec)}")
                 }
+                // 浮层：菜单条目是主文字压 Popover（按 AAA）；提示条是次级文字压 PopoverRaised（按 AA）。
+                // 体检的状态遍里悬停弹出提示条时单独量过它（vernacular 5.4、aqua 8.3）
+                check(worst(Palette.TextPrimary, listOf(Palette.Popover)), 6.9f, "${skin.id} 菜单底上的文字不到 7:1")?.let(failures::add)
+                check(worst(Palette.TextSecondary, listOf(Palette.PopoverRaised)), 4.4f, "${skin.id} 提示条底上的文字不到 4.5:1")?.let(failures::add)
                 inks.forEach { (name, get) ->
                     check(worst(get(), s.resting), 4.4f, "${skin.id} 文字级 $name 在静置面上不到 4.5:1")?.let(failures::add)
                     check(worst(get(), s.all), 2.9f, "${skin.id} 文字级 $name 在抬升面上不到 3:1")?.let(failures::add)
@@ -184,6 +188,9 @@ class SkinTest {
         assertEquals(Palette.Red.toCss(), Palette.RedText.toCss())
         assertEquals(Color(0xFF1B1B1B).toCss(), Palette.OnAccent.toCss(), "暗色的 onAccent 本来达标，不该被换掉")
         assertEquals(Color(0xA8FFFFFF).toCss(), Palette.TextSecondary.toCss(), "暗色的次级文字保持半透明")
+        // 三级文字在最不利的静置面（hero 顶部）上是 4.98、差 0.02：推的是透明度（仍是白），不是换成实色
+        assertTrue(Palette.TextTertiary.alpha in 0.529f..0.999f, "Fluent 的三级文字仍是半透明的白：${Palette.TextTertiary.toCss()}")
+        assertEquals(Color.White.toCss(), Palette.TextTertiary.copy(alpha = 1f).toCss(), "色相没变（仍是白）")
         Skins.apply(Skins.byId.getValue(Skins.DEFAULT_ID))
     }
 

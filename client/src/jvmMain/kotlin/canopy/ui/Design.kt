@@ -55,12 +55,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -494,11 +492,10 @@ fun Modifier.focusRing(
  *     shadowElevation 档，与容器自己的 skinShadow 叠加即增强）；
  *     硬偏移档（HARD_OFFSET）hover 时再叠一遍 skinShadow——偏移块同形加深，正是粗野主义的 hover 语言。
  *  ② 上浮 [lift]（默认 2dp，graphicsLayer translationY 动画驱动，不动布局，与 skinShadow 各画各的）。
- *  ③ 整体提亮：内容画完后再叠一层 Material.hoverBrighten 的 Plus 混合（提亮量换肤时按皮肤算：半透明卡片的
- *  皮肤只加「卡 → 悬停卡」多出来的那一点）——只加不减：暗底向 hover 表面靠、
- *     白字被钳制在纯白不受影响；浅色皮肤上近白底钳在原色、深色字微亮，两侧都不破。要做**精确**
- *     Card→CardHover 底色切换的容器（GlassCard 已是）在自己的 background 动画里做，
- *     挂本修饰符时传 brighten = false 免得叠亮。
+ *  这里**不提亮底色**：提亮要作用在表面上，只能由容器在自己的 background 里做（Card → CardHover，GlassCard
+ *  与看板的项目卡都是）。原先本修饰符还有第 ③ 步「整体提亮」——内容画完后叠一层加法混合，说是「只对表面
+ *  做加法」，其实连文字一起加：浅色皮肤里深色字被加上 35% 的近白色，整张卡的字被冲淡（Aqua 看板页悬停实拍：
+ *  标题、状态词、动作全部掉到 2.1–2.4，体检的状态遍抓到）。暗色皮肤里白字被钳在纯白，所以一直没暴露。
  *
  * 链上挂在 skinShadow 的下游、clip / background 的上游（海拔阴影要画在底色之下才不出暗边）：
  *   `.skinShadow(r).hoverLift(interaction).clip(...).background(...)`（与 ButtonChrome 现有顺序同构）。
@@ -509,7 +506,6 @@ fun Modifier.hoverLift(
     enabled: Boolean = true,
     lift: Dp = 2.dp,
     radius: Dp = Radius.card,
-    brighten: Boolean = true,
 ): Modifier = composed {
     val hovered by interaction.collectIsHoveredAsState()
     val active = hovered && enabled
@@ -527,13 +523,6 @@ fun Modifier.hoverLift(
                 shadowElevation = (lift * 2f * k).toPx() // 海拔给 2×lift：软阴影 2dp 几乎看不见，4dp 才读得出「浮起来了」（GraphicsLayerScope 里这是 Float 像素值，不是 Dp）
                 ambientShadowColor = Material.shadowDark
                 spotShadowColor = Material.shadowDark
-            }
-        }
-        // ③ 整体提亮：画在内容之后（Plus 混合），只对表面做加法
-        .drawWithContent {
-            drawContent()
-            if (brighten && k > 0.01f) {
-                drawRect(Material.hoverBrighten.copy(alpha = Material.hoverBrighten.alpha * k), blendMode = BlendMode.Plus)
             }
         }
 }

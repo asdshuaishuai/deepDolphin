@@ -37,6 +37,7 @@ package canopy.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -394,6 +395,14 @@ private fun ProjectCard(c: BoardCard, model: AppModel, onOpenProject: (String) -
     // hover / 焦点共用一个 interaction 源：clickable 往里写事件，hoverLift 读 hover、
     // focusRing 读键盘焦点——整卡可点就该有 hover 提亮上浮，Tab 落上出 accent 环。
     val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    // 悬停换底色走 Card → CardHover，与 GlassCard 同一套（表面模型里的抬升面）。原先由 hoverLift 在内容之后
+    // 叠一层加法混合来「提亮」：浅色皮肤里整张卡的字被一起冲淡（Aqua 悬停实拍 2.1–2.4，体检的状态遍抓到）
+    val bg by androidx.compose.animation.animateColorAsState(
+        if (hovered) Palette.CardHover else Palette.Card,
+        androidx.compose.animation.core.tween(Motion.normal),
+        label = "projectCardBg",
+    )
     Column(
         Modifier
             .fillMaxWidth()
@@ -402,7 +411,7 @@ private fun ProjectCard(c: BoardCard, model: AppModel, onOpenProject: (String) -
             .hoverLift(interaction)
             .focusRing(radius = Radius.card)
             .clip(RoundedCornerShape(Radius.card))
-            .background(Palette.Card)
+            .background(bg)
             .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.card))
             .clickable(interactionSource = interaction, indication = null) { onOpenProject(c.name) }
             .padding(Space.md),
