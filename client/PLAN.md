@@ -613,3 +613,36 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
 - 引擎仓库同步做了并入（`feat/sylva-brand` 并入 `origin/dev`），本机引擎二进制随之更新到合并后的构建
   （旧版备份 `~/.local/libexec/cambium/cambium.bin.bak-20261127-pre-merge`）。
 - 验证：客户端门禁对着合并后的引擎跑，283 passed / 0 failed / 1 skipped。
+
+## 置信度准确性批 · 客户端对齐（2026-11-27）
+
+**背景**：引擎在同一日做了置信度准确性批（Cambium `feat/sylva-brand` @ `1ce5f44`，`AGENTS.md` 不变量 160）：
+分数与各聚合表改在截断之前算——`findings` 最多列 400 条只限制清单，`score` / `byKind` / `penaltyByFile` 吃全部检出的条目；
+四个 JSON 出口恒发 `findingsTotal` / `penaltyTotal` / `coverage`。本仓是契约的消费端，跟着对齐。
+
+**取舍**
+- **清单标题不再拿列出的条数冒充总数**：`findingsTotal > findings.size` 时写「疑点共 N 条 · 列出 M 条」；
+  没截断照旧「疑点 N 条」；总量未知（旧引擎 / 旧快照，键缺失）维持「N 条」——不编数字，由既有的限流披露
+  （`cmp.conf.capped*`）说明是子集。判定抽成纯函数 `findingsHeadline(total, shown)`，Composable 只渲染。
+- **缺字段是 null 不是 0**（规约 6）：`findingsTotal` / `penaltyTotal` / `coverage` 在镜像里都是可空，旧 fixture
+  （准确性批之前的引擎产出）照常解码。
+- **`coverage` 只镜像、不另起一块**：它的内容与 `astNote` 是同一条信息的结构化版，页面上 `astNote` 已经原样展示在
+  披露框里——同一句话说两遍是噪声。键先进镜像（客户端不必解析散文就能拿到覆盖面），单独的呈现等有真实需要再加。
+- **不碰生成物**：新文案 `cmp.conf.findingsTotalN` 加在手写的 `L10nCmpKeys.kt`（四语言键集一致由 `L10nTest` 守），
+  不动 `gen_l10n.py` 的产物。
+
+**判据**（门禁禁缓存：`passed=286 skipped=1 failed=0`）
+- `ContractTest.confidenceReportCarriesTotalsAndCoverage`：新 fixture `fixtures/confidence/confidence_totals.json`
+  由本机引擎 `dendro check --json` 真跑落盘（隔离的 `DEEPGIT_HOME`，一个 3 函数的 Python 文件，ast-grep 在位）：
+  总量 = 列出数、罚分 = 逐条权重之和、分数 = 100·20 / (20 + 52 / 1)、`coverage` 七键、全部文件走成语法树时
+  `kindsUnavailable` 为空、`unresolved-call` 权重 3 与标签「未解析调用」。
+- `ContractTest.confidenceReportWithoutTotalsDecodesWithNulls`：旧 fixture 解码得出来，三个新键是 null。
+- `ConfidencePagesTest.findingsHeadlineDistinguishesTotalFromListed`：三种情形的标题文案。
+- 负控（改坏 → 红 → 原样恢复）：摘掉 `findingsHeadline` 的截断判定 → `ConfidencePagesTest` 1 红；
+  把 `coverage` 的序列化名改掉 → `ContractTest` 1 红。
+
+**边界（如实）**
+- `EngineMirrorDriftTest` 的真机两向对账跑的是**本机已安装**的引擎（本批装的是 `1ce5f44` 之后的构建）；
+  用户机器上的引擎若仍是旧版，三个新键缺失 → 页面退回「疑点 N 条」+ 限流披露，不报错。
+- 图谱两页内嵌的引擎产物（热力图的「置信度分析报告」侧栏）仍是引擎 HTML 自己的布局，本批没动；
+  它的「共多少条」由产物自己从 `confidence` 块里读。

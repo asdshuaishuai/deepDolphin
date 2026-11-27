@@ -6,9 +6,9 @@
 > 引擎访问唯一通路：`cambium <命令> --json` CLI 子进程，**没有 HTTP、没有 FFI**。
 > 分批执行手册（计划/红线/判据纪律）见 [PLAN.md](PLAN.md)。
 
-## 状态（2026-11-26）
+## 状态（2026-11-27）
 
-- 判据门禁绿：`scripts/build.sh --test` → **282 判据 0 failed**（1 skipped = 只手动触发的皮肤对比度体检；禁用缓存复跑
+- 判据门禁绿：`scripts/build.sh --test` → **286 判据 0 failed**（1 skipped = 只手动触发的皮肤对比度体检；禁用缓存复跑
   `gradle jvmTest --rerun-tasks --no-build-cache` 同数）。门禁脚本读的是 test-results XML，
   增量构建下会读到陈旧结果——当证据用的数字必须来自禁用缓存的那次。
 - 本机引擎是 **Cambium**（0.3.0 的开发构建，取自引擎仓库 `feat/sylva-brand`）：启动器 `~/.local/bin/cambium`，
@@ -206,7 +206,7 @@ src/jvmMain/kotlin/canopy/
   ui/L10nCmpKeys.kt       CMP 特有键四语言（cmp. 前缀；以 zh 为源补 en/zh-TW/ja）
 src/jvmTest/kotlin/
   engine/ContractTest.kt        fixtures 契约回归（真实引擎输出，缺必知键=契约过旧）
-  ui/ConfidencePagesTest.kt     置信度/补丁体检判据（10 条）
+  ui/ConfidencePagesTest.kt     置信度/补丁体检判据（12 条）
   ui/GraphParseTest.kt          render 回执/路径提取判据（10 条）
   ui/ScanSheetLogicTest.kt      扫描单判定判据（10 条）
   ui/CommitFormTest.kt          提交类型前缀判据（5 条）

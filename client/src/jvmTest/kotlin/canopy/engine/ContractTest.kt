@@ -229,6 +229,43 @@ class ContractTest {
     // ── graph confidence / patchconf（fixtures/confidence/，2026-11 本机 cambium 真跑落盘：
     //    vtest 播种 suspect.py 后 graph confidence --json / patchconf 两发真命令的 stdout 原样）──
 
+    // 2026-11-27 置信度准确性批：总量与覆盖面进契约（fixtures/confidence/confidence_totals.json 由
+    // 本机引擎 dendro check --json 真跑落盘——隔离的 DEEPGIT_HOME 里一个 3 函数的 Python 文件，ast-grep 在位）。
+    @Test
+    fun confidenceReportCarriesTotalsAndCoverage() {
+        val r = decodeOrThrow(ConfidenceReport.serializer(), fixture("confidence/confidence_totals"))
+        // 一共检出的条数与总罚分恒发；没截断时总量 = 列出数、罚分 = 逐条权重之和
+        assertEquals(6L, r.findingsTotal)
+        assertEquals(6, r.findings.size)
+        assertEquals(52L, r.penaltyTotal)
+        assertEquals(r.findings.sumOf { it.weight }.toInt(), r.penaltyTotal!!.toInt())
+        // 分数按总罚分算：100·20 / (20 + 52 / 1 文件) = 27
+        assertEquals(27, r.score)
+        // 覆盖面七键恒发：全部文件都走成语法树 ⇒ 没有任何类别缺失（不许把「7 类」挂在没降级的报告上）
+        val cov = requireNotNull(r.coverage) { "coverage 必须带出来（结构化版 astNote）" }
+        assertEquals(1L, cov.astFiles)
+        assertEquals(0L, cov.lexicalFiles)
+        assertEquals(1L, cov.astBatchesTotal)
+        assertEquals(0L, cov.astBatchesFailed)
+        assertTrue(cov.kindsDropped.isEmpty())
+        assertEquals(0L, cov.nodesDropped)
+        assertTrue(cov.kindsUnavailable.isEmpty())
+        assertTrue(r.astUsed)
+        // 未解析调用按实测精度降权（8 → 3），标签不再是「幻觉调用」
+        val unresolved = r.byKind.first { it.kind == "unresolved-call" }
+        assertEquals(3L, unresolved.weight)
+        assertEquals("未解析调用", unresolved.label)
+    }
+
+    // 旧 fixture（准确性批之前的引擎产出）没有新键：镜像必须解码得出来，且缺字段是 null 不是 0
+    @Test
+    fun confidenceReportWithoutTotalsDecodesWithNulls() {
+        val r = decodeOrThrow(ConfidenceReport.serializer(), fixture("confidence/confidence"))
+        assertNull(r.findingsTotal, "旧快照没有总量：必须是 null（未知），不许回落成 0")
+        assertNull(r.penaltyTotal)
+        assertNull(r.coverage)
+    }
+
     @Test
     fun confidenceReportParsesRealShape() {
         val r = decodeOrThrow(ConfidenceReport.serializer(), fixture("confidence/confidence"))

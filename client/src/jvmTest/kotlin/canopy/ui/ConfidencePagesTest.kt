@@ -47,6 +47,15 @@ class ConfidencePagesTest {
         assertEquals(fs, highWeightFindings(fs, false), "关着 = 引擎全序原样（不重排）")
     }
 
+    // ── 清单标题：列出的条数不许冒充总数（引擎 2026-11-27 起发 findingsTotal）──
+
+    @Test
+    fun findingsHeadlineDistinguishesTotalFromListed() {
+        assertEquals("疑点共 938 条 · 列出 400 条", findingsHeadline(938L, 400), "总量大于列出数：说「共多少 · 列出多少」")
+        assertEquals("疑点 6 条", findingsHeadline(6L, 6), "没截断：总量 = 列出数，照旧")
+        assertEquals("疑点 400 条", findingsHeadline(null, 400), "总量未知（旧引擎 / 旧快照）：维持「N 条」，不编数字")
+    }
+
     // ── 疑点位置串（引擎 0.3.0 的 qual：问题发生在哪）──
 
     @Test

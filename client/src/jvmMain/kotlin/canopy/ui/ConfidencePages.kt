@@ -5,6 +5,8 @@
 // 引擎源码 Cambium/src/graph/confidence_render.cj / patchconf_render.cj 同口径）：
 //   · graph confidence <项目> --json → score/dimensions/penaltyByFile/findings/byKind/
 //     astUsed/astNote/cappedKind/cappedTotal/filesAnalyzed/semantics
+//     + 2026-11-27 准确性批起：findingsTotal/penaltyTotal/coverage（findings 只是列出的那一部分，
+//       分数按全部检出的条目算——清单标题不许拿列出的条数冒充总数）
 //   · graph confidence <项目> --llm → 纯文本提示词（非 JSON，直接可喂模型 → 剪贴板）
 //   · graph patchconf <项目> --patch <diff文件> --json → Layer1（signals S1..S10 可 null）
 //   · graph patchconf --merge <alg> <agent> --json → Layer3 终稿
@@ -299,6 +301,15 @@ fun ConfidencePage(model: AppModel) {
     }
 }
 
+/**
+ * 清单标题：「列出 N 条」只在引擎说「一共就这么多」时才等于全部；总量大于列出数（总量截断 /
+ * 每文件每类上限）时写「共多少条 · 列出多少条」。总量未知（旧引擎 / 旧快照）时维持「N 条」，
+ * 由限流披露（capped*）说明是子集。
+ */
+internal fun findingsHeadline(total: Long?, shown: Int): String =
+    if (total != null && total > shown) L10n.t("cmp.conf.findingsTotalN", total, shown)
+    else L10n.t("cmp.conf.findingsN", shown)
+
 /** 报告体：页面级 LazyColumn 的条目（行级懒加载；键稳定）。 */
 private fun LazyListScope.confidenceReportItems(r: ConfidenceReport, highWeightOnly: Boolean, projectPath: String) {
     item(key = "score") {
@@ -324,7 +335,7 @@ private fun LazyListScope.confidenceReportItems(r: ConfidenceReport, highWeightO
 
     // findings：披露式行（收起 = 位置告知，点击 = 展开证据与实码）
     item(key = "findingsHead") {
-        Text(L10n.t("cmp.conf.findingsN", r.findings.size) + if (highWeightOnly) L10n.t("cmp.conf.findingsHighN", highWeightFindings(r.findings, true).size) else "", style = Type.section)
+        Text(findingsHeadline(r.findingsTotal, r.findings.size) + if (highWeightOnly) L10n.t("cmp.conf.findingsHighN", highWeightFindings(r.findings, true).size) else "", style = Type.section)
         Text(L10n.t("cmp.conf.findingsHint"), style = Type.micro)
     }
     val shown = highWeightFindings(r.findings, highWeightOnly)

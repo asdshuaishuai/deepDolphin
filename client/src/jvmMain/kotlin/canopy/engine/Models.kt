@@ -649,6 +649,32 @@ data class ConfidenceReport(
     val cappedTotal: Boolean = false,
     val filesAnalyzed: Long = 0,
     val semantics: String = "",
+    /**
+     * 一共检出多少条（列出 + 总量截断 + 每文件每类上限丢弃）。引擎 2026-11-27 准确性批起恒发；
+     * 旧快照缺键 = null（不回落成 0——「引擎没说」≠「没有」）。[findings] 只是列出的那一部分。
+     */
+    val findingsTotal: Long? = null,
+    /** 总罚分（全部检出的条目，含被上限丢弃的）；[score] 由它算，不由列出的条目算。 */
+    val penaltyTotal: Long? = null,
+    /** 覆盖面（结构化版 astNote：多少文件走语法树、多少降级、批失败、被剔除 / 丢弃的节点、缺失的类别）。 */
+    val coverage: ConfCoverage? = null,
+)
+
+@Serializable
+@Immutable
+data class ConfCoverage(
+    /** 走语法树的文件数；语法树不可用时为 0。 */
+    val astFiles: Long? = null,
+    /** 因语言没有 tree-sitter 语法而降级为词法级的文件数。 */
+    val lexicalFiles: Long? = null,
+    val astBatchesTotal: Long? = null,
+    val astBatchesFailed: Long? = null,
+    /** 本版 ast-grep 不认、已从规则里剔除的节点种类（"swift.struct_declaration"）。 */
+    val kindsDropped: List<String> = emptyList(),
+    /** 签名不成其为签名、已丢弃的函数节点数（tree-sitter 错误恢复的产物）。 */
+    val nodesDropped: Long? = null,
+    /** 在降级文件上整类缺失的类别（全部文件都走成语法树时为空）。 */
+    val kindsUnavailable: List<String> = emptyList(),
 )
 
 @Serializable

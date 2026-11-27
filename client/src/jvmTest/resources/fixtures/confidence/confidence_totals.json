@@ -1,0 +1,144 @@
+{
+  "root": "/tmp/cmp-fix-vtest",
+  "score": 27,
+  "dimensions": [
+    {
+      "id": "structure",
+      "label": "结构级",
+      "penalty": 36,
+      "findings": 3,
+      "score": 35
+    },
+    {
+      "id": "concurrency",
+      "label": "并发链路/并发细节",
+      "penalty": 10,
+      "findings": 1,
+      "score": 66
+    },
+    {
+      "id": "function",
+      "label": "函数/对象级",
+      "penalty": 6,
+      "findings": 2,
+      "score": 76
+    }
+  ],
+  "penaltyByFile": [
+    {
+      "file": "suspect.py",
+      "penalty": 52
+    }
+  ],
+  "findings": [
+    {
+      "id": "f:suspect.py:4:swallow",
+      "qual": "swallow",
+      "file": "suspect.py",
+      "line": 4,
+      "kind": "orphan",
+      "weight": 12,
+      "dim": "structure",
+      "label": "孤儿符号",
+      "symbol": "swallow",
+      "evidence": "func swallow：定义后全仓无任何非声明处引用，也没有调用点连到它——可能从未被接入，或已被替代"
+    },
+    {
+      "id": "f:suspect.py:12:risky",
+      "qual": "risky",
+      "file": "suspect.py",
+      "line": 12,
+      "kind": "orphan",
+      "weight": 12,
+      "dim": "structure",
+      "label": "孤儿符号",
+      "symbol": "risky",
+      "evidence": "func risky：定义后全仓无任何非声明处引用，也没有调用点连到它——可能从未被接入，或已被替代"
+    },
+    {
+      "id": "f:suspect.py:18:unused_wrapper",
+      "qual": "unused_wrapper",
+      "file": "suspect.py",
+      "line": 18,
+      "kind": "orphan",
+      "weight": 12,
+      "dim": "structure",
+      "label": "孤儿符号",
+      "symbol": "unused_wrapper",
+      "evidence": "func unused_wrapper：定义后全仓无任何非声明处引用，也没有调用点连到它——可能从未被接入，或已被替代"
+    },
+    {
+      "id": "f:suspect.py:4:swallow",
+      "qual": "swallow",
+      "file": "suspect.py",
+      "line": 7,
+      "kind": "swallowed-error",
+      "weight": 10,
+      "dim": "concurrency",
+      "label": "错误被吞",
+      "symbol": "swallow",
+      "evidence": "catch/except 块内没有任何处理——错误被静默吞掉"
+    },
+    {
+      "id": "f:suspect.py:4:swallow",
+      "qual": "swallow",
+      "file": "suspect.py",
+      "line": 6,
+      "kind": "unresolved-call",
+      "weight": 3,
+      "dim": "function",
+      "label": "未解析调用",
+      "symbol": "parse",
+      "evidence": "调用 parse(…)：全仓没有该名字的定义，也不是语言内建——最常见的是库 / 框架调用（先 index grep 或查依赖确认这个名字存在），其次才是拼错或编造"
+    },
+    {
+      "id": "f:suspect.py:12:risky",
+      "qual": "risky",
+      "file": "suspect.py",
+      "line": 14,
+      "kind": "unresolved-call",
+      "weight": 3,
+      "dim": "function",
+      "label": "未解析调用",
+      "symbol": "missing_helper",
+      "evidence": "调用 missing_helper(…)：全仓没有该名字的定义，也不是语言内建——最常见的是库 / 框架调用（先 index grep 或查依赖确认这个名字存在），其次才是拼错或编造"
+    }
+  ],
+  "byKind": [
+    {
+      "kind": "orphan",
+      "label": "孤儿符号",
+      "count": 3,
+      "weight": 12
+    },
+    {
+      "kind": "swallowed-error",
+      "label": "错误被吞",
+      "count": 1,
+      "weight": 10
+    },
+    {
+      "kind": "unresolved-call",
+      "label": "未解析调用",
+      "count": 2,
+      "weight": 3
+    }
+  ],
+  "astUsed": true,
+  "astNote": "语法树：ast-grep (tree-sitter)，1 文件走 AST、命中 4 个结构节点",
+  "cappedKind": false,
+  "cappedTotal": false,
+  "filesAnalyzed": 1,
+  "findingsTotal": 6,
+  "penaltyTotal": 52,
+  "coverage": {
+    "astFiles": 1,
+    "lexicalFiles": 0,
+    "astBatchesTotal": 1,
+    "astBatchesFailed": 0,
+    "kindsDropped": [],
+    "nodesDropped": 0,
+    "kindsUnavailable": []
+  },
+  "semantics": "score = 100·S/(S+每文件疑点权重)（S=20，与仓库规模无关），是结构性疑点的汇总（0..100），不是正确性证明；按全部检出的疑点（含未列出的）计；信号为词法+语法树级事实，不包含运行时行为与业务语义"
+}
