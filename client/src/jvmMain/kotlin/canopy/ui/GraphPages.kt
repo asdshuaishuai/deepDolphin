@@ -33,6 +33,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -313,8 +314,9 @@ internal fun openArtifactExternally(path: String): String? = try {
  * 回执（渲染结果 / 装载问题 / 缩放核对）摆在页头里而不是页面底下压一条：画布多出一条的高度，
  * 页面底部只剩产物自己的通栏底条。胶囊定高、单行——页头高度不随回执有无而变，WebView 不被挤动。
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun GraphPageHeader(
+internal fun GraphPageHeader(
     kind: GraphKind,
     repo: String,
     rendering: Boolean,
@@ -324,31 +326,36 @@ private fun GraphPageHeader(
     status: GraphReceipt? = null,
     onDismissStatus: (() -> Unit)? = null,
 ) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.lg),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // 图标瓦片：圆角方块 + 白色图标，同一产品两个页面的视觉锚（渐变 = 语义色内部深→亮）
-        Box(
-            Modifier.size(32.dp).clip(RoundedCornerShape(Radius.control)).background(kind.tileBrush),
-            contentAlignment = Alignment.Center,
-        ) { IconBox(kind.tileIcon, size = 20.dp, tint = readableOn(Palette.Accent)) }
-        Spacer(Modifier.width(Space.md))
-        Column(Modifier.weight(1f)) {
-            Text(kind.titleWord(), style = Type.title)
-            Text("$repo · ${kind.subtitle()}", style = Type.label, maxLines = 1)
-        }
-        if (rendering) {
-            CircularProgressIndicator(Modifier.size(14.dp), color = Palette.AccentText, strokeWidth = 2.dp)
-            Spacer(Modifier.width(Space.sm))
-            Text(L10n.t("graph.rendering"), style = Type.label, color = Palette.TextSecondary)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // 窄内容区（≈ 最小窗口 960，内容区 730）：副标题让位。原先标题列是唯一带 weight 的一列，
+        // 回执胶囊（最宽 360）与三个按钮先把宽度占满，标题被挤成一个字一行（实拍：「架构图」竖排）。
+        // 现在标题按内容宽、永远单行；会伸缩的是回执胶囊（窄到只剩图标 + 关闭），其次是副标题。
+        val compact = graphHeaderCompact(maxWidth.value)
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.lg),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // 图标瓦片：圆角方块 + 白色图标，同一产品两个页面的视觉锚（渐变 = 语义色内部深→亮）
+            Box(
+                Modifier.size(32.dp).clip(RoundedCornerShape(Radius.control)).background(kind.tileBrush),
+                contentAlignment = Alignment.Center,
+            ) { IconBox(kind.tileIcon, size = 20.dp, tint = readableOn(Palette.Accent)) }
             Spacer(Modifier.width(Space.md))
-        }
-        status?.let { receipt ->
-            Spacer(Modifier.width(Space.md))
-            GraphReceiptChip(receipt, onDismissStatus)
-            Spacer(Modifier.width(Space.md))
-        }
+            Column(Modifier.widthIn(min = 72.dp)) {
+                Text(kind.titleWord(), style = Type.title, maxLines = 1, softWrap = false)
+                if (!compact) {
+                    Text("$repo · ${kind.subtitle()}", style = Type.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (rendering) {
+                CircularProgressIndicator(Modifier.size(14.dp), color = Palette.AccentText, strokeWidth = 2.dp)
+                Spacer(Modifier.width(Space.sm))
+                Text(L10n.t("graph.rendering"), style = Type.label, color = Palette.TextSecondary)
+                Spacer(Modifier.width(Space.md))
+            }
+            status?.let { receipt ->
+                GraphReceiptChip(receipt, onDismissStatus, Modifier.weight(1f, fill = false).padding(horizontal = Space.md))
+            }
         onOpenExternal?.let { open ->
             IconButton(FluentIcon.Open, onClick = open)
             Spacer(Modifier.width(Space.sm))
@@ -356,16 +363,17 @@ private fun GraphPageHeader(
         FluentButton(L10n.t("toolbar.refresh"), onClick = onRefresh, icon = FluentIcon.ArrowSync, enabled = !rendering)
         Spacer(Modifier.width(Space.sm))
         FluentButton(L10n.t("cmp.graph.backToRepo"), onClick = onBack, icon = FluentIcon.ArrowLeft)
+        }
     }
 }
 
 /** 页头里的回执胶囊（mac GraphStatusBar 的对位）：一行（ok = 绿✓ / 失败 = 橙⚠），可关闭；长文本截断。 */
 @Composable
-private fun GraphReceiptChip(receipt: GraphReceipt, onDismiss: (() -> Unit)?) {
+private fun GraphReceiptChip(receipt: GraphReceipt, onDismiss: (() -> Unit)?, modifier: Modifier = Modifier) {
     Row(
-        Modifier
+        modifier
             .height(ControlHeight)
-            .widthIn(max = ReceiptMaxWidth)
+            .widthIn(min = ReceiptMinWidth, max = ReceiptMaxWidth)
             .clip(RoundedCornerShape(Radius.chip))
             .background(if (receipt.ok) Palette.Card else Palette.Amber.copy(alpha = 0.10f))
             .border(Material.borderWidth, if (receipt.ok) Palette.Stroke else Palette.Amber.copy(alpha = 0.45f), RoundedCornerShape(Radius.chip))
@@ -399,6 +407,15 @@ private fun GraphReceiptChip(receipt: GraphReceipt, onDismiss: (() -> Unit)?) {
 
 /** 回执胶囊的最大宽度：再宽就截断——页头右侧还有三个按钮，窄窗口下先让标题。 */
 private val ReceiptMaxWidth = 360.dp
+
+/** 回执胶囊的最小宽度：图标 + 关闭按钮——再窄就不成其为一条可关的回执了（这时让位的是副标题）。 */
+private val ReceiptMinWidth = 52.dp
+
+/** 页头内容区窄于这个宽度进入紧凑态（副标题不显示）。最小窗口 960 − 侧栏 230 = 730 落在里头，默认窗口 1280 不落。 */
+internal val GraphHeaderCompactBelow = 860.dp
+
+/** 页头要不要进紧凑态（纯函数，判据见 GraphParseTest）：只看内容区宽度。 */
+internal fun graphHeaderCompact(contentWidthDp: Float): Boolean = contentWidthDp < GraphHeaderCompactBelow.value
 
 /**
  * 仓库详情里进图谱两页的入口（用户定稿：入口在每个仓库里面）。

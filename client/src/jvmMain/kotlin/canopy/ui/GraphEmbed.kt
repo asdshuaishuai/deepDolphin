@@ -130,6 +130,11 @@ internal fun graphEmbedCanvas(): JsonObject = obj {
     put("card", Palette.Card.toCss())                // 模块卡片的底
     put("mini", Palette.Well.toCss())                // 小地图的底
     put("cols", JsonArray(listOf(Palette.Accent, Palette.Deep, Palette.Shallow, Palette.Yellow, Palette.TextTertiary).map { JsonPrimitive(it.toCss()) }))
+    // 泳道标签是文字：给文字级的同一组语义色（cols 是填充色，浅色皮肤下黄 / 浅绿压在浅色泳道上读不出来）
+    put(
+        "textCols",
+        JsonArray(listOf(Palette.AccentText, Palette.DeepText, Palette.ShallowText, Palette.YellowText, Palette.TextTertiary).map { JsonPrimitive(it.toCss()) }),
+    )
     put(
         "fills",
         JsonArray(

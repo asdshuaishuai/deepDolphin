@@ -8,7 +8,7 @@
 
 ## 状态（2026-11-27）
 
-- 判据门禁绿：`scripts/build.sh --test` → **286 判据 0 failed**（1 skipped = 只手动触发的皮肤对比度体检；禁用缓存复跑
+- 判据门禁绿：`scripts/build.sh --test` → **291 判据 0 failed**（1 skipped = 只手动触发的皮肤对比度体检；禁用缓存复跑
   `gradle jvmTest --rerun-tasks --no-build-cache` 同数）。门禁脚本读的是 test-results XML，
   增量构建下会读到陈旧结果——当证据用的数字必须来自禁用缓存的那次。
 - 本机引擎是 **Cambium**（0.3.0 的开发构建，取自引擎仓库 `feat/sylva-brand`）：启动器 `~/.local/bin/cambium`，
@@ -207,7 +207,8 @@ src/jvmMain/kotlin/canopy/
 src/jvmTest/kotlin/
   engine/ContractTest.kt        fixtures 契约回归（真实引擎输出，缺必知键=契约过旧）
   ui/ConfidencePagesTest.kt     置信度/补丁体检判据（12 条）
-  ui/GraphParseTest.kt          render 回执/路径提取判据（10 条）
+  ui/GraphParseTest.kt          render 回执/路径提取/页头紧凑阈值判据（12 条）
+  ui/GraphHeaderLayoutTest.kt   图谱页头离屏布局判据（3 条：窄内容区标题单行、副标题让位、无回执时按钮仍在）
   ui/ScanSheetLogicTest.kt      扫描单判定判据（10 条）
   ui/CommitFormTest.kt          提交类型前缀判据（5 条）
   ui/SearchFilterTest.kt        侧栏搜索判据（11 条）

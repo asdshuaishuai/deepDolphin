@@ -301,6 +301,24 @@ class GraphParseTest {
         assertEquals("<script>SHIM</script><html><body></body></html>", withHeadScript("<html><body></body></html>", "SHIM"))
     }
 
+    // ── 页头紧凑态（内容区宽度定；原先标题列是唯一带 weight 的一列，最小窗口下标题竖排）──
+
+    @Test
+    fun graphHeaderGoesCompactBelowTheThreshold() {
+        assertTrue(graphHeaderCompact(730f), "最小窗口 960 − 侧栏 230 = 730：紧凑")
+        assertTrue(graphHeaderCompact(859.9f))
+        assertFalse(graphHeaderCompact(860f), "阈值本身不进紧凑")
+        assertFalse(graphHeaderCompact(1050f), "默认窗口 1280 − 侧栏：不紧凑")
+    }
+
+    @Test
+    fun archCanvasPaletteCarriesTextLevelLaneColors() {
+        // 泳道标签是文字：cols 是填充色，浅色皮肤下黄 / 浅绿读不出来——宿主要另给一份文字级的
+        val script = graphEmbedHeadScript(arch = true)
+        assertTrue(script.contains("\"textCols\""), "嵌入配置的画布调色板要带 textCols")
+        assertTrue(script.contains("\"cols\""), "填充色照旧（卡片描边、边线渐变用它）")
+    }
+
     @Test
     fun darkSchemeShimOverridesMediaQueryWithoutTouchingBase() {
         assertTrue(DARK_SCHEME_SHIM.contains("matchMedia"), "垫片改写的是产物的明暗探测口")
