@@ -324,6 +324,22 @@ class GraphParseTest {
         assertTrue(script.contains("\"cols\""), "填充色照旧（卡片描边、边线渐变用它）")
     }
 
+    @Test
+    fun graphForceFollowsUserRefreshNotBackgroundVerify() {
+        // 重建时机（2026-11-28 用户定）：架构图是快照——源码变动不自动重建，「刷新」按钮是唯一的手动重建入口；
+        // 代码图谱靠引擎探针自愈（打开页面即随变动重构），会话内首绘保留一次强制（旧产物升级）。
+        // 后台核验（先秒出缓存再核验）永远不强推。
+        val forced = HashSet<String>()
+        assertTrue(graphShouldForce(GraphKind.INDEX, "repo", allowForce = true, userRefresh = false, forcedThisSession = forced), "INDEX 会话首绘强制一次")
+        assertFalse(graphShouldForce(GraphKind.INDEX, "repo", allowForce = true, userRefresh = false, forcedThisSession = forced), "第二次不再强制")
+        assertFalse(graphShouldForce(GraphKind.INDEX, "repo", allowForce = true, userRefresh = true, forcedThisSession = forced), "INDEX 刷新走引擎自愈，不强推")
+        assertFalse(graphShouldForce(GraphKind.ARCH, "repo", allowForce = true, userRefresh = false, forcedThisSession = forced), "进页/入口不算手动重建——架构图是快照")
+        assertTrue(graphShouldForce(GraphKind.ARCH, "repo", allowForce = true, userRefresh = true, forcedThisSession = forced), "点「刷新」= 手动重建")
+        assertFalse(graphShouldForce(GraphKind.ARCH, "repo", allowForce = false, userRefresh = true, forcedThisSession = forced), "后台核验永远不强推")
+        assertTrue(forced.single() == "repo", "集合只被 INDEX 首绘碰过——ARCH 的判定不许有副作用")
+        assertFalse(graphShouldForce(GraphKind.ARCH, "repo", allowForce = false, userRefresh = false, forcedThisSession = forced))
+    }
+
     /** 嵌入配置里的画布调色板（不是合法配置 = 空表）。 */
     private fun embedCanvasOf(script: String): JsonObject {
         val at = script.indexOf("window.CAMBIUM_EMBED=")

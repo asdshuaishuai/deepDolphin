@@ -111,6 +111,24 @@ fun renderStaleConfidence(text: String): Boolean =
 fun needsConfidenceRefresh(kind: GraphKind, text: String): Boolean =
     kind == GraphKind.INDEX && renderStaleConfidence(text)
 
+/**
+ * 要不要强制重建：只有「用户点了刷新」才是手动重建——
+ * · 架构图是快照（引擎 2026-11-28 起：源码变动不再自愈重建），点「刷新」是唯一的手动重建入口 → force；
+ * · 代码图谱平时靠引擎探针自愈（打开页面即随变动重构），点「刷新」不强推——
+ *   但会话内首绘保留一次强制（旧产物可能是纯结构版，不 --force 会被一直复用）。
+ * allowForce=false 的后台核验永远不强推。纯函数，判据见 GraphParseTest。
+ */
+internal fun graphShouldForce(
+    kind: GraphKind,
+    project: String,
+    allowForce: Boolean,
+    userRefresh: Boolean,
+    forcedThisSession: HashSet<String>,
+): Boolean = allowForce && (
+    (kind == GraphKind.ARCH && userRefresh) ||
+        (kind == GraphKind.INDEX && !userRefresh && forcedThisSession.add(project))
+    )
+
 /** 同源产物要不要重载 WebView：非复用（文件真的重写了）或路径变了才重载，否则不闪。 */
 fun shouldReloadWebView(reused: Boolean, pathChanged: Boolean): Boolean = !reused || pathChanged
 
@@ -176,12 +194,12 @@ class GraphPageModel(
      * `background` = 先秒出缓存产物后的后台核验：产物仍是复用就不重载 WebView
      * （重载会闪一下，画面没变就不闪）。
      */
-    suspend fun render(background: Boolean) {
+    suspend fun render(background: Boolean, userRefresh: Boolean = false) {
         if (!background) {
             rendering = true; error = null
         }
         try {
-            val text = model.renderGraph(kind, projectName, allowForce = !background)
+            val text = model.renderGraph(kind, projectName, allowForce = !background, userRefresh = userRefresh)
             receiptLine(text)?.let { status = GraphReceipt(ok = true, text = it) }
             val p = extractHtmlPath(text)
             if (p != null) {
@@ -278,7 +296,7 @@ private fun GraphPage(model: AppModel, kind: GraphKind) {
             rendering = vm.rendering,
             status = vm.status,
             onDismissStatus = { vm.clearStatus() },
-            onRefresh = { scope.launch { vm.render(background = false) } },
+            onRefresh = { scope.launch { vm.render(background = false, userRefresh = true) } },
             onBack = { model.backToRepo() },
             onOpenExternal = vm.htmlPath?.let { path ->
                 {

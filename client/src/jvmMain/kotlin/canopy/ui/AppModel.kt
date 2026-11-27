@@ -137,16 +137,18 @@ class AppModel(private val engineBin: String) {
     /**
      * 图谱渲染的统一口径——详情页入口与图谱页自身（深链直达、页内刷新）共用，不各写一套。
      * [allowForce] = 这次是「真的在出图」（首开/刷新）：代码图谱的热力图以置信度快照为数据源，
-     * 先出快照再渲染；每个仓库每会话首次强制重绘一次（旧的纯结构产物不 --force 会被一直复用）。
+     * 先出快照再渲染；[userRefresh] = 用户点了「刷新」——架构图的手动重建入口（引擎 2026-11-28 起
+     * 源码变动不再自动重建，见引擎 AGENTS.md 不变量 163）；每个仓库每会话首次强制重绘一次
+     * （旧的纯结构产物不 --force 会被一直复用）。
      * false = 先秒出缓存产物后的后台核验，只问引擎「还新鲜吗」（复用就不重载，画面不闪）。
      * 快照生成失败不堵路（仍出结构图），但写进结果行说出来——否则用户以为这个仓库没有热点。
      * 渲染回执说「置信度快照过期」（源码变了、索引被重建，引擎不再把旧快照叠上去）时补生成一次再重绘：
      * 否则这一页没有热力图，而本会话已经强制重绘过、刷新按钮也不会再生成快照。
      * 返回引擎原始输出。
      */
-    suspend fun renderGraph(kind: GraphKind, project: String, allowForce: Boolean): String {
+    suspend fun renderGraph(kind: GraphKind, project: String, allowForce: Boolean, userRefresh: Boolean = false): String {
         var confNote: String? = null
-        val force = allowForce && kind == GraphKind.INDEX && graphForcedThisSession.add(project)
+        val force = graphShouldForce(kind, project, allowForce, userRefresh, graphForcedThisSession)
         if (force) {
             confNote = confidenceGenNote(project)
         }
