@@ -360,15 +360,21 @@ private fun BoardColumnUi(id: BoardColumnId, board: BoardModel, model: AppModel,
             Pill(cards.size.toString(), columnTone(id))
         }
         Spacer(Modifier.height(Space.xs))
-        // 列判据常驻（对位 mac「列判据写明」纪律；mac 空列时展示同一段文案）。
-        Text(id.basis, style = Type.micro)
-
-        Spacer(Modifier.height(Space.sm))
-        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            if (cards.isEmpty()) {
-                // 空列如实披露：说「没有项目落在这列」，判据已在列头——不写「暂无数据」。
-                Text(L10n.t("cmp.board.colEmpty"), style = Type.body.copy(color = Palette.TextSecondary))
-            } else {
+        if (cards.isEmpty()) {
+            // 空列如实披露：说「没有项目落在这列」——不写「暂无数据」。判据与这句话并成一行
+            //（2026-11-27 ui-ux 规则 empty-states / whitespace-balance：原先三段各占一行 ≈92px，
+            // 三个空列把真有卡的那一列以下的内容顶出首屏）；判据仍常驻（mac「列判据写明」纪律）。
+            Text(
+                id.basis + " · " + L10n.t("cmp.board.colEmpty"),
+                style = Type.micro.copy(color = Palette.TextSecondary),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            // 列判据常驻（对位 mac「列判据写明」纪律）。
+            Text(id.basis, style = Type.micro)
+            Spacer(Modifier.height(Space.sm))
+            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 cards.forEach { c -> ProjectCard(c, model, onOpenProject) }
             }
         }

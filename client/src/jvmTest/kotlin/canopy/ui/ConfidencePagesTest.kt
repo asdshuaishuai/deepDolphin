@@ -6,12 +6,15 @@
 
 package canopy.ui
 
+import canopy.engine.ConfCoverage
 import canopy.engine.ConfFinding
+import canopy.engine.ConfKindCount
 import canopy.engine.PatchEntity
 import java.io.File
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -54,6 +57,66 @@ class ConfidencePagesTest {
         assertEquals("疑点共 938 条 · 列出 400 条", findingsHeadline(938L, 400), "总量大于列出数：说「共多少 · 列出多少」")
         assertEquals("疑点 6 条", findingsHeadline(6L, 6), "没截断：总量 = 列出数，照旧")
         assertEquals("疑点 400 条", findingsHeadline(null, 400), "总量未知（旧引擎 / 旧快照）：维持「N 条」，不编数字")
+    }
+
+    // ── 覆盖与口径（2026-11-27：摘要一行常驻，全文点开；打了折扣的覆盖用警示色）──
+
+    private fun cov(
+        ast: Long? = 436, lex: Long? = 30, bt: Long? = 4, bf: Long? = 0,
+        missing: List<String> = emptyList(), dropped: List<String> = emptyList(),
+    ) = ConfCoverage(astFiles = ast, lexicalFiles = lex, astBatchesTotal = bt, astBatchesFailed = bf, kindsDropped = dropped, nodesDropped = 0, kindsUnavailable = missing)
+
+    @Test
+    fun coverageSegmentsReadEveryKeyAndNeverInventNumbers() {
+        assertEquals(listOf("语法树 436 文件", "词法 30 文件", "批失败 0 / 4"), coverageSegments(cov()))
+        assertEquals(
+            listOf("语法树 0 文件", "词法 80 文件", "批失败 0 / 0", "缺 7 类信号"),
+            coverageSegments(cov(ast = 0, lex = 80, bt = 0, missing = listOf("a", "b", "c", "d", "e", "f", "g"))),
+        )
+        // 缺键 = 「?」，不回落成 0（引擎没说 ≠ 没有）
+        assertEquals(listOf("语法树 ? 文件", "词法 ? 文件", "批失败 ? / ?"), coverageSegments(cov(ast = null, lex = null, bt = null, bf = null)))
+        // 旧引擎没有 coverage：如实说未披露
+        assertEquals(listOf("覆盖面未披露（旧版引擎）"), coverageSegments(null))
+    }
+
+    @Test
+    fun coverageIsDegradedWhenAstIsOffOrSomethingFailedOrWentMissing() {
+        assertFalse(coverageIsDegraded(cov(), astUsed = true), "全部文件走成语法树：没有打折")
+        assertTrue(coverageIsDegraded(cov(), astUsed = false), "没用上语法树")
+        assertTrue(coverageIsDegraded(cov(bf = 1), astUsed = true), "有批次失败")
+        assertTrue(coverageIsDegraded(cov(missing = listOf("x")), astUsed = true), "有类别缺失")
+        assertTrue(coverageIsDegraded(cov(dropped = listOf("swift.struct_declaration")), astUsed = true), "有节点种类被剔除")
+        assertTrue(coverageIsDegraded(null, astUsed = false))
+        assertFalse(coverageIsDegraded(null, astUsed = true), "旧引擎没给覆盖面、语法树也用上了：按没打折")
+    }
+
+    // ── 按类别筛（清单是引擎的全序，一类几百条连成一片）──
+
+    private val kindA = ConfFinding(kind = "orphan", file = "a", line = 1, symbol = "s", evidence = "e", weight = 12)
+    private val kindB = kindA.copy(kind = "high-complexity", file = "b", line = 2)
+    private val kindC = kindA.copy(kind = "magic-number", file = "c", line = 3, weight = 3)
+
+    @Test
+    fun kindFilterKeepsEngineOrderInsideTheKind() {
+        val fs = listOf(kindA, kindB, kindA.copy(file = "d", line = 9), kindC)
+        assertEquals(listOf(kindA, kindA.copy(file = "d", line = 9)), kindFilteredFindings(fs, "orphan"))
+        assertEquals(fs, kindFilteredFindings(fs, null), "null = 全部，引擎全序原样")
+    }
+
+    @Test
+    fun kindFilterFallsBackToAllWhenTheKindIsGoneFromTheNewReport() {
+        val byKind = listOf(ConfKindCount(kind = "orphan", label = "孤儿符号", count = 61, weight = 12))
+        assertEquals("orphan", effectiveKindFilter("orphan", byKind))
+        assertNull(effectiveKindFilter("stub-body", byKind), "换了报告之后这一类不存在了 = 回到全部")
+        assertNull(effectiveKindFilter(null, byKind))
+    }
+
+    @Test
+    fun kindLabelPrefersTheEngineLabelAndFallsBackToTheId() {
+        val byKind = listOf(ConfKindCount(kind = "orphan", label = "孤儿符号", count = 61, weight = 12), ConfKindCount(kind = "x", label = "", count = 1, weight = 1))
+        assertEquals("孤儿符号", kindDisplayLabel("orphan", byKind))
+        assertEquals("x", kindDisplayLabel("x", byKind), "标签是空串：退回类别 id")
+        assertEquals("unknown", kindDisplayLabel("unknown", byKind))
     }
 
     // ── 疑点位置串（引擎 0.3.0 的 qual：问题发生在哪）──

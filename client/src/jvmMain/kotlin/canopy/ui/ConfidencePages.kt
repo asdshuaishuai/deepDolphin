@@ -39,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import canopy.engine.AgentPayload
 import canopy.engine.AgentVerdict
@@ -56,6 +57,15 @@ import java.io.File
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import canopy.engine.ConfCoverage
+import canopy.engine.ConfKindCount
 
 // ── 纯函数（判据见 ConfidencePagesTest；阈值全部对位 mac 基准，不发明）──
 
@@ -186,6 +196,11 @@ class ConfidencePageModel(private val engine: Engine) {
         private set
     /** 只看高权重疑点（权重 ≥ 8；mac highWeightOnly 对位）。 */
     var highWeightOnly by mutableStateOf(false)
+    /**
+     * 只看某一类疑点（null = 全部）。清单是引擎的全序（权重↓ → 文件↑ → 行↑），同一类的几百条会连成一片——
+     * 不按类筛的话，排在后面的类别要滚很久才看得到。换了报告之后这一类不存在了就自动回到「全部」。
+     */
+    var kindFilter by mutableStateOf<String?>(null)
 
     /** graph confidence --json（mac load 对位；fallback = 进页时还没选项目的默认取法）。 */
     suspend fun load(fallbackProject: String?) {
@@ -295,7 +310,10 @@ fun ConfidencePage(model: AppModel) {
                     )
                 }
             } else {
-                confidenceReportItems(r, vm.highWeightOnly, projects.firstOrNull { it.name == vm.projectName }?.path ?: "")
+                confidenceReportItems(
+                    r, vm.highWeightOnly, projects.firstOrNull { it.name == vm.projectName }?.path ?: "",
+                    vm.kindFilter, onKind = { vm.kindFilter = it },
+                )
             }
         }
     }
@@ -310,8 +328,46 @@ internal fun findingsHeadline(total: Long?, shown: Int): String =
     if (total != null && total > shown) L10n.t("cmp.conf.findingsTotalN", total, shown)
     else L10n.t("cmp.conf.findingsN", shown)
 
+/** 只看某一类（null = 全部）；引擎的全序原样保留。 */
+fun kindFilteredFindings(fs: List<ConfFinding>, kind: String?): List<ConfFinding> =
+    if (kind == null) fs else fs.filter { it.kind == kind }
+
+/** 这一轮有效的类别筛选：选中的类别在报告的 byKind 里不存在（换了项目 / 换了报告）= 回到全部。 */
+fun effectiveKindFilter(kind: String?, byKind: List<ConfKindCount>): String? =
+    kind?.takeIf { k -> byKind.any { it.kind == k } }
+
+/** 覆盖面一行里的段（引擎 coverage 的七键 → 人读的短语；缺键 = 「?」，不编数字）。 */
+fun coverageSegments(c: ConfCoverage?): List<String> {
+    if (c == null) return listOf(L10n.t("cmp.conf.covUnknown"))
+    fun n(v: Long?): String = v?.toString() ?: "?"
+    val out = ArrayList<String>()
+    out += L10n.t("cmp.conf.covAst", n(c.astFiles))
+    out += L10n.t("cmp.conf.covLexical", n(c.lexicalFiles))
+    out += L10n.t("cmp.conf.covBatches", n(c.astBatchesFailed), n(c.astBatchesTotal))
+    val missing = c.kindsUnavailable.size + c.kindsDropped.size
+    if (missing > 0) out += L10n.t("cmp.conf.covMissing", missing)
+    return out
+}
+
+/**
+ * 覆盖面是不是「打了折扣」的：没用上语法树、有批次失败、有类别缺失。
+ * 打了折扣的摘要行用警示色——读数之前先看见「这份报告少查了什么」。
+ */
+fun coverageIsDegraded(c: ConfCoverage?, astUsed: Boolean): Boolean =
+    !astUsed || (c != null && ((c.astBatchesFailed ?: 0) > 0 || c.kindsUnavailable.isNotEmpty() || c.kindsDropped.isNotEmpty()))
+
+/** 疑点行上显示的类别名：引擎给的本地化标签（「孤儿符号」），没有标签退回类别 id。 */
+fun kindDisplayLabel(kind: String, byKind: List<ConfKindCount>): String =
+    byKind.firstOrNull { it.kind == kind }?.label?.takeIf { it.isNotBlank() } ?: kind
+
 /** 报告体：页面级 LazyColumn 的条目（行级懒加载；键稳定）。 */
-private fun LazyListScope.confidenceReportItems(r: ConfidenceReport, highWeightOnly: Boolean, projectPath: String) {
+private fun LazyListScope.confidenceReportItems(
+    r: ConfidenceReport,
+    highWeightOnly: Boolean,
+    projectPath: String,
+    kindFilter: String?,
+    onKind: (String?) -> Unit,
+) {
     item(key = "score") {
         // 总分 + 维度行（引擎只发有疑点的维度——有几个维度亮几个，不造假补齐）
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
@@ -327,18 +383,19 @@ private fun LazyListScope.confidenceReportItems(r: ConfidenceReport, highWeightO
             }
         }
     }
-    // 降级/限流披露必须原样展示（契约：不许静默）
-    if (r.astNote.isNotBlank()) item(key = "astNote") { DisclosureBox(r.astNote) }
-    if (r.cappedTotal) item(key = "capped") { DisclosureBox(L10n.t("cmp.conf.cappedTotal")) }
-    else if (r.cappedKind) item(key = "capped") { DisclosureBox(L10n.t("cmp.conf.cappedKind")) }
-    if (r.semantics.isNotBlank()) item(key = "semantics") { Text(r.semantics, style = Type.micro, color = Palette.TextTertiary) }
+    // 降级 / 限流 / 覆盖面必须展示（契约：不许静默）——摘要一行常驻，全文点开再看：
+    // 原先是三四段小字铺在分数和清单之间（实拍 ≈150px），读数之前先读一遍说明书。
+    item(key = "coverage") { CoverageDisclosure(r) }
+    // 按类别筛（渐进披露：一类几百条连成一片的清单，先选类再看）
+    val kind = effectiveKindFilter(kindFilter, r.byKind)
+    if (r.byKind.size > 1) item(key = "kinds") { KindFilterRow(r.byKind, kind, onKind) }
 
     // findings：披露式行（收起 = 位置告知，点击 = 展开证据与实码）
     item(key = "findingsHead") {
         Text(findingsHeadline(r.findingsTotal, r.findings.size) + if (highWeightOnly) L10n.t("cmp.conf.findingsHighN", highWeightFindings(r.findings, true).size) else "", style = Type.section)
         Text(L10n.t("cmp.conf.findingsHint"), style = Type.micro)
     }
-    val shown = highWeightFindings(r.findings, highWeightOnly)
+    val shown = kindFilteredFindings(highWeightFindings(r.findings, highWeightOnly), kind)
     if (shown.isEmpty()) {
         item(key = "findingsEmpty") {
             Text(
@@ -348,8 +405,113 @@ private fun LazyListScope.confidenceReportItems(r: ConfidenceReport, highWeightO
         }
     }
     items(shown, key = { f -> f.kind + "#" + f.file + "#" + f.line + "#" + f.symbol }) { f ->
-        FindingDisclosureRow(f, projectPath)
+        FindingDisclosureRow(f, projectPath, kindDisplayLabel(f.kind, r.byKind))
     }
+}
+
+/**
+ * 覆盖与口径：一行摘要（覆盖面的几段 + 限流提示）常驻；引擎的说明全文与语义边界一句点开再看。
+ * 打了折扣的覆盖（词法档 / 批失败 / 缺类别）摘要行用警示色。
+ */
+@Composable
+private fun CoverageDisclosure(r: ConfidenceReport) {
+    var expanded by remember { mutableStateOf(false) }
+    val degraded = coverageIsDegraded(r.coverage, r.astUsed)
+    val capNote = when {
+        r.cappedTotal -> L10n.t("cmp.conf.cappedTotal")
+        r.cappedKind -> L10n.t("cmp.conf.cappedKind")
+        else -> ""
+    }
+    val summary = coverageSegments(r.coverage).joinToString(" · ") + if (capNote.isNotBlank()) " · $capNote" else ""
+    val accent = if (degraded) Palette.AmberText else Palette.TextSecondary
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.control))
+            .background(Palette.Well)
+            .border(Material.borderWidth, Palette.Stroke, RoundedCornerShape(Radius.control)),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(horizontal = Space.sm, vertical = Space.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            IconBox(
+                if (degraded) FluentIcon.Warning else FluentIcon.Info,
+                size = 14.dp,
+                tint = if (degraded) Palette.AmberText else Palette.TextSecondary,
+            )
+            Text(L10n.t("cmp.conf.coverageTitle"), style = Type.label, color = Palette.TextPrimary)
+            Text(
+                summary, style = Type.label.copy(color = accent), maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+            )
+            IconBox(if (expanded) FluentIcon.ChevronDown else FluentIcon.ChevronRight, size = 12.dp, tint = Palette.TextSecondary)
+        }
+        if (expanded) {
+            // 引擎说什么就展示什么，一个字不改（全文可能很长：交给竖向滚动，不撑开页面）
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                    .heightIn(max = 220.dp)
+                    .padding(start = Space.sm, end = Space.sm, bottom = Space.sm),
+            ) {
+                if (r.astNote.isNotBlank()) Text(r.astNote, style = Type.label.copy(color = Palette.TextSecondary))
+                if (r.cappedTotal || r.cappedKind) {
+                    Spacer(Modifier.height(Space.xs))
+                    Text(capNote, style = Type.label.copy(color = Palette.AmberText))
+                }
+                if (r.semantics.isNotBlank()) {
+                    Spacer(Modifier.height(Space.xs))
+                    // 行宽收着：一句话横跨 1000px 的页面读起来找不回行首
+                    Text(r.semantics, style = Type.micro.copy(color = Palette.TextTertiary), modifier = Modifier.widthIn(max = 720.dp))
+                }
+            }
+        }
+    }
+}
+
+/** 类别筛选：一行可换行的 chip（「全部 N」+ 每类的标签与全量计数）；点选中的那颗 = 回到全部。 */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun KindFilterRow(byKind: List<ConfKindCount>, selected: String?, onKind: (String?) -> Unit) {
+    @Suppress("DEPRECATION")
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        verticalArrangement = Arrangement.spacedBy(Space.sm),
+    ) {
+        val total = byKind.sumOf { it.count }
+        FilterChip(L10n.t("cmp.conf.kindsAll", total), selected == null) { onKind(null) }
+        byKind.forEach { k ->
+            FilterChip("${k.label.ifBlank { k.kind }} ${k.count}", selected == k.kind) {
+                onKind(if (selected == k.kind) null else k.kind)
+            }
+        }
+    }
+}
+
+/** 筛选 chip：选中 = 强调色底与描边；未选中 = 卡片底，悬停提亮（150ms 过渡，与其它可点元素同一节奏）。 */
+@Composable
+private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val bg by animateColorAsState(
+        if (selected) Palette.Accent.copy(alpha = 0.12f) else if (hovered) Palette.CardHover else Palette.Card,
+        tween(Motion.normal), label = "chipBg",
+    )
+    val stroke by animateColorAsState(
+        if (selected) Palette.Accent else if (hovered) Palette.StrokeHover else Palette.Stroke,
+        tween(Motion.normal), label = "chipStroke",
+    )
+    Text(
+        label,
+        style = Type.label,
+        color = if (selected) Palette.AccentText else Palette.TextPrimary,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(Radius.chip))
+            .background(bg)
+            .border(Material.borderWidth, stroke, RoundedCornerShape(Radius.chip))
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    )
 }
 
 @Composable
@@ -382,7 +544,7 @@ private fun DisclosureBox(text: String) {
 
 /** finding 披露行：收起 = [权重] 类别 位置（低置信度高亮）；展开 = 引擎证据 + 实码一行。 */
 @Composable
-private fun FindingDisclosureRow(f: ConfFinding, projectPath: String) {
+private fun FindingDisclosureRow(f: ConfFinding, projectPath: String, kindLabel: String) {
     var expanded by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.control))
@@ -401,7 +563,7 @@ private fun FindingDisclosureRow(f: ConfFinding, projectPath: String) {
                     .background(findingWeightColor(f.weight).copy(alpha = 0.12f))
                     .padding(horizontal = Space.xs, vertical = 1.dp),
             )
-            Text(f.kind, style = Type.label)
+            Text(kindLabel, style = Type.label)
             Spacer(Modifier.weight(1f))
             Text(
                 findingLocationText(f),

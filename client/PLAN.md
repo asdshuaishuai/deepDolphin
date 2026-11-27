@@ -682,3 +682,57 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
   装机版在本批提交后才重装（`scripts/install-user.sh`）。
 - 产物里「收起 / 抽屉 / 点节点展开」的交互态没法在真窗口里不发键鼠地验证：在浏览器里加载客户端缓存的
   那份已注入嵌入脚本的产物，按内容区尺寸设视口逐项核对（引擎仓 `AGENTS.md` 不变量 161 记了方法）。
+
+## ui-ux-pro-max 细节打磨批（2026-11-27）
+
+**用户口径**：「在 home 目录下找到 ui-ux-pro 这个 skill，载入它，继续进行 ui/ux 的细节，布局，交互以及各组件文字的
+尺寸大小，颜色，排列嵌套的方式，阴影，动画效果等」。
+skill 位置 `/home/superShuai/code/NaN/.agents/skills/ui-ux-pro-max/`（`SKILL.md` + `data/*.csv` + `references/`），
+不在 Skill 工具的可用列表里——按文件载入，走它的 `scripts/search.py`。
+
+**检索结果如实记**：`--design-system` 两次（"developer tool project dashboard desktop dense" /
+"productivity project management desktop app"）返回的 pattern 都是落地页（FAQ / Product Demo）、style 是
+Dark Mode (OLED) / Flat Design——**没对上产品类型**（Canopy 是带 14 套皮肤的 Fluent 桌面工具，视觉风格是用户定的，
+不由 skill 另起一套）。按 skill 自己的规则：两次都对不上就明说「没有验证过的匹配」，只采用内置的优先级表与
+`references/quick-reference.md` 的 119 条规则做审计清单。`--domain ux` 的逐条检索与规则集一致（active-state /
+reduced-motion / hover / empty-states / line-height / number-tabular 等）。
+
+**审计**（六个页面真窗口实拍 1270×830：仪表盘 / 看板 / 里程碑 / 代码置信度 / 补丁体检 / 设置，Aqua 皮肤；按十个类别过）
+
+| 类别（skill 优先级） | 看到了什么 | 处置 |
+|---|---|---|
+| 1 无障碍 · CRITICAL | 文字对比度由离屏体检守卫（本轮新组件再量一遍：三页 × 三皮肤，静置 + 悬停 0 冲突）；键盘焦点环既有 | 量，无新问题 |
+| 2 触控与交互 | 桌面鼠标场景；最小命中区 = 控件高（28–32） | 不动 |
+| 4 风格 · `primary-action` / `elevation-consistent` | 每页右上「浅更新 / 深更新」是语义色实心按钮（绿 / 紫），与各页的主按钮并存 | **不动**：mac 基准的全局动作，语义色（浅 = 绿、深 = 紫）是既有契约 |
+| 5 布局 · `progressive-disclosure` / `line-length` / `whitespace-balance` | 置信度页：分数与清单之间铺着四段小字（≈150px），「语义边界」一句横跨 1000px；看板三个空列各占 ≈92px | **改**：见下 |
+| 6 排版 · `readable-font-size`（正文不小于 12px）/ `number-tabular` | `Type.micro` 是 11sp + 第三级文字色，低于档位注释自己写的 Fluent ramp（caption 12）；KPI 数字是比例数字 | **改**：micro → 12sp；display 档开 tnum |
+| 6 颜色 · `color-semantic` / `color-not-only` | 全部走令牌；状态都是「色点 + 文字」 | 既有纪律，无新问题 |
+| 7 动效 · `state-transition` / `motion-consistency` | `Motion.normal = 150ms / slow = 300ms`，在规则区间内；新加的 chip 悬停走同一节奏 | 既有纪律 |
+| 8 表单与反馈 · `empty-states` | 看板空列、里程碑空态都有「说明 + 下一步」 | 看板空列收紧（下）；里程碑空态里的「全部」链接位置略怪，**没动**（它是筛选行，语义正确） |
+| 9 导航 · `nav-state-active` / `nav-label-icon` | 侧栏激活项有色条 + 底色，图标 + 文字 | 既有纪律 |
+| 10 图表 · `number-tabular` / `legend-visible` | 图例都在卡片内；语言分布数值右对齐 | display 档 tnum 覆盖 |
+
+**改了什么**
+- **置信度页重排**（`ConfidencePages.kt`）：
+  - 「覆盖与口径」摘要一行常驻：图标 + `coverage` 的几段（语法树 N 文件 · 词法 N 文件 · 批失败 N / N · 缺 N 类信号）
+    + 限流提示；打了折的覆盖（没用上语法树 / 批失败 / 缺类别）用警示色。点开才看引擎说明全文与语义边界（限高 220px、
+    内部滚动；行宽收到 720dp）。**披露没有静默**：摘要本身就是披露，全文一字不改。旧引擎没有 `coverage` 时写
+    「覆盖面未披露（旧版引擎）」，缺键写「?」。
+  - **按类别筛**：清单是引擎的全序（权重↓ → 文件↑ → 行↑），一类几百条连成一片；加一行可换行的 chip
+    （「全部 N」+ 每类的标签与全量计数），单选，再点一次回到全部；换了报告之后选中的类别不存在了自动回全部。
+  - 疑点行的类别显示引擎给的本地化标签（「孤儿符号」），不再显示 `orphan`。
+- **看板空列**（`BoardView.kt`）：判据与「没有项目落在这列」并成一行（micro，最多两行）。判据仍常驻。
+- **字号档**（`Design.kt`）：`Type.micro` 11 → 12sp（行高 14 → 15）；`Type.display` 开 `fontFeatureSettings = "tnum"`。
+
+**判据**
+- `ConfidencePagesTest` 五条：覆盖面各段与「?」、打折与否的六种情形、按类筛保留引擎全序、类别消失回全部、标签回退。
+- `TypeScaleTest` 两条：最小字号 ≥ 12sp；display 档是等宽数字。
+- 负控两项真红：`effectiveKindFilter` 恒返回原值 → 1 红；`coverageIsDegraded` 忽略缺失类别 → 1 红。
+- 离屏体检（`CANOPY_SKIN_AUDIT_PAGES=confidence,board,dashboard`，Aqua / Fluent / Neo，静置 + 悬停）：
+  每套 225 段文字 0 冲突；悬停遍偏弱的几段都是既有的（Fluent 仪表盘卡片悬停 4.2–4.3、Neo 的「进入管控 →」、
+  Aqua 看板计数胶囊），没有一段来自新组件。
+- 真窗口实拍 `docs/ui-cmp/25–26`。
+
+**没动的（如实）**：顶栏三个实心按钮并存（全局动作，mac 基准）；里程碑空态里的「全部」链接；卡片阴影是皮肤定的
+（Aqua 的投影偏重）；补丁体检页的项目下拉没有可见标签（占位文字「选择项目」）——这几项要么是既有契约、要么改动面
+大，留给下一轮按用户意见定。

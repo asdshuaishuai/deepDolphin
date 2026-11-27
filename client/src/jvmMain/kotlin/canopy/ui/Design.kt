@@ -170,13 +170,17 @@ object Palette {
 object Type {
     // 行高按 Fluent 2 排版（Body 14/20、Caption 12/16、Subtitle 16/22、Title 20/28）：
     // 多行正文与说明文字靠它拉开行距；此前不带行高，密排的说明读起来糊成一片
-    var display by mutableStateOf(TextStyle(fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary))
+    // display 档是 KPI 数字与总分（2 / 12 / 25）：等宽数字（tnum）让同一列里的数在刷新时不对不齐地跳——
+    // 「1」与「8」在比例数字下宽度不同（ui-ux-pro-max 规则 number-tabular）。
+    var display by mutableStateOf(TextStyle(fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary, fontFeatureSettings = "tnum"))
     var title by mutableStateOf(TextStyle(fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary))
     var section by mutableStateOf(TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary))
     var card by mutableStateOf(TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, color = Palette.TextPrimary))
     var body by mutableStateOf(TextStyle(fontSize = 14.sp, lineHeight = 20.sp, color = Palette.TextPrimary))
     var label by mutableStateOf(TextStyle(fontSize = 12.sp, lineHeight = 16.sp, color = Palette.TextSecondary))
-    var micro by mutableStateOf(TextStyle(fontSize = 11.sp, lineHeight = 14.sp, color = Palette.TextTertiary))
+    // 12sp 起（原 11sp）：ui-ux-pro-max 的规则集把「正文 < 12px」列为反模式——caption 级的小字
+    // 再叠上第三级文字色，行高 14px 在高分屏上发虚。字号 +1、行高 +1，层级关系不变。
+    var micro by mutableStateOf(TextStyle(fontSize = 12.sp, lineHeight = 15.sp, color = Palette.TextTertiary))
 }
 
 /** 间距刻度 4/8/12/16/20/24（8 网格）。 */
