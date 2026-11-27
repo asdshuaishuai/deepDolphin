@@ -6,7 +6,12 @@
 
 package canopy.ui
 
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.dp
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -317,6 +322,63 @@ class GraphParseTest {
         val script = graphEmbedHeadScript(arch = true)
         assertTrue(script.contains("\"textCols\""), "嵌入配置的画布调色板要带 textCols")
         assertTrue(script.contains("\"cols\""), "填充色照旧（卡片描边、边线渐变用它）")
+    }
+
+    /** 嵌入配置里的画布调色板（不是合法配置 = 空表）。 */
+    private fun embedCanvasOf(script: String): JsonObject {
+        val at = script.indexOf("window.CAMBIUM_EMBED=")
+        assertTrue(at >= 0, "嵌入配置要在 head 脚本里")
+        val body = script.substring(at + "window.CAMBIUM_EMBED=".length).removeSuffix("})();").removeSuffix(";").trim()
+        return canopy.engine.contractJson.parseToJsonElement(body).jsonObject["canvas"]!!.jsonObject
+    }
+
+    private fun JsonObject.strings(key: String): List<String> = this[key]!!.jsonArray.map { it.jsonPrimitive.content }
+
+    @Test
+    fun laneLabelsStayReadableOnTheirOwnLaneAcrossSkins() {
+        // 泳道标签压在自己颜色的泳道上。原先职责视图用产物自带的角色色（给暗色底挑的）：Aqua 上七档是
+        // 1.44–2.20:1；架构级的标签虽有文字级颜色，但换肤保底只认皮肤自己的表面，不认这块带色的画布
+        //（玻璃拟态上紫字差 0.05）。现在两套标签都走 laneInk：同一色相的文字级 + 按自己那条泳道保底 4.5。
+        assertEquals(7, roleFills().toSet().size, "七个角色的填充色互不相同")
+        assertEquals(5, layerFills().toSet().size, "五层的填充色互不相同")
+        val stats = ArrayList<Triple<String, Int, Float>>()
+        try {
+            for (skin in Skins.all) {
+                Skins.apply(skin)
+                val canvas = embedCanvasOf(graphEmbedHeadScript(arch = true))
+                assertEquals(layerFills().map { it.toCss() }, canvas.strings("cols"), skin.id)
+                assertEquals(roleFills().map { it.toCss() }, canvas.strings("roleCols"), skin.id)
+                assertEquals(layerTexts().map { it.toCss() }, canvas.strings("textCols"), skin.id)
+                assertEquals(roleTexts().map { it.toCss() }, canvas.strings("roleTextCols"), skin.id)
+                val sets = listOf(
+                    Triple(layerFills(), layerTexts(), 0.10f * 0.9f),
+                    Triple(roleFills(), roleTexts(), 0.07f * 0.9f),
+                )
+                // 画布是 BgBase → Sidebar 的纵向渐变（半透明的先压在页面底上），泳道底压在它之上；两端各算一次
+                val bases = listOf(Palette.BgBase, Palette.Sidebar.compositeOver(Palette.BgBase))
+                for ((fills, texts, alpha) in sets) {
+                    assertEquals(fills.size, texts.size)
+                    for (i in fills.indices) {
+                        val lanes = bases.map { fills[i].copy(alpha = alpha).compositeOver(it) }
+                        for (lane in lanes) {
+                            val c = contrastOf(texts[i].compositeOver(lane), lane)
+                            assertTrue(c >= 4.5f, "${skin.id} · 泳道 $i · 标签 ${texts[i].toCss()} 压在泳道 ${lane.toCss()} 上只有 ${"%.2f".format(c)}:1")
+                        }
+                        // 墨是从同一色相的文字级派生的：达标就原样，不达标才被保底推过——不许是另挑的颜色
+                        val level = ink(fills[i])
+                        val worst = lanes.minOf { contrastOf(level.compositeOver(it), it) }
+                        if (worst >= 4.5f) assertEquals(level, texts[i], "${skin.id} · 泳道 $i 本来就达标，不该被改动")
+                        stats.add(Triple(skin.id, i, worst))
+                    }
+                }
+            }
+            // 体检记录（进测试报告的 system-out）：每套皮肤里最差的一条泳道，以及被保底推过的条目
+            stats.groupBy { it.first }.forEach { (id, mine) ->
+                println("LANE_INK $id: worst=${"%.2f".format(mine.minOf { it.third })}:1 floored=${mine.count { it.third < 4.5f }}/${mine.size}")
+            }
+        } finally {
+            Skins.apply(Skins.byId.getValue(Skins.DEFAULT_ID))
+        }
     }
 
     @Test

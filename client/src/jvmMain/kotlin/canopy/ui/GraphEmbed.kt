@@ -129,18 +129,21 @@ internal fun graphEmbedCanvas(): JsonObject = obj {
     put("arrow", Palette.TextTertiary.toCss())
     put("card", Palette.Card.toCss())                // 模块卡片的底
     put("mini", Palette.Well.toCss())                // 小地图的底
-    put("cols", JsonArray(listOf(Palette.Accent, Palette.Deep, Palette.Shallow, Palette.Yellow, Palette.TextTertiary).map { JsonPrimitive(it.toCss()) }))
+    put("cols", JsonArray(layerFills().map { JsonPrimitive(it.toCss()) }))
     // 泳道标签是文字：给文字级的同一组语义色（cols 是填充色，浅色皮肤下黄 / 浅绿压在浅色泳道上读不出来）
-    put(
-        "textCols",
-        JsonArray(listOf(Palette.AccentText, Palette.DeepText, Palette.ShallowText, Palette.YellowText, Palette.TextTertiary).map { JsonPrimitive(it.toCss()) }),
-    )
+    put("textCols", JsonArray(layerTexts().map { JsonPrimitive(it.toCss()) }))
+    // 职责视图的角色色，顺序同产物的 ROLEPAL（入口 / 界面 / 服务 / 数据 / 存储 / 支撑 / 其他）。
+    // 产物自带的角色色是给它自己的暗色底挑的；嵌入时页面以暗色为基座、只覆盖宿主给的键——
+    // 宿主不给的话浅色皮肤下泳道标签只有 1.4–2.2:1（Aqua 实测，文字要 4.5）。按引擎色相的次序换成令牌：
+    // 品红→Red、蓝→Accent、绿→Shallow、琥珀→Yellow、紫→Deep；剩下两档引擎是深浅两种灰，
+    // 令牌里没有能分成两档的同色相中性色——「支撑」用还没出场的 Amber，「其他」用中性灰。
+    put("roleCols", JsonArray(roleFills().map { JsonPrimitive(it.toCss()) }))
+    // 标签是文字：走 ink()——同一色相的文字级，换肤时按所在表面保底（判据见 GraphParseTest）
+    put("roleTextCols", JsonArray(roleTexts().map { JsonPrimitive(it.toCss()) }))
     put(
         "fills",
         JsonArray(
-            listOf(Palette.Accent, Palette.Deep, Palette.Shallow, Palette.Yellow, Palette.TextTertiary).map {
-                JsonPrimitive(it.copy(alpha = 0.10f).toCss())
-            },
+            layerFills().map { JsonPrimitive(it.copy(alpha = 0.10f).toCss()) },
         ),
     )
 }
@@ -158,6 +161,31 @@ internal fun graphEmbedHeadScript(arch: Boolean): String {
     val json = embedJson.encodeToString(JsonObject.serializer(), cfg)
     return (if (arch) DARK_SCHEME_SHIM else "") + "(function(){window.CAMBIUM_EMBED=" + json + ";})();"
 }
+
+/** 架构级五层（其他 / 接口 / 编排 / 核心 / 基础）的填充色：每次现读，令牌随皮肤变。 */
+internal fun layerFills(): List<Color> =
+    listOf(Palette.Accent, Palette.Deep, Palette.Shallow, Palette.Yellow, Palette.TextTertiary)
+
+/** 职责视图七个角色（入口 / 界面 / 服务 / 数据 / 存储 / 支撑 / 其他）的填充色。 */
+internal fun roleFills(): List<Color> =
+    listOf(Palette.Red, Palette.Accent, Palette.Shallow, Palette.Yellow, Palette.Deep, Palette.Amber, Palette.TextTertiary)
+
+/** 图上画布的两端：画布是 BgBase → Sidebar 的纵向渐变；半透明的侧栏色（玻璃拟态）先压在页面底上。 */
+private fun canvasBases(): List<Color> = listOf(Palette.BgBase, Palette.Sidebar.compositeOver(Palette.BgBase))
+
+/**
+ * 一档图例色当「墨」用（泳道标签）：[ink] 给同一色相的文字级，再按标签**真正落的表面**保底——
+ * 自己那一条泳道（这一档色以 [laneAlpha] 压在画布上）。换肤的保底只认皮肤自己的表面与 0.16 的同色 chip，
+ * 这块带色的画布它不知道（玻璃拟态上紫字压在自己的泳道上差 0.05）。已经达标就原样返回，不是重设计。
+ */
+internal fun laneInk(fill: Color, laneAlpha: Float): Color =
+    ensureContrast(ink(fill), canvasBases().map { fill.copy(alpha = laneAlpha).compositeOver(it) }, 4.5f)
+
+/** 层标签的墨：泳道底 = 层色 0.10 × 驱动的 0.9。 */
+internal fun layerTexts(): List<Color> = layerFills().map { laneInk(it, 0.10f * 0.9f) }
+
+/** 角色标签的墨：泳道底 = 角色色 0.07 × 0.9。 */
+internal fun roleTexts(): List<Color> = roleFills().map { laneInk(it, 0.07f * 0.9f) }
 
 /** 读回一份嵌入配置里的变量（判据与调试用；不是合法配置 = 空表）。 */
 internal fun decodeEmbedVars(script: String): Map<String, String> {
