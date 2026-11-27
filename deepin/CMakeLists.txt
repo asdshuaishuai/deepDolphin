@@ -33,6 +33,19 @@ find_package(Dtk6Gui REQUIRED)
 find_package(Dtk6Widget REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SECRET REQUIRED IMPORTED_TARGET libsecret-1)
+# ★ xcb：deepin 托盘**窗口协议**要自己建 X11 窗口并发 REQUEST_DOCK（批 Y 查明）。
+#   用 xcb 而不是 Xlib：Xlib 的 Bool/Status/None/CursorShape 是宏，与 Qt 头文件打架。
+#   ⚠ **不走 pkg-config**：本构建环境的 pkg-config（2.5.1）解不开
+#     xcb → xau → xproto 的 Requires.private 链（实测 `--exists xcb` 失败，
+#     而新版 pkgconf 正常）⇒ 改用 find_path/find_library 直接找（与 Qt 的查找方式一致）。
+set(DD_EXTRA_PREFIX "$ENV{HOME}/.local/dd-sysroot/usr" CACHE PATH
+    "额外依赖查找前缀（开发用 dd-sysroot；正式打包环境留空即可）")
+find_path(XCB_INCLUDE_DIR NAMES xcb/xcb.h
+    HINTS ${DD_EXTRA_PREFIX} ${CMAKE_PREFIX_PATH}
+    PATH_SUFFIXES include)
+find_library(XCB_LIBRARY NAMES xcb
+    HINTS ${DD_EXTRA_PREFIX} ${CMAKE_PREFIX_PATH}
+    PATH_SUFFIXES lib lib/x86_64-linux-gnu lib64)
 
 # ★ 冒烟硬路径：产物固定在源码树 build 根（即使配到别处也不破）
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/build")
@@ -42,11 +55,17 @@ add_executable(deepDolphin
     src/main.cpp
     # ── app/：进程级编排 ──
     src/app/AppModel.cpp
+    src/app/AppModelGraph.cpp
+    src/app/AppModelUpdate.cpp
     src/app/EngineCli.cpp
+    src/app/EngineInstaller.cpp
     src/app/EngineLocator.cpp
     src/app/Notifier.cpp
     src/app/ProcessRegistry.cpp
     src/app/SelfCheck.cpp
+    src/app/SelfCheckDocs.cpp
+    src/app/SelfCheckEngine.cpp
+    src/app/SelfCheckGraph.cpp
     src/app/Settings.cpp
     # ── models/：JSON 契约层（键名逐字对齐 CONTRACT）──
     src/models/ContextEnvelope.cpp
@@ -54,6 +73,7 @@ add_executable(deepDolphin
     src/models/EngineError.cpp
     src/models/EngineFailure.cpp
     src/models/EngineJson.cpp
+    src/models/GraphScene.cpp
     src/models/ProjectStatus.cpp
     src/models/StatusEnvelope.cpp
     src/models/UpdateResult.cpp
@@ -76,30 +96,71 @@ add_executable(deepDolphin
     src/ai/ToolArgs.cpp
     # ── logic/：纯函数判定层（零 GUI 依赖）──
     src/logic/CommitTypeComposition.cpp
+    src/logic/Backend.cpp
+    src/logic/PanelGeometry.cpp
     src/logic/DashboardScope.cpp
     src/logic/DashFilter.cpp
     src/logic/Derived.cpp
+    src/logic/DocumentIntegrity.cpp
     src/logic/LanguageCoverage.cpp
     src/logic/PathInput.cpp
     src/logic/Route.cpp
     src/logic/Router.cpp
     src/logic/Scope.cpp
     src/logic/UpdateOutcome.cpp
+    # ── 图谱/架构图（章程 §3.5 平台 Canvas 分派：deepin = Qt QPainter Canvas）──
+    src/logic/GraphToken.cpp
+    src/logic/SceneRender.cpp
+    src/logic/ArchViewport.cpp
+    src/logic/ArchReceipt.cpp
+    src/logic/AgentToolPlan.cpp
+    src/logic/CanvasFont.cpp
+    src/logic/CodeGraphBuild.cpp
+    src/logic/HeatLayout.cpp
+    src/logic/PatchCheck.cpp
+    src/logic/DocPages.cpp
+    src/logic/SyntaxHighlight.cpp
+    src/logic/GraphInsight.cpp
+    src/logic/EngineConfig.cpp
+    src/logic/IndexStatus.cpp
+    src/logic/EngineDoctor.cpp
+    src/logic/EngineDownload.cpp
+    src/logic/Notifications.cpp
+    src/logic/EngineHook.cpp
+    src/logic/IconNames.cpp
+    src/logic/SnapshotFixture.cpp
+    src/logic/TraySni.cpp
+    src/logic/DeepinTray.cpp
+    src/logic/DeepinTray.h
     # ── platform/ ──
     src/platform/AppService.cpp
     src/platform/AutostartManager.cpp
+    src/platform/Backend.cpp
+    src/platform/DdePanel.cpp
+    src/platform/DpiPixmap.cpp
+    src/platform/DpiPixmap.h
+    src/platform/Canvas2D.cpp
     src/platform/CrashHandler.cpp
-    src/platform/IconLoader.cpp
+    src/platform/IconResolver.cpp
     src/platform/SysOpen.cpp
+    src/platform/TraySni.cpp
+    src/platform/TraySni.h
+    src/platform/DeepinTray.cpp
+    src/platform/DeepinTray.h
+    src/platform/TrayBackend.cpp
+    src/platform/TrayBackend.h
     # ── tray/ ──
     src/tray/TrayController.cpp
     src/tray/TrayPopupWindow.cpp
     # ── ui/：主窗口与四页 ──
     src/ui/DesignTokens.cpp
+    src/ui/ColorSampleSheet.cpp
     src/ui/DualTrackButtons.cpp
     src/ui/PanelWindow.cpp
     src/ui/SidebarNav.cpp
     src/ui/WorkBar.cpp
+    src/ui/ArchCanvasWidget.cpp
+    src/ui/HeatmapWidget.cpp
     src/ui/common/BusyRow.cpp
     src/ui/common/FlatButton.cpp
     src/ui/common/MarkdownView.cpp
@@ -117,6 +178,12 @@ add_executable(deepDolphin
     src/ui/dialogs/AgentDialog.cpp
     src/ui/dialogs/AiResultDialog.cpp
     src/ui/dialogs/AiSettingsDialog.cpp
+    src/ui/dialogs/ArchDialog.cpp
+    src/ui/dialogs/CodeGraphDialog.cpp
+    src/ui/dialogs/PatchCheckDialog.cpp
+    src/ui/dialogs/DocsDialog.cpp
+    src/ui/dialogs/DocsDialogProbe.cpp
+    src/ui/CodeHighlighter.cpp
     src/ui/dialogs/ScanDialog.cpp
     src/ui/dialogs/panes/AutomationPane.cpp
     src/ui/dialogs/panes/GeneralPane.cpp
@@ -137,6 +204,16 @@ target_link_libraries(deepDolphin PRIVATE
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::DBus Qt6::Network
     Dtk6::Core Dtk6::Gui Dtk6::Widget
     PkgConfig::SECRET)
+
+# xcb 缺失时不阻断构建（那台机器不是 deepin 式托盘 ⇒ 这条路用不上 ⇒ 平台层退化成桩）
+if(XCB_INCLUDE_DIR AND XCB_LIBRARY)
+    target_include_directories(deepDolphin PRIVATE ${XCB_INCLUDE_DIR})
+    target_link_libraries(deepDolphin PRIVATE ${XCB_LIBRARY})
+    target_compile_definitions(deepDolphin PRIVATE DD_HAVE_XCB)
+    message(STATUS "xcb 找到：${XCB_LIBRARY} ⇒ deepin 托盘窗口协议可用")
+else()
+    message(WARNING "xcb 未找到：deepin 托盘窗口协议（自绘 X11 窗口）不可用（平台层退化成桩）")
+endif()
 
 # tests/：QtTest 单测随 PLAN 里程碑 2（口径层锁死）加入，届时在此
 # enable_testing() + add_subdirectory(tests)；当前以二进制内置 --selfcheck

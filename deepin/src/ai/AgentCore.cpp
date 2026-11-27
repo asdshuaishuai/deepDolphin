@@ -1,5 +1,6 @@
 #include "AgentCore.h"
 #include "../app/EngineCli.h"
+#include "../logic/AgentToolPlan.h"
 #include "../models/ContextEnvelope.h"
 #include "../models/ToolsEnvelope.h"
 #include "AIEngineFactory.h"
@@ -7,14 +8,17 @@
 #include "AgentOutcome.h"
 #include "AgentPrompts.h"
 #include "ToolArgs.h"
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSet>
+#include <QTemporaryDir>
 #include <memory>
 
 namespace {
-// 上下文预算：整轮 9000（SPEC §4.4）；工具内取 8000（与 mac 一致）。
+// 上下文预算：整轮 9000（SPEC §4.4）；工具内取 8000（与 mac 一致）——
+// 工具内的那个已随 argv 形态一起搬进 logic/AgentToolPlan（跟命令形态同处）。
 constexpr int kContextBudget = 9000;
-constexpr int kToolContextBudget = 8000;
 // 客户端自报截断阈值：引擎自己的截断披露写在**结尾**，头部切会把它切掉，
 // 于是客户端切的这刀必须自报家门（#191）。
 constexpr int kToolOutputClip = 16000;
@@ -51,12 +55,20 @@ bool AgentCore::loadToolManifest(QVector<ToolDef> *defs, QMap<QString, QString> 
             EngineTimeouts::Tools, &raw, err, cancelled))
         return false;
     if (toolsText)
-        *toolsText = raw; // 清单**原文**进系统提示词（mac 同款）
+        *toolsText = raw; // 兜底：解析失败就用原文（不空提示词）
 
     // 解析失败 → 空清单不崩（mac engineToolDefinitions 同款守卫）
     const QJsonDocument doc = QJsonDocument::fromJson(raw.toUtf8());
     if (doc.isObject()) {
         if (const auto env = ToolsEnvelope::fromJson(doc.object())) {
+            // ⚠ 收敛口径的**单一真相源**在判定层（`ToolsEnvelope::activeTools`）：
+            //   模型可见面与系统提示词**都**按它来 ⇒ 两处口径不会漂。
+            //   （原来模型面自己又写了一遍 `!t.deprecated`，提示词却用 `activeJson()`
+            //     —— **两处实现、碰巧一致**：将来改了一处忘了另一处，模型就会去调
+            //     「提示词里有、工具表里没有」的名字，或反过来。）
+            QSet<QString> activeNames;
+            for (const ToolSpec &t : env->activeTools())
+                activeNames.insert(t.name);
             for (const ToolSpec &t : env->tools) {
                 ToolDef d;
                 d.name = t.name;
@@ -76,10 +88,22 @@ bool AgentCore::loadToolManifest(QVector<ToolDef> *defs, QMap<QString, QString> 
                     { "properties", props },
                     { "required", QJsonArray::fromStringList(d.requiredParams) },
                 });
+                // ⚠ 必填校验表收**全部**工具（含废弃别名）—— 契约门第 12 组钉住
+                //   「客户端能执行的工具集 == 引擎声明的工具集」，别名必须仍可执行。
                 if (paramsByTool)
                     paramsByTool->insert(d.name, QString::fromUtf8(paramsDoc.toJson(QJsonDocument::Compact)));
-                if (defs)
+                // ⚠ 但**模型可调用的工具面**只给非废弃的：引擎标了「旧名别名，
+                //   将移除」的那些就别再推荐给模型了（工具面收敛）。
+                //   ⚠ 判据用判定层的 activeNames（不是自己再写一遍 `!t.deprecated`）——
+                //     与下面的提示词清单**同一口径**。
+                if (activeNames.contains(t.name) && defs)
                     defs->append(d);
+            }
+            // 系统提示词里的清单 = **收敛后**的（与上面的工具面同一口径）——
+            // 不收敛的话，提示词里还列着旧名，模型就会去调它。
+            if (toolsText) {
+                *toolsText = QString::fromUtf8(
+                    QJsonDocument(env->activeJson()).toJson(QJsonDocument::Compact));
             }
         }
     }
@@ -97,96 +121,72 @@ bool AgentCore::executeTool(const QString &name, const QJsonObject &params,
             *outText = ToolArgs::missingMessage(name, absent);
         return false;
     }
-    const auto str = [&params](const QString &key) {
-        return params.value(key).toString();
-    };
 
-    QString raw;
-    QString err;
-    bool ok = false;
-    // 10 个工具，与引擎 tools --json 声明集严格相等（contract 钉住）；
-    // default → 明说「未知工具」，不静默成功。
-    if (name == QLatin1String("get_group_context")) {
-        ok = runEngineRaw({ QStringLiteral("context"), QStringLiteral("--budget"),
-                                QString::number(kToolContextBudget), QStringLiteral("--json") },
-            EngineTimeouts::Context, &raw, &err, cancelled);
-        if (ok && outText) {
-            ContextEnvelope::Note note;
-            if (const auto env = ContextEnvelope::decode(raw.toUtf8(), &note))
-                *outText = env->context; // mac：工具内只交正文（说明走系统提示词那条路）
-            else
-                *outText = raw;
-        }
-    } else if (name == QLatin1String("get_project_context")) {
-        ok = runEngineRaw({ QStringLiteral("context"), str(QStringLiteral("name")),
-                                QStringLiteral("--budget"), QString::number(kToolContextBudget),
-                                QStringLiteral("--json") },
-            EngineTimeouts::Context, &raw, &err, cancelled);
-        if (ok && outText) {
-            ContextEnvelope::Note note;
-            if (const auto env = ContextEnvelope::decode(raw.toUtf8(), &note))
-                *outText = env->context;
-            else
-                *outText = raw;
-        }
-    } else if (name == QLatin1String("get_project_docs")) {
-        ok = runEngineRaw({ QStringLiteral("docs"), str(QStringLiteral("name")),
-                                QStringLiteral("--json") },
-            EngineTimeouts::Docs, &raw, &err, cancelled);
-    } else if (name == QLatin1String("get_journal")) {
-        ok = runEngineRaw({ QStringLiteral("journal"), str(QStringLiteral("name")),
-                                QStringLiteral("--json") },
-            EngineTimeouts::Journal, &raw, &err, cancelled);
-    } else if (name == QLatin1String("get_milestones")) {
-        ok = runEngineRaw({ QStringLiteral("milestone"), QStringLiteral("list"),
-                                QStringLiteral("--json") },
-            EngineTimeouts::Milestones, &raw, &err, cancelled);
-    } else if (name == QLatin1String("run_shallow_update")) {
-        ok = runEngineRaw({ QStringLiteral("update"), str(QStringLiteral("name")),
-                                QStringLiteral("--json"), QStringLiteral("--quiet") },
-            EngineTimeouts::Update, &raw, &err, cancelled);
-    } else if (name == QLatin1String("run_deep_update")) {
-        ok = runEngineRaw({ QStringLiteral("deep"), str(QStringLiteral("name")),
-                                QStringLiteral("--json"), QStringLiteral("--quiet") },
-            EngineTimeouts::Deep, &raw, &err, cancelled);
-    } else if (name == QLatin1String("git_commit")) {
-        ok = runEngineRaw({ QStringLiteral("git"), QStringLiteral("commit"),
-                                str(QStringLiteral("name")), QStringLiteral("--message"),
-                                str(QStringLiteral("message")), QStringLiteral("--json") },
-            EngineTimeouts::Git, &raw, &err, cancelled);
-    } else if (name == QLatin1String("git_pull_push")) {
-        // 引擎 git 白名单里 agent 工具只该碰 pull/push——越界明说，不转交
-        QString op = str(QStringLiteral("op"));
-        if (op.isEmpty())
-            op = QStringLiteral("pull");
-        if (op != QLatin1String("pull") && op != QLatin1String("push")) {
-            if (outText)
-                *outText = QStringLiteral(
-                    "git_pull_push 的 op 只支持 pull|push，收到：「%1」。已拒绝执行。")
-                    .arg(op);
-            return false;
-        }
-        ok = runEngineRaw({ QStringLiteral("git"), op, str(QStringLiteral("name")),
-                                QStringLiteral("--json") },
-            EngineTimeouts::Git, &raw, &err, cancelled);
-    } else if (name == QLatin1String("milestone_done")) {
-        ok = runEngineRaw({ QStringLiteral("milestone"), QStringLiteral("done"),
-                                str(QStringLiteral("project")), str(QStringLiteral("name")),
-                                QStringLiteral("--json") },
-            EngineTimeouts::Milestones, &raw, &err, cancelled);
-    } else {
+    // argv 形态、参数校验、拒绝理由全在**纯函数表**里（logic/AgentToolPlan）：
+    // 28 个工具（与引擎 tools --json 严格对位）的命令形态、flag 解析、白名单
+    // 都可无头判；这一层只做 I/O 与执行。
+    AgentToolPlan::Plan plan = AgentToolPlan::planFor(name, params);
+    if (!plan.known) {
         if (outText)
             *outText = QStringLiteral("未知工具：%1").arg(name);
         return false;
     }
+    if (!plan.reject.isEmpty()) {
+        if (outText)
+            *outText = plan.reject;
+        return false;
+    }
 
+    // 临时文件：引擎 CLI 吃**路径**的那种（graph patchconf --merge <a.json> <b.json>）。
+    // 落盘是 I/O，在这里做 —— 纯函数层只声明「哪个参数要落盘、argv 哪一格放路径」。
+    QStringList argv = plan.argv;
+    QTemporaryDir tmpDir;
+    if (!plan.tempParams.isEmpty()) {
+        if (!tmpDir.isValid()) {
+            if (outText)
+                *outText = QStringLiteral("无法创建临时目录，%1 未执行。").arg(name);
+            return false;
+        }
+        for (const QString &key : plan.tempParams) {
+            const QString path = tmpDir.filePath(key + QStringLiteral(".json"));
+            QFile f(path);
+            if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                if (outText)
+                    *outText = QStringLiteral("写临时文件失败（%1），%2 未执行。")
+                                   .arg(path, name);
+                return false;
+            }
+            f.write(params.value(key).toString().toUtf8());
+            f.close();
+            for (QString &a : argv) {
+                if (a == QStringLiteral("{{tmp:%1}}").arg(key))
+                    a = path;
+            }
+        }
+    }
+
+    QString raw;
+    QString err;
+    const bool ok = runEngineRaw(argv, plan.timeoutMs, &raw, &err, cancelled);
     if (!ok) {
         if (outText)
             *outText = err;
         return false;
     }
-    if (outText)
-        *outText = raw; // 原始 stdout（JSON 原文交给模型解读，mac 同款）
+    if (!outText)
+        return true;
+
+    // context 两个工具：只交正文给模型（说明走系统提示词那条路，mac 同款）
+    if (name == QLatin1String("get_group_context")
+        || name == QLatin1String("get_project_context")) {
+        ContextEnvelope::Note note;
+        if (const auto env = ContextEnvelope::decode(raw.toUtf8(), &note))
+            *outText = env->context;
+        else
+            *outText = raw;
+        return true;
+    }
+    *outText = raw; // 原始 stdout（JSON 原文交给模型解读，mac 同款）
     return true;
 }
 

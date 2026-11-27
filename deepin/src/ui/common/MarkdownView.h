@@ -42,10 +42,11 @@ private:
         return QStringLiteral("h1 { font-size: %1px; font-weight: 600; }"
                               "h2 { font-size: %2px; font-weight: 600; }"
                               "h3 { font-size: %3px; font-weight: 600; }"
-                              "h4, h5, h6 { font-size: 14px; font-weight: 600; }"
+                              "h4, h5, h6 { font-size: %4px; font-weight: 600; }"
                               "code, pre { font-family: monospace; }")
             .arg(DS::MD_H1)
             .arg(DS::MD_H2)
-            .arg(DS::MD_H3);
+            .arg(DS::MD_H3)
+            .arg(DS::MD_H3); // h4-h6 与 h3 同档（值相同，档位语义也相同）
     }
 };

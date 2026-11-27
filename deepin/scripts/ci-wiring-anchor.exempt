@@ -1,0 +1,61 @@
+# ci-wiring-anchor.exempt —— 「整行锚定」豁免基线（批 BN）
+#
+# ⚠ 格式：<门型>\t<目标相对路径>\t<门项正则>\t<理由>
+#   ⇒ **TAB** 分隔（门项正则里含 `|`，不能用 `|` 分隔）
+#   ⇒ 目标路径 = **相对仓根**（审计器用同一个口径 ⇒ 零漂移）
+#   ⇒ 正则**按 rstrip 比较**（行尾空格在文本文件里极易丢失）
+# ⚠ 理由**不许为空**：没有理由的豁免 = 一条没人负责的后门
+# ⚠ 坏行（字段数不对 / 理由为空）⇒ **不豁免**（fail closed）⇒ 对应门项照红
+# ⚠ 键 = (门型, 路径, 正则) ⇒ 同一个正则被不同门型用时不会互相顶替
+#
+# ⚠⚠⚨ 为什么这些门**不能**整行锚定（逐条给理由，不许「以后再说」）：
+#   1. --color-sample：ci.sh 里这条命令是 **shell 续行**（行尾是 `\`）
+#      ⇒ 整行锚定只能钉住**第一行** ⇒ 真正的动作（输出重定向）在下一行
+#      ⇒ 锚定挡不住「第二行被改」⇒ 锚了反而给人「已经钉死」的错觉
+#   2. › [0-9]+/16 ：16 个步骤打点行的**后半段各不相同**
+#      ⇒ 一条正则只能通配 ⇒ 整行锚定**无增量价值**（能加的只是「以打点开头」）
+#   3~6. (sh|bash|python3) …ci.sh / smoke.sh / probe-*.sh：
+#      **期望 0 次**的白名单门 ⇒ 语义是「这个模式**不许出现在任何位置**」
+#      ⇒ 整行锚定会把它**弱化**成「不许出现在某一种整行形态」⇒ 语义被改窄
+#   7. check-deb-layout.sh 的 `^[[:space:]]*(no|ok) "`：数的是**调用点数量**
+#      （ok/no 的说明文字是自由文本）⇒ 整行锚定等于把每条说明逐字写进正则
+#      ⇒ 会把「清单不许被删」这条门改窄成「这几种文案不许被删」⇒ 显式豁免
+#   8. contract-check.sh 的 `^[[:space:]]*check`：数的是**调用点数量**
+#      （93 处断言的名字与表达式都是自由文本）⇒ 同上 ⇒ 显式豁免
+#      ⚠⚠⚨ 这两条是**批 BY 把这两个脚本纳入适用范围时**新增的豁免
+#      ⇒ 批 BY 给它们新加的 12 条门**全部是整行锚定** ⇒ 不落在这张表里
+#   9. ci.sh 的 `^wire_need "\$SRC/src/`：数的是**调用点数量**
+#      （6 处调用的正则实参与说明文字都是自由文本 ⇒ 其中一处还自带双引号）
+#      ⇒ 整行锚定等于把 6 条调用逐字写进正则
+#      ⇒ 会把「6 处接线不许被删」改窄成「这几种调用不许被删」⇒ 显式豁免
+#      ⚠⚠⚨ 这是**批 EH** 新增的门项（CI 第 7 步 verify 接线门的调用点总数）
+#
+arch_need_count	deepin/scripts/ci.sh	--color-sample	ci.sh 里这条命令是 shell 续行（行尾是续行符）⇒ 整行锚定只能钉住第一行 ⇒ 真正的动作在下一行 ⇒ 锚定挡不住 ⇒ 不能用整行锚定
+arch_need_count	deepin/scripts/ci.sh	› [0-9]+/16 	16 个步骤打点行的后半段各不相同 ⇒ 一条正则只能通配 ⇒ 整行锚定无增量价值 ⇒ 不能用整行锚定（⚠ 批 DG：步数 15 → 16）
+arch_need_count	deepin/scripts/ci.sh	(sh|bash|python3) +"?[^"]*/scripts/ci\.sh	期望 0 次的白名单门 ⇒ 语义是「不许出现在任何位置」⇒ 整行锚定会把它弱化成「不许出现在某一种整行形态」⇒ 不能用整行锚定
+arch_need_count	deepin/scripts/ci.sh	(sh|bash|python3) +"?[^"]*/scripts/smoke\.sh	期望 0 次的白名单门 ⇒ 语义是「不许出现在任何位置」⇒ 整行锚定会把它弱化成「不许出现在某一种整行形态」⇒ 不能用整行锚定
+arch_need_count	deepin/scripts/ci.sh	(sh|bash|python3) +"?[^"]*/scripts/probe-deepin-tray\.sh	期望 0 次的白名单门 ⇒ 语义是「不许出现在任何位置」⇒ 整行锚定会把它弱化成「不许出现在某一种整行形态」⇒ 不能用整行锚定
+arch_need_count	deepin/scripts/ci.sh	(sh|bash|python3) +"?[^"]*/scripts/probe-sni-icon\.sh	期望 0 次的白名单门 ⇒ 语义是「不许出现在任何位置」⇒ 整行锚定会把它弱化成「不许出现在某一种整行形态」⇒ 不能用整行锚定
+arch_need_count	deepin/scripts/ci-platform-probe.sh	^[[:space:]]*echo "[ ]*✗	条数基线门：数的是「报错文案行」⇒ 行尾是自由文本 ⇒ 整行锚定会改窄语义（等于把每条报错文案逐字写进正则）⇒ 显式豁免
+arch_need_count	deepin/scripts/ci-docs-lang-probe.sh	^[[:space:]]*echo "[ ]*✗	条数基线门：数的是「报错文案行」⇒ 行尾是自由文本 ⇒ 整行锚定会改窄语义（等于把每条报错文案逐字写进正则）⇒ 显式豁免
+arch_need_count	deepin/scripts/ci-divider-probe.sh	^[[:space:]]*echo "[ ]*✗	条数基线门：数的是「报错文案行」⇒ 行尾是自由文本 ⇒ 整行锚定会改窄语义（等于把每条报错文案逐字写进正则）⇒ 显式豁免
+arch_need_count	deepin/scripts/ci-orphan-probe.sh	^[[:space:]]*echo "[ ]*✗	条数基线门：数的是「报错文案行」⇒ 行尾是自由文本 ⇒ 整行锚定会改窄语义（等于把每条报错文案逐字写进正则）⇒ 显式豁免
+arch_need_count	deepin/scripts/probe-agent-tool-surface.sh	^[[:space:]]*echo "[ ]*✗	条数基线门：数的是「报错文案行」⇒ 行尾是自由文本 ⇒ 整行锚定会改窄语义（等于把每条报错文案逐字写进正则）⇒ 显式豁免
+arch_need_count	deepin/scripts/check-deb-layout.sh	^[[:space:]]*(no|ok) "	清单门数的是**调用点数量**（ok/no 后面是自由说明文本）⇒ 整行锚定等于把每条说明逐字写进正则⇒ 会把「清单不许被删」改窄成「这几种文案不许被删」⇒ 显式豁免
+arch_need_count	deepin/scripts/contract-check.sh	^[[:space:]]*check	清单门数的是**调用点数量**（93 处断言的名字与表达式都是自由文本）⇒ 整行锚定等于把 93 条断言逐字写进正则⇒ 会把「清单不许被删」改窄成「这几种断言不许被删」⇒ 显式豁免
+arch_need_count	deepin/scripts/build-deb.sh	\b(die|fail) "	die/fail 调用点常写在**行中** ⇒ 没法行首锚定 ⇒ 这条门盯的是「**调用点总数**」（不是「✗ 标记数」）⇒ 强度弱于整行锚定 ⇒ 如实记为已知边界（批 BU 同款）
+
+# ⚠⚠⚨ 批 EE · `ci-shell-parity.sh` 纳入「整行锚定」适用范围 ⇒ 它上面
+#   这 6 条「盯串」门项必须**逐条**登记豁免（豁免表 ≡「非锚定门项」集合
+#   ⇒ **双向配准** ⇒ 条数是**推导出来的**，不另写条数基线）。
+#   ⇒ 每条的理由都写明「盯的是**文案措辞**，判定行已由批 EE 的新门单独守住」。
+arch_need_count	deepin/scripts/ci-shell-parity.sh	⇒ 诊断文案\*\*随执行 shell 变\*\* ⇒ 负控的文案命中判定不可信（批 DT）	盯的是**归因文案的措辞** ⇒ 整行锚定会把它改窄 ⇒ 但**归因判定行**已由 批 EE 的新门**整行锚定**单独守住 ⇒ 本门只负责措辞
+arch_need_count	deepin/scripts/ci-shell-parity.sh	但\*\*两遍都没跑通\*\*	盯的是**提示文案的措辞** ⇒ 整行锚定会把它改窄 ⇒ 这条是「两遍都没跑通」**单独成支**（批 DX）的文案 ⇒ 判定层由别的门守着 ⇒ 本门只负责措辞
+arch_need_count	deepin/scripts/ci-shell-parity.sh	先查外部依赖	盯的是**归因文案的措辞**（判「退出码不同」时必须先叫读者查外部依赖）⇒ 整行锚定会把它改窄 ⇒ 但**归因判定行**已由批 EE 的新门**整行锚定**单独守住 ⇒ 本门只负责措辞
+arch_need_count	deepin/scripts/ci-shell-parity.sh	差异已写 \$_SD（diff 退出码 \$_drc）前 20 行	盯的是**诊断文案的措辞** ⇒ 整行锚定会把它改窄 ⇒ 但**判定行**已由批 EE 的新门**整行锚定**单独守住 ⇒ 本门只负责「诊断话术不许被改掉」这一层
+arch_need_count	deepin/scripts/ci-shell-parity.sh	标了 EXEMPT 却\*\*没写理由\*\*	盯的是**提示文案的措辞**（「标了 EXEMPT 却没写理由」这句话还在不在）⇒ 整行锚定会把它改窄 ⇒ 但**判定行**已由批 EE 的新门**整行锚定**单独守住 ⇒ 本门只负责「文案不许被改掉」这一层 ⇒ 两层互补
+arch_need_count	deepin/scripts/ci-shell-parity.sh	登记册共 \$\(\(n_dual \+ n_dual_cish \+ n_exempt\)\) 条	盯的是**汇总行里的数字咬合**（登记册条数必须等于三个计数之和）⇒ 整行锚定会把它改窄（那行还有别的内容）⇒ 数字咬合另由「三个数字对账」那组门守着 ⇒ 本门只负责这个串不许消失
+
+# ⚠⚠⚨ 批 EH · CI 第 7 步 verify 接线门的**调用点总数**那条门项
+#   ⇒ ⇒ 6 处调用的实参是自由文本 ⇒ ⇒ 整行锚定会改窄语义 ⇒ ⇒ 显式豁免
+arch_need_count	deepin/scripts/ci.sh	^wire_need "\$SRC/src/	清单门数的是**调用点数量**（6 处调用的正则实参与说明文字都是自由文本 ⇒ 其中一处还自带双引号）⇒ 整行锚定等于把 6 条调用逐字写进正则 ⇒ 会把「6 处接线不许被删」改窄成「这几种调用不许被删」⇒ 显式豁免

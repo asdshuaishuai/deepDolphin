@@ -1,8 +1,13 @@
 #include "ProjectDetailPage.h"
+#include "../../logic/IconNames.h"
+#include "../../logic/ArchReceipt.h"
+#include "../../platform/IconResolver.h"
+#include "../../platform/DpiPixmap.h"
 #include "../../logic/CommitTypeComposition.h"
 #include "../../logic/Derived.h"
 #include "../../logic/DestructiveGuard.h"
 #include "../../logic/DashboardScope.h"
+#include "../../logic/DocumentIntegrity.h"
 #include "../../logic/MilestoneCardTitle.h"
 #include "../../platform/SysOpen.h"
 #include "../DesignTokens.h"
@@ -16,6 +21,7 @@
 #include "../common/MarkdownView.h"
 #include "../common/SecondaryLabel.h"
 #include "../common/SegmentedBar.h"
+#include "../common/VDivider.h"
 #include "../pages/MilestoneRowWidget.h"
 #include "../../models/ProjectStatus.h"
 #include <DSpinner>
@@ -37,12 +43,12 @@ namespace {
 // 页头小图标按钮（borderless；图标优先主题，文字兜底）。
 // M3b-FlatButton 收编：原先「new QPushButton + setFlat + 各写各的几何」就地散装，
 // 平钮观感/字号/hover 压语义全部归 FlatButton 单点（本助手即 plan §3b 的对位原型）。
-QPushButton *iconButton(const QString &iconName, const QString &text, const QString &tooltip,
+QPushButton *iconButton(IconNames::Id iconId, const QString &text, const QString &tooltip,
     QWidget *parent)
 {
     auto *b = new FlatButton(text, parent);
     b->setToolTip(tooltip);
-    b->setIcon(QIcon::fromTheme(iconName));
+    b->setIcon(platform::icon(iconId));
     return b;
 }
 
@@ -53,6 +59,18 @@ QLabel *smallLabel(const QString &text, QWidget *parent, const QColor &color)
     l->setStyleSheet(QStringLiteral("color: %1;").arg(color.name()));
     l->setWordWrap(true);
     return l;
+}
+
+// 竖分隔线 —— **唯一构造点**（批 AW）。
+// ⚠ 旧写法是 `new QLabel(QStringLiteral("|"))`（用**文字**冒充线）：
+//   实测 sizeHint = 4×18 逻辑像素 ⇒ 宽 4px、高 18px，且是**字形**
+//   （HiDPI dpr=2 时实测占 8×36 物理像素），颜色还是 QSS 写死的构建时快照。
+//   ⇒ 改走 `VDivider`（自绘**真线**：1 逻辑像素宽、高 14，对位 mac `Divider().frame(height: 14)`）。
+// ⚠ **唯一构造点**的原因：分隔线一旦在两处各写一遍 `new VDivider(...)`，
+//   宽度/高度/颜色三处口径就会分叉 ⇒ 收成一处（判据也只盯这一行）。
+VDivider *vDivider(QWidget *parent)
+{
+    return new VDivider(parent);
 }
 } // namespace
 
@@ -92,6 +110,16 @@ void ProjectDetailPage::setDocs(const QString &name, const std::optional<DocsEnv
     rebuild();
 }
 
+void ProjectDetailPage::setVerify(const QString &name, const std::optional<VerifyEnvelope> &verify,
+    const LoadStateBox &state)
+{
+    m_verify = verify;
+    m_verifyState = state;
+    if (m_name != name)
+        m_name = name;
+    rebuild();
+}
+
 void ProjectDetailPage::setMilestones(const QVector<Milestone> &items)
 {
     m_milestones = items;
@@ -110,6 +138,16 @@ void ProjectDetailPage::setGitOutput(const QString &name, const GitOpResponse &r
 void ProjectDetailPage::setBusy(bool busy)
 {
     m_busy = busy;
+    rebuild();
+}
+
+void ProjectDetailPage::setReportReceipt(bool ok, const QString &project, const QString &receipt)
+{
+    // 按项目存：回执不带项目名就会串台（切到别的项目时显示上一个项目的回执）。
+    m_reportOk[project] = ok;
+    m_reportReceipts[project] = receipt;
+    if (!m_name.isEmpty() && project != m_name)
+        return; // 不是当前项目：存着但不刷新界面
     rebuild();
 }
 
@@ -143,7 +181,7 @@ void ProjectDetailPage::rebuild()
         // 不随 FlatButton 收编（同「主操作不降平钮」口径）
         auto *retry = new QPushButton(QStringLiteral("重试"), m_content);
         connect(retry, &QPushButton::clicked, this, &ProjectDetailPage::retryRequested);
-        m_contentLayout->addWidget(new EmptyState(QStringLiteral("data-warning"),
+        m_contentLayout->addWidget(new EmptyState(IconNames::Id::dataWarning,
             QStringLiteral("读不出来：%1").arg(m_name), reason, retry));
         return;
     }
@@ -155,6 +193,8 @@ void ProjectDetailPage::rebuild()
 
     const ProjectStatus &p = *m_project;
     m_contentLayout->addWidget(buildHeader(p));
+    if (m_reportReceipts.contains(m_name))
+        m_contentLayout->addWidget(buildReportCard());
     if (p.isGit())
         m_contentLayout->addWidget(buildCommitCard());
 
@@ -171,6 +211,7 @@ void ProjectDetailPage::rebuild()
     m_contentLayout->addWidget(buildMilestoneCard());
     if (!p.journal.empty())
         m_contentLayout->addWidget(buildJournalCard(p));
+    m_contentLayout->addWidget(buildIntegrityCard());
     m_contentLayout->addWidget(buildDocsArea());
     m_contentLayout->addStretch(1);
 }
@@ -220,7 +261,7 @@ QWidget *ProjectDetailPage::buildHeader(const ProjectStatus &p)
     auto *path = new SecondaryLabel(p.path, header);
     path->setFont(DS::font(DS::FontT::label));
     pathRow->addWidget(path, 1);
-    auto *copy = iconButton(QStringLiteral("edit-copy"), QString(),
+    auto *copy = iconButton(IconNames::Id::copy, QString(),
         QStringLiteral("复制路径"), header);
     connect(copy, &QPushButton::clicked, this, [p] {
         QGuiApplication::clipboard()->setText(p.path);
@@ -246,42 +287,65 @@ QWidget *ProjectDetailPage::buildHeader(const ProjectStatus &p)
             v->addWidget(smallLabel(*p.overall.summary, header, DS::textSecondary()));
     }
 
-    // ── 右侧按钮排：项目说明 + 拉取/推送/抓取 + 分隔 + 暂存/恢复 + 分隔 + 更新菜单 ──
+    // ── 右侧按钮排：架构图 + 项目说明 + 拉取/推送/抓取 + 分隔 + 暂存/恢复 + 分隔 + 更新菜单 ──
     auto *actions = new QHBoxLayout;
     actions->setSpacing(DS::Spacing::xs);
 
-    auto *brief = iconButton(QStringLiteral("applications-utilities"), QStringLiteral("项目说明"),
+    // 架构图：独立窗口承载（画布要空间，mac 用 sheet —— DDE 无 sheet 对位物）。
+    auto *arch = iconButton(IconNames::Id::arch, QStringLiteral("架构图"),
+        QStringLiteral("查看模块分层与依赖治理"), header);
+    connect(arch, &QPushButton::clicked, this, [this] { emit archRequested(m_name); });
+    actions->addWidget(arch);
+
+    // 代码图谱：符号级树 + 置信度疑点 + 调用关系（引擎 graph 三源）。
+    auto *cgraph = iconButton(IconNames::Id::codegraph, QStringLiteral("代码图谱"),
+        QStringLiteral("查看符号树、置信度疑点与调用关系"), header);
+    connect(cgraph, &QPushButton::clicked, this, [this] { emit codeGraphRequested(m_name); });
+    actions->addWidget(cgraph);
+
+    // 补丁体检：三层体检（算法 → 人工裁决 → 合并终稿），独立窗承载。
+    auto *patch = iconButton(IconNames::Id::patch, QStringLiteral("补丁体检"),
+        QStringLiteral("对工作区未提交改动做置信度三层体检"), header);
+    connect(patch, &QPushButton::clicked, this, [this] { emit patchCheckRequested(m_name); });
+    actions->addWidget(patch);
+
+    auto *brief = iconButton(IconNames::Id::brief, QStringLiteral("项目说明"),
         QStringLiteral("AI 项目说明（未配置 AI 时会给出配置指引）"), header);
     connect(brief, &QPushButton::clicked, this, [this] { emit briefRequested(m_name); });
     actions->addWidget(brief);
 
+    // 导出进度报告：引擎 `report`（回执型命令，落盘 Markdown）。
+    // 报告是**可交付物**（要能给人看/存档），所以回执里必须把落盘路径露出来。
+    auto *report = iconButton(IconNames::Id::report, QStringLiteral("导出报告"),
+        QStringLiteral("导出 Markdown 进度报告（引擎 report）"), header);
+    connect(report, &QPushButton::clicked, this, [this] { emit reportExportRequested(m_name); });
+    actions->addWidget(report);
+
     // gitOpButtons 唯一构造点：pull/push/fetch + stash/unstash（busy 禁用+转圈）
-    const auto addGit = [&actions, this, header](const QString &op, const QString &icon,
+    const auto addGit = [&actions, this, header](const QString &op, IconNames::Id iconId,
                             const QString &tip) {
-        auto *b = iconButton(icon, QString(), tip, header);
+        auto *b = iconButton(iconId, QString(), tip, header);
         b->setEnabled(!m_busy);
         connect(b, &QPushButton::clicked, this,
             [this, op] { emit gitOpRequested(op, m_name, QString()); });
         actions->addWidget(b);
         return b;
     };
-    addGit(QStringLiteral("pull"), QStringLiteral("arrow-down"),
+    addGit(QStringLiteral("pull"), IconNames::Id::gitPull,
         QStringLiteral("拉取（git pull）"));
-    addGit(QStringLiteral("push"), QStringLiteral("arrow-up"), QStringLiteral("推送（git push）"));
-    addGit(QStringLiteral("fetch"), QStringLiteral("view-refresh"),
+    addGit(QStringLiteral("push"), IconNames::Id::gitPush, QStringLiteral("推送（git push）"));
+    addGit(QStringLiteral("fetch"), IconNames::Id::refresh,
         QStringLiteral("抓取（git fetch）"));
-    auto *div1 = new QLabel(QStringLiteral("|"), header);
-    div1->setStyleSheet(QStringLiteral("color: %1;").arg(DS::surfaceBorder().name()));
+    auto *div1 = vDivider(header);
     actions->addWidget(div1);
-    addGit(QStringLiteral("stash"), QStringLiteral("archive-insert"),
+    addGit(QStringLiteral("stash"), IconNames::Id::gitStash,
         QStringLiteral("暂存（git stash）"));
-    addGit(QStringLiteral("unstash"), QStringLiteral("archive-insert-axis"),
+    addGit(QStringLiteral("unstash"), IconNames::Id::gitUnstash,
         QStringLiteral("恢复（git stash pop）"));
 
-    auto *div2 = new QLabel(QStringLiteral("|"), header);
-    div2->setStyleSheet(QStringLiteral("color: %1;").arg(DS::surfaceBorder().name()));
+    auto *div2 = vDivider(header);
     actions->addWidget(div2);
-    auto *update = iconButton(QStringLiteral("view-refresh"), QStringLiteral("更新"),
+    auto *update = iconButton(IconNames::Id::refresh, QStringLiteral("更新"),
         QStringLiteral("浅更新 / 深更新（会改写托管文档）"), header);
     connect(update, &QPushButton::clicked, this, &ProjectDetailPage::updateMenuRequested);
     actions->addWidget(update);
@@ -290,16 +354,16 @@ QWidget *ProjectDetailPage::buildHeader(const ProjectStatus &p)
     // 再下一行：Finder（文件管理器）/ 终端 / 远端（remote 为空时不显示远端）
     auto *sysRow = new QHBoxLayout;
     sysRow->setSpacing(DS::Spacing::xs);
-    auto *finder = iconButton(QStringLiteral("folder"), QString(),
+    auto *finder = iconButton(IconNames::Id::folder, QString(),
         QStringLiteral("在文件管理器中显示"), header);
     connect(finder, &QPushButton::clicked, this, [p] { SysOpen::revealInFileManager(p.path); });
     sysRow->addWidget(finder);
-    auto *term = iconButton(QStringLiteral("utilities-terminal"), QString(),
+    auto *term = iconButton(IconNames::Id::terminal, QString(),
         QStringLiteral("在终端中打开"), header);
     connect(term, &QPushButton::clicked, this, [p] { SysOpen::openTerminal(p.path); });
     sysRow->addWidget(term);
     if (!p.remote.isEmpty()) {
-        auto *remote = iconButton(QStringLiteral("web-browser"), QString(),
+        auto *remote = iconButton(IconNames::Id::remote, QString(),
             QStringLiteral("打开远端仓库"), header);
         connect(remote, &QPushButton::clicked, this, [p] {
             QString url = p.remote;
@@ -577,7 +641,8 @@ QWidget *ProjectDetailPage::buildBranchesCard(const ProjectStatus &p)
         h->setContentsMargins(0, 0, 0, 0);
         h->setSpacing(DS::Spacing::xs);
         auto *dot = new QLabel(row1);
-        QPixmap pm(DS::Height::dot, DS::Height::dot); // 状态点统一 8px（M3-5）
+        // ⚠ **HiDPI 感知**（批 AP · M3c）：按 dpr 放大后画。
+        QPixmap pm = platform::dpiPixmap(QSize(DS::Height::dot, DS::Height::dot)); // 状态点统一 8px（M3-5）
         pm.fill(Qt::transparent);
         QPainter dp(&pm);
         dp.setRenderHint(QPainter::Antialiasing);
@@ -807,6 +872,73 @@ QWidget *ProjectDetailPage::buildJournalCard(const ProjectStatus &p)
     return card;
 }
 
+QWidget *ProjectDetailPage::buildIntegrityCard()
+{
+    auto *host = new QWidget(m_content);
+    auto *v = new QVBoxLayout(host);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->setSpacing(DS::Spacing::sm);
+
+    // 三态：loading/idle（读）→ failed（橙，读不出来）→ loaded（判定）。
+    // ⚠ 「无法判定」**不是**「通过」：引擎给不出答案时这里给的是「无法判定」，不装没事。
+    if (m_verifyState.state == LoadState::loading || m_verifyState.state == LoadState::idle) {
+        auto *loading = new QWidget(host);
+        auto *lh = new QHBoxLayout(loading);
+        auto *sp = new DSpinner(loading);
+        sp->start();
+        lh->addWidget(sp);
+        lh->addWidget(new QLabel(QStringLiteral("校验文档完整性…"), loading));
+        lh->addStretch(1);
+        v->addWidget(loading);
+        return host;
+    }
+    if (m_verifyState.state == LoadState::failed) {
+        auto *card = new Card(host);
+        card->clearPadding();
+        auto *cv = new QVBoxLayout(card);
+        cv->addWidget(smallLabel(QStringLiteral("读不出来：%1").arg(m_verifyState.message), card,
+            DS::semColor(DS::SemColor::orange)));
+        v->addWidget(card);
+        return host;
+    }
+    if (!m_verify.has_value())
+        return host; // 引擎没给载荷：安静不占位（failed 分支已经兜住异常）
+
+    const VerifyEnvelope &e = *m_verify;
+    const DocumentIntegrity::State st = DocumentIntegrity::stateOf(e);
+
+    auto *card = new Card(host);
+    auto *cv = new QVBoxLayout(card);
+    cv->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
+    cv->setSpacing(DS::Spacing::sm);
+
+    auto *title = new QLabel(QStringLiteral("文档完整性"), card);
+    title->setFont(DS::font(DS::FontT::cardTitle));
+    cv->addWidget(title);
+
+    // 状态色由视图层映射（判定层只给档，不给色）：
+    // 通过=绿 / 明确不一致=红 / 无法判定=橙（不是灰！没答案 ≠ 没事）/
+    // 缺失=橙（备份仍在，可恢复）/ 无从校验=灰。
+    DS::SemColor tone = DS::SemColor::gray;
+    if (st == DocumentIntegrity::State::verified)
+        tone = DS::SemColor::shallow;
+    else if (st == DocumentIntegrity::State::failed)
+        tone = DS::SemColor::red;
+    else if (st == DocumentIntegrity::State::undetermined || st == DocumentIntegrity::State::missing)
+        tone = DS::SemColor::orange;
+
+    cv->addWidget(smallLabel(DocumentIntegrity::headline(st, e), card, DS::semColor(tone)));
+    const QString detail = DocumentIntegrity::detail(e);
+    if (!detail.isEmpty())
+        cv->addWidget(smallLabel(detail, card, DS::textSecondary()));
+
+    for (const VerifyDocument &d : e.documents)
+        cv->addWidget(smallLabel(DocumentIntegrity::documentLine(d), card, DS::textSecondary()));
+
+    v->addWidget(card);
+    return host;
+}
+
 QWidget *ProjectDetailPage::buildDocsArea()
 {
     auto *host = new QWidget(m_content);
@@ -860,5 +992,49 @@ QWidget *ProjectDetailPage::buildDocsArea()
         cv->addWidget(md);
         v->addWidget(card);
     }
+    return host;
+}
+
+QWidget *ProjectDetailPage::buildReportCard()
+{
+    auto *host = new QWidget(m_content);
+    auto *v = new QVBoxLayout(host);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->setSpacing(DS::Spacing::sm);
+
+    const bool ok = m_reportOk.value(m_name, false);
+    // 回执原文带 ANSI 颜色码（引擎不认 NO_COLOR），直接显示会是「[32m✓[0m …」
+    const QString receipt = ArchReceipt::plain(m_reportReceipts.value(m_name));
+
+    auto *card = new Card(host);
+    auto *cv = new QVBoxLayout(card);
+    cv->setContentsMargins(0, 0, 0, 0); // 内距走 Card::kPadding（构造即设）
+    cv->setSpacing(DS::Spacing::sm);
+
+    auto *title = new QLabel(QStringLiteral("进度报告"), card);
+    title->setFont(DS::font(DS::FontT::cardTitle));
+    cv->addWidget(title);
+
+    // 失败 → 橙字（原因原样给引擎的，不自己编）
+    cv->addWidget(smallLabel(ok ? QStringLiteral("已导出。") : QStringLiteral("导出失败："),
+        card, DS::semColor(ok ? DS::SemColor::shallow : DS::SemColor::orange)));
+    if (!receipt.isEmpty())
+        cv->addWidget(smallLabel(receipt, card, DS::textSecondary()));
+
+    // 落盘路径：抽得到才给「打开」入口（抽不到就是坏按钮，不给）。
+    const QString path = ArchReceipt::filePath(receipt, QStringLiteral(".md"));
+    if (ok && !path.isEmpty()) {
+        auto *row = new QHBoxLayout;
+        row->setSpacing(DS::Spacing::xs);
+        auto *open = new FlatButton(QStringLiteral("打开报告"), card);
+        open->setToolTip(path);
+        connect(open, &QPushButton::clicked, this, [path] {
+            SysOpen::openUrl(QUrl::fromLocalFile(path));
+        });
+        row->addWidget(open);
+        row->addStretch(1);
+        cv->addLayout(row);
+    }
+    v->addWidget(card);
     return host;
 }

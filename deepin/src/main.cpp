@@ -9,25 +9,55 @@
 #include "ai/SecretStore.h"
 #include "app/AppModel.h"
 #include "app/EngineCli.h"
+#include "app/EngineInstaller.h"
 #include "app/EngineLocator.h"
 #include "app/Notifier.h"
 #include "app/SelfCheck.h"
 #include "app/Settings.h"
 #include "app/Version.h"
 #include "platform/AppService.h"
+#include "platform/Backend.h"
 #include "platform/CrashHandler.h"
+#include "platform/IconResolver.h"
+#include "platform/DeepinTray.h"
+#include "logic/AgentToolPlan.h"
+#include "logic/ArchReceipt.h"
+#include "logic/Backend.h"
+#include "logic/CodeGraphBuild.h"
+#include "logic/EngineConfig.h"
+#include "logic/EngineDoctor.h"
+#include "logic/EngineDownload.h"
+#include "logic/IconNames.h"
+#include "logic/IndexStatus.h"
+#include "logic/PanelGeometry.h"
+#include "logic/SyntaxHighlight.h"
 #include "logic/Liveness.h"
 #include "logic/Route.h"
+#include "platform/DdePanel.h"
+#include "platform/DpiPixmap.h"
 #include "tray/TrayController.h"
+#include "tray/TrayGeometry.h"
+#include "ui/ColorSampleSheet.h"
 #include "ui/DesignTokens.h"
 #include "ui/PanelWindow.h"
+#include "ui/dialogs/DocsDialog.h"
+#include "ui/dialogs/DocsDialogProbe.h"
+#include "ui/common/VDividerProbe.h"
 #include <DApplication>
 #include <DGuiApplicationHelper>
 #include <DLog>
+#include <QComboBox>
 #include <QCoreApplication>
+#include <QStandardPaths>
 #include <unistd.h>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QEventLoop>
+#include <QProcess>
+#include <QScreen>
+#include <QSet>
+#include <QPainter>
+#include <QPixmap>
 #include <QSystemTrayIcon>
 #include <QThread>
 #include <QTimer>
@@ -50,6 +80,109 @@ static void applyThemeOverride()
         DGuiApplicationHelper::instance()->setPaletteType(DGuiApplicationHelper::LightType);
     else if (themeEnv.compare(QLatin1String("dark"), Qt::CaseInsensitive) == 0)
         DGuiApplicationHelper::instance()->setPaletteType(DGuiApplicationHelper::DarkType);
+}
+
+// ── 无头路径的**唯一**收尾出口（批 BV）──
+// ⚠⚠⚨ **为什么所有无头路径都必须走它**（批 BV 取证坐实，不是推演）：
+//   1) 它在**退出那一刻**报一个**可断言的事实**（`appAlive`）——
+//      事实的值在**退出点**求值 ⇒ 无论退出点被挪到哪，说的都是当下的真相。
+//   2) `appAlive=0` ⇔ **退出时 QApplication 已经被析构** ⇔ 那个必崩的竞态回来了。
+//
+// ⚠⚠⚨ **根因（core 取证 + 反汇编坐实）**：
+//   `QCoreApplication::~QCoreApplication()` 会把静态 `QCoreApplication::self` 置空
+//   （libQt6Core 里 `movq $0x0,(%rax)` 写的正是那个 `self` 变量）；
+//   而后台线程（实测探针进程里有 `QDBusConnection` 与 `DConfigGlobalTh` 两个）
+//   可能正走在 `QCoreApplication::notifyInternal2()` 里派发事件 ——
+//   它先读一次 `self` 判非空（通过），隔一个函数调用再读时已被主线程置空
+//   ⇒ `mov (%rdi),%rax` 空指针解引用 ⇒ **SIGSEGV**（CI 偶发段错误的真身）。
+//   ⇒ 无头路径**绝不能**让 QApplication 析构 ⇒ 一律在 app 还活着时 `_exit`。
+//
+// ⚠ 退出方式仍是 `::_exit`（跳过静态析构）：DTK/DBus 全局单例收尾会无限等 futex
+//   （容器实测 5/8 次挂死）。
+[[noreturn]] static void probeExit(int rc)
+{
+    // ⚠ 这个事实**必须在这里求值**（退出那一刻），不能挪到别处 ——
+    //   挪走 ⇒ 它就不再反映「退出时 app 还在不在」⇒ 断言就变成空门。
+    fprintf(stdout, "appAlive=%d\n", QCoreApplication::instance() ? 1 : 0);
+    fflush(stdout);
+    ::_exit(rc);
+}
+
+// ── 无头 agent 工具面探针（批 AB）：**模型实际能看到什么** ──
+// 用法：deepDolphin --agent-tool-surface（配合 QT_QPA_PLATFORM=offscreen 亦可用）。
+// 逐行打印（每行一个字段，key=value）：
+//   engine=<引擎版本>       model=<模型可见的工具名，逗号分隔>
+//   validated=<必填校验表里的工具名>   prompt=<系统提示词里的清单原文>
+// ⚠ 只报告不断言（断言归 scripts/probe-agent-tool-surface.sh）。
+//
+// 【为什么要有】工具面**收敛**（引擎标了「旧名别名，将移除」的那些不再推荐给模型）
+//   是一条**行为**：源码里写了过滤 ≠ 模型真的看不到那些工具。
+//   ⇒ 这个探针走真实引擎的 `tools --json` + 客户端真实的过滤口径，把三份名单
+//     （模型可见 / 校验表 / 提示词）都打出来给人看、给脚本核。
+static int headlessAgentToolSurface(int argc, char *argv[])
+{
+    QCoreApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("deepin"));
+    QCoreApplication::setApplicationName(QStringLiteral("deepDolphin"));
+
+    const EngineLocator::Result engine = EngineLocator::locate();
+    if (!engine.found) {
+        fprintf(stderr, "✗ 引擎未找到（工具面探针需要真引擎）\n");
+        fflush(stderr);
+        // ⚠⚠⚨ 批 BW：退出码 **3 = 「未验证」**（引擎缺席 ⇒ 本门无从验证
+        //   ⇒ 既不能红也不能绿 ⇒ 显式 SKIP）—— 与「失败（1）」**分开**。
+        //   以前这里报 1 ⇒ 脚本只按「stdout 空不空」分诊 ⇒ **探针崩了（139）
+        //   也被当成「引擎没找到」⇒ SKIP ⇒ CI 报绿 ⇒ 崩点彻底看不见**。
+        probeExit(3);
+    }
+    AgentCore core(engine.bin);
+    QVector<ToolDef> defs;
+    QMap<QString, QString> paramsByTool;
+    QString toolsText;
+    QString err;
+    if (!core.loadToolManifest(&defs, &paramsByTool, &toolsText, &err, nullptr)) {
+        fprintf(stderr, "✗ 取工具清单失败：%s\n", qPrintable(err));
+        fflush(stderr);
+        probeExit(1);
+    }
+    QStringList modelNames;
+    for (const ToolDef &d : defs)
+        modelNames << d.name;
+    QStringList validated;
+    for (auto it = paramsByTool.constBegin(); it != paramsByTool.constEnd(); ++it)
+        validated << it.key();
+    // 引擎**原始**清单里带 deprecated 标记的工具有哪些 ——
+    // ⚠ 必须看原始清单：客户端给模型的清单**已经收敛**（别名被剔掉了），
+    //   在那里找标记永远找不到 ⇒ 探针会误判「引擎太老」而 SKIP。
+    // ⚠ **解析 JSON 取名字**，不用「数 `"deprecated": true` 出现次数」——
+    //   计数只给个数、不给**是哪些**，断言脚本就得把别名名单硬编码在脚本里
+    //   ⇒ 引擎增减别名时那道门就跟不上真相（漏检），或名单过期时假红。
+    //   名字必须**来自引擎**，脚本才知道该断言谁。
+    QStringList engineDeprecatedNames;
+    {
+        QProcess eng;
+        eng.setProgram(engine.bin);
+        eng.setArguments({ QStringLiteral("tools"), QStringLiteral("--json") });
+        eng.start();
+        if (eng.waitForFinished(30000)) {
+            const QJsonDocument doc = QJsonDocument::fromJson(eng.readAllStandardOutput());
+            const QJsonArray arr = doc.object().value(QStringLiteral("tools")).toArray();
+            for (const QJsonValue &v : arr) {
+                const QJsonObject o = v.toObject();
+                if (o.value(QStringLiteral("deprecated")).toBool(false))
+                    engineDeprecatedNames << o.value(QStringLiteral("name")).toString();
+            }
+        }
+    }
+    fprintf(stdout, "engine_deprecated=%d\n", int(engineDeprecatedNames.size()));
+    fprintf(stdout, "engine_deprecated_names=%s\n",
+        qPrintable(engineDeprecatedNames.join(QLatin1Char(','))));
+    fprintf(stdout, "model=%s\n", qPrintable(modelNames.join(QLatin1Char(','))));
+    fprintf(stdout, "validated=%s\n", qPrintable(validated.join(QLatin1Char(','))));
+    fprintf(stdout, "prompt=%s\n", qPrintable(toolsText));
+    fflush(stdout);
+    // ⚠ 批 BV：无头路径**不许**正常 return（那会析构 QCoreApplication ⇒ 竞态）。
+    probeExit(0);
 }
 
 static int headlessAgentSelftest(int argc, char *argv[], const QString &question)
@@ -101,7 +234,7 @@ static int headlessAgentSelftest(int argc, char *argv[], const QString &question
 }
 
 // ── 无头快照（mac scripts/render-harness 对位：离屏渲染整窗 PNG，布局可自动验证）──
-// 用法：deepDolphin --snapshot <out.png> [--section dashboard|board|milestones] [--project <名>]
+// 用法：deepDolphin --snapshot <out.png> [--section dashboard|board|milestones|setupguide] [--project <名>]
 // 配合 QT_QPA_PLATFORM=offscreen 使用；等数据首轮落地后抓整窗、写文件即退。
 // 退出码：0 = 已写文件；1 = 抓取/写盘失败（headless 测试必须响亮失败）。
 static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, const QString &outPath)
@@ -116,18 +249,54 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
     if (!DS::paletteIsThemeConsistent())
         app.setPalette(DS::applicationPaletteFallback());
 
-    const EngineLocator::Result engine = EngineLocator::locate();
-    if (!engine.found)
-        qWarning() << "引擎未找到:" << engine.problems.join(QStringLiteral("; "));
+    // ⚠ **setupguide 段 = 引擎缺失首屏**（批 AH）：
+    //   那个界面在正常启动时**根本不出现**（引擎在 ⇒ 落仪表盘），
+    //   ⇒ 以前 docs/snapshots/*-setupguide.png 是**死基线**（拍不出、没人比）。
+    //   死基线比没基线更隐蔽：它让人以为「首屏有视觉保障」。
+    const bool setupGuide = route.section == QLatin1String("setupguide");
+
+    EngineLocator::Result engine;
+    if (setupGuide) {
+        // ⚠ **不调 locate()**：它的结果**依赖本机环境**（装没装引擎、DEEPGIT_BIN 指向）
+        //   ⇒ 基线不可逐字节重现。这里显式构造**通用缺失态**
+        //   （与 EngineLocator::locate() 失败时同款：一条「没找到」+ 一条安装指引）。
+        engine.found = false;
+        engine.pending = false;
+        engine.problems << QStringLiteral(
+            "在 DEEPGIT_BIN、开发构建目录、~/.local/bin、/usr/local/bin 与 PATH 上"
+            "都没有找到可用的 moongit/deepgit。");
+        engine.problems << EngineLocator::installHint();
+    } else {
+        engine = EngineLocator::locate();
+        if (!engine.found)
+            qWarning() << "引擎未找到:" << engine.problems.join(QStringLiteral("; "));
+    }
 
     EngineCli cli;
     if (engine.found)
         cli.setEngineBin(engine.bin);
     AppModel model(engine, &cli);
     PanelWindow panel(route, engine, &model);
-    model.start(); // 快照要真实数据：首轮 CLI --json 落地后再抓
-
+    // ⚠ **快照必须关掉标题栏阴影带**（批 AN）：那条 20px 渐变带由 DTK 的
+    //   `DShadowLine` 用内嵌 SVG（`titlebar_shadow_20px.svg`）画，**渲染结果不确定**：
+    //   实测同一份代码在同机并发下会拍出两种字节（带内整条渐变高度不同），
+    //   串行也有 ≈0.5% 概率出变体 ⇒ 基线天天漂 ⇒ 「逐字节可重现」这道门形同虚设。
+    //   根因证据：两张变体图的差异 **100% 集中在 y[50..69]**（带外 0 行不同），
+    //   且关掉阴影带后该区域变成纯背景色 ⇒ 确认是 DShadowLine。
+    //   为什么可以关：阴影带是**标题栏的装饰**，不承载任何信息；
+    //   而基线的价值在于「界面改了它会红」——装饰带的像素抖动只会制造假红。
+    //   ⚠ `setTitlebarShadowEnabled` 是 DMainWindow 的**公开** API（dmainwindow.h:108，
+    //   public 段），不是私有符号 ⇒ 不依赖 DTK 内部实现，升级不会断。
+    panel.setTitlebarShadowEnabled(false);
+    // ⚠ 快照**走夹具**（批 T），不走真引擎 —— 真引擎取数会让基线取决于
+    //   「本机注册了什么项目」，**不可重现**（此前 4 页快照拍的是空态，
+    //   对状态色/布局全是空门：改界面它不红）。夹具走**同一段解析路径**。
+    //   夹具是同步喂的 ⇒ 放在 show() 之后，让 UI 一定收到信号再拍。
     panel.show();
+    // ⚠ setupguide 段**不喂夹具**：要拍的正是「没有引擎、没有项目」的样子
+    //   ⇒ 喂了夹具就变成「有项目但引擎缺失」，那不是用户会看到的画面。
+    if (!setupGuide)
+        model.useSnapshotFixture();
     int rc = 1;
     // 等 UI 稳定再抓（M0-7）：以前写死 2500ms，引擎慢时拍到 loading 态且退出码仍 0。
     // 现在轮询"数据到位 / 状态已定（引擎未找到 → setup guide 就是终态）"，上限 15s，
@@ -141,23 +310,52 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
     auto *poll = new QTimer(&panel);
     poll->setInterval(100);
     QObject::connect(poll, &QTimer::timeout, &panel,
-        [&panel, &model, outPath, &rc, poll, settle, &cycleDone] {
+        [&panel, &model, outPath, &rc, poll, settle, &cycleDone, setupGuide] {
         // 「该拍了」= 数据落地 / 一轮刷新已收尾（含空数据与失败）/ 引擎未找到
         //      （setup guide 即终态）/ 探活仍在飞（pending 也是稳定画面：忙态页）。
-        const bool settled = model.hasLoadedProjectsOnce() || model.lastRefreshedMs() > 0
-            || cycleDone || !model.engineFound() || model.enginePending();
+        // ⚠ setupguide 段没有数据可等 ⇒ 改成**等一小会儿让布局落定**（300ms），
+        //   免得拍到还没排好版的半成品。
+        // ⚠ **再加一条「已停在首屏」**（批 AN）：以前只在**拍完**才断言
+        //   `showingSetupGuide()` ⇒ 万一那一刻还没切到首屏，报的是「重拍失败」，
+        //   而**本可以**继续等它切过去 —— 偶发失败就变成了无谓的假红。
+        //   现在把判据**前移到拍前**：还没停在首屏就继续等（上限 15s），
+        //   拍后再断言**保留**（那是防空门的最后一道，不是等位替代）。
+        const bool settled = setupGuide
+            ? (settle.elapsed() >= 300 && panel.showingSetupGuide())
+            : (model.hasLoadedProjectsOnce() || model.lastRefreshedMs() > 0
+                || cycleDone || !model.engineFound() || model.enginePending());
         if (!settled && settle.elapsed() < 15000)
             return;
         poll->stop();
         poll->deleteLater();
         if (!settled) {
-            fprintf(stdout, "[snapshot] 超时：15s 内数据未落地（引擎慢/未响应）\n");
+            // ⚠ 两种超时要说不同的话（批 AN）：setupguide 段等的是「停在首屏」，
+            //   其余段等的是「数据落地」——混成一句就成了「不知道哪儿超时了」。
+            fprintf(stdout, "[snapshot] 超时：15s 内%s\n",
+                setupGuide ? "仍未停在引擎缺失首屏" : "数据未落地（引擎慢/未响应）");
             fflush(stdout);
             QCoreApplication::quit();
             return;
         }
         const QPixmap shot = panel.grab();
         rc = (shot.isNull() || !shot.save(outPath)) ? 1 : 0;
+        // ⚠ **拍到空态 = 响亮失败**（批 T）：夹具没生效 / 夹具被改坏 ⇒ 画面是空的
+        //   ⇒ 提交进去的基线又变成「空门」（改界面它不红，说「视觉已评审」是假的）。
+        //   宁可构建失败，也不能把空图固化成基线。
+        // ⚠ setupguide 段**必然没有项目**（没引擎没夹具）⇒ 这道检查对它不适用，
+        //   改用「拍到的**确实是首屏**」来防空门（否则文件名叫 setupguide、
+        //   图里其实是仪表盘也能过门）。
+        if (rc == 0 && setupGuide) {
+            if (!panel.showingSetupGuide()) {
+                fprintf(stderr, "[snapshot] setupguide 段却没停在首屏 —— 拍到的不是引擎缺失首屏\n");
+                QFile::remove(outPath);
+                rc = 1;
+            }
+        } else if (rc == 0 && model.projects().empty()) {
+            fprintf(stderr, "[snapshot] 夹具没有项目 —— 拍出来是空态，基线会变成空门\n");
+            QFile::remove(outPath); // 别把那张空图留在盘上（会被当成基线改动）
+            rc = 1;
+        }
         if (rc == 0)
             fprintf(stdout, "[snapshot] 已写入 %s（%dx%d）\n", qPrintable(outPath),
                 shot.width(), shot.height());
@@ -168,7 +366,42 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
     });
     poll->start();
     app.exec();
-    return rc;
+    // ⚠ 批 BV：无头路径**不许**正常 return（那会析构 QApplication ⇒ 竞态）。
+    probeExit(rc);
+}
+
+// ── 无头状态色样张（批 R）──
+// 用法：deepDolphin --color-sample <out.png>（配合 QT_QPA_PLATFORM=offscreen）
+// 画一张状态语义色色卡：把**每一档**都画出来。
+//
+// 【为什么必须单独做这个】4 页面板快照拍的是**空态**（本机引擎注册项目数 0，
+// 快照里只有「仪表盘还没有数据」）—— 状态点一个都没画进去。
+// ⇒ 面板快照对状态色是**空门**：改色它不红，说「视觉已评审」是假的。
+// 这张色卡把每档都画出来，纳入截图矩阵 —— 改色 ⇒ 色卡 diff 红。
+// 退出码：0 = 已写文件；1 = 抓取/写盘失败（响亮失败，别把错图固化成基线）。
+static int headlessColorSample(int argc, char *argv[], const QString &outPath)
+{
+    DApplication app(argc, argv);
+    app.setApplicationName(QStringLiteral("deepDolphin"));
+    app.setOrganizationName(QStringLiteral("deepin"));
+    applyThemeOverride(); // 与面板快照同一套主题口径（DEEPDOLPHIN_THEME）
+    if (!DS::paletteIsThemeConsistent())
+        app.setPalette(DS::applicationPaletteFallback());
+
+    ColorSampleSheet sheet;
+    sheet.show();
+    const QPixmap shot = sheet.grab();
+    int rc = 1;
+    if (!shot.isNull() && shot.save(outPath)) {
+        rc = 0;
+        fprintf(stdout, "[color-sample] 已写入 %s（%dx%d）\n", qPrintable(outPath),
+            shot.width(), shot.height());
+    } else {
+        fprintf(stderr, "[color-sample] 写入失败：%s\n", qPrintable(outPath));
+    }
+    fflush(stdout);
+    // ⚠ 批 BV：无头路径**不许**正常 return（那会析构 QApplication ⇒ 竞态）。
+    probeExit(rc);
 }
 
 // ── 无头平台探针（M1-9，PLAN §4.3：真机回归可断言的平台事实）──
@@ -183,6 +416,30 @@ static int headlessSnapshot(int argc, char *argv[], const LaunchRoute &route, co
 //                                               DS::font 档位实际像素（T4..T8，
 //                                               DesignTokens.cpp:182 同一根系）——真机
 //                                               改控制中心字号档位后重跑，这些值应整体变大
+//   devicePixelRatio=<dpr>                     当前缩放倍率（100%=1；125%=1.25…）
+//   dpiPixmap=logical:WxH buffer:BxB dpr:D     自绘位图的结构事实（批 AP · M3c HiDPI）
+//   dpiEdgeLevels=legacy:N aware:M             同尺寸圆点的边缘过渡层数（1x vs dpr 感知）
+// ⚠ **HiDPI 自检**（批 AP · M3c）：把「1x 自绘」与「dpr 感知自绘」画成同一个
+//   8×8 **逻辑**圆点，量两件事：
+//   ① 缓冲区尺寸（结构事实）——dpr 感知那张必须是 logical × dpr 的**设备**像素；
+//   ② 边缘的**半透明过渡层数**（观感事实）——层数越多边缘越平滑、越不发虚。
+//   ⚠ 只报告不断言：断言归 CI 门（`scripts/ci-platform-probe.sh`）——
+//     它得在 **dpr>1** 下跑（`QT_SCALE_FACTOR=2`）才有意义，dpr=1 时两列必然相同。
+//   返回值：过渡层数（0 = 图是空的）。
+static int countEdgeTransitionLevels(const QPixmap &pm)
+{
+    const QImage img = pm.toImage();
+    QSet<int> levels;
+    for (int y = 0; y < img.height(); ++y) {
+        for (int x = 0; x < img.width(); ++x) {
+            const int a = qAlpha(img.pixel(x, y));
+            if (a > 0 && a < 255)
+                levels.insert(a);
+        }
+    }
+    return levels.size();
+}
+
 static int headlessPlatformProbe(int argc, char *argv[])
 {
     int rc = 0;
@@ -196,16 +453,123 @@ static int headlessPlatformProbe(int argc, char *argv[])
 
         fprintf(stdout, "backend=%s\n", qPrintable(QGuiApplication::platformName()));
 
+        // ⚠ **HiDPI 事实**（批 AP · M3c）：当前 dpr + 自绘位图的实际缓冲区。
+        //   控制中心把缩放调到 125%/150%/200% 时 dpr 变成 1.25/1.5/2 ⇒
+        //   自绘图形必须按 dpr 放大后画，否则被控件放大 ⇒ **发虚**。
+        //   `dpiPixmap=` 那行是**结构事实**（缓冲区该多大、有没有设 dpr）——
+        //   断言归 CI 门；这里只报告。
+        {
+            const qreal dpr = platform::devicePixelRatio();
+            fprintf(stdout, "devicePixelRatio=%g\n", dpr);
+
+            // 8×8 逻辑的圆点：一条走旧路（1x 缓冲区），一条走新路（dpr 感知）。
+            const int logical = 8;
+            const auto paintDot = [](QPixmap &pm) {
+                pm.fill(Qt::transparent);
+                QPainter p(&pm);
+                p.setRenderHint(QPainter::Antialiasing);
+                p.setPen(Qt::NoPen);
+                // ⚠ 色值走 **DS 单一真相源**（D2 门：src/ 下不许有色值字面量）。
+                //   颜色本身与测量无关（只看 alpha 覆盖），但纪律不因「只是探针」而破。
+                p.setBrush(DS::semColor(DS::SemColor::accent));
+                p.drawEllipse(0, 0, 8, 8);
+                p.end();
+            };
+            QPixmap legacy(logical, logical); // 旧路：只有 logical×logical 设备像素
+            paintDot(legacy);
+            QPixmap aware = platform::dpiPixmap(QSize(logical, logical)); // 新路
+            paintDot(aware);
+
+            fprintf(stdout, "dpiPixmap=logical:%dx%d buffer:%dx%d dpr:%g\n", logical, logical,
+                aware.width(), aware.height(), aware.devicePixelRatio());
+            fprintf(stdout, "dpiEdgeLevels=legacy:%d aware:%d\n",
+                countEdgeTransitionLevels(legacy), countEdgeTransitionLevels(aware));
+        }
+
+        // 后端分档（批 V · M1-7）：平台名 → X11 / Wayland / Other。
+        // ⚠ 只报告不断言（离屏是 offscreen ⇒ other）：断言归 CI 门与 SelfCheck。
+        //   报出来的意义：真机回归时能一眼看出「这台机器跑的是哪套后端」，
+        //   激活动作与托盘弹窗定位的差异都挂在这个分档上。
+        fprintf(stdout, "backendKind=%s\n", qPrintable(Backend::kindName(platform::current())));
+
+        // 任务栏几何（批 V · M1-7）：屏幕被面板/任务栏占掉的四边边距。
+        // ⚠ 现在是**只读事实**（X11/DDE 下 availableGeometry 已扣掉面板）；
+        //   Wayland 下 QPA 未必扣 ⇒ 这行是 M1-8 接 `org.deepin.dde.Panel` 的输入口。
+        {
+            QScreen *prim = QGuiApplication::primaryScreen();
+            const QPoint anchor = prim ? prim->geometry().center() : QPoint(0, 0);
+            const Backend::Insets ins = platform::taskbarInsetsAt(anchor);
+            fprintf(stdout, "taskbarInsets=%d,%d,%d,%d\n", ins.left, ins.top, ins.right,
+                ins.bottom);
+        }
+
+        // SNI 托盘（批 X · M1-3）：这台机器的托盘认 SNI 吗？我们的项登记上了吗？
+        // ⚠ DDE 上 `QSystemTrayIcon` **一个像素都不显示**（实测：全屏差分 0 像素；
+        //   ⚠ 批 Y 更正：`_NET_SYSTEM_TRAY_S0` 选区**是存在的**（`xprop` 查属性查错了），
+        //   但它托管的是**应用自绘的 X11 窗口**、不画 SNI 图标）⇒ 托盘能不能出现，
+        //   全看 SNI 这条路通不通。
+        {
+            const platform::TraySniStatus sni = platform::probeTraySni();
+            fprintf(stdout, "sniWatcher=%d\n", sni.watcherPresent ? 1 : 0);
+            fprintf(stdout, "sniHost=%d\n", int(sni.host));
+            fprintf(stdout, "sniHostItems=%d\n", int(sni.hostItems.size()));
+            if (!sni.error.isEmpty())
+                fprintf(stdout, "sniError=%s\n", qPrintable(sni.error));
+        }
+
+        // deepin 托盘**窗口协议**（批 Y · M1-3）：`_NET_SYSTEM_TRAY_S0` 选区在不在、
+        // 我们自绘的图标窗口有没有被 daemon 认领（认领了 ⇒ 它进了 `TrayIcons`）。
+        {
+            const platform::DeepinTrayStatus dt = platform::probeDeepinTray();
+            fprintf(stdout, "deepinTraySelection=%d\n", dt.selectionPresent ? 1 : 0);
+            if (!dt.error.isEmpty())
+                fprintf(stdout, "deepinTrayError=%s\n", qPrintable(dt.error));
+        }
+
+        // DDE 面板真几何（批 W · M1-8）：面板**自己**报的几何（D-Bus），
+        // 以及由此算出的可用区与**托盘弹窗落点**。
+        // ⚠ 探针是「一次性、无交互」的无头工具 ⇒ 这里**同步读**是安全的
+        //   （交互路径走 platform::DdePanel::refreshAsync()，不卡 GUI 线程）。
+        {
+            const PanelGeometry::Panel panel = platform::DdePanel::readNow();
+            fprintf(stdout, "panelService=%d\n", platform::DdePanel::servicePresent() ? 1 : 0);
+            fprintf(stdout, "panelValid=%d\n", panel.valid ? 1 : 0);
+            if (panel.valid) {
+                fprintf(stdout, "panelRect=%d,%d,%d,%d\n", panel.rect.x(), panel.rect.y(),
+                    panel.rect.width(), panel.rect.height());
+                fprintf(stdout, "panelEdge=%s\n", qPrintable(PanelGeometry::edgeName(panel.edge)));
+            }
+            const QRect screen = platform::screenGeometryAt(QPoint(0, 0));
+            fprintf(stdout, "screenRect=%d,%d,%d,%d\n", screen.x(), screen.y(), screen.width(),
+                screen.height());
+            const QRect avail = PanelGeometry::effectiveAvailable(
+                platform::availableGeometryAt(QPoint(0, 0)), screen, panel);
+            fprintf(stdout, "usableRect=%d,%d,%d,%d\n", avail.x(), avail.y(), avail.width(),
+                avail.height());
+            // 托盘弹窗落点：**托盘几何不可用**（DDE 常态：`QSystemTrayIcon` 在 DDE 上
+            // **没有宿主** —— DDE 托盘画的是应用自绘的 X11 窗口，批 Y 查明 ⇒ 拿不到坐标）
+            // ⇒ 走面板/兜底落点。尺寸用 380×300 代替真实高度（探针里没有真实弹窗）。
+            const QRect target = Backend::placePopup(QRect(), QSize(380, 300), avail,
+                TrayGeometry::popupGeometry(), panel)
+                                    .rect;
+            fprintf(stdout, "trayPopupTarget=%d,%d,%d,%d\n", target.x(), target.y(),
+                target.width(), target.height());
+        }
+
         // 托盘 geometry：先置可见才有平台集成可言；真机托盘嵌入是异步的（毫秒级），
         // 自旋泵事件等它变有效（上限 500ms）；offscreen 无系统托盘，等满 500ms 后
         // 如实报 0——只报告不断言（PLAN §4 注意事项 7：offscreen 托盘判定一律无效）。
-        QSystemTrayIcon tray;
-        tray.setVisible(true);
-        QElapsedTimer spin;
-        spin.start();
-        while (!tray.geometry().isValid() && spin.elapsed() < 500)
-            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        fprintf(stdout, "trayGeometryValid=%d\n", tray.geometry().isValid() ? 1 : 0);
+        // ⚠ 批 BV：tray 单独一个作用域 ⇒ 它在**退出之前**被析构（真机上托盘图标被
+        //   正确摘除，不留残影），而 app 本身**不析构**（见本函数末尾的说明）。
+        {
+            QSystemTrayIcon tray;
+            tray.setVisible(true);
+            QElapsedTimer spin;
+            spin.start();
+            while (!tray.geometry().isValid() && spin.elapsed() < 500)
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            fprintf(stdout, "trayGeometryValid=%d\n", tray.geometry().isValid() ? 1 : 0);
+        }
 
         const auto palette = DGuiApplicationHelper::instance()->paletteType();
         const char *paletteName = palette == DGuiApplicationHelper::LightType ? "light"
@@ -220,19 +584,169 @@ static int headlessPlatformProbe(int argc, char *argv[])
         fprintf(stdout, "fontSizeCardTitlePx=%d\n", DS::font(DS::FontT::cardTitle).pixelSize());
         fprintf(stdout, "fontSizeBodyPx=%d\n", DS::font(DS::FontT::body).pixelSize());
         fprintf(stdout, "fontSizeBadgePx=%d\n", DS::font(DS::FontT::badge).pixelSize());
-        fflush(stdout);
-    } // app/tray 在此正常析构：真机上托盘图标被正确摘除，不留残影
 
-    // 不能走常规 return→exit()：探针启动后 ~1s 即返回 main，进程退出时的**静态析构**
-    // 会在 DTK/DBus 全局单例收尾上无限等 futex（本容器实测 5/8 次挂死；GUI 常规退出
-    // 事件循环跑得久、异步初始化早已落地，不复现）。探针只读不写、输出已 flush、
-    // 无需收口的资源（不碰引擎子进程/Settings），::_exit 跳过静态析构是此处唯一的
-    // 确定性退出方式。代价：Qt/DTK 全局单例不走析构——对一次性只读探针无影响。
-    ::_exit(rc);
+        // 图标解析（批 U · M1-2）：每个逻辑图标名报**解析来源**
+        // （dci / theme / qrc / missing）—— 主题缺名是**环境事实**，
+        // 只有报出来才知道「界面上那个图标为什么是空的」。
+        // ⚠ 这里只**报告**不断言（PLAN §4 注意事项 7 同款：offscreen 下图标主题可能不在位）。
+        {
+            // 图标主题名：空 = 这台机器**没有**图标主题（offscreen 就是这样）
+            // ⇒ 那时「解析不到」不是图标名错了，不该逐个告警、也不该画占位圆点
+            //   （圆点会把基线污染成「到处都是圆点」，反而看不出真问题）。
+            fprintf(stdout, "iconTheme=%s\n", qPrintable(QIcon::themeName()));
+            const QList<IconNames::Id> ids = IconNames::all();
+            int missing = 0;
+            for (const IconNames::Id id : ids) {
+                const QString source = platform::resolveSource(id);
+                if (source == QStringLiteral("missing"))
+                    ++missing;
+                fprintf(stdout, "icon.%s=%s\n", qPrintable(IconNames::name(id)), qPrintable(source));
+            }
+            fprintf(stdout, "iconCount=%d\n", ids.size());
+            fprintf(stdout, "iconMissing=%d\n", missing);
+        }
+        fflush(stdout);
+
+        // ⚠⚠⚨ 批 BV：**在 app 仍存活时**退出 —— 这里是**原来那个偶发段错误的位置**。
+        //   以前这段收尾在 app 作用域**之外**：作用域一闭合，`~QApplication` 就把
+        //   静态 `QCoreApplication::self` 置空；而后台线程（QDBusConnection /
+        //   DConfigGlobalTh）此刻可能正走在 `notifyInternal2()` 里派发事件，
+        //   它隔一个函数调用再读 `self` 时拿到 NULL ⇒ 空指针解引用 ⇒ SIGSEGV。
+        //   （取证：core 的崩溃线程 rip 就在 libQt6Core 的 notifyInternal2，rdi=0x0。）
+        //   ⇒ 现在退出点在 app 作用域**内** ⇒ app 永不析构 ⇒ 那个竞态不存在。
+        //   ⚠ 退出方式仍是 `::_exit`（跳过静态析构）：DTK/DBus 全局单例收尾会无限等
+        //   futex（本容器实测 5/8 次挂死）。探针只读不写、输出已 flush、无需收口的
+        //   资源（不碰引擎子进程/Settings）⇒ 对一次性只读探针无影响。
+        probeExit(rc);
+    } // ↑ 不可达：probeExit 不返回（app 的作用域在语法上闭合，实际走不到这里）
+}
+
+// ── 无头文档语言探针（批 AA）：固定文档页的四语言切换**真跑**一遍 ──
+// 用法：deepDolphin --docs-lang-probe（配合 QT_QPA_PLATFORM=offscreen 亦可用）。
+// 逐语言打印文档窗的**实际**呈现（每行一个字段，key=value）：
+//   lang=<语言 key>   title=<窗口标题>   close=<关闭按钮文字>
+//   segments=<四个类目分段名，用 | 分隔>   body=<正文前 120 字，换行折成 |>
+//   hint=<底部说明>
+// ⚠ 只报告不断言（断言归 scripts/ci-docs-lang-probe.sh）。
+// ⚠ **必须隔离设置**：探针会切语言 ⇒ 会写 `app.language` ⇒ 走 QSettings 的
+//   测试模式（QStandardPaths test mode）⇒ 绝不碰用户的真实设置。
+static int headlessDocsLangProbe(int argc, char *argv[])
+{
+    // ⚠ 必须在 QApplication 构造**之前**开测试模式：QSettings 的落盘位置
+    //   在构造时就定下来了。
+    QStandardPaths::setTestModeEnabled(true);
+
+    DApplication app(argc, argv);
+    app.setApplicationName(QStringLiteral("deepDolphin"));
+    app.setOrganizationName(QStringLiteral("deepin"));
+
+    DocsDialog dlg;
+    const QString report = docsLangProbeReport(&dlg);
+    if (report.isEmpty()) {
+        fprintf(stderr, "✗ 文档窗里找不到语言选择器（无从断言）\n");
+        fflush(stderr);
+        // ⚠ 批 BV：失败也走同一个收尾出口（app 仍存活 ⇒ 无竞态）。
+        probeExit(1);
+    }
+    fprintf(stdout, "%s\n", qPrintable(report));
+    fflush(stdout);
+    // 同平台探针：走 probeExit（app 仍存活时 _exit ⇒ 跳过静态析构，见 probeExit 的说明）。
+    probeExit(0);
+}
+
+// ── 无头分隔线探针（批 AW）：分隔线**真渲染**一次，量几何与颜色 ──
+// 用法：deepDolphin --divider-probe（配合 QT_QPA_PLATFORM=offscreen 亦可用）。
+// ⚠ **为什么必须自己构造 DApplication**：`--selfcheck` 分支在 GUI 应用构造**之前**
+//   就 return ⇒ 那个模式下**没有 QApplication** ⇒ 建 QWidget 会崩
+//   ⇒ 几何这类「要真渲染才量得到」的判据只能走本探针（与 --docs-lang-probe 同款）。
+// ⚠ 只报告不断言（断言归 scripts/ci-divider-probe.sh）。
+static int headlessDividerProbe(int argc, char *argv[])
+{
+    DApplication app(argc, argv);
+    app.setApplicationName(QStringLiteral("deepDolphin"));
+    app.setOrganizationName(QStringLiteral("deepin"));
+
+    const QString report = dividerProbeReport();
+    if (report.isEmpty()) {
+        fprintf(stderr, "✗ 分隔线探针没有输出（无从断言）\n");
+        fflush(stderr);
+        // ⚠ 批 BV：失败也走同一个收尾出口（app 仍存活 ⇒ 无竞态）。
+        probeExit(1);
+    }
+    fprintf(stdout, "%s\n", qPrintable(report));
+    fflush(stdout);
+    // 同上：走 probeExit（app 仍存活时 _exit ⇒ 跳过静态析构，见 probeExit 的说明）。
+    probeExit(0);
+}
+
+static int headlessEngineDownload(int argc, char *argv[], const QString &apiUrl, const QString &dest)
+{
+    // 无头跑一遍「查发布信息 → 下载 → 校验 → 解压 → 落盘 → 探活」全链，
+    // 把结论打成 JSON 打到 stdout（契约门拿它断言）。
+    // ⚠ 必须留在无头分支：否则未知 flag 落进 GUI 主路径单实例常驻，ci.sh 挂死。
+    QCoreApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("deepin"));
+    QCoreApplication::setApplicationName(QStringLiteral("deepDolphin"));
+
+    EngineInstaller installer;
+    QEventLoop loop;
+    bool got = false;
+    EngineInstaller::Result last;
+    QObject::connect(&installer, &EngineInstaller::progress, &app,
+        [](const QString &text) {
+            fprintf(stderr, "› %s\n", qPrintable(text));
+            fflush(stderr);
+        });
+    QObject::connect(&installer, &EngineInstaller::finished, &app,
+        [&](const EngineInstaller::Result &r) {
+            last = r;
+            got = true;
+            loop.quit();
+        });
+
+    installer.start(apiUrl, dest);
+    // 兜底超时：网络卡死不能让 CI 永久挂着（引擎链自己也有 30s/步超时）
+    QTimer::singleShot(180000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QJsonObject out;
+    out.insert(QStringLiteral("ok"), got && last.ok);
+    out.insert(QStringLiteral("stage"), EngineDownload::stageName(last.stage));
+    out.insert(QStringLiteral("message"), last.message);
+    out.insert(QStringLiteral("bin"), last.bin);
+    out.insert(QStringLiteral("tag"), last.tag);
+    out.insert(QStringLiteral("verified"), last.verified);
+    // ⚠ 这两个字段是本批的核心判据（契约门拿它们断言）：
+    //   installedVersion = 实际装上的版本（空 = 未知）
+    //   keptPrevious    = 失败时**原有引擎是否被保留**（装坏包不许毁掉已有引擎）
+    out.insert(QStringLiteral("installedVersion"), last.installedVersion);
+    out.insert(QStringLiteral("keptPrevious"), last.keptPrevious);
+    fprintf(stdout, "%s\n",
+        qPrintable(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact))));
+    fflush(stdout);
+    if (!got) {
+        fprintf(stderr, "✗ 引擎下载无头跑超时（没拿到结论）\n");
+        return 2;
+    }
+    return last.ok ? 0 : 1;
 }
 
 int main(int argc, char *argv[])
 {
+    // ⚠ **快照必须逐字节可重现**（批 T）⇒ 快照进程内固定时区为 UTC。
+    //   侧栏状态条渲染「空闲 · 上次刷新 HH:mm」，那是 epoch 的**本地时区**渲染：
+    //   时区不固定 ⇒ 同一份代码在 UTC 机与 UTC+8 机上拍出两张不同的基线
+    //   ⇒ 视觉 diff 门被环境牵着走（与「离屏才同机位」同一个道理）。
+    //   只对 --snapshot 生效：正常桌面会话仍用用户本地时区。
+    //   ⚠ 必须在**任何 QDateTime 构造之前**设置：Qt 的本地时区是首次使用时缓存的，
+    //   之后再改 TZ 不生效。
+    for (int i = 1; i < argc; ++i) {
+        if (qstrcmp(argv[i], "--snapshot") == 0) {
+            qputenv("TZ", "UTC");
+            break;
+        }
+    }
+
     // 崩溃可观测（M4c）：装在无头分支分派之前——GUI 路径必装；无头路径
     //（--selfcheck/--version/--platform-probe/--agent-selftest/--snapshot）也装：
     // CI 里崩了若只留一行 "Segmentation fault" 无从排障。取舍：崩溃时 stderr
@@ -240,7 +754,8 @@ int main(int argc, char *argv[])
     // 不变（打完栈恢复默认处置并 re-raise，core 照常），ci.sh 成败判定不受影响。
     CrashHandler::install();
 
-    // ── 无头分支：--selfcheck / --version / --platform-probe / --agent-selftest
+    // ── 无头分支：--selfcheck / --version / --platform-probe / --docs-lang-probe /
+    //   --agent-selftest
     //（GUI 应用构造前解析——未知 flag 落进 GUI 主路径会以单实例常驻，无头 CI 挂死）──
     QStringList rawArgs;
     rawArgs.reserve(argc);
@@ -258,10 +773,257 @@ int main(int argc, char *argv[])
         fprintf(stdout, "deepDolphin %s\n", DD_VERSION_STRING);
         return 0;
     }
+    if (rawArgs.contains(QStringLiteral("--code-graph-symbol-id"))) {
+        // 客户端的符号 id 构造式（与引擎 functions 侧同形）。
+        // 契约检查拿它与引擎实际给的 id 逐条比对 —— 构造式一改，关系页签就
+        // 永远对不上「调用方/被调方」，而症状极隐蔽（树能画、关系是空的）。
+        // 用法：--code-graph-symbol-id <路径> <行号> <名字>
+        const int at = rawArgs.indexOf(QStringLiteral("--code-graph-symbol-id"));
+        if (at + 3 >= rawArgs.size()) {
+            fprintf(stderr, "用法：deepDolphin --code-graph-symbol-id <路径> <行号> <名字>\n");
+            return 2;
+        }
+        const QString id = CodeGraphBuild::symbolId(rawArgs.at(at + 1),
+            rawArgs.at(at + 2).toInt(), rawArgs.at(at + 3));
+        fprintf(stdout, "%s\n", qPrintable(id));
+        fflush(stdout);
+        return 0;
+    }
+    if (rawArgs.contains(QStringLiteral("--agent-tool-names"))) {
+        // 客户端能执行的 agent 工具清单（**单一真相源**在 logic/AgentToolPlan）。
+        // 契约检查拿它与引擎 `tools --json` 的声明集对位（mac 同款第 12 组，
+        // 但这里是运行时真清单，不靠源码解析 —— 解析 switch 会在改写法时静默空转）。
+        for (const QString &tool : AgentToolPlan::knownToolNames())
+            fprintf(stdout, "%s\n", qPrintable(tool));
+        fflush(stdout);
+        return 0;
+    }
+    if (rawArgs.contains(QStringLiteral("--syntax-languages"))) {
+        // 客户端语法高亮支持的语言清单（单一真相源在 logic/SyntaxHighlight）。
+        // 契约检查拿它与**真引擎**的 detectLang 产物对位：引擎报什么语言，
+        // 客户端就得能高亮什么语言 —— 对不上时那些文件的源码是一片纯色，
+        // 而「一片纯色」在界面上看不出是缺能力还是代码本来就长这样。
+        for (const QString &lang : SyntaxHighlight::languages())
+            fprintf(stdout, "%s\n", qPrintable(lang));
+        fflush(stdout);
+        return 0;
+    }
+    if (rawArgs.contains(QStringLiteral("--doctor-parse"))) {
+        // 客户端对 `doctor --json` 载荷的判定结果（单一真相源在 logic/EngineDoctor）。
+        // 契约检查拿**真引擎**的载荷喂它，逐条对「问题数 / 档 / 摘要」——
+        // 引擎 doctor 有问题时退出码是 1，但 stdout 仍是合法 JSON，这条口径
+        // 只有把真载荷喂进客户端才验得到（自造夹具验的是另一回事）。
+        // 用法：deepDolphin --doctor-parse < payload.json
+        QFile in;
+        in.open(stdin, QIODevice::ReadOnly);
+        const QByteArray raw = in.readAll();
+        QJsonParseError perr{};
+        const QJsonDocument doc = QJsonDocument::fromJson(raw, &perr);
+        EngineDoctor::Report rep;
+        if (perr.error != QJsonParseError::NoError || !doc.isObject()) {
+            rep.ok = false;
+            rep.error = QStringLiteral("自检载荷不是 JSON 对象");
+        } else {
+            rep = EngineDoctor::parse(doc.object());
+        }
+        const char *tone = "ok";
+        switch (EngineDoctor::toneOf(rep)) {
+        case EngineDoctor::Tone::ok:
+            tone = "ok";
+            break;
+        case EngineDoctor::Tone::problem:
+            tone = "problem";
+            break;
+        case EngineDoctor::Tone::unknown:
+            tone = "unknown";
+            break;
+        case EngineDoctor::Tone::unreadable:
+            tone = "unreadable";
+            break;
+        }
+        QJsonObject out;
+        out.insert(QStringLiteral("ok"), rep.ok);
+        out.insert(QStringLiteral("problems"), rep.problems);
+        out.insert(QStringLiteral("tone"), QString::fromLatin1(tone));
+        out.insert(QStringLiteral("summary"), EngineDoctor::summary(rep));
+        out.insert(QStringLiteral("checks"), rep.checks.size());
+        fprintf(stdout, "%s\n",
+            qPrintable(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact))));
+        fflush(stdout);
+        return rep.ok ? 0 : 1;
+    }
+    if (rawArgs.contains(QStringLiteral("--receipt-file-path"))) {
+        // 从回执型命令的 stdout 里抽出落盘文件的绝对路径（判定层在
+        // logic/ArchReceipt）。契约检查拿**真引擎**的回执喂它 —— 「打开导出
+        // 文件 / 打开报告」入口全靠这一步，抽不到就永远是坏按钮。
+        // 用法：deepDolphin --receipt-file-path .md < receipt.txt
+        const int at = rawArgs.indexOf(QStringLiteral("--receipt-file-path"));
+        const QString suffix = (at + 1 < rawArgs.size()) ? rawArgs.at(at + 1) : QString();
+        if (suffix.isEmpty()) {
+            fprintf(stderr, "用法：deepDolphin --receipt-file-path <后缀> < 回执.txt\n");
+            return 2;
+        }
+        QFile in;
+        in.open(stdin, QIODevice::ReadOnly);
+        const QString text = QString::fromUtf8(in.readAll());
+        const QString path = ArchReceipt::filePath(ArchReceipt::plain(text), suffix);
+        fprintf(stdout, "%s\n", qPrintable(path));
+        fflush(stdout);
+        return path.isEmpty() ? 1 : 0;
+    }
+    if (rawArgs.contains(QStringLiteral("--engine-config-parse"))) {
+        // 客户端对 `config list --json` 载荷的判定结果（单一真相源在 logic/EngineConfig）。
+        // 契约检查拿**真引擎**的载荷喂它 —— 客户端与引擎各认各的键时，
+        // 自造夹具验的是另一回事。
+        // 用法：deepDolphin --engine-config-parse < config.json
+        QFile in;
+        in.open(stdin, QIODevice::ReadOnly);
+        const QByteArray raw = in.readAll();
+        QJsonParseError perr{};
+        const QJsonDocument doc = QJsonDocument::fromJson(raw, &perr);
+        EngineConfig::Config rep;
+        if (perr.error != QJsonParseError::NoError || !doc.isObject()) {
+            rep.ok = false;
+            rep.error = QStringLiteral("引擎配置载荷不是 JSON 对象");
+        } else {
+            rep = EngineConfig::parse(doc.object());
+        }
+        QJsonObject out;
+        out.insert(QStringLiteral("ok"), rep.ok);
+        out.insert(QStringLiteral("version"), rep.version);
+        out.insert(QStringLiteral("language"), rep.language);
+        out.insert(QStringLiteral("roots"), rep.roots.size());
+        out.insert(QStringLiteral("docs"), rep.docs.size());
+        out.insert(QStringLiteral("backupKeep"), rep.backupKeep);
+        out.insert(QStringLiteral("maxShallowBranches"), rep.maxShallowBranches);
+        out.insert(QStringLiteral("summary"), EngineConfig::summary(rep));
+        fprintf(stdout, "%s\n",
+            qPrintable(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact))));
+        fflush(stdout);
+        return rep.ok ? 0 : 1;
+    }
+    if (rawArgs.contains(QStringLiteral("--receipt-plain"))) {
+        // 回执净化：剥掉 ANSI 颜色码后打印（界面显示回执前走的就是这一步）。
+        // 契约检查拿**真引擎**的回执喂它 —— 引擎的 `report` / `config set`
+        // 回执带色码（引擎不认 NO_COLOR），裸显示是「[32m✓[0m …」。
+        // 用法：deepDolphin --receipt-plain < receipt.txt
+        QFile in;
+        in.open(stdin, QIODevice::ReadOnly);
+        const QString text = QString::fromUtf8(in.readAll());
+        const QString plainText = ArchReceipt::plain(text).trimmed();
+        fprintf(stdout, "%s\n", qPrintable(plainText));
+        fflush(stdout);
+        return plainText.isEmpty() ? 1 : 0;
+    }
+    if (rawArgs.contains(QStringLiteral("--index-status-parse"))) {
+        // 客户端对 `index overview --json` 载荷的判定结果（判定层在 logic/IndexStatus）。
+        // 契约检查拿**真引擎**的载荷喂它 —— 引擎形状变了、客户端没跟上时，
+        // 自造夹具照样全绿。
+        // 用法：deepDolphin --index-status-parse < overview.json
+        QFile in;
+        in.open(stdin, QIODevice::ReadOnly);
+        const QByteArray raw = in.readAll();
+        QJsonParseError perr{};
+        const QJsonDocument doc = QJsonDocument::fromJson(raw, &perr);
+        IndexStatus::Overview rep;
+        if (perr.error != QJsonParseError::NoError || !doc.isObject()) {
+            rep.ok = false;
+            rep.error = QStringLiteral("索引概览载荷不是 JSON 对象");
+        } else {
+            rep = IndexStatus::parseOverview(doc.object());
+        }
+        QJsonObject out;
+        out.insert(QStringLiteral("ok"), rep.ok);
+        out.insert(QStringLiteral("project"), rep.project);
+        out.insert(QStringLiteral("updateCount"), rep.updateCount);
+        out.insert(QStringLiteral("nodes"), rep.nodes);
+        out.insert(QStringLiteral("edges"), rep.edges);
+        out.insert(QStringLiteral("files"), rep.files);
+        out.insert(QStringLiteral("selfHealedPresent"), rep.selfHealedPresent);
+        out.insert(QStringLiteral("probeFiles"), rep.probeFiles);
+        out.insert(QStringLiteral("summary"), IndexStatus::summary(rep));
+        fprintf(stdout, "%s\n",
+            qPrintable(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact))));
+        fflush(stdout);
+        return rep.ok ? 0 : 1;
+    }
     if (rawArgs.contains(QStringLiteral("--platform-probe"))) {
         // 必须留在无头分支：否则未知 flag 落进 GUI 主路径单实例常驻，ci.sh 步骤 4 挂死
         //（M1a 期实测）。M1-9 起返回探针事实，不再快速失败。
         return headlessPlatformProbe(argc, argv);
+    }
+    if (rawArgs.contains(QStringLiteral("--divider-probe"))) {
+        // 分隔线**真渲染**一次，量几何与颜色（批 AW）：详情页不在快照矩阵里
+        // ⇒ 快照抓不到它 ⇒ 这一门是它唯一的判据。
+        // 同样必须留在无头分支（否则会落进 GUI 主路径常驻，CI 挂死）。
+        return headlessDividerProbe(argc, argv);
+    }
+    if (rawArgs.contains(QStringLiteral("--docs-lang-probe"))) {
+        // 固定文档页的四语言切换**真跑**一遍（批 AA）：报文档窗的实际呈现。
+        // 同样必须留在无头分支（否则会落进 GUI 主路径常驻，CI 挂死）。
+        return headlessDocsLangProbe(argc, argv);
+    }
+    if (rawArgs.contains(QStringLiteral("--agent-tool-surface"))) {
+        // 报**模型实际能看到**哪些 agent 工具（批 AB 的工具面收敛探针）。
+        return headlessAgentToolSurface(argc, argv);
+    }
+    if (rawArgs.contains(QStringLiteral("--hook-status-parse"))) {
+        // 客户端对引擎 `hook status <项目> --json` 载荷的判定结果
+        // （判定层在 logic/EngineHook）。契约检查拿**真引擎**的载荷喂它 ——
+        // 引擎改了 installed 的形状（数组 → 对象）时，自造夹具照样全绿。
+        // 用法：deepDolphin --hook-status-parse < status.json
+        QFile in;
+        in.open(stdin, QIODevice::ReadOnly);
+        const EngineHook::Status st = EngineHook::parseStatus(in.readAll());
+        QJsonObject out;
+        out.insert(QStringLiteral("parsed"), st.parsed);
+        out.insert(QStringLiteral("project"), st.project);
+        out.insert(QStringLiteral("installedPresent"), st.installedPresent);
+        out.insert(QStringLiteral("postCommit"), st.postCommit);
+        out.insert(QStringLiteral("postMerge"), st.postMerge);
+        out.insert(QStringLiteral("count"), EngineHook::installedCount(st));
+        out.insert(QStringLiteral("summary"), EngineHook::summary(st));
+        fprintf(stdout, "%s\n",
+            qPrintable(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact))));
+        fflush(stdout);
+        return st.parsed ? 0 : 1;
+    }
+    if (rawArgs.contains(QStringLiteral("--engine-release-parse"))) {
+        // 客户端对 GitHub Releases「latest」载荷的判定结果（判定层在 logic/EngineDownload）。
+        // 契约检查拿**真 API** 的载荷喂它 —— 真 release 的资产名/字段形状变了，
+        // 自造夹具照样全绿。
+        // 用法：deepDolphin --engine-release-parse < release.json
+        QFile in;
+        in.open(stdin, QIODevice::ReadOnly);
+        const EngineDownload::Release rel = EngineDownload::parseRelease(in.readAll());
+        QJsonObject out;
+        out.insert(QStringLiteral("parsed"), rel.parsed);
+        out.insert(QStringLiteral("tag"), rel.tag);
+        out.insert(QStringLiteral("hasAsset"), rel.asset.present);
+        out.insert(QStringLiteral("assetName"), rel.asset.name);
+        out.insert(QStringLiteral("assetUrl"), rel.asset.url);
+        out.insert(QStringLiteral("hasDigest"), !rel.asset.digest.trimmed().isEmpty());
+        out.insert(QStringLiteral("available"), QJsonArray::fromStringList(rel.available));
+        fprintf(stdout, "%s\n",
+            qPrintable(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact))));
+        fflush(stdout);
+        return rel.parsed ? 0 : 1;
+    }
+    if (rawArgs.contains(QStringLiteral("--engine-download"))) {
+        // 引擎获取链（GitHub Releases 下载安装）的**无头全链**：
+        // 查发布信息 → 下载 → 校验和 → 解压 → 落盘 → 探活，结论打成 JSON 打 stdout。
+        // ⚠ 必须留在无头分支：否则未知 flag 落进 GUI 主路径单实例常驻，ci.sh 挂死。
+        const int at = rawArgs.indexOf(QStringLiteral("--engine-download"));
+        if (at + 1 >= rawArgs.size()) {
+            fprintf(stderr, "用法：deepDolphin --engine-download <release-api-url> "
+                            "[--engine-download-dest <dir>]\n");
+            return 2;
+        }
+        QString dest;
+        const int d = rawArgs.indexOf(QStringLiteral("--engine-download-dest"));
+        if (d >= 0 && d + 1 < rawArgs.size())
+            dest = rawArgs.at(d + 1);
+        return headlessEngineDownload(argc, argv, rawArgs.at(at + 1), dest);
     }
     const LaunchRoute preRoute = Route::parseArgs(rawArgs);
     if (preRoute.agentSelftest)
@@ -271,10 +1033,18 @@ int main(int argc, char *argv[])
         // 缺参必须响亮失败：以前会带着一个无意义参数把 GUI 拉起来（headless 测试藏在成功里）
         if (snapIdx + 1 >= rawArgs.size()) {
             fprintf(stderr, "用法：deepDolphin --snapshot <out.png> "
-                            "[--section dashboard|board|milestones] [--project <名>]\n");
+                            "[--section dashboard|board|milestones|setupguide] [--project <名>]\n");
             return 2;
         }
         return headlessSnapshot(argc, argv, preRoute, rawArgs.at(snapIdx + 1));
+    }
+    const int sampleIdx = rawArgs.indexOf(QStringLiteral("--color-sample"));
+    if (sampleIdx >= 0) {
+        if (sampleIdx + 1 >= rawArgs.size()) {
+            fprintf(stderr, "用法：deepDolphin --color-sample <out.png>\n");
+            return 2;
+        }
+        return headlessColorSample(argc, argv, rawArgs.at(sampleIdx + 1));
     }
 
     DApplication app(argc, argv);
@@ -317,6 +1087,14 @@ int main(int argc, char *argv[])
     const LaunchRoute route = Route::parseArgs(app.arguments());
 
     PanelWindow panel(route, engine, &model);
+
+    // ── DDE 面板真几何（批 W · M1-8）：托盘弹窗要落在**面板旁边**，
+    //    而 DDE 上 `QSystemTrayIcon::geometry()` 恒无效（DDE 托盘画的是**应用自绘的
+    //    X11 窗口**，`QSystemTrayIcon` 压根没有宿主；⚠ 批 Y 实测更正，早先写的是
+    //    「DDE 的托盘是 SNI」——**说反了**）⇒
+    //    拿不到托盘坐标时，弹窗的落点只能靠面板几何推。
+    //    读面板是 D-Bus 同步往返 ⇒ 放 worker 线程，结果回 GUI 线程存缓存。
+    platform::DdePanel::refreshAsync();
 
     // ── 托盘（C10）：图标五态 + 速览弹窗 + 右键两项纪律 ──
     TrayController *tray = new TrayController();

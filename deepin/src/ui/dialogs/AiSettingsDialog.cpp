@@ -1,6 +1,9 @@
 #include "AiSettingsDialog.h"
 #include "../../ai/SecretStore.h"
+#include "../../app/AppModel.h"
 #include "../../app/Settings.h"
+#include "../../logic/IconNames.h"
+#include "../../platform/IconResolver.h"
 #include "../DesignTokens.h"
 #include "panes/AutomationPane.h"
 #include "panes/GeneralPane.h"
@@ -16,7 +19,7 @@
 #include <QThreadPool>
 #include <QVBoxLayout>
 
-AiSettingsDialog::AiSettingsDialog(QWidget *parent)
+AiSettingsDialog::AiSettingsDialog(AppModel *model, QWidget *parent)
     : DDialog(parent)
     , m_store(new SecretStore)
 {
@@ -32,11 +35,9 @@ AiSettingsDialog::AiSettingsDialog(QWidget *parent)
 
     // header：分段三页签（DTabBar + QStackedWidget——实测无 DTabWidget）
     m_tabs = new DTabBar(content);
-    m_tabs->addTab(QIcon::fromTheme(QStringLiteral("preferences-system")), QStringLiteral("通用"));
-    m_tabs->addTab(QIcon::fromTheme(QStringLiteral("preferences-system-time")),
-        QStringLiteral("自动化"));
-    m_tabs->addTab(QIcon::fromTheme(QStringLiteral("applications-engineering")),
-        QStringLiteral("AI"));
+    m_tabs->addTab(platform::icon(IconNames::Id::settings), QStringLiteral("通用"));
+    m_tabs->addTab(platform::icon(IconNames::Id::automation), QStringLiteral("自动化"));
+    m_tabs->addTab(platform::icon(IconNames::Id::ai), QStringLiteral("AI"));
     m_tabs->setExpanding(false);
     v->addWidget(m_tabs);
 
@@ -45,13 +46,13 @@ AiSettingsDialog::AiSettingsDialog(QWidget *parent)
     auto *wrapGeneral = new DScrollArea(content);
     wrapGeneral->setWidgetResizable(true);
     wrapGeneral->setFrameShape(QFrame::NoFrame);
-    wrapGeneral->setWidget(new GeneralPane(wrapGeneral));
+    wrapGeneral->setWidget(new GeneralPane(model, wrapGeneral));
     m_generalPane = wrapGeneral->widget();
 
     auto *wrapAutomation = new DScrollArea(content);
     wrapAutomation->setWidgetResizable(true);
     wrapAutomation->setFrameShape(QFrame::NoFrame);
-    m_automationWidget = new AutomationPane(wrapAutomation);
+    m_automationWidget = new AutomationPane(model, wrapAutomation);
     wrapAutomation->setWidget(m_automationWidget);
 
     auto *aiPane = new AiSettingsPane(content);

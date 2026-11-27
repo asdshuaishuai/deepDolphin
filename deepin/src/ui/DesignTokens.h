@@ -35,6 +35,10 @@ constexpr int bar = 6;     // 进度条/分段条统一高度（DProgressBar/Seg
 constexpr int barMini = 4; // 迷你进度条（托盘行内 44×barMini）
 constexpr int dot = 8;     // 状态圆点统一尺寸（页面/卡片/侧栏行）
 constexpr int dotLg = 10;  // 大号圆点（侧栏状态条/托盘行等汇总态指示）
+// 竖分隔线高度 —— ⚠ **对位 mac**：`DetailViews.swift` 的
+// `Divider().frame(height: 14)`（SwiftUI Divider 本身是 1pt 宽的真线）。
+// 放 DS 是因为「分隔线长什么样」是设计 token，不该由调用点各写各的。
+constexpr int divider = 14;
 } // namespace Height
 
 // ── 圆角（DSRadius；chip/control/card 三档 + pill，window/frame 接 DTK 运行期 metric）──
@@ -51,15 +55,21 @@ int frame();  // DStyle::PM_FrameRadius —— 控件框圆角（M3b 组件化�
 } // namespace Radius
 
 // ── 语义色（状态语义保留 mac 取值；accent 接 DTK 主题强调色）──
+// ⚠ **取值不在这里** —— 固定语义色下沉到 `logic/SemColors.h`（判定层纯色，
+//   唯一出处；判定层 / 托盘 / 平台层都要用同一批色）。只有 `accent` 例外：
+//   它接 **DTK 运行期主题强调色**（DGuiApplicationHelper = ui 层），天然住 ui 层。
 enum class SemColor {
     accent,     // DTK 主题强调色（LightLively，亮暗自适应）· 强调
     shallow,    // 绿 #10B981 · 浅更新轨 / 活跃
     deep,       // 紫 #8B5CF6 · 深更新轨 / 已合并
     ai,         // 青 #06B6D4 · AI（provider 徽章）
-    orange,     // 橙 #F59E0B · needsAction / 量级中档
-    red,        // 红 #DC2626 · 错误 / 量级高档
+    orange,     // 橙 #F59E0B · needsAction / 分支 stale / 量级中档
+    red,        // 红 #DC2626 · 读不出来 / 量级高档
     yellow,     // 黄 #E8B01C · idle / 量级低档
-    gray,       // 灰 #9CA3AF · unknown
+    gray,       // 灰 #9CA3AF · 静默 / 不适用
+    // ⚠ **没有 stale 档**（批 R）：陈旧红 #EF4444 只服务托盘（颜色是它的唯一信号），
+    //   UI 层一律走 mac 口径（停滞=灰、读不出来=红）。托盘直接取 logic/SemColors，
+    //   不经本枚举。
 };
 
 QColor semColor(SemColor c);
@@ -77,13 +87,36 @@ QColor surfaceBorder();
 QColor textPrimary();
 QColor textSecondary();
 
+/// 底轨遮罩（分段条无数据时仍可见的浅灰轨道）—— 通用组件色，不属语义色。
+QColor trackMask();
+
 // ── 字体层级（px 常量，一处可调）──
 enum class FontT { metric, cardTitle, sectionTitle, body, label, badge };
 QFont font(FontT t);
 
-// Markdown 标题字号（h1/h2/h3 = 22/18/15，其余 14）——改由 DFontManager 档位派生：
+// Markdown 标题字号（h1/h2/h3 = 22/18/14，其余同 h3）——改由 DFontManager 档位派生：
 // MD_H1=T3(22)、MD_H2=T4(18)、MD_H3=T5(14)，与正文字号档位同一根系。
 enum { MD_H1 = 22, MD_H2 = 18, MD_H3 = 14, MD_BODY = 11 };
+
+// ── QSS 用的字号（px，一处可调）──
+// ⚠ **与 FontT 的区别要说清楚**：FontT 走 DFontManager 档位，**会随系统放大字号变**；
+//   而 QSS 里的 `font-size` 只能写字面量（没法走 DFontManager 档位）—— 所以这里
+//   不是「档位」，只是把散落的字面量**收口成一处可调的常量**。
+//   （想要「随系统字号缩放」就别用 QSS 写字号，走 DS::font(FontT) 设 QFont。）
+namespace FontPx {
+constexpr int badge = 11; ///< 胶囊徽章 / 小标签
+constexpr int code = 13;  ///< 等宽代码 / 项目名
+}
+
+// ── 透明度（色值的 alpha 维，同属「一处可调」）──
+// ⚠ 以前 `rgba(%1,%2,%3, 0.18)` 的 0.18 是**裸字面量**散在调用点 —— 色值进了
+//   DS 但透明度没进，同一个「18% 强调底」就散成 N 个真相源。alpha 与 RGB 同权。
+namespace Alpha {
+constexpr double accentTint = 0.18; ///< 强调色淡底（用户气泡 / 选中态底）
+}
+
+/// 强调色淡底的 rgba 字符串（alpha 走 token，调用方不再自己拼 rgba 字面量）。
+QString accentTintRgba(const QColor &c);
 
 // ── 动效（全项目唯一动效是 agent 新消息自动滚动，0.20s easeInOut）──
 constexpr int MotionStandardMs = 200;

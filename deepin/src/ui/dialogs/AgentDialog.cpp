@@ -48,8 +48,14 @@ AgentDialog::AgentDialog(QWidget *parent, const QString &engineBin, const AgentC
     , m_cancelFlag(QSharedPointer<QAtomicInt>::create())
 {
     setWindowTitle(QStringLiteral("AI 助手 · %1").arg(m_target.label()));
+    // ⚠ **可缩放，不许固定**（PLAN §3c 响应式那条；同仓先例 `AiResultDialog.cpp:15`）：
+    //   固定尺寸曾让长报告读不完且关不掉 ⇒ 固定 720×620 时窗口**不能放大**，
+    //   AI 助手的回复一长就被裁掉、也调不大。
+    //   ⇒ 初始 720×620（mac sheet 口径），最小同值，**但可以放大**。
+    //   ⚠ 本对话框是全仓**最后一个**固定尺寸的对话框 ⇒ 其余（AddMilestone/AiResult/
+    //   AiSettings/Arch/CodeGraph/Docs/PatchCheck/Scan）都用 `setMinimumSize`。
     resize(720, 620);
-    setFixedSize(720, 620); // mac sheet 720×620 固定
+    setMinimumSize(720, 620);
     setOnButtonClickedClose(false);
 
     // AI 配置初判（判定空态/发送按钮）：GUI 线程只读 Settings 身份（不含 key——
@@ -324,12 +330,11 @@ void AgentDialog::rebuildTranscript()
             lab->setTextInteractionFlags(Qt::TextSelectableByMouse);
             // 用户气泡 = accent 蓝 18% 透明底（对位 mac tinted accentColor.opacity(0.18)）；
             // 圆角归 card 档（M3-5，原 10 硬编码同值入 token）
+            // ⚠ alpha 与 RGB 同权：18% 也走 token，调用点不拼 rgba 字面量
             const QColor accent = DS::semColor(DS::SemColor::accent);
             lab->setStyleSheet(QStringLiteral(
-                "background: rgba(%1, %2, %3, 0.18); border-radius: %4px; padding: 10px;")
-                .arg(accent.red())
-                .arg(accent.green())
-                .arg(accent.blue())
+                "background: %1; border-radius: %2px; padding: 10px;")
+                .arg(DS::accentTintRgba(accent))
                 .arg(DS::Radius::card));
             lay->addStretch(40);
             lay->addWidget(lab, 160);

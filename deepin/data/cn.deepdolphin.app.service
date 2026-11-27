@@ -1,5 +1,16 @@
 [D-BUS Service]
 Name=cn.deepdolphin.app
-Exec=deepDolphin --dbus-service
-# DBusActivatable=true（data/cn.deepdolphin.app.desktop）：面板没起来时，
-# 会话总线自动拉起本服务——拉起后由 AppService::registerOnBus 接管名字。
+Exec=/usr/bin/deepDolphin
+# ⚠⚠ `Exec` **必须用绝对路径**（**实测** 2026-10-20，本机 dbus 1.16.2）：
+#   dbus-daemon 激活服务时**不做 PATH 搜索** ——
+#   实测裸名 `true`（明明在 /usr/bin 里）也报 `Spawn.ExecFailed: No such file or directory`，
+#   而绝对路径 `/bin/false` 能 exec 成功（报的是 ChildExited）。
+#   ⇒ 原来写的 `Exec=deepDolphin --dbus-service` 有**两个**问题：
+#   ① 裸名 ⇒ 总线 exec 不到 ⇒ **「从启动器点图标」激活失败，应用起不来**；
+#   ② `--dbus-service` 这个 flag **客户端根本不认识**（全项目 grep 无此 flag）——
+#      激活出来的进程会走 GUI 主路径并**忽略**它。
+# ⇒ 正确做法：`Exec=/usr/bin/deepDolphin`（**无参数**）——
+#   D-Bus 激活 = 正常启动客户端，它在 GUI 主路径里自己注册 `cn.deepdolphin.app`
+#   （main.cpp 的 AppService::registerOnBus）。
+# ⚠ 这个绝对路径必须与**实际安装路径一致** ⇒ scripts/build-deb.sh 安装时会**校验**，
+#   不一致直接构建失败（不让两处悄悄漂）。

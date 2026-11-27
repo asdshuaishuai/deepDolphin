@@ -5,7 +5,16 @@
 // · category「DIGEST」、所有通知都带 actions {"open","打开面板"}（mac 版全部通知可点进
 //   面板；Linux 无默认点击语义，动作按钮即等价物）——notify() 传空 actions 也按默认补齐；
 // · ActionInvoked→转发 openRequested（→bringToFront），归属按已知 id 集合判定；
-// · 每条通知独立送达、互不顶替（mac 语义：通知中心并存）——不用 replaceId 顶掉前一条；
+// · ⚠ **顶替规则**：**只有「状态型」通知**（失败/停滞）同类别互相顶替（replaceId），
+//   其余（更新完成/定时简报）按标题天然区分 ⇒ **并存不顶替**。
+//   ⚠ 这条规则的**判定在判定层**（logic/Notifications::categoryOf / replacesPrevious）
+//   ⇒ 无头可测（发通知要 D-Bus 会话，规则写在执行层就测不到）。
+//   ⚠ 头注释曾写着「每条通知独立送达、互不顶替」—— 那与实现**相反**
+//   （实现一直用 replaceId 顶替状态型）⇒ 已订正（批 AI）。
+//   接线门盯着那句过时说法不许复活（⚠ 那道门**不剥注释** —— 过时说法住在注释里，
+//   剥了就永远绿 ⇒ 又一个空门）。
+// · 显示时长**由设置驱动**（M1-4 收尾）：`Settings::notifyTimeoutMs`，
+//   归一在判定层（0 在 D-Bus 语义里是「永不消失」⇒ 不能原样传）。
 // · notifyOnce 按 key 去重（「提醒只在状态新变差时发」的去重由 AppModel 的 key 生成保证）；
 // · 文案三态照 SPEC §3.2：引擎报什么说什么——没变不说已刷新、有备份必说路径、被停不报失败。
 #pragma once
@@ -30,10 +39,6 @@ public:
 signals:
     // 用户点了通知/动作（actionKey=="open"）→ 上层 bringToFront()。
     void actionInvoked(const QString &actionKey);
-
-private:
-    // 通知类别（replaceId 归属）：同一类别的状态型通知互相顶替，其余不顶替
-    QString categoryOf(const QString &title) const;
 
 private slots:
     void onActionInvoked(uint id, const QString &actionKey);

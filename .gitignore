@@ -13,3 +13,13 @@ __pycache__/
 .stepcode/
 # deepin 客户端构建产物（cmake -S deepin -B deepin/build）
 deepin/build/
+
+# 崩溃转储：core_pattern 是**相对名** `core` 且 core_uses_pid=1
+#   ⇒ 实际文件名是 `core.<pid>`，落在**崩溃进程的 cwd**（实测）。
+# ⚠ **必须锚定**（带前导 / 且逐目录写死），不许用无锚定的 `core.*`：
+#   无锚定的 `core.*` 会把将来的 `src/core.cpp` 这类**真源码**静默忽略掉 ⇒ 那是埋雷。
+#   （仓里已有 `linux/vendor/CangjieGUI/src/core` 这样的**同名目录** ⇒ 更不能裸写 `core`。）
+/core.*
+/deepin/core.*
+/core
+/deepin/core

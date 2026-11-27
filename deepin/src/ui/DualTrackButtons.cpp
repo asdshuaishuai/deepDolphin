@@ -39,9 +39,10 @@ DualTrackButtons::DualTrackButtons(QWidget *parent)
     m_badge = new QLabel(this);
     m_badge->setStyleSheet(
         QStringLiteral("QLabel { background: %1; color: white; border-radius: %2px;"
-                       " padding: 1px 7px; font-size: 11px; }")
+                       " padding: 1px 7px; font-size: %3px; }")
             .arg(DS::semColor(DS::SemColor::shallow).name())
-            .arg(DS::Radius::pill)); // 胶囊徽章 = pill 档（M3-5，原 8 硬编码）
+            .arg(DS::Radius::pill)
+            .arg(DS::FontPx::badge)); // 胶囊徽章 = pill 档（M3-5，原 8 硬编码）
     m_badge->hide();
     h->addWidget(m_badge);
 

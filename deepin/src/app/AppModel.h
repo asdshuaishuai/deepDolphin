@@ -18,13 +18,24 @@
 #include "../models/LoadState.h"
 #include "../models/DocsEnvelope.h"
 #include "../models/GitOpResponse.h"
+#include "../logic/CodeGraphBuild.h"
+#include "../logic/EngineConfig.h"
+#include "../logic/EngineDownload.h"
+#include "../logic/EngineHook.h"
+#include "../logic/EngineDoctor.h"
+#include "../logic/GraphInsight.h"
+#include "../logic/IndexStatus.h"
+#include "../models/GraphScene.h"
 #include "../models/Milestone.h"
+#include "../models/PatchReport.h"
 #include "../models/ProjectStatus.h"
 #include "../models/StatusEnvelope.h"
+#include "../models/VerifyEnvelope.h"
 #include "../models/UpdateResult.h"
 #include "EngineCli.h"
 #include "EngineLocator.h"
 #include <QElapsedTimer>
+#include <QJsonObject>
 #include <QMap>
 #include <QMetaObject>
 #include <QObject>
@@ -59,6 +70,8 @@ struct AgentBulkReport {
     QString outcomeTable() const;
 };
 
+class EngineInstaller;
+
 class AppModel : public QObject {
     Q_OBJECT
 public:
@@ -71,6 +84,24 @@ public:
     bool engineFound() const { return m_engineFound; }
     bool enginePending() const { return m_enginePending; } // 发现链在跑：UI 走忙态，别说"未找到"
     QString engineProblem() const { return m_engineProblem; }
+    /// 引擎下载安装中（UI 走忙态，别说「没反应」）。
+    bool engineDownloading() const { return m_engineDownloading; }
+    /// 最近一次引擎下载的结论（成功/失败的具体说法）。
+    QString engineDownloadMessage() const { return m_engineDownloadMessage; }
+    // ── 引擎下载动作的**文案**（判定层真相源，界面只取不改）──
+    // ⚠ 为什么经 AppModel 转发而不是界面直接调判定层：
+    //   既有纪律「界面不自己读判定层，结论经 AppModel 传上来」
+    //   （接线门 arch_forbid 盯着 GeneralPane 不许出现 EngineDownload::）。
+    //   首屏 SetupGuidePage 同样不许直接读判定层。
+    QString engineDownloadActionLabel() const { return EngineDownload::downloadActionLabel(); }
+    QString engineDownloadActionTooltip() const { return EngineDownload::downloadActionTooltip(); }
+    QString engineDownloadBusyLabel() const { return EngineDownload::downloadBusyLabel(); }
+    /// 设置页「引擎」卡的状态说明（按当前引擎状态取判定层的四态文案）。
+    QString engineStatusText() const
+    {
+        return EngineDownload::downloadStatusText(
+            m_engineFound, m_enginePending, m_engineDownloading);
+    }
     const std::vector<ProjectStatus> &projects() const { return m_projects; }
     const std::optional<ProjectStatus> project(const QString &name) const;
     const std::optional<EngineSummary> &summary() const { return m_summary; }
@@ -84,7 +115,23 @@ public:
         return m_docs.contains(name) ? std::optional<DocsEnvelope>(m_docs.value(name))
                                      : std::nullopt;
     }
+    // 文档完整性（引擎 `verify`）：按项目一份自己的状态，不共用 lastError。
+    LoadStateBox verifyState(const QString &name) const { return m_verifyStates.value(name); }
+    const std::optional<VerifyEnvelope> verifyFor(const QString &name) const
+    {
+        return m_verifies.contains(name) ? std::optional<VerifyEnvelope>(m_verifies.value(name))
+                                         : std::nullopt;
+    }
     QString projectLoadError(const QString &name) const { return m_projectLoadErrors.value(name); }
+    // 架构图场景（引擎 `graph arch --format scene`）：与 docs/verify 各自一份状态。
+    // **按项目分开存** —— 架构图窗可同时开着两个项目的，不能共用一个槽位串台。
+    LoadStateBox sceneState(const QString &name) const { return m_sceneStates.value(name); }
+    // 场景数据（几百 KB 的结构 → 返回指针，不按值复制一份）。
+    const GraphScene *sceneFor(const QString &name) const
+    {
+        auto it = m_scenes.constFind(name);
+        return it == m_scenes.constEnd() ? nullptr : &it.value();
+    }
     QString lastError() const { return m_lastError; }
     bool hasLoadedProjectsOnce() const { return m_hasLoadedProjectsOnce; }
     qint64 lastRefreshedMs() const { return m_lastRefreshedMs; }
@@ -104,6 +151,14 @@ public:
     void refreshLight(); // 300s 周期 / 托盘弹窗 onShow：仅 status
     void loadProject(const QString &name);
     void loadDocs(const QString &name);
+    // 文档完整性校验：引擎 `verify <name> --json`（只读，不写用户数据）。
+    void loadVerify(const QString &name);
+    // 架构图场景：引擎 `graph arch <name> --format scene`（只读；scene 契约 v1）。
+    void loadScene(const QString &name);
+    // 架构图生成：引擎 `arch gen <name>`（写 arch.json —— **经引擎写，不越权**）。
+    void genArch(const QString &name);
+    // 架构图导出：引擎 `render arch <name>`（落盘单文件 HTML —— 引擎层交付物）。
+    void exportArch(const QString &name);
 
     void runUpdate(const QString &name, bool deep);
     // C5「更新 + AI 摘要」（mac UpdateActionMenu 变体）：真更新走同一把 busy 锁，
@@ -137,12 +192,172 @@ public:
     };
     TrayState trayState() const;
 
+    // ── 代码图谱（引擎 graph tree / confidence / functions 三源）──
+    // 按项目存（与场景同理：代码图谱窗也按项目各开一个）。
+    LoadStateBox codeGraphState(const QString &name) const
+    {
+        return m_codeGraphStates.value(name);
+    }
+    const CodeGraphBuild::Result *codeGraphFor(const QString &name) const
+    {
+        auto it = m_codeGraphs.constFind(name);
+        return it == m_codeGraphs.constEnd() ? nullptr : &it.value();
+    }
+    /// 取数据（引擎三源 → 一棵树）。三源缺一即失败，且**说清是哪一种**。
+    void loadCodeGraph(const QString &name);
+    /// 生成索引 + 置信度（引擎 index gen / confidence gen；写库/落盘）。
+    void genIndex(const QString &name);
+    /// 导出交互 HTML（引擎 render index --confidence；引擎层交付物）。
+    void exportIndex(const QString &name);
+
+    // ── 补丁体检（引擎 graph patchconf 三层）──
+    // 按项目存（与场景/代码图谱同理：两个项目的体检窗可以同时开着）。
+    LoadStateBox patchState(const QString &name) const
+    {
+        return m_patchStates.value(name);
+    }
+    const PatchLayer1 *patchFor(const QString &name) const
+    {
+        auto it = m_patchLayers.constFind(name);
+        return it == m_patchLayers.constEnd() ? nullptr : &it.value();
+    }
+    const PatchMerged *patchMergedFor(const QString &name) const
+    {
+        auto it = m_patchMerged.constFind(name);
+        return it == m_patchMerged.constEnd() ? nullptr : &it.value();
+    }
+    /// 工作区未提交 diff（补丁体检的输入）。
+    /// ⚠ 走本机 git 而不是引擎：引擎的 git 白名单里没有 diff（它是读操作，
+    ///   引擎刻意不把任意 git 透传进白名单）。本机只读 `git diff HEAD` 不越权。
+    QString workingDiff(const QString &name, QString *error) const;
+    /// Layer 1：算法体检（引擎 graph patchconf --patch）。
+    void loadPatchCheck(const QString &name);
+    /// Layer 3：合并终稿（引擎 graph patchconf --merge）。
+    void mergePatchCheck(const QString &name, const QJsonObject &agentPayload);
+    /// Layer 2 任务书（引擎 graph patchconf --skill）：给人/模型看的 markdown。
+    void loadPatchSkill(const QString &name);
+
+    // ── 图谱三件套（引擎 graph overview / symbol / impact）──
+    LoadStateBox insightState(const QString &name) const
+    {
+        return m_insightStates.value(name);
+    }
+    const GraphInsight::Overview *overviewFor(const QString &name) const
+    {
+        auto it = m_overviews.constFind(name);
+        return it == m_overviews.constEnd() ? nullptr : &it.value();
+    }
+    const GraphInsight::SymbolDetail *symbolDetailFor(const QString &name,
+        const QString &symbolName) const
+    {
+        auto it = m_symbolDetails.constFind(name + QLatin1Char('\n') + symbolName);
+        return it == m_symbolDetails.constEnd() ? nullptr : &it.value();
+    }
+    const GraphInsight::Impact *impactFor(const QString &name, const QString &symbolName) const
+    {
+        auto it = m_impacts.constFind(name + QLatin1Char('\n') + symbolName);
+        return it == m_impacts.constEnd() ? nullptr : &it.value();
+    }
+    /// 项目级概览（引擎 graph overview）。
+    void loadOverview(const QString &name);
+    /// 符号详情（引擎 graph symbol）。⚠ 引擎**只认符号名**，不认符号 id。
+    void loadSymbolDetail(const QString &name, const QString &symbolName);
+    /// 影响面（引擎 graph impact）。⚠ 同上，只认符号名。
+    void loadImpact(const QString &name, const QString &symbolName);
+
+    // ── 持久化代码索引的状态（index overview / index update）──
+    // 按项目存（与代码图谱/场景同理：两个项目的图谱窗可以同时开着）。
+    LoadStateBox indexState(const QString &name) const { return m_indexStates.value(name); }
+    const IndexStatus::Overview *indexOverview(const QString &name) const
+    {
+        auto it = m_indexOverviews.constFind(name);
+        return it == m_indexOverviews.constEnd() ? nullptr : &it.value();
+    }
+    /// 读索引状态（引擎 `index overview --json`）。
+    void loadIndexOverview(const QString &name);
+    /// 增量更新索引（引擎 `index update --json`；源状态没动时引擎回 `fresh: true`）。
+    void updateIndex(const QString &name);
+
+    // ── 引擎自检（doctor）与进度报告（report）──
+    const EngineDoctor::Report *doctorReport() const { return &m_doctor; }
+    /// 运行引擎自检。
+    /// ⚠ 引擎 doctor 在**发现问题时退出码是 1**（自检必须能失败），但 stdout
+    ///   仍是合法 JSON —— 那不是「命令崩了」，是「环境有问题」。故这里读载荷，
+    ///   不按退出码判成败。
+    void runDoctor();
+    /// 导出 Markdown 进度报告（引擎 report <项目>；回执型命令，stdout 是人话）。
+    void exportReport(const QString &name);
+
+    // ── 引擎配置（config list / config set）──
+    /// 读取引擎配置（引擎 `config list --json`）。
+    /// 展示的是**引擎实际在用的策略**（浅更新分支上限 / 文档备份份数 / 受管文档 /
+    /// 扫描根），不是客户端自己的设置 —— 两边刻意分开，避免两个真相源。
+    void loadEngineConfig();
+    /// 下载并安装引擎（GitHub Releases）。⚠ 全程异步，GUI 不冻结。
+    /// 安装完成后自动重跑发现链 —— 装好的引擎要**立刻**被认出来。
+    void downloadEngine();
+    /// 改一个引擎配置键（引擎 `config set <键> <值>`；**回执型命令，回执在 stderr**）。
+    /// ⚠ 键必须在 EngineConfig::writableKeys() 里 —— 引擎对未知键直接报错。
+    void setEngineConfig(const QString &key, const QString &value);
+    LoadStateBox engineConfigState() const { return m_engineConfigState; }
+    const EngineConfig::Config *engineConfig() const { return &m_engineConfig; }
+
+    // ── 引擎钩子（hook install / uninstall / status）──
+    /// 查所有已注册项目的钩子状态（逐项目串行查，不并发也不卡 UI）。
+    void loadHookStatus();
+    /// 给所有已注册项目安装 post-commit / post-merge 钩子（引擎 hook install）。
+    void installHooksAll();
+    /// 从所有已注册项目卸载钩子（引擎 hook uninstall；**只删托管块**，用户自己的钩子逻辑留着）。
+    void uninstallHooksAll();
+    const QVector<EngineHook::Status> &hookStatus() const { return m_hookStatus; }
+    LoadStateBox hookState() const { return m_hookState; }
+    /// 钩子批量动作进行中（UI 走忙态）。
+    bool hookBusy() const { return m_hookBusy; }
+
+    // ── 快照夹具模式（批 T）──
+    /// **不调引擎**，用固定夹具喂数据。
+    /// 面板快照基线用 —— 真引擎取数会让基线取决于「本机注册了什么项目」，**不可重现**
+    /// （此前 4 页快照拍的是空态 ⇒ 对状态色/布局全是空门）。
+    /// ⚠ 走的是**同一段解析路径**（StatusEnvelope / DashboardData / MilestonesEnvelope
+    ///   的 fromJson）⇒ 它顺带覆盖契约解析，不只是「摆一堆好看的字」。
+    void useSnapshotFixture();
+
 signals:
     void projectsChanged();
     void dashboardChanged();
     void milestonesChanged();
     void projectChanged(const QString &name);
     void docsChanged(const QString &name);
+    void verifyChanged(const QString &name);
+    void sceneChanged(const QString &name);
+    /// 架构图生成/导出的回执（引擎末行非空行；失败时 ok=false）。
+    /// 带项目名 —— 两个项目的架构图窗可以同时开着，回执不许串台。
+    void archActionFinished(bool ok, const QString &project, const QString &receipt);
+    void codeGraphChanged(const QString &name);
+    /// 补丁体检：Layer 1 结果就绪 / 终稿就绪 / 任务书就绪。
+    /// 都带项目名 —— 两个项目的体检窗可以同时开着，信号不许串台。
+    void patchCheckChanged(const QString &name);
+    void patchMerged(const QString &name);
+    void patchSkillReady(const QString &name, const QString &text);
+    /// 引擎自检完成（无论有没有发现问题，都带报告）。
+    void doctorFinished(const EngineDoctor::Report &report);
+    /// 进度报告导出的回执（引擎 `report` 是**回执型命令**，stdout 是人话）。
+    /// ⚠ **不与 archActionFinished 合流**：那个信号是架构图窗在收的（按项目路由后
+    ///   还会触发画布重载），报告回执混进去会让架构图窗显示报告的回执、
+    ///   甚至把它当成「架构已生成」而重载画布 —— 两个项目的窗还会串台。
+    void reportExported(bool ok, const QString &project, const QString &receipt);
+    /// 引擎配置变化（读或写完都发）。
+    void engineConfigChanged();
+    /// 索引状态变化（按项目路由；两个项目的图谱窗可以同时开着）。
+    void indexStatusChanged(const QString &name);
+    /// 索引增量更新的结果（ok=true 时 text 是引擎给的一句话）。
+    void indexUpdated(const QString &name, bool ok, const QString &text);
+    /// 引擎配置写入的回执（ok=false 时 text 是引擎给的原因原文）。
+    void engineConfigSaved(bool ok, const QString &text);
+    /// 图谱三件套的结果就绪（都带项目名；符号级的额外带符号名）。
+    void overviewChanged(const QString &name);
+    void symbolDetailChanged(const QString &name, const QString &symbolName);
+    void impactChanged(const QString &name, const QString &symbolName);
     void gitOutputReady(const QString &name, const GitOpResponse &resp);
     void scanFinished(bool ok, const QString &message, const QString &coverageNote);
     void addFinished(bool ok, const QString &message);
@@ -162,8 +377,34 @@ signals:
 
     // 引擎发现结果变化（含「重新检测引擎」后的回灌）：UI 重新读 engineFound/engineProblem
     void engineFoundChanged();
+    /// 引擎下载开始/结束（UI 据此切忙态）。
+    void engineDownloadingChanged();
+    /// 引擎下载收尾：ok=装好了；text=给用户看的结论（失败时说清是哪一种）。
+    void engineDownloadFinished(bool ok, const QString &text);
+
+    /// 钩子状态变化（查询完成 / 批量装卸后刷新）。
+    void hookStatusChanged();
+    /// 钩子批量动作收尾：ok=全部成功；text=逐项目结论（失败的项目**点名**）。
+    void hookActionFinished(bool ok, const QString &text);
+    /// 钩子批量动作的忙态变化（UI 据此禁用按钮）。
+    void hookBusyChanged();
 
 private:
+    // ── 载荷应用（取数与判定分层，批 T）──
+    // 引擎取数与夹具注入**共用**这一段 ⇒ 夹具走的就是真实解析路径。
+    /// 应用 status 载荷。`checkPaths=false` 时跳过真机路径预检（夹具项目是假的，
+    /// 路径本就不存在；预检是「真实项目路径不可读」的事，夹具没有这个语义）。
+    bool applyStatusPayload(const QJsonDocument &doc, bool checkPaths);
+    bool applyDashboardPayload(const QJsonDocument &doc);
+    bool applyMilestonesPayload(const QJsonDocument &doc);
+
+    /// 钩子：串行查下一个项目的状态（查完最后一个发 hookStatusChanged）。
+    void fetchNextHookStatus();
+    /// 钩子：开始一轮批量装/卸。
+    void startHookBatch();
+    /// 钩子：串行执行下一个项目的装/卸（全部跑完发 hookActionFinished + 刷新状态）。
+    void runNextHookAction();
+
     // ── 合并闸门：撞上不丢弃、排队补跑一次不叠加 ──
     bool tryEnterRefresh();
     void leaveRefresh();
@@ -193,6 +434,32 @@ private:
     LoadStateBox m_milestonesState;
     QMap<QString, LoadStateBox> m_docsStates;
     QMap<QString, DocsEnvelope> m_docs;
+    QMap<QString, LoadStateBox> m_verifyStates;
+    QMap<QString, VerifyEnvelope> m_verifies;
+    QMap<QString, LoadStateBox> m_sceneStates;
+    QMap<QString, GraphScene> m_scenes;
+    QMap<QString, LoadStateBox> m_codeGraphStates;
+    QMap<QString, CodeGraphBuild::Result> m_codeGraphs;
+    QMap<QString, LoadStateBox> m_patchStates;
+    QMap<QString, PatchLayer1> m_patchLayers;
+    QMap<QString, PatchMerged> m_patchMerged;
+    QMap<QString, QJsonObject> m_patchRawPayload; ///< 引擎给的原始载荷（合并终稿要原样回写）
+    QMap<QString, LoadStateBox> m_insightStates;
+    QMap<QString, GraphInsight::Overview> m_overviews;
+    /// 符号级结果按「项目\n符号名」存（同一项目不同符号各自一份）。
+    QMap<QString, GraphInsight::SymbolDetail> m_symbolDetails;
+    QMap<QString, GraphInsight::Impact> m_impacts;
+    EngineDoctor::Report m_doctor;
+    EngineConfig::Config m_engineConfig;
+    QVector<EngineHook::Status> m_hookStatus; ///< 逐项目的钩子状态
+    LoadStateBox m_hookState;
+    bool m_hookBusy = false;
+    int m_hookIndex = 0;                ///< 串行推进（逐项目查/装/卸）
+    QVector<EngineHook::Item> m_hookItems; ///< 批量动作的逐项目结果
+    bool m_hookActionInstall = true;     ///< 本轮批量动作是「装」还是「卸」
+    LoadStateBox m_engineConfigState;
+    QMap<QString, LoadStateBox> m_indexStates;
+    QMap<QString, IndexStatus::Overview> m_indexOverviews;
     QMap<QString, QString> m_projectLoadErrors;
 
     QString m_lastError;
@@ -211,6 +478,9 @@ private:
     bool m_engineFound = false;
     bool m_enginePending = false; // 发现链在跑（locateAsync 未收尾）；期间引擎未找到不算"连接失败"
     QString m_engineProblem;
+    EngineInstaller *m_installer = nullptr; ///< 引擎下载执行器（网络/解压全异步）
+    bool m_engineDownloading = false;
+    QString m_engineDownloadMessage;
 
     QTimer *m_lightTimer = nullptr;  // 300s 轻刷新
     QTimer *m_autoTimer = nullptr;   // 定时更新（autoHours 周期）

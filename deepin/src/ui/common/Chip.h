@@ -39,9 +39,10 @@ private:
         QColor bg = c;
         bg.setAlpha(32);
         setStyleSheet(QStringLiteral("QLabel { color: %1; background: %2; border-radius: %3px;"
-                                     " padding: 1px 6px; font-size: 11px; }")
+                                     " padding: 1px 6px; font-size: %4px; }")
                           .arg(c.name(), bg.name())
-                          .arg(DS::Radius::chip));
+                          .arg(DS::Radius::chip)
+                          .arg(DS::FontPx::badge));
     }
 
     DS::SemColor m_tone = DS::SemColor::gray;

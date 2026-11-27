@@ -2,6 +2,7 @@
 // 无 Q_OBJECT：纯呈现。
 #pragma once
 #include "../DesignTokens.h"
+#include "../../platform/DpiPixmap.h"
 #include "SecondaryLabel.h"
 #include <QColor>
 #include <QPair>
@@ -34,7 +35,8 @@ public:
         for (const auto &e : entries) {
             auto *dot = new QLabel(this);
             dot->setFixedSize(DS::Height::dot, DS::Height::dot); // 状态点统一 8px（M3-5）
-            QPixmap pm(DS::Height::dot, DS::Height::dot);
+            // ⚠ **HiDPI 感知**（批 AP · M3c）：按 dpr 放大后画。
+            QPixmap pm = platform::dpiPixmap(QSize(DS::Height::dot, DS::Height::dot));
             pm.fill(Qt::transparent);
             QPainter p(&pm);
             p.setRenderHint(QPainter::Antialiasing);

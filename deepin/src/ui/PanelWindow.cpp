@@ -3,10 +3,14 @@
 #include "../ai/AIEngineFactory.h"
 #include "../ai/AiDigests.h"
 #include "../ai/SecretStore.h"
+#include "../logic/IconNames.h"
 #include "../logic/DashboardScope.h"
+#include "../platform/IconResolver.h"
 #include "../logic/Derived.h"
 #include "../logic/Router.h"
 #include "../logic/ShortcutMap.h"
+#include "../platform/Backend.h"
+#include "../platform/SysOpen.h"
 #include "../tray/TrayController.h"
 #include "DesignTokens.h"
 #include "DualTrackButtons.h"
@@ -20,6 +24,10 @@
 #include "dialogs/AgentDialog.h"
 #include "dialogs/AiResultDialog.h"
 #include "dialogs/AiSettingsDialog.h"
+#include "dialogs/ArchDialog.h"
+#include "dialogs/CodeGraphDialog.h"
+#include "dialogs/DocsDialog.h"
+#include "dialogs/PatchCheckDialog.h"
 #include "../app/Settings.h"
 #include "dialogs/ScanDialog.h"
 #include "dialogs/panes/AutomationPane.h"
@@ -28,6 +36,8 @@
 #include "pages/MilestonesPage.h"
 #include "pages/ProjectDetailPage.h"
 #include "pages/SetupGuidePage.h"
+
+#include <QUrl>
 #include <DGuiApplicationHelper>
 #include <DIconButton>
 #include <QApplication>
@@ -55,10 +65,10 @@ namespace {
 //（无图标主题的环境）→ FlatButton 文字平钮（M3b-FlatButton 收编，原 DPushButton+setFlat）。
 // 空按钮比非原生按钮更糟（R2 诚实降级）；真机 DDE 必有图标主题，恒走图标分支。
 // DIconButton 不开放 setText，回退必须换类。
-QAbstractButton *makeToolButton(const QString &iconName, const QString &fallbackText,
+QAbstractButton *makeToolButton(IconNames::Id iconId, const QString &fallbackText,
     const QString &tooltip)
 {
-    const QIcon icon = QIcon::fromTheme(iconName);
+    const QIcon icon = platform::icon(iconId);
     if (icon.isNull()) {
         auto *btn = new FlatButton;
         btn->setText(fallbackText);
@@ -133,7 +143,7 @@ void PanelWindow::buildUi()
         .arg(DS::Radius::control));
     m_errorBar->setWordWrap(true);
     eh->addWidget(m_errorBar, 1);
-    QAbstractButton *errClose = makeToolButton(QStringLiteral("window-close"),
+    QAbstractButton *errClose = makeToolButton(IconNames::Id::close,
         QStringLiteral("✕"), QStringLiteral("关闭提示"));
     errClose->setParent(errorRow);
     errClose->setFixedSize(28, 28);
@@ -191,7 +201,10 @@ void PanelWindow::openScanDialog(const QString &presetPath)
 
 void PanelWindow::wirePages()
 {
-    m_setupPage = new SetupGuidePage(m_engine.problems.join(QStringLiteral("；")), m_stack);
+    // ⚠ 文案由**上层传入**（判定层真相源经 AppModel 转来）——
+    //   首屏与设置页共用同一份说法，不会两处漂移。
+    m_setupPage = new SetupGuidePage(m_engine.problems.join(QStringLiteral("；")),
+        m_model->engineDownloadActionLabel(), m_model->engineDownloadActionTooltip(), m_stack);
     m_dashboard = new DashboardPage(m_stack);
     m_board = new BoardPage(m_stack);
     m_milestonesPage = new MilestonesPage(m_stack);
@@ -258,6 +271,23 @@ void PanelWindow::wirePages()
         [this] { m_model->loadProject(m_detail->property("projectName").toString()); });
     connect(m_detail, &ProjectDetailPage::briefRequested, this,
         [this](const QString &p) { showBrief(p); });
+    // 架构图：独立窗承载（项目名在入口锁定）
+    connect(m_detail, &ProjectDetailPage::archRequested, this,
+        [this](const QString &p) { showArch(p); });
+    // 代码图谱：独立窗承载（项目名在入口锁定）
+    connect(m_detail, &ProjectDetailPage::codeGraphRequested, this,
+        [this](const QString &p) { showCodeGraph(p); });
+    // 补丁体检：独立窗承载（项目名在入口锁定，同架构图/代码图谱窗）
+    connect(m_detail, &ProjectDetailPage::patchCheckRequested, this,
+        [this](const QString &p) { showPatchCheck(p); });
+    // 导出进度报告（引擎 report）：回执型命令，stdout 是人话 → 落盘路径从回执里抽。
+    connect(m_detail, &ProjectDetailPage::reportExportRequested, this,
+        [this](const QString &p) { m_model->exportReport(p); });
+    // 回执回灌详情页（按项目路由：回执不带项目名会串台）。
+    connect(m_model, &AppModel::reportExported, this,
+        [this](bool ok, const QString &project, const QString &receipt) {
+            m_detail->setReportReceipt(ok, project, receipt);
+        });
     connect(m_detail, &ProjectDetailPage::updateMenuRequested, this, [this] {
         const UpdateScope scope = scopeFromSelection(m_model->selection());
         QMenu menu(this);
@@ -293,6 +323,24 @@ void PanelWindow::wirePages()
             if (ConfirmDialog::confirm(this, spec))
                 m_model->removeMilestone(p, n);
         });
+
+    // ── 引擎缺失首屏：把下载链接进来（批 AH）──
+    // ⚠ 引擎缺失时用户**第一眼**看到的就是这块屏幕 ⇒ 用户唯一的出路必须在这。
+    //   原来下载链只在设置页（GeneralPane）⇒ 用户得先知道「设置里有」才用得上，
+    //   而首屏的提示还让用户去跑仓库里的 install.sh（拿 deb 的人根本没那个仓库）。
+    connect(m_setupPage, &SetupGuidePage::downloadClicked, this, [this] {
+        if (!m_model)
+            return;
+        m_model->downloadEngine();
+    });
+    // ⚠ 下载态与结论**原样**透给首屏（文案由判定层生成，UI 不自己写第二份）。
+    connect(m_model, &AppModel::engineDownloadingChanged, this, [this] {
+        m_setupPage->setDownloadState(m_model->engineDownloading(),
+            m_model->engineDownloadMessage());
+    });
+    connect(m_model, &AppModel::engineDownloadFinished, this, [this](bool, const QString &text) {
+        m_setupPage->setDownloadState(false, text);
+    });
 
     connect(m_setupPage, &SetupGuidePage::redetectClicked, this, [this] {
         // 异步发现链（M0-2）：探活在 worker 跑，按钮不冻结；期间 SetupGuidePage 走忙态
@@ -331,8 +379,10 @@ void PanelWindow::wireModel()
         m_sidebar->select(sel, false); // 同步侧栏高亮（不再回发信号，防循环）
         navigate(sel);
         // 进入详情 = loadProject + loadDocs（go 已带 loadProject；这里补 docs）
-        if (sel.kind == Selection::Kind::project)
+        if (sel.kind == Selection::Kind::project) {
             m_model->loadDocs(sel.projectName);
+            m_model->loadVerify(sel.projectName); // 文档完整性（只读校验）
+        }
     });
     connect(m_model, &AppModel::busyChanged, this, &PanelWindow::refreshChrome);
     connect(m_model, &AppModel::lastErrorChanged, this, [this](const QString &msg) {
@@ -353,6 +403,12 @@ void PanelWindow::wireModel()
         if (m_model->selection().kind == Selection::Kind::project
             && m_model->selection().projectName == name) {
             m_detail->setDocs(name, m_model->docsFor(name), m_model->docsState(name));
+        }
+    });
+    connect(m_model, &AppModel::verifyChanged, this, [this](const QString &name) {
+        if (m_model->selection().kind == Selection::Kind::project
+            && m_model->selection().projectName == name) {
+            m_detail->setVerify(name, m_model->verifyFor(name), m_model->verifyState(name));
         }
     });
     connect(m_model, &AppModel::bulkReportReady, this, [this](const AgentBulkReport &report) {
@@ -475,6 +531,11 @@ void PanelWindow::refreshChrome()
     navigate(m_model->selection());
 }
 
+bool PanelWindow::showingSetupGuide() const
+{
+    return m_stack && m_stack->currentIndex() == PageSetupGuide;
+}
+
 void PanelWindow::navigate(Selection sel)
 {
     m_selection = sel;
@@ -540,6 +601,12 @@ void PanelWindow::buildMenu()
     connect(panelMenu->addAction(QStringLiteral("添加 / 扫描项目")), &QAction::triggered, this,
         [this] { openScanDialog(); });
     panelMenu->addAction(QStringLiteral("设置"), this, &PanelWindow::showSettings);
+    panelMenu->addSeparator();
+    // 固定文档（mac 的原生「关于 / 帮助」窗口在 DDE 下无对位物 → 合为一个文档窗）
+    connect(panelMenu->addAction(QStringLiteral("关于 deepDolphin")), &QAction::triggered, this,
+        [this] { showDocs(0); });
+    connect(panelMenu->addAction(QStringLiteral("帮助")), &QAction::triggered, this,
+        [this] { showDocs(1); });
 
     if (DTitlebar *tb = titlebar()) {
         tb->setMenu(panelMenu);
@@ -549,7 +616,7 @@ void PanelWindow::buildMenu()
         // 标准动作 = DIconButton（图标走 freedesktop 主题名；尺寸 DStyle::PM_IconButtonIconSize
         // 由 DTK 样式接管）。图标名解析不到（无图标主题的环境）退回文字平钮——空按钮
         // 比非原生按钮更糟（R2 诚实降级）。「AI 助手」无 freedesktop 标准图标名，恒文字钮。
-        QAbstractButton *refresh = makeToolButton(QStringLiteral("view-refresh"),
+        QAbstractButton *refresh = makeToolButton(IconNames::Id::refresh,
             QStringLiteral("刷新"), QStringLiteral("刷新（Ctrl+R）"));
         connect(refresh, &QAbstractButton::clicked, this, [this] { m_model->refreshAll(); });
         m_refreshBtn = refresh; // busy 时让位转圈（refreshChrome 拨），收尾换回
@@ -562,10 +629,10 @@ void PanelWindow::buildMenu()
         agentBtn->setText(QStringLiteral("AI 助手"));
         agentBtn->setToolTip(QStringLiteral("AI 助手对话"));
         connect(agentBtn, &QPushButton::clicked, this, &PanelWindow::showAgentDialog);
-        QAbstractButton *settingsBtn = makeToolButton(QStringLiteral("preferences-system"),
+        QAbstractButton *settingsBtn = makeToolButton(IconNames::Id::settings,
             QStringLiteral("设置"), QStringLiteral("设置（Ctrl+,）"));
         connect(settingsBtn, &QAbstractButton::clicked, this, &PanelWindow::showSettings);
-        QAbstractButton *searchBtn = makeToolButton(QStringLiteral("system-search"),
+        QAbstractButton *searchBtn = makeToolButton(IconNames::Id::codegraph,
             QStringLiteral("搜索"), QStringLiteral("搜索（Ctrl+F，焦点送进侧栏搜索框）"));
         connect(searchBtn, &QAbstractButton::clicked, this, [this] { m_sidebar->focusSearch(); });
         tb->addWidget(agentBtn);
@@ -698,9 +765,65 @@ void PanelWindow::showAgentDialog()
     } else {
         m_agent->retarget(target);
     }
-    m_agent->show();
-    m_agent->raise();
-    m_agent->activateWindow();
+    platform::activate(m_agent);
+}
+
+void PanelWindow::showArch(const QString &project)
+{
+    if (project.isEmpty())
+        return;
+    // 按项目各一个窗（mac 同款单仓库锁定）：同一项目重复点 → 叫醒已有窗口，
+    // 不叠第二个（两个窗抢同一份场景状态会让人搞不清谁在显示什么）。
+    QPointer<ArchDialog> &dlg = m_archDialogs[project];
+    if (!dlg) {
+        dlg = new ArchDialog(project, m_model, this);
+        connect(dlg, &ArchDialog::openExportedFile, this, [](const QString &path) {
+            SysOpen::openUrl(QUrl::fromLocalFile(path));
+        });
+    }
+    platform::activate(dlg);
+}
+
+void PanelWindow::showCodeGraph(const QString &project)
+{
+    if (project.isEmpty())
+        return;
+    // 按项目各一个窗（与架构图窗同理）：重复点入口叫醒已有窗口，
+    // 不叠第二个（两个窗抢同一份图谱状态会让人搞不清谁在显示什么）。
+    QPointer<CodeGraphDialog> &dlg = m_codeGraphDialogs[project];
+    if (!dlg) {
+        dlg = new CodeGraphDialog(project, m_model, this);
+        connect(dlg, &CodeGraphDialog::openExportedFile, this, [](const QString &path) {
+            SysOpen::openUrl(QUrl::fromLocalFile(path));
+        });
+    }
+    platform::activate(dlg);
+}
+
+void PanelWindow::showPatchCheck(const QString &project)
+{
+    if (project.isEmpty())
+        return;
+    // 按项目各一个窗（与架构图窗/代码图谱窗同理）：重复点入口叫醒已有窗口，
+    // 不叠第二个（两个窗抢同一份体检状态会让人搞不清谁在显示什么）。
+    QPointer<PatchCheckDialog> &dlg = m_patchDialogs[project];
+    if (!dlg) {
+        dlg = new PatchCheckDialog(project, m_model, this);
+    }
+    platform::activate(dlg);
+}
+
+void PanelWindow::showDocs(int kindIndex)
+{
+    // 一个窗 + 顶部分段切四类目（mac 是两个原生窗 + 设置里四个区，内容同源）
+    if (!m_docsDialog) {
+        m_docsDialog = new DocsDialog(this);
+        connect(m_docsDialog, &DocsDialog::openUrl, this, [](const QString &url) {
+            SysOpen::openUrl(QUrl(url));
+        });
+    }
+    platform::activate(m_docsDialog);
+    Q_UNUSED(kindIndex); // 类别由窗内分段切换决定，入口只负责把窗叫醒
 }
 
 void PanelWindow::showBrief(const QString &project, const QString &titleOverride)
@@ -779,13 +902,12 @@ void PanelWindow::showBrief(const QString &project, const QString &titleOverride
 void PanelWindow::showSettings()
 {
     if (!m_settings) {
-        m_settings = new AiSettingsDialog(this);
+        // ⚠ 模型必传：设置·通用页的「环境自检」要经 AppModel 调引擎 doctor。
+        m_settings = new AiSettingsDialog(m_model, this);
         connect(m_settings->automationPane(), &AutomationPane::autoHoursChanged, m_model,
             &AppModel::restartAutoTimer); // 改完立即生效（不经过保存按钮）
     }
-    m_settings->show();
-    m_settings->raise();
-    m_settings->activateWindow();
+    platform::activate(m_settings);
 }
 
 void PanelWindow::showRouteNotice(const QString &text)
@@ -908,9 +1030,7 @@ TraySnapshot PanelWindow::traySnapshot() const
 
 void PanelWindow::bringToFront()
 {
-    show();
-    raise();
-    activateWindow();
+    platform::activate(this);
 }
 
 void PanelWindow::closeEvent(QCloseEvent *event)

@@ -5,68 +5,38 @@
 #include "../ai/AiDigests.h"
 #include "../ai/SecretStore.h"
 #include "../logic/Derived.h"
+#include "../logic/EngineDownload.h"
+#include "../logic/EngineHook.h"
+#include "../logic/SnapshotFixture.h"
+#include "../logic/PatchCheck.h"
 #include "../logic/ScanCoverage.h"
 #include "../logic/StopDecision.h"
 #include "../logic/UpdateOutcome.h"
+#include "EngineInstaller.h"
 #include "Notifier.h"
 #include "Settings.h"
 #include <QDateTime>
+#include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
 #include <QMetaObject>
 #include <QPointer>
+#include <QProcess>
+#include <QTemporaryDir>
 #include <QThreadPool>
 #include <QTimer>
 #include <algorithm>
 
-namespace {
+#include "AppModelInternal.h"
 
-// status/update/deep 的全局静默旗标（叙述层走 stderr，--json 载荷干净）
-const QStringList kQuiet = { QStringLiteral("--json"), QStringLiteral("--quiet") };
+using AppModelInternal::kQuiet;
+using AppModelInternal::loadAiConfigWithFallbackKey;
+using AppModelInternal::loadAiKeyInWorker;
+using AppModelInternal::sortProjects;
 
-// 里程碑 CLI 子命令 → 用户文案（done/drop/reopen 是引擎动词，不直接见人）
-QString milestoneActionLabel(const QString &action)
-{
-    if (action == QLatin1String("done"))
-        return QStringLiteral("已达成里程碑");
-    if (action == QLatin1String("drop"))
-        return QStringLiteral("已放弃里程碑");
-    if (action == QLatin1String("reopen"))
-        return QStringLiteral("已重开里程碑");
-    if (action == QLatin1String("remove"))
-        return QStringLiteral("已删除里程碑");
-    return action;
-}
-
-// AI 配置快照（M0-4 拆两半）：本函数**GUI 线程专用**——只读 Settings（身份 + 明文回退键，
-// 仅 mock/headless 有值）；同步 libsecret 读在 worker 侧用 loadAiKeyInWorker 补齐。
-// worker 不得直接碰 Settings 单例（QSettings/QObject 跨线程访问告警的根因）。
-AIConfig loadAiConfigWithFallbackKey()
-{
-    AIConfig cfg = AIConfig::load();
-    cfg.apiKey = Settings::instance().aiApiKeyPlaintext();
-    return cfg;
-}
-
-// worker 线程专用：同步 libsecret 读（阻塞不进 GUI 线程，PLAN §2.5）；
-// 明文回退键用 GUI 线程快照带进来的那份。
-void loadAiKeyInWorker(AIConfig *cfg)
-{
-    SecretStore store;
-    cfg->apiKey = AIConfig::loadKey(&store, cfg->apiKey);
-}
-
-// 项目按系统本地化排序（QString::localeAwareCompare，mac localizedStandardCompare 对位）
-void sortProjects(std::vector<ProjectStatus> &projects)
-{
-    std::sort(projects.begin(), projects.end(),
-        [](const ProjectStatus &a, const ProjectStatus &b) {
-            return a.name.localeAwareCompare(b.name) < 0;
-        });
-}
-
-} // namespace
 
 QString AgentBulkReport::toMarkdown() const
 {
@@ -116,7 +86,34 @@ AppModel::AppModel(const EngineLocator::Result &engine, EngineCli *cli, QObject 
     , m_engineFound(engine.found)
     , m_enginePending(engine.pending)
     , m_engineProblem(engine.problems.join(QStringLiteral("；")))
+    , m_installer(new EngineInstaller(this))
 {
+    connect(m_installer, &EngineInstaller::finished, this,
+        [this](const EngineInstaller::Result &r) {
+            m_engineDownloading = false;
+            m_engineDownloadMessage = r.message;
+            emit engineDownloadingChanged();
+            if (!r.ok) {
+                emit engineDownloadFinished(false, r.message);
+                return;
+            }
+            // 装好了 → **立刻**重跑发现链：装到 ~/.local/libexec/deepdolphin/moongit 的引擎
+            // 是发现链的候选之一，不重跑的话用户还得自己重启应用才认得出引擎。
+            EngineLocator::Result pending;
+            pending.pending = true;
+            setEngineResult(pending);
+            EngineLocator::locateAsync([this, r](const EngineLocator::Result &found) {
+                setEngineResult(found);
+                QString msg = r.message;
+                if (found.found)
+                    msg += QStringLiteral("；已可使用");
+                else
+                    msg += QStringLiteral("；⚠ 装好了，但发现链仍没找到它 —— 请检查安装位置与权限");
+                m_engineDownloadMessage = msg;
+                // ⚠ 只发**一次**收尾信号（下载完成 + 复检合并成一条结论）。
+                emit engineDownloadFinished(true, msg);
+            });
+        });
     connect(m_cli, &EngineCli::engineMissing, this, [this] {
         // 引擎在运行中消失（被删/权限变化）：如实转故障态，不静默。
         // 但「从来没设过 bin」不是"引擎消失"——那是从未发现过引擎（SetupGuidePage 的口径），
@@ -298,30 +295,89 @@ void AppModel::fetchStatus(std::function<void(bool ok)> onDone)
                 onDone(false);
                 return;
             }
-            const auto env = res.payload.has_value()
-                ? StatusEnvelope::decodeEnvelopeOrBare(*res.payload)
-                : std::nullopt;
-            if (!env.has_value()) {
-                m_lastError = QStringLiteral("引擎输出不是合法的项目状态（契约可能过旧）");
-                emit lastErrorChanged(m_lastError);
+            if (!res.payload.has_value() || !applyStatusPayload(*res.payload, true)) {
                 onDone(false);
                 return;
             }
-            // TCC 预检的 Linux 等价物（PLAN §8 T6）：首个项目路径可读性预检
-            for (const ProjectStatus &p : env->projects) {
-                if (!p.isUnreadable() && !p.path.isEmpty() && !QFileInfo::exists(p.path)) {
-                    m_lastError = QStringLiteral("%1：路径不存在或卷未挂载（%2）")
-                                      .arg(p.name, p.path);
-                    emit lastErrorChanged(m_lastError);
-                    break;
-                }
-            }
-            m_projects = env->projects;
-            sortProjects(m_projects);
-            m_summary = env->summary;
-            m_hasLoadedProjectsOnce = true; // 成功才置位（pendingRoute 在此处补判）
             onDone(true);
         });
+}
+
+// ── 载荷应用（批 T：取数与判定分层）────────────────────────────
+//   引擎取数与夹具注入**共用**这三个函数 —— 夹具走的就是真实解析路径，
+//   所以面板快照顺带覆盖契约解析，而不只是「摆一堆好看的字」。
+bool AppModel::applyStatusPayload(const QJsonDocument &doc, bool checkPaths)
+{
+    const auto env = StatusEnvelope::decodeEnvelopeOrBare(doc);
+    if (!env.has_value()) {
+        m_lastError = QStringLiteral("引擎输出不是合法的项目状态（契约可能过旧）");
+        emit lastErrorChanged(m_lastError);
+        return false;
+    }
+    // TCC 预检的 Linux 等价物（PLAN §8 T6）：首个项目路径可读性预检
+    // ⚠ 夹具模式跳过（checkPaths=false）—— 夹具项目是假的，路径本就不存在；
+    //   预检是「真实项目路径不可读」的事，夹具没有这个语义。
+    if (checkPaths) {
+        for (const ProjectStatus &p : env->projects) {
+            if (!p.isUnreadable() && !p.path.isEmpty() && !QFileInfo::exists(p.path)) {
+                m_lastError = QStringLiteral("%1：路径不存在或卷未挂载（%2）")
+                                  .arg(p.name, p.path);
+                emit lastErrorChanged(m_lastError);
+                break;
+            }
+        }
+    }
+    m_projects = env->projects;
+    sortProjects(m_projects);
+    m_summary = env->summary;
+    m_hasLoadedProjectsOnce = true; // 成功才置位（pendingRoute 在此处补判）
+    emit projectsChanged();
+    return true;
+}
+
+bool AppModel::applyDashboardPayload(const QJsonDocument &doc)
+{
+    const auto d = DashboardData::fromJson(doc.object());
+    if (!d.has_value()) {
+        m_dashboardState = { LoadState::failed,
+            QStringLiteral("仪表盘载荷缺键（契约可能过旧）") };
+        emit dashboardChanged();
+        return false;
+    }
+    m_dashboard = d;
+    m_dashboardState = { LoadState::loaded, QString() };
+    emit dashboardChanged();
+    return true;
+}
+
+bool AppModel::applyMilestonesPayload(const QJsonDocument &doc)
+{
+    const auto e = MilestonesEnvelope::fromJson(doc.object());
+    if (!e.has_value()) {
+        m_milestonesState = { LoadState::failed,
+            QStringLiteral("里程碑载荷缺键（契约可能过旧）") };
+        emit milestonesChanged();
+        return false;
+    }
+    applyMilestoneLoadRules(*e);
+    return true;
+}
+
+void AppModel::useSnapshotFixture()
+{
+    // 夹具 = 判定层产出的固定 JSON。
+    // ⚠ 走**同一段解析路径**（applyStatusPayload / applyDashboardPayload /
+    //   applyMilestonesPayload）⇒ 顺带覆盖契约解析。
+    // ⚠ 夹具的时间戳**分两类**：会被算天数的 `lastCommitAt` 跟真实 now 走（天数恒定），
+    //   只会被显示成绝对字符串的锚定基准日（绝对日期不随日子变）—— 详见 SnapshotFixture.h。
+    applyStatusPayload(QJsonDocument::fromJson(SnapshotFixture::statusJson()), false);
+    applyDashboardPayload(QJsonDocument::fromJson(SnapshotFixture::dashboardJson()));
+    applyMilestonesPayload(QJsonDocument::fromJson(SnapshotFixture::milestonesJson()));
+    // ⚠ **不许用墙钟**（批 T）：侧栏渲染「空闲 · 上次刷新 HH:mm」，用墙钟就意味着
+    //   基线每分钟变一次、换台机器（时区不同）也变 ⇒ CI 天天有 diff ⇒ 人就学会
+    //   忽略 diff ⇒ 基线又变成空门。固定时刻 + 快照进程固定 TZ=UTC ⇒ 逐字节可重现。
+    m_lastRefreshedMs = SnapshotFixture::fixedRefreshedMs();
+    emit refreshCycleFinished(true);
 }
 
 void AppModel::fetchDashboard()
@@ -338,21 +394,14 @@ void AppModel::fetchDashboard()
                 fetchMilestones();
                 return;
             }
-            const auto d = DashboardData::fromJson(res.payload->object());
-            if (!d.has_value()) {
-                m_dashboardState = { LoadState::failed,
-                    QStringLiteral("仪表盘载荷缺键（契约可能过旧）") };
-                emit dashboardChanged();
+            // 解析与应用走**同一段**（批 T：夹具与引擎共用，避免两份解析逻辑）
+            if (!applyDashboardPayload(*res.payload)) {
                 fetchMilestones();
                 return;
             }
-            m_dashboard = d;
-            m_dashboardState = { LoadState::loaded, QString() };
-            emit dashboardChanged();
             fetchMilestones();
         });
 }
-
 void AppModel::fetchMilestones()
 {
     m_cli->callJson({ QStringLiteral("milestone"), QStringLiteral("list"), QStringLiteral("--json") },
@@ -369,11 +418,7 @@ void AppModel::fetchMilestones()
                 emit refreshAllFinished(false);
                 return;
             }
-            const auto e = MilestonesEnvelope::fromJson(res.payload->object());
-            if (!e.has_value()) {
-                m_milestonesState = { LoadState::failed,
-                    QStringLiteral("里程碑载荷缺键（契约可能过旧）") };
-                emit milestonesChanged();
+            if (!applyMilestonesPayload(*res.payload)) {
                 m_lastRefreshedMs = QDateTime::currentMSecsSinceEpoch();
                 postNotificationsIfNeeded();
                 leaveRefresh();
@@ -381,7 +426,6 @@ void AppModel::fetchMilestones()
                 emit refreshAllFinished(false);
                 return;
             }
-            applyMilestoneLoadRules(*e);
             m_lastRefreshedMs = QDateTime::currentMSecsSinceEpoch();
             postNotificationsIfNeeded();
             leaveRefresh();
@@ -481,639 +525,528 @@ void AppModel::loadDocs(const QString &name)
         });
 }
 
-// ── 更新动作 ──
-
-void AppModel::runUpdate(const QString &name, bool deep)
+// 文档完整性校验：引擎 `verify <name> --json`。
+// 只读命令 —— 客户端不写任何用户数据，校验口径全部来自引擎（VERIFY 契约）。
+void AppModel::loadVerify(const QString &name)
 {
-    if (m_busyAll || m_busyProjects.contains(name))
-        return;
-    runUpdateInternal(name, deep, [this, name, deep](bool ok, const UpdateResultBase *result) {
-        Q_UNUSED(deep);
-        if (!ok)
+    m_verifyStates[name] = { LoadState::loading, QString() };
+    emit verifyChanged(name);
+    m_cli->callJson({ QStringLiteral("verify"), name, QStringLiteral("--json") },
+        EngineTimeouts::Verify, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value()) {
+                m_verifyStates[name] = { LoadState::failed,
+                    res.ok() ? QStringLiteral("引擎输出不是合法 JSON（契约可能过旧）")
+                             : res.error.userMessage() };
+                emit verifyChanged(name);
+                return;
+            }
+            const auto e = VerifyEnvelope::fromJson(res.payload->object());
+            if (!e.has_value()) {
+                m_verifyStates[name] = { LoadState::failed,
+                    QStringLiteral("verify 载荷缺键（契约可能过旧）") };
+                emit verifyChanged(name);
+                return;
+            }
+            m_verifies[name] = *e;
+            m_verifyStates[name] = { LoadState::loaded, QString() };
+            emit verifyChanged(name);
+        });
+}
+
+// 架构图场景：引擎 `graph arch <name> --format scene`（moongit-graph-scene v1）。
+// 只读命令 —— 不写用户数据；场景数据由引擎确定性生成，客户端只负责画。
+void AppModel::loadScene(const QString &name)
+{
+    m_sceneStates[name] = { LoadState::loading, QString() };
+    emit sceneChanged(name);
+    m_cli->callJson({ QStringLiteral("graph"), QStringLiteral("arch"), name,
+                        QStringLiteral("--format"), QStringLiteral("scene") },
+        EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value()) {
+                m_sceneStates[name] = { LoadState::failed,
+                    res.ok() ? QStringLiteral("引擎输出不是合法 JSON（契约可能过旧）")
+                             : res.error.userMessage() };
+                emit sceneChanged(name);
+                return;
+            }
+            const auto s = GraphScene::fromJson(res.payload->object());
+            if (!s.has_value()) {
+                m_sceneStates[name] = { LoadState::failed,
+                    QStringLiteral("场景契约不认识（版本不对或缺键）") };
+                emit sceneChanged(name);
+                return;
+            }
+            m_scenes[name] = *s;
+            m_sceneStates[name] = { LoadState::loaded, QString() };
+            emit sceneChanged(name);
+        });
+}
+
+// 架构图生成：引擎 `arch gen <name>`。**经引擎写**（客户端不直接碰项目文件）——
+// 章程 C11「客户端永远只经引擎写文档」在这里同样成立。
+// 回执型命令 → 走 Text 契约（引擎 stdout 是人话回执，不是 JSON）。
+void AppModel::genArch(const QString &name)
+{
+    m_cli->callText({ QStringLiteral("arch"), QStringLiteral("gen"), name },
+        EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
+            emit archActionFinished(res.ok(), name,
+                res.ok() ? res.receipt : res.error.userMessage());
+        });
+}
+
+// 架构图导出：引擎 `render arch <name>`（落盘单文件 HTML —— 引擎层交付物，
+// 不是本平台的渲染路径：章程 §3.5「平台渲染零外包」说的是运行时渲染）。
+void AppModel::exportArch(const QString &name)
+{
+    m_cli->callText({ QStringLiteral("render"), QStringLiteral("arch"), name },
+        EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
+            emit archActionFinished(res.ok(), name,
+                res.ok() ? res.receipt : res.error.userMessage());
+        });
+}
+
+// 代码图谱：引擎三源（graph tree / confidence / functions）→ 一棵树。
+// 三个命令**并行**取（互不依赖），合成的规则在 logic/CodeGraphBuild（纯函数层）。
+void AppModel::loadCodeGraph(const QString &name)
+{
+    m_codeGraphStates[name] = { LoadState::loading, QString() };
+    emit codeGraphChanged(name);
+
+    auto tree = std::make_shared<QJsonObject>();
+    auto conf = std::make_shared<QJsonObject>();
+    auto fns = std::make_shared<QJsonObject>();
+    auto errs = std::make_shared<QStringList>();
+    auto done = std::make_shared<int>(0);
+
+    // 三源齐了才合成 —— 少一源就说清缺哪一源（合成器会点名）。
+    const auto finish = [this, name, tree, conf, fns, errs, done]() {
+        if (*done < 3)
             return;
-        if (result)
-            m_notifier->notify(deep ? QStringLiteral("深度更新完成") : QStringLiteral("进度已记录"),
-                UpdateOutcome::summary(*result), {});
-        reloadAfterWrite(name);
-    });
-}
-
-void AppModel::runUpdateInternal(const QString &name, bool deep,
-    std::function<void(bool ok, const UpdateResultBase *result)> onDone)
-{
-    m_busyProjects.insert(name);
-    emit busyChanged();
-    const QString cmd = deep ? QStringLiteral("deep") : QStringLiteral("update");
-    m_cli->callJson(QStringList { cmd, name } + kQuiet, deep ? EngineTimeouts::Deep : EngineTimeouts::Update,
-        [this, name, deep, onDone](const EngineCli::EngineResult &res) {
-            m_busyProjects.remove(name);
-            emit busyChanged();
-            if (res.error.kind == EngineErrorKind::cancelled) {
-                // 被停不报失败：不写 lastError/不弹通知；收尾回调仍要走到
-                //（调用方撤自己的 busy/等待态——如「更新 + AI 摘要」的结果窗）
-                onDone(false, nullptr);
-                return;
-            }
-            if (!res.ok()) {
-                m_lastError = QStringLiteral("%1：%2").arg(name, res.error.userMessage());
-                emit lastErrorChanged(m_lastError);
-                m_notifier->notify(QStringLiteral("更新失败"), m_lastError, {});
-                onDone(false, nullptr);
-                return;
-            }
-            if (!res.payload.has_value()) {
-                onDone(false, nullptr);
-                return;
-            }
-            const UpdateResultAny any = decodeUpdateResultEntry(res.payload->object());
-            if (std::holds_alternative<UpdateFailureEntry>(any)) {
-                m_lastError = QStringLiteral("%1：%2")
-                                  .arg(name, std::get<UpdateFailureEntry>(any).message);
-                emit lastErrorChanged(m_lastError);
-                onDone(false, nullptr);
-                return;
-            }
-            const UpdateResultBase *base = std::holds_alternative<ShallowUpdateResult>(any)
-                ? static_cast<const UpdateResultBase *>(&std::get<ShallowUpdateResult>(any))
-                : static_cast<const UpdateResultBase *>(&std::get<DeepUpdateResult>(any));
-            onDone(true, base);
-        });
-}
-
-void AppModel::runUpdateDigest(const QString &name, bool deep)
-{
-    if (m_busyAll || m_busyProjects.contains(name))
-        return;
-    runUpdateInternal(name, deep, [this, name, deep](bool ok, const UpdateResultBase *result) {
-        Q_UNUSED(result);
-        if (!ok) {
-            // 更新失败/被停：AI 报告无从生成——ok=false + 空原因（失败原因已走
-            // lastError/通知），调用方只负责撤 busy 态
-            emit updateDigestReady(false, deep, name, QString());
-            return;
-        }
-        reloadAfterWrite(name);
-        // AI 摘要在 worker：agent 工具循环阻塞 + key 读取是同步 libsecret——
-        // 两件事都不进 GUI 线程（PLAN §2.5）
-        QPointer<AppModel> guard(this);
-        const QString engineBin = m_cli->engineBin();
-        AIConfig identity = loadAiConfigWithFallbackKey(); // Settings 只在 GUI 线程读（M0-4）
-        QThreadPool::globalInstance()->start([this, guard, name, deep, engineBin, identity] {
-            AIConfig cfg = identity;
-            loadAiKeyInWorker(&cfg);
-            AiDigests::Outcome d;
-            QString why;
-            if (!AIEngineFactory::create(cfg)->isConfigured(&why)) {
-                d.error = QStringLiteral(
-                    "AI 未配置：%1\n\n更新本身已经完成，结果以通知为准；"
-                    "要生成 AI 报告请在「设置 → AI」里选择渠道并填写 API Key。")
-                                  .arg(why);
-            } else {
-                d = AiDigests::updateDigest(engineBin, cfg, name, deep);
-            }
-            if (!guard)
-                return;
-            QMetaObject::invokeMethod(
-                guard,
-                [this, guard, name, deep, d] {
-                    if (!guard)
-                        return;
-                    emit updateDigestReady(d.ok, deep, name, d.ok ? d.text : d.error);
-                },
-                Qt::QueuedConnection);
-        });
-    });
-}
-
-void AppModel::updateAll(bool deep, bool silent, std::function<void(const AgentBulkReport &)> onDone)
-{
-    if (m_busyAll)
-        return; // busyAll 单锁：同一把锁覆盖所有批量入口，不得绕过
-    m_busyAll = true;
-    emit busyChanged();
-
-    auto finish = [this, deep, silent, onDone](const AgentBulkReport &report) {
-        m_busyAll = false;
-        emit busyChanged();
-        refreshAll();
-        if (!silent) {
-            if (report.failed > 0)
-                m_notifier->notify(
-                    deep ? QStringLiteral("全部深度更新完成") : QStringLiteral("全部进度已记录"),
-                    QStringLiteral("%1 个项目更新，%2 个失败（详见面板）")
-                        .arg(report.succeeded)
-                        .arg(report.failed),
-                    {});
-            else if (report.succeeded == 0)
-                m_notifier->notify(
-                    deep ? QStringLiteral("全部深度更新完成") : QStringLiteral("全部进度已记录"),
-                    QStringLiteral("%1 个项目都没有需要更新的文档").arg(report.attempted), {});
-            else
-                m_notifier->notify(
-                    deep ? QStringLiteral("全部深度更新完成") : QStringLiteral("全部进度已记录"),
-                    QStringLiteral("%1 个项目已更新（%2 个有进展）")
-                        .arg(report.attempted)
-                        .arg(report.succeeded),
-                    {});
-            // 结果面板只随 UI 入口弹（mac updateAll(silent:) 从不设 agentBulkResult）：
-            // 定时更新/重新索引走 silent，不发 bulkReportReady，不在后台偷偷弹窗
-            emit bulkReportReady(report);
-        }
-        if (onDone)
-            onDone(report);
-    };
-
-    // 覆盖顺序：先 refreshAll（刷新注册表）**等它跑完**再冻结名单——
-    // 防拿陈旧名单漏掉别的进程新注册的仓库（实测：CLI 加仓库后不刷新就全量 → 账对不上）。
-    refreshAll();
-    m_bulkStopRequested = false; // 新一轮全量开启：清除上一轮的停止请求
-    // 闸门连接存成员（m_bulkGate）再回填：不能把 Connection 按值捕获进自身初始化器
-    //（捕获到的是未初始化副本，disconnect 断不开真连接——循环重跑全量更新）
-    // 接 refreshAllFinished（专用信号）：refreshCycleFinished 被 300s 轻刷新共用，
-    // 接那里会让轻刷新在全量刷新落地前提前放行 → 冻结陈旧名单（M0-6）
-    if (m_bulkGate)
-        disconnect(m_bulkGate); // 理论不可达（busyAll 单锁期内不会有第二个闸门），防御性清理
-    m_bulkGate = connect(this, &AppModel::refreshAllFinished, this,
-        [this, deep, silent, finish](bool) mutable {
-            if (m_bulkGate) {
-                disconnect(m_bulkGate);
-                m_bulkGate = QMetaObject::Connection();
-            }
-            runBulkOverFrozenTargets(deep, silent, finish);
-        });
-}
-
-void AppModel::runBulkOverFrozenTargets(bool deep, bool silent,
-    std::function<void(const AgentBulkReport &)> finish)
-{
-    // 名单 = projects **全部条目（含采集失败的）**——失败项目恰是最需要被告知的
-    QVector<ProjectStatus> targets;
-    for (const ProjectStatus &p : m_projects)
-        targets.append(p);
-
-    auto report = new AgentBulkReport;
-    report->deep = deep;
-    report->attempted = targets.size();
-    if (targets.isEmpty()) {
-        // aiNote 三态之一：没东西可跑也要说明 AI 层发生了什么。
-        // key 读取（同步 libsecret）走 worker（PLAN §2.5）；结论回 GUI 再 finish。
-        QPointer<AppModel> guard(this);
-        AIConfig identity = loadAiConfigWithFallbackKey(); // Settings 只在 GUI 线程读（M0-4）
-        QThreadPool::globalInstance()->start([this, guard, report, finish, identity] {
-            AIConfig cfg = identity;
-            loadAiKeyInWorker(&cfg);
-            QString why;
-            const bool aiUsable = AIEngineFactory::create(cfg)->isConfigured(&why);
-            report->aiNote = aiUsable
-                ? QStringLiteral("没有已注册项目，AI 简报无事可写。")
-                : QStringLiteral(
-                    "未生成 AI 简报：AI 未配置。更新本身没有可执行的项目，结果以逐仓库列表为准。");
-            if (!guard) {
-                delete report;
-                return;
-            }
-            QMetaObject::invokeMethod(
-                guard, [guard, report, finish] { finish(*report); delete report; },
-                Qt::QueuedConnection);
-        });
-        return;
-    }
-
-    // 逐仓库顺序执行（代码逐个显式传项目名——不许 prefix/filter/dropFirst；一个失败不中断）
-    struct Shared {
-        QVector<ProjectStatus> targets;
-        int index = 0;
-        AgentBulkReport *report = nullptr;
-        std::function<void()> next;
-    };
-    auto shared = new Shared { targets, 0, report, {} };
-    const int timeout = deep ? EngineTimeouts::DeepAll : EngineTimeouts::UpdateAll;
-    // 循环收尾：逐仓库事实先行；AI 简报（仅 UI 入口）在 worker 生成后再交出结果——
-    // 定时更新场景（silent）不重复生成，简报经「定时更新简报」通知送达。
-    // key 读取（同步 libsecret）与「已配置」判定一并放 worker（PLAN §2.5），
-    // 分支结论回 GUI 再 finish/派生 bulkDigest。
-    auto finalize = [this, deep, silent, finish](AgentBulkReport out) {
-        QPointer<AppModel> guard(this);
-        const QString engineBin = m_cli->engineBin();
-        const QString table = out.outcomeTable();
-        AIConfig identity = loadAiConfigWithFallbackKey(); // Settings 只在 GUI 线程读（M0-4）
-        QThreadPool::globalInstance()->start([this, guard, deep, silent, finish, engineBin, out,
-                                             table, identity] {
-            AIConfig cfg = identity;
-            loadAiKeyInWorker(&cfg);
-            QString why;
-            const bool aiUsable = AIEngineFactory::create(cfg)->isConfigured(&why);
-            if (!guard)
-                return;
-            if (silent || !aiUsable) {
-                AgentBulkReport local = out;
-                local.aiNote = aiUsable
-                    ? QStringLiteral("定时更新场景：AI 简报经「定时更新简报」通知送达；此处只列事实。")
-                    : QStringLiteral("未生成 AI 简报：AI 未配置（%1）。"
-                                     "更新本身已经执行完毕，结果以逐仓库列表为准。")
-                          .arg(why);
-                QMetaObject::invokeMethod(
-                    guard, [guard, local, finish] { finish(local); }, Qt::QueuedConnection);
-                return;
-            }
-            // UI 入口：worker 里跑 bulkDigest（agent 工具循环阻塞），完成后才 finish——
-            // 结果面板一次给出最终 aiNote（mac UpdateActionMenu 的 busy → 正文同构）。
-            const AiDigests::Outcome d = AiDigests::bulkDigest(engineBin, cfg, table, deep);
-            AgentBulkReport final = out;
-            if (d.ok)
-                final.aiNote = QStringLiteral("由 AI agent 依据引擎事实生成。\n\n") + d.text;
-            else
-                final.aiNote = QStringLiteral("未生成 AI 简报：%1\n\n"
-                                              "更新本身已经执行完毕，结果以逐仓库列表为准。")
-                                   .arg(d.error);
-            QMetaObject::invokeMethod(
-                guard, [guard, final, finish] { finish(final); }, Qt::QueuedConnection);
-        });
-    };
-    shared->next = [this, shared, deep, timeout, finalize] {
-        // 停止判据：「停止更新」已请求（引擎子进程被杀、当前仓库会以 cancelled 收尾）→
-        // 不再启动剩余仓库，就地收尾（mac ②cancel Swift Task 的对位）
-        if (shared->index >= shared->targets.size() || m_bulkStopRequested) {
-            // 此时正在执行的就是 shared->next 这个 functor——先把自己要用的东西拷出来，
-            // shared 的销毁延后一拍：在 operator() 存续期内 delete 自身 functor 是
-            // use-after-free（finalize/finish 的捕获会读到被复用的内存——实测停止路径
-            // 上 finish 的 this 变成垃圾指针，必现段错误）
-            AgentBulkReport out = *shared->report;
-            const std::function<void(AgentBulkReport)> fin = finalize;
-            AgentBulkReport *rep = shared->report;
-            QTimer::singleShot(0, this, [shared, rep] { delete rep; delete shared; });
-            fin(out);
+        if (!errs->isEmpty()) {
+            m_codeGraphStates[name] = { LoadState::failed, errs->join(QStringLiteral("；")) };
+            emit codeGraphChanged(name);
             return;
         }
-        const ProjectStatus p = shared->targets.at(shared->index++);
-        const QString cmd = deep ? QStringLiteral("deep") : QStringLiteral("update");
-        m_cli->callJson(QStringList { cmd, p.name } + kQuiet, timeout,
-            [this, shared, p](const EngineCli::EngineResult &res) {
-                bool okEntry = false;
-                if (res.ok() && res.payload.has_value()) {
-                    const UpdateResultAny any = decodeUpdateResultEntry(res.payload->object());
-                    if (!std::holds_alternative<UpdateFailureEntry>(any)) {
-                        const UpdateResultBase *base
-                            = std::holds_alternative<ShallowUpdateResult>(any)
-                            ? static_cast<const UpdateResultBase *>(
-                                  &std::get<ShallowUpdateResult>(any))
-                            : static_cast<const UpdateResultBase *>(
-                                  &std::get<DeepUpdateResult>(any));
-                        shared->report->succeeded += 1;
-                        shared->report->rows.append(
-                            { p.name, true, UpdateOutcome::summary(*base) });
-                        okEntry = true;
-                    }
+        CodeGraphBuild::Source src;
+        src.tree = *tree;
+        src.confidence = *conf;
+        src.functions = *fns;
+        const CodeGraphBuild::Result r = CodeGraphBuild::build(src, name);
+        if (!r.ok) {
+            m_codeGraphStates[name] = { LoadState::failed, r.error };
+            emit codeGraphChanged(name);
+            return;
+        }
+        m_codeGraphs[name] = r;
+        m_codeGraphStates[name] = { LoadState::loaded, QString() };
+        emit codeGraphChanged(name);
+    };
+
+    const auto grab = [this, name, done, errs, finish](const QString &label,
+                        std::shared_ptr<QJsonObject> slot, const QStringList &args) {
+        m_cli->callJson(args, EngineTimeouts::Graph,
+            [name, label, done, errs, finish, slot](const EngineCli::EngineResult &res) {
+                if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                    errs->append(QStringLiteral("%1：%2")
+                                     .arg(label,
+                                         res.ok() ? QStringLiteral("输出不是 JSON 对象")
+                                                  : res.error.userMessage()));
+                } else {
+                    *slot = res.payload->object();
                 }
-                if (!okEntry) {
-                    shared->report->failed += 1;
-                    shared->report->rows.append({ p.name, false,
-                        res.error.kind == EngineErrorKind::cancelled
-                            ? QStringLiteral("已停止")
-                            : res.error.userMessage() });
-                }
-                shared->next();
+                *done += 1;
+                finish();
             });
     };
-    shared->next();
+
+    grab(QStringLiteral("图树"), tree,
+        { QStringLiteral("graph"), QStringLiteral("tree"), name, QStringLiteral("--depth"),
+            QStringLiteral("8"), QStringLiteral("--json") });
+    grab(QStringLiteral("置信度"), conf,
+        { QStringLiteral("graph"), QStringLiteral("confidence"), name,
+            QStringLiteral("--json") });
+    grab(QStringLiteral("函数级图谱"), fns,
+        { QStringLiteral("graph"), QStringLiteral("functions"), name,
+            QStringLiteral("--json") });
 }
 
-void AppModel::stopUpdate()
+// 生成索引 + 置信度：引擎 index gen --stats + confidence gen（写库/落盘）。
+// 两个都是**回执型**命令（stdout 是人话）→ 走 Text 契约。
+void AppModel::genIndex(const QString &name)
 {
-    // 两步顺序不能反：① 真杀引擎子进程（只杀 update/deep，不伤并行 status）
-    // ② 请求批量链停止——runBulkOverFrozenTargets 见 m_bulkStopRequested 即不再
-    // 启动剩余仓库（mac ②cancel Swift Task 的对位）
-    const int killed = m_cli->stopUpdates();
-    m_bulkStopRequested = true;
-    const bool stillAlive = !m_busyProjects.isEmpty() || m_busyAll;
-    const StopDecision::Outcome o = StopDecision::decide(killed, stillAlive);
-    // busyAll/busyProjects **不在此复位**：提前复位会让新一轮 updateAll 与残留旧链并发
-    // （旧链各回调会立刻以 cancelled 收尾并自己释放锁——真正的收尾在各回调里）
-    emit busyChanged();
-    m_notifier->notify(QStringLiteral("停止更新"), StopDecision::message(o, m_projects.size()), {});
-    if (StopDecision::shouldWarn(o)) {
-        m_lastError = StopDecision::message(o, m_projects.size());
-        emit lastErrorChanged(m_lastError);
-    }
-}
-
-// ── git 操作 ──
-
-void AppModel::gitOp(const QString &op, const QString &name, const QString &message)
-{
-    if (m_busyProjects.contains(name))
-        return;
-    m_busyProjects.insert(name);
-    emit busyChanged();
-    QStringList args = { QStringLiteral("git"), op, name };
-    if (!message.isEmpty())
-        args << QStringLiteral("--message") << message;
-    args << QStringLiteral("--json");
-    m_cli->callJson(args, EngineTimeouts::Git, [this, name, op](const EngineCli::EngineResult &res) {
-        m_busyProjects.remove(name);
-        emit busyChanged();
-        GitOpResponse resp;
-        if (res.ok() && res.payload.has_value()) {
-            const auto parsed = GitOpResponse::fromJson(res.payload->object());
-            if (parsed.has_value())
-                resp = *parsed;
-        }
-        if (resp.op.isEmpty()) {
-            resp.op = op;
-            resp.ok = false;
-            resp.project = name;
-            resp.output = res.ok() ? QStringLiteral("引擎输出不是合法 JSON（契约可能过旧）")
-                                   : res.error.userMessage();
-        }
-        if (resp.ok)
-            m_notifier->notify(QStringLiteral("git %1 完成").arg(op), name, {});
-        emit gitOutputReady(name, resp);
-        reloadAfterWrite(name);
-    });
-}
-
-void AppModel::reloadAfterWrite(const QString &projectName)
-{
-    // 写操作后回读单项目 + 文档 + 里程碑/仪表盘聚合（失败不短路——尽力而为的刷新）
-    loadProject(projectName);
-    loadDocs(projectName);
-    m_cli->callJson({ QStringLiteral("milestone"), QStringLiteral("list"), QStringLiteral("--json") },
-        EngineTimeouts::Milestones, [this](const EngineCli::EngineResult &res) {
-            if (res.ok() && res.payload.has_value()) {
-                const auto e = MilestonesEnvelope::fromJson(res.payload->object());
-                if (e.has_value())
-                    applyMilestoneLoadRules(*e);
+    m_cli->callText({ QStringLiteral("index"), QStringLiteral("gen"), name,
+                        QStringLiteral("--stats") },
+        EngineTimeouts::Deep, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok()) {
+                emit archActionFinished(false, name, res.error.userMessage());
+                return;
             }
+            const QString first = res.receipt;
+            // 索引生成完还要算置信度（`confidence gen` 才是最终结论，回执取它）
+            m_cli->callText({ QStringLiteral("confidence"), QStringLiteral("gen"), name },
+                EngineTimeouts::Deep, [this, name, first](const EngineCli::EngineResult &r2) {
+                    if (!r2.ok()) {
+                        emit archActionFinished(false, name, r2.error.userMessage());
+                        return;
+                    }
+                    emit archActionFinished(true, name, r2.receipt.isEmpty()
+                        ? first : r2.receipt);
+                    loadCodeGraph(name); // 数据全换了 → 重载
+                });
         });
 }
 
-// ── 添加 / 扫描 ──
-
-void AppModel::addProject(const QString &path, const QString &name)
+// 导出交互 HTML：引擎 render index --confidence（落盘单文件 HTML —— 引擎层交付物）。
+void AppModel::exportIndex(const QString &name)
 {
-    QStringList args = { QStringLiteral("add"), path, QStringLiteral("--json") };
-    if (!name.isEmpty())
-        args << QStringLiteral("--name") << name;
-    m_cli->callJson(args, EngineTimeouts::Add, [this, path](const EngineCli::EngineResult &res) {
-        if (!res.ok()) {
-            emit addFinished(false, res.error.userMessage());
+    m_cli->callText({ QStringLiteral("render"), QStringLiteral("index"), name,
+                        QStringLiteral("--confidence") },
+        EngineTimeouts::Deep, [this, name](const EngineCli::EngineResult &res) {
+            emit archActionFinished(res.ok(), name, res.ok() ? res.receipt
+                                                             : res.error.userMessage());
+        });
+}
+
+// 代码图谱页的回执与架构图页共用一个信号（都是「引擎跑完给一句话」）。
+
+// ── 补丁体检（引擎 graph patchconf 三层）──
+
+QString AppModel::workingDiff(const QString &name, QString *error) const
+{
+    // 找项目的绝对路径（引擎 status 的 projects[].path）
+    QString path;
+    for (const ProjectStatus &p : m_projects) {
+        if (p.name == name) {
+            path = p.path;
+            break;
+        }
+    }
+    if (path.isEmpty()) {
+        if (error)
+            *error = QStringLiteral("找不到项目 %1 的本地路径（补丁体检要读它的工作区）").arg(name);
+        return QString();
+    }
+    // 只读 `git diff HEAD` —— 不写、不动仓库。
+    QProcess proc;
+    proc.start(QStringLiteral("git"), { QStringLiteral("-C"), path, QStringLiteral("diff"),
+        QStringLiteral("HEAD") });
+    if (!proc.waitForStarted(5000)) {
+        if (error)
+            *error = QStringLiteral("git 启动失败（补丁体检读不到工作区改动）");
+        return QString();
+    }
+    if (!proc.waitForFinished(30000)) {
+        proc.kill();
+        proc.waitForFinished(2000);
+        if (error)
+            *error = QStringLiteral("git diff 超时（工作区可能太大）");
+        return QString();
+    }
+    const QByteArray out = proc.readAllStandardOutput();
+    if (proc.exitCode() != 0) {
+        if (error)
+            *error = QStringLiteral("git diff 失败：%1")
+                         .arg(QString::fromUtf8(proc.readAllStandardError()).trimmed());
+        return QString();
+    }
+    return QString::fromUtf8(out);
+}
+
+void AppModel::loadPatchCheck(const QString &name)
+{
+    m_patchStates[name] = { LoadState::loading, QString() };
+    emit patchCheckChanged(name);
+
+    QString err;
+    const QString diff = workingDiff(name, &err);
+    if (!err.isEmpty()) {
+        m_patchStates[name] = { LoadState::failed, err };
+        emit patchCheckChanged(name);
+        return;
+    }
+    if (diff.trimmed().isEmpty()) {
+        m_patchStates[name] = { LoadState::failed,
+            QStringLiteral("工作区没有未提交改动（补丁体检没有输入）") };
+        emit patchCheckChanged(name);
+        return;
+    }
+
+    // 引擎的 --patch 吃**文件路径**（不是 diff 正文）—— 落盘在 app 层做，
+    // 判定层只管解析结果。临时目录随 QTemporaryDir 析构自动清。
+    QTemporaryDir tmpDir;
+    if (!tmpDir.isValid()) {
+        m_patchStates[name] = { LoadState::failed, QStringLiteral("临时目录建不起来，补丁体检未执行") };
+        emit patchCheckChanged(name);
+        return;
+    }
+    const QString diffPath = tmpDir.filePath(QStringLiteral("patch.diff"));
+    {
+        QFile f(diffPath);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            m_patchStates[name] = { LoadState::failed, QStringLiteral("临时 diff 写不下去，补丁体检未执行") };
+            emit patchCheckChanged(name);
             return;
         }
-        emit addFinished(true, QStringLiteral("已注册 %1").arg(path));
-        refreshAll();
-    });
-}
-
-void AppModel::scan(const QString &root, int depth)
-{
-    m_cli->callJson({ QStringLiteral("scan"), root, QStringLiteral("--depth"),
-                         QString::number(depth), QStringLiteral("--json") },
-        EngineTimeouts::Scan, [this](const EngineCli::EngineResult &res) {
-            if (!res.ok() || !res.payload.has_value()) {
-                emit scanFinished(false,
-                    res.ok() ? QStringLiteral("引擎输出不是合法 JSON（契约可能过旧）")
-                             : res.error.userMessage(),
-                    QString());
+        f.write(diff.toUtf8());
+    }
+    m_cli->callJson({ QStringLiteral("graph"), QStringLiteral("patchconf"), name,
+                        QStringLiteral("--patch"), diffPath, QStringLiteral("--json") },
+        EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                m_patchStates[name] = { LoadState::failed,
+                    res.ok() ? QStringLiteral("补丁体检输出不是 JSON 对象")
+                             : res.error.userMessage() };
+                emit patchCheckChanged(name);
                 return;
             }
-            const QJsonObject o = res.payload->object();
-            const int added = o.value(QLatin1String("added")).toInt();
-            const int found = o.value(QLatin1String("found")).toInt();
-            const int existing = o.value(QLatin1String("existing")).toInt();
-            QString msg = QStringLiteral("新增 %1 个 / 共发现 %2 个").arg(added).arg(found);
-            if (existing > 0)
-                msg += QStringLiteral("（已存在 %1 个跳过）").arg(existing);
-            ScanCoverage::Input in;
-            in.found = found;
-            in.truncated = o.contains(QLatin1String("truncated"))
-                ? o.value(QLatin1String("truncated")).toBool()
-                : false;
-            in.depthCapped = o.contains(QLatin1String("depthCapped"))
-                ? o.value(QLatin1String("depthCapped")).toBool()
-                : false;
-            in.unreadable = o.value(QLatin1String("unreadable")).toArray().size();
-            emit scanFinished(true, msg, ScanCoverage::note(in));
-            refreshAll();
+            const PatchLayer1 layer = PatchCheck::parseLayer1(res.payload->object());
+            if (!layer.ok) {
+                m_patchStates[name] = { LoadState::failed, layer.error };
+                emit patchCheckChanged(name);
+                return;
+            }
+            m_patchLayers[name] = layer;
+            // 原始载荷留着：合并终稿时**原样回写**（丢了就拼不出正确的终稿）。
+            m_patchRawPayload[name] = res.payload->object();
+            m_patchStates[name] = { LoadState::loaded, QString() };
+            emit patchCheckChanged(name);
         });
 }
 
-// ── 里程碑写操作 ──
-
-void AppModel::addMilestone(const QString &project, const QString &name, const QString &tag,
-    const QString &date, const QString &desc)
+void AppModel::mergePatchCheck(const QString &name, const QJsonObject &agentPayload)
 {
-    // 空 tag/date/desc **不发键**（引擎按键存在与否判定）
-    QStringList args = { QStringLiteral("milestone"), QStringLiteral("add"), project, name };
-    if (!tag.isEmpty())
-        args << QStringLiteral("--tag") << tag;
-    if (!date.isEmpty())
-        args << QStringLiteral("--date") << date;
-    if (!desc.isEmpty())
-        args << QStringLiteral("--desc") << desc;
-    args << QStringLiteral("--json");
-    m_cli->callJson(args, EngineTimeouts::Milestones, [this, project, name](const EngineCli::EngineResult &res) {
-        if (!res.ok()) {
-            emit milestoneActionFinished(false, res.error.userMessage());
+    const PatchLayer1 *layer = patchFor(name);
+    if (!layer) {
+        m_patchStates[name] = { LoadState::failed, QStringLiteral("还没有算法层结果，没法合并终稿") };
+        emit patchCheckChanged(name);
+        return;
+    }
+    // 引擎的 --merge 吃两个**文件路径**（算法结果 + 裁决）—— 落盘在 app 层做。
+    QTemporaryDir tmpDir;
+    if (!tmpDir.isValid()) {
+        m_patchStates[name] = { LoadState::failed, QStringLiteral("临时目录建不起来，合并终稿未执行") };
+        emit patchCheckChanged(name);
+        return;
+    }
+    const QString algPath = tmpDir.filePath(QStringLiteral("algorithm.json"));
+    const QString agentPath = tmpDir.filePath(QStringLiteral("agent.json"));
+    {
+        // ⚠ 算法结果**原样回写**引擎给的那份载荷（mac 同款）——
+        //   自己拼一个精简版会把 entities/uncertain/signals 丢掉，
+        //   合并出来的终稿就没有实体了。
+        QFile f(algPath);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            m_patchStates[name] = { LoadState::failed, QStringLiteral("算法结果落盘失败，合并终稿未执行") };
+            emit patchCheckChanged(name);
             return;
         }
-        emit milestoneActionFinished(true, QStringLiteral("已创建里程碑「%1」").arg(name));
-        reloadAfterWrite(project);
-    });
-}
-
-void AppModel::setMilestoneStatus(const QString &project, const QString &name, const QString &action)
-{
-    m_cli->callJson({ QStringLiteral("milestone"), action, project, name, QStringLiteral("--json") },
-        EngineTimeouts::Milestones, [this, project, name, action](const EngineCli::EngineResult &res) {
-            // 载荷为 {project, milestone, requested, status, applied}（CONTRACT §3.8，无 message 键）。
-            // status 是实际生效状态：达成时展示它，被压回（applied:false，如同名 tag 的
-            // 自动达成规则）时也展示它——不许显示空原因。
-            bool applied = true;
-            QString status;
-            if (res.ok() && res.payload.has_value()) {
-                const QJsonObject o = res.payload->object();
-                if (o.contains(QLatin1String("applied")))
-                    applied = o.value(QLatin1String("applied")).toBool(true);
-                if (o.contains(QLatin1String("status")))
-                    status = o.value(QLatin1String("status")).toString();
-            }
-            if (!res.ok()) {
-                emit milestoneActionFinished(false, res.error.userMessage());
+        const QJsonObject &raw = m_patchRawPayload.value(name);
+        if (raw.isEmpty()) {
+            m_patchStates[name] = { LoadState::failed, QStringLiteral("算法层原始载荷丢了，合并终稿未执行") };
+            emit patchCheckChanged(name);
+            return;
+        }
+        f.write(QJsonDocument(raw).toJson(QJsonDocument::Indented));
+    }
+    {
+        QFile f(agentPath);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            m_patchStates[name] = { LoadState::failed, QStringLiteral("裁决落盘失败，合并终稿未执行") };
+            emit patchCheckChanged(name);
+            return;
+        }
+        f.write(QJsonDocument(agentPayload).toJson(QJsonDocument::Indented));
+    }
+    m_cli->callJson({ QStringLiteral("graph"), QStringLiteral("patchconf"),
+                        QStringLiteral("--merge"), algPath, agentPath, QStringLiteral("--json") },
+        EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                m_patchStates[name] = { LoadState::failed,
+                    res.ok() ? QStringLiteral("合并终稿输出不是 JSON 对象")
+                             : res.error.userMessage() };
+                emit patchCheckChanged(name);
                 return;
             }
-            emit milestoneActionFinished(true,
-                applied ? QStringLiteral("%1「%2」，当前状态 %3")
-                              .arg(milestoneActionLabel(action), name,
-                                   status.isEmpty() ? QStringLiteral("未知") : status)
-                        : QStringLiteral("引擎未应用该操作：「%1」实际状态仍为 %2（可能被同名 tag 的自动达成规则压回）")
-                              .arg(name, status.isEmpty() ? QStringLiteral("未知") : status));
-            reloadAfterWrite(project);
+            const PatchMerged merged = PatchCheck::parseMerged(res.payload->object());
+            if (!merged.ok) {
+                m_patchStates[name] = { LoadState::failed, merged.error };
+                emit patchCheckChanged(name);
+                return;
+            }
+            m_patchMerged[name] = merged;
+            m_patchStates[name] = { LoadState::loaded, QString() };
+            emit patchMerged(name);
+            emit patchCheckChanged(name);
         });
 }
 
-void AppModel::removeMilestone(const QString &project, const QString &name)
+// ── 引擎自检（doctor）与进度报告（report）──
+
+void AppModel::runDoctor()
 {
-    m_cli->callJson({ QStringLiteral("milestone"), QStringLiteral("remove"), project, name,
-                         QStringLiteral("--json") },
-        EngineTimeouts::Milestones, [this, project, name](const EngineCli::EngineResult &res) {
-            if (!res.ok()) {
-                emit milestoneActionFinished(false, res.error.userMessage());
+    m_cli->callJson({ QStringLiteral("doctor"), QStringLiteral("--json") },
+        EngineTimeouts::Status, [this](const EngineCli::EngineResult &res) {
+            // ⚠ 引擎 doctor 在**发现问题时退出码是 1**，但 stdout 仍是合法 JSON。
+            //   那是「环境有问题」，不是「命令崩了」—— 所以先看载荷有没有解析出来，
+            //   解析出来了就是一份**有效报告**（问题数由报告自己说）。
+            if (res.payload.has_value() && res.payload->isObject()) {
+                const EngineDoctor::Report r = EngineDoctor::parse(res.payload->object());
+                if (r.ok) {
+                    m_doctor = r;
+                    emit doctorFinished(r);
+                    return;
+                }
+                m_doctor = r;
+                emit doctorFinished(r);
                 return;
             }
-            emit milestoneActionFinished(true, QStringLiteral("已删除里程碑「%1」").arg(name));
-            reloadAfterWrite(project);
+            EngineDoctor::Report bad;
+            bad.ok = false;
+            bad.error = res.ok() ? QStringLiteral("引擎自检输出不是 JSON 对象")
+                                  : res.error.userMessage();
+            m_doctor = bad;
+            emit doctorFinished(bad);
         });
 }
 
-// ── 选择 / 筛选 ──
-
-void AppModel::setSelection(Selection sel)
+void AppModel::exportReport(const QString &name)
 {
-    if (m_selection == sel)
+    // 回执型命令：stdout 是人话（"报告已生成：<路径>（N 个项目）"），
+    // 走 Text 契约；路径从回执里抽（ArchReceipt::filePath 的 .md 特例）。
+    // ⚠ 回执走**独立信号**：archActionFinished 是架构图窗在收的，混流会让
+    //   架构图窗显示报告的回执，还可能被当成「架构已生成」而重载画布。
+    m_cli->callText({ QStringLiteral("report"), name },
+        EngineTimeouts::Deep, [this, name](const EngineCli::EngineResult &res) {
+            emit reportExported(res.ok(), name, res.ok() ? res.receipt
+                                                         : res.error.userMessage());
+        });
+}
+
+// ── 持久化代码索引的状态（index overview / index update）──
+
+void AppModel::loadIndexOverview(const QString &name)
+{
+    m_indexStates[name] = { LoadState::loading, QString() };
+    emit indexStatusChanged(name);
+    m_cli->callJson({ QStringLiteral("index"), QStringLiteral("overview"), name,
+                        QStringLiteral("--json") },
+        EngineTimeouts::Graph, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                m_indexStates[name] = { LoadState::failed,
+                    res.ok() ? QStringLiteral("索引状态输出不是 JSON 对象")
+                             : res.error.userMessage() };
+                emit indexStatusChanged(name);
+                return;
+            }
+            const IndexStatus::Overview ov = IndexStatus::parseOverview(res.payload->object());
+            if (!ov.ok) {
+                m_indexStates[name] = { LoadState::failed, ov.error };
+                emit indexStatusChanged(name);
+                return;
+            }
+            m_indexOverviews[name] = ov;
+            m_indexStates[name] = { LoadState::loaded, QString() };
+            emit indexStatusChanged(name);
+        });
+}
+
+void AppModel::updateIndex(const QString &name)
+{
+    // 走 **Json 契约**：`index update --json` 给的是结构化结果
+    // （fresh / rebuilt / updateCount / indexJson 落盘路径），
+    // 人话形态只有一句「已最新——首版（第 0 版）」，拿不到这些。
+    m_cli->callJson({ QStringLiteral("index"), QStringLiteral("update"), name,
+                        QStringLiteral("--json") },
+        EngineTimeouts::Deep, [this, name](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                emit indexUpdated(name, false,
+                    res.ok() ? QStringLiteral("索引更新输出不是 JSON 对象")
+                             : res.error.userMessage());
+                return;
+            }
+            const IndexStatus::UpdateResult u = IndexStatus::parseUpdate(res.payload->object());
+            if (!u.ok) {
+                emit indexUpdated(name, false, u.error);
+                return;
+            }
+            // ⚠ 「已最新」≠「已更新」：源文件没动时引擎回 fresh: true，
+            //   这次**什么都没重建** —— 界面要说清，不能说成「更新好了」。
+            QString text;
+            if (u.fresh)
+                text = QStringLiteral("源文件没动，索引已是最新（第 %1 代）")
+                           .arg(u.updateCount >= 0 ? QString::number(u.updateCount)
+                                                   : QStringLiteral("?"));
+            else if (u.rebuilt)
+                text = QStringLiteral("索引已重建（第 %1 代）%2")
+                           .arg(u.updateCount >= 0 ? QString::number(u.updateCount)
+                                                   : QStringLiteral("?"),
+                               u.indexJsonPath);
+            else
+                text = QStringLiteral("索引已更新（第 %1 代）")
+                           .arg(u.updateCount >= 0 ? QString::number(u.updateCount)
+                                                   : QStringLiteral("?"));
+            // 索引内容变了 → 重新读索引状态，并重载代码图谱（数据换了）
+            loadIndexOverview(name);
+            if (!u.fresh)
+                loadCodeGraph(name);
+            emit indexUpdated(name, true, text);
+        });
+}
+
+// ── 引擎配置（config list / config set）──
+
+void AppModel::loadEngineConfig()
+{
+    m_engineConfigState = { LoadState::loading, QString() };
+    emit engineConfigChanged();
+    // `config list --json` 是 **Json 契约**（stdout 是一份 JSON 对象）。
+    m_cli->callJson({ QStringLiteral("config"), QStringLiteral("list"),
+                        QStringLiteral("--json") },
+        EngineTimeouts::Status, [this](const EngineCli::EngineResult &res) {
+            if (!res.ok() || !res.payload.has_value() || !res.payload->isObject()) {
+                m_engineConfigState = { LoadState::failed,
+                    res.ok() ? QStringLiteral("引擎配置输出不是 JSON 对象")
+                             : res.error.userMessage() };
+                emit engineConfigChanged();
+                return;
+            }
+            const EngineConfig::Config c = EngineConfig::parse(res.payload->object());
+            if (!c.ok) {
+                m_engineConfigState = { LoadState::failed, c.error };
+                emit engineConfigChanged();
+                return;
+            }
+            m_engineConfig = c;
+            m_engineConfigState = { LoadState::loaded, QString() };
+            emit engineConfigChanged();
+        });
+}
+
+void AppModel::setEngineConfig(const QString &key, const QString &value)
+{
+    // 键白名单在客户端也卡一道：引擎对未知键会报错，但那是**事后**；
+    // 客户端先拦一道，界面就不会给用户一个必然失败的键。
+    if (!EngineConfig::isWritable(key)) {
+        emit engineConfigSaved(false, QStringLiteral("引擎不认这个配置键：%1").arg(key));
         return;
-    m_selection = sel;
-    emit selectionChanged(sel);
-}
-
-void AppModel::go(Selection sel)
-{
-    setSelection(sel);
-    if (sel.kind == Selection::Kind::project)
-        loadProject(sel.projectName);
-}
-
-void AppModel::setDashFilter(const DashFilter &f)
-{
-    m_dashFilter = f;
-    emit dashFilterChanged();
-}
-
-void AppModel::clearLastError()
-{
-    m_lastError.clear();
-    emit lastErrorChanged(QString());
-}
-
-void AppModel::setEngineResult(const EngineLocator::Result &engine)
-{
-    const bool foundChanged = m_engineFound != engine.found;
-    m_engineFound = engine.found;
-    m_enginePending = engine.pending;
-    m_engineProblem = engine.problems.join(QStringLiteral("；"));
-    // 把新发现的引擎二进制回灌给 CLI（M0-1）：只改 UI 文案而不改 bin 的话，
-    // 「重新检测引擎」提示"已找到"后每次调用仍走 engineMissing → notFound，
-    // 且上面的处理器又会把 m_engineFound 翻回 false → 用户必须重启应用。
-    // found 时设 bin；未找到时清空 bin，让 both 状态（未发现/曾发现又丢失）统一由
-    // engineMissing 处理器的 isEmpty 判定分流。
-    if (m_cli)
-        m_cli->setEngineBin(engine.found ? engine.bin : QString());
-    if (foundChanged)
-        emit engineFoundChanged();
-}
-
-// ── 派生查询 ──
-
-const std::optional<ProjectStatus> AppModel::project(const QString &name) const
-{
-    for (const ProjectStatus &p : m_projects) {
-        if (p.name == name)
-            return p;
     }
-    return std::nullopt;
-}
-
-int AppModel::pendingForScope(const UpdateScope &scope) const
-{
-    // pendingCommits 实时值按范围取（mac Scope.swift pending 对位）
-    if (scope.kind == UpdateScopeKind::project) {
-        const auto p = project(scope.name);
-        if (!p.has_value())
-            return 0;
-        int sum = 0;
-        for (const BranchStatus &b : p->branches)
-            sum += qMax(0, b.pendingCommits);
-        return sum;
-    }
-    int total = 0;
-    for (const ProjectStatus &p : m_projects) {
-        for (const BranchStatus &b : p.branches)
-            total += qMax(0, b.pendingCommits);
-    }
-    return total;
-}
-
-AppModel::TrayState AppModel::trayState() const
-{
-    // menuTitle 规则（mac Model.swift:323-355）：「<N> ⚠︎<S>」/「<N> ●<D>」互斥、⚠︎ 优先
-    TrayState st;
-    if (!m_engineFound)
-        return { QStringLiteral("？"), Liveness::unreadable };
-    if (m_refreshing && m_projects.empty())
-        return { QStringLiteral("⋯"), Liveness::unknown };
-    if (!m_lastError.isEmpty() && m_projects.empty())
-        return { QStringLiteral("！"), Liveness::unreadable };
-
-    int stale = 0;
-    int dirty = 0;
-    if (m_summary.has_value()) {
-        stale = m_summary->staleProjects;
-        dirty = m_summary->dirtyProjects;
-    } else {
-        for (const ProjectStatus &p : m_projects) {
-            if (p.userDirtyCount > 0)
-                ++dirty;
-            for (const BranchStatus &b : p.branches) {
-                if (b.status == QLatin1String("stale")) {
-                    ++stale;
-                    break;
-                }
+    // ⚠ 回执型命令，**回执在 stderr**（实测 2026-10-19：`config set` 与 `report` 同款）。
+    //   走 Text 契约（callText），回执由 EngineCli::receiptText 两路兜底取回。
+    m_cli->callText({ QStringLiteral("config"), QStringLiteral("set"), key, value },
+        EngineTimeouts::Status, [this, key](const EngineCli::EngineResult &res) {
+            if (!res.ok()) {
+                emit engineConfigSaved(false, res.error.userMessage());
+                return;
             }
-        }
-    }
-    QString title = QString::number(m_projects.size());
-    Liveness tint = Liveness::recent;
-    if (stale > 0) {
-        title += QStringLiteral(" ⚠︎%1").arg(stale);
-        tint = Liveness::engineStale;
-    } else if (dirty > 0) {
-        title += QStringLiteral(" ●%1").arg(dirty);
-        tint = Liveness::needsAction;
-    }
-    return { title, tint };
+            // 写完重读 —— 界面显示的必须是**引擎当前真的在用的值**，
+            // 不是客户端刚发过去的值（引擎可能做了钳制或改写）。
+            loadEngineConfig();
+            emit engineConfigSaved(true, res.receipt);
+        });
 }
 
-// ── 通知（「新变差」才发）──
+// ── 图谱三件套（引擎 graph overview / symbol / impact）──
 
-void AppModel::postNotificationsIfNeeded()
-{
-    // 通知文案三态照 SPEC §3.2；去重键：停滞按 (project,branch) 对、未提交按十位分桶。
-    int newStaleCount = 0;
-    for (const ProjectStatus &p : m_projects) {
-        if (p.isUnreadable())
-            continue;
-        for (const BranchStatus &b : p.branches) {
-            const QString key = QStringLiteral("%1/%2").arg(p.id.isEmpty() ? p.name : p.id, b.name);
-            if (b.status == QLatin1String("stale") && !b.isDefault) {
-                ++newStaleCount;
-                if (!m_havePrevSnapshot || !m_seenStaleBranches.contains(key)) {
-                    m_seenStaleBranches.insert(key);
-                    m_notifier->notifyOnce(QStringLiteral("stale:%1").arg(key),
-                        QStringLiteral("分支停滞：%1").arg(p.name),
-                        QStringLiteral("「%1」 已 %2 无提交，考虑合并或关闭")
-                            .arg(b.name, b.headAgo.isEmpty() ? QStringLiteral("一段时间") : b.headAgo));
-                }
-            } else {
-                m_seenStaleBranches.remove(key);
-            }
-        }
-        // 未提交过多：userDirtyCount >= 10，按十位分桶去重
-        if (p.userDirtyCount >= 10) {
-            const int bucket = p.userDirtyCount / 10;
-            m_notifier->notifyOnce(QStringLiteral("dirty:%1:%2").arg(p.name).arg(bucket),
-                QStringLiteral("未提交改动较多：%1").arg(p.name),
-                QStringLiteral("%1 处改动未提交").arg(p.userDirtyCount));
-        }
-    }
-    m_havePrevSnapshot = true;
-    Q_UNUSED(newStaleCount);
-}
+
+    // ── 图谱/索引/概览/符号/影响：见 AppModelGraph.cpp（批 AL 拆分）──
+    // ── 更新/批量/git 操作/扫描/里程碑写入：见 AppModelUpdate.cpp（批 AL 拆分）──

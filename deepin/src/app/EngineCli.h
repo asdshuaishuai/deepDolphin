@@ -12,6 +12,13 @@
 // · 超时 → 杀进程 + timeout（与 cancelled 严格分开）；
 // · 引擎缺失 → notFound + engineMissing 信号。
 //
+// 【两套输出契约】引擎的输出分两类，**判据不同**，不能共用一条：
+// · Json 模式（`--json` 命令）：stdout 必须是一份合法 JSON 对象；
+// · Text 模式（`arch gen` / `render arch` 这类回执型命令）：stdout 必须是**非空
+//   文本**，引擎把回执写成人话（如「架构已生成：首版（第 0 版）」）。
+// 用错模式的后果很具体：拿 Json 模式去收 Text 命令的输出，exit==0 但 stdout 不是
+// JSON 会被判成「引擎输出不是合法 JSON」——**成功被报成失败**。
+//
 // 超时预算 ≥ 引擎 120s 上界口径（CONTRACT §4.5）：宁可等也不要半截数据。
 // UTF-8 尾部 lossy 解码（超时/残缺输出不当代码 JSON）。
 #pragma once
@@ -29,29 +36,23 @@
 class QProcess;
 class QTimer;
 
-// 各命令超时（SPEC §2 表 / PLAN §2.3），单位毫秒
-namespace EngineTimeouts {
-constexpr int Version = 8'000;        // 探活
-constexpr int Status = 30'000;        // status --json（全群）
-constexpr int StatusProject = 60'000; // status <name> --json
-constexpr int Dashboard = 180'000;
-constexpr int Milestones = 60'000;    // milestone list/add/done/drop/reopen/remove
-constexpr int Docs = 60'000;
-constexpr int Journal = 30'000;
-constexpr int Update = 300'000;       // update <name>
-constexpr int Deep = 600'000;         // deep <name>
-constexpr int UpdateAll = 900'000;    // update（全项目）
-constexpr int DeepAll = 1'800'000;    // deep（全项目）
-constexpr int Git = 120'000;
-constexpr int Add = 30'000;
-constexpr int Scan = 300'000;
-constexpr int Tools = 30'000;
-constexpr int Context = 60'000;
-} // namespace EngineTimeouts
+// 各命令超时（SPEC §2 表 / PLAN §2.3），单位毫秒。
+// 常量已下沉到 logic/EngineTimeouts.h —— agent 工具表（logic/AgentToolPlan）
+// 要用同一批数字，同一件事两处字面量必然漂移（改了引擎调用忘了改工具表，
+// 症状是「大仓整图构建在 agent 里被砍成 120 秒」这类难查的问题）。
+// logic/ 不依赖 app/，所以常量住在下面这一层；这里 include 它，
+// `EngineTimeouts::X` 的写法在全局作用域照样成立（老调用点零改动）。
+#include "../logic/EngineTimeouts.h"
 
 class EngineCli : public QObject {
     Q_OBJECT
 public:
+    /// stdout 的契约形态。决定 exit==0 时 stdout 该被怎么判（见文件头「两套输出契约」）。
+    enum class OutputMode {
+        Json, ///< stdout 应是合法 JSON 对象（`--json` 命令）
+        Text, ///< stdout 应是非空文本（回执型命令：arch gen / render arch）
+    };
+
     struct EngineResult {
         int exitCode = -1;
         QString stdOut;
@@ -60,6 +61,10 @@ public:
         bool cancelled = false;
         std::optional<QJsonDocument> payload; // exit==0 或 failedWithPayload 时尽量有
         EngineError error;                    // isNull() = 成功
+        /// **Text 契约的回执正文**（stdout 优先，stdout 空时取 stderr）。
+        /// Text 模式的消费方一律读这个字段，别直接读 stdOut ——
+        /// 引擎的 `report` 把回执写在 stderr（见 receiptText 的说明）。
+        QString receipt;
 
         bool ok() const { return error.isNull(); }
     };
@@ -77,6 +82,27 @@ public:
     void callJson(const QStringList &args, int timeoutMs,
                   std::function<void(const EngineResult &)> onDone);
 
+    // 同上，但按 Text 契约判 stdout（回执型命令专用；回执在 res.receipt）。
+    void callText(const QStringList &args, int timeoutMs,
+                  std::function<void(const EngineResult &)> onDone);
+
+    // 纯判定：这份 stdout 满不满该 mode 的契约？**分类逻辑的唯一出处**（判据直接测它）。
+    // · Json：必须能解析成一个 JSON 对象（空 stdout = 契约破坏）；
+    // · Text：必须非空（引擎说成功了却没给回执 = 契约破坏）。
+    static bool stdoutSatisfies(OutputMode mode, const QString &stdoutText);
+
+    /// **回执通道**：stdout 优先，stdout 空时取 stderr。
+    ///
+    /// ⚠ 引擎不是所有回执型命令都写 stdout。实测 2026-10-19（moongit dev d363b6a）：
+    ///   `arch gen` / `render arch` / `index gen --stats` / `confidence gen` /
+    ///   `render index` 的回执在 **stdout**；而 `report` 的
+    ///   「报告已生成：<路径>（N 个项目）」在 **stderr**。
+    ///   只认 stdout 的话，`report` 会被判成「引擎没有回执（命令 report，退出码 0）」——
+    ///   **明明成功却说失败**，用户点「导出报告」只看到一句报错，而报告其实已经落盘了。
+    ///   exit==0 时 stderr 不是错误通道（引擎的失败文案走 stdout，见 CONTRACT §4），
+    ///   拿它当回执兜底是安全的。
+    static QString receiptText(const QString &stdoutText, const QString &stderrText);
+
     // 同步调用：引擎探活/自检与 agent worker 使用，不得在 UI 热路径使用。
     // cancelled 非空时切片等待（M0-5）：旗标置位 → terminate（2s 后 kill）+ cancelled 结果，
     // 「停止」不必再等当前引擎命令跑完（deep 最长 600s）。
@@ -93,6 +119,10 @@ signals:
     void engineMissing();
 
 private:
+    // 两条公开调用路径的唯一实现处（进程管理/超时/取消/分类/收尾都在这里）。
+    void callWithMode(const QStringList &args, int timeoutMs, OutputMode mode,
+                      std::function<void(const EngineResult &)> onDone);
+
     QString m_bin;
     ProcessRegistry m_registry;
 };

@@ -68,6 +68,11 @@ QString resolveSection(const QString &raw)
         return QStringLiteral("milestones");
     if (raw == QLatin1String("board"))
         return QStringLiteral("board");
+    // ⚠ setupguide = **引擎缺失首屏**（无头快照要拍它）：
+    //   那个界面在正常启动时**根本不会出现**（引擎在 ⇒ 落仪表盘），
+    //   ⇒ 只能靠 --section 显式点名 ⇒ 认不出来就拍不到。
+    if (raw == QLatin1String("setupguide"))
+        return QStringLiteral("setupguide");
     return QStringLiteral("dashboard"); // dashboard 与一切认不出的名字
 }
 

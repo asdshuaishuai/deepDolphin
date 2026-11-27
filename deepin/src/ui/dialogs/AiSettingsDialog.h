@@ -15,13 +15,16 @@ class QStackedWidget;
 class QLabel;
 class SecretStore;
 class AutomationPane;
+class AppModel;
 
 DWIDGET_USE_NAMESPACE
 
 class AiSettingsDialog : public DDialog {
     Q_OBJECT
 public:
-    explicit AiSettingsDialog(QWidget *parent = nullptr);
+    /// ⚠ model 必传：通用页的「环境自检」要经 AppModel 调引擎 doctor
+    ///   （判定层在 logic/EngineDoctor，界面不自己起子进程）。
+    explicit AiSettingsDialog(AppModel *model, QWidget *parent = nullptr);
     AutomationPane *automationPane() const { return m_automationWidget; } // 供外部接 restartAutoTimer
 
 private:

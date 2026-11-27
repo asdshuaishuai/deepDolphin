@@ -1,4 +1,5 @@
 #include "Settings.h"
+#include "../logic/Notifications.h"
 #include <QSettings>
 #include <QVariant>
 
@@ -23,6 +24,19 @@ int Settings::autoUpdateHours() const
 void Settings::setAutoUpdateHours(int hours)
 {
     m_s->setValue(QStringLiteral("update.autoHours"), hours);
+}
+
+int Settings::notifyTimeoutMs() const
+{
+    // ⚠ 归一在判定层（唯一真相源）—— 0 在 D-Bus 语义里是「永不消失」，
+    //   越界值会让用户看到的时长与设定的不一致。
+    return Notifications::normalizeTimeoutMs(
+        m_s->value(QStringLiteral("notify.timeoutMs"), Notifications::kDefaultTimeoutMs).toInt());
+}
+
+void Settings::setNotifyTimeoutMs(int ms)
+{
+    m_s->setValue(QStringLiteral("notify.timeoutMs"), Notifications::normalizeTimeoutMs(ms));
 }
 
 bool Settings::modelsDevRefreshed() const
@@ -83,6 +97,22 @@ void Settings::clearAi()
              QStringLiteral("ai.baseURL"), QStringLiteral("ai.preset"),
              QStringLiteral("ai.apiKey") })
         m_s->remove(k);
+}
+
+QString Settings::appLanguageKey() const
+{
+    // ⚠ 缺省**空串**（不是 "zh-CN"）：这里只存「用户选了什么」，
+    //   「没选过 ⇒ 用默认语言」是调用方的判断，不在存储层替他决定。
+    return m_s->value(QStringLiteral("app.language")).toString();
+}
+
+void Settings::setAppLanguageKey(const QString &key)
+{
+    if (key.isEmpty()) {
+        m_s->remove(QStringLiteral("app.language"));
+        return;
+    }
+    m_s->setValue(QStringLiteral("app.language"), key);
 }
 
 void Settings::sync()

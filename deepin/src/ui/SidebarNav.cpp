@@ -1,6 +1,9 @@
 #include "SidebarNav.h"
+#include "../logic/IconNames.h"
 #include "../logic/DashFilter.h"
 #include "../logic/Derived.h"
+#include "../platform/IconResolver.h"
+#include "../platform/DpiPixmap.h"
 #include "DesignTokens.h"
 #include "common/BusyRow.h"
 #include "common/CountLabel.h"
@@ -30,6 +33,10 @@ constexpr int kRoleIsView = Qt::UserRole + 4;
 // 侧栏行（countedRow 与项目行两处共用）行内边距/行距（M3-6：复制收成一点）
 constexpr QMargins kRowMargins{4, 2, 6, 2};
 constexpr int kRowSpacing = 6;
+/// 项目名列的最大宽度（px）—— 超出部分**用省略号**表示（不硬裁）。
+/// ⚠ 这是**布局常量**：侧栏最小宽 210（`PanelWindow.cpp` 的 kSidebarMinWidth），
+///   给项目名留 120，其余留给状态点/计数/间距。
+constexpr int kProjectNameMaxPx = 120;
 
 // countedRow（PanelView.swift:127-140 对位）：行 widget = 图标 + 名称 + 拉伸 + 行内计数。
 // 子控件全部 WA_TransparentForMouseEvents → 点击落回列表项；
@@ -46,7 +53,13 @@ QWidget *countedRow(const QIcon &icon, const QString &text, QWidget *parent)
     h->addWidget(ic);
     auto *name = new QLabel(text, w);
     name->setAttribute(Qt::WA_TransparentForMouseEvents);
-    name->setMaximumWidth(120); // 单行截断（60 字项目名在最窄窗口截断带省略号为预期行为）
+    // ⚠ 这里只放**固定视图名**（仪表盘 / 看板 / 里程碑，文本短 ⇒ 永不溢出）
+    //   ⇒ `setMaximumWidth(120)` 是**兜底上限**，不是「项目名截断」。
+    // ⚠ **原注释是错的**（批 AO 订正）：它把这行说成「项目名」、并说宽度限制会自动加省略号——
+    //     ① 这行**不是项目名**（项目名在下面 `rebuildProjectRows`，批 AM 已改省略号）；
+    //     ② `setMaximumWidth` **不会**加省略号（Qt 默认是硬裁，批 AM 实测）。
+    //   ⇒ 按实际行为写：短文本 + 兜底上限。
+    name->setMaximumWidth(kProjectNameMaxPx);
     h->addWidget(name);
     h->addStretch(1);
     auto *count = new CountLabel(w);
@@ -83,7 +96,7 @@ SidebarNav::SidebarNav(QWidget *parent)
     // ── 底部动作区（列表外）：添加 / 扫描项目（侧栏唯一主操作，带图标实底钮——
     // 不随 FlatButton 收编，同「主操作不降平钮」口径）──
     m_addOrScan = new QPushButton(QStringLiteral("添加 / 扫描项目"), this);
-    m_addOrScan->setIcon(QIcon::fromTheme(QStringLiteral("list-add")));
+    m_addOrScan->setIcon(platform::icon(IconNames::Id::add));
     layout->addWidget(m_addOrScan);
     connect(m_addOrScan, &QPushButton::clicked, this, &SidebarNav::addOrScanClicked);
 
@@ -121,12 +134,13 @@ SidebarNav::SidebarNav(QWidget *parent)
         auto *item = new QListWidgetItem(m_list);
         item->setData(kRoleSelection, static_cast<int>(v.second));
         item->setData(kRoleIsView, true);
-        const QString themeIcon = v.second == Selection::Kind::dashboard
-            ? QStringLiteral("preferences-desktop-wallpaper")
-            : (v.second == Selection::Kind::board ? QStringLiteral("view-list-details")
-                                                  : QStringLiteral("flag"));
+        // 视图行的图标走**统一入口**（逻辑名 → 候选链）：主题缺名时静默空图是最难查的故障
+        const IconNames::Id logicalIcon = v.second == Selection::Kind::dashboard
+            ? IconNames::Id::dashboard
+            : (v.second == Selection::Kind::board ? IconNames::Id::board
+                                                  : IconNames::Id::milestone);
         // 行尾计数语义：看板=attention 数（不受时间窗筛选）；里程碑=open+done
-        auto *row = countedRow(QIcon::fromTheme(themeIcon), v.first, this);
+        auto *row = countedRow(platform::icon(logicalIcon), v.first, this);
         row->setProperty("viewKind", static_cast<int>(v.second));
         m_list->setItemWidget(item, row);
         item->setSizeHint(row->sizeHint());
@@ -244,7 +258,14 @@ void SidebarNav::rebuildProjectRows()
         h->addWidget(dot);
         auto *name = new QLabel(p.name, row);
         name->setAttribute(Qt::WA_TransparentForMouseEvents);
-        name->setMaximumWidth(120);
+        // ⚠ **省略号**，不是硬裁（PLAN §3c「响应式」那条：定宽截断改 `elidedText`）。
+        //   原来只 `setMaximumWidth(120)` ⇒ QLabel 默认**直接切掉后半截**，
+        //   长项目名变成「my-very-long-pro…」（半个字，无提示）⇒ 用户看不懂是哪个项目。
+        //   ⇒ 按可用宽度算省略号，**完整名进 tooltip**（鼠标悬停能看全）。
+        name->setText(name->fontMetrics().elidedText(
+            p.name, Qt::ElideRight, kProjectNameMaxPx));
+        name->setToolTip(p.name);
+        name->setMaximumWidth(kProjectNameMaxPx);
         h->addWidget(name);
         h->addStretch(1);
         auto *count = new CountLabel(row);
@@ -302,7 +323,8 @@ void SidebarNav::setStatusStrip(const QString &text, Liveness dot, bool busy)
     m_statusBusy->setBusy(busy); // 忙态转圈（BusyRow 单点）；关动画时退化为静态弧
     const QColor c = Derived::livenessColor(dot);
     // 汇总态大点 = dotLg（M3-5）；行内点已统一 8px（StatusDot）
-    QPixmap pm(DS::Height::dotLg, DS::Height::dotLg);
+    // ⚠ **HiDPI 感知**（批 AP · M3c）：按 dpr 放大后画 ⇒ 缩放下不发虚。
+    QPixmap pm = platform::dpiPixmap(QSize(DS::Height::dotLg, DS::Height::dotLg));
     pm.fill(Qt::transparent);
     QPainter p(&pm);
     p.setRenderHint(QPainter::Antialiasing);

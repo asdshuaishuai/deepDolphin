@@ -20,6 +20,7 @@
 //   · DPalette::LightLively（DTK 推荐按钮底色，浅 #0081FF / 深 #0059D2）。
 // 取不到值（isValid 检查失败）时退回 deepin 官方视觉规范值，绝不静默变白。
 #include "DesignTokens.h"
+#include "../logic/SemColors.h"
 #include <DGuiApplicationHelper>
 #include <DFontManager>
 #include <DStyle>
@@ -95,23 +96,35 @@ QColor semColor(SemColor c)
     case SemColor::accent:
         // accent = DTK 推荐按钮底色（LightLively）——与 DSuggestButton/DPushButton 的
         // 原生强调色同源，不再另立门户；取不到退回 deepin 规范强调蓝。
+        // ⚠ 只有这一档**接运行期主题**（DGuiApplicationHelper = ui 层），所以它
+        //   留在 ui 层；其余语义色是固定值，**下沉到 logic/SemColors**（唯一出处）。
         return paletteRole(DPalette::LightLively, "#0081ff", "#3b9eff");
     case SemColor::shallow:
-        return QColor(0x10, 0xB9, 0x81);
+        return SemColors::shallow();
     case SemColor::deep:
-        return QColor(0x8B, 0x5C, 0xF6);
+        return SemColors::deep();
     case SemColor::ai:
-        return QColor(0x06, 0xB6, 0xD4);
+        return SemColors::ai();
     case SemColor::orange:
-        return QColor(0xF5, 0x9E, 0x0B);
+        return SemColors::orange();
     case SemColor::red:
-        return QColor(0xDC, 0x26, 0x26);
+        return SemColors::red();
     case SemColor::yellow:
-        return QColor(0xE8, 0xB0, 0x1C);
+        return SemColors::yellow();
     case SemColor::gray:
-        break;
+        return SemColors::gray();
     }
-    return QColor(0x9C, 0xA3, 0xAF);
+    return SemColors::gray();
+}
+
+// 强调色淡底：alpha 走 token，调用方不再自己拼 rgba 字面量。
+QString accentTintRgba(const QColor &c)
+{
+    return QStringLiteral("rgba(%1, %2, %3, %4)")
+        .arg(c.red())
+        .arg(c.green())
+        .arg(c.blue())
+        .arg(QString::number(Alpha::accentTint, 'f', 2));
 }
 
 bool isDarkTheme()
@@ -201,6 +214,13 @@ QColor textSecondary()
 {
     // 次级文字 = DTK 的 PlaceholderText（提示性文本专用角色）
     return paletteRole(DPalette::PlaceholderText, "#808080", "#a6a6a6");
+}
+
+// 底轨遮罩：中性灰 40/255 —— 通用「无数据也可见」的轨道底色。
+// 放 DS 是因为它服务多个分段条类控件（各写各的 = 多个真相源）。
+QColor trackMask()
+{
+    return QColor(128, 128, 128, 40);
 }
 
 QFont font(FontT t){

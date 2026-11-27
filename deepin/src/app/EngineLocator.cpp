@@ -1,4 +1,5 @@
 #include "EngineLocator.h"
+#include "../logic/EngineDownload.h"
 #include <DStandardPaths>
 #include <QCoreApplication>
 #include <QDir>
@@ -35,7 +36,14 @@ QStringList candidatePaths(QStringList *problems)
     paths << QDir(appDir + QStringLiteral("/../../../moonGit/target/release/bin/main"))
                  .absolutePath();
 
-    // 3/4. 常见安装位：先新名 moongit，再旧名 deepgit（旧名兜底不能省）
+    // 3. 客户端自己管理的目录（**引擎下载链装的**）：~/.local/libexec/deepdolphin/moongit
+    //    ⚠ 排在 ~/.local/bin **之前**：mac 的 build.sh 注释记着同一个教训 ——
+    //      「顺序必须是客户端自带的优先，否则永远选到 ~/.local/bin 那个**过期安装版**」。
+    //      两条路径各有其主：libexec = 客户端下载链管的（跟 latest 发布走），
+    //      ~/.local/bin = 用户用 install.sh 手动装的。
+    paths << homePath() + QStringLiteral("/.local/libexec/deepdolphin/moongit");
+
+    // 4/5. 常见安装位：先新名 moongit，再旧名 deepgit（旧名兜底不能省）
     const QStringList dirs = {
         homePath() + QStringLiteral("/.local/bin"),
         QStringLiteral("/usr/local/bin"),
@@ -116,9 +124,12 @@ EngineLocator::Result EngineLocator::locate()
 
 QString EngineLocator::installHint()
 {
-    return QString::fromUtf8(
-        "请运行 moonGit/scripts/install.sh 安装引擎（安装到 ~/.local/bin/moongit），"
-        "或设置环境变量 DEEPGIT_BIN 指向引擎二进制，然后点击「重新检测引擎」。");
+    // ⚠ **文案在判定层**（logic/EngineDownload::installHint）——
+    //   同一句指引会被首屏 / 面板状态栏 / AppModel 多处用
+    //   ⇒ 放 app 层就要复制多份 ⇒ 改一处漏两处。
+    //   ⚠ 旧文案让用户去跑 `moonGit/scripts/install.sh` ⇒ **过时**
+    //   （拿 deb 的普通用户没有那个仓库），而客户端自己就有下载链。
+    return EngineDownload::installHint();
 }
 
 namespace {

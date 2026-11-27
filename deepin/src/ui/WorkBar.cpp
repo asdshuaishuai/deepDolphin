@@ -1,7 +1,9 @@
 #include "WorkBar.h"
 #include "DualTrackButtons.h"
 #include "../app/AppModel.h"
+#include "../logic/IconNames.h"
 #include "../logic/Derived.h"
+#include "../platform/IconResolver.h"
 #include "DesignTokens.h"
 #include <DComboBox>
 #include <QHBoxLayout>
@@ -23,10 +25,13 @@ WorkBar::WorkBar(QWidget *parent)
     h->setSpacing(DS::Spacing::sm);
 
     auto *globe = new QLabel(this);
-    globe->setPixmap(QIcon::fromTheme(QStringLiteral("globe")).pixmap(16, 16));
+    globe->setPixmap(platform::icon(IconNames::Id::globe).pixmap(16, 16));
     h->addWidget(globe);
 
     m_range = new Dtk::Widget::DComboBox(this);
+    // ⚠ **这里不用改省略号**（批 AO 实测核对）：DComboBox **自带**按宽度省略
+    //   （QComboBox 的 viewDelegate 用 QFontMetrics::elidedText）⇒ 不是硬裁。
+    //   ⇒ 全仓「定宽截断改 elidedText」那条只针对 **QLabel**（QLabel 默认是硬裁）。
     m_range->setMaximumWidth(320);
     h->addWidget(m_range);
     h->addStretch(1);

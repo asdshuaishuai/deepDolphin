@@ -1,15 +1,18 @@
 #include "TrayPopupWindow.h"
 #include "TrayGeometry.h"
+#include "../logic/SemColors.h"
+#include "../platform/Backend.h"
+#include "../platform/DpiPixmap.h"
 #include "../ui/DesignTokens.h"
 #include "../ui/common/BusyRow.h"
 #include "../ui/common/FlatButton.h"
 #include "../ui/common/SecondaryLabel.h"
 #include <QApplication>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPainter>
 #include <QPainterPath>
-#include <QScreen>
 #include <QVBoxLayout>
 
 TrayPopupWindow::TrayPopupWindow(QWidget *parent)
@@ -61,6 +64,20 @@ TrayPopupWindow::TrayPopupWindow(QWidget *parent)
     connect(m_updateAllBtn, &QPushButton::clicked, this, &TrayPopupWindow::updateAllClicked);
     connect(m_quitBtn, &QPushButton::clicked, this, &TrayPopupWindow::quitClicked);
 
+    // ── 失焦收起的**兜底**（批 W · M1-8）──
+    // 原来只有 `QEvent::WindowDeactivate` ⇒ 失焦就收起。Wayland 上失焦事件
+    // **可能不送达**（合成器不给你 focus 变化）⇒ 弹窗赖在屏幕上不走。
+    // 应用级失焦（`applicationStateChanged`）是一定会来的信号 ⇒ 用它兜底。
+    // ⚠ 判据：只在**转成 Inactive** 时收起 ⇒ 弹窗刚弹出、应用还没被激活
+    //   （托盘图标属于壳，点击它激活的是壳不是我们）时**不会**被误收起。
+    if (auto *guiApp = qobject_cast<QGuiApplication *>(QCoreApplication::instance())) {
+        connect(guiApp, &QGuiApplication::applicationStateChanged, this,
+            [this](Qt::ApplicationState state) {
+                if (state == Qt::ApplicationInactive)
+                    hide();
+            });
+    }
+
     rebuildBody(TraySnapshot{});
 }
 
@@ -111,31 +128,13 @@ void TrayPopupWindow::refreshFrom(const TraySnapshot &snapshot)
 void TrayPopupWindow::popupNear(const QRect &trayIconGeometry)
 {
     adjustSize();
-    QRect target;
-    QScreen *screen = QGuiApplication::screenAt(trayIconGeometry.center());
-    if (!screen && QGuiApplication::primaryScreen())
-        screen = QGuiApplication::primaryScreen();
-    const QRect avail = screen ? screen->availableGeometry()
-                               : QRect(0, 0, 1280, 720);
-    if (trayIconGeometry.isValid()) {
-        target.moveCenter(trayIconGeometry.center());
-        target.moveLeft(trayIconGeometry.right() - width() + TrayGeometry::dockGap);
-        target.moveTop(trayIconGeometry.bottom() + TrayGeometry::dockGap);
-    } else {
-        // 取不到托盘几何 → 屏幕右上（PLAN §8 T4）
-        target.moveTopRight(avail.topRight()
-            + QPoint(TrayGeometry::fallbackDx, TrayGeometry::fallbackDy));
-    }
-    target.setWidth(width());
-    target.setHeight(height());
-    if (target.bottom() > avail.bottom())
-        target.moveBottom(avail.bottom() - TrayGeometry::edgeMargin);
-    if (target.left() < avail.left())
-        target.moveLeft(avail.left() + TrayGeometry::dockGap);
+    // 落点收口到平台层（M1-7）：几何算法在判定层（`logic/Backend`），
+    // 屏幕可用区在这里取（平台层），定位参数出自托盘域 token（`TrayGeometry`）。
+    const QRect target = platform::trayPopupTarget(trayIconGeometry, size(), TrayGeometry::popupGeometry());
     move(target.topLeft());
-    show();
-    raise();
-    activateWindow();
+    // 激活动作也收口到平台层：**这里以前是 show/raise/activateWindow 三连**，
+    // 最小化态下 show() 拉不回来（点了跟没点一样）——平台层统一处理。
+    platform::activate(this);
 }
 
 void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
@@ -177,17 +176,26 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
         h->setContentsMargins(0, TrayGeometry::rowMarginV, 0, TrayGeometry::rowMarginV);
         h->setSpacing(TrayGeometry::rowSpacing);
         auto *dot = new QLabel(line);
-        QPixmap pm(DS::Height::dotLg, DS::Height::dotLg); // 托盘汇总行大点 = dotLg（M3-5）
+        // ⚠ **HiDPI 感知**（批 AP · M3c）：按 dpr 放大后画 ⇒ 125%/150%/200% 下不发虚
+        //   （原来 `QPixmap pm(w, h)` 只有 w×h **设备**像素，被控件放大 ⇒ 锯齿）。
+        QPixmap pm = platform::dpiPixmap(QSize(DS::Height::dotLg, DS::Height::dotLg)); // 托盘汇总行大点 = dotLg（M3-5）
         pm.fill(Qt::transparent);
         QPainter p(&pm);
         p.setRenderHint(QPainter::Antialiasing);
-        p.setBrush(row.dot.isValid() ? row.dot : QColor(0x9C, 0xA3, 0xAF));
+        p.setBrush(row.dot.isValid() ? row.dot : SemColors::gray());
         p.setPen(Qt::NoPen);
         p.drawEllipse(0, 0, DS::Height::dotLg, DS::Height::dotLg);
         dot->setPixmap(pm);
         h->addWidget(dot);
         auto *name = new QLabel(row.name, line);
-        name->setFixedWidth(TrayGeometry::nameWidth);
+        // ⚠ **省略号，不是硬裁**（批 AO）：托盘弹窗宽固定（`TrayGeometry::popupWidth`），
+        //   项目名却**长度不受控**（用户可注册任意长的目录名）⇒ 原来 `setFixedWidth(120)`
+        //   是**直接切掉后半截**（半个字、无提示）⇒ 用户认不出是哪个项目。
+        //   ⇒ 按可用宽度算省略号，**完整名进 tooltip**（悬停能看全）。
+        //   ⚠ 与侧栏项目名（`SidebarNav` 的 kProjectNameMaxPx）同一口径。
+        name->setText(name->fontMetrics().elidedText(
+            row.name, Qt::ElideRight, TrayGeometry::nameWidth));
+        name->setToolTip(row.name);
         h->addWidget(name);
         // ●N 橙 chip（userDirtyCount>0）
         if (row.dirty > 0) {
@@ -221,15 +229,16 @@ void TrayPopupWindow::rebuildBody(const TraySnapshot &snapshot)
             bar->setFixedSize(TrayGeometry::miniBarWidth, DS::Height::barMini); // 迷你条（M3-5/M3-7）
             h->addWidget(bar);
             // 迷你进度条（一次性画成 pixmap）
-            QPixmap barPm(TrayGeometry::miniBarWidth, DS::Height::barMini);
+            // ⚠ **HiDPI 感知**（批 AP · M3c）：迷你条同理，按 dpr 放大后画。
+            QPixmap barPm = platform::dpiPixmap(QSize(TrayGeometry::miniBarWidth, DS::Height::barMini));
             barPm.fill(Qt::transparent);
             QPainter bp(&barPm);
             bp.setRenderHint(QPainter::Antialiasing);
             bp.setPen(Qt::NoPen);
-            bp.setBrush(QColor(128, 128, 128, 60));
+            bp.setBrush(FixedColors::trayBarTrack());
             bp.drawRoundedRect(0, 0, TrayGeometry::miniBarWidth, DS::Height::barMini,
                 DS::Height::barMini / 2.0, DS::Height::barMini / 2.0);
-            bp.setBrush(QColor(0x1E, 0x6F, 0xEB));
+            bp.setBrush(FixedColors::trayAccent());
             const int w = TrayGeometry::miniBarWidth * qMin(row.pending, TrayGeometry::pendingBarCap)
                 / TrayGeometry::pendingBarCap;
             if (w > 0)

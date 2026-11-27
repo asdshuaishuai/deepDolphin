@@ -124,8 +124,15 @@ QString AddMilestoneDialog::tag() const
 QString AddMilestoneDialog::targetDate() const
 {
     // 未勾选 → 空串（空 date 不发键）
-    return m_hasDate->isChecked() ? m_date->date().toString(QStringLiteral("yyyy-MM-dd"))
-                                  : QString();
+    if (!m_hasDate->isChecked())
+        return QString();
+    // ⚠ **formatter 静态化**（mac 性能审计 21c7082 同款）：QDate::toString(格式串)
+    //   每次调用都要**新建一个 QDateTimeFormat**（解析格式串 + 建缓存）——
+    //   看着便宜，但这是提交路径上的一次多余分配。
+    //   用 **Qt::ISODate 枚举**而不是格式串：对 QDate 它就是 yyyy-MM-dd，
+    //   且 Qt 内部走**现成的 ISO 快速路径**，连格式串都不必解析。
+    //   （注：QDateTimeFormat 在 Qt 6.9 之前不是公开类，deepin 用的这版没有。）
+    return m_date->date().toString(Qt::ISODate);
 }
 
 QString AddMilestoneDialog::desc() const

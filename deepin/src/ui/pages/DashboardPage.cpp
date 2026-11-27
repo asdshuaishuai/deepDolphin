@@ -5,6 +5,7 @@
 #include "../../logic/CommitTypeComposition.h"
 #include "../../logic/DashboardScope.h"
 #include "../../logic/Derived.h"
+#include "../../platform/DpiPixmap.h"
 #include "../../logic/LanguageCoverage.h"
 #include "../../logic/MilestoneCardTitle.h"
 #include "../DesignTokens.h"
@@ -24,6 +25,13 @@
 #include <QVBoxLayout>
 
 DWIDGET_USE_NAMESPACE
+
+namespace {
+// ⚠ **活跃项目摘要的定宽上限**（批 AO）：headline 来自引擎，长度不受控。
+//   原来这个 300 是**裸字面量**写在调用点（且是「硬裁」而非省略号）。
+//   ⇒ 提到本地常量并与省略号口径绑在一起（同 SidebarNav 的 kProjectNameMaxPx 做法）。
+constexpr int kActiveHeadlineMaxPx = 300;
+} // namespace
 
 DashboardPage::DashboardPage(QWidget *parent)
     : QWidget(parent)
@@ -94,7 +102,7 @@ void DashboardPage::rebuild()
         auto *addBtn = new DPushButton(QStringLiteral("添加 / 扫描项目"), m_content);
         addBtn->setToolTip(QStringLiteral("注册项目后运行一次浅更新，仪表盘开始出数"));
         connect(addBtn, &QPushButton::clicked, this, &DashboardPage::addScanRequested);
-        m_contentLayout->addWidget(new EmptyState(QStringLiteral("folder-new"),
+        m_contentLayout->addWidget(new EmptyState(IconNames::Id::folderNew,
             QStringLiteral("仪表盘还没有数据"),
             QStringLiteral("注册项目后运行一次浅更新，这里会出现项目群脉搏。"), addBtn));
         return;
@@ -159,8 +167,17 @@ void DashboardPage::rebuild()
     });
     m_contentLayout->addWidget(m_filterBar);
 
-    // ── KPI 4 卡（QGridLayout；宽 <980 由 resizeEvent 折 2 列——用两列网格自适应代替：
-    //    固定两行两列在窄窗口下仍可读，宽窗口展开四列）──
+    // ── KPI 4 卡（QGridLayout；**固定两行两列**）──
+    // ⚠ **实测订正（批 AM）**：这段注释原来声称「窗宽 <980 时会折成 2 列」，
+    //   而**代码里根本没有那种折行机制**（4 张卡写死在 (0,0)(0,1)(1,0)(1,1)）
+    //   ⇒ 说法与实现相反（与批 AI 的 `Notifier.h` 同类：注释比实现还自信）。
+    //   ⇒ 现在按**实际行为**写：固定 2×2。
+    // ⚠ 为什么**不做** 1/2/4 列响应式（PLAN §3c 原提案）：实测 mac 侧是
+    //   **固定 4 列**（`macos/Sources/deepDolphin/DetailViews.swift:902-903`
+    //   `LazyVGrid(count: 4)`）⇒ 「按窗宽 1/2/4」是 deepin 侧的提案，**无 mac 对位**；
+    //   而 2×2 在窄窗口下仍可读（宽窗口则两列各自拉宽）⇒ 保持 2×2。
+    //   ⚠ 将来若真要响应式：**改这里 + 补判定层**（列数判定不许写在 resizeEvent 里
+    //   ——那样无头测不到），别只改一半。
     auto *kpiHost = new QWidget(m_content);
     auto *kpiGrid = new QGridLayout(kpiHost);
     kpiGrid->setContentsMargins(0, 0, 0, 0);
@@ -381,7 +398,8 @@ QWidget *DashboardPage::buildActiveCard()
         h->setContentsMargins(0, 0, 0, 0);
         h->setSpacing(DS::Spacing::sm);
         auto *dot = new QLabel(row);
-        QPixmap pm(DS::Height::dot, DS::Height::dot); // 状态点统一 8px（M3-5）
+        // ⚠ **HiDPI 感知**（批 AP · M3c）：按 dpr 放大后画。
+        QPixmap pm = platform::dpiPixmap(QSize(DS::Height::dot, DS::Height::dot)); // 状态点统一 8px（M3-5）
         pm.fill(Qt::transparent);
         QPainter p(&pm);
         p.setRenderHint(QPainter::Antialiasing);
@@ -396,7 +414,16 @@ QWidget *DashboardPage::buildActiveCard()
         h->addWidget(ago);
         h->addStretch(1);
         auto *headline = new SecondaryLabel(a.headline, row);
-        headline->setMaximumWidth(300);
+        // ⚠ **省略号，不是硬裁**（批 AO）：headline 来自**引擎**（`DocumentIntegrity::headline`）
+        //   ⇒ 长度不受我们控制（实测可到「状态读不出来」这种整句，也可能更长）；
+        //   原来只 `setMaximumWidth(300)` ⇒ QLabel 默认**直接切掉后半截**（半个字、无提示）
+        //   ⇒ 用户看到「一切正」不知道后面是什么。
+        //   ⇒ 按可用宽度算省略号，**完整文进 tooltip**（鼠标悬停能看全）。
+        //   ⚠ mac 侧对位 `DashboardParts.swift` 用的是 `Text(...)`（SwiftUI 自动截断 + 可悬停）
+        //   ⇒ 「省略号 + 完整可查」是**两边一致**的口径。
+        headline->setText(headline->fontMetrics().elidedText(
+            a.headline, Qt::ElideRight, kActiveHeadlineMaxPx));
+        headline->setToolTip(a.headline);
         v->addWidget(row);
     }
     return card;

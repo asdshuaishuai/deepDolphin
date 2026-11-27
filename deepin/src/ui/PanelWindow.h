@@ -11,6 +11,7 @@
 #include "../logic/Scope.h"
 #include "../tray/TrayController.h"
 #include <DMainWindow>
+#include <QHash>
 #include <QLabel>
 #include <QPointer>
 #include <optional>
@@ -29,6 +30,10 @@ class SetupGuidePage;
 class AiResultDialog;
 class AiSettingsDialog;
 class AgentDialog;
+class ArchDialog;
+class CodeGraphDialog;
+class PatchCheckDialog;
+class DocsDialog;
 class TrayController;
 
 DWIDGET_USE_NAMESPACE
@@ -45,6 +50,11 @@ public:
     void showRouteNotice(const QString &text); // 深链说明条（详情区顶部，独立于 lastError）
     void applyRoute(const LaunchRoute &route); // 二实例深链转发
     void attachTray(TrayController *tray);     // 托盘信号接线（main 持有托盘）
+
+    /// 当前显示的是不是「引擎缺失首屏」。
+    /// ⚠ 为什么要有：无头快照用它**断言**拍到的确实是首屏 ——
+    ///   否则「文件名叫 setupguide、图里其实是仪表盘」也能过门 ⇒ 又一个空门。
+    bool showingSetupGuide() const;
 
 signals:
     void traySnapshotChanged(); // main 借此刷托盘（fillSnapshot 由本类提供）
@@ -66,6 +76,10 @@ private:
     void maybeApplyPendingRoute();
     void showSettings();
     void showAgentDialog();  // AI 助手（范围跟随 selection；成员复用防 worker 悬垂）
+    void showArch(const QString &project); // 架构图窗（按项目各一个；单仓库在入口锁定）
+    void showCodeGraph(const QString &project); // 代码图谱窗（按项目各一个）
+    void showPatchCheck(const QString &project); // 补丁体检窗（按项目各一个）
+    void showDocs(int kindIndex); // 固定文档窗（关于 / 帮助 / 开源感谢 / 更新日志）
     void showBrief(const QString &project, const QString &titleOverride = QString()); // AI 说明（worker 生成；未配置 → 诚实降级）
     void confirmBulkUpdate(bool deep);
     void runUpdateForScope(bool deep);
@@ -93,6 +107,12 @@ private:
     ProjectDetailPage *m_detail = nullptr;
     AiSettingsDialog *m_settings = nullptr;
     AgentDialog *m_agent = nullptr; // AI 助手（成员复用：worker 回调不悬垂）
+    // 架构图窗：按项目各一个（mac 同款单仓库锁定 —— 仓库在入口定，窗内不切）。
+    QHash<QString, QPointer<ArchDialog>> m_archDialogs;
+    // 代码图谱窗：按项目各一个（与架构图窗同理）。
+    QHash<QString, QPointer<CodeGraphDialog>> m_codeGraphDialogs;
+    QHash<QString, QPointer<PatchCheckDialog>> m_patchDialogs;
+    QPointer<DocsDialog> m_docsDialog;
     QPointer<AiResultDialog> m_digestDialog; // 「更新 + AI 摘要」结果窗（busy → 正文/错误）
 
     Selection m_selection;
