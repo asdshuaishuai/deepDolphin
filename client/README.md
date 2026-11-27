@@ -44,6 +44,9 @@
   对比度：14 套 0 冲突，悬停 / 按下与提示条也是 0 冲突。
   **仓库与本地目录不改名**（2026-11-27 定）：两个仓库都开着 GitHub Pages，改名后 Pages 地址不跳转；
   `~/.deepgit` 也不动（用户定）。
+  **基线**（2026-11-27）：`next/cmp` 包含本仓全部开发分支（`main`、`dev`、`next/bui`、`docs/agents-md-bootstrap`、
+  `feat/deepin-engine-capabilities`）；`gh-pages` 是 Pages 的部署产物，不算开发分支。根目录的 `AGENTS.md`
+  是这个仓库的协作指南（仓库形状、构建、约定、测试纪律）。
 - 图谱两页依赖引擎产物的嵌入模式（0.3.0 开发构建）：引擎退回 0.2.x 时图谱照常出图，但是原样内嵌的样子。
 - **真窗口实拍（2026-11-25，DISPLAY=:0，打包后的 deb 提取运行）**：截图与逐张说明见
   [`docs/ui-cmp/README.md`](../docs/ui-cmp/README.md)。此前入库的 48 张旧图已退役——其中

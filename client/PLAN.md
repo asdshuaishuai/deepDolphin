@@ -588,3 +588,28 @@ report（`--out`）/config/verify/doctor。重点四类（均实测存在）：
   逐级 + 每套皮肤的语义色，容器前景 ≥ 4.5 且只能是纯黑 / 纯白。
 - **结果**：浅色皮肤的主文字在卡面上的对比度普遍升到 17–21（neo 10.2 → 17.1、clay 9.9 → 19.0、frutiger 11.9 → 19.5、
   aqua 13.8 → 18.5）。体检：14 套 × 7 页 5,803 段文字 0 冲突，偏弱 65 → 32；门禁 283 passed / 0 failed / 1 skipped。
+
+## 并入最新基线（2026-11-27）
+
+用户：「从当前改名后为最新基线，两个仓库的分支全部并入最新分支」。客户端仓库的最新分支是 `next/cmp`。
+逐个远端分支核对（`git rev-list --left-right --count next/cmp...<分支>`）：
+
+| 远端分支 | 相对 next/cmp | 处置 |
+|---|---|---|
+| `main`、`dev`、`next/bui` | 已全部包含 | 无需操作 |
+| `docs/agents-md-bootstrap` | 多 1 个提交（根 AGENTS.md 初稿 + .zcodeignore） | 干净并入（`7572233`） |
+| `feat/deepin-engine-capabilities` | 多 222 个提交 | 并入（`bf6336c`） |
+| `gh-pages` | 多 1 个提交（「deploy deepDolphin website」，532 个生成文件） | **不并**：GitHub Pages 的部署产物 |
+
+- **根 AGENTS.md 重写成当前事实**（`178a613`）：docs 分支带进来的那份写于多平台并行时期（deepDolphin 是 moonGit 的多平台
+  客户端、macos 是功能基准、引擎命令 `moongit`），与平台决定、品牌都对不上。保留它的章节结构（仓库形状 / Setup /
+  Code style / Testing / 协作规约 / PR & commit / Security），内容按现状重写。
+- **deepin 分支**：那是冻结的 deepin 端最后一次没并进主线的工作（EJ 系列修复、引擎能力对接）。并入后 `deepin/**`
+  跟到该分支的最后一版（197 个文件），`linux/` 的 4 处小改（脚本与一处注释乱码修正）与 `.gitignore` 新增的 core 转储忽略一并收下。
+  冲突只有两个 macOS 的 Swift 文件（`ArchPage` / `CodeGraphPage`）：该分支在更早时并过一次主线，带的是旧一版的图谱页；
+  主线的 macOS 目录更新。**`macos/**` 整体保持 `next/cmp` 的原样**——该分支在 macos 下新增的三个无人引用的文件也不收
+  （没有调用方、测试也没随迁）。`client/`（CMP）与 `docs/` 一个字节没动。
+- **基线**：`next/cmp`。`main` 与 `dev` 没动（落后 284 / 318 个提交）——它们都是 `next/cmp` 的祖先，要跟上只需快进。
+- 引擎仓库同步做了并入（`feat/sylva-brand` 并入 `origin/dev`），本机引擎二进制随之更新到合并后的构建
+  （旧版备份 `~/.local/libexec/cambium/cambium.bin.bak-20261127-pre-merge`）。
+- 验证：客户端门禁对着合并后的引擎跑，283 passed / 0 failed / 1 skipped。
