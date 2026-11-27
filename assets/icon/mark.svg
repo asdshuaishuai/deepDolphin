@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    Canopy 应用图标 ·「森林谱系」
+    项目叫 Sylva：整个仓库如同一片森林，谱系就是它的图谱。图标画的是一张谱系图——
+    地面上一根主干分出两枝（第一代），两枝再各向上分出一棵、并向顶冠汇合（第二代）。
+    五个圆是树冠，也是节点：整体轮廓是一棵树，拆开看是一张图。
+
+    几何（1024 画布，满幅圆角方底，半径 226——与历代 Canopy 图标同一几何；边距由
+    assets/icon/make-icons.py 按各平台规范另加，这里四边不留透明边距）：
+      地面    y=782，横条 y=770 高 24
+      主干根  (512, 782)
+      第一代  (368, 566) (656, 566)   圆冠 r=85   光环 r=93
+      第二代  (300, 384) (724, 384)   圆冠 r=67   光环 r=75
+      顶冠    (512, 300)              圆冠 r=93   光环 r=101
+    连线宽 44（主干）/ 32（分枝）；底色里的四圈淡环以主干根为圆心，是谱系从根部扩散的意思。
+
+    约束：
+    · 只用渐变、透明度与叠加，不用滤镜（模糊、投影滤镜）——librsvg 与 cairosvg 对滤镜的
+      支持不一样，同一个文件在两台机器上渲染出不同像素，各尺寸产物就会漂。
+    · 小尺寸母版 mark-small.svg 是这张的简化版（三个圆冠），两份的方底、配色必须一致。
+  -->
+  <defs>
+    <clipPath id="round">
+      <rect width="1024" height="1024" rx="226" ry="226"/>
+    </clipPath>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#13A374"/>
+      <stop offset="1" stop-color="#04302A"/>
+    </linearGradient>
+    <!-- 顶冠后面的一团光：林冠上方透下来的光，也给顶冠一个视觉焦点 -->
+    <radialGradient id="glow" cx="0.5" cy="0.27" r="0.6">
+      <stop offset="0" stop-color="#56F2B0" stop-opacity="0.36"/>
+      <stop offset="1" stop-color="#56F2B0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.24"/>
+    </linearGradient>
+    <!-- 圆冠三档亮度：越靠上（越新的一代）越亮。高光偏左上，与方底的光向一致 -->
+    <radialGradient id="crownTop" cx="0.36" cy="0.3" r="0.82">
+      <stop offset="0" stop-color="#EFFFF5"/>
+      <stop offset="1" stop-color="#4EE49E"/>
+    </radialGradient>
+    <radialGradient id="crown2" cx="0.36" cy="0.3" r="0.82">
+      <stop offset="0" stop-color="#B8FFD6"/>
+      <stop offset="1" stop-color="#2BD07F"/>
+    </radialGradient>
+    <radialGradient id="crown1" cx="0.36" cy="0.3" r="0.82">
+      <stop offset="0" stop-color="#8EF0BC"/>
+      <stop offset="1" stop-color="#13AE65"/>
+    </radialGradient>
+  </defs>
+
+  <g clip-path="url(#round)">
+    <rect width="1024" height="1024" fill="url(#tile)"/>
+    <rect width="1024" height="1024" fill="url(#glow)"/>
+    <!-- 谱系从根部扩散：四圈淡环 -->
+    <g fill="none" stroke="#9CFFD0" stroke-opacity="0.085" stroke-width="16">
+      <circle cx="512" cy="782" r="300"/>
+      <circle cx="512" cy="782" r="450"/>
+      <circle cx="512" cy="782" r="600"/>
+      <circle cx="512" cy="782" r="750"/>
+    </g>
+    <rect width="1024" height="1024" fill="url(#floor)"/>
+
+    <!-- 地面：林地 -->
+    <rect x="318" y="770" width="388" height="24" rx="12" fill="#6FEDB0" fill-opacity="0.5"/>
+
+    <!-- 谱系连线：主干 → 第一代 → 第二代（顶冠是两枝的汇合） -->
+    <g fill="none" stroke="#2FB87E" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M512 782 C512 706 452 664 368 566" stroke-width="44"/>
+      <path d="M512 782 C512 706 572 664 656 566" stroke-width="44"/>
+      <path d="M368 566 C340 500 322 462 300 384" stroke-width="32"/>
+      <path d="M368 566 C420 472 470 402 512 300" stroke-width="32"/>
+      <path d="M656 566 C604 472 554 402 512 300" stroke-width="32"/>
+      <path d="M656 566 C684 500 702 462 724 384" stroke-width="32"/>
+    </g>
+
+    <!-- 圆冠的投影（向下偏 14，不用投影滤镜） -->
+    <g fill="#021E1A" fill-opacity="0.28">
+      <circle cx="368" cy="580" r="93"/>
+      <circle cx="656" cy="580" r="93"/>
+      <circle cx="300" cy="396" r="75"/>
+      <circle cx="724" cy="396" r="75"/>
+      <circle cx="512" cy="316" r="101"/>
+    </g>
+    <!-- 光环：方底的深一档颜色，连线进冠处才有清楚的界 -->
+    <g fill="#08453A">
+      <circle cx="368" cy="566" r="93"/>
+      <circle cx="656" cy="566" r="93"/>
+      <circle cx="300" cy="384" r="75"/>
+      <circle cx="724" cy="384" r="75"/>
+      <circle cx="512" cy="300" r="101"/>
+    </g>
+    <!-- 树冠 = 节点 -->
+    <circle cx="368" cy="566" r="85" fill="url(#crown1)"/>
+    <circle cx="656" cy="566" r="85" fill="url(#crown1)"/>
+    <circle cx="300" cy="384" r="67" fill="url(#crown2)"/>
+    <circle cx="724" cy="384" r="67" fill="url(#crown2)"/>
+    <circle cx="512" cy="300" r="93" fill="url(#crownTop)"/>
+
+    <!-- 方底内侧一圈高光：Fluent 图标的收边 -->
+    <rect x="3" y="3" width="1018" height="1018" rx="224" ry="224" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="4"/>
+  </g>
+</svg>

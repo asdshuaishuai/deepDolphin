@@ -52,6 +52,18 @@ kotlin {
     }
 }
 
+// 应用图标：全平台唯一的一套在 assets/icon/（母版 mark.svg → make-icons.py 导出 out/）。
+// 客户端不从资源目录里拿自己的一份——窗口图标在构建时从 out/ 并进资源，仓内不留第二份拷贝
+//（判据：assets/icon/check-icon.sh 第 7–9 步）。少掉这段接线的症状：窗口与任务栏落到
+// Compose 自带的 Kotlin 图标上，安装器的桌面项指向打包器的默认图。
+val appIconRoot = projectDir.parentFile.resolve("assets/icon/out")
+tasks.named<org.gradle.api.tasks.Copy>("jvmProcessResources") {
+    from(appIconRoot.resolve("png/256.png")) {
+        into("icon")
+        rename { "canopy.png" }
+    }
+}
+
 // 桌面应用入口：gradle run 直接启动真窗口；nativeDistributions（jpackage 打包）在分发批次补。
 compose.desktop.application {
     mainClass = "canopy.MainKt"
@@ -69,9 +81,18 @@ compose.desktop.application {
         linux {
             menuGroup = "Development"
             shortcut = true
+            // 打包器把它拷成应用镜像里的 lib/canopy.png；scripts/install-user.sh 写的桌面项 Icon= 指的就是这个文件
+            iconFile.set(appIconRoot.resolve("png/512.png"))
             // ⚠ 这里不能写 startupWMClass：Compose Gradle 插件 1.7.3 的 Linux DSL 没有这个属性
             //   （写了脚本编译就失败）。窗口的 WM_CLASS 实测是 canopy-MainKt（AWT 按主类名生成），
             //   与 desktop 文件名不一致——任务栏归组靠窗口管理器的模糊匹配，未验证。
+        }
+        // Windows / macOS 的包图标：同一套 out/ 产物。本机只打 deb / AppImage，这两段留给在相应平台上打包时用
+        windows {
+            iconFile.set(appIconRoot.resolve("AppIcon.ico"))
+        }
+        macOS {
+            iconFile.set(appIconRoot.resolve("macos/AppIcon.icns"))
         }
     }
 }

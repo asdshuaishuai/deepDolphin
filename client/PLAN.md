@@ -815,3 +815,41 @@ reduced-motion / hover / empty-states / line-height / number-tabular 等）。
   这是产物既有的小毛病，正常点 chip 进入时不出现；没在这批里改。
 - 角色色里的 Amber / Yellow 是相近的暖色（「支撑」与「数据」），在泳道顺序上隔着「存储」，实际看能分开；
   没有再做色觉缺陷的区分度验证。
+
+## 应用图标：「森林谱系」（2026-11-28）
+
+**用户口径**：「给他制作一个 icon，别用 Kotlin 的那个，根据新的项目名称去制作，就是这个森林谱系」。
+
+**现状先量**：图标流水线（`assets/icon/`：一张母版 → `make-icons.py` 导出全平台产物 →
+`check-icon.sh` 判据「全平台同一套」）2026-10 就建好了，母版却还是旧品牌的鲨鱼标记；
+CMP 客户端 `Window(...)` 根本没传 `icon` ——窗口 / 任务栏一直是 Compose 自带的 Kotlin 图标，
+安装器桌面项指向的 512 图也是打包器从旧产物拷的。「别用 Kotlin 那个」没兑现的原因不在资产，
+在**接线**。
+
+**设计（森林谱系）**：`mark.svg`（矢量真相源，1024 满幅圆角方底）——地面一根主干分两枝（第一代），
+两枝再各向上分出一棵、并向顶冠汇合（第二代）；五个圆是树冠也是节点，整体是一棵树、拆开是一张图。
+方底四圈淡环从主干根扩散（谱系 / 年轮），顶冠上方一团光。只用渐变 / 透明度 / 叠加，不用滤镜——
+librsvg 与 cairosvg 对滤镜支持不同，母版要在两台机器上渲染出同一张图。`mark-small.svg`（≤32px 档）：
+五个圆冠缩到 32px 以下粘成一团，简化成三圆冠、线加粗；方底 / 配色 / 圆角与主母版一致。
+
+**取舍**
+- **接线补齐，资产不复制**：`build.gradle.kts` 把 `out/png/256.png` 在 `jvmProcessResources`
+  并进资源（`Window(icon = painterResource("icon/canopy.png"))`），`nativeDistributions`
+  三平台 `iconFile` 全部指向 `out/`；`client/src` 里不许出现图标拷贝（判据 + `IconAssetTest`）。
+- **生成器跟上**：SVG 母版栅格化按 cairosvg → rsvg-convert → ImageMagick 找；≤32px 档自动换
+  小母版；`.icns` 没有 iconutil 就按容器格式直接写（PNG 载荷十档，两平台产出同一组档位）——
+  以前非 macOS 直接跳过，`out/macos/AppIcon.icns` 永远是上一台 Mac 留下的旧图，「同一套」
+  在这一份上破了。`--check` 从「只查尺寸」升级为「逐档与母版合成实底后逐像素比」。
+- **deepin 冻结**：生成器默认不再生成 / 校验 `deepin/data/icons`（`--with-deepin` 显式开），
+  那里保留仓内已入库的旧品牌文件——冻结目录不投入新工作。
+
+**判据**：`check-icon.sh` 重写（第 1–7 步判红：无第二份拷贝 / 母版满幅 / 产物逐像素跟母版 /
+窗口 icon 传了 / 资源与包图标取自 out/ / 桌面项指向打包器拷贝 / 生成器不手绘；第 8 步冻结端只报不判红）；
+`IconAssetTest` 3 条（资源与 out/ 同一份字节、256px 上钉住「森林谱系」的几何与配色、资源目录无拷贝）。
+负控 5 项真红（窗口 icon 摘掉 / 资源源文件改错 / 256 档换成旧图 / 小尺寸不认小母版 / icns 档位按位置配对写错——
+最后这条是实打实的 bug，`--check` 的逐档比对当场抓的）。门禁（禁缓存）`passed=302 skipped=1 failed=0`。
+
+**实证**：deb 里 `lib/canopy.png` 与 `out/png/512.png` 像素相同；装机版桌面项指向它；
+真窗口 `_NET_WM_ICON`（96px，AWT 缩放）与母版 LANCZOS 缩放平均差 1.8/255（噪声级）——
+任务栏上已是「森林谱系」。实拍与对照归档 `docs/ui-cmp/32`。
+

@@ -12,10 +12,15 @@
 
 ## 母版
 
-- `mark.png` —— 1024×1024 满幅，**四边不留透明边距**，圆角方底 + 海豚/章鱼。
-  圆角是**设计的一部分**（三个平台的视觉语言因此一致），不是平台遮罩的产物。
-- 若日后补上 `mark.svg`，脚本优先用它 —— 矢量母版在任意尺寸下都更锐利，
-  尤其 16/24px 那种小尺寸。届时不必改任何平台代码。
+- `mark.svg` —— 唯一真相源，1024×1024 满幅圆角方底，**四边不留透明边距**。画的是「森林谱系」：
+  项目叫 Sylva（仓库如森林，谱系即图谱），五个圆树冠由谱系连线串成一张图，整体轮廓是一棵树。
+  圆角是**设计的一部分**（各平台的视觉语言因此一致），不是平台遮罩的产物。
+  只用渐变 / 透明度 / 叠加，不用滤镜：librsvg 与 cairosvg 对滤镜的支持不同，
+  同一个文件在两台机器上渲染出不同像素，入库的产物就会漂。
+- `mark-small.svg` —— 小尺寸母版（像素 ≤ 32 的档位用）：五个圆冠缩到 32px 以下会粘成一团，
+  这里留三个圆冠、线更粗。方底、配色、圆角与主母版一致——同一张图的两个密度，不是两个设计。
+- `mark.png` —— 主母版的同步位图（SVG 为真相源时每次导出重写），给不认 SVG 的工具与文档用；
+  没有 `mark.svg` 时它自己就是母版。
 
 ## 两种导出几何（这里有个真实差异，不是偷懒）
 
@@ -32,8 +37,12 @@
     python3 assets/icon/make-icons.py            # 生成全部产物
     python3 assets/icon/make-icons.py --check    # 只校验产物与母版一致，不写文件
 
-依赖：Pillow（`pip install pillow`）。`.icns` 需要 macOS 的 `iconutil`，
-其余平台会跳过并在末尾明说。
+依赖：Pillow（`pip install pillow`）。SVG 母版的栅格化按 cairosvg → rsvg-convert →
+ImageMagick 的顺序找，装了哪个用哪个。`.icns` 有 macOS 的 `iconutil` 就用它，
+没有就按容器格式直接写（PNG 载荷，十档齐全）——两个平台产出同一组档位。
+
+deepin 端已冻结（2026-11-26 起全平台只做 CMP 客户端）：默认**不**生成也不校验
+`deepin/data/icons`，那里保留仓内已入库的旧品牌文件；确实要更新时加 `--with-deepin`。
 """
 
 from __future__ import annotations
@@ -49,6 +58,17 @@ OUT = os.path.join(HERE, "out")
 
 MARK_PNG = os.path.join(HERE, "mark.png")
 MARK_SVG = os.path.join(HERE, "mark.svg")
+# 小尺寸母版：像素 ≤ SMALL_MAX_PX 的档位用它（五个圆冠缩到 32px 以下会粘成一团）。
+# 没有这个文件时所有档位都从主母版缩，行为与以前一致。
+MARK_SMALL_SVG = os.path.join(HERE, "mark-small.svg")
+SMALL_MAX_PX = 32
+
+# icns 就是一个容器：'icns' 魔数 + 总长，后面一串「4 字节类型 + 4 字节长度 + 数据」。
+# 数据可以是 PNG（10.7 起）。这十档与 ICONSET_NAMES 一一对应：前七个是 @1x，后四个是 @2x。
+ICNS_TYPES = [
+    ("icp4", 16), ("icp5", 32), ("icp6", 64), ("ic07", 128), ("ic08", 256),
+    ("ic09", 512), ("ic10", 1024), ("ic11", 32), ("ic12", 64), ("ic13", 256), ("ic14", 512),
+]
 
 # macOS 导出几何：沿用既有 macOS 母版。改这两个数会改变 macOS 上的图标大小，
 # 必须同时更新 --verify-legacy 的基线（`macos/AppIcon.icns`）。
@@ -81,6 +101,9 @@ ICONSET_NAMES = [
 
 APP_ID = "canopy"
 APP_NAME = "Canopy"
+
+# deepin 树默认不动（见文件头的说明）；由 main() 按命令行参数置位。
+WITH_DEEPIN = False
 
 # deepin 客户端产物树（deepin/data/icons，M2-6）：与 out/ 同一个母版唯一原则 ——
 # 树下不许出现手写文件，一切由本脚本生成。与 out/linux 的差异只有两点：
@@ -213,35 +236,80 @@ def fail(msg: str) -> "None":
     raise SystemExit(1)
 
 
-def load_mark():
-    """载入母版。SVG 优先（矢量母版在 16px 下明显更锐利），否则用 PNG。"""
+def _need_pillow():
     try:
-        from PIL import Image
+        from PIL import Image  # noqa: F401
     except ImportError:
         fail("需要 Pillow：pip3 install pillow")
 
-    if os.path.exists(MARK_SVG):
+
+def _rasterize_svg(path: str):
+    """把 SVG 母版栅格化成 1024 满幅的 RGBA。
+
+    统一先栅格化到 1024，后续所有尺寸都从它缩，避免各尺寸各自栅格化导致边缘锯齿不一致。
+    渲染器按 cairosvg → rsvg-convert → ImageMagick 的顺序找：三种都完整支持渐变 / 裁剪 / 透明度
+    （母版约定不用滤镜，正是为了这一点），哪台机器装了哪个都能出同一张图。
+    """
+    _need_pillow()
+    import io
+
+    from PIL import Image
+
+    try:
+        import cairosvg  # noqa: F401
+
+        png_bytes = cairosvg.svg2png(url=path, output_width=1024, output_height=1024)
+        return Image.open(io.BytesIO(png_bytes)).convert("RGBA"), "cairosvg"
+    except ImportError:
+        pass
+
+    for cmd in (
+        ["rsvg-convert", "-w", "1024", "-h", "1024", path],
+        ["magick", "-background", "none", "-density", "72", path, "-resize", "1024x1024", "png:-"],
+        ["convert", "-background", "none", path, "-resize", "1024x1024", "png:-"],
+    ):
         try:
-            import cairosvg  # noqa: F401
-        except ImportError:
-            fail(
-                "发现 mark.svg 但缺 cairosvg，无法栅格化。\n"
-                "  装它：pip3 install cairosvg\n"
-                "  或：把母版降回 mark.png（删掉 mark.svg）"
-            )
-        import cairosvg
-        # 统一栅格化到 1024 满幅，后续所有尺寸都从它缩，避免各尺寸各自栅格化
-        # 导致边缘锯齿不一致。
-        png_bytes = cairosvg.svg2png(
-            url=MARK_SVG, output_width=1024, output_height=1024
-        )
-        import io
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        except OSError:
+            continue
+        if proc.returncode == 0 and proc.stdout[:8] == b"\x89PNG\r\n\x1a\n":
+            im = Image.open(io.BytesIO(proc.stdout)).convert("RGBA")
+            if im.size != (1024, 1024):
+                im = im.resize((1024, 1024), _lanczos())
+            return im, cmd[0]
+    fail(
+        "SVG 母版没法栅格化：%s\n"
+        "  装其一：pip3 install cairosvg / rsvg-convert (librsvg2-bin) / ImageMagick\n"
+        "  或：把母版降回 mark.png（删掉 mark.svg）" % path
+    )
 
-        return Image.open(io.BytesIO(png_bytes)).convert("RGBA"), "mark.svg"
 
+def load_mark():
+    """载入主母版。SVG 优先（矢量母版在 16px 下明显更锐利），否则用 PNG。"""
+    if os.path.exists(MARK_SVG):
+        return _rasterize_svg(MARK_SVG)
     if not os.path.exists(MARK_PNG):
         fail("找不到母版：%s（也没有 %s）" % (MARK_PNG, MARK_SVG))
+    _need_pillow()
+    from PIL import Image
+
     return Image.open(MARK_PNG).convert("RGBA"), "mark.png"
+
+
+def load_mark_small():
+    """载入小尺寸母版；没有就返回 None（所有档位都从主母版缩）。"""
+    if not os.path.exists(MARK_SMALL_SVG):
+        return None
+    im, _ = _rasterize_svg(MARK_SMALL_SVG)
+    assert_full_bleed(im, "母版 mark-small.svg")
+    return im
+
+
+def master_for(px: int, mark, small):
+    """px 像素的档位该从哪张母版缩：小尺寸母版存在且 px ≤ SMALL_MAX_PX 时用它，否则主母版。"""
+    if small is not None and px <= SMALL_MAX_PX:
+        return small
+    return mark
 
 
 def assert_full_bleed(img, label: str) -> None:
@@ -274,7 +342,7 @@ def deepin_path(rel: str) -> str:
     return os.path.join(DEEPIN_ICONS_DIR, rel)
 
 
-def build_deepin(mark) -> None:
+def build_deepin(mark, small) -> None:
     """deepin/data/icons 全树产物（M2-6）。
 
     位图与 out/linux 同一满幅几何（桌面环境自套圆角遮罩），只差尺寸集合；
@@ -283,7 +351,7 @@ def build_deepin(mark) -> None:
     """
     for s in DEEPIN_HICOLOR_SIZES:
         save_png(
-            mark.resize((s, s), _lanczos()),
+            master_for(s, mark, small).resize((s, s), _lanczos()),
             deepin_path("hicolor/%dx%d/apps/%s.png" % (s, s, APP_ID)),
         )
     write_text(deepin_path("canopy.svg"), DEEPIN_APP_SVG)
@@ -293,8 +361,8 @@ def build_deepin(mark) -> None:
         write_text(deepin_path("symbolic/apps/dd-%s.svg" % name), svg)
 
 
-def check_deepin() -> int:
-    """deepin 树的 --check：位图尺寸、SVG 良构、染色件无写死色值且带次调。"""
+def check_deepin(mark, small) -> int:
+    """deepin 树的 --check：位图尺寸与内容、SVG 良构、染色件无写死色值且带次调。"""
     import xml.etree.ElementTree as ET
     from PIL import Image
 
@@ -309,6 +377,10 @@ def check_deepin() -> int:
         if im.size != (s, s):
             print("  ✗ %s 尺寸 %s，期望 (%d, %d)"
                   % (os.path.relpath(p, HERE), im.size, s, s))
+            bad += 1
+        elif not _same_picture(im.convert("RGBA"),
+                               master_for(s, mark, small).resize((s, s), _lanczos()),
+                               os.path.relpath(p, HERE)):
             bad += 1
 
     tinted = [("canopy-symbolic.svg", DEEPIN_SYMBOLIC_APP_SVG)]
@@ -369,37 +441,80 @@ def build_macos_canvas(mark) -> "Image.Image":
     return canvas
 
 
-def build_icns(mark) -> bool:
-    """用 macOS 自带的 iconutil 打包 .icns。非 macOS 返回 False。"""
-    if not os.path.exists("/usr/bin/iconutil"):
-        print(
-            "  · 跳过 .icns：需要 macOS 的 /usr/bin/iconutil。"
-            "icns 是 Apple 专有格式，其他平台无法生成（也不需要）。"
-        )
-        return False
-    # iconutil 硬性要求目录名以 `.iconset` 结尾，不符合就只回一句
-    # "Invalid Iconset" 且不说是哪个文件错了。
-    iconset = os.path.join(OUT, "Canopy.iconset")
-    os.makedirs(iconset, exist_ok=True)
-    try:
-        mac_canvas = build_macos_canvas(mark)
-        for name, px in ICONSET_NAMES:
-            # 每档都从同一张 1024 macOS 画布缩，而不是从母版各自缩 ——
-            # 后者会让 32px 档绕过那圈 83px 边距，图标在 Dock 里大小不一。
-            save_png(mac_canvas.resize((px, px), _lanczos()),
-                     os.path.join(iconset, name))
-        icns = os.path.join(OUT, "macos", "AppIcon.icns")
-        os.makedirs(os.path.dirname(icns), exist_ok=True)
-        subprocess.run(
-            ["/usr/bin/iconutil", "-c", "icns", iconset, "-o", icns], check=True
-        )
-        print("  · %s" % os.path.relpath(icns, HERE))
-        return True
-    except subprocess.CalledProcessError as e:
-        fail("iconutil 失败（退出码 %s）" % e.returncode)
-    finally:
-        _rmtree(iconset)
+def build_icns(mark, small) -> bool:
+    """打包 .icns。有 macOS 的 iconutil 就用它；没有就用 Python 直接写容器。
+
+    两种方式产出同一组十档位（ICNS_TYPES）：每档都从同一张 1024 macOS 画布缩，
+    而不是从母版各自缩 —— 后者会让 32px 档绕过那圈 83px 边距，图标在 Dock 里大小不一。
+    以前非 macOS 直接跳过，结果 out/macos/AppIcon.icns 永远是上一台 Mac 留下的旧图 ——
+    换母版时它不跟着变，「全平台同一套」就在这一份文件上破了。容器格式是公开且简单的，
+    没有理由非得在 Mac 上才能生成。
+    """
+    import io
+    import struct
+
+    icns = os.path.join(OUT, "macos", "AppIcon.icns")
+    os.makedirs(os.path.dirname(icns), exist_ok=True)
+    # 每个像素档只缩一次；icp4…ic14 与 icon_16x16…icon_512x512@2x 是同一组图的两种排法，
+    # 顺序并不一致（icns 类型按点尺寸排，iconset 文件按画布排）——所以两边都按像素取图，不按位置配对。
+    canvases = {}
+    for _, px in ICONSET_NAMES:
+        canvases[px] = build_macos_canvas(master_for(px, mark, small)).resize((px, px), _lanczos())
+
+    if os.path.exists("/usr/bin/iconutil"):
+        # iconutil 硬性要求目录名以 `.iconset` 结尾，不符合就只回一句
+        # "Invalid Iconset" 且不说是哪个文件错了。
+        iconset = os.path.join(OUT, "Canopy.iconset")
+        os.makedirs(iconset, exist_ok=True)
+        try:
+            for name, px in ICONSET_NAMES:
+                save_png(canvases[px], os.path.join(iconset, name))
+            subprocess.run(
+                ["/usr/bin/iconutil", "-c", "icns", iconset, "-o", icns], check=True
+            )
+            print("  · %s  %s（iconutil）" % (os.path.relpath(icns, HERE), [px for _, px in ICONSET_NAMES]))
+            return True
+        except subprocess.CalledProcessError as e:
+            fail("iconutil 失败（退出码 %s）" % e.returncode)
+        finally:
+            _rmtree(iconset)
+
+    body = b""
+    for typ, px in ICNS_TYPES:
+        buf = io.BytesIO()
+        canvases[px].save(buf, format="PNG")
+        data = buf.getvalue()
+        body += typ.encode("ascii") + struct.pack(">I", len(data) + 8) + data
+    with open(icns, "wb") as fh:
+        fh.write(b"icns" + struct.pack(">I", len(body) + 8) + body)
+    print("  · %s  %s（无 iconutil，按容器格式直接写，PNG 载荷）"
+          % (os.path.relpath(icns, HERE), [px for _, px in ICONSET_NAMES]))
     return False
+
+
+def read_icns(path: str):
+    """读回 icns 的档位表：{像素: PNG 字节}。结构不对就返回 None。"""
+    import struct
+
+    try:
+        with open(path, "rb") as fh:
+            blob = fh.read()
+    except OSError:
+        return None
+    if len(blob) < 8 or blob[:4] != b"icns" or struct.unpack(">I", blob[4:8])[0] != len(blob):
+        return None
+    size_of = dict((t, px) for t, px in ICNS_TYPES)
+    out = {}
+    pos = 8
+    while pos + 8 <= len(blob):
+        typ = blob[pos:pos + 4].decode("ascii", "replace")
+        (length,) = struct.unpack(">I", blob[pos + 4:pos + 8])
+        if length < 8 or pos + length > len(blob):
+            return None
+        if typ in size_of and blob[pos + 8:pos + 16] == b"\x89PNG\r\n\x1a\n":
+            out[size_of[typ]] = blob[pos + 8:pos + length]
+        pos += length
+    return out if out else None
 
 
 def _lanczos() -> "Image.Resampling":
@@ -420,12 +535,53 @@ def _rmtree(path: str) -> None:
     os.rmdir(path)
 
 
-def build_ico(mark) -> None:
+def build_ico(mark, small) -> None:
+    import io
+
+    from PIL import Image
+
     ico = os.path.join(OUT, "AppIcon.ico")
     os.makedirs(os.path.dirname(ico), exist_ok=True)
-    # PIL 的 ICO 写入是「从大图里挑尺寸」，不是每档重采样，所以母版必须够大。
-    mark.save(ico, format="ICO", sizes=[(s, s) for s in ICO_SIZES])
+    # 每一档各自给一张正好那么大的图（PIL 的 append_images 按尺寸取用）——
+    # 只给一张大图让 PIL 自己缩的话，16/24/32 档就绕过了小尺寸母版。
+    frames = [master_for(s, mark, small).resize((s, s), _lanczos()) for s in ICO_SIZES]
+    frames[-1].save(
+        ico, format="ICO", sizes=[(s, s) for s in ICO_SIZES], append_images=frames[:-1]
+    )
     print("  · %s  %s" % (os.path.relpath(ico, HERE), ICO_SIZES))
+
+
+def read_ico_frames(path: str):
+    """读回 ico 的每一档：{像素: RGBA 图}；读不了返回 None。"""
+    from PIL import Image
+
+    try:
+        im = Image.open(path)
+        sizes = sorted(im.ico.sizes())
+        return dict((w, im.ico.getimage((w, h)).convert("RGBA")) for (w, h) in sizes)
+    except Exception:  # noqa: BLE001 —— 判据用：读不了就是坏了
+        return None
+
+
+def _same_picture(a, b, label: str) -> bool:
+    """两张图合成到实底之后逐像素比：平均差 ≤ 1.5 且肉眼可辨（> 8 级）的像素 < 2% 才算同一张。
+
+    不能直接比 RGBA：半透明边缘的 RGB 在非预乘表示下本来就是噪声（alpha=1 的像素可以存任意 RGB）。
+    """
+    from PIL import ImageChops, ImageStat
+
+    worst_mean, worst_over = 0.0, 0.0
+    for bg in ((255, 255, 255, 255), (15, 23, 42, 255)):
+        diff = ImageChops.difference(_flatten(a, bg), _flatten(b, bg)).convert("L")
+        mean = ImageStat.Stat(diff).mean[0]
+        hist = diff.point(lambda v: 255 if v > 8 else 0).histogram()
+        over = sum(hist[1:]) / float(a.size[0] * a.size[1])
+        worst_mean, worst_over = max(worst_mean, mean), max(worst_over, over)
+    if worst_mean <= 1.5 and worst_over < 0.02:
+        return True
+    print("  ✗ %s 与母版不一致：平均差 %.2f/255，超阈像素 %.2f%%（改了母版没重导？）"
+          % (label, worst_mean, worst_over * 100))
+    return False
 
 
 def verify_legacy(icns_path: str) -> None:
@@ -524,31 +680,49 @@ def _flatten(img, bg):
 
 
 def check_outputs() -> int:
-    """只校验不写。产物缺失或与母版对不上就返回非 0。"""
+    """只校验不写。产物缺失、尺寸不对，或内容与母版对不上，就返回非 0。
+
+    只查尺寸不够：换母版之后忘了重导，每个文件都「尺寸正确」但全是旧图。
+    这里把每个产物按它的档位从母版重新缩一遍，逐像素比。
+    """
+    import io
+
     from PIL import Image
 
+    mark, source = load_mark()
+    small = load_mark_small()
     bad = 0
+
+    # mark.png 是 SVG 母版的同步位图（给不认 SVG 的工具与文档用），必须与 mark.svg 是同一张图
+    if source == "mark.svg":
+        if not os.path.exists(MARK_PNG):
+            print("  ✗ 缺 %s（SVG 母版的同步位图）" % os.path.relpath(MARK_PNG, HERE))
+            bad += 1
+        else:
+            synced = Image.open(MARK_PNG).convert("RGBA")
+            if synced.size != mark.size or not _same_picture(synced, mark, "mark.png"):
+                print("    mark.png 与 mark.svg 不是同一张图")
+                bad += 1
+
+    def expect(rel: str, px: int):
+        p = os.path.join(OUT, rel)
+        if not os.path.exists(p):
+            print("  ✗ 缺 %s" % os.path.relpath(p, HERE))
+            return 1
+        im = Image.open(p)
+        if im.size != (px, px):
+            print("  ✗ %s 尺寸 %s，期望 (%d, %d)" % (os.path.relpath(p, HERE), im.size, px, px))
+            return 1
+        want = master_for(px, mark, small).resize((px, px), _lanczos())
+        if not _same_picture(im.convert("RGBA"), want, os.path.relpath(p, HERE)):
+            return 1
+        return 0
+
     for s in PNG_SIZES:
-        p = os.path.join(OUT, "png", "%d.png" % s)
-        if not os.path.exists(p):
-            print("  ✗ 缺 %s" % os.path.relpath(p, HERE))
-            bad += 1
-            continue
-        im = Image.open(p)
-        if im.size != (s, s):
-            print("  ✗ %s 尺寸 %s，期望 (%d, %d)" % (os.path.relpath(p, HERE), im.size, s, s))
-            bad += 1
+        bad += expect(os.path.join("png", "%d.png" % s), s)
     for s in HICOLOR_SIZES:
-        p = os.path.join(OUT, "linux", "hicolor", "%dx%d" % (s, s), "apps",
-                         "%s.png" % APP_ID)
-        if not os.path.exists(p):
-            print("  ✗ 缺 %s" % os.path.relpath(p, HERE))
-            bad += 1
-            continue
-        im = Image.open(p)
-        if im.size != (s, s):
-            print("  ✗ %s 尺寸 %s，期望 (%d, %d)" % (os.path.relpath(p, HERE), im.size, s, s))
-            bad += 1
+        bad += expect(os.path.join("linux", "hicolor", "%dx%d" % (s, s), "apps", "%s.png" % APP_ID), s)
+
     ico = os.path.join(OUT, "AppIcon.ico")
     if not os.path.exists(ico):
         print("  ✗ 缺 out/AppIcon.ico")
@@ -558,11 +732,36 @@ def check_outputs() -> int:
             if fh.read(4) != b"\x00\x00\x01\x00":
                 print("  ✗ out/AppIcon.ico 不是 ICO 魔数")
                 bad += 1
-    if sys.platform == "darwin":
-        icns = os.path.join(OUT, "macos", "AppIcon.icns")
-        if not os.path.exists(icns):
-            print("  ✗ 缺 out/macos/AppIcon.icns")
+        frames = read_ico_frames(ico)
+        if not frames:
+            print("  ✗ out/AppIcon.ico 读不出档位")
             bad += 1
+        else:
+            for s in ICO_SIZES:
+                if s not in frames:
+                    print("  ✗ out/AppIcon.ico 缺 %d 档（有 %s）" % (s, sorted(frames)))
+                    bad += 1
+                elif not _same_picture(frames[s], master_for(s, mark, small).resize((s, s), _lanczos()),
+                                       "out/AppIcon.ico@%d" % s):
+                    bad += 1
+
+    # icns 在任何平台上都要有、都要对：以前只在 macOS 上查，别的平台这份文件可以是任意旧图
+    icns = os.path.join(OUT, "macos", "AppIcon.icns")
+    entries = read_icns(icns) if os.path.exists(icns) else None
+    if entries is None:
+        print("  ✗ 缺 out/macos/AppIcon.icns，或它的容器结构读不出来")
+        bad += 1
+    else:
+        for _, px in ICONSET_NAMES:
+            if px not in entries:
+                print("  ✗ out/macos/AppIcon.icns 缺 %dpx 档（有 %s）" % (px, sorted(entries)))
+                bad += 1
+                continue
+            got = Image.open(io.BytesIO(entries[px])).convert("RGBA")
+            want = build_macos_canvas(master_for(px, mark, small)).resize((px, px), _lanczos())
+            if not _same_picture(got, want, "out/macos/AppIcon.icns@%d" % px):
+                bad += 1
+
     dt = os.path.join(OUT, "linux", "%s.desktop" % APP_ID)
     if not os.path.exists(dt):
         print("  ✗ 缺 out/linux/%s.desktop" % APP_ID)
@@ -575,18 +774,27 @@ def check_outputs() -> int:
         if ("Icon=%s\n" % APP_ID) not in txt:
             print("  ✗ .desktop 的 Icon= 不是 %s，与 hicolor 文件名对不上" % APP_ID)
             bad += 1
-    bad += check_deepin()
+    if WITH_DEEPIN:
+        bad += check_deepin(mark, small)
     return bad
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="只校验产物，不写文件")
+    ap.add_argument("--with-deepin", action="store_true",
+                    help="连 deepin/data/icons 一起生成 / 校验（deepin 端已冻结，默认跳过）")
     args = ap.parse_args()
+    global WITH_DEEPIN
+    WITH_DEEPIN = args.with_deepin
 
     mark, source = load_mark()
-    print("母版：%s  %dx%d" % (source, mark.size[0], mark.size[1]))
+    print("母版：%s（%s）  %dx%d" % (os.path.basename(MARK_SVG if source != "mark.png" else MARK_PNG),
+                                   source, mark.size[0], mark.size[1]))
     assert_full_bleed(mark, "母版 %s" % source)
+    small = load_mark_small()
+    if small is not None:
+        print("小尺寸母版：mark-small.svg  ≤ %dpx 的档位用它" % SMALL_MAX_PX)
 
     if args.check:
         bad = check_outputs()
@@ -597,27 +805,34 @@ def main() -> int:
         return 0
 
     print("导出：")
+    # SVG 是真相源；mark.png 是它的同步位图，每次导出一起重写（--check 会核对两者一致）
+    if source != "mark.png":
+        save_png(mark, MARK_PNG)
+        print("  · mark.png（SVG 母版的同步位图）")
     for s in PNG_SIZES:
-        save_png(mark.resize((s, s), _lanczos()), os.path.join(OUT, "png", "%d.png" % s))
+        save_png(master_for(s, mark, small).resize((s, s), _lanczos()), os.path.join(OUT, "png", "%d.png" % s))
     print("  · out/png/{%s}.png" % ",".join(str(s) for s in PNG_SIZES))
 
     for s in HICOLOR_SIZES:
         save_png(
-            mark.resize((s, s), _lanczos()),
+            master_for(s, mark, small).resize((s, s), _lanczos()),
             os.path.join(OUT, "linux", "hicolor", "%dx%d" % (s, s), "apps",
                          "%s.png" % APP_ID),
         )
     print("  · out/linux/hicolor/{16,24,32,48,64,128,256,512}x…/apps/%s.png" % APP_ID)
 
-    build_deepin(mark)
-    print("  · deepin/data/icons/hicolor/{%s}x…/apps/%s.png"
-          % (",".join(str(s) for s in DEEPIN_HICOLOR_SIZES), APP_ID))
-    print("  · deepin/data/icons/symbolic/apps/{canopy-symbolic,%s}.svg"
-          % ",".join("dd-%s" % n for n in DEEPIN_SYMBOL_SVGS))
-    print("  · deepin/data/icons/canopy.svg（原样收编，字节不变）")
+    if WITH_DEEPIN:
+        build_deepin(mark, small)
+        print("  · deepin/data/icons/hicolor/{%s}x…/apps/%s.png"
+              % (",".join(str(s) for s in DEEPIN_HICOLOR_SIZES), APP_ID))
+        print("  · deepin/data/icons/symbolic/apps/{canopy-symbolic,%s}.svg"
+              % ",".join("dd-%s" % n for n in DEEPIN_SYMBOL_SVGS))
+        print("  · deepin/data/icons/canopy.svg（原样收编，字节不变）")
+    else:
+        print("  · deepin/data/icons：已冻结，跳过（要更新加 --with-deepin）")
 
-    build_ico(mark)
-    if build_icns(mark):
+    build_ico(mark, small)
+    if build_icns(mark, small):
         verify_legacy(os.path.join(HERE, "..", "..", "macos", "AppIcon.icns"))
 
     # .desktop 的 Exec 留 __EXEC__ 占位：可执行文件路径每台机器都不一样，
@@ -629,9 +844,11 @@ def main() -> int:
     print("  · %s" % os.path.relpath(desktop, HERE))
 
     print("\n接线：")
-    print("  macOS    build.sh 从 out/macos/AppIcon.icns 取")
-    print("  Linux    scripts/install-icon.sh 装 out/linux/hicolor → ~/.local/share/icons")
-    print("  Windows  out/AppIcon.ico")
+    print("接线：")
+    print("  CMP 客户端  窗口图标 = out/png/256.png（client/build.gradle.kts 把它并进资源，不留第二份）；")
+    print("              jpackage 三平台的 iconFile = out/png/512.png · out/AppIcon.ico · out/macos/AppIcon.icns")
+    print("  macOS（冻结）  build.sh 从 out/macos/AppIcon.icns 取")
+    print("  Linux（冻结）  scripts/install-icon.sh 装 out/linux/hicolor → ~/.local/share/icons")
     return 0
 
 

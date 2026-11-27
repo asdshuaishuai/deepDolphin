@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    Canopy 应用图标 ·「森林谱系」小尺寸母版（≤ 32px 的档位用这一张）
+    mark.svg 的简化版：五个圆冠缩到 32px 以下时圆与圆粘成一团，16px 只剩一个绿点。
+    这里留三个圆冠（顶冠 + 第一代两棵），连线加粗到 66、圆冠放大到占方底宽度的一半，
+    16px 下仍能看出「三团圆冠 + 一根主干」。
+    方底、光晕、配色、圆角半径与 mark.svg 完全一致——两份是同一张图的两个密度，不是两个设计。
+
+    几何（1024 画布，满幅圆角方底，半径 226）：
+      地面    横条 y=792 高 40
+      主干根  (512, 806)
+      第一代  (330, 610) (694, 610)   圆冠 r=124   光环 r=138
+      顶冠    (512, 390)              圆冠 r=158   光环 r=172
+  -->
+  <defs>
+    <clipPath id="round">
+      <rect width="1024" height="1024" rx="226" ry="226"/>
+    </clipPath>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#13A374"/>
+      <stop offset="1" stop-color="#04302A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.3" r="0.6">
+      <stop offset="0" stop-color="#56F2B0" stop-opacity="0.36"/>
+      <stop offset="1" stop-color="#56F2B0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="crownTop" cx="0.36" cy="0.3" r="0.82">
+      <stop offset="0" stop-color="#EFFFF5"/>
+      <stop offset="1" stop-color="#4EE49E"/>
+    </radialGradient>
+    <radialGradient id="crown1" cx="0.36" cy="0.3" r="0.82">
+      <stop offset="0" stop-color="#8EF0BC"/>
+      <stop offset="1" stop-color="#2BC97B"/>
+    </radialGradient>
+  </defs>
+
+  <g clip-path="url(#round)">
+    <rect width="1024" height="1024" fill="url(#tile)"/>
+    <rect width="1024" height="1024" fill="url(#glow)"/>
+    <rect x="300" y="792" width="424" height="40" rx="20" fill="#6FEDB0" fill-opacity="0.55"/>
+    <g fill="none" stroke="#2FB87E" stroke-width="66" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M512 806 C512 720 440 700 330 610"/>
+      <path d="M512 806 C512 720 584 700 694 610"/>
+      <path d="M330 610 C380 520 450 480 512 390"/>
+      <path d="M694 610 C644 520 574 480 512 390"/>
+    </g>
+    <g fill="#08453A">
+      <circle cx="330" cy="610" r="138"/>
+      <circle cx="694" cy="610" r="138"/>
+      <circle cx="512" cy="390" r="172"/>
+    </g>
+    <circle cx="330" cy="610" r="124" fill="url(#crown1)"/>
+    <circle cx="694" cy="610" r="124" fill="url(#crown1)"/>
+    <circle cx="512" cy="390" r="158" fill="url(#crownTop)"/>
+    <rect x="3" y="3" width="1018" height="1018" rx="224" ry="224" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="4"/>
+  </g>
+</svg>

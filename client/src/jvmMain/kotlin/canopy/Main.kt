@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.delay
 import androidx.compose.ui.unit.dp
 import java.awt.Dimension
@@ -264,6 +265,8 @@ fun main(vararg args: String) {
         },
         state = WindowState(width = 1280.dp, height = 860.dp),
         title = "Canopy",
+        // 不传就是 Compose 自带的 Kotlin 图标。资源在构建时从 assets/icon/out/ 并进来（见 build.gradle.kts）
+        icon = painterResource("icon/canopy.png"),
     ) {
         LaunchedEffect(Unit) { StartupMark.report() }
         // 窗口最小尺寸：再窄图谱两页的嵌入产物就要退化成上下排（它的断点按视口宽算，视口 = 窗口 − 侧栏 230），
