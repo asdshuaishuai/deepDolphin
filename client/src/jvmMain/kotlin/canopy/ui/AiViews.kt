@@ -230,7 +230,7 @@ fun SettingsPage(model: AppModel) {
         ) {
             when (tab) {
                 0 -> GeneralPane()
-                1 -> AiSettingsPane()
+                1 -> AiSettingsPane(model)
                 2 -> SchedulePane(model)
                 else -> AboutPane()
             }
@@ -481,8 +481,107 @@ private fun ChoicePill(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 /** AI tab（原「AI 设置」页收编；key 纪律与连通性测试不变）。 */
+/**
+ * AI Agent 集成卡（2026-11-28，用户：安装客户端后，在设置里就能启用 agent 的能力——
+ * cli、skill 和 mcp 直接安装到、或被 agent 识别到启用）。引擎有三个现成出口
+ * （cambium 命令、cambium mcp 服务、cambium skill install），这张卡把它们接到
+ * agent 实际读取的位置：PATH 上的 cambium、Claude Code / Codex 的 MCP 配置、
+ * ZCode / Agents 的技能目录。动作全部走 canopy.agent（纯函数判据见 AgentIntegrationTest）；
+ * 改用户的 agent 配置是写用户数据——引擎侧已做原子写 + 首次备份，这里只负责如实回执。
+ */
 @Composable
-fun AiSettingsPane() {
+private fun AgentIntegrationCard(model: AppModel) {
+    var status by remember { mutableStateOf<canopy.agent.AgentIntegrationStatus?>(null) }
+    var busyId by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun refresh() {
+        scope.launch {
+            busyId = "probe"
+            try {
+                status = canopy.agent.probeAgentIntegration()
+            } catch (e: Exception) {
+                message = L10n.t("cmp.agent.failed", e.message ?: e.javaClass.simpleName)
+            } finally {
+                busyId = null
+            }
+        }
+    }
+    LaunchedEffect(Unit) { refresh() }
+
+    fun run(id: String, label: String, action: () -> String?) {
+        scope.launch {
+            busyId = id
+            val err = withContext(Dispatchers.IO) { action() }
+            message = if (err == null) L10n.t("cmp.agent.done", label) else L10n.t("cmp.agent.failed", err)
+            busyId = null
+            refresh()
+        }
+    }
+
+    GlassCard(Modifier.fillMaxWidth()) {
+        Text(L10n.t("cmp.agent.title"), style = Type.section)
+        Spacer(Modifier.height(Space.xs))
+        MarkdownText(L10n.t("cmp.agent.note"), style = Type.micro)
+        Spacer(Modifier.height(Space.sm))
+        val st = status
+        if (st == null) {
+            Text(L10n.t("cmp.agent.probing"), style = Type.body.copy(color = Palette.TextSecondary))
+        } else {
+            // ① CLI：PATH 上的 cambium。没有就给一个安装动作（应用镜像捆绑的引擎 → ~/.local/bin）。
+            val cliStatus = when {
+                st.cliFound -> L10n.t("cmp.agent.cliOk", st.cliVersion.ifBlank { st.cliPath })
+                else -> L10n.t("cmp.agent.cliMissing")
+            }
+            Text(L10n.t("cmp.agent.cli"), style = Type.card.copy(color = Palette.TextPrimary))
+            Text(cliStatus, style = Type.micro.copy(color = Palette.TextSecondary))
+            if (!st.cliFound && st.bundledLauncher != null) {
+                ActionText(L10n.t("cmp.agent.cliInstall"), Palette.AccentText, enabled = busyId == null) {
+                    run("cli", L10n.t("cmp.agent.cli")) { canopy.agent.installCli(java.io.File(System.getProperty("user.home")), st.bundledLauncher) }
+                }
+            }
+            Spacer(Modifier.height(Space.sm))
+            // ②③ 各 agent 挂载点：MCP 注册（Claude Code / Codex）与 Skill 安装（ZCode / Agents）。
+            // MCP 用 PATH 上的 cambium（没有 CLI 就先装——注册动作自带保底）；Skill 调引擎命令，
+            // SKILL.md 的正文只有引擎一个出处。
+            st.targets.forEach { t ->
+                val label = L10n.t(t.target.labelKey)
+                val installed = t.installed
+                Text(label, style = Type.card.copy(color = Palette.TextPrimary))
+                Text(
+                    L10n.t(if (installed) "cmp.agent.registered" else "cmp.agent.notRegistered"),
+                    style = Type.micro.copy(color = if (installed) Palette.ShallowText else Palette.TextSecondary),
+                )
+                if (!installed && busyId == null) {
+                    val actionLabel = L10n.t(if (canopy.agent.targetKind(t.target) == canopy.agent.AgentKind.SKILL) "cmp.agent.skillInstall" else "cmp.agent.register")
+                    ActionText(actionLabel, Palette.AccentText, enabled = busyId == null) {
+                        run(t.target.id, label) {
+                            if (canopy.agent.targetKind(t.target) == canopy.agent.AgentKind.SKILL) {
+                                canopy.agent.installSkill(t.target, model.engine.bin)
+                            } else {
+                                // PATH 上没有 cambium 就先装 CLI（捆绑引擎存在才有得装）——
+                                // 注册本身只需要配置里有 "cambium" 这个入口名
+                                if (!st.cliFound && st.bundledLauncher != null) {
+                                    canopy.agent.installCli(java.io.File(System.getProperty("user.home")), st.bundledLauncher)
+                                }
+                                canopy.agent.registerMcp(t.target, "cambium")
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(Space.xs))
+            }
+        }
+        message?.let {
+            Spacer(Modifier.height(Space.xs))
+            Text(it, style = Type.micro.copy(color = Palette.TextSecondary))
+        }
+    }
+}
+
+@Composable
+fun AiSettingsPane(model: AppModel) {
     val saved = remember { ConfStore.readAi() }
     var provider by remember { mutableStateOf(saved.providerID) }
     var model_ by remember { mutableStateOf(saved.model) }
@@ -578,6 +677,11 @@ fun AiSettingsPane() {
                 Spacer(Modifier.height(Space.sm))
                 Text(it, style = Type.body.copy(color = if (it.contains("✓") || it.startsWith(L10n.t("cmp.ai.testOk", ""))) Palette.GreenText else Palette.AmberText))
             }
+
+            // AI Agent 集成（2026-11-28）：把引擎的 CLI / MCP / Skill 装进本机的编码 agent——
+            // 装好后 agent 直接调用 cambium 命令、挂上 cambium mcp 服务、读到使用技能。
+            // 逻辑与 IO 在 canopy/agent/AgentIntegration.kt（纯函数判据见 AgentIntegrationTest）。
+            AgentIntegrationCard(model)
         }
     }
 }

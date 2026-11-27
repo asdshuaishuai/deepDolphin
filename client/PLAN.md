@@ -924,3 +924,47 @@ librsvg 与 cairosvg 对滤镜支持不同，母版要在两台机器上渲染�
 - 引擎升级后旧形状的 arch.json 仍会自愈迁移一次（那是升级路径，不是代码变动触发）。
 - 引擎的 stale 注记由引擎按自身语言设置输出，客户端回执胶囊原样透出。
 
+## 设备安装包 + AI Agent 集成（2026-11-28）
+
+**用户口径**：「构建本设备的安装包，也包括引擎的能力哦，实际上在安装客户端的时候，应该可以通过
+客户端的设置里面启动 AI agent 的能力，也就是 cli，skill 和 mcp 可以直接安装到或者被 agent 识别到启用」。
+
+**审计（先量）**：引擎有三个现成出口——`cambium`（CLI）、`cambium mcp`（stdio JSON-RPC 服务，42 工具）、
+`cambium skill install [--dir D]`（SKILL.md）。缺的不是出口，是「接到 agent 实际读取的位置」的最后一公里。
+
+**改法**
+- **`scripts/package-device.sh`：安装包捆绑引擎**。`gradle packageDeb` → `dpkg-deb --raw-extract`
+  （保留 DEBIAN/ 控制元数据）→ 注入 `/opt/canopy/engine/`（cambium.bin + 仓颉运行时 + `bin/cambium-engine`
+  启动器，启动器自带 LD_LIBRARY_PATH）→ 重打（69M → 74M）。装机后整个能力自包含：没有单独装过引擎的
+  设备装这一个包就全有。
+- **设置 → AI tab 新增「AI Agent 集成」卡**（`canopy/agent/AgentIntegration.kt` + `AgentIntegrationCard`）：
+  - CLI 行：探测 PATH 上的 cambium（引擎定位 + `version`）；未找到且应用镜像有捆绑引擎 → 「安装到
+    ~/.local/bin」（写启动器，幂等——已有入口不覆盖，那是用户/引擎安装器装的版本）。
+  - MCP 行（按本机检测到的 agent 列出）：Claude Code（~/.claude.json 的 mcpServers）、Codex CLI
+    （~/.codex/config.toml 的 [mcp_servers.cambium]）。注册 = `cambium mcp`（stdio）；
+    合并保留用户已有的服务器条目，**首次改动留 .bak-before-cambium 备份**、原子写（临时文件 + rename）、
+    配置不是合法 JSON 时宁可不动如实报错。没装的 agent 不列（凭空造配置没有意义）。
+  - Skill 行：ZCode（~/.zcode/skills/cambium）与 Agents（~/.agents/skills/cambium）——调引擎命令安装
+    （SKILL.md 正文只有引擎一个出处，客户端不抄一份）。
+  - L10n 四语言键 `cmp.agent.*`（13 键 × 4）；ZCode 的 MCP 配置走它自己的 UI（本机没有可写文件），
+    技能目录是它认的部分。
+- **引擎零代码改动**：三个出口本来就在；本批全部是「接线」。
+
+**判据**：`AgentIntegrationTest` 6 条（临时目录仿真 home，绝不碰真实 agent 配置）——Claude 合并保留
+用户条目且幂等、坏 JSON 宁可不动、Codex 块追加/整块替换且其它段落不丢、目标探测只列存在的 agent、
+注册→探测到→幂等、备份只对已有内容留、CLI 安装幂等不覆盖已有入口。门禁（禁缓存）
+`passed=309 skipped=1 failed=0`。
+
+**本机落地（已执行，等价于卡片动作的输出）**
+- `package-device.sh --install`：装机完成，捆绑引擎自检过（`cambium-engine version` → Cambium Engine
+  0.3.0）。
+- Skill：`cambium skill install` 装进 `~/.zcode/skills/cambium` 与 `~/.agents/skills/cambium`
+  ——装完 **本会话（agent）立即可见 cambium 技能**（被 agent 识别到启用的直接证据）。
+- MCP：`~/.claude.json` 注册（zai-mcp-server 原样保留，备份 `~/.claude.json.bak-before-cambium`）；
+  `~/.codex/config.toml` 新建注册。握手验证：`cambium mcp` initialize → serverInfo cambium 0.3.0、
+  tools/list 42 个工具。
+- CLI：本机已在 PATH（~/.local/bin/cambium → 0.3.0），卡片显示已就绪。
+
+**边界（如实）**：ZCode 桌面端的 MCP 服务没有可写的配置文件（走它自己的 UI），所以 ZCode 这一列只有
+技能目录；卡片动作里 MCP 注册写的是用户的 agent 配置文件——备份/幂等/原子写在纯函数里，判据钉住。
+

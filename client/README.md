@@ -8,7 +8,7 @@
 
 ## 状态（2026-11-27）
 
-- 判据门禁绿：`scripts/build.sh --test` → **303 判据 0 failed**（1 skipped = 只手动触发的皮肤对比度体检；禁用缓存复跑
+- 判据门禁绿：`scripts/build.sh --test` → **309 判据 0 failed**（1 skipped = 只手动触发的皮肤对比度体检；禁用缓存复跑
   `gradle jvmTest --rerun-tasks --no-build-cache` 同数）。门禁脚本读的是 test-results XML，
   增量构建下会读到陈旧结果——当证据用的数字必须来自禁用缓存的那次。
 - 本机引擎是 **Cambium**（0.3.0 的开发构建，取自引擎仓库 `feat/sylva-brand`）：启动器 `~/.local/bin/cambium`，

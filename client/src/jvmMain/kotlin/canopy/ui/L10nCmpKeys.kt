@@ -12,6 +12,20 @@ package canopy.ui
 
 /** CMP 特有键 · 简体中文（源语言）。 */
 internal val L10N_CMP_ZH_CN: Map<String, String> = mapOf(
+    // AI Agent 集成（设置 → AI；canopy/agent/AgentIntegration.kt）
+    "cmp.agent.title" to "AI Agent 集成",
+    "cmp.agent.note" to "把引擎的三件东西装进本机的编码 agent：CLI（cambium 命令）、MCP 服务（cambium mcp）、使用技能（SKILL.md）。装好后 agent 可以直接查仓库、渲染图谱、跑置信度。改动已有配置前先留 .bak-before-cambium 备份。",
+    "cmp.agent.cli" to "引擎 CLI（cambium）",
+    "cmp.agent.cliOk" to "已就绪：%s",
+    "cmp.agent.cliMissing" to "未找到（PATH 上没有，agent 用不了）",
+    "cmp.agent.cliInstall" to "安装到 ~/.local/bin",
+    "cmp.agent.registered" to "已注册",
+    "cmp.agent.notRegistered" to "未注册",
+    "cmp.agent.register" to "注册 MCP",
+    "cmp.agent.skillInstall" to "安装技能",
+    "cmp.agent.done" to "完成：%s",
+    "cmp.agent.failed" to "失败：%s",
+    "cmp.agent.probing" to "正在探测 agent 环境…",
     // 引擎探活 / 托盘
     "cmp.probe.locating" to "正在定位引擎…",
     "cmp.probe.binHint" to "CAMBIUM_BIN / DEEPGIT_BIN 或安装到 PATH 后重试",
@@ -398,6 +412,20 @@ internal val L10N_CMP_ZH_CN: Map<String, String> = mapOf(
 
 /** CMP 特有键 · English。 */
 internal val L10N_CMP_EN: Map<String, String> = mapOf(
+    // AI Agent 集成（设置 → AI；canopy/agent/AgentIntegration.kt）
+    "cmp.agent.title" to "AI agent integration",
+    "cmp.agent.note" to "Installs the engine's three pieces into local coding agents: the CLI (cambium command), the MCP service (cambium mcp) and the usage skill (SKILL.md). Once installed an agent can query repositories, render graphs and run confidence directly. Existing agent configs get a .bak-before-cambium backup before the first change.",
+    "cmp.agent.cli" to "Engine CLI (cambium)",
+    "cmp.agent.cliOk" to "ready: %s",
+    "cmp.agent.cliMissing" to "not found (not on PATH — agents cannot use it)",
+    "cmp.agent.cliInstall" to "Install to ~/.local/bin",
+    "cmp.agent.registered" to "registered",
+    "cmp.agent.notRegistered" to "not registered",
+    "cmp.agent.register" to "Register MCP",
+    "cmp.agent.skillInstall" to "Install skill",
+    "cmp.agent.done" to "done: %s",
+    "cmp.agent.failed" to "failed: %s",
+    "cmp.agent.probing" to "probing agent environment…",
     "cmp.probe.locating" to "Locating engine…",
     "cmp.probe.binHint" to "Set CAMBIUM_BIN / DEEPGIT_BIN or install to PATH, then retry",
     "cmp.tray.reading" to "Reading project group…",
@@ -761,6 +789,20 @@ internal val L10N_CMP_EN: Map<String, String> = mapOf(
 
 /** CMP 特有键 · 繁體中文。 */
 internal val L10N_CMP_ZH_TW: Map<String, String> = mapOf(
+    // AI Agent 集成（设置 → AI；canopy/agent/AgentIntegration.kt）
+    "cmp.agent.title" to "AI Agent 整合",
+    "cmp.agent.note" to "把引擎的三件東西裝進本機的編碼 agent：CLI（cambium 命令）、MCP 服務（cambium mcp）、使用技能（SKILL.md）。裝好後 agent 可以直接查倉庫、渲染圖譜、跑信賴度。改動已有設定前先留 .bak-before-cambium 備份。",
+    "cmp.agent.cli" to "引擎 CLI（cambium）",
+    "cmp.agent.cliOk" to "已就緒：%s",
+    "cmp.agent.cliMissing" to "未找到（PATH 上沒有，agent 用不了）",
+    "cmp.agent.cliInstall" to "安裝到 ~/.local/bin",
+    "cmp.agent.registered" to "已註冊",
+    "cmp.agent.notRegistered" to "未註冊",
+    "cmp.agent.register" to "註冊 MCP",
+    "cmp.agent.skillInstall" to "安裝技能",
+    "cmp.agent.done" to "完成：%s",
+    "cmp.agent.failed" to "失敗：%s",
+    "cmp.agent.probing" to "正在探測 agent 環境…",
     "cmp.probe.locating" to "正在定位引擎…",
     "cmp.probe.binHint" to "設定 CAMBIUM_BIN / DEEPGIT_BIN 或安裝到 PATH 後重試",
     "cmp.tray.reading" to "正在讀取專案群…",
@@ -1124,6 +1166,20 @@ internal val L10N_CMP_ZH_TW: Map<String, String> = mapOf(
 
 /** CMP 特有键 · 日本語。 */
 internal val L10N_CMP_JA: Map<String, String> = mapOf(
+    // AI Agent 集成（设置 → AI；canopy/agent/AgentIntegration.kt）
+    "cmp.agent.title" to "AI Agent 統合",
+    "cmp.agent.note" to "エンジンの 3 点をローカルのコーディング agent にインストールします：CLI（cambium コマンド）、MCP サービス（cambium mcp）、利用スキル（SKILL.md）。導入後は agent から直接リポジトリ照会・グラフレンダリング・信頼度実行ができます。既存の設定変更前には .bak-before-cambium のバックアップを残します。",
+    "cmp.agent.cli" to "エンジン CLI（cambium）",
+    "cmp.agent.cliOk" to "準備完了：%s",
+    "cmp.agent.cliMissing" to "見つかりません（PATH になし — agent から使えません）",
+    "cmp.agent.cliInstall" to "~/.local/bin にインストール",
+    "cmp.agent.registered" to "登録済み",
+    "cmp.agent.notRegistered" to "未登録",
+    "cmp.agent.register" to "MCP を登録",
+    "cmp.agent.skillInstall" to "スキルをインストール",
+    "cmp.agent.done" to "完了：%s",
+    "cmp.agent.failed" to "失敗：%s",
+    "cmp.agent.probing" to "agent 環境を確認中…",
     "cmp.probe.locating" to "エンジンを探しています…",
     "cmp.probe.binHint" to "CAMBIUM_BIN / DEEPGIT_BIN を設定するか PATH へインストールして再試行",
     "cmp.tray.reading" to "プロジェクト群を読み込み中…",
