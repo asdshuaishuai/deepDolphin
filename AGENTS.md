@@ -1,97 +1,100 @@
 # AGENTS.md
 
-deepDolphin —— moonGit 引擎的**多平台客户端**（展示层 + AI 层）。业务核心在**独立仓库** moonGit
-（本仓不含引擎源码）；每个客户端经 CLI 子进程调用引擎（`moongit <命令> --json`），
-只负责数据渲染、AI 通道与系统集成。
+**Sylva** 项目的客户端仓库。整个项目叫 Sylva：引擎叫 **Cambium**（独立仓库，GitHub `asdshuaishuai/moongit`，
+本地通常在兄弟目录 `../moongit`），客户端叫 **Canopy**，引擎里的置信度模块叫 **Dendro**。
+本仓不含引擎源码：客户端经 CLI 子进程调用引擎（`cambium <命令> --json`），只负责数据渲染、AI 通道与系统集成。
+
+名字改过两轮（deepGit → moonGit，再 → Cambium / Canopy / Dendro），**仓库与目录名没有跟着改**：
+两个仓库都开着 GitHub Pages，改名后 Pages 地址不跳转。看到 `moongit` / `deepDolphin` 的目录名、
+链接、旧命令别名，都是有意保留的，不要「顺手改名」。
 
 ## 仓库形状
 
-单 git 仓，多平台客户端并列（不是多仓）。
+单 git 仓。**全平台的客户端就是 `client/` 里的 CMP 这一份**（Kotlin + Compose Desktop，
+macOS / Linux / Windows 都跑它），不再做任何平台的原生开发（用户 2026-11-26 定，见 `client/PLAN.md`
+「平台决定」）。其余目录是冻结的历史参照，**不投入新工作、不删**：
 
-- `macos/` — macOS 14+ · SwiftUI · SwiftPM 5.9（target `deepDolphin`）· **功能基准**
-- `linux/` — Linux · 仓颉 1.0.5 LTS（**禁升级**）+ CangjieGUI(CUI) 0.9.6 · `cjpm`
-- `deepin/` — deepin/DDE · C++17 + DTK6/Qt6 Widgets · CMake（**禁混 DTK5/Qt5**）· 1:1 对标 macos
-- `windows/` — 规划中：WinUI 3 / WPF
-- `harmonyos/` — 规划中：ArkUI
-- `assets/icon/` — 全平台唯一图标真相源：`mark.png` 母版 → `make-icons.py` → `out/`（平台只许引用，不许复制）
-- `assets/models/models-dev.json` — models.dev provider 目录快照（客户端 AI 选型数据源）
+- `client/` — **Canopy（CMP）**：唯一的在研客户端。Compose Desktop 1.7 / Kotlin 2.0 / JDK 21
+- `macos/` `linux/` `deepin/` `windows/` `harmonyos/` — 冻结的各平台原生端（SwiftUI / 仓颉+CUI / DTK6+Qt6 / …），
+  目录名、包名仍是旧的 deepDolphin；只当历史参照，各自的 README 与判据脚本仍在
+- `docs/` — `ui-cmp/`（界面实拍与说明）、`ROADMAP.md` 等；`client/PLAN.md` 是客户端的施工台账（每批的取舍与边界）
+- `assets/` — 图标等资产的真相源；`website/` — 项目主页（GitHub Pages 从 gh-pages 分支发布）
+- `PLATFORM-CHARTER.md` — 跨平台能力基准（C1–C11）
 
-跨平台能力基准 = `PLATFORM-CHARTER.md`（C1–C11）：**交互 UI 各平台自由，能力必须一致**。
-唯一耦合面 = 引擎 `--json` 键名；改动必须同步各端模型层。
-引擎仓（兄弟目录 `../moongit`）的 `AGENTS.md` 是协作规约与不变量的**上游出处**，先读它。
+唯一耦合面 = 引擎 `--json` 键名。引擎仓的 `AGENTS.md` 是协作规约与不变量的**上游出处**，改契约前先读它。
 
 ## Setup commands
 
-**各平台独立，无全仓统一命令** —— 只走你要改的那个目录。
+只走 `client/`。JDK 21 与 Gradle 装在家目录（`~/.local/jdk`、`~/.local/gradle`），脚本自动定位，**不需要 root**。
 
-| 目录 | 装依赖 | 构建 | 测试 / 验证 | 运行 |
-|---|---|---|---|---|
-| `macos/` | — | `sh build.sh` | `sh scripts/client-check.sh`（+ `agent-check` / `catalog-check` / `markdown-check`）；契约 `sh scripts/contract-check.sh`（需可执行的 `moongit`） | `open deepDolphin.app` |
-| `linux/` | `sh scripts/fetch-deps.sh`（vendor/ 已 gitignore） | `sh scripts/build.sh`（环境自举幂等 + `cjpm build`） | `sh scripts/ci-local.sh` → `cjpm test`；末尾 `CJTEST_SUMMARY … failed=0`；AI 链路 `sh scripts/ai-e2e.sh` | `sh scripts/run.sh` / `sh scripts/dev-launch.sh` |
-| `deepin/` | `python3 scripts/bootstrap-deps.py --download` + `sh scripts/setup-deps.sh`（用户态 sysroot，无需 root） | `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel 4` | `./build/deepDolphin --selfcheck`（66 例，须 0 失败）；`sh scripts/ci.sh`（6 道门）；契约 `sh scripts/contract-check.sh` | `sh scripts/dev-run.sh`（`-o` 离屏冒烟） |
-| 根 | — | — | `bash assets/icon/check-icon.sh` | — |
+```sh
+cd client
+scripts/build.sh --test     # 编译 + 全量判据（jvmTest），末行 CMPTEST_SUMMARY passed=N skipped=S failed=M
+scripts/build.sh --run      # 编译后真窗口启动（需 DISPLAY）
+gradle packageDeb           # jpackage 打 deb（或 packageAppImage）
+scripts/install-user.sh     # 免 root 安装：~/.local/opt/canopy + ~/.local/bin/canopy + 应用菜单项（--uninstall 卸掉）
+```
 
-引擎发现链：`DEEPGIT_BIN` → 应用内嵌副本 → `~/.local/bin` → PATH。
-引擎安装步骤见 `deepin/README.md`「引擎安装前提」。
+引擎发现链：`CAMBIUM_BIN` → `MOONGIT_BIN` / `DEEPGIT_BIN`（旧名兜底）→ 仓内构建 → PATH
+（`cambium` / `moongit` / `deepgit`）。引擎的装法见引擎仓 README。
+**缺系统依赖（引擎、ast-grep、sudo 才能装的东西）时告诉用户来装**，不自行安装系统包。
 
 ## Code style
 
-无 linter / formatter 配置（无 `.editorconfig` / swiftlint / clang-format）—— **照邻近文件的写法走**。
-本仓特有的硬约定：
+无仓库级 linter / formatter——**照邻近文件的写法走**。本仓特有的硬约定：
 
-- **纯函数判定层**：判定抽到零依赖纯函数，视图层只渲染。
-  macos：进 `client-check.sh` 编译清单的文件**不得** `import SwiftUI|AppKit`；
-  deepin：`src/models/`、`src/logic/` 零 QWidget 头；linux：判据在 `src/*_test.cj`。
-  判定藏回视图 = 运行时抓不到 = 缺陷漏网。
-- **单一真相源**：一条规则只许有一个出处（如「当前分支」= `ProjectStatus.primaryBranch`，
-  快捷键 = `logic/ShortcutMap.h` / `ShortcutMap.swift`）。抄第二份，迟早两份都错。
-- **设计令牌单一来源**：色值/间距/字号走 `DS::*`（macos）、`tokens.cj`（linux）、`DesignTokens`（deepin）。
-  deepin 有 grep 硬门：DS 之外出现色值 / px 字号即失败（存量上限 4，只减不增）。
-- **动效极少**：macOS 全项目只 1 处动效，必须走 `DSMotion.standard`；不许新增裸 `withAnimation`。
-- **注释写「为什么」不写「什么」**：本仓注释密度高、逐条记取舍与代价，中文书写。
-- **文档随代码同步**：代码结构清单按磁盘重建（`client-check.sh` 有双向判据）——改了文件要改 README 清单。
+- **判定与渲染分开**：判定抽到零依赖纯函数（`canopy.engine` / `canopy.sysint` 等），Composable 只渲染。
+  判定藏进视图 = 单测抓不到。
+- **单一真相源**：一条规则只许有一个出处。字符串表是生成物（`scripts/gen_l10n.py` → `L10nTables.kt`），
+  **手改会被下次生成覆盖**——要改就改生成器。
+- **设计令牌单一来源**：色值 / 字号 / 圆角 / 材质只从 `ui/Design.kt`（`Palette` / `Type` / `Radius`）与
+  `ui/Skin.kt`（换肤时派生）取。界面代码里手写色值 = 要逐个修的 bug。
+- **文字极性看主题色**：浅色主题主文字纯黑、深色主题纯白；容器上的前景只有纯黑 / 纯白（`readableOn`）。
+  文字与表面的对比度由换肤时的保底与 `SkinTest` 守卫钉住，不在调用点手调。
+- **注释写「为什么」不写「什么」**：注释密度高、逐条记取舍与代价，中文书写。
+- **文档随代码同步**：每批的取舍、判据与边界当轮写进 `client/PLAN.md`，状态数字写进 `client/README.md`。
 
 ## Testing instructions
 
 - **判据先行**：每个行为改动配一条判据；**负控必须真红**（摘掉接线或改成恒真，确认判据红）。
   「判据全绿」本身不构成证据。
-- 各端判据落点：macos `scripts/*-check.sh`（`swiftc` 单独编译**本体**而非副本）；
-  linux `src/model_test.cj`(140) + `src/ai_test.cj`(46) + `src/markdown_test.cj`(17)；
-  deepin 二进制内置 `--selfcheck`（`src/app/SelfCheck.cpp`）。
-- **交叉验证必须拿非空样本**；负控按判据的**实际位置**选套件（源码扫描类判据先剥注释再匹配）。
-- 契约改动必须同时过 `contract-check.sh`（真引擎输出喂真模型层），且各端模型层同步。
-- UI 改动走离屏快照对比**同机位** before/after 基线（linux `scripts/ui-snap.sh`、deepin `--snapshot`）；
-  凭感觉说「应该好看了」不算验收。
-- 引擎缺席时契约检查 SKIP —— **SKIP 不算通过**，如实报告。
+- **门禁证据必须禁用缓存**：`gradle jvmTest --rerun-tasks --no-build-cache`。增量构建下跑过旧字节码、
+  读到陈旧 test-results 的事都出过。
+- **界面改动要量，不要凭感觉**：皮肤 / 对比度走离屏体检（`SkinContrastAudit`，需显示器：
+  `CANOPY_SKIN_AUDIT=<目录> gradle jvmTest --rerun-tasks --tests '*SkinContrastAudit*'`；加
+  `CANOPY_SKIN_AUDIT_HOVER=1` / `_PRESSED=1` 把悬停 / 按下态也量一遍）；真窗口实拍归档在 `docs/ui-cmp/`。
+  离屏只能证明「画出来的东西」，证明不了「和真窗口是同一棵树」——两者都要。
+- **真窗口取图按窗口取，不从屏幕合成结果取**；锁屏时**一律不发键鼠**（会打进锁屏的密码框）。
+- 引擎缺席时契约检查 SKIP——**SKIP 不算通过**，如实报告。
 
 ## 协作规约
 
-继承 `../moongit/AGENTS.md`「协作规约」节：
+继承引擎仓 `AGENTS.md`「协作规约」节：
 
 1. **拿不准时按最佳预案定，不停下来提问。** 只有两类可以问：① 会写进用户真实数据或造成不可逆损失的动作；
    ② 物理授权（OAuth / MFA / 硬件钥匙）。
-2. **决定必须同轮落文档**，否则等于不存在：通用结论 → 判据 / 不变量；本次取舍与已知代价 → README「已知边界」。
+2. **决定必须同轮落文档**，否则等于不存在：通用结论 → 判据；本次取舍与已知代价 → `client/PLAN.md`。
    两者都要能回答「后来者凭什么这么定」。
 3. **改名字不改身份**：`DEEPGIT_BIN` / `DEEPGIT_HOME` 环境变量名、`~/.deepgit` 数据目录、
-   `<!-- deepgit:begin -->` 文档托管标记都是既有接口，不许改。
-4. **诚实降级**：AI 未配置 → 更新动作照常可用（仅无摘要）；引擎不可达 → 明确报错 + 引导安装。
+   `<!-- deepgit:begin -->` 文档托管标记、已落盘产物的 schema 串都是既有接口，不许改（用户 2026-11-27：`~/.deepgit` 不动）。
+4. **界面要完全的 Fluent 美学**；不设独立的「AI 助手」入口；图谱两页跟仓库走、是独立页面不弹窗、由 WebView 渲染。
+5. **诚实降级**：AI 未配置 → 更新动作照常可用（仅无摘要）；引擎不可达 → 明确报错 + 引导安装。
    每条出口都要区分「跑成了 / 没跑成（附原因与下一步）/ 跑了但没产出」，永不静默。
-5. **缺字段不回落成 0**：引擎没说 ≠ 没有。缺披露字段显示「?」，不显示 0。
-6. **失败要说清是哪一种**：引擎找不到 / 契约过旧 / 部分项目失败 —— 三者分开说，处置不同。
-7. **失败的项目留在列表里并显示引擎给的原因**，不静默过滤（过滤掉 = 谎称读过那个仓库）。
+6. **缺字段不回落成 0**：引擎没说 ≠ 没有。缺披露字段显示「?」，不显示 0。
+7. **失败要说清是哪一种**：引擎找不到 / 契约过旧 / 部分项目失败——三者分开说，处置不同。
+8. **失败的项目留在列表里并显示引擎给的原因**，不静默过滤（过滤掉 = 谎称读过那个仓库）。
 
 ## PR & commit conventions
 
-- 分支从 `main` 起，不直接提交到 `main`
-- Conventional commits，**带平台 scope**：`feat(linux):` / `fix(deepin):` / `docs(linux):` / `chore(linux):`
-- 提交信息写清「改了什么 + 为什么 + 影响面」
-- 阶段完成即提交：判据全绿 + 负控真红 + 复验完成即算一个阶段
-- 提交前跑对应平台的测试命令 + `bash assets/icon/check-icon.sh`
+- 在最新分支上工作（当前是 `next/cmp`）；`main` 与 `dev` 落后，不直接提交
+- Conventional commits：`feat(ui):` / `fix(ui):` / `docs:` / `chore:` …；提交信息写清「改了什么 + 为什么 + 影响面」
+- 阶段完成即提交：判据全绿 + 负控真红 + 复验完成即算一个阶段；提交后推送
+- 对外、难撤回的动作（改仓库名、公开发版打标、动用户数据）先确认
 
 ## Security
 
-- **API key 只进平台安全存储**：macOS 钥匙串 / libsecret / DPAPI / 鸿蒙关键资产。
-  不进日志、不进配置文件明文。降级到文件（chmod 600）时**在设置页显式写明**，不静默降级。
-- **客户端零业务数据写入**：一切文档 / 进度写操作只经引擎子进程；客户端唯一写盘是自启 `.desktop`。
+- **API key 只进平台安全存储**（钥匙串 / libsecret /…）；不进日志、不进配置文件明文。
+  降级到文件（chmod 600）时**在设置页显式写明**，不静默降级。
+- **客户端零业务数据写入**：一切文档 / 进度写操作只经引擎子进程；客户端自己写盘的只有配置与自启条目。
 - 引擎不可达时明确报错，不静默失败。
-- `.gitignore` / `.zcodeignore` 已排除构建产物与代理会话状态（`.stepcode/`、`.zcode/`）。
+- `.gitignore` / `.zcodeignore` 已排除构建产物与代理会话状态（`.stepcode/` / `.zcode/`）。
