@@ -38,7 +38,7 @@
   玻璃拟态 / 液态玻璃 / 新拟态 / 黏土拟态 / 新粗野主义 / Y2K / Frutiger Aero / 拟物皮革 / 远古网页 /
   Aqua / Windows Aero / 极简主义等，即点即换、settings.conf 持久化（`app.skin`）。
   文字与表面的对比度在换肤时保底（`ui/Skin.kt`：文字级语义色、四层表面模型、光泽预算；静置面三级文字
-  7 / 6 / 5），`SkinTest` 逐套守卫；另有只手动触发的离屏体检——`CANOPY_SKIN_AUDIT=<目录> gradle jvmTest
+  7 / 6 / 5）；主文字的极性看主题色——浅色主题纯黑、深色主题纯白，容器上的前景只有纯黑 / 纯白两种，`SkinTest` 逐套守卫；另有只手动触发的离屏体检——`CANOPY_SKIN_AUDIT=<目录> gradle jvmTest
   --rerun-tasks --tests '*SkinContrastAudit*'`（需要显示器；再加 `CANOPY_SKIN_AUDIT_HOVER=1`、
   `CANOPY_SKIN_AUDIT_PRESSED=1` 会把每个可点节点的悬停 / 按下态也量一遍）——按语义树量每段文字的实际像素
   对比度：14 套 0 冲突，悬停 / 按下与提示条也是 0 冲突。

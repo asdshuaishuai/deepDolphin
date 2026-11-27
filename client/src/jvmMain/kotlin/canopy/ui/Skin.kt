@@ -357,16 +357,15 @@ object Skins {
         Palette.TextPrimary = skin.textPrimary
         Palette.TextSecondary = skin.textSecondary
         Palette.TextTertiary = skin.textTertiary
-        // 语义基色身兼容器填充：先过实心保底（见 solidReadable），后面的墨与前景都从保底后的值派生
-        Palette.Accent = solidReadable(skin.accent)
+        Palette.Accent = skin.accent
         Palette.OnAccent = skin.onAccent
         Palette.AccentHover = skin.accentHover
-        Palette.Shallow = solidReadable(skin.green)
-        Palette.Deep = solidReadable(skin.deep)
-        Palette.Ai = solidReadable(skin.ai)
-        Palette.Yellow = solidReadable(skin.yellow)
-        Palette.Amber = solidReadable(skin.amber)
-        Palette.Red = solidReadable(skin.red)
+        Palette.Shallow = skin.green
+        Palette.Deep = skin.deep
+        Palette.Ai = skin.ai
+        Palette.Yellow = skin.yellow
+        Palette.Amber = skin.amber
+        Palette.Red = skin.red
         Palette.HeroTop = skin.heroTop
         Palette.HeroBottom = skin.heroBottom
         Palette.AccentAlt = skin.accentAlt
@@ -409,6 +408,7 @@ object Skins {
      * · 悬停 + 光泽叠加处：主 ≥ 4.5，其余 ≥ 3.0。
      * · accent 上的前景：皮肤给的 onAccent 对比度不到 4.5 就换成可读色（浅色皮肤的粉彩 accent 配白字）。
      * 暗色皮肤（Fluent 等）本来就达标，派生值等于原值。
+     * 主文字不取皮肤数据：浅色主题纯黑、深色主题纯白（极性看页面底色）。
      * 光泽强度也在这里定（[glossBudget]）。
      */
     private fun normalizeContrast() {
@@ -427,7 +427,9 @@ object Skins {
         // 一悬停从 5.4 掉到 4.1）就朝远离文字的方向派生一档
         Palette.AccentHover = skin.accentHover.takeIf { contrastOf(Palette.OnAccent, it) >= 4.5f }
             ?: hoverOf(Palette.Accent, Palette.OnAccent)
-        Palette.TextPrimary = level(skin.textPrimary, 7.0f, 4.5f, 4.5f)
+        // 主文字的极性看**主题色**（页面底色）：浅色主题用黑字，深色主题用白字（用户 2026-11-27 定）。
+        // 不取皮肤数据里的 textPrimary——那里面是藏青、奶白这类「带色相的深 / 浅色」，正常文字就该是纯黑或纯白
+        Palette.TextPrimary = level(readableOn(skin.bgBase, 0f), 7.0f, 4.5f, 4.5f)
         Palette.TextSecondary = level(skin.textSecondary, 6.0f, 4.5f, 3.0f)
         Palette.TextTertiary = level(skin.textTertiary, 5.0f, 3.0f, 3.0f)
         // 语义墨还会落在自己色的浅色底 chip 上：那一面也算进去
@@ -448,7 +450,8 @@ object Skins {
     /**
      * 光泽预算：0…皮肤给的光泽强度里最大的那个 g，使得——
      * · 「静置面上达标的次级文字」在叠了 g 的白的卡 / 凹槽 / hero 顶部仍 ≥ 4.5，且
-     * · 每个语义容器（含 accent）上的可读前景，在容器本体与它的光泽顶部上都保住 ≥ 4.3（readableOn 的保证值）。
+     * · 每个语义容器（含 accent）上的可读前景，在容器本体上保住 ≥ 4.5（readableOn 对任何颜色都给 ≥ 4.58）、
+     *   在它的光泽顶部上保住 ≥ 4.3。
      * 光泽是装饰——不许把正文级的字拉到 AA 以下、不许把容器上的前景拉出保证值；预算不够就削弱光泽，不动文字。
      * 只按静置面算：悬停 + 光泽的叠加由抬升面的保底兜（次级文字最多被再提亮一点）。
      * 返回预算与随之定下的 accent 前景：皮肤给的 onAccent 在光泽顶部上站不住就换成 [readableOn] 按光泽选的那个。
@@ -477,7 +480,7 @@ object Skins {
             accept(g)?.let { return GlossBudget(g, it) }
             g -= 0.02f
         }
-        // 没有光泽时 readableOn 必然达标（分界线处两种前景都有 4.3），兜底只是不让换肤因为一个色值崩掉
+        // 没有光泽时 readableOn 必然达标（纯黑 / 纯白对任何颜色都 ≥ 4.58），兜底只是不让换肤因为一个色值崩掉
         return GlossBudget(0f, accept(0f) ?: readableOn(Palette.Accent, 0f))
     }
 
@@ -514,17 +517,18 @@ object Material {
 // ── 绘制辅助（Buttons.kt 与卡片容器共用；按 Material 令牌渲染，调用点不 if 皮肤）──
 
 /**
- * 容器上读得清的前景色：亮底给近黑、暗底给白，取两者中对比度更高的那个。
- * 分界线是近黑（#111）与白两种前景对比度相等的亮度 ≈ 0.19——原先是 0.55，中等亮度的绿、紫、蓝
- * 都被判成「配白字」，实际只有 2–3 的对比度（Aqua 的浅更新 / 深更新按钮实拍）。
+ * 容器上读得清的前景色：亮底给黑、暗底给白，取两者中对比度更高的那个。**纯黑与纯白**——正常文字就该是
+ * 这两种（用户 2026-11-27：「主题色是浅色采用深色文字，反之」）。两种前景对比度相等的分界亮度 ≈ 0.179，
+ * 在这条线上两者都是 4.58，所以**任何容器色经它取前景，对比度都 ≥ 4.58**，不存在「两种都不够」的中段
+ * （近黑 #111 做前景时有那么一小段，两种都到不了 4.5）。
  * 带光泽的皮肤里容器顶部还叠着一层白（[glossy]）：两种前景各取「容器本体与光泽顶部里较差的那个」再比，
- * 否则按钮上一半清楚一半糊。任何容器色经它取前景，对比度都 ≥ 4.3。
+ * 否则按钮上一半清楚一半糊。
  */
 fun readableOn(c: Color): Color = readableOn(c, if (Material.gloss) Material.glossStrength else 0f)
 
 fun readableOn(c: Color, gloss: Float): Color {
-    val dark = Color(0xFF111111)
-    val light = Color(0xFFFFFFFF)
+    val dark = Color.Black
+    val light = Color.White
     val worst = { fg: Color -> if (gloss > 0f) minOf(contrastOf(fg, c), contrastOf(fg, glossy(c, gloss))) else contrastOf(fg, c) }
     return if (worst(dark) >= worst(light)) dark else light
 }
@@ -542,29 +546,6 @@ fun veil(alpha: Float): Color = (if (Palette.TextPrimary.luminance() < 0.5f) Col
 fun compositionSurfaces(skin: Skin): List<Color> {
     val bases = backdropBases(skin.backdrop, skin.bgBase)
     return bases + skin.card.compositeOver(bases.first()) + sidebarBases(skin.backdrop, skin.bgBase).map { skin.sidebar.compositeOver(it) }
-}
-
-/**
- * 实心容器的基色保底：有一小段中等亮度的颜色，白字与近黑字**都**到不了 4.5（亮度约 0.183–0.200，
- * 两种前景在 0.19 处相交、都是 4.35）。落在这一段里的语义色朝更近的一侧推到刚好够读——变化不到 0.02 的亮度，
- * 看不出来；不推的话按钮上只能是 4.4（neo 的深更新：白字压 #7c5cf6，体检实拍偏弱）。
- * 其余颜色原样返回。保底后任何语义色当容器，[readableOn] 在容器本体上都配得出 ≥ 4.5 的前景。
- */
-fun solidReadable(c: Color): Color {
-    val dark = Color(0xFF111111)
-    val onDark = contrastOf(dark, c)
-    val onLight = contrastOf(Color.White, c)
-    if (max(onDark, onLight) >= 4.5f) return c
-    val toBlack = onLight >= onDark
-    val target = if (toBlack) Color.Black else Color.White
-    val on = if (toBlack) Color.White else dark
-    var t = 0.02f
-    while (t < 1f) {
-        val x = lerp(c, target, t)
-        if (contrastOf(on, x) >= 4.5f) return x
-        t += 0.02f
-    }
-    return c
 }
 
 /** WCAG 对比度（1:1 同色 … 21:1 黑白）。 */

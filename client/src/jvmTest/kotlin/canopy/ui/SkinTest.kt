@@ -141,7 +141,7 @@ class SkinTest {
                     val fill = get()
                     val on = readableOn(fill)
                     val tops = if (g > 0f) listOf(fill, glossy(fill, g), hoverOf(fill, on)) else listOf(fill, hoverOf(fill, on))
-                    if (contrastOf(on, fill) < 4.4f || tops.any { contrastOf(on, it) < 4.2f }) {
+                    if (contrastOf(on, fill) < 4.45f || tops.any { contrastOf(on, it) < 4.25f }) {
                         failures.add("${skin.id} $name 容器上的可读前景不到 4.5:1（或光泽顶部 / 悬停上不到 4.3:1）：${on.toCss()} on ${fill.toCss()}")
                     }
                 }
@@ -162,17 +162,48 @@ class SkinTest {
     }
 
     @Test
-    fun midToneFillsAreNudgedUntilOnePolarityReads() {
-        // 亮度 0.1887：白字 4.40、近黑字 4.29——两种都差一点。朝更近的白字一侧压暗到 4.5
-        val neoDeep = Color(0xFF7C5CF6)
-        val fixed = solidReadable(neoDeep)
-        assertTrue(contrastOf(Color.White, fixed) >= 4.5f, "白字应到 4.5：${"%.2f".format(contrastOf(Color.White, fixed))}")
-        assertTrue(fixed.luminance() < neoDeep.luminance(), "压暗了一点点")
-        assertTrue(neoDeep.luminance() - fixed.luminance() < 0.02f, "只推了一点点（肉眼看不出）")
-        // 不在这一段的原样返回
-        assertEquals(Color(0xFF34C759).toCss(), solidReadable(Color(0xFF34C759)).toCss())
-        assertEquals(Color(0xFF60CDFF).toCss(), solidReadable(Color(0xFF60CDFF)).toCss())
-        assertEquals(Color(0xFF0000EE).toCss(), solidReadable(Color(0xFF0000EE)).toCss())
+    fun primaryTextFollowsTheTheme() {
+        // 用户 2026-11-27：「正常情况下文字应该是黑色的；看主题色，主题色是浅色采用深色文字，反之」。
+        // 主文字不取皮肤数据（那里是藏青 #1a2433、奶白 #f2e8d8 这类带色相的深 / 浅色）：浅色主题纯黑，深色主题纯白。
+        try {
+            val light = ArrayList<String>()
+            val dark = ArrayList<String>()
+            Skins.all.forEach { skin ->
+                Skins.apply(skin)
+                val lightTheme = contrastOf(Color.Black, skin.bgBase) > contrastOf(Color.White, skin.bgBase)
+                (if (lightTheme) light else dark).add(skin.id)
+                val expected = if (lightTheme) Color.Black else Color.White
+                assertEquals(expected.toCss(), Palette.TextPrimary.toCss(), "${skin.id}（底 ${skin.bgBase.toCss()}）的主文字应是纯${if (lightTheme) "黑" else "白"}")
+            }
+            // 两边都有人：这条规则不是空转（Fluent 暗色 / Aero / 玻璃 / 皮革…是深色主题，Aqua / 新拟态 / 极简…是浅色）
+            assertTrue(light.contains("aqua") && light.contains("minimal") && light.contains("frutiger"), "浅色主题：$light")
+            assertTrue(dark.contains("fluent") && dark.contains("aero") && dark.contains("skeuo"), "深色主题：$dark")
+        } finally {
+            Skins.apply(Skins.byId.getValue(Skins.DEFAULT_ID))
+        }
+    }
+
+    @Test
+    fun everyContainerGetsPureBlackOrWhiteThatReads() {
+        // 前景只有纯黑、纯白两种；两者对比度相等的分界亮度 ≈ 0.179，在那里都是 4.58——
+        // 所以任何容器色都配得出 ≥ 4.5 的前景。灰阶从黑到白逐级扫一遍，再把每套皮肤的语义色都过一遍
+        for (v in 0..255 step 5) {
+            val c = Color(v, v, v)
+            val on = readableOn(c, 0f)
+            assertTrue(on == Color.Black || on == Color.White, "前景只能是纯黑或纯白：$on")
+            assertTrue(contrastOf(on, c) >= 4.5f, "灰 $v 上 ${on.toCss()} 只有 ${"%.2f".format(contrastOf(on, c))}")
+        }
+        try {
+            Skins.all.forEach { skin ->
+                Skins.apply(skin)
+                listOf(Palette.Accent, Palette.Shallow, Palette.Deep, Palette.Ai, Palette.Yellow, Palette.Amber, Palette.Red).forEach { fill ->
+                    val on = readableOn(fill, 0f)
+                    assertTrue(contrastOf(on, fill) >= 4.5f, "${skin.id} 容器 ${fill.toCss()} 上 ${on.toCss()} 只有 ${"%.2f".format(contrastOf(on, fill))}")
+                }
+            }
+        } finally {
+            Skins.apply(Skins.byId.getValue(Skins.DEFAULT_ID))
+        }
     }
 
     @Test
@@ -195,9 +226,9 @@ class SkinTest {
     }
 
     @Test
-    fun lightSkinInkIsDarkenedAndMidToneContainersGetDarkText() {
+    fun lightSkinInkIsDarkenedAndMidToneContainersGetBlackText() {
         // Aqua：绿 #34C759（亮度约 0.43）当容器时原先配白字（2.2:1）——中等亮度的容器要配深字
-        assertEquals(Color(0xFF111111).toCss(), readableOn(Color(0xFF34C759)).toCss())
+        assertEquals(Color.Black.toCss(), readableOn(Color(0xFF34C759)).toCss())
         assertTrue(contrastOf(readableOn(Color(0xFF34C759)), Color(0xFF34C759)) >= 4.5f)
         // 很暗的容器仍配白字
         assertEquals(Color(0xFFFFFFFF).toCss(), readableOn(Color(0xFF1B1B1B)).toCss())
